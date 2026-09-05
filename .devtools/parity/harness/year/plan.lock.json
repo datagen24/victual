@@ -2,10 +2,10 @@
 	"generatorVersion": 1,
 	"plans": {
 		"g1/smoke/seed-20260905/anchor-2025-01-01": {
-			"hash": "105f5cc570ba3bec621a438586c400eca4cdcab295ae274a2f8d932d2f5d0cbf",
-			"recorded": 625,
-			"arranged": 68,
-			"bookings": 150,
+			"hash": "88f7d5f2516d20d87f15e6079dadf6c79b2d7f11cf88de50e05be9cfd3e764ac",
+			"recorded": 632,
+			"arranged": 71,
+			"bookings": 153,
 			"byLedgerKind": {
 				"self-production": 1,
 				"edit": 1,
@@ -17,10 +17,10 @@
 			}
 		},
 		"g1/year/seed-20260905/anchor-2025-01-01": {
-			"hash": "50662915a1dbb568ba190588808d52d45b2f4e2e12eae629fb58dd1ae5909a10",
-			"recorded": 5369,
-			"arranged": 143,
-			"bookings": 1848,
+			"hash": "9afcfdaf1226cc82d377fe0a459b408e4291b9785bd155789d6faa7b475ab91e",
+			"recorded": 5376,
+			"arranged": 146,
+			"bookings": 1851,
 			"byLedgerKind": {
 				"purchase": 530,
 				"transfer": 53,
