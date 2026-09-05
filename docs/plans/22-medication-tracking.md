@@ -308,10 +308,10 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two pairs, claiming **0267** (medication master data and subjects)
-  and **0268** (regimens, administrations, excursions), with rows added to
+- **Migration numbering.** Two pairs, claiming **0268** (medication master data and subjects)
+  and **0269** (regimens, administrations, excursions), with rows added to
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written, per
-  [ADR-0004](../adr/0004-engine-specific-migrations.md). 0266 belongs to
+  [ADR-0004](../adr/0004-engine-specific-migrations.md). 0267 belongs to
   [23](23-storage-classes.md), which lands first. **These numbers have moved twice** — claimed
   as 0261–0262 until `master` landed 0261, then 0262–0264 until wave 2 landed 0262 through
   0265 — so re-read that table at every resync rather than trusting a number this plan claimed
@@ -326,7 +326,7 @@ Collected because most of them are only visible from inside the existing code.
    > every `/objects/locations` client can see for the sake of a wine cooler and a
    > cheese cave as much as a medication fridge, and a schema change justified only
    > inside a medication plan is one nobody reading `locations` would think to open.
-   > 23 takes migration 0266 and lands first.
+   > 23 takes migration 0267 and lands first.
 
 2. **Where do lot numbers live?** A column on `stock` and `stock_log`, or a side table keyed on
    `stock_id`.

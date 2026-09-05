@@ -798,3 +798,61 @@ that keeps paying after this plan, since it fails on a field nobody thought abou
 than on one somebody already classified. Three to four sittings, of which the first is answering Q1, Q3 and Q8 —
 Q2 the plan answers itself (a constant), and Q4, Q5 and Q9 are now questions for 02, 18
 and wave 2 rather than for this plan.
+
+## Executed
+
+### Piece 1 — wave 3a (2026-09-05)
+
+Migration 0266 adds `roles`, `role_permissions` and `user_roles`, widens the resolved
+permission views, and adds the six view leaves specified by Q1/Q3/Q8. Every existing user
+receives those leaves; `user_roles` starts empty. Admin, Adult, Child and Guest are seeded
+by immutable code. New users receive only configured direct grants and `DEFAULT_ROLES`
+(default `[]`). Account creation and both sets of defaults are transactional.
+
+Role APIs and the role list/editor are implemented, together with the users list's Roles
+column and the per-user role selector. Q9's permissions endpoint now returns every
+hierarchy row with `has_permission` and sorted `via_roles`, and direct grant writes require
+`USERS_EDIT`. This replaces the old unresolved-row shape, rather than merely adding a
+field to it. The OpenAPI specification describes the new endpoints and response shape.
+
+Assignments check the complete effective grant set. Changing a role also checks its
+existing grants and every current holder's permissions, so removing a role cannot strip
+a stronger user. Authorization-model writes lock the three grant tables through the
+check and transaction. The UI retains overlapping direct grants when roles are removed
+and renders role names as text, including delete confirmations.
+
+The six domains' page and API reads are gated, including generic objects, separately
+addressable userfields, label/print reads and product/recipe pictures. Calendar aggregation
+filters those domains by the caller's view leaves. Navigation and the default landing-page
+choice respect read permissions. Batteries, equipment and custom entities retain their
+previous read policy; this wave does not add view leaves for them.
+
+Implementation differences and remaining scope:
+
+- Migration 0266 is PostgreSQL-only PHP so its transaction can execute the schema and
+  shared SQL seed. The importer reuses that seed after checking its verbatim copy,
+  restoring leaves and role grants that a frozen SQLite source cannot carry.
+- Unwritten storage/medication reservations move to 0267–0269. The frozen SQLite migration
+  line is unchanged. Differential tests still compare the old permission model and six
+  original UI-helper columns; PostgreSQL tests assert the new model separately.
+- The Effort paragraph includes `permission_fields` in piece 1, but that table and its
+  pricing seed are delivered with piece 2's enforcement and snapshot, as Q2 requires.
+  **This wave does not hide prices from Child or Guest.** Existing direct grants also
+  remain effective when assigning a narrower role; administrators must remove them
+  deliberately when narrowing an upgraded user's access.
+- [ADR-0018](../adr/0018-role-grants-and-domain-reads.md) records the implemented model as
+  Proposed; it does not accept or change another ADR.
+
+Verification is reproducible with `.devtools/pgsql/run-tests.sh rbac`, `import`, and the
+full suite. The role phase exercises denied routed reads, allowed view leaves, seed roles,
+role provenance, removal, malformed/unknown IDs, delegated grants, the inherited
+user-picture ownership rule, injected rollback failures, default roles and actual Blade
+renders. `.devtools/frontend/roles.js <url>` exercises role creation and editing, inherited
+checkboxes and overlapping direct grants in a browser. The existing S29 probe now includes
+role-name delete confirmations. Both browser checks run in `frontend-security`.
+
+On 2026-09-05, the wave 3a working copy based on `96b21711` passed the complete
+`.devtools/pgsql/run-tests.sh` suite in the local development image against PostgreSQL 16,
+including 256 role-phase assertions and three default-role subprocesses. The role browser
+workflow passed with local Chrome, and all 27 S29 probes were clean. PHP syntax, runtime SQL,
+API path typing, ADR headers and the eight CI-script unit tests also passed.

@@ -119,6 +119,13 @@ foreach ($views as $view)
 	{
 		$a = $sqlite->query("SELECT * FROM $view")->fetchAll(PDO::FETCH_ASSOC);
 		$b = $pg->query("SELECT * FROM $view")->fetchAll(PDO::FETCH_ASSOC);
+		// Compare the original six columns on the frozen SQLite model. PostgreSQL's
+		// additional role provenance is asserted by rbac-tests.php.
+		if ($view === 'uihelper_user_permissions')
+		{
+			foreach ($b as &$row) unset($row['via_roles']);
+			unset($row);
+		}
 	}
 	catch (Exception $ex)
 	{

@@ -180,6 +180,8 @@ class FilesApiController extends BaseApiController
 	 */
 	public function ServeFile(Request $request, Response $response, array $args)
 	{
+		if ($args['group'] === 'productpictures') User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		if ($args['group'] === 'recipepictures') User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			if (!in_array($args['group'], $this->GetOpenApispec()->components->schemas->FileGroups->enum))
@@ -220,7 +222,7 @@ class FilesApiController extends BaseApiController
 					$mimeType = 'application/octet-stream';
 				}
 
-				$response = $response->withHeader('Cache-Control', 'max-age=2592000');
+				$response = $response->withHeader('Cache-Control', 'private, no-store');
 				$response = $response->withHeader('Content-Type', $mimeType);
 				// Load-bearing, not belt and braces: a GIF/HTML polyglot passes getimagesize
 				// and sniffs as image/gif, so it is served inline - and it stays an image

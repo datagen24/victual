@@ -3,6 +3,7 @@
 namespace Victual\Services;
 
 use Victual\Helpers\UrlManager;
+use Victual\Controllers\Users\User;
 
 /**
  * Aggregates upcoming due dates from all enabled feature areas (stock due dates, tasks,
@@ -32,7 +33,7 @@ class CalendarService extends BaseService
 		$usersService = UsersService::GetInstance();
 
 		$stockEvents = [];
-		if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
+		if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING && User::HasPermissions(User::PERMISSION_STOCK_VIEW))
 		{
 			$products = $this->DB->products();
 			$titlePrefix = LocalizationService::GetInstance()->__t('Product due') . ': ';
@@ -53,7 +54,7 @@ class CalendarService extends BaseService
 		}
 
 		$taskEvents = [];
-		if (VICTUAL_FEATURE_FLAG_TASKS)
+		if (VICTUAL_FEATURE_FLAG_TASKS && User::HasPermissions(User::PERMISSION_TASKS_VIEW))
 		{
 			$titlePrefix = LocalizationService::GetInstance()->__t('Task due') . ': ';
 
@@ -70,7 +71,7 @@ class CalendarService extends BaseService
 		}
 
 		$choreEvents = [];
-		if (VICTUAL_FEATURE_FLAG_CHORES)
+		if (VICTUAL_FEATURE_FLAG_CHORES && User::HasPermissions(User::PERMISSION_CHORES_VIEW))
 		{
 			$users = UsersService::GetInstance()->GetUsersAsDto();
 			$chores = $this->DB->chores()->where('active = 1');
@@ -118,7 +119,7 @@ class CalendarService extends BaseService
 		$mealPlanRecipeEvents = [];
 		$mealPlanNotesEvents = [];
 		$mealPlanProductEvents = [];
-		if (VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN)
+		if (VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN && User::HasPermissions(User::PERMISSION_MEALPLAN_VIEW))
 		{
 			$mealPlanSections = $this->DB->meal_plan_sections();
 

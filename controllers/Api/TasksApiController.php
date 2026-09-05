@@ -18,6 +18,7 @@ class TasksApiController extends BaseApiController
 	 */
 	public function Current(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		return $this->FilteredApiResponse($request, $response, TasksService::GetInstance()->GetCurrent(), $request->getQueryParams());
 	}
 

@@ -19,7 +19,7 @@ class DatabaseImporter
 	/**
 	 * Tables that belong to the target engine alone and have no counterpart in the source.
 	 */
-	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time'];
+	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles'];
 
 	/**
 	 * Tables that exist on both sides but are deliberately not copied.
@@ -182,6 +182,14 @@ class DatabaseImporter
 			}
 
 			StoredApiKeyHasher::HashPlaintextKeys($this->Target, $this->Progress);
+
+			// The frozen source replaces permission_hierarchy, and TRUNCATE CASCADE
+			// clears role grants. Restore the target's read leaves and built-in grants
+			// only after the verbatim-copy assertions have succeeded.
+			if ($this->Target->query("SELECT to_regclass('roles')")->fetchColumn() !== null)
+			{
+				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/roles-seed.sql'));
+			}
 		}
 
 		return $report;

@@ -35,7 +35,7 @@ use Victual\Services\Database\ValueComparison;
  * phase exists to make a missing table loud, and an exemption it does not know about is a
  * missing table wearing a different hat. See db/pgsql/README.md.
  */
-const ENGINE_EXCLUSIVE_TABLES = ['files'];
+const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
@@ -142,7 +142,10 @@ function CompareRows(PDO $sqlite, PDO $pg): int
 		$list = implode(', ', array_map(fn($c) => '"' . $c . '"', $columns));
 
 		$a = array_map([ValueComparison::class, 'NormaliseRow'], $sqlite->query('SELECT ' . $list . ' FROM "' . $table . '"')->fetchAll(PDO::FETCH_ASSOC));
-		$b = array_map([ValueComparison::class, 'NormaliseRow'], $pg->query('SELECT ' . $list . ' FROM "' . $table . '"')->fetchAll(PDO::FETCH_ASSOC));
+		// Wave 3a adds six read leaves and their upgrade backfill only on PostgreSQL.
+		// Compare the entire frozen permission model; the new model has rbac-tests.php.
+		$where = $table === 'permission_hierarchy' ? ' WHERE id <= 30' : ($table === 'user_permissions' ? ' WHERE permission_id <= 30' : '');
+		$b = array_map([ValueComparison::class, 'NormaliseRow'], $pg->query('SELECT ' . $list . ' FROM "' . $table . '"' . $where)->fetchAll(PDO::FETCH_ASSOC));
 
 		sort($a);
 		sort($b);

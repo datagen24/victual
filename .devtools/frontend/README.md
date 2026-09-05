@@ -129,3 +129,11 @@ paths of `routes.php`'s non-API group; regenerate it with
 ```bash
 sed -n '33,150p' ../../routes.php | grep -oE "\\\$group->get\('[^']*'" | sed "s/.*get('//;s/'\$//" > routes.txt
 ```
+
+## Role workflow
+
+`node roles.js <url>` runs against a disposable authenticated admin or demo instance. It
+creates a custom role and a user, checks the role form and escaped delete confirmation,
+and assigns/removes Child and Guest through the user permissions page while preserving
+an overlapping direct grant. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an
+installed Chromium executable. CI runs it in `frontend-security` after the S29 probe.

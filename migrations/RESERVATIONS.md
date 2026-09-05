@@ -51,9 +51,10 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0263 | [plan 11](../docs/plans/11-api-error-handling.md) question 4 — `api_keys.key_hint` | in this tree |
 | 0264 | [plan 11](../docs/plans/11-api-error-handling.md) question 4 — hash the stored API keys, backfill the hint | in this tree |
 | 0265 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `users.must_change_password`, moved out of `user_settings` in review | in this tree |
-| 0266 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
-| 0267 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0268 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0266 | [plan 19](../docs/plans/19-rbac.md) — roles and read permissions (wave 3a) | in this tree |
+| 0267 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
+| 0268 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0269 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 ## The merge order this implies — discharged
 
@@ -71,7 +72,7 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-The next migration takes **0269** and claims it here first.
+The next migration takes **0270** and claims it here first.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering
@@ -79,19 +80,14 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0266 to 0268 are claimed by drafts and no file exists for any of them yet**, which is this
-record working as designed rather than a hole: the rule is that a number is claimed before it
-is written, and [22](../docs/plans/22-medication-tracking.md) and
-[23](../docs/plans/23-storage-classes.md) are drafts under review. `check-migrations.php` never
-sees them — its hole scan runs below the highest number on disk, which is 0265 — so no waiver
-is involved and none should be added for them.
+**0267 to 0269 are claimed by drafts and no file exists for any of them yet.**
+Wave 3a takes 0266, so those unwritten reservations moved together before its migration
+was written. The highest number on disk is 0266 and there is no hole or waiver.
 
-They do imply an order once the code starts. **23 owns 0266 and merges before 22**, because 22
-depends on it for `locations.storage_class_id`; 22's own two are consecutive and land together
-or in order. If 22's work starts first for any reason, the numbers are re-claimed here rather
-than swapped on a branch — this table is the authority, not the branch that got there first.
+Plan 23 still merges before 22: it owns 0267 and supplies `locations.storage_class_id`;
+22 owns 0268–0269. The next unclaimed number is 0270.
 
-**These three have now moved twice without a line of SQL being written**: claimed as 0261–0262
+**These three moved twice before wave 3a without a line of SQL being written**: claimed as 0261–0262
 while `master` was landing 0261 for [#46](https://github.com/datagen24/victual/issues/46), then
 0262–0264 until wave 2 landed 0262 through 0265. Both times the correction cost one table edit,
 because nothing had been written to disk under the old numbers. That is the argument for

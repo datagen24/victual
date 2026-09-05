@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Controllers\Users\EntityReadPolicy;
 use Victual\Services\StockService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -269,6 +270,7 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	public function GetObject(Request $request, Response $response, array $args)
 	{
+		EntityReadPolicy::Check($request, $args['entity']);
 		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
@@ -304,6 +306,7 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	public function GetObjects(Request $request, Response $response, array $args)
 	{
+		EntityReadPolicy::Check($request, $args['entity']);
 		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
@@ -353,6 +356,11 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	public function GetUserfields(Request $request, Response $response, array $args)
 	{
+		// The current-user profile remains readable without household user-directory access.
+		if ($args['entity'] !== 'users' || (string)$args['objectId'] !== (string)VICTUAL_USER_ID)
+		{
+			EntityReadPolicy::Check($request, $args['entity']);
+		}
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, UserfieldsService::GetInstance()->GetValues($args['entity'], $args['objectId']));

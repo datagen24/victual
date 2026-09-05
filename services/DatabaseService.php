@@ -172,6 +172,8 @@ class DatabaseService
 		{
 			$pdo = $this->GetDbConnectionRaw();
 			self::$DbConnection = new Database($pdo);
+			self::$DbConnection->setPrimary('user_roles', ['user_id', 'role_id']);
+			self::$DbConnection->setPrimary('role_permissions', ['role_id', 'permission_id']);
 
 			$dialect = $this->GetDialect();
 			self::$DbConnection->setIdentifierDelimiter($dialect->GetIdentifierDelimiter());

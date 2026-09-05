@@ -67,6 +67,7 @@ class ChoresApiController extends BaseApiController
 	 */
 	public function ChoreDetails(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, ChoresService::GetInstance()->GetChoreDetails($args['choreId']));
@@ -79,6 +80,7 @@ class ChoresApiController extends BaseApiController
 	 */
 	public function Current(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->FilteredApiResponse($request, $response, ChoresService::GetInstance()->GetCurrent(), $request->getQueryParams());
 	}
 
@@ -149,6 +151,7 @@ class ChoresApiController extends BaseApiController
 	 */
 	public function ChorePrintLabel(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$choreDetails = (object)ChoresService::GetInstance()->GetChoreDetails($args['choreId']);

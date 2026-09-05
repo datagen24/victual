@@ -69,6 +69,7 @@ choice and rationale.
 | [0015](0015-medication-records-never-advises.md) | Victual records medication; it never advises | **Proposed** | [22](../plans/22-medication-tracking.md) |
 | [0016](0016-schedule-expansion-in-the-application.md) | Schedule expansion lives in the application, not the database | **Proposed**, an input to [0009](0009-database-as-the-logic-layer.md) | [22](../plans/22-medication-tracking.md) |
 | [0017](0017-doctrine-dbal-is-the-persistence-seam.md) | Doctrine DBAL is the persistence seam; engine portability is an affordance, not a promise | **Proposed**, depends on 0008 | [24](../plans/24-sqlite-runtime-retirement.md), [15](../plans/15-deliberate-cleanup.md) |
+| [0018](0018-role-grants-and-domain-reads.md) | Roles contribute grants; six domains require view permissions | **Proposed**, records wave 3a implementation of plan 19's answered questions | [19](../plans/19-rbac.md) |
 
 ## Review and implementation notes
 

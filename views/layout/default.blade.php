@@ -160,7 +160,7 @@
 			class="collapse navbar-collapse">
 			<ul class="navbar-nav navbar-sidenav">
 
-				@if(VICTUAL_FEATURE_FLAG_STOCK)
+				@if(VICTUAL_FEATURE_FLAG_STOCK && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW))
 				<li class="nav-item nav-item-sidebar @if($viewName == 'stockoverview') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -172,7 +172,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
+				@if(VICTUAL_FEATURE_FLAG_SHOPPINGLIST && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_SHOPPINGLIST_VIEW))
 				<li class="nav-item nav-item-sidebar @if($viewName == 'shoppinglist') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -184,7 +184,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_RECIPES)
+				@if(VICTUAL_FEATURE_FLAG_RECIPES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_RECIPES_VIEW))
 				<div class="nav-item-divider"></div>
 				<li class="nav-item nav-item-sidebar permission-RECIPES @if($viewName == 'recipes') active-page @endif"
 					data-toggle="tooltip"
@@ -196,7 +196,7 @@
 						<span class="nav-link-text">{{ $__t('Recipes') }}</span>
 					</a>
 				</li>
-				@if(VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN)
+				@if(VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_MEALPLAN_VIEW))
 				<li class="nav-item nav-item-sidebar permission-RECIPES_MEALPLAN @if($viewName == 'mealplan') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -210,7 +210,7 @@
 				</li>
 				@endif
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_CHORES)
+				@if(VICTUAL_FEATURE_FLAG_CHORES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_CHORES_VIEW))
 				<div class="nav-item-divider"></div>
 				<li class="nav-item nav-item-sidebar @if($viewName == 'choresoverview') active-page @endif"
 					data-toggle="tooltip"
@@ -223,7 +223,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_TASKS)
+				@if(VICTUAL_FEATURE_FLAG_TASKS && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_TASKS_VIEW))
 				<li class="nav-item nav-item-sidebar @if($viewName == 'tasks') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -273,7 +273,7 @@
 				</li>
 				@endif
 
-				@if(VICTUAL_FEATURE_FLAG_STOCK)
+				@if(VICTUAL_FEATURE_FLAG_STOCK && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW))
 				<div class="nav-item-divider"></div>
 				<li class="nav-item nav-item-sidebar permission-STOCK_PURCHASE @if($viewName == 'purchase') active-page @endif"
 					data-toggle="tooltip"
@@ -318,7 +318,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_CHORES)
+				@if(VICTUAL_FEATURE_FLAG_CHORES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_CHORES_VIEW))
 				<li class="nav-item nav-item-sidebar permission-CHORE_TRACK_EXECUTION @if($viewName == 'choretracking') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -387,7 +387,7 @@
 								<span class="nav-link-text">{{ $__t('Products') }}</span>
 							</a>
 						</li>
-						@if(VICTUAL_FEATURE_FLAG_STOCK)
+						@if(VICTUAL_FEATURE_FLAG_STOCK && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_STOCK_VIEW))
 						@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)
 						<li class="@if($viewName == 'locations') active-page @endif">
 							<a class="nav-link discrete-link"
@@ -417,7 +417,7 @@
 								<span class="nav-link-text">{{ $__t('Product groups') }}</span>
 							</a>
 						</li>
-						@if(VICTUAL_FEATURE_FLAG_CHORES)
+						@if(VICTUAL_FEATURE_FLAG_CHORES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_CHORES_VIEW))
 						<li class="@if($viewName == 'chores') active-page @endif">
 							<a class="nav-link discrete-link"
 								href="{{ $U('/chores') }}">
@@ -433,7 +433,7 @@
 							</a>
 						</li>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_TASKS)
+						@if(VICTUAL_FEATURE_FLAG_TASKS && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_TASKS_VIEW))
 						<li class="@if($viewName == 'taskcategories') active-page @endif">
 							<a class="nav-link discrete-link"
 								href="{{ $U('/taskcategories') }}">
@@ -643,19 +643,19 @@
 					<div class="dropdown-menu dropdown-menu-right">
 						<a class="dropdown-item discrete-link"
 							href="{{ $U('/stocksettings') }}"><i class="fa-solid fa-fw fa-box"></i>&nbsp;{{ $__t('Stock settings') }}</a>
-						@if(VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
+						@if(VICTUAL_FEATURE_FLAG_SHOPPINGLIST && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_SHOPPINGLIST_VIEW))
 						<a class="dropdown-item discrete-link permission-SHOPPINGLIST"
 							href="{{ $U('/shoppinglistsettings') }}"><i class="fa-solid fa-fw fa-shopping-cart"></i>&nbsp;{{ $__t('Shopping list settings') }}</a>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_RECIPES)
+						@if(VICTUAL_FEATURE_FLAG_RECIPES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_RECIPES_VIEW))
 						<a class="dropdown-item discrete-link permission-RECIPES"
 							href="{{ $U('/recipessettings') }}"><i class="fa-solid fa-fw fa-pizza-slice"></i>&nbsp;{{ $__t('Recipes settings') }}</a>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_CHORES)
+						@if(VICTUAL_FEATURE_FLAG_CHORES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_CHORES_VIEW))
 						<a class="dropdown-item discrete-link permission-CHORES"
 							href="{{ $U('/choressettings') }}"><i class="fa-solid fa-fw fa-home"></i>&nbsp;{{ $__t('Chores settings') }}</a>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_TASKS)
+						@if(VICTUAL_FEATURE_FLAG_TASKS && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_TASKS_VIEW))
 						<a class="dropdown-item discrete-link permission-TASKS"
 							href="{{ $U('/taskssettings') }}"><i class="fa-solid fa-fw fa-tasks"></i>&nbsp;{{ $__t('Tasks settings') }}</a>
 						@endif

@@ -56,7 +56,7 @@ there is no SQLite path left to break.
 
 | Phase | Command | What it drives |
 |---|---|---|
-| API | `parity api` | 285 calls across 8 scenarios, both instances, responses diffed |
+| API | `parity api` | 288 calls across 8 scenarios, both instances, responses diffed |
 | Browser | `parity ui` | 49 view routes plus a purchase workflow, both instances |
 | Side effects | `parity side-effects` | MQTT retained topics, Home Assistant discovery, InfluxDB points — fork-only |
 
@@ -80,7 +80,7 @@ empty answer on any engine and proves nothing.
 | `stock` | Purchase, consume, open, transfer, inventory, entries, price history, the ledger |
 | `barcodes-and-undo` | All 6 by-barcode operations, undo by booking and by transaction |
 | `shoppinglist` | Explicit and derived membership, clear, the uihelper view |
-| `chores-batteries-tasks` | Execute, charge, complete, and the undo of each |
+| `chores-batteries-tasks` | Execute, charge, complete, and the undo of each, plus a chore whose assignment group is empty |
 | `recipes-mealplan` | Positions, fulfilment, nesting, copy, consume, meal plan |
 | `users-files-calendar` | Users, the recursive permission view, userfields, files, iCal |
 

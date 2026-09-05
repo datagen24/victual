@@ -66,6 +66,8 @@ class RecipesApiController extends BaseApiController
 	 */
 	public function GetRecipeFulfillment(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			if (!isset($args['recipeId']))
@@ -108,6 +110,7 @@ class RecipesApiController extends BaseApiController
 	 */
 	public function RecipePrintLabel(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$recipe = $this->DB->recipes()->where('id', $args['recipeId'])->fetch();

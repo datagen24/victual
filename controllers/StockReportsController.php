@@ -3,6 +3,7 @@
 namespace Victual\Controllers;
 
 use Victual\Services\DatabaseService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -23,6 +24,7 @@ class StockReportsController extends BaseController
 	 */
 	public function Spendings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$where = "pph.transaction_type != 'self-production'";
 
 		// Everything which would otherwise be interpolated into the SQL below is bound

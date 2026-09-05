@@ -396,7 +396,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"post": {
 				"summary": "Adds a single object of the given entity",
@@ -599,7 +600,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"put": {
 				"summary": "Edits the given object of the given entity",
@@ -841,7 +843,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": " Reads require the corresponding STOCK_VIEW, SHOPPINGLIST_VIEW, CHORES_VIEW, TASKS_VIEW, RECIPES_VIEW or MEALPLAN_VIEW domain permission. Roles and the permission hierarchy require USERS_READ."
 			},
 			"put": {
 				"summary": "Edits the given userfields of the given object of the given entity",
@@ -1215,7 +1218,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires USERS_READ. "
 			},
 			"post": {
 				"summary": "Creates a new user",
@@ -1390,7 +1394,7 @@
 		"/users/{userId}/permissions": {
 			"get": {
 				"summary": "Returns the assigned permissions of the given user",
-				"description": "See \"GET /objects/permission_hierarchy\" for a permission name / id mapping",
+				"description": "Requires USERS_READ. Returns every hierarchy permission with its effective state and inherited role codes.",
 				"tags": [
 					"User management"
 				],
@@ -1407,21 +1411,13 @@
 				],
 				"responses": {
 					"200": {
-						"description": "A list of user permission objects",
+						"description": "Resolved permissions",
 						"content": {
 							"application/json": {
 								"schema": {
 									"type": "array",
 									"items": {
-										"type": "object",
-										"properties": {
-											"permission_id": {
-												"type": "integer"
-											},
-											"user_id": {
-												"type": "integer"
-											}
-										}
+										"$ref": "#/components/schemas/UserPermission"
 									}
 								}
 							}
@@ -1461,7 +1457,7 @@
 			},
 			"post": {
 				"summary": "Adds a permission to the given user",
-				"description": "See \"GET /objects/permission_hierarchy\" for a permission name / id mapping",
+				"description": "Requires USERS_EDIT, target administration and full grant subset checks. Changes direct grants only; inherited role grants remain.",
 				"tags": [
 					"User management"
 				],
@@ -1530,7 +1526,7 @@
 			},
 			"put": {
 				"summary": "Replaces the assigned permissions of the given user",
-				"description": "See \"GET /objects/permission_hierarchy\" for a permission name / id mapping",
+				"description": "Requires USERS_EDIT, target administration and full grant subset checks. Changes direct grants only; inherited role grants remain.",
 				"tags": [
 					"User management"
 				],
@@ -1861,7 +1857,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/entry/{entryId}": {
@@ -1912,7 +1909,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			},
 			"put": {
 				"summary": "Edits the stock entry",
@@ -2077,7 +2075,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/volatile": {
@@ -2119,7 +2118,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productId}": {
@@ -2170,7 +2170,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productId}/locations": {
@@ -2245,7 +2246,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productId}/entries": {
@@ -2320,7 +2322,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productId}/price-history": {
@@ -2374,7 +2377,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productId}/add": {
@@ -2945,7 +2949,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/{productIdToKeep}/merge/{productIdToRemove}": {
@@ -3059,7 +3064,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/products/by-barcode/{barcode}/add": {
@@ -3570,7 +3576,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/shoppinglist/add-missing-products": {
@@ -4029,7 +4036,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/bookings/{bookingId}/undo": {
@@ -4137,7 +4145,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/transactions/{transactionId}/undo": {
@@ -4262,7 +4271,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist": {
@@ -4376,7 +4386,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW. "
 			}
 		},
 		"/recipes/{recipeId}/consume": {
@@ -4487,7 +4498,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW. "
 			}
 		},
 		"/recipes/{recipeId}/copy": {
@@ -4596,7 +4608,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW. "
 			}
 		},
 		"/chores": {
@@ -4643,7 +4656,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires CHORES_VIEW. "
 			}
 		},
 		"/chores/{choreId}": {
@@ -4694,7 +4708,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires CHORES_VIEW. "
 			}
 		},
 		"/chores/{choreId}/execute": {
@@ -4949,7 +4964,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires CHORES_VIEW. "
 			}
 		},
 		"/chores/{choreIdToKeep}/merge/{choreIdToRemove}": {
@@ -5341,7 +5357,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires TASKS_VIEW. "
 			}
 		},
 		"/tasks/{taskId}/complete": {
@@ -5614,6 +5631,681 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				},
+				"description": "Requires SHOPPINGLIST_VIEW. "
+			}
+		},
+		"/roles": {
+			"get": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Read roles or their permissions",
+				"description": "Requires USERS_READ.",
+				"parameters": [],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/Role"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Create a custom role",
+				"description": "Requires USERS_EDIT. The caller must hold all permissions conferred and may only administer holders whose effective permissions are a subset of their own.",
+				"parameters": [],
+				"responses": {
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"created_object_id"
+									],
+									"properties": {
+										"created_object_id": {
+											"type": "integer"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"name",
+									"code"
+								],
+								"properties": {
+									"name": {
+										"type": "string",
+										"minLength": 1
+									},
+									"description": {
+										"type": "string",
+										"nullable": true
+									},
+									"code": {
+										"type": "string",
+										"pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/roles/{roleId}": {
+			"put": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Replace role details or assignments",
+				"description": "Requires USERS_EDIT. The caller must hold all permissions conferred and may only administer holders whose effective permissions are a subset of their own.",
+				"parameters": [
+					{
+						"name": "roleId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"name"
+								],
+								"properties": {
+									"name": {
+										"type": "string",
+										"minLength": 1
+									},
+									"description": {
+										"type": "string",
+										"nullable": true
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Delete a custom role",
+				"description": "Requires USERS_EDIT. The caller must hold all permissions conferred and may only administer holders whose effective permissions are a subset of their own.",
+				"parameters": [
+					{
+						"name": "roleId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/roles/{roleId}/permissions": {
+			"get": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Read roles or their permissions",
+				"description": "Requires USERS_READ.",
+				"parameters": [
+					{
+						"name": "roleId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"role_id": {
+												"type": "integer"
+											},
+											"permission_id": {
+												"type": "integer"
+											}
+										}
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Replace role details or assignments",
+				"description": "Requires USERS_EDIT. The caller must hold all permissions conferred and may only administer holders whose effective permissions are a subset of their own.",
+				"parameters": [
+					{
+						"name": "roleId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"permissions"
+								],
+								"properties": {
+									"permissions": {
+										"type": "array",
+										"items": {
+											"type": "integer",
+											"minimum": 1
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{userId}/roles": {
+			"get": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Read roles or their permissions",
+				"description": "Requires USERS_READ.",
+				"parameters": [
+					{
+						"name": "userId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/Role"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"tags": [
+					"User management"
+				],
+				"summary": "Replace role details or assignments",
+				"description": "Requires USERS_EDIT. The caller must hold all permissions conferred and may only administer holders whose effective permissions are a subset of their own.",
+				"parameters": [
+					{
+						"name": "userId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Success"
+					},
+					"400": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Request refused",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"error_message": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"roles"
+								],
+								"properties": {
+									"roles": {
+										"type": "array",
+										"items": {
+											"type": "integer",
+											"minimum": 1
+										}
+									}
 								}
 							}
 						}
@@ -7179,7 +7871,8 @@
 					"product_barcodes_view",
 					"permission_hierarchy",
 					"uihelper_shopping_list",
-					"mqtt_product_entities"
+					"mqtt_product_entities",
+					"roles"
 				]
 			},
 			"ExposedEntityNoListing": {
@@ -7203,7 +7896,8 @@
 					"battery_charge_cycles",
 					"product_barcodes_view",
 					"permission_hierarchy",
-					"uihelper_shopping_list"
+					"uihelper_shopping_list",
+					"roles"
 				]
 			},
 			"ExposedEntityNoDelete": {
@@ -7220,7 +7914,8 @@
 					"battery_charge_cycles",
 					"product_barcodes_view",
 					"permission_hierarchy",
-					"uihelper_shopping_list"
+					"uihelper_shopping_list",
+					"roles"
 				]
 			},
 			"ExposedEntityEditRequiresAdmin": {
@@ -7254,6 +7949,78 @@
 				"enum": [
 					""
 				]
+			},
+			"Role": {
+				"type": "object",
+				"required": [
+					"id",
+					"code",
+					"name",
+					"builtin"
+				],
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"code": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"description": {
+						"type": "string",
+						"nullable": true
+					},
+					"builtin": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						]
+					},
+					"row_created_timestamp": {
+						"type": "string"
+					}
+				}
+			},
+			"UserPermission": {
+				"type": "object",
+				"required": [
+					"id",
+					"user_id",
+					"permission_name",
+					"permission_id",
+					"has_permission",
+					"parent",
+					"via_roles"
+				],
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"user_id": {
+						"type": "integer"
+					},
+					"permission_id": {
+						"type": "integer"
+					},
+					"has_permission": {
+						"type": "integer"
+					},
+					"parent": {
+						"type": "integer",
+						"nullable": true
+					},
+					"permission_name": {
+						"type": "string"
+					},
+					"via_roles": {
+						"type": "string",
+						"nullable": true,
+						"description": "Sorted comma-separated immutable role codes granting this permission; null when no role grants it."
+					}
+				}
 			}
 		},
 		"securitySchemes": {

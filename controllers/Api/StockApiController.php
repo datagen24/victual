@@ -385,6 +385,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function CurrentStock(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->ApiResponse($response, StockService::GetInstance()->GetCurrentStock());
 	}
 
@@ -395,6 +396,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function CurrentVolatileStock(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$nextXDays = 5;
 
 		if (isset($request->getQueryParams()['due_soon_days']) && !empty($request->getQueryParams()['due_soon_days']) && is_numeric($request->getQueryParams()['due_soon_days']))
@@ -484,6 +486,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ExternalBarcodeLookup(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
@@ -665,6 +668,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductDetails(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, StockService::GetInstance()->GetProductDetails($args['productId']));
@@ -678,6 +682,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductDetailsByBarcode(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$productId = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
@@ -692,6 +697,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductPriceHistory(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, StockService::GetInstance()->GetProductPriceHistory($args['productId']));
@@ -706,6 +712,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductStockEntries(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$allowSubproductSubstitution = false;
 		if (isset($request->getQueryParams()['include_sub_products']) && filter_var($request->getQueryParams()['include_sub_products'], FILTER_VALIDATE_BOOLEAN) !== false)
 		{
@@ -722,6 +729,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function LocationStockEntries(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->FilteredApiResponse($request, $response, StockService::GetInstance()->GetLocationStockEntries($args['locationId']), $request->getQueryParams());
 	}
 
@@ -734,6 +742,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductStockLocations(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$allowSubproductSubstitution = false;
 		if (isset($request->getQueryParams()['include_sub_products']) && filter_var($request->getQueryParams()['include_sub_products'], FILTER_VALIDATE_BOOLEAN) !== false)
 		{
@@ -752,6 +761,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function ProductPrintLabel(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$productDetails = (object)StockService::GetInstance()->GetProductDetails($args['productId']);
@@ -782,6 +792,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function StockEntryPrintLabel(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
@@ -858,6 +869,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function StockBooking(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$stockLogRow = $this->DB->stock_log($args['bookingId']);
@@ -876,6 +888,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function StockEntry(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->ApiResponse($response, StockService::GetInstance()->GetStockEntry($args['entryId']));
 	}
 
@@ -888,6 +901,7 @@ class StockApiController extends BaseApiController
 	 */
 	public function StockTransactions(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$transactionRows = $this->DB->stock_log()->where('transaction_id = :1', $args['transactionId'])->fetchAll();

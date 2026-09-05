@@ -8,6 +8,7 @@ use Victual\Controllers\Api\GenericEntityApiController;
 use Victual\Controllers\Api\OpenApiController;
 use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
+use Victual\Controllers\Api\RolesApiController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Controllers\Api\SystemApiController;
 use Victual\Controllers\Api\TasksApiController;
@@ -57,6 +58,9 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/user/{userId}', [UsersController::class, 'UserEditForm']);
 	$group->get('/user/{userId}/permissions', [UsersController::class, 'PermissionList']);
 	$group->get('/usersettings', [UsersController::class, 'UserSettings']);
+
+	$group->get('/roles', [UsersController::class, 'RolesList']);
+	$group->get('/role/{roleId}', [UsersController::class, 'RoleEditForm']);
 
 	// Stock master data routes
 	$group->get('/products', [StockController::class, 'ProductsList']);
@@ -187,6 +191,16 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/users/{userId}/permissions', [UsersApiController::class, 'ListPermissions']);
 	$group->post('/users/{userId}/permissions', [UsersApiController::class, 'AddPermission']);
 	$group->put('/users/{userId}/permissions', [UsersApiController::class, 'SetPermissions']);
+
+	// Role bundles
+	$group->get('/roles', [RolesApiController::class, 'ListRoles']);
+	$group->post('/roles', [RolesApiController::class, 'CreateRole']);
+	$group->put('/roles/{roleId}', [RolesApiController::class, 'EditRole']);
+	$group->delete('/roles/{roleId}', [RolesApiController::class, 'DeleteRole']);
+	$group->get('/roles/{roleId}/permissions', [RolesApiController::class, 'ListPermissions']);
+	$group->put('/roles/{roleId}/permissions', [RolesApiController::class, 'SetPermissions']);
+	$group->get('/users/{userId}/roles', [RolesApiController::class, 'ListUserRoles']);
+	$group->put('/users/{userId}/roles', [RolesApiController::class, 'SetUserRoles']);
 
 	// User
 	$group->get('/user', [UsersApiController::class, 'CurrentUser']);

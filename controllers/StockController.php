@@ -9,6 +9,7 @@ use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -49,6 +50,7 @@ class StockController extends BaseController
 	 */
 	public function Consume(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'consume', [
 			'products' => $this->DB->products()->where('active = 1')->where('id IN (SELECT product_id from stock_current WHERE amount_aggregated > 0)')->orderBy('name'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
@@ -64,6 +66,7 @@ class StockController extends BaseController
 	 */
 	public function Inventory(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'inventory', [
 			'products' => $this->DB->products()->where('active = 1 AND no_own_stock = 0')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
@@ -83,6 +86,7 @@ class StockController extends BaseController
 	 */
 	public function Journal(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		// Default 6 months
 		$months = 6;
 		if (isset($request->getQueryParams()['months']) && filter_var($request->getQueryParams()['months'], FILTER_VALIDATE_INT) !== false)
@@ -120,6 +124,7 @@ class StockController extends BaseController
 	 */
 	public function LocationContentSheet(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'locationcontentsheet', [
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
@@ -135,6 +140,7 @@ class StockController extends BaseController
 	 */
 	public function LocationEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if ($args['locationId'] == 'new')
 		{
 			return $this->RenderPage($response, 'locationform', [
@@ -159,6 +165,7 @@ class StockController extends BaseController
 	 */
 	public function LocationsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$locations = $this->DB->locations()->orderBy('name', 'COLLATE NOCASE');
@@ -182,6 +189,7 @@ class StockController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$usersService = UsersService::GetInstance();
 		$userSettings = $usersService->GetUserSettings(VICTUAL_USER_ID);
 		$nextXDays = $userSettings['stock_due_soon_days'];
@@ -212,6 +220,7 @@ class StockController extends BaseController
 	 */
 	public function ProductBarcodesEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$product = null;
 		if (isset($request->getQueryParams()['product']))
 		{
@@ -254,6 +263,7 @@ class StockController extends BaseController
 	 */
 	public function ProductEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if ($args['productId'] == 'new')
 		{
 			$quantityunits = $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE');
@@ -299,6 +309,7 @@ class StockController extends BaseController
 	 */
 	public function ProductGrocycodeImage(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$gc = new Grocycode(Grocycode::PRODUCT, $args['productId']);
 		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}
@@ -310,6 +321,7 @@ class StockController extends BaseController
 	 */
 	public function ProductGroupEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if ($args['productGroupId'] == 'new')
 		{
 			return $this->RenderPage($response, 'productgroupform', [
@@ -334,6 +346,7 @@ class StockController extends BaseController
 	 */
 	public function ProductGroupsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$productGroups = $this->DB->product_groups()->orderBy('name', 'COLLATE NOCASE');
@@ -359,6 +372,7 @@ class StockController extends BaseController
 	 */
 	public function ProductsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$products = $this->DB->products();
 		if (!isset($request->getQueryParams()['include_disabled']))
 		{
@@ -395,6 +409,7 @@ class StockController extends BaseController
 	 */
 	public function Purchase(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'purchase', [
 			'products' => $this->DB->products()->where('active = 1 AND no_own_stock = 0')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
@@ -416,6 +431,7 @@ class StockController extends BaseController
 	 */
 	public function QuantityUnitConversionEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$product = null;
 		if (isset($request->getQueryParams()['product']))
 		{
@@ -459,6 +475,7 @@ class StockController extends BaseController
 	 */
 	public function QuantityUnitEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if ($args['quantityunitId'] == 'new')
 		{
 			return $this->RenderPage($response, 'quantityunitform', [
@@ -489,6 +506,7 @@ class StockController extends BaseController
 	 */
 	public function QuantityUnitPluralFormTesting(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'quantityunitpluraltesting', [
 			'quantityUnits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE')
 		]);
@@ -501,6 +519,7 @@ class StockController extends BaseController
 	 */
 	public function QuantityUnitsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$quantityUnits = $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE');
@@ -524,6 +543,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_VIEW);
 		$listId = 1;
 		if (isset($request->getQueryParams()['list']))
 		{
@@ -560,6 +580,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingListEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_VIEW);
 		if ($args['listId'] == 'new')
 		{
 			return $this->RenderPage($response, 'shoppinglistform', [
@@ -584,6 +605,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingListItemEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_VIEW);
 		if ($args['itemId'] == 'new')
 		{
 			return $this->RenderPage($response, 'shoppinglistitemform', [
@@ -616,6 +638,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingListSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_VIEW);
 		return $this->RenderPage($response, 'shoppinglistsettings', [
 			'shoppingLists' => $this->DB->shopping_lists()->orderBy('name', 'COLLATE NOCASE')
 		]);
@@ -628,6 +651,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingLocationEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if ($args['shoppingLocationId'] == 'new')
 		{
 			return $this->RenderPage($response, 'shoppinglocationform', [
@@ -652,6 +676,7 @@ class StockController extends BaseController
 	 */
 	public function ShoppingLocationsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$shoppingLocations = $this->DB->shopping_locations()->orderBy('name', 'COLLATE NOCASE');
@@ -673,6 +698,7 @@ class StockController extends BaseController
 	 */
 	public function StockEntryEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'stockentryform', [
 			'stockEntry' => $this->DB->stock()->where('id', $args['entryId'])->fetch(),
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
@@ -688,6 +714,7 @@ class StockController extends BaseController
 	 */
 	public function StockEntryGrocycodeImage(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
 		$gc = new Grocycode(Grocycode::PRODUCT, $stockEntry->product_id, [$stockEntry->stock_id]);
 		return $this->ServeGrocycodeImage($request, $response, $gc);
@@ -699,6 +726,7 @@ class StockController extends BaseController
 	 */
 	public function StockEntryGrocycodeLabel(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
 		return $this->RenderPage($response, 'stockentrylabel', [
 			'stockEntry' => $stockEntry,
@@ -711,6 +739,7 @@ class StockController extends BaseController
 	 */
 	public function StockSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'stocksettings', [
 			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
@@ -723,6 +752,7 @@ class StockController extends BaseController
 	 */
 	public function Stockentries(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$usersService = UsersService::GetInstance();
 		$nextXDays = $usersService->GetUserSettings(VICTUAL_USER_ID)['stock_due_soon_days'];
 
@@ -747,6 +777,7 @@ class StockController extends BaseController
 	 */
 	public function Transfer(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'transfer', [
 			'products' => $this->DB->products()->where('active = 1')->where('no_own_stock = 0 AND id IN (SELECT product_id from stock_current WHERE amount_aggregated > 0)')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
@@ -763,6 +794,7 @@ class StockController extends BaseController
 	 */
 	public function JournalSummary(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$entries = $this->DB->uihelper_stock_journal_summary();
 		if (isset($request->getQueryParams()['product_id']))
 		{
@@ -794,6 +826,7 @@ class StockController extends BaseController
 	 */
 	public function QuantityUnitConversionsResolved(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		$product = null;
 		if (isset($request->getQueryParams()['product']))
 		{

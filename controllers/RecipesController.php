@@ -6,6 +6,7 @@ use Victual\Helpers\Grocycode;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Services\UserfieldsService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -27,6 +28,7 @@ class RecipesController extends BaseController
 	 */
 	public function MealPlan(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_MEALPLAN_VIEW);
 		$start = date('Y-m-d');
 		if (isset($request->getQueryParams()['start']) && IsIsoDate($request->getQueryParams()['start']))
 		{
@@ -118,6 +120,7 @@ class RecipesController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		$recipes = $this->DB->recipes()->where('type', RecipesService::RECIPE_TYPE_NORMAL)->orderBy('name', 'COLLATE NOCASE');
 		$recipesResolved = RecipesService::GetInstance()->GetRecipesResolved('recipe_id > 0');
 
@@ -212,6 +215,7 @@ class RecipesController extends BaseController
 	 */
 	public function RecipeEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		$recipeId = $args['recipeId'];
 
 		return $this->RenderPage($response, 'recipeform', [
@@ -235,6 +239,7 @@ class RecipesController extends BaseController
 	 */
 	public function RecipePosEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		if ($args['recipePosId'] == 'new')
 		{
 			return $this->RenderPage($response, 'recipeposform', [
@@ -266,6 +271,7 @@ class RecipesController extends BaseController
 	 */
 	public function RecipesSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		return $this->RenderPage($response, 'recipessettings');
 	}
 
@@ -276,6 +282,7 @@ class RecipesController extends BaseController
 	 */
 	public function MealPlanSectionEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_MEALPLAN_VIEW);
 		if ($args['sectionId'] == 'new')
 		{
 			return $this->RenderPage($response, 'mealplansectionform', [
@@ -296,6 +303,7 @@ class RecipesController extends BaseController
 	 */
 	public function MealPlanSectionsList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_MEALPLAN_VIEW);
 		return $this->RenderPage($response, 'mealplansections', [
 			'mealplanSections' => $this->DB->meal_plan_sections()->where('id > 0')->orderBy('sort_number')
 		]);
@@ -306,6 +314,7 @@ class RecipesController extends BaseController
 	 */
 	public function RecipeGrocycodeImage(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		$gc = new Grocycode(Grocycode::RECIPE, $args['recipeId']);
 		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}

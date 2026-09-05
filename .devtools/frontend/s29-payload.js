@@ -458,7 +458,7 @@ let browser = null;
 
 (async () =>
 {
-	browser = await chromium.launch({ args: ['--no-sandbox'] });
+	browser = await chromium.launch({ args: ['--no-sandbox'], executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
 	const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
 
 	// One page just for seeding; hitting / first establishes the demo session.
@@ -475,6 +475,7 @@ let browser = null;
 	const fallbackLocation = Array.isArray(locations) && locations.length ? locations[0].id : 1;
 
 	const seeds = [
+		['role', '/api/roles', { code: RUN_TOKEN.replace(/-/g, '_').toUpperCase(), name: PAYLOAD_LIVE }],
 		['location', '/api/objects/locations', { name: PAYLOAD_ENCODED }],
 		['chore', '/api/objects/chores', { name: PAYLOAD_ENCODED, period_type: 'manually', period_days: 1 }],
 		['quantityunit', '/api/objects/quantity_units', { name: PAYLOAD_ENCODED, name_plural: PAYLOAD_ENCODED }],
@@ -607,6 +608,7 @@ let browser = null;
 		['batteries', '/batteries', clickDelete('.battery-delete-button[data-battery-id="' + ids.battery + '"]'), 'dialog'],
 		['equipment', '/equipment', openMenuThen('tr:has(.equipment-delete-button[data-equipment-id="' + ids.equipment + '"]) [data-toggle="dropdown"]', '.equipment-delete-button[data-equipment-id="' + ids.equipment + '"]'), 'dialog'],
 		['taskcategories', '/taskcategories', clickDelete('.task-category-delete-button[data-category-id="' + ids.taskcategory + '"]'), 'dialog'],
+		['roles', '/roles', clickDelete('.role-delete-button[data-role-id="' + ids.role + '"]'), 'dialog'],
 		['productgroups', '/productgroups', clickDelete('.product-group-delete-button[data-group-id="' + ids.productgroup + '"]'), 'dialog'],
 		['shoppinglocations', '/shoppinglocations', clickDelete('.shoppinglocation-delete-button[data-shoppinglocation-id="' + ids.shoppinglocation + '"]'), 'dialog'],
 		['batteriesoverview', '/batteriesoverview', async page =>

@@ -9,6 +9,7 @@
 	<div class="col">
 		<div class="title-related-links">
 			<h2 class="title">@yield('title')</h2>
+			<a class="btn btn-outline-secondary" href="{{ $U('/roles') }}">{{ $__t('Roles') }}</a>
 			@include('components.list_collapse_toggles')
 			<div class="related-links collapse d-md-flex order-2 width-xs-sm-100 m-1 mt-md-0 mb-md-0 float-right"
 				id="related-links">
@@ -48,6 +49,7 @@
 					<th>{{ $__t('Username') }}</th>
 					<th>{{ $__t('First name') }}</th>
 					<th>{{ $__t('Last name') }}</th>
+					<th>{{ $__t('Roles') }}</th>
 
 					@include('components.userfields_thead', array(
 					'userfields' => $userfields
@@ -90,6 +92,7 @@
 					<td>
 						{{ $user->last_name }}
 					</td>
+					<td>@foreach($rolesService->GetUserRoles((int)$user->id) as $role) {{ $role->name }}@if(!$loop->last), @endif @endforeach</td>
 
 					@include('components.userfields_tbody', array(
 					'userfields' => $userfields,

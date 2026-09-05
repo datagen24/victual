@@ -6,6 +6,7 @@ use Victual\Helpers\Grocycode;
 use Victual\Services\ChoresService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -25,6 +26,7 @@ class ChoresController extends BaseController
 	 */
 	public function ChoreEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		$usersService = UsersService::GetInstance();
 		$users = $usersService->GetUsersAsDto();
 
@@ -60,6 +62,7 @@ class ChoresController extends BaseController
 	 */
 	public function ChoresList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$chores = $this->DB->chores()->orderBy('name', 'COLLATE NOCASE');
@@ -81,6 +84,7 @@ class ChoresController extends BaseController
 	 */
 	public function ChoresSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->RenderPage($response, 'choressettings');
 	}
 
@@ -92,6 +96,7 @@ class ChoresController extends BaseController
 	 */
 	public function Journal(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		// Default 1 year
 		$months = 12;
 		if (isset($request->getQueryParams()['months']) && filter_var($request->getQueryParams()['months'], FILTER_VALIDATE_INT) !== false)
@@ -125,6 +130,7 @@ class ChoresController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		$usersService = UsersService::GetInstance();
 		$nextXDays = $usersService->GetUserSettings(VICTUAL_USER_ID)['chores_due_soon_days'];
 
@@ -164,6 +170,7 @@ class ChoresController extends BaseController
 	 */
 	public function TrackChoreExecution(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->RenderPage($response, 'choretracking', [
 			'chores' => $this->DB->chores()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'users' => $this->DB->users()->orderBy('username'),
@@ -176,6 +183,7 @@ class ChoresController extends BaseController
 	 */
 	public function ChoreGrocycodeImage(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		$gc = new Grocycode(Grocycode::CHORE, $args['choreId']);
 		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}

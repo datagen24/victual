@@ -270,6 +270,10 @@ jobs:
         working-directory: .devtools/frontend
         run: node s29-payload.js --url http://127.0.0.1:8085 --out s29-payload-ci.json
 
+      - name: Run role form and inheritance checks
+        working-directory: .devtools/frontend
+        run: node roles.js http://127.0.0.1:8085
+
       # Uploaded on failure: the per-probe reasons are in the log, but the JSON carries
       # what was stored and read back, which is what tells a reader whether a failing probe
       # found a real sink or a broken seed.

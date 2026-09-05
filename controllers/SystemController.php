@@ -3,6 +3,7 @@
 namespace Victual\Controllers;
 
 use Victual\Services\ApplicationService;
+use Victual\Controllers\Users\User;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DemoDataGeneratorService;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -112,31 +113,31 @@ class SystemController extends BaseController
 		}
 
 		// Stock
-		if ($entryPage === 'stock' && constant('VICTUAL_FEATURE_FLAG_STOCK'))
+		if ($entryPage === 'stock' && constant('VICTUAL_FEATURE_FLAG_STOCK') && User::HasPermissions(User::PERMISSION_STOCK_VIEW))
 		{
 			return '/stockoverview';
 		}
 
 		// Shoppinglist
-		if ($entryPage === 'shoppinglist' && constant('VICTUAL_FEATURE_FLAG_SHOPPINGLIST'))
+		if ($entryPage === 'shoppinglist' && constant('VICTUAL_FEATURE_FLAG_SHOPPINGLIST') && User::HasPermissions(User::PERMISSION_SHOPPINGLIST_VIEW))
 		{
 			return '/shoppinglist';
 		}
 
 		// Recipes
-		if ($entryPage === 'recipes' && constant('VICTUAL_FEATURE_FLAG_RECIPES'))
+		if ($entryPage === 'recipes' && constant('VICTUAL_FEATURE_FLAG_RECIPES') && User::HasPermissions(User::PERMISSION_RECIPES_VIEW))
 		{
 			return '/recipes';
 		}
 
 		// Chores
-		if ($entryPage === 'chores' && constant('VICTUAL_FEATURE_FLAG_CHORES'))
+		if ($entryPage === 'chores' && constant('VICTUAL_FEATURE_FLAG_CHORES') && User::HasPermissions(User::PERMISSION_CHORES_VIEW))
 		{
 			return '/choresoverview';
 		}
 
 		// Tasks
-		if ($entryPage === 'tasks' && constant('VICTUAL_FEATURE_FLAG_TASKS'))
+		if ($entryPage === 'tasks' && constant('VICTUAL_FEATURE_FLAG_TASKS') && User::HasPermissions(User::PERMISSION_TASKS_VIEW))
 		{
 			return '/tasks';
 		}

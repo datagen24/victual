@@ -206,6 +206,9 @@ Setting('LOGIN_THROTTLE_WINDOW_MINUTES', 15);
 // merely existing
 Setting('DEFAULT_PERMISSIONS', []);
 
+// Immutable role codes assigned to new users (for example ['CHILD']).
+Setting('DEFAULT_ROLES', []);
+
 // Which browser origins may call the API cross-origin, as a comma separated list of
 // exact origins, e.g. 'https://home.example.com, https://tablet.example.com'.
 // Empty (the default) means no CORS response headers are sent at all, which is what an

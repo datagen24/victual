@@ -807,3 +807,12 @@ Worth knowing that this is pre-existing upstream behaviour rather than something
 introduced: Victual's own demo dataset ships with 146 of its 166 `recipes_nestings` rows
 already dangling. A client listing `/objects/recipes_nestings` or `/objects/recipes_pos`
 therefore sees slightly fewer junk rows on PostgreSQL.
+
+### Wave 3a role model
+
+`.devtools/pgsql/run-tests.sh rbac` tests the PostgreSQL-only role/read model, including
+the six view permissions, backfill, role provenance, grants, rollback, default roles and
+Blade rendering. It also runs as part of the full suite. The SQLite model stays at 0265:
+the migration comparison projects the original 30 permissions, and the view comparison
+projects the original six `uihelper_user_permissions` columns. Import checks assert both
+the copied legacy rows and the new target-only read grants.

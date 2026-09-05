@@ -258,7 +258,9 @@ foreach ([$min, $max] as $version)
 		try
 		{
 			$expected = intval(Scalar($source, 'SELECT COUNT(*) FROM "' . $table . '"'));
-			$actual = intval(Scalar($target, 'SELECT COUNT(*) FROM "' . $table . '"'));
+			// Compare the frozen source rows; separately assert the six new grants below.
+			$where = $table === 'permission_hierarchy' ? ' WHERE id <= 30' : ($table === 'user_permissions' ? ' WHERE permission_id <= 30' : '');
+			$actual = intval(Scalar($target, 'SELECT COUNT(*) FROM "' . $table . '"' . $where));
 		}
 		catch (\PDOException $ex)
 		{
@@ -280,6 +282,14 @@ foreach ([$min, $max] as $version)
 
 	Check('every table copied its rows', empty($mismatched), 'no differences',
 		empty($mismatched) ? $compared . ' tables compared' : implode(', ', $mismatched));
+
+	$leaves = Scalar($target, "SELECT COUNT(*) FROM permission_hierarchy WHERE name IN ('STOCK_VIEW','SHOPPINGLIST_VIEW','CHORES_VIEW','TASKS_VIEW','RECIPES_VIEW','MEALPLAN_VIEW')");
+	Check('six read leaves restored after copy', (int)$leaves === 6, '6', (string)$leaves);
+	$backfilled = Scalar($target, "SELECT COUNT(*) FROM user_permissions up JOIN permission_hierarchy p ON p.id=up.permission_id WHERE p.name IN ('STOCK_VIEW','SHOPPINGLIST_VIEW','CHORES_VIEW','TASKS_VIEW','RECIPES_VIEW','MEALPLAN_VIEW')");
+	$expectedGrants = 6 * (int)Scalar($source, 'SELECT COUNT(*) FROM users');
+	Check('imported users keep all previous reads', (int)$backfilled === $expectedGrants, (string)$expectedGrants, (string)$backfilled);
+	$roleGrants = Scalar($target, 'SELECT COUNT(*) FROM role_permissions');
+	Check('built-in role grants restored', (int)$roleGrants === 28, '28', (string)$roleGrants);
 
 	// The two row transformations the target's own migration run could not see, because it
 	// ran against an empty database and the rows arrived afterwards.

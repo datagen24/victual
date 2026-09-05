@@ -36,11 +36,11 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 16 | [Project rename](16-project-rename.md) | Code rename landed | Registry/domain claims await announcement. |
 | 17 | [Ecosystem clients](17-ecosystem-clients.md) | Ongoing | Q2/Q4 answered; Q1 and part of Q3 remain. Client implementations are outside this repository's wave order. |
 | 18 | [MQTT state publication](18-mqtt-state-publication.md) | Landed | Home Assistant checks 2, 4, 8 remain. Includes InfluxDB events through an outbox. |
-| 19 | [Roles and data visibility](19-rbac.md) | Draft | Piece 1 in wave 3a; piece 2 with 14 piece 2 in wave 5. Q1–Q3 and Q6–Q9 answered. |
+| 19 | [Roles and data visibility](19-rbac.md) | Piece 1 implemented | Wave 3a: roles and six domain read permissions. Piece 2, including price visibility, remains with 14 piece 2 in wave 5. |
 | 20 | [Container infrastructure](20-container-infrastructure.md) | Piece 1 and part of 3 landed | Production Docker target retired. Pieces 2, remaining 3, 4, 5; credential split and SIGTERM verification remain. |
 | 21 | [Frontend sink discipline](21-frontend-sink-discipline.md) | Landed | CI payload checks and stored-HTML cleanup on upgrade/import included. |
-| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0267–0268. |
-| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0266. |
+| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0268–0269. |
+| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0267. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
 
 ## Order of operations
@@ -54,7 +54,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 0–1 | Scaffolding, security hotfix, platform work | Complete. Details are in the owning plans' Executed sections and the security sweep. |
 | 2 | API correctness and authentication | Complete, 2026-09-04, with the follow-ups listed above. |
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
-| 3a | 19 piece 1: roles and read gating | Runs alone before features add read paths. Includes view permissions, existing-user backfill, seed roles, and the permissions endpoint changes. |
+| 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
 | 3b | 03 category minimums; 06 location labels; optionally 09 | New reads use 3a's permissions. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination. |
 | 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |

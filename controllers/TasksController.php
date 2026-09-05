@@ -5,6 +5,7 @@ namespace Victual\Controllers;
 use Victual\Services\TasksService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -24,6 +25,7 @@ class TasksController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		$usersService = UsersService::GetInstance();
 		$nextXDays = $usersService->GetUserSettings(VICTUAL_USER_ID)['tasks_due_soon_days'];
 
@@ -73,6 +75,7 @@ class TasksController extends BaseController
 	 */
 	public function TaskCategoriesList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$categories = $this->DB->task_categories()->orderBy('name', 'COLLATE NOCASE');
@@ -96,6 +99,7 @@ class TasksController extends BaseController
 	 */
 	public function TaskCategoryEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		if ($args['categoryId'] == 'new')
 		{
 			return $this->RenderPage($response, 'taskcategoryform', [
@@ -120,6 +124,7 @@ class TasksController extends BaseController
 	 */
 	public function TaskEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		if ($args['taskId'] == 'new')
 		{
 			return $this->RenderPage($response, 'taskform', [
@@ -146,6 +151,7 @@ class TasksController extends BaseController
 	 */
 	public function TasksSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_TASKS_VIEW);
 		return $this->RenderPage($response, 'taskssettings');
 	}
 }

@@ -4,6 +4,8 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
 use Victual\Services\UsersService;
+use Victual\Services\RolesService;
+use Victual\Services\DatabaseService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -15,32 +17,39 @@ class UsersApiController extends BaseApiController
 {
 	/**
 	 * POST /api/users/{userId}/permissions - assigns the permission given by the body
-	 * field permission_id to the user. Requires the ADMIN permission (403 otherwise), that
+	 * field permission_id to the user. Requires the USERS_EDIT permission (403 otherwise), that
 	 * the caller may administer the target user, and that the caller holds everything the
 	 * grant would confer. Returns 204 on success, 400 when permission_id names no
 	 * permission, or a 400 error response.
 	 */
 	public function AddPermission(Request $request, Response $response, array $args)
 	{
-		User::CheckPermission($request, User::PERMISSION_ADMIN);
+		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
-
-			if (!isset($requestBody['permission_id']))
+			return RolesService::GetInstance()->Mutate($request, User::PERMISSION_USERS_EDIT, function () use ($args, $request, $response)
 			{
-				throw new EInvalidApiQuery('permission_id is required');
-			}
+				$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			User::CheckMayAdminister($request, (int)$args['userId']);
-			User::CheckMayGrant($request, [$requestBody['permission_id']]);
+				if (!isset($requestBody['permission_id']))
+				{
+					throw new EInvalidApiQuery('permission_id is required');
+				}
 
-			$this->DB->user_permissions()->createRow([
-				'user_id' => $args['userId'],
-				'permission_id' => $requestBody['permission_id']
-			])->save();
-			return $this->EmptyApiResponse($response);
+				if ($this->DB->users($args['userId']) === null)
+				{
+					throw new EInvalidApiQuery('User does not exist');
+				}
+				User::CheckMayAdminister($request, (int)$args['userId']);
+				User::CheckMayGrant($request, [$requestBody['permission_id']]);
+
+				$this->DB->user_permissions()->createRow([
+					'user_id' => $args['userId'],
+					'permission_id' => $requestBody['permission_id']
+				])->save();
+				return $this->EmptyApiResponse($response);
+			});
 		});
 	}
 
@@ -59,27 +68,33 @@ class UsersApiController extends BaseApiController
 		// meant an account holding only USERS_CREATE could create an administrator and log
 		// in as it - a direct escalation past the permission model. Sweep finding S5.
 		User::CheckMayGrant($request, UsersService::GetInstance()->GetDefaultPermissionIds());
+		RolesService::GetInstance()->CheckMayAssign($request, RolesService::GetInstance()->GetDefaultRoleIds());
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($requestBody, $response)
+		return $this->HandleApiCall($response, function () use ($requestBody, $response, $request)
 		{
-			if ($requestBody === null)
+			return RolesService::GetInstance()->Mutate($request, User::PERMISSION_USERS_CREATE, function () use ($requestBody, $response, $request)
 			{
-				throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
-			}
+				User::CheckMayGrant($request, UsersService::GetInstance()->GetDefaultPermissionIds());
+				RolesService::GetInstance()->CheckMayAssign($request, RolesService::GetInstance()->GetDefaultRoleIds());
+				if ($requestBody === null)
+				{
+					throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+				}
 
-			$requestBody = self::WithDecodedPassword($requestBody, 'password');
+				$requestBody = self::WithDecodedPassword($requestBody, 'password');
 
-			UsersService::GetInstance()->CreateUser(
-				self::RequiredField($requestBody, 'username'),
-				$requestBody['first_name'] ?? null,
-				$requestBody['last_name'] ?? null,
-				self::RequiredField($requestBody, 'password'),
-				$requestBody['picture_file_name'] ?? null
-			);
+				UsersService::GetInstance()->CreateUser(
+					self::RequiredField($requestBody, 'username'),
+					$requestBody['first_name'] ?? null,
+					$requestBody['last_name'] ?? null,
+					self::RequiredField($requestBody, 'password'),
+					$requestBody['picture_file_name'] ?? null
+				);
 
-			return $this->EmptyApiResponse($response);
+				return $this->EmptyApiResponse($response);
+			});
 		});
 	}
 
@@ -93,10 +108,14 @@ class UsersApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);
 		User::CheckMayAdminister($request, (int)$args['userId']);
 
-		return $this->HandleApiCall($response, function () use ($args, $response)
+		return $this->HandleApiCall($response, function () use ($args, $response, $request)
 		{
-			UsersService::GetInstance()->DeleteUser($args['userId']);
-			return $this->EmptyApiResponse($response);
+			return RolesService::GetInstance()->Mutate($request, User::PERMISSION_USERS_EDIT, function () use ($args, $response, $request)
+			{
+				User::CheckMayAdminister($request, (int)$args['userId']);
+				UsersService::GetInstance()->DeleteUser($args['userId']);
+				return $this->EmptyApiResponse($response);
+			});
 		});
 	}
 
@@ -133,31 +152,35 @@ class UsersApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $isSelf, $requestBody, $response)
+		return $this->HandleApiCall($response, function () use ($args, $isSelf, $requestBody, $response, $request)
 		{
-			if ($requestBody === null)
+			return RolesService::GetInstance()->Mutate($request, ($isSelf ? User::PERMISSION_USERS_EDIT_SELF : User::PERMISSION_USERS_EDIT), function () use ($args, $isSelf, $requestBody, $response, $request)
 			{
-				throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
-			}
+				if (!$isSelf) User::CheckMayAdminister($request, (int)$args['userId']);
+				if ($requestBody === null)
+				{
+					throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+				}
 
-			$requestBody = self::WithDecodedPassword($requestBody, 'password');
-			$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
+				$requestBody = self::WithDecodedPassword($requestBody, 'password');
+				$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
 
-			if ($isSelf && !empty($requestBody['password'] ?? null))
-			{
-				UsersService::GetInstance()->CheckCurrentPassword((int)$args['userId'], $requestBody['current_password'] ?? null);
-			}
+				if ($isSelf && !empty($requestBody['password'] ?? null))
+				{
+					UsersService::GetInstance()->CheckCurrentPassword((int)$args['userId'], $requestBody['current_password'] ?? null);
+				}
 
-			UsersService::GetInstance()->EditUser(
-				$args['userId'],
-				self::RequiredField($requestBody, 'username'),
-				$requestBody['first_name'] ?? null,
-				$requestBody['last_name'] ?? null,
-				$requestBody['password'] ?? null,
-				$requestBody['picture_file_name'] ?? null
-			);
+				UsersService::GetInstance()->EditUser(
+					$args['userId'],
+					self::RequiredField($requestBody, 'username'),
+					$requestBody['first_name'] ?? null,
+					$requestBody['last_name'] ?? null,
+					$requestBody['password'] ?? null,
+					$requestBody['picture_file_name'] ?? null
+				);
 
-			return $this->EmptyApiResponse($response);
+				return $this->EmptyApiResponse($response);
+			});
 		});
 	}
 
@@ -251,23 +274,7 @@ class UsersApiController extends BaseApiController
 		});
 	}
 
-	/**
-	 * GET /api/users/{userId}/permissions - returns the user_permissions rows assigned
-	 * to the given user. Requires the USERS_READ permission (403 otherwise); 400 on other
-	 * errors.
-	 *
-	 * USERS_READ rather than ADMIN closes a mismatch plan 14's section 2b recorded: the
-	 * server-rendered permissions page has always required only USERS_READ, so the two
-	 * halves of the same screen disagreed about who may look at it, and the strict half
-	 * was the one nothing rendered from. Reading who holds what is a read of the users
-	 * surface. Plan 19 states the same rule for the role endpoints it will add.
-	 *
-	 * Only the read half moves. The two write endpoints below stay on ADMIN: loosening a
-	 * *grant* path to USERS_EDIT is a decision about the permission model, which 19 has
-	 * not recorded, and the roadmap's own lesson about parking findings on that plan cuts
-	 * both ways - a wave that would not guess at the model should not guess at it here
-	 * either.
-	 */
+	/** Returns the hierarchy-joined effective permission model, including role sources. */
 	public function ListPermissions(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_USERS_READ);
@@ -276,64 +283,43 @@ class UsersApiController extends BaseApiController
 		{
 			return $this->ApiResponse(
 				$response,
-				$this->DB->user_permissions()->where('user_id', $args['userId'])
+				$this->DB->uihelper_user_permissions()->where('user_id', $args['userId'])->orderBy('permission_id')
 			);
 		});
 	}
 
 	/**
 	 * PUT /api/users/{userId}/permissions - replaces all permission assignments of the
-	 * given user with the body field permissions (array of permission ids); in demo or
-	 * prerelease mode the user is always given the ADMIN permission instead.
-	 * Requires the ADMIN permission (403 otherwise). Returns 204 on success or a
+	 * given user with the body field permissions (array of permission ids).
+	 * Requires the USERS_EDIT permission (403 otherwise). Returns 204 on success or a
 	 * 400 error response.
 	 */
 	public function SetPermissions(Request $request, Response $response, array $args)
 	{
-		User::CheckPermission($request, User::PERMISSION_ADMIN);
+		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			$requestBody = $request->getParsedBody();
-			$requested = $requestBody['permissions'] ?? [];
-
-			if (!is_array($requested))
+			return RolesService::GetInstance()->Mutate($request, User::PERMISSION_USERS_EDIT, function () use ($args, $request, $response)
 			{
-				throw new EInvalidApiQuery('permissions has to be an array of permission ids');
-			}
-
-			// Both checks before anything is deleted: this endpoint replaces the whole set,
-			// so a refusal halfway through would leave the user holding nothing
-			User::CheckMayAdminister($request, (int)$args['userId']);
-			User::CheckMayGrant($request, $requested);
-
-			$db = $this->DB;
-			$db->user_permissions()
-				->where('user_id', $args['userId'])
-				->delete();
-
-			$perms = [];
-			if (VICTUAL_MODE === 'demo' || VICTUAL_MODE === 'prerelease')
-			{
-				// For demo mode always all users have and keep the ADMIN permission
-				$perms[] = [
-					'user_id' => $args['userId'],
-					'permission_id' => 1
-				];
-			}
-			else
-			{
-				foreach ($requested as $perm_id)
+				$requested = RolesService::Ids($request->getParsedBody(), 'permissions');
+				DatabaseService::GetInstance()->InTransaction(function () use ($request, $args, $requested)
 				{
-					$perms[] = [
-						'user_id' => $args['userId'],
-						'permission_id' => $perm_id
-					];
-				}
-			}
-			$db->insert('user_permissions', $perms, 'batch');
+					if ($this->DB->users($args['userId']) === null)
+					{
+						throw new EInvalidApiQuery('User does not exist');
+					}
+					User::CheckMayAdminister($request, (int)$args['userId']);
+					User::CheckMayGrant($request, $requested);
+					$this->DB->user_permissions()->where('user_id', $args['userId'])->delete();
+					foreach ($requested as $id)
+					{
+						$this->DB->user_permissions()->createRow(['user_id' => $args['userId'], 'permission_id' => $id])->save();
+					}
+				});
 
-			return $this->EmptyApiResponse($response);
+				return $this->EmptyApiResponse($response);
+			});
 		});
 	}
 

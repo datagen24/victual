@@ -22,6 +22,7 @@ class PrintApiController extends BaseApiController
 	 */
 	public function PrintShoppingListThermal(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_VIEW);
 		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST);
 
 		return $this->HandleApiCall($response, function () use ($request, $response)

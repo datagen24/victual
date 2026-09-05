@@ -70,30 +70,38 @@ class UsersService extends BaseService
 	 */
 	public function CreateUser(string $username, ?string $firstName, ?string $lastName, string $password, ?string $pictureFileName = null)
 	{
-		$newUserRow = $this->DB->users()->createRow([
-			'username' => $username,
-			'first_name' => $firstName,
-			'last_name' => $lastName,
-			'password' => password_hash($password, PASSWORD_ARGON2ID),
-			'picture_file_name' => $pictureFileName
-		]);
-		$newUserRow = $newUserRow->save();
-		$permList = [];
-
-		foreach ($this->GetDefaultPermissionIds() as $permissionId)
+		return DatabaseService::GetInstance()->InTransaction(function () use ($username, $firstName, $lastName, $password, $pictureFileName)
 		{
-			$permList[] = [
-				'user_id' => $newUserRow->id,
-				'permission_id' => $permissionId
-			];
-		}
+			$newUserRow = $this->DB->users()->createRow([
+				'username' => $username,
+				'first_name' => $firstName,
+				'last_name' => $lastName,
+				'password' => password_hash($password, PASSWORD_ARGON2ID),
+				'picture_file_name' => $pictureFileName
+			]);
+			$newUserRow = $newUserRow->save();
+			$permList = [];
 
-		if (!empty($permList))
-		{
-			$this->DB->user_permissions()->insert($permList);
-		}
+			foreach ($this->GetDefaultPermissionIds() as $permissionId)
+			{
+				$permList[] = [
+					'user_id' => $newUserRow->id,
+					'permission_id' => $permissionId
+				];
+			}
 
-		return $newUserRow;
+			if (!empty($permList))
+			{
+				$this->DB->user_permissions()->insert($permList);
+			}
+
+			foreach (RolesService::GetInstance()->GetDefaultRoleIds() as $roleId)
+			{
+				$this->DB->user_roles()->insert(['user_id' => $newUserRow->id, 'role_id' => $roleId]);
+			}
+
+			return $newUserRow;
+		});
 	}
 
 	/**

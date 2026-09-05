@@ -4,6 +4,7 @@ namespace Victual\Controllers;
 
 use Victual\Controllers\Users\User;
 use Victual\Services\UserfieldsService;
+use Victual\Services\RolesService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -21,10 +22,23 @@ class UsersController extends BaseController
 	public function PermissionList(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_USERS_READ);
+		$direct = [];
+		foreach ($this->DB->user_permissions()->where('user_id', $args['userId']) as $grant)
+		{
+			$direct[] = (int)$grant->permission_id;
+		}
+		$assigned = [];
+		foreach (RolesService::GetInstance()->GetUserRoles((int)$args['userId']) as $role)
+		{
+			$assigned[] = (int)$role->id;
+		}
 		return $this->RenderPage($response, 'userpermissions', [
 			'user' => $this->DB->users($args['userId']),
-			'permissions' => $this->DB->uihelper_user_permissions()
-				->where('parent IS NULL')->where('user_id', $args['userId'])
+			'permissionRows' => $this->DB->uihelper_user_permissions()->where('user_id', $args['userId'])->fetchAll(),
+			'directIds' => $direct,
+			'roles' => RolesService::GetInstance()->GetRoles()->fetchAll(),
+			'assignedIds' => $assigned,
+			'canEdit' => User::HasPermissions(User::PERMISSION_USERS_EDIT) && User::MayAdminister((int)$args['userId'])
 		]);
 	}
 
@@ -93,8 +107,37 @@ class UsersController extends BaseController
 		User::CheckPermission($request, User::PERMISSION_USERS_READ);
 		return $this->RenderPage($response, 'users', [
 			'users' => $this->DB->users()->orderBy('username'),
+			'rolesService' => RolesService::GetInstance(),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('users'),
 			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('users')
+		]);
+	}
+
+	public function RolesList(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_USERS_READ);
+		return $this->RenderPage($response, 'roles', [
+			'roles' => RolesService::GetInstance()->GetRoles(),
+			'canEdit' => User::HasPermissions(User::PERMISSION_USERS_EDIT)
+		]);
+	}
+
+	public function RoleEditForm(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_USERS_READ);
+		$id = $args['roleId'];
+		$role = $id === 'new' ? null : RolesService::GetInstance()->RequireRole((int)$id);
+		$rows = [];
+		foreach ($this->DB->permission_hierarchy() as $permission)
+		{
+			$rows[] = (object)['permission_id' => $permission->id, 'permission_name' => $permission->name,
+				'parent' => $permission->parent, 'via_roles' => null];
+		}
+		return $this->RenderPage($response, 'roleform', [
+			'role' => $role,
+			'permissionRows' => $rows,
+			'directIds' => $role === null ? [] : RolesService::GetInstance()->GetPermissionIds((int)$id),
+			'canEdit' => User::HasPermissions(User::PERMISSION_USERS_EDIT)
 		]);
 	}
 }
