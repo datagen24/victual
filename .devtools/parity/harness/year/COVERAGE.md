@@ -135,6 +135,7 @@ assertion fires.
 | Behaviour | Operation | Independent assertion |
 |---|---|---|
 | Every booking moved its intended amount | every stock operation | `rowsSum` — the signed total, from the response itself |
+| A transfer moved stock to the right place, at the step | every transfer | the lot assertion, whose `LOT_FIELDS` include `location_id` and which is emitted after every transfer. This was listed as a gap until the lot work closed it: per-operation checks previously asserted only the product total, which a transfer never changes. |
 | Each operation left the intended state | ~275/year sampled, always after open/transfer/inventory/undo/edit/spoil/self-production/tare | a read asserting `stock_amount` against the ledger |
 | Partial opening | ~52 opens | `stock_amount` unchanged **and** `stock_amount_opened` up by the opened quantity |
 | Events reached InfluxDB | 532 priced purchases | `price_paid` count **and** a multiset of (product, price, amount) |
@@ -155,7 +156,6 @@ These run. Nothing establishes they ran *correctly*.
 | **Nested recipe transactions** | `Sunday lunch` nests roast + soup; `Leftovers` nests pasta bake | `POST /recipes/{id}/consume` answers 204, so there is no booking to assert `rowsSum` against, and `cook()` emits no post-state read. A failure to consume the *nested* recipe's ingredients is caught only in aggregate, at the next monthly checkpoint, attributed to a product rather than to the recipe. |
 | **Edits after consumption** | 1 stock-entry edit per year | The average-price oracle *does* model `edited_origin_amount` as the edited amount plus what was consumed from that entry first — so the arithmetic is asserted. But the generator picks the first entry in FIFO order, so whether that entry had prior consumption is incidental; the interesting case is not guaranteed to occur. The edit also carries no `rowsSum`. |
 | **Undo dependencies** | 2 undos per year | Deliberately avoided: the generator only emits an undo when the model still holds the purchased stock, because undoing a booking whose stock has been consumed drove `stock_log` to imply a negative balance. The dependent case is the interesting one and is currently out of scope rather than covered. |
-| **Transfers, per operation** | 53 transfers | Per-operation, only the product total is asserted — which a transfer never changes. Position is asserted monthly and at the end, so a wrong transfer is caught within a month rather than at the step. |
 
 ## What would close them
 
