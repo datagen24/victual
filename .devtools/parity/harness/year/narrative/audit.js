@@ -109,8 +109,16 @@ function undoSomething({ ctx, day, ops, recentBookings }) {
 	// It also stops the year asking for something whose outcome is not obviously defined:
 	// the log after those undos implied a negative stock for the product, which is a
 	// question worth asking deliberately and in isolation rather than by accident in March.
+	// **The precondition is the entry, not the total.** `UndoBooking` refuses when the
+	// purchased entry has later bookings against it (services/StockService.php:2064) and
+	// otherwise deletes that entry whole (`:2078`), so "is there enough stock of this
+	// product" was never the right question — a product can hold plenty while the specific
+	// entry has been eaten.
 	const id = sym.product(booking.product);
-	if (ledger.amountOf(id) < booking.amount) return;
+	const purchase = ledger.bookings[booking.seq];
+	if (!purchase || purchase.entryKey === undefined || purchase.entryKey === null) return;
+	const entry = ledger.entryByKey(purchase.entryKey);
+	if (!entry || entry.amount !== booking.amount) return;
 
 	ops.push(call({
 		method: 'POST', path: `/stock/bookings/{${booking.symbol}}/undo`,
@@ -121,12 +129,9 @@ function undoSomething({ ctx, day, ops, recentBookings }) {
 		label: `d${day}: undo the ${booking.product} purchase`
 	}));
 
-	// Undoing a purchase removes the stock it added, and the model follows unconditionally
-	// now that the operation is only emitted when it can.
-	ledger.consume({ productId: id, amount: booking.amount });
-	// Not a consumption in the ledger identity — the original booking is marked undone
-	// instead, so the two cancel rather than adding a third row.
-	ledger.bookings.pop();
+	// The entry the purchase created, removed whole — no booking of its own, because the
+	// original is marked undone instead and the two cancel in the ledger identity.
+	ledger.undoPurchase(purchase.entryKey);
 	// **By index, not by resemblance.** Matching on (type, product, amount) marked whichever
 	// purchase looked similar, and two purchases of the same amount at different prices are
 	// ordinary — so the model excluded one booking from the average-price oracle while the
@@ -215,28 +220,72 @@ function editEntry({ ctx, day, ops }) {
 	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
 	const stocked = plainProducts.filter((p) => ledger.amountOf(sym.product(p.key)) > 0);
 	if (stocked.length === 0) return;
-	const product = pick(rng, stocked);
+
+	// **The product has to be chosen for the case too, not just the entry.**
+	//
+	// Choosing at random kept landing on a product measured in whole units, whose entries are
+	// consumed entire and so are never both drawn-on and still editable — seven edits a year,
+	// every one on an untouched entry, which is the case that establishes nothing about
+	// `edited_origin_amount`. Products measured in grams or millilitres are consumed in parts
+	// and leave exactly the entry this wants, so they are preferred when one exists.
+	const drawnOn = new Set();
+	for (const b of ledger.bookings) {
+		for (const t of b.touched || []) drawnOn.add(t.key);
+	}
+	const interesting = stocked.filter((p) => ledger.ordered(sym.product(p.key))
+		.some((e) => e.amount > 1 && drawnOn.has(e.key)));
+	const product = pick(rng, interesting.length > 0 ? interesting : stocked);
 	const id = sym.product(product.key);
 
-	const entries = ledger.ordered(id);
-	if (entries.length === 0) return;
-	const entry = entries[0];
+	// A correction downward, so the edit pair nets to a real change rather than to zero —
+	// `stock-edit-old` carries the old amount and `stock-edit-new` the new one, and an edit
+	// that changed nothing would exercise the path without testing the arithmetic. Only an
+	// entry holding more than one unit can move.
+	const step = product.qu === 'gram' || product.qu === 'millilitre' ? 50 : 1;
+	const editable = ledger.ordered(id).filter((e) => e.amount > 1);
+	if (editable.length === 0) return;
+
+	// **Prefer an entry that has already been consumed from.**
+	//
+	// `products_average_price` weights an edited entry by `edited_origin_amount`, which the
+	// application sets to the edited amount *plus* whatever had already been drawn from that
+	// entry — so editing an untouched entry exercises the arithmetic with that term equal to
+	// zero and establishes nothing about it. The previous version took `ordered()[0]` and
+	// left hitting the real case to chance. The model records which entries each consume drew
+	// on, so it can be chosen. An untouched entry is still edited when no drawn-on one is
+	// available, because an edit that does not happen tests less than an easy one that does.
+	const entry = editable.find((e) => drawnOn.has(e.key)) || editable[0];
+	const priorConsumption = drawnOn.has(entry.key);
+
+	// **The entry has to be named, not taken positionally.**
+	//
+	// The read used to be `order=id:asc&limit=1` — the lowest id — while the model chose in
+	// `stock_next_use` order. Those are the same entry only by coincidence, so the edit could
+	// land on one entry while the model recorded another, and every later price and lot
+	// assertion for that product would be measured against the wrong one. Now the chosen
+	// entry is described by its own dates and the read asserts that exactly one row matches,
+	// which is what makes "this entry" mean the same thing on both instances.
+	const sameDates = ledger.ordered(id)
+		.filter((e) => e.bbd === entry.bbd && e.purchasedDate === entry.purchasedDate);
+	if (sameDates.length !== 1) return;   // not uniquely nameable; skip rather than guess
 
 	ops.push(call({
 		method: 'GET',
-		path: `/objects/stock?query%5B%5D=product_id%3D{product:${product.key}}&order=id:asc&limit=1`,
-		expect: { status: 200, kind: 'array', minLength: 1, rowShape: ['id', 'product_id', 'amount'] },
+		path: `/objects/stock?query%5B%5D=product_id%3D{product:${product.key}}` +
+			`&query%5B%5D=best_before_date%3D${entry.bbd}` +
+			`&query%5B%5D=purchased_date%3D${entry.purchasedDate}&order=id:asc`,
+		expect: {
+			status: 200, kind: 'array', length: 1,
+			rowShape: ['id', 'product_id', 'amount'],
+			rowEquals: { amount: entry.amount }
+		},
 		window: cal.dayWindow(day),
 		bind: { [`entry:${product.key}:${day}`]: '[0].id' },
-		label: `m${cal.month(day)}: find a ${product.name} entry to correct`
+		label: `m${cal.month(day)}: find the ${product.name} entry of ${entry.amount} ` +
+			`from ${entry.purchasedDate} to correct`
 	}));
 
-	// A small correction downward, so the edit pair nets to a real change rather than to
-	// zero — `stock-edit-old` carries the old amount and `stock-edit-new` the new one, and
-	// an edit that changed nothing would exercise the path without testing the arithmetic.
-	const step = product.qu === 'gram' || product.qu === 'millilitre' ? 50 : 1;
 	const newAmount = Math.max(1, entry.amount - step);
-	if (newAmount === entry.amount) return;
 
 	ops.push(call({
 		method: 'PUT',
@@ -252,7 +301,8 @@ function editEntry({ ctx, day, ops }) {
 		expect: bookingRows({ transactionType: 'stock-edit-old', length: 2 }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'edit', product: product.key, from: entry.amount, to: newAmount },
-		label: `m${cal.month(day)}: correct ${product.name} ${entry.amount} -> ${newAmount}`
+		label: `m${cal.month(day)}: correct ${product.name} ${entry.amount} -> ${newAmount}` +
+			(priorConsumption ? ' (an entry already consumed from)' : ' (an untouched entry)')
 	}));
 
 	// The model follows: the old amount comes off and the new one goes on, which is exactly

@@ -374,6 +374,29 @@ class Ledger {
 		return { exact, groups: [...groups.values()] };
 	}
 
+	entryByKey(key) {
+		return this.entries.find((e) => e.key === key);
+	}
+
+	// **Undoing a purchase deletes the entry that purchase created — it is not a consume.**
+	//
+	// The model used to follow an undo with `consume(amount)`, which removes the same total
+	// from whichever lots `stock_next_use` puts first. That agrees on every total and
+	// disagrees on which lot survives, so 274 days of ledger, log, position and average-price
+	// invariants all passed while the model held a lot the application had deleted. The lot
+	// assertion is what found it, on the first year run after it was added.
+	//
+	// `UndoBooking` deletes every `stock` row with the booking's `stock_id`
+	// (services/StockService.php:2078) and refuses outright when that entry has later
+	// bookings against it (`:2064`), so the model removes the entry whole and only when it is
+	// whole.
+	undoPurchase(entryKey) {
+		const entry = this.entryByKey(entryKey);
+		if (!entry) return null;
+		this.entries = this.entries.filter((e) => e.key !== entryKey);
+		return entry.amount;
+	}
+
 	// Every (product, location) the model currently holds stock at.
 	//
 	// **This is what a transfer changes, and nothing else the suite asserts would notice.**

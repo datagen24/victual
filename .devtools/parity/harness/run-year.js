@@ -33,6 +33,7 @@ function parseArgs(argv) {
 		updateLock: false,
 		printMeta: false,
 		invariantsOnly: false,
+		inject: null,
 		victual: process.env.PARITY_VICTUAL_URL || 'http://127.0.0.1:8080',
 		clockFile: process.env.PARITY_CLOCK_FILE || null,
 		// The fork-only side. Absent means the delivery checks are skipped and say so,
@@ -54,6 +55,14 @@ function parseArgs(argv) {
 		else if (flag === '--update-plan-lock') args.updateLock = true;
 		else if (flag === '--print-meta') args.printMeta = true;
 		else if (flag === '--invariants-only') args.invariantsOnly = true;
+		// **A negative test needs to corrupt the database between the replay and the check.**
+		// Injecting before the replay is undone by the replay; injecting after the run is too
+		// late for the invariants to see it. Nothing else in the harness offers that seam, so
+		// demonstrating that an assertion fires meant hand-staging a run, which is not a
+		// reproducible demonstration. The command runs once, with the replay finished and the
+		// invariants not yet started, and its failure aborts the run rather than being
+		// mistaken for a passing injection.
+		else if (flag === '--inject') args.inject = argv[++i];
 		else if (flag === '--victual') args.victual = argv[++i];
 		else if (flag === '--clock-file') args.clockFile = argv[++i];
 		else if (flag === '--influx') args.influx = argv[++i];
@@ -161,6 +170,18 @@ async function runAgainstInstance(args, plan) {
 		console.log(`\x1b[31m  ${result.windowProblems.length} operations wrote a timestamp outside their simulated window\x1b[0m`);
 		for (const w of result.windowProblems.slice(0, 8)) {
 			console.log(`    ${w.op}: ${w.problems.join('; ')}`);
+		}
+	}
+
+	if (args.inject) {
+		const { execSync } = require('child_process');
+		console.log('');
+		console.log(`  \x1b[33minjecting\x1b[0m  ${args.inject}`);
+		try {
+			const out = execSync(args.inject, { encoding: 'utf8', timeout: 120000 }).trim();
+			if (out) for (const line of out.split('\n')) console.log(`    ${line}`);
+		} catch (e) {
+			throw new Incomplete(`the injection failed, so nothing was established: ${e.message.slice(0, 200)}`);
 		}
 	}
 

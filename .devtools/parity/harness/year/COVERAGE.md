@@ -22,6 +22,8 @@ substitute for a mutation of the application itself.
 | The log and the table agree | every booking | `sum(stock_log) equals stock, per product`, using the contribution function (`product-opened` contributes 0, `stock-edit-old` negated) | a `consume` row flipped to `undone=1` | **Caught**: `milk: stock 2, log implies 3` |
 | Each type moved what was booked | all nine types | `every transaction type moved what the plan booked` — summed amounts, both directions | the same flipped row | **Caught**: `consume: log sums to -85297, plan booked -85298` |
 | Price arithmetic over a year | 532 priced purchases | `products_average_price matches the ledger, to 4dp`, modelling the view's edited-entry rule | a purchase price raised by 0.50 | **Caught**: `tomatoes: view 1.6325, ledger 1.6230` |
+| A delivered event landed on the right day | 532 priced purchases | `price_paid` multiset keyed by (product, **day**, price, amount) | one point rewritten one simulated day later, every tag and value identical | **Caught**: `unexpected point rolls\|2024-12-04\|1.3700\|1; missing 1 x rolls\|2024-12-03\|1.3700\|1` |
+| An undone purchase removed *its own* lot | 2 undos | the lot assertion | *(no injection needed — a year run found it)* | **Caught**: the model had been undoing by FIFO consume, which agrees on every total and disagrees on which lot survives. 274 days of ledger, log, position and average-price invariants passed while the model held a lot the application had deleted. |
 | Stock is in the right *place* | 53 transfers | `every product sits where the ledger put it` — per (product, location), monthly **and** at the end | one unit moved to another location | **Caught**: `fish@freezer: live 101, ledger 102; stock of 1 at 14@8 that the ledger does not place there` |
 
 The last row is why this table was worth building: before it, an injected location change was
@@ -135,6 +137,8 @@ assertion fires.
 | Behaviour | Operation | Independent assertion |
 |---|---|---|
 | Every booking moved its intended amount | every stock operation | `rowsSum` — the signed total, from the response itself |
+| A recipe consumed its ingredients, nested ones included | every `cook` | `POST /recipes/{id}/consume` answers 204, so the evidence is the state it left: a stock read **and** a lot read per affected product, named by the recipe. `requirements()` resolves nesting, so the model knows what a nested recipe should have drawn and by how much. |
+| An edit carried its prior consumption | 11 edits/year | the average-price oracle's `edited_origin_amount` term — the edited amount plus what had already been drawn from that entry. The generator now chooses both the product and the entry so that term is non-zero: all 11 edits in a year land on an entry already consumed from, where previously 1 landed and it was untouched. The entry is also named by its own dates with a uniqueness assertion, rather than taken as the lowest id while the model meant the FIFO-first one. |
 | A transfer moved stock to the right place, at the step | every transfer | the lot assertion, whose `LOT_FIELDS` include `location_id` and which is emitted after every transfer. This was listed as a gap until the lot work closed it: per-operation checks previously asserted only the product total, which a transfer never changes. |
 | Each operation left the intended state | ~275/year sampled, always after open/transfer/inventory/undo/edit/spoil/self-production/tare | a read asserting `stock_amount` against the ledger |
 | Partial opening | ~52 opens | `stock_amount` unchanged **and** `stock_amount_opened` up by the opened quantity |
@@ -153,9 +157,7 @@ These run. Nothing establishes they ran *correctly*.
 | Behaviour | Operation | Why nothing distinguishes it |
 |---|---|---|
 | **Quantity-unit conversions** | bread 1 piece = 18 slices, coffee/pasta 1 pack = 500 g | **Not exercised at all** — and not for the reason previously recorded here. See below. |
-| **Nested recipe transactions** | `Sunday lunch` nests roast + soup; `Leftovers` nests pasta bake | `POST /recipes/{id}/consume` answers 204, so there is no booking to assert `rowsSum` against, and `cook()` emits no post-state read. A failure to consume the *nested* recipe's ingredients is caught only in aggregate, at the next monthly checkpoint, attributed to a product rather than to the recipe. |
-| **Edits after consumption** | 1 stock-entry edit per year | The average-price oracle *does* model `edited_origin_amount` as the edited amount plus what was consumed from that entry first — so the arithmetic is asserted. But the generator picks the first entry in FIFO order, so whether that entry had prior consumption is incidental; the interesting case is not guaranteed to occur. The edit also carries no `rowsSum`. |
-| **Undo dependencies** | 2 undos per year | Deliberately avoided: the generator only emits an undo when the model still holds the purchased stock, because undoing a booking whose stock has been consumed drove `stock_log` to imply a negative balance. The dependent case is the interesting one and is currently out of scope rather than covered. |
+| **Undo dependencies** | 2 undos per year | Deliberately avoided, and the precondition is now the right one: `UndoBooking` refuses when the purchased entry has later bookings against it (`services/StockService.php:2064`) and otherwise deletes that entry whole (`:2078`), so the generator only emits an undo when the model still holds that entry intact. The **refusal** is the interesting case and nothing asserts it — no operation in the year expects `Booking has subsequent dependent bookings, undo not possible`. |
 
 ## What would close them
 
@@ -183,9 +185,5 @@ In the order the gaps are worth closing:
      and consuming a parent product whose sub-products are stocked in a different unit books
      `amount * factor` against the sub-product. That is the assertion worth building, and it
      needs a parent/child pair in the fixture — which the world does not currently have.
-2. **Assert nested recipes.** Emit a post-state read per affected product after a recipe
-   consume, so the failure names the recipe rather than surfacing as a product total a month
-   later.
-3. **Force the edit-after-consumption case**, rather than letting FIFO order decide it.
-4. **Bring undo dependencies into scope** with their own isolated fixture and an explicitly
+2. **Bring undo dependencies into scope** with their own isolated fixture and an explicitly
    stated expected outcome, as the FIFO tie probe already does.

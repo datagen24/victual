@@ -7,7 +7,7 @@
 // a recipe that cannot be cooked this week simply is not cooked, which is what a household
 // does too.
 
-const { call, CREATED } = require('../ops');
+const { call, CREATED, verifyStock } = require('../ops');
 const { intBetween, pick, chance } = require('../rng');
 
 // Sunday: plan the coming week. A mix of the three meal_plan types, because `type` decides
@@ -109,8 +109,30 @@ function cook({ ctx, day, ops }) {
 		label: `d${day}: cook ${recipe.name}`
 	}));
 
+	// **The consume answers 204, so the only evidence is the state it left.**
+	//
+	// There is no booking array to check `rowsSum` against, and until this existed a recipe
+	// that failed to consume its *nested* recipe's ingredients was caught only in aggregate
+	// at the next monthly checkpoint, attributed to a product rather than to the recipe.
+	// `requirements()` already resolves nesting, so the model knows exactly which products a
+	// nested recipe should have drawn on and by how much.
+	const affected = [];
 	for (const [productKey, amount] of needs) {
+		const lotsBefore = ledger.ordered(sym.product(productKey)).length;
 		ledger.consume({ productId: sym.product(productKey), amount });
+		affected.push({ productKey, amount, lotsBefore });
+	}
+	for (const { productKey, amount, lotsBefore } of affected) {
+		const product = world.products.find((p) => p.key === productKey);
+		if (!product) continue;
+		ops.push(verifyStock({
+			productKey,
+			amount: ledger.amountOf(sym.product(productKey)),
+			window: cal.dayWindow(day),
+			label: `d${day}: ${recipe.name} should have taken ${amount} ${product.name}, ` +
+				`leaving ${ledger.amountOf(sym.product(productKey))}`
+		}));
+		ctx.verifyLotsAfter(ops, product, day, `cook ${recipe.name}`, lotsBefore);
 	}
 }
 

@@ -511,16 +511,20 @@ const CACHE_LAPSE_MS = 1100;
 // eight consecutive fresh replies is consistent with one warm child answering all eight
 // while three stale ones sit idle. The claim was stronger than the evidence.
 //
-// Concurrency is what actually forces the pool to be sampled. The pool is `pm = static` with
-// `pm.max_children = 4` (nix/runtime/fpm-conf.nix:23,41) and a child serves one request at a
-// time, so `POOL_SIZE` requests in flight simultaneously cannot all be answered by the same
-// child: each in-flight request occupies a distinct one. Requiring every reply in a round to
-// be fresh therefore says something about every worker, which a sequential run does not.
+// Concurrency raises how much of the pool a round is likely to touch, and that is all it
+// does. **It is bounded sampling, not proof of coverage.** `POOL_SIZE` requests issued
+// together are not `POOL_SIZE` requests served by distinct children: a fast child can finish
+// one and accept the next while another is still queued, and nothing here observes which
+// child answered — no endpoint reports it, and there is no server-side barrier to hold each
+// child until the others have been handed work.
 //
-// What this still does not establish, stated rather than glossed: it assumes the pool is
-// otherwise idle (it is — the harness is the only client), and it observes the pool
-// *collectively*, since no endpoint reports which child answered. A round is evidence that
-// four distinct children each answered freshly, not a per-child identity check.
+// So what a clean round establishes is that the pool answered `POOL_SIZE` overlapping
+// requests freshly. It is stronger evidence than the same count sequentially, because the
+// requests overlap in time and cannot all have been served by one child unless that child
+// served them in sequence while the others sat idle. It is not a guarantee that every child
+// was sampled. Establishing that would need worker identity in the reply or a barrier the
+// application does not offer, and until one of those exists this check should not be
+// described as proving the pool is uniformly fresh.
 //
 // Warming and verifying are separate jobs and are done separately. A stale child refreshes
 // its faketime cache by *serving* a request, and the reply to that request is still the stale
