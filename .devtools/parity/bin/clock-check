@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# The Stage 0 acceptance matrix for simulated time.
+#
+#   .devtools/parity/bin/clock-check [--anchor 'YYYY-MM-DD HH:MM:SS']
+#
+# Boots both stacks under a faked clock and asks every runtime what time it is, through the
+# surfaces the application itself uses — there is no `podman exec … date` here, because the
+# fork's images are built from scratch and carry no shell and no PATH.
+#
+# **The matrix is checked after three steps, not only at T0.** A worker spawned after a step
+# could re-derive its own origin, and a check that only ran at boot would never see it. It
+# does not — measured 2026-09-05 — but that is a result, not an assumption, and this script
+# is what keeps it one.
+#
+# Exit 0 when every surface agrees at every step; non-zero, loudly, otherwise.
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARITY_ROOT="$(cd "$HERE/.." && pwd)"
+REPO_ROOT="$(cd "$PARITY_ROOT/../.." && pwd)"
+
+export PARITY_FAKETIME=on
+# shellcheck source=../stack/stack.sh
+source "$PARITY_ROOT/stack/stack.sh"
+
+ANCHOR="${1:-2025-01-15 08:00:00}"
+[ "${1:-}" = "--anchor" ] && ANCHOR="$2"
+
+PASS=0; FAIL=0
+
+# Why a surface could not be read, in the surface's own words. "UNREACHABLE" on its own
+# sent the first run of this script looking for a clock fault when the answer was an
+# unrelated stale image saying "could not find driver" — the endpoint answered, it just did
+# not answer with a time.
+why() { # base_url
+	local jar body; jar="$(mktemp)"
+	curl -s -c "$jar" -o /dev/null -X POST -d 'username=admin&password=admin' "$1/login" 2>/dev/null || true
+	body="$(curl -s -b "$jar" "$1/api/system/time" 2>/dev/null || true)"
+	rm -f "$jar"
+	if [ -z "$body" ]; then printf 'no response'; else printf '%s' "$(printf '%s' "$body" | tr -d '\n' | cut -c1-58)"; fi
+}
+
+check() { # label expected_epoch observed_epoch [base_url]
+	local label="$1" want="$2" got="$3" base="${4:-}" delta
+	if [ -z "$got" ]; then
+		printf '  %-34s \033[1;31mUNREADABLE\033[0m %s\n' "$label" \
+			"$( [ -n "$base" ] && why "$base" )"
+		FAIL=$((FAIL+1)); return
+	fi
+	delta=$(( got - want ))
+	if [ "$delta" -ge 0 ] && [ "$delta" -le "$FT_MAX_STEP_DRIFT_S" ]; then
+		printf '  %-34s \033[1;32mok\033[0m (+%ss)\n' "$label" "$delta"; PASS=$((PASS+1))
+	else
+		printf '  %-34s \033[1;31mFAIL\033[0m (off by %ss)\n' "$label" "$delta"; FAIL=$((FAIL+1))
+	fi
+}
+
+# The two HTTP surfaces. A session is needed because /api/system/time is authenticated, and
+# both projects ship admin/admin from migration 0027 — the same credential the harness uses.
+http_epoch() { ft_http_epoch "$1"; }
+
+log "clock-check: anchor $ANCHOR"
+ft_init "$ANCHOR"
+stack_up
+
+# Before anything else: prove the preload actually took. An ignored LD_PRELOAD is a silent
+# no-op that would run the whole year at wall-clock time.
+ft_assert_loaded "$ANCHOR"
+log "LD_PRELOAD verified as loaded"
+
+STEPS=("$ANCHOR" "2025-06-30 12:00:00" "2025-09-20 17:30:00" "2026-02-28 23:00:00")
+for i in "${!STEPS[@]}"; do
+	when="${STEPS[$i]}"
+	if [ "$i" -gt 0 ]; then
+		log "step $i -> $when"
+		ft_step "$when"
+	fi
+	want="$(ft_epoch "$when")"
+	printf '\033[1m step %d: %s\033[0m\n' "$i" "$when"
+	check "postgres LOCALTIMESTAMP (new conn)" "$want" "$(ft_observed_epoch postgres)"
+	check "victual CLI (newly spawned proc)"   "$want" "$(ft_observed_epoch cli)"
+	check "victual php-fpm (running worker)"   "$want" "$(http_epoch "http://127.0.0.1:${VICTUAL_PORT}")"  "http://127.0.0.1:${VICTUAL_PORT}"
+	check "upstream php + SQLite (running)"    "$want" "$(http_epoch "http://127.0.0.1:${UPSTREAM_PORT}")" "http://127.0.0.1:${UPSTREAM_PORT}"
+done
+
+# A row written now must carry the *simulated* moment in the column default, which is the
+# whole reason PostgreSQL is faked rather than only PHP.
+rct="$("$ENGINE" exec "$c_pg" psql -U "$PGUSER_" -d "$PGDATABASE_" -At -c \
+	"CREATE TEMP TABLE _ck(id serial, rct timestamp NOT NULL DEFAULT date_trunc('second', LOCALTIMESTAMP)); \
+	 INSERT INTO _ck DEFAULT VALUES; SELECT rct FROM _ck;" 2>/dev/null | tail -1)"
+printf '\033[1m row_created_timestamp default\033[0m\n'
+check "column default is simulated" "$(ft_epoch "${STEPS[$(( ${#STEPS[@]} - 1 ))]}")" \
+	"$(python3 -c 'import sys,datetime;print(int(datetime.datetime.strptime(sys.argv[1],"%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp()))' "$rct" 2>/dev/null || true)"
+
+printf '\n real host time: %s UTC\n' "$(date -u '+%Y-%m-%d %H:%M:%S')"
+if [ "$FAIL" -eq 0 ]; then
+	printf '\033[1;32m PASS\033[0m — %d checks, every surface agreed at every step\n' "$PASS"
+else
+	printf '\033[1;31m FAIL\033[0m — %d of %d checks disagreed\n' "$FAIL" "$((PASS+FAIL))"
+fi
+exit $(( FAIL > 0 ))

@@ -103,6 +103,12 @@ die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --- Small helpers ---------------------------------------------------------------------
 
+# Simulated time. Sourced here rather than from bin/parity because every function below
+# that starts a container needs its argument builders, and it needs this file's names,
+# images and log helpers in return. It is inert unless PARITY_FAKETIME=on.
+# shellcheck source=faketime.sh
+. "$STACK_DIR/faketime.sh"
+
 exists()  { "$ENGINE" container exists "$1" 2>/dev/null; }
 running() { [ "$("$ENGINE" inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]; }
 
@@ -137,13 +143,16 @@ start_postgres() {
 	log "postgres"
 	# tmpfs, no volume, for the reason docker-compose.yml gives: a stale volume is how a
 	# passing suite starts lying.
+	local ft=()
+	while IFS= read -r a; do [ -n "$a" ] && ft+=("$a"); done < <(ft_postgres_args)
 	"$ENGINE" run -d --name "$c_pg" \
 		--network "$PARITY_NETWORK" --network-alias postgres \
 		--tmpfs /var/lib/postgresql/data \
 		-e POSTGRES_USER="$PGUSER_" \
 		-e POSTGRES_PASSWORD="$PGPASSWORD_" \
 		-e POSTGRES_DB="$PGDATABASE_" \
-		"$POSTGRES_IMAGE" >/dev/null
+		${ft[@]+"${ft[@]}"} \
+		"$(ft_postgres_image)" >/dev/null
 	wait_for postgres 90 "$ENGINE" exec "$c_pg" pg_isready -U "$PGUSER_" -d "$PGDATABASE_"
 }
 
@@ -202,6 +211,7 @@ victual_env_args() {
 		-e "VICTUAL_INFLUXDB_ORG=$INFLUX_ORG" \
 		-e "VICTUAL_INFLUXDB_BUCKET=$INFLUX_BUCKET" \
 		-e VICTUAL_FILE_STORAGE=database
+	ft_victual_args
 }
 
 # The security flags the manifest sets, said the way `podman run` says them. Not decoration:
@@ -320,6 +330,8 @@ start_upstream() {
 	"$ENGINE" volume rm -f "$v_upstream_data" >/dev/null 2>&1 || true
 	"$ENGINE" volume create "$v_upstream_data" >/dev/null
 	log "upstream grocy"
+	local ft=()
+	while IFS= read -r a; do [ -n "$a" ] && ft+=("$a"); done < <(ft_upstream_args)
 	# SQLite, which is what upstream is: ADR-0001 put PostgreSQL *alongside* it and
 	# ADR-0008 retired it here, but upstream never had it. Comparing the fork on its engine
 	# against upstream on its own is the comparison worth making — anything else would be
@@ -331,7 +343,8 @@ start_upstream() {
 		-e PUID=1000 -e PGID=1000 -e TZ=UTC \
 		-e GROCY_MODE=production \
 		-e "GROCY_BASE_URL=http://127.0.0.1:${UPSTREAM_PORT}" \
-		"$UPSTREAM_IMAGE" >/dev/null
+		${ft[@]+"${ft[@]}"} \
+		"$(ft_upstream_image)" >/dev/null
 	# **`/`, not `/login`, and this is the ordering trap of the whole file.** Upstream grocy
 	# has no migrate command: `SystemController::Root` is what calls `MigrateDatabase()`, so
 	# the schema is created by the first request to `/` and by nothing else. Waiting on

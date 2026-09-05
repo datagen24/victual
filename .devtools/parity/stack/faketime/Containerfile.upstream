@@ -1,0 +1,13 @@
+# Upstream grocy with libfaketime, for the year phase only.
+#
+# **This is the one place the suite stops running the published upstream image
+# byte-for-byte**, and it is stated here rather than discovered. What is added is a
+# library and nothing else: grocy's PHP is untouched, and libfaketime intercepts time
+# syscalls only. The comparison the suite makes is still fork-against-upstream-4.6.0.
+#
+# Alpine, so musl — which is why this cannot reuse the nixpkgs libfaketime the fork side
+# mounts. Upstream keeps its SQLite in-process, so faking the PHP process's clock is
+# also what fakes SQLite's CURRENT_TIMESTAMP; there is no second engine to fake.
+ARG UPSTREAM_IMAGE=docker.io/linuxserver/grocy:version-v4.6.0
+FROM ${UPSTREAM_IMAGE}
+RUN apk add --no-cache libfaketime

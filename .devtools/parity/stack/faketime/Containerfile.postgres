@@ -1,0 +1,35 @@
+# PostgreSQL with libfaketime, for the year phase only.
+#
+# The fork's own image is never rebuilt for the clock: a nixpkgs-built libfaketime
+# resolves its libc through RUNPATH to the very glibc store path the app image already
+# carries, so there it is a mount and an env var. That trick does not travel — postgres:16
+# is Debian and a /nix/store RUNPATH means nothing to it — hence this image. PostgreSQL is
+# infrastructure here rather than the artifact under test (ADR-0008 makes the engine a fork
+# implementation detail), and `LOCALTIMESTAMP` is why it has to be faked at all: it is the
+# column default behind row_created_timestamp on ~40 tables.
+#
+# **The preload is on the postgres binaries, not on the container**, and that is the whole
+# point of this file. Setting LD_PRELOAD as container environment hangs the official
+# entrypoint: it re-execs itself through `gosu postgres` and the second pass never reaches
+# bash's first traced command — a stall with empty logs and no children, which took a
+# `SHELLOPTS=xtrace` run to localise. Every individual piece works preloaded (bash, dash,
+# gosu, initdb, postgres --version); the combination does not. Shimming the two binaries
+# the entrypoint actually invokes keeps the preload out of env/bash/gosu entirely and
+# still faces every clock read PostgreSQL makes, which is the only thing being asked for.
+ARG POSTGRES_IMAGE=docker.io/library/postgres:16
+FROM ${POSTGRES_IMAGE}
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libfaketime \
+ && rm -rf /var/lib/apt/lists/*
+
+# /usr/local/bin precedes /usr/lib/postgresql/*/bin on the image's PATH, so these win the
+# lookup the entrypoint does. Resolved by glob rather than hard-coded to one architecture.
+RUN set -eu; \
+    so="$(ls /usr/lib/*/faketime/libfaketime.so.1 | head -1)"; \
+    real="$(ls -d /usr/lib/postgresql/*/bin | head -1)"; \
+    for b in postgres initdb; do \
+      printf '#!/bin/sh\nexport LD_PRELOAD=%s\nexec %s/%s "$@"\n' "$so" "$real" "$b" \
+        > "/usr/local/bin/$b"; \
+      chmod 0755 "/usr/local/bin/$b"; \
+    done; \
+    cat /usr/local/bin/postgres
