@@ -105,6 +105,8 @@ function eat({ ctx, day, ops }) {
 			? Math.min(have, pick(rng, [50, 100, 200]))
 			: Math.min(have, intBetween(rng, 1, 2));
 		if (want <= 0) continue;
+		// How many lots there were to choose between. One lot is no choice.
+		const lotsBefore = ledger.ordered(sym.product(product.key)).length;
 
 		const useBarcode = chance(rng, 0.12);
 		ops.push(call({
@@ -120,6 +122,7 @@ function eat({ ctx, day, ops }) {
 		}));
 		ledger.consume({ productId: sym.product(product.key), amount: want });
 		ctx.verifyAfter(ops, product, day, 'consume');
+		ctx.verifyLotsAfter(ops, product, day, 'consume', lotsBefore);
 	}
 }
 
@@ -149,8 +152,10 @@ function openSomething({ ctx, day, ops }) {
 		ledger: { kind: 'open', product: product.key, amount },
 		label: `d${day}: open ${product.name}`
 	}));
+	const lotsBeforeOpen = ledger.ordered(sym.product(product.key)).length;
 	ledger.open({ productId: sym.product(product.key), amount });
 	ctx.verifyAfter(ops, product, day, 'open');
+	ctx.verifyLotsAfter(ops, product, day, 'open', lotsBeforeOpen);
 }
 
 // Into the freezer. Exercises default_best_before_days_after_freezing, which recalculates
@@ -183,11 +188,13 @@ function freeze({ ctx, day, ops }) {
 		ledger: { kind: 'transfer', product: product.key, amount, from: product.loc, to: 'freezer' },
 		label: `d${day}: freeze ${product.name} ${amount}`
 	}));
+	const lotsBeforeTransfer = ledger.ordered(sym.product(product.key)).length;
 	ledger.transfer({
 		productId: sym.product(product.key), amount,
 		fromLocationId: sym.location(product.loc), toLocationId: sym.location('freezer')
 	});
 	ctx.verifyAfter(ops, product, day, 'transfer');
+	ctx.verifyLotsAfter(ops, product, day, 'transfer', lotsBeforeTransfer);
 }
 
 // Throwing away. Drawn from entries the ledger says are actually past their best-before on
@@ -216,8 +223,10 @@ function spoil({ ctx, day, ops }) {
 		ledger: { kind: 'spoil', product: product.key, amount },
 		label: `d${day}: spoiled ${product.name} ${amount}`
 	}));
+	const lotsBeforeSpoil = ledger.ordered(id).length;
 	ledger.consume({ productId: id, amount, spoiled: true });
 	ctx.verifyAfter(ops, product, day, 'spoil');
+	ctx.verifyLotsAfter(ops, product, day, 'spoil', lotsBeforeSpoil);
 }
 
 module.exports = { shop, eat, openSomething, freeze, spoil, priceFor };

@@ -94,4 +94,25 @@ function verifyStock({ productKey, amount, opened, label, window }) {
 const OK_ARRAY = { status: 200, kind: 'array' };
 const OK_OBJECT = { status: 200, kind: 'object' };
 
-module.exports = { call, arrange, auth, mark, CREATED, bookingRows, verifyStock, OK_ARRAY, OK_OBJECT };
+// Reads a product's remaining lots and asserts they are exactly the ones the ledger holds.
+//
+// The fields are chosen for what a wrong lot changes: `amount` and `location_id` a wrong
+// *split* would change, and `best_before_date`, `purchased_date` and `price` are what a
+// wrong *selection* leaves behind while every total stays correct.
+const LOT_FIELDS = ['amount', 'best_before_date', 'purchased_date', 'price', 'open', 'location_id'];
+
+function verifyLots({ productKey, entries, label, window }) {
+	return call({
+		method: 'GET',
+		path: `/stock/products/{product:${productKey}}/entries`,
+		expect: {
+			status: 200,
+			kind: 'array',
+			rowsEqual: { fields: LOT_FIELDS, rows: entries.map((e) => LOT_FIELDS.map((f) => e[f])) }
+		},
+		window,
+		label
+	});
+}
+
+module.exports = { call, arrange, auth, mark, CREATED, bookingRows, verifyStock, verifyLots, LOT_FIELDS, OK_ARRAY, OK_OBJECT };

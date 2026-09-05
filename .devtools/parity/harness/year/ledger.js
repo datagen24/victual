@@ -110,7 +110,14 @@ class Ledger {
 	purchase({ productId, amount, bbd, purchasedDate, locationId, price, type = 'purchase' }) {
 		const entry = {
 			key: this.nextEntryKey++,
-			productId, amount, bbd, purchasedDate, locationId, price,
+			productId, amount, bbd, purchasedDate, locationId,
+			// **An entry created without a price holds 0, not null.** The application stores
+			// 0 on the stock row, and the price views use `COALESCE(price, 0) > 0`, so the
+			// two are indistinguishable there — which is why the model got away with null
+			// until the lot assertion compared the entries themselves and reported
+			// `price 0 against null` on a self-produced lot. The *booking* keeps whatever it
+			// was given; this is the entry.
+			price: price === null || price === undefined ? 0 : price,
 			open: 0
 		};
 		this.entries.push(entry);
@@ -219,6 +226,52 @@ class Ledger {
 		this.entries = this.entries.filter((e) => e.amount > 0);
 		this.book('inventory-correction', productId, delta);
 		return delta;
+	}
+
+	// Whether two of this product's lots are indistinguishable to `stock_next_use`.
+	//
+	// **A transfer routinely creates such a pair.** It splits one lot in two that share a
+	// best-before date, a purchased date and a price, differing only by location — and
+	// location only enters the ordering through
+	// `CASE WHEN COALESCE(default_consume_location_id, -1) = location_id THEN 0 ELSE 1 END`,
+	// which is 1 for both when the product has no default consume location. The remaining
+	// terms are then equal, `ROW_NUMBER()` picks arbitrarily, and which lot the next consume
+	// draws from is genuinely undefined.
+	//
+	// So the lot assertion is not emitted for such a product: the suite asserts what the
+	// application determines, and demanding an answer where it defines none would report a
+	// conforming choice as a defect. It was a year run reaching day 169 that established
+	// this — butter, transferred fridge to freezer, then consumed from the half the model
+	// had not picked.
+	hasOrderingTie(productId) {
+		const meta = this.products.get(productId) || { defaultConsumeLocationId: null };
+		const def = meta.defaultConsumeLocationId === null ? -1 : meta.defaultConsumeLocationId;
+		const seen = new Set();
+		for (const e of this.entries.filter((x) => x.productId === productId && x.amount > 0)) {
+			const rank = [e.locationId === def ? 0 : 1, e.open ? 1 : 0, e.bbd, e.purchasedDate].join('|');
+			if (seen.has(rank)) return true;
+			seen.add(rank);
+		}
+		return false;
+	}
+
+	// The lots the model currently holds for a product, as comparable tuples.
+	//
+	// **This is what distinguishes a consume that drew from the right lot from one that drew
+	// the right *amount* from the wrong lot.** Every total is identical either way; what
+	// differs is which best-before dates and which prices are left behind. Since the model
+	// mirrors `stock_next_use`'s ordering exactly, it can say which lots should remain.
+	entriesOf(productId) {
+		return this.entries
+			.filter((e) => e.productId === productId && e.amount > 0)
+			.map((e) => ({
+				amount: e.amount,
+				best_before_date: e.bbd,
+				purchased_date: e.purchasedDate,
+				price: e.price === undefined ? null : e.price,
+				open: e.open ? 1 : 0,
+				location_id: e.locationId
+			}));
 	}
 
 	// Every (product, location) the model currently holds stock at.

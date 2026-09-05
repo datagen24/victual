@@ -20,7 +20,7 @@ const { worldFor, PROFILES } = require('./world');
 const { makeCalendar } = require('./calendar');
 const { Ledger } = require('./ledger');
 const { streamFor } = require('./rng');
-const { call, arrange, auth, mark, CREATED, verifyStock } = require('./ops');
+const { call, arrange, auth, mark, CREATED, verifyStock, verifyLots } = require('./ops');
 const checkpoints = require('./checkpoints');
 
 const groceries = require('./narrative/groceries');
@@ -323,6 +323,41 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 	// evidence is an aggregate at the next monthly checkpoint, which names a product and not
 	// the operation. With it, at most `verifyEvery` ordinary operations on a product can pass
 	// before something names the day and the step.
+	// **Which lots remain, asserted where the choice of lot was a real one.**
+	//
+	// A consume drawing the right amount from the wrong lot leaves every total correct and
+	// every existing check green; what differs is the best-before dates and prices left
+	// behind. So after an operation that had more than one lot to choose from — and after
+	// any operation that splits or moves one — the remaining lots are compared against the
+	// model, which mirrors `stock_next_use`'s ordering exactly.
+	//
+	// When a product holds a single lot there was no selection to get wrong, so the read is
+	// not worth its request; those are sampled instead.
+	const ALWAYS_LOTS = new Set(['open', 'transfer', 'inventory', 'edit']);
+	let lotCounter = 0;
+	ctx.verifyLotsAfter = (ops, product, day, kind, lotsBefore) => {
+		const chose = lotsBefore >= 2;
+		lotCounter += 1;
+		if (!chose && !ALWAYS_LOTS.has(kind) && lotCounter % profile.verifyEvery !== 0) return;
+		const id = sym.product(product.key);
+		// Where two lots are indistinguishable to stock_next_use, the next consume's choice
+		// between them is undefined and the suite has nothing to assert. See
+		// ledger.hasOrderingTie().
+		if (ledger.hasOrderingTie(id)) return;
+		const entries = ledger.entriesOf(id).map((e) => ({
+			...e,
+			// The model names locations by symbol; the assertion is substituted at replay.
+			location_id: `{${e.location_id}}`
+		}));
+		ops.push(verifyLots({
+			productKey: product.key,
+			entries,
+			window: cal.dayWindow(day),
+			label: `d${day}: after ${kind}, ${product.name || product.key} should hold ${entries.length} lot(s)` +
+				(chose ? ` (chosen from ${lotsBefore})` : '')
+		}));
+	};
+
 	const ALWAYS_VERIFY = new Set(['open', 'transfer', 'inventory', 'undo', 'edit', 'spoil', 'self-production', 'tare']);
 	let verifyCounter = 0;
 	ctx.verifyAfter = (ops, product, day, kind) => {

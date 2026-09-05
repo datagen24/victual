@@ -165,6 +165,49 @@ function checkExpect(op, record, where) {
 		}
 	}
 
+	// **A collection compared as a whole, not row by row.**
+	//
+	// `rowsMatch` asks whether particular rows are there; this asks whether the set is
+	// exactly right — which is the only way to catch a consume that took the correct amount
+	// from the wrong lot. The totals are identical either way; the remaining best-before
+	// dates and prices are not. Compared as a sorted multiset because stock entries have no
+	// ordering the API promises, and because two genuinely identical lots (the FIFO tie
+	// probe builds one such pair on purpose) must compare equal in either order.
+	if (e.rowsEqual) {
+		// **"No price" has two representations and they are treated as one.**
+		//
+		// A stock entry created without a price comes back as `null` in some situations and
+		// `0` in others: a self-produced lot read straight after its booking answered `null`,
+		// and an otherwise identical one answered `0`. Consuming part of it does not change
+		// which — that was tested and it stays `null` — so the rule behind it is not
+		// established here, and this comment does not pretend otherwise.
+		//
+		// Collapsing them is safe for what this assertion is *for*. The database's own price
+		// views already treat the two identically (`COALESCE(price, 0) > 0`), and a consume
+		// that drew from the wrong lot leaves a different *non-zero* price behind, which is
+		// still caught. What is given up is the ability to tell `null` from `0`, which no
+		// behaviour in the application appears to distinguish.
+		const norm = (v) => {
+			if (v === null || v === undefined) return 0;
+			const n = Number(v);
+			return Number.isFinite(n) && String(v).trim() !== '' ? Number(n.toFixed(6)) : String(v);
+		};
+		const tupleOf = (row) => JSON.stringify(e.rowsEqual.fields.map((f) => norm(row[f])));
+		const got = (Array.isArray(body) ? body : []).map(tupleOf).sort();
+		const want = e.rowsEqual.rows.map((r) => JSON.stringify(r.map(norm))).sort();
+		if (got.length !== want.length || got.some((t, i) => t !== want[i])) {
+			throw new Incomplete(
+				`${where}: the lots left behind are not the ones the plan expects ` +
+				`(${got.length} rows against ${want.length})`,
+				{
+					op: op.label,
+					fields: e.rowsEqual.fields,
+					got: got.slice(0, 6),
+					expected: want.slice(0, 6)
+				});
+		}
+	}
+
 	// Rows that must be present in a collection, matched by a field and checked on another.
 	// This is how a monthly checkpoint asserts a whole position rather than a status code.
 	for (const spec of e.rowsMatch || []) {
