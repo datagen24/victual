@@ -8,7 +8,7 @@
 // generation (ledger.selfCheck), because a model that drifts from its own operations would
 // produce expectations wrong in the same direction as the plan and agree with itself.
 
-const { call, bookingRows } = require('../ops');
+const { call, bookingRows, verifyStock } = require('../ops');
 const { intBetween, pick, sample, chance, weighted } = require('../rng');
 
 // Price with a seasonal shape and a yearly drift, computed rather than drawn, so that
@@ -69,7 +69,7 @@ function shop({ ctx, day, ops }) {
 				location_id: `{location:${product.loc}}`,
 				shopping_location_id: `{shoppingLocation:${shoppingLocation.key}}`
 			},
-			expect: bookingRows({ transactionType: 'purchase' }),
+			expect: bookingRows({ transactionType: 'purchase', rowsSum: amount }),
 			window: cal.dayWindow(day),
 			bind: {
 				[`booking:${product.key}:${day}`]: '[0].id',
@@ -87,6 +87,7 @@ function shop({ ctx, day, ops }) {
 		// The index of the booking just made, carried on the operation so that an undo later
 		// in the year can name *this* booking rather than one that merely resembles it.
 		ops[ops.length - 1].ledger.seq = ledger.bookings.length - 1;
+		ctx.verifyAfter(ops, product, day, 'purchase');
 	}
 }
 
@@ -112,12 +113,13 @@ function eat({ ctx, day, ops }) {
 				? `/stock/products/by-barcode/${ctx.barcodeOf(product.key)}/consume`
 				: `/stock/products/{product:${product.key}}/consume`,
 			body: { amount: want },
-			expect: bookingRows({ transactionType: 'consume' }),
+			expect: bookingRows({ transactionType: 'consume', rowsSum: -want }),
 			window: cal.dayWindow(day),
 			ledger: { kind: 'consume', product: product.key, amount: want },
 			label: `d${day}: consume ${product.name} ${want}`
 		}));
 		ledger.consume({ productId: sym.product(product.key), amount: want });
+		ctx.verifyAfter(ops, product, day, 'consume');
 	}
 }
 
@@ -140,12 +142,15 @@ function openSomething({ ctx, day, ops }) {
 		method: 'POST',
 		path: `/stock/products/{product:${product.key}}/open`,
 		body: { amount },
-		expect: bookingRows({ transactionType: 'product-opened' }),
+		// Opening moves quantity into the opened state and changes no total, so the
+		// interesting assertion is the pair: stock_amount unchanged, stock_amount_opened up.
+		expect: bookingRows({ transactionType: 'product-opened', rowsSum: amount }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'open', product: product.key, amount },
 		label: `d${day}: open ${product.name}`
 	}));
 	ledger.open({ productId: sym.product(product.key), amount });
+	ctx.verifyAfter(ops, product, day, 'open');
 }
 
 // Into the freezer. Exercises default_best_before_days_after_freezing, which recalculates
@@ -171,7 +176,9 @@ function freeze({ ctx, day, ops }) {
 			location_id_from: `{location:${product.loc}}`,
 			location_id_to: '{location:freezer}'
 		},
-		expect: bookingRows({ transactionType: 'transfer_from', length: 2 }),
+		// A transfer books a from/to pair that nets to zero: the product's total is unchanged
+		// and only its location moved.
+		expect: bookingRows({ transactionType: 'transfer_from', length: 2, rowsSum: 0 }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'transfer', product: product.key, amount, from: product.loc, to: 'freezer' },
 		label: `d${day}: freeze ${product.name} ${amount}`
@@ -180,6 +187,7 @@ function freeze({ ctx, day, ops }) {
 		productId: sym.product(product.key), amount,
 		fromLocationId: sym.location(product.loc), toLocationId: sym.location('freezer')
 	});
+	ctx.verifyAfter(ops, product, day, 'transfer');
 }
 
 // Throwing away. Drawn from entries the ledger says are actually past their best-before on
@@ -203,12 +211,13 @@ function spoil({ ctx, day, ops }) {
 		method: 'POST',
 		path: `/stock/products/{product:${product.key}}/consume`,
 		body: { amount, spoiled: true },
-		expect: bookingRows({ transactionType: 'consume' }),
+		expect: bookingRows({ transactionType: 'consume', rowsSum: -amount }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'spoil', product: product.key, amount },
 		label: `d${day}: spoiled ${product.name} ${amount}`
 	}));
 	ledger.consume({ productId: id, amount, spoiled: true });
+	ctx.verifyAfter(ops, product, day, 'spoil');
 }
 
 module.exports = { shop, eat, openSomething, freeze, spoil, priceFor };

@@ -54,17 +54,44 @@ function mark({ note, day }) {
 // envelope terminates as INCOMPLETE on its first call.
 const CREATED = { status: 200, shape: ['created_object_id'] };
 
-function bookingRows({ transactionType, length = 1, extra = {} }) {
-	return {
+// `rowsSum` is the signed total the booking is *intended* to move, and it is the cheapest
+// per-step assertion there is: booking rows carry a signed `amount` (a consume answers -1),
+// so the response alone says whether the operation moved what the plan meant it to. Without
+// it a wrong amount in March is only caught by an aggregate in December, which reports
+// "milk disagrees" and names none of the 1,040 consumes that could have done it.
+function bookingRows({ transactionType, length = 1, rowsSum, extra = {} }) {
+	const expect = {
 		status: 200,
 		kind: 'array',
 		minLength: length,
 		rowShape: ['id', 'product_id', 'amount', 'stock_id', 'transaction_id', 'transaction_type'],
 		rowEquals: { transaction_type: transactionType, ...extra }
 	};
+	if (rowsSum !== undefined) expect.rowsSum = rowsSum;
+	return expect;
+}
+
+// Read one product's stock and assert it is what the shadow ledger says it should be after
+// the operation that just ran.
+//
+// This is the other half of "what did we intend": `rowsSum` says the booking moved the right
+// amount, and this says the resulting *state* is the right one. It costs a request, so it is
+// emitted after every operation whose effect is not a plain add or subtract, and at a
+// sampled cadence otherwise (see plan.js) — enough to bound how far a divergence can travel
+// before something names the product, the day and the operation that caused it.
+function verifyStock({ productKey, amount, opened, label, window }) {
+	const equals = { stock_amount: amount };
+	if (opened !== undefined) equals.stock_amount_opened = opened;
+	return call({
+		method: 'GET',
+		path: `/stock/products/{product:${productKey}}`,
+		expect: { status: 200, kind: 'object', equals },
+		window,
+		label
+	});
 }
 
 const OK_ARRAY = { status: 200, kind: 'array' };
 const OK_OBJECT = { status: 200, kind: 'object' };
 
-module.exports = { call, arrange, auth, mark, CREATED, bookingRows, OK_ARRAY, OK_OBJECT };
+module.exports = { call, arrange, auth, mark, CREATED, bookingRows, verifyStock, OK_ARRAY, OK_OBJECT };

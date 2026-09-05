@@ -180,9 +180,14 @@ const SETTINGS = [
 // Profiles scale the world down rather than describing a different one, so a smoke run
 // exercises the same shapes as a year.
 const PROFILES = {
-	smoke: { label: 'smoke', days: 31, products: 8, recipes: 3, chores: 4, batteries: 2, cadence: 1 },
-	year: { label: 'year', days: 365, products: 24, recipes: 8, chores: 8, batteries: 4, cadence: 1 },
-	dense: { label: 'dense', days: 365, products: 24, recipes: 8, chores: 8, batteries: 4, cadence: 2 }
+	// `verifyEvery` is how often an ordinary purchase or consume is followed by a read that
+	// asserts the resulting stock. Operations with a less obvious effect are always followed
+	// by one regardless (see plan.js). Smoke checks every one because it is short enough to
+	// afford it; a year samples, because the year's own request volume is what its runs are
+	// bounded by.
+	smoke: { label: 'smoke', days: 31, products: 8, recipes: 3, chores: 4, batteries: 2, cadence: 1, verifyEvery: 1 },
+	year: { label: 'year', days: 365, products: 24, recipes: 8, chores: 8, batteries: 4, cadence: 1, verifyEvery: 20 },
+	dense: { label: 'dense', days: 365, products: 24, recipes: 8, chores: 8, batteries: 4, cadence: 2, verifyEvery: 20 }
 };
 
 // The world a profile actually gets. Products are taken in declaration order so that a

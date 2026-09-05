@@ -15,7 +15,7 @@
 // every emitter a second protocol for the sake of one branch. What the ledger stores is
 // still the net contents; only the wire values are gross.
 
-const { call, bookingRows } = require('../ops');
+const { call, bookingRows, verifyStock } = require('../ops');
 const { intBetween, chance } = require('../rng');
 
 function tareProducts(world) {
@@ -43,7 +43,8 @@ function refill({ ctx, day, ops }) {
 				transaction_type: 'purchase',
 				location_id: `{location:${product.loc}}`
 			},
-			expect: bookingRows({ transactionType: 'purchase' }),
+			// The wire value is gross; what the booking moves is the net added.
+			expect: bookingRows({ transactionType: 'purchase', rowsSum: added }),
 			window: cal.dayWindow(day),
 			ledger: { kind: 'purchase', product: product.key, amount: added, price: 3.49, tareGross: gross },
 			label: `d${day}: refill ${product.name} to ${gross}g gross (+${added} net)`
@@ -52,6 +53,7 @@ function refill({ ctx, day, ops }) {
 			productId: id, amount: added, bbd, purchasedDate,
 			locationId: sym.location(product.loc), price: 3.49
 		});
+		ctx.verifyAfter(ops, product, day, 'tare');
 	}
 }
 
@@ -69,12 +71,13 @@ function use({ ctx, day, ops }) {
 		ops.push(call({
 			method: 'POST', path: `/stock/products/{product:${product.key}}/consume`,
 			body: { amount: gross },
-			expect: bookingRows({ transactionType: 'consume' }),
+			expect: bookingRows({ transactionType: 'consume', rowsSum: -used }),
 			window: cal.dayWindow(day),
 			ledger: { kind: 'consume', product: product.key, amount: used, tareGross: gross },
 			label: `d${day}: ${product.name} down to ${gross}g gross (-${used} net)`
 		}));
 		ledger.consume({ productId: id, amount: used });
+		ctx.verifyAfter(ops, product, day, 'tare');
 	}
 }
 

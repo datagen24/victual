@@ -4,7 +4,7 @@
 // cupboard, correcting a mistake, undoing a booking, and the two deliberately awkward cases
 // that are kept to the very end.
 
-const { call, bookingRows } = require('../ops');
+const { call, bookingRows, verifyStock } = require('../ops');
 const { intBetween, pick, sample, chance } = require('../rng');
 const { priceFor } = require('./groceries');
 
@@ -42,7 +42,9 @@ function stocktake({ ctx, day, ops }) {
 				price: up ? price : undefined,
 				location_id: `{location:${product.loc}}`
 			},
-			expect: bookingRows({ transactionType: 'inventory-correction' }),
+			// An inventory correction moves the *delta*, not the new total — the endpoint takes
+			// an absolute amount and books the difference.
+			expect: bookingRows({ transactionType: 'inventory-correction', rowsSum: newAmount - current }),
 			window: cal.dayWindow(day),
 			ledger: { kind: 'inventory', product: product.key, newAmount },
 			label: `q: count ${product.name} to ${newAmount}`
@@ -52,6 +54,7 @@ function stocktake({ ctx, day, ops }) {
 			productId: id, newAmount, bbd, purchasedDate,
 			locationId: sym.location(product.loc), price: up ? price : null
 		});
+		ctx.verifyAfter(ops, product, day, 'inventory');
 	}
 }
 
@@ -76,7 +79,7 @@ function selfProduce({ ctx, day, ops }) {
 			transaction_type: 'self-production',
 			location_id: `{location:${product.loc}}`
 		},
-		expect: bookingRows({ transactionType: 'self-production' }),
+		expect: bookingRows({ transactionType: 'self-production', rowsSum: amount }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'self-production', product: product.key, amount },
 		label: `d${day}: bake ${product.name}`
@@ -85,6 +88,7 @@ function selfProduce({ ctx, day, ops }) {
 		productId: id, amount, bbd, purchasedDate,
 		locationId: sym.location(product.loc), price: null, type: 'self-production'
 	});
+	ctx.verifyAfter(ops, product, day, 'self-production');
 }
 
 // Undoing. Always aimed at a booking bound earlier by symbol, so it cannot be aimed at a row
@@ -256,6 +260,7 @@ function editEntry({ ctx, day, ops }) {
 	ledger.book('stock-edit-old', id, entry.amount);
 	ledger.book('stock-edit-new', id, newAmount);
 	entry.amount = newAmount;
+	ctx.verifyAfter(ops, product, day, 'edit');
 }
 
 module.exports.editEntry = editEntry;

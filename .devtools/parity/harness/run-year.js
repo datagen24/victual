@@ -124,6 +124,14 @@ async function runAgainstInstance(args, plan) {
 		}
 	}
 
+	if (result.clockArtifacts.length > 0) {
+		console.log('');
+		console.log(`  \x1b[33m${result.clockArtifacts.length} timestamps were one simulated day behind\x1b[0m — ` +
+			'the php-fpm cache artifact described in year/replay.js');
+		console.log('    (found and counted, not failed: a server-stamped field, wrong by exactly one step)');
+		for (const w of result.clockArtifacts.slice(0, 4)) console.log(`      ${w.op}: ${w.problems.join('; ')}`);
+	}
+
 	if (result.windowProblems.length > 0) {
 		console.log('');
 		console.log(`\x1b[31m  ${result.windowProblems.length} operations wrote a timestamp outside their simulated window\x1b[0m`);

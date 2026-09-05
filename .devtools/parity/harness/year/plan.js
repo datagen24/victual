@@ -20,7 +20,7 @@ const { worldFor, PROFILES } = require('./world');
 const { makeCalendar } = require('./calendar');
 const { Ledger } = require('./ledger');
 const { streamFor } = require('./rng');
-const { call, arrange, auth, mark, CREATED } = require('./ops');
+const { call, arrange, auth, mark, CREATED, verifyStock } = require('./ops');
 const checkpoints = require('./checkpoints');
 
 const groceries = require('./narrative/groceries');
@@ -306,7 +306,37 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		batteryState: household.initBatterySchedule(world),
 		openTasks: [],
 		barcodeOf: (productKey) => (world.barcodes.find((b) => b.product === productKey) || {}).barcode,
-		rng: null
+		rng: null,
+		verifyAfter: () => {}
+	};
+
+	// **What the plan intended, checked against what the database holds, per operation.**
+	//
+	// `rowsSum` already says the booking moved the right amount; this says the resulting
+	// state is the right one. It costs a request, so it is emitted after every operation
+	// whose effect is not a plain add or subtract — opening splits an entry, a transfer moves
+	// between locations, an inventory correction books a delta from an absolute, an undo
+	// reverses a booking, an edit writes a pair, a tare product speaks in gross readings —
+	// and at a sampled cadence for ordinary purchases and consumes.
+	//
+	// The cadence is what bounds how far a divergence can travel: without it the first
+	// evidence is an aggregate at the next monthly checkpoint, which names a product and not
+	// the operation. With it, at most `verifyEvery` ordinary operations on a product can pass
+	// before something names the day and the step.
+	const ALWAYS_VERIFY = new Set(['open', 'transfer', 'inventory', 'undo', 'edit', 'spoil', 'self-production', 'tare']);
+	let verifyCounter = 0;
+	ctx.verifyAfter = (ops, product, day, kind) => {
+		verifyCounter += 1;
+		if (!ALWAYS_VERIFY.has(kind) && verifyCounter % profile.verifyEvery !== 0) return;
+		const id = sym.product(product.key);
+		const equalsOpened = kind === 'open' ? ledger.openAmountOf(id) : undefined;
+		ops.push(verifyStock({
+			productKey: product.key,
+			amount: ledger.amountOf(id),
+			opened: equalsOpened,
+			window: cal.dayWindow(day),
+			label: `d${day}: after ${kind}, ${product.name || product.key} should hold ${ledger.amountOf(id)}`
+		}));
 	};
 
 	for (const p of world.products) {
