@@ -165,6 +165,43 @@ function checkExpect(op, record, where) {
 		}
 	}
 
+	// Rows that must be present in a collection, matched by a field and checked on another.
+	// This is how a monthly checkpoint asserts a whole position rather than a status code.
+	for (const spec of e.rowsMatch || []) {
+		const rows = Array.isArray(body) ? body : [];
+		const found = rows.filter((r) => Object.entries(spec.where)
+			.every(([k, v]) => String(r[k]) === String(v)));
+		if (found.length === 0) {
+			throw new Incomplete(
+				`${where}: no row where ${JSON.stringify(spec.where)}, expected ${JSON.stringify(spec.equals)}`,
+				{ op: op.label, rows: rows.length });
+		}
+		for (const [k, want] of Object.entries(spec.equals)) {
+			const got = found[0][k];
+			const same = (Number.isFinite(Number(want)) && Number.isFinite(Number(got)))
+				? Math.abs(Number(got) - Number(want)) < 1e-6
+				: String(got) === String(want);
+			if (!same) {
+				throw new Incomplete(
+					`${where}: row ${JSON.stringify(spec.where)} has ${k}=${got}, the plan intended ${want}`,
+					{ op: op.label });
+			}
+		}
+	}
+
+	// Rows that must *not* be present. A product the plan has emptied should be gone, and
+	// "absent" is a claim a check that only looks at what is there can never make.
+	for (const spec of e.rowsAbsent || []) {
+		const rows = Array.isArray(body) ? body : [];
+		const found = rows.filter((r) => Object.entries(spec.where)
+			.every(([k, v]) => String(r[k]) === String(v)));
+		if (found.length > 0) {
+			throw new Incomplete(
+				`${where}: a row where ${JSON.stringify(spec.where)} is present, the plan expects none`,
+				{ op: op.label, row: found[0] });
+		}
+	}
+
 	for (const [key, want] of Object.entries(e.rowEquals || {})) {
 		const row = Array.isArray(body) ? body[0] : body;
 		if (!row || String(row[key]) !== String(want)) {
@@ -490,6 +527,9 @@ async function replay(plan, instance, options = {}) {
 
 		const path = substitute(op.path, symbols, where);
 		const body = op.body === undefined ? undefined : substituteDeep(op.body, symbols, where);
+		// `expect` is substituted too: a checkpoint assertion names rows by the ids the
+		// fixture allocated, so `{product:milk}` has to resolve there as well as in a path.
+		const expectation = substituteDeep(op.expect, symbols, where);
 
 		const run = () => instance.api(op.method, path, body, { label: op.label });
 		const startedAt = Date.now();
@@ -515,7 +555,7 @@ async function replay(plan, instance, options = {}) {
 		}
 
 
-		checkExpect(op, record, where);
+		checkExpect({ ...op, expect: expectation }, record, where);
 		checkWindow(op, record, where, windowProblems, clockArtifacts);
 
 		for (const [symbol, rawSpec] of Object.entries(op.bind || {})) {

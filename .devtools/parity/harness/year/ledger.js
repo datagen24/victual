@@ -221,6 +221,25 @@ class Ledger {
 		return delta;
 	}
 
+	// Every (product, location) the model currently holds stock at.
+	//
+	// **This is what a transfer changes, and nothing else the suite asserts would notice.**
+	// A transfer books a from/to pair summing to zero and leaves the product's total
+	// untouched, so `rowsSum: 0` and an unchanged total are equally true of a transfer that
+	// moved the right amount and one that moved nothing at all. Only the position says which.
+	locationAmounts() {
+		const out = new Map();
+		for (const e of this.entries) {
+			if (e.amount <= 0) continue;
+			const key = `${e.productId}@${e.locationId}`;
+			out.set(key, (out.get(key) || 0) + e.amount);
+		}
+		return [...out].map(([key, amount]) => {
+			const [productId, locationId] = key.split('@');
+			return { productId, locationId, amount };
+		});
+	}
+
 	// The expected value of the executable ledger identity, per product, from the bookings
 	// this model recorded. invariants.js compares this against the live instance.
 	expectedAmounts() {

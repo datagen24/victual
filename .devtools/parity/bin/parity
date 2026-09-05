@@ -238,9 +238,14 @@ case "${1:-all}" in
 				ft_assert_loaded "$startDate 09:00:00"
 
 				PARITY_PSQL_CMD="'$HERE/parity' psql" \
+				PARITY_INFLUX_TOKEN="$INFLUX_TOKEN" \
+				PARITY_INFLUX_ORG="$INFLUX_ORG" \
+				PARITY_INFLUX_BUCKET="$INFLUX_BUCKET" \
 				node "$HARNESS/run-year.js" \
 					--victual "$VICTUAL_URL" \
 					--clock-file "$FT_CLOCK_FILE" \
+					--influx "http://127.0.0.1:${INFLUX_PORT}" \
+					--mqtt "127.0.0.1:${MQTT_PORT}" \
 					--out "$REPORTS" \
 					"$@"
 				;;

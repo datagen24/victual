@@ -52,11 +52,59 @@ function light({ ctx, day, ops }) {
 	for (const spec of WHOLE.slice(0, 6)) ops.push(read(ctx, day, spec.path, spec.label, `w${ctx.cal.week(day)}`));
 }
 
+// **A monthly checkpoint asserts the whole position, not a status code.**
+//
+// Until it did, the scheduled reads were only evidence that the endpoints answered: the
+// invariants ran once, after the entire replay, so a divergence in February was first
+// described in December and only in aggregate. These two assertions state what the ledger
+// says the database should hold *at that month*, and they are what turns a checkpoint into
+// a checkpoint.
+//
+// The per-location one is the half that cannot be skipped. A transfer books a from/to pair
+// summing to zero and leaves the product's total untouched, so a zero booking sum and an
+// unchanged total describe a transfer that moved the right amount and one that moved nothing
+// equally well. Only the position distinguishes them.
+function assertPosition({ ctx, day, ops, tier }) {
+	const { ledger, sym, world } = ctx;
+
+	const held = [];
+	const empty = [];
+	for (const product of world.products) {
+		const amount = ledger.amountOf(sym.product(product.key));
+		const where = { product_id: `{product:${product.key}}` };
+		if (amount > 0) held.push({ where, equals: { amount } });
+		else empty.push({ where });
+	}
+	ops.push(call({
+		method: 'GET', path: '/stock',
+		expect: { status: 200, kind: 'array', rowsMatch: held, rowsAbsent: empty },
+		window: ctx.cal.dayWindow(day),
+		label: `[${tier}] every product holds what the ledger says (${held.length} held, ${empty.length} empty)`
+	}));
+
+	// stock_current_locations carries a constant `1` as its id, so it is read whole rather
+	// than paged — there is no key to page by.
+	const byLocation = ledger.locationAmounts().map(({ productId, locationId, amount }) => ({
+		where: {
+			product_id: `{${productId}}`,
+			location_id: `{${locationId}}`
+		},
+		equals: { amount }
+	}));
+	ops.push(call({
+		method: 'GET', path: '/objects/stock_current_locations',
+		expect: { status: 200, kind: 'array', rowsMatch: byLocation },
+		window: ctx.cal.dayWindow(day),
+		label: `[${tier}] every product sits where the ledger put it (${byLocation.length} positions)`
+	}));
+}
+
 // Monthly: everything bounded, plus a tail slice of each growing table. A tail slice rather
 // than the whole log because stock_log passes four thousand rows in a year and the question
 // at a checkpoint is "what has happened lately", not "replay the year".
 function medium({ ctx, day, ops }) {
 	const tier = `m${ctx.cal.month(day)}`;
+	assertPosition({ ctx, day, ops, tier });
 	for (const spec of WHOLE) ops.push(read(ctx, day, spec.path, spec.label, tier));
 	for (const spec of PAGED) {
 		ops.push(read(ctx, day, `${spec.path}?order=${spec.key}:desc&limit=25`, `${spec.label} (latest 25)`, tier));
@@ -92,4 +140,4 @@ function yearEnd({ ctx, day, ops, expectedRows }) {
 	}
 }
 
-module.exports = { light, medium, quarterly, yearEnd, PAGED, WHOLE, PAGE };
+module.exports = { light, medium, quarterly, yearEnd, assertPosition, PAGED, WHOLE, PAGE };

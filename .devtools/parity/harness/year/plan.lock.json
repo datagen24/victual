@@ -2,8 +2,8 @@
 	"generatorVersion": 1,
 	"plans": {
 		"g1/smoke/seed-20260905/anchor-2025-01-01": {
-			"hash": "a5c2541b1bc4e1678ab83d884aa8205959d083fc6050c66704e60199ea497b17",
-			"recorded": 516,
+			"hash": "e00a8971c8e4311d767f068905d5d70f7d5408c814bad9e893f72cac776b02ab",
+			"recorded": 520,
 			"arranged": 68,
 			"bookings": 141,
 			"byLedgerKind": {
@@ -17,8 +17,8 @@
 			}
 		},
 		"g1/year/seed-20260905/anchor-2025-01-01": {
-			"hash": "42398618ee4a92be7c37cab70cf6c328bf98719902404bc65233580eff3dc3ee",
-			"recorded": 4568,
+			"hash": "36b55c0adad84e2172744e834052d0c19e5ffecefd2dabef05dd5cc174977b85",
+			"recorded": 4592,
 			"arranged": 143,
 			"bookings": 1819,
 			"byLedgerKind": {
@@ -34,8 +34,8 @@
 			}
 		},
 		"g1/dense/seed-20260905/anchor-2025-01-01": {
-			"hash": "027e2b212b7774aa95e184518a24de95d5e8b8163a855972d21bcb757a3d788b",
-			"recorded": 6228,
+			"hash": "0c47c14f2092e04340d42eeb1aec8f59abe1c5041027dc5f73daa0bcd31d89a6",
+			"recorded": 6252,
 			"arranged": 143,
 			"bookings": 3400,
 			"byLedgerKind": {

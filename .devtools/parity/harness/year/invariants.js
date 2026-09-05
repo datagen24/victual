@@ -21,6 +21,8 @@
 // products from the price oracle altogether. Five ways to pass by finding nothing.
 
 const { CONTRIBUTION } = require('./ledger');
+const { queryPoints } = require('../lib/influx');
+const { collectRetained } = require('../lib/mqtt');
 
 function ok(results, name, passed, detail) {
 	results.push({ name, ok: !!passed, detail });
@@ -105,7 +107,127 @@ function expectedAveragePrices(bookings) {
 	return out;
 }
 
-async function check({ instance, plan, symbols, psql = null }) {
+// What plan 18 should have delivered, checked against the series and the broker rather than
+// against the outbox being empty.
+//
+// **An empty outbox is not delivery.** A build that never enqueued satisfies "nothing
+// pending" perfectly, which is why the counts below come from the plan and not from the
+// table. The rules are the publisher's own (services/Influx/BookingEventPublisher.php:790+):
+// a `price_paid` point exists for a booking that is a purchase, was not undone *at the
+// moment the event was captured*, and carried a price; `stock_value` carries one point per
+// affected product per event.
+//
+// That capture-time qualifier is what makes the undo case meaningful. A purchase undone in
+// March had already published its price_paid in February, and the undo publishes its own
+// event rather than retracting that one — so the historical point must still be there. An
+// implementation that deleted history on undo would satisfy every count that ignored it.
+async function checkDelivery({ plan, symbols, influx, mqtt, results }) {
+	const bookings = plan.ledger.bookingsDetail || [];
+	const start = `${plan.meta.startDate}T00:00:00Z`;
+	const stop = `${new Date(Date.parse(`${plan.meta.endDate}T00:00:00Z`) + 3 * 86400000).toISOString().slice(0, 10)}T00:00:00Z`;
+
+	// --- price_paid, counted and valued from the plan ---------------------------------------
+	const expectedPriced = bookings.filter((b) => b.type === 'purchase' && b.price !== null && b.price > 0);
+	let paid;
+	try {
+		paid = await queryPoints({ ...influx, measurement: 'price_paid', start, stop });
+	} catch (e) {
+		ok(results, 'influx holds a price_paid point for every priced purchase', false,
+			`could not query influx: ${String(e.message || e).slice(0, 120)}`);
+		return;
+	}
+
+	const countProblems = [];
+	if (paid.pointCount !== expectedPriced.length) {
+		countProblems.push(`${paid.pointCount} points, the plan booked ${expectedPriced.length} priced purchases`);
+	}
+	// Values, as a multiset of (product, price, amount). Matching by booking id would be
+	// tighter still, but the plan does not bind an id for every purchase; a multiset already
+	// fails on a wrong price, a wrong amount, a missing point and a duplicated one.
+	const key = (productKey, price, amount) => `${productKey}|${Number(price).toFixed(4)}|${Number(amount)}`;
+	const wanted = new Map();
+    for (const b of expectedPriced) {
+		const k = key(b.productKey, b.price, b.amount);
+		wanted.set(k, (wanted.get(k) || 0) + 1);
+	}
+	const keyOfId = new Map();
+	for (const [symbol, id] of Object.entries(symbols)) {
+		if (symbol.startsWith('product:')) keyOfId.set(String(id), symbol.slice('product:'.length));
+	}
+	for (const point of paid.points) {
+		const productKey = keyOfId.get(String(point.tags.product_id));
+		const k = key(productKey, point.fields.price, point.fields.amount);
+		if (!wanted.has(k)) { countProblems.push(`unexpected point ${k}`); continue; }
+		const left = wanted.get(k) - 1;
+		if (left === 0) wanted.delete(k); else wanted.set(k, left);
+	}
+	for (const [k, n] of [...wanted].slice(0, 4)) countProblems.push(`missing ${n} x ${k}`);
+
+	ok(results, 'influx holds a price_paid point for every priced purchase, with its values',
+		countProblems.length === 0,
+		countProblems.length === 0
+			? `${paid.pointCount} points match the plan exactly`
+			: countProblems.slice(0, 5).join('; '));
+
+	// --- both halves of each event were delivered ---------------------------------------------
+	let values;
+	try {
+		values = await queryPoints({ ...influx, measurement: 'stock_value', start, stop });
+	} catch (e) {
+		ok(results, 'every event delivered its stock_value points too', false, String(e.message || e).slice(0, 120));
+		return;
+	}
+	const valueEvents = new Set(values.points.map((p) => p.tags.event_id));
+	const orphaned = [...new Set(paid.points.map((p) => p.tags.event_id))].filter((id) => !valueEvents.has(id));
+	ok(results, 'every event delivered its stock_value points too', orphaned.length === 0,
+		orphaned.length === 0
+			? `${valueEvents.size} events, ${values.pointCount} stock_value points`
+			: `${orphaned.length} price_paid events have no stock_value point`);
+
+	// --- history survives an undo ---------------------------------------------------------------
+	const undonePurchases = bookings.filter((b) => b.undone && b.type === 'purchase' && b.price > 0);
+	if (undonePurchases.length > 0) {
+		const stillThere = undonePurchases.filter((b) =>
+			paid.points.some((p) => keyOfId.get(String(p.tags.product_id)) === b.productKey
+				&& Math.abs(Number(p.fields.price) - b.price) < 1e-6
+				&& Math.abs(Number(p.fields.amount) - b.amount) < 1e-6));
+		ok(results, 'an undone purchase keeps the event it already published',
+			stillThere.length === undonePurchases.length,
+			`${stillThere.length} of ${undonePurchases.length} retained`);
+	}
+
+	// --- the broker holds the current state ------------------------------------------------------
+	if (mqtt) {
+		try {
+			const [host, port] = mqtt.split(':');
+			const messages = await collectRetained(host, Number(port), '#');
+			const state = messages.filter((m) => m.topic.startsWith('victual/state/'));
+			const notRetained = state.filter((m) => !m.retained);
+			const stockTopic = state.find((m) => /\/state\/stock$/.test(m.topic));
+			const problems = [];
+			if (state.length === 0) problems.push('no state topics on the broker at all');
+			if (notRetained.length > 0) problems.push(`${notRetained.length} state topics are not retained`);
+			if (!stockTopic) problems.push('no victual/state/stock topic');
+			else {
+				// `state` is the number of products currently in stock; the ledger knows it.
+				const expectedInStock = Object.entries(plan.ledger.expectedAmounts).filter(([, n]) => n > 0).length;
+				let published = null;
+				try { published = JSON.parse(stockTopic.payload).state; } catch { /* reported below */ }
+				if (published === null) problems.push('victual/state/stock did not parse as JSON');
+				else if (Number(published) !== expectedInStock) {
+					problems.push(`the broker says ${published} products in stock, the ledger says ${expectedInStock}`);
+				}
+			}
+			ok(results, 'the broker holds the state the ledger ends at', problems.length === 0,
+				problems.length === 0 ? `${state.length} retained state topics, stock agrees` : problems.join('; '));
+		} catch (e) {
+			ok(results, 'the broker holds the state the ledger ends at', false,
+				`could not read the broker: ${String(e.message || e).slice(0, 120)}`);
+		}
+	}
+}
+
+async function check({ instance, plan, symbols, psql = null, influx = null, mqtt = null }) {
 	const results = [];
 	const bookings = plan.ledger.bookingsDetail || [];
 	const idOf = (productKey) => symbols[`product:${productKey}`];
@@ -296,7 +418,9 @@ async function check({ instance, plan, symbols, psql = null }) {
 	ok(results, 'price history covers every day the plan bought on', historyProblems.length === 0,
 		historyProblems.length === 0 ? `${sampled.length} products checked` : historyProblems.join('; '));
 
+	if (influx) await checkDelivery({ plan, symbols, influx, mqtt, results });
+
 	return results;
 }
 
-module.exports = { check, readAll, expectedAveragePrices };
+module.exports = { check, checkDelivery, readAll, expectedAveragePrices };

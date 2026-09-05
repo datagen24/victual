@@ -35,6 +35,13 @@ function parseArgs(argv) {
 		invariantsOnly: false,
 		victual: process.env.PARITY_VICTUAL_URL || 'http://127.0.0.1:8080',
 		clockFile: process.env.PARITY_CLOCK_FILE || null,
+		// The fork-only side. Absent means the delivery checks are skipped and say so,
+		// rather than passing by not running.
+		influx: process.env.PARITY_INFLUX_URL || null,
+		influxToken: process.env.PARITY_INFLUX_TOKEN || 'victual-parity-token',
+		influxOrg: process.env.PARITY_INFLUX_ORG || 'victual',
+		influxBucket: process.env.PARITY_INFLUX_BUCKET || 'victual',
+		mqtt: process.env.PARITY_MQTT || null,
 		unimplemented: []
 	};
 	for (let i = 2; i < argv.length; i++) {
@@ -49,6 +56,8 @@ function parseArgs(argv) {
 		else if (flag === '--invariants-only') args.invariantsOnly = true;
 		else if (flag === '--victual') args.victual = argv[++i];
 		else if (flag === '--clock-file') args.clockFile = argv[++i];
+		else if (flag === '--influx') args.influx = argv[++i];
+		else if (flag === '--mqtt') args.mqtt = argv[++i];
 		// Parsed and refused rather than ignored: a run that quietly did something other
 		// than what was asked is worse than one that stops.
 		else if (['--deep', '--against', '--update-baseline', '--no-reset', '--verbose-report'].includes(flag)) {
@@ -143,7 +152,16 @@ async function runAgainstInstance(args, plan) {
 
 	console.log('');
 	console.log('  invariants');
-	const results = await invariants.check({ instance: api, plan, symbols: result.symbols, psql: psqlRunner() });
+	const results = await invariants.check({
+		instance: api, plan, symbols: result.symbols, psql: psqlRunner(),
+		influx: args.influx
+			? { url: args.influx, token: args.influxToken, org: args.influxOrg, bucket: args.influxBucket }
+			: null,
+		mqtt: args.mqtt
+	});
+	if (!args.influx) {
+		console.log('    \x1b[33mskipped\x1b[0m  delivered-event checks (no --influx given)');
+	}
 	for (const r of results) {
 		console.log(`    ${r.ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'}  ${r.name}`);
 		if (r.detail) console.log(`          ${r.detail}`);
