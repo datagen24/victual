@@ -21,12 +21,27 @@ class BaseController
 {
 	/**
 	 * Wires up the view engine and the LessQL database connection from the DI container.
+	 *
+	 * @param bool $connectDatabase Whether the connection is opened here. Every controller
+	 *                              that serves a route wants it and leaves this alone.
+	 *                              ExceptionController passes false, because one of the
+	 *                              failures it exists to report is the database being
+	 *                              unreachable, and connecting in this constructor made the
+	 *                              handler for that failure raise it again - at bootstrap,
+	 *                              where the error middleware it is being handed to does not
+	 *                              exist yet. The result was an uncaught PDOException and a
+	 *                              lost worker instead of a 500 page; see
+	 *                              ExceptionController::RenderErrorPage().
 	 */
-	public function __construct(Container $container)
+	public function __construct(Container $container, bool $connectDatabase = true)
 	{
 		$this->AppContainer = $container;
 		$this->View = $container->get('view');
-		$this->DB = DatabaseService::GetInstance()->GetDbConnection();
+
+		if ($connectDatabase)
+		{
+			$this->DB = DatabaseService::GetInstance()->GetDbConnection();
+		}
 	}
 
 	/** @var Container The application DI container */
@@ -35,7 +50,7 @@ class BaseController
 	/** @var \Victual\Helpers\SlimBladeView The shared Blade view engine */
 	protected $View;
 
-	/** @var \LessQL\Database Fluent database connection (PostgreSQL; see ADR-0008) */
+	/** @var \LessQL\Database|null Fluent database connection (PostgreSQL; see ADR-0008); null only while a controller constructed without one has not obtained it */
 	protected $DB;
 
 	/**

@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors]
 #
-# Eleven kinds of check, for eleven reasons. Views are compared by what they return, because
+# Twelve kinds of check, for twelve reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -98,6 +98,16 @@
 # is a per-engine answer. Each empty case is paired with a populated control, so a guard that
 # answered null to everything fails here rather than passing.
 #
+# The twelfth is the only phase that wants the database to be *missing*, which is why it
+# could live nowhere else. ExceptionController renders the page that reports a failure, and
+# it used to need a working database to do it - so a request that failed because the
+# database was unreachable produced an uncaught PDOException in the handler for it, with
+# nothing above to catch it: a fatal, no status, no body, a lost worker. The phase points a
+# configuration at a port nothing listens on and asserts the handler still answers, then
+# runs the same script against the migrated database and asserts the real Blade pages came
+# back. The second run is the load-bearing one - without it a fallback used for everything
+# would pass just as well as a fallback used for nothing.
+#
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
 # difftest.php, trigdifftest.php and migratedifftest.php, which share their normalisation
@@ -119,6 +129,9 @@
 #   SUITE_PGSQL_MQTT_DB                  database for the mqtt tests    (default victual_mqtt)
 #   SUITE_PGSQL_IMPORT_DB                database for the import tests  (default victual_import)
 #   SUITE_PGSQL_CHORES_DB                database for the chore assignment tests (default victual_chores)
+#   SUITE_PGSQL_ERRORS_DB                database for the error path tests (default victual_errors)
+#   SUITE_ERRORS_DEAD_PORT               port nothing listens on, for the unreachable half
+#                                        of the error path tests (default 8392)
 #   SUITE_MQTT_STANDIN_PORT              port for the stand-in InfluxDB (default 8390)
 #   SUITE_MQTT_BROKER_PORT               port for the recording MQTT stand-in (default 8391)
 #   SUITE_SCRATCH                        where the throwaway databases go
@@ -158,6 +171,8 @@ FILES_DB="${SUITE_PGSQL_FILES_DB:-victual_files}"
 MQTT_DB="${SUITE_PGSQL_MQTT_DB:-victual_mqtt}"
 IMPORT_DB="${SUITE_PGSQL_IMPORT_DB:-victual_import}"
 CHORES_DB="${SUITE_PGSQL_CHORES_DB:-victual_chores}"
+ERRORS_DB="${SUITE_PGSQL_ERRORS_DB:-victual_errors}"
+ERRORS_DEAD_PORT="${SUITE_ERRORS_DEAD_PORT:-8392}"
 MQTT_STANDIN_PORT="${SUITE_MQTT_STANDIN_PORT:-8390}"
 MQTT_BROKER_PORT="${SUITE_MQTT_BROKER_PORT:-8391}"
 
@@ -928,6 +943,57 @@ run_import_tests() {
 	fi
 }
 
+# --- Error path tests -------------------------------------------------------------
+#
+# Two runs of one script. The first configures a PostgreSQL host that refuses the
+# connection immediately - localhost on a port nothing listens on, rather than an
+# unroutable address, so the failure is a refusal and not a wait for a timeout; the driver
+# raises the same 08006 either way and the handler cannot tell them apart. The second runs
+# against a migrated database, where the answer has to be the rendered page.
+#
+# No fixture and no seed on either side: what the handler renders is a template, the
+# sidebar userentities, and the localizations, all of which a migration alone provides.
+
+run_error_path_tests() {
+	local datapath="$SUITE_SCRATCH/errors-unreachable"
+
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+
+	# Written with the port interpolated because this one value is the point of the file;
+	# everything else is a literal, as in write_pgsql_config().
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', '127.0.0.1');
+		Setting('DB_PORT', $ERRORS_DEAD_PORT);
+		Setting('DB_NAME', 'victual_nothing_here');
+		Setting('DB_USER', 'victual');
+		Setting('DB_PASSWORD', 'victual');
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" php "$SUITE_DIR/error-path-tests.php" unreachable; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+
+	build_pgsql "$ERRORS_DB"
+
+	local pgdatapath="$SUITE_SCRATCH/errors-pgsql"
+	rm -rf "$pgdatapath"
+	write_pgsql_config "$pgdatapath"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$pgdatapath" DIFFTEST_DB_NAME="$ERRORS_DB" \
+		php "$SUITE_DIR/error-path-tests.php" reachable; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$pgdatapath"
+}
+
 # --- Chore assignment tests -------------------------------------------------------
 #
 # One engine at a time, like the rollback and schema phases: the question is what the
@@ -1009,8 +1075,9 @@ case "$WHICH" in
 	mqtt) run_mqtt_tests ;;
 	import) run_import_tests ;;
 	chores) run_chores_assignment_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores or all)" ;;
+	errors) run_error_path_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
