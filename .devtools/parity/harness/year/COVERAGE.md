@@ -24,6 +24,7 @@ substitute for a mutation of the application itself.
 | Price arithmetic over a year | 532 priced purchases | `products_average_price matches the ledger, to 4dp`, modelling the view's edited-entry rule | a purchase price raised by 0.50 | **Caught**: `tomatoes: view 1.6325, ledger 1.6230` |
 | A delivered event landed on the right day | 532 priced purchases | `price_paid` multiset keyed by (product, **day**, price, amount) | one point rewritten one simulated day later, every tag and value identical | **Caught**: `unexpected point rolls\|2024-12-04\|1.3700\|1; missing 1 x rolls\|2024-12-03\|1.3700\|1` |
 | An undone purchase removed *its own* lot | 2 undos | the lot assertion | *(no injection needed — a year run found it)* | **Caught**: the model had been undoing by FIFO consume, which agrees on every total and disagrees on which lot survives. 274 days of ledger, log, position and average-price invariants passed while the model held a lot the application had deleted. |
+| A conversion factor applied to a booking | sub-product substitution | `rowsSum` on the consume: ask the parent for 1 pack, expect 500 g removed from the child | the stored factor set to 400 while the plan still expected 500 | **Caught**: `the booking moved -400, the plan intended -500` |
 | Stock is in the right *place* | 53 transfers | `every product sits where the ledger put it` — per (product, location), monthly **and** at the end | one unit moved to another location | **Caught**: `fish@freezer: live 101, ledger 102; stock of 1 at 14@8 that the ledger does not place there` |
 
 The last row is why this table was worth building: before it, an injected location change was
@@ -82,6 +83,38 @@ delivery oracle had borrowed the view's rule and counted one point too few; the 
 surfaced it as an unexpected `butter|0.0000|5` point. **The two surfaces genuinely disagree
 about whether unknown and zero are the same thing**, which is exactly why the equivalence
 could not stay global.
+
+### The conversion fixture
+
+`narrative/conversions.js` closes what was the largest gap, and correcting *why* it was a gap
+mattered more than closing it. The list here used to say conversions could be exercised by
+"purchasing in the purchase unit". They cannot: `AddProduct`
+(`services/StockService.php:211`) applies no purchase-to-stock conversion at any point, so
+the `amount` on `POST /stock/products/{id}/add` is in the **stock unit** and always was.
+Sending 1 for a 500 g pack books one gram, and an assertion expecting 500 would have failed
+against correct behaviour.
+
+The factor is read in three places and only one changes what a booking removes:
+
+- **Product details**, as `qu_conversion_factor_purchase_to_stock` (`:1129`) — display only.
+- **The shopping list's print path** (`:1681-1687`) — not on a JSON endpoint.
+- **Sub-product substitution** (`:620-623`, `:658`, `:1504`) — the only path where a factor
+  moves stock.
+
+So the fixture builds the pair the household does not otherwise have: a parent stocked in
+packs holding nothing of its own, a child stocked in grams, and one product-specific
+pack-to-gram factor of 500. Asking the parent for one pack with
+`allow_subproduct_substitution` books 500 grams against the child, and `rowsSum` is what says
+so — a wrong factor changes that number and nothing else in the suite would notice, because
+every total, position and price stays consistent with whatever the factor claims.
+
+**One conversion row, two directions, both asserted.** `stock_current` aggregates a parent's
+children into the *parent's* unit and joins the conversion the other way round — `from_qu_id`
+= the child's stock unit, `to_qu_id` = the parent's (migration 0233:23-26). Nothing was
+written for that direction; `quantity_unit_conversions_resolved` derives the inverse of every
+row it finds. So the parent reports 2 packs for 1000 grams, and after the consumes it reports
+0.5 — a quantity that is not a whole number of packs, where an integer division would report
+zero.
 
 ### The price-representation fixture
 
@@ -156,34 +189,11 @@ These run. Nothing establishes they ran *correctly*.
 
 | Behaviour | Operation | Why nothing distinguishes it |
 |---|---|---|
-| **Quantity-unit conversions** | bread 1 piece = 18 slices, coffee/pasta 1 pack = 500 g | **Not exercised at all** — and not for the reason previously recorded here. See below. |
 | **Undo dependencies** | 2 undos per year | Deliberately avoided, and the precondition is now the right one: `UndoBooking` refuses when the purchased entry has later bookings against it (`services/StockService.php:2064`) and otherwise deletes that entry whole (`:2078`), so the generator only emits an undo when the model still holds that entry intact. The **refusal** is the interesting case and nothing asserts it — no operation in the year expects `Booking has subsequent dependent bookings, undo not possible`. |
 
 ## What would close them
 
 In the order the gaps are worth closing:
 
-1. **Exercise conversions — but not by "purchasing in the purchase unit", which the API
-   does not do.** An earlier version of this list said to purchase in the purchase unit and
-   expect `rowsSum` to be the converted amount. That was written from the fixture rather than
-   from the endpoint, and it is wrong: `AddProduct` (`services/StockService.php:211`) applies
-   no purchase-to-stock conversion at any point, so the `amount` on
-   `POST /stock/products/{id}/add` is in the **stock unit** and always was. Sending 1 for a
-   500 g pack would book 1 gram, and an assertion expecting 500 would fail against correct
-   behaviour.
-
-   The factor is read in three places, and only one of them moves stock:
-
-   - **Product details**, as `qu_conversion_factor_purchase_to_stock` (`:1129`). A direct
-     contract assertion, one request: `GET /stock/products/{id}` must report the factor the
-     fixture configured. Cheap, and it catches a conversion row that was written wrong.
-   - **The shopping list's print path** (`:1681-1687`), which converts a stock-unit amount
-     into the row's own unit. Not on a JSON endpoint; low value here.
-   - **Sub-product substitution** (`:623`, `:658`, `:1504`), which is the only place a
-     conversion factor changes what a booking removes. `POST /stock/products/{id}/consume`
-     accepts `allow_subproduct_substitution` (`controllers/Api/StockApiController.php:344`),
-     and consuming a parent product whose sub-products are stocked in a different unit books
-     `amount * factor` against the sub-product. That is the assertion worth building, and it
-     needs a parent/child pair in the fixture — which the world does not currently have.
-2. **Bring undo dependencies into scope** with their own isolated fixture and an explicitly
+1. **Bring undo dependencies into scope** with their own isolated fixture and an explicitly
    stated expected outcome, as the FIFO tie probe already does.
