@@ -323,6 +323,20 @@ victual_cli() {
 		"$VICTUAL_MIGRATE_IMAGE" "$php_bin" "$app_bin/$tool" "$@"
 }
 
+# Read-only SQL against the parity PostgreSQL, for the things the API cannot answer. Plan
+# 18's `outbox` is deliberately not an ExposedEntity, so "did every event drain" has no HTTP
+# surface at all; neither does "is api_keys.api_key a hash at rest" (plan 11).
+#
+# **Read-only is enforced, not intended.** `default_transaction_read_only` is set on the
+# connection itself rather than by a leading `SET` statement, so there is no way to issue a
+# query that runs before it and no `SET` tag in the output to filter back out. A mistake
+# here fails instead of mutating the database the suite is measuring — this is a fixture
+# with a psql in it, and the next person to reach for it will not be reading this comment.
+pg_query() {
+	"$ENGINE" exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$c_pg" \
+		psql -U "$PGUSER_" -d "$PGDATABASE_" -At -v ON_ERROR_STOP=1 -c "$*"
+}
+
 # --- Upstream grocy --------------------------------------------------------------------
 
 start_upstream() {

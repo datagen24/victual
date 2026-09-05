@@ -24,10 +24,15 @@
 // *could* consume it, not that it did.
 
 const fs = require('fs');
-const net = require('net');
 const path = require('path');
 
 const { victual } = require('./lib/instance');
+// The broker subscriber and the InfluxDB reader moved to lib/ so that the year phase can
+// ask the same questions of the same infrastructure at a checkpoint. Nothing about what
+// this phase asks changed with the move: `queryInflux` keeps the relative window that is
+// right here, where the booking under test was made seconds ago on the real clock.
+const { collectRetained } = require('./lib/mqtt');
+const { queryInflux } = require('./lib/influx');
 
 function parseArgs(argv) {
 	const args = {
@@ -47,153 +52,6 @@ function parseArgs(argv) {
 		else if (argv[i] === '--out') args.out = argv[++i];
 	}
 	return args;
-}
-
-// --- A minimal MQTT 3.1.1 subscriber -----------------------------------------------------
-//
-// Hand-rolled rather than a dependency, for the same reason `.devtools/mqtt/` hand-rolls
-// its stand-in: this needs to CONNECT, SUBSCRIBE with a wildcard, and read retained
-// PUBLISH frames, which is about eighty lines, and adding an npm dependency to a test
-// harness is a supply-chain input for something a fixed-length header can do.
-
-function encodeRemainingLength(n) {
-	const bytes = [];
-	do {
-		let byte = n % 128;
-		n = Math.floor(n / 128);
-		if (n > 0) byte |= 0x80;
-		bytes.push(byte);
-	} while (n > 0);
-	return Buffer.from(bytes);
-}
-
-function encodeString(s) {
-	const body = Buffer.from(s, 'utf8');
-	const length = Buffer.alloc(2);
-	length.writeUInt16BE(body.length, 0);
-	return Buffer.concat([length, body]);
-}
-
-function connectPacket(clientId) {
-	const payload = Buffer.concat([
-		encodeString('MQTT'),
-		Buffer.from([0x04]),        // protocol level 4 = 3.1.1
-		Buffer.from([0x02]),        // clean session
-		Buffer.from([0x00, 0x3c]),  // keepalive 60s
-		encodeString(clientId)
-	]);
-	return Buffer.concat([Buffer.from([0x10]), encodeRemainingLength(payload.length), payload]);
-}
-
-function subscribePacket(topicFilter, packetId) {
-	const payload = Buffer.concat([
-		Buffer.from([(packetId >> 8) & 0xff, packetId & 0xff]),
-		encodeString(topicFilter),
-		Buffer.from([0x00]) // QoS 0
-	]);
-	return Buffer.concat([Buffer.from([0x82]), encodeRemainingLength(payload.length), payload]);
-}
-
-// Reads frames until `quietMs` passes with nothing new. Retained messages arrive
-// immediately on subscribe, so a short quiet period is the correct end condition — waiting
-// a fixed time would make the suite slower for no extra evidence.
-function collectRetained(host, port, topicFilter, quietMs = 1500, hardTimeoutMs = 15000) {
-	return new Promise((resolve, reject) => {
-		const messages = [];
-		let buffer = Buffer.alloc(0);
-		let quietTimer = null;
-		const socket = net.createConnection({ host, port });
-
-		const finish = () => {
-			clearTimeout(quietTimer);
-			clearTimeout(hardTimer);
-			socket.destroy();
-			resolve(messages);
-		};
-		const bump = () => {
-			clearTimeout(quietTimer);
-			quietTimer = setTimeout(finish, quietMs);
-		};
-		const hardTimer = setTimeout(finish, hardTimeoutMs);
-
-		socket.on('error', (e) => {
-			clearTimeout(quietTimer);
-			clearTimeout(hardTimer);
-			reject(e);
-		});
-
-		socket.on('connect', () => {
-			socket.write(connectPacket(`parity-suite-${process.pid}`));
-		});
-
-		socket.on('data', (chunk) => {
-			buffer = Buffer.concat([buffer, chunk]);
-
-			for (;;) {
-				if (buffer.length < 2) break;
-
-				// Decode the variable-length remaining-length field.
-				let multiplier = 1;
-				let remaining = 0;
-				let i = 1;
-				let byte;
-				do {
-					if (i >= buffer.length) return;
-					byte = buffer[i++];
-					remaining += (byte & 127) * multiplier;
-					multiplier *= 128;
-				} while ((byte & 0x80) !== 0);
-
-				const total = i + remaining;
-				if (buffer.length < total) break;
-
-				const type = buffer[0] >> 4;
-				const flags = buffer[0] & 0x0f;
-				const frame = buffer.subarray(i, total);
-				buffer = buffer.subarray(total);
-
-				if (type === 2) {            // CONNACK
-					socket.write(subscribePacket(topicFilter, 1));
-					bump();
-				} else if (type === 9) {     // SUBACK
-					bump();
-				} else if (type === 3) {     // PUBLISH
-					const topicLength = frame.readUInt16BE(0);
-					const topic = frame.subarray(2, 2 + topicLength).toString('utf8');
-					// QoS 0 only — the publisher uses it, so there is no packet id here.
-					const payload = frame.subarray(2 + topicLength).toString('utf8');
-					messages.push({ topic, payload, retained: (flags & 0x01) === 1 });
-					bump();
-				}
-			}
-		});
-	});
-}
-
-// --- InfluxDB ------------------------------------------------------------------------------
-
-async function queryInflux(args, measurement) {
-	const url = `${args.influx.replace(/\/+$/, '')}/api/v2/query?org=${encodeURIComponent(args.influxOrg)}`;
-	// -30d rather than -1h: the outbox writes with the event's own timestamp, and a suite
-	// run that took a while should not lose its own points to a narrow window.
-	const flux = `from(bucket: "${args.influxBucket}")\n` +
-		'  |> range(start: -30d)\n' +
-		`  |> filter(fn: (r) => r._measurement == "${measurement}")\n` +
-		'  |> limit(n: 50)';
-
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: {
-			Authorization: `Token ${args.influxToken}`,
-			'Content-Type': 'application/vnd.flux',
-			Accept: 'application/csv'
-		},
-		body: flux
-	});
-
-	const text = await response.text();
-	const rows = text.split('\n').filter((l) => l.trim().length > 0 && !l.startsWith('#'));
-	return { status: response.status, rowCount: Math.max(0, rows.length - 1), sample: rows.slice(0, 4) };
 }
 
 // --- The boot publish ---------------------------------------------------------------------------

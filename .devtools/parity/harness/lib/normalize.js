@@ -15,16 +15,33 @@
 // answering the same question milliseconds apart legitimately differ here, so the name is
 // masked and its *presence* still compared — a field that exists on one side and not the
 // other is still a difference.
-const VOLATILE_FIELDS = new Set([
+// **Temporal, and separable from the rest.** These name a moment. On the real clock two
+// instances cannot agree on one, so they are masked — but under the year phase's faked,
+// stepped clock they *can*, and then masking them throws away the evidence that a booking
+// landed on the right simulated day. Kept as their own set so that mode can un-mask exactly
+// these and nothing else.
+const TEMPORAL_FIELDS = new Set([
 	'row_created_timestamp',
 	'last_used',
 	'expires',
-	'api_key',
-	'session_key',
 	'undone_timestamp',
 	'used_timestamp',
 	'last_login',
 	'timestamp',
+	'time_local',
+	'time_local_sqlite3',
+	'time_utc'
+]);
+
+// Credentials. Masked in every mode: a clock cannot make two instances mint the same key.
+const SECRET_FIELDS = new Set([
+	'api_key',
+	'session_key'
+]);
+
+const VOLATILE_FIELDS = new Set([
+	...TEMPORAL_FIELDS,
+	...SECRET_FIELDS,
 
 	// **The opaque booking handles, and masking them is not a concession.** `stock_id`,
 	// `transaction_id` and `correlation_id` are `uniqid()` output — a hex rendering of the
@@ -38,17 +55,14 @@ const VOLATILE_FIELDS = new Set([
 	// which `.devtools/pgsql/`'s rollback phase is what does.
 	'stock_id',
 	'transaction_id',
-	'correlation_id',
-
-	// GET /system/time reports the clock. The two instances are asked a fraction of a
-	// second apart and answered one second apart on the first run that got this far, which
-	// is the definition of a flaky assertion. What is still compared is that the fields
-	// exist, that the offset variant differs from the plain one by the offset — which the
-	// scenario asserts by asking for both — and that the shape is the same.
-	'time_local',
-	'time_local_sqlite3',
-	'time_utc'
+	'correlation_id'
 ]);
+
+// The opaque booking handles, masked in every mode for the reason above: `uniqid()` renders
+// the current microsecond, so a faked clock does not make them agree either. They are still
+// *captured* as handles by the year phase — masking governs what is diffed, not what is
+// bound.
+const OPAQUE_FIELDS = new Set(['stock_id', 'transaction_id', 'correlation_id']);
 
 // Fields describing the machine rather than the application. Two images built from
 // different base layers legitimately ship different interpreter and library versions;
@@ -88,12 +102,60 @@ function roundFloat(n) {
 	return Number(n.toFixed(FLOAT_PLACES));
 }
 
-function normalizeValue(key, value) {
-	if (VOLATILE_FIELDS.has(key)) return MASK;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+// Milliseconds for a value that claims to be a moment, or null when it does not parse.
+// An integer is an epoch — `GET /system/time` reports `timestamp` that way — and a string
+// is one of the two ISO shapes the application writes.
+function momentToMillis(value) {
+	if (typeof value === 'number' && Number.isFinite(value)) return value * 1000;
+	if (typeof value !== 'string') return null;
+	if (DATE_RE.test(value)) return Date.parse(`${value}T00:00:00Z`);
+	if (DATETIME_RE.test(value)) return Date.parse(`${value.replace(' ', 'T')}${/Z|[+-]\d{2}/.test(value) ? '' : 'Z'}`);
+	return null;
+}
+
+// A temporal field, under whichever clock the run had.
+//
+// **Its shape is checked before it is masked.** Masking first meant any string at all
+// compared equal to any other, so a field that had started returning "0000-00-00" or a
+// stray note would have read as parity forever. A value that does not parse as a moment is
+// reported as malformed rather than hidden, and the malformed text is carried so the two
+// sides can still differ from each other.
+//
+// Under a faked, stepped clock the field is not masked at all: both instances are at the
+// same simulated instant, so what is compared is the day the value fell on, relative to the
+// run's anchor. That is the evidence a booking landed on the right simulated day, and
+// masking is what used to throw it away. Seconds are not compared — the faked clock still
+// runs at real rate between steps, so second-equality would be a flake; within-day ordering
+// is asserted separately, by id sequence.
+function normalizeTemporal(value, opts) {
+	if (value === '') return value;
+
+	const ms = momentToMillis(value);
+	if (ms === null || Number.isNaN(ms)) {
+		return `<malformed-timestamp:${String(value).slice(0, 40)}>`;
+	}
+
+	if (opts && opts.clock === 'simulated' && opts.anchorMs !== undefined) {
+		const days = Math.floor((ms - opts.anchorMs) / 86400000);
+		return `<day${days >= 0 ? '+' : ''}${days}>`;
+	}
+
+	return MASK;
+}
+
+function normalizeValue(key, value, opts) {
+	// **A null is not a moment, and neither is an absent value.** Masking them made "never
+	// undone" compare equal to "undone at some instant", which is exactly what those two
+	// records differ by — so the check for them comes first now, and a null stays a null.
+	if (value === null || value === undefined) return value;
+
+	if (SECRET_FIELDS.has(key) || OPAQUE_FIELDS.has(key)) return MASK;
+	if (TEMPORAL_FIELDS.has(key)) return normalizeTemporal(value, opts);
 	if (IDENTITY_FIELDS.has(key)) return IDENTITY;
 	if (ENVIRONMENT_FIELDS.has(key)) return ENVIRONMENT;
-
-	if (value === null || value === undefined) return value;
 
 	if (typeof value === 'number') return roundFloat(value);
 
@@ -106,23 +168,23 @@ function normalizeValue(key, value) {
 		return roundFloat(Number(value)).toString();
 	}
 
-	if (Array.isArray(value)) return value.map((v) => normalizeValue(key, v));
+	if (Array.isArray(value)) return value.map((v) => normalizeValue(key, v, opts));
 
-	if (typeof value === 'object') return normalizeObject(value);
+	if (typeof value === 'object') return normalizeObject(value, opts);
 
 	return value;
 }
 
-function normalizeObject(obj) {
+function normalizeObject(obj, opts) {
 	if (obj === null || typeof obj !== 'object') return obj;
-	if (Array.isArray(obj)) return obj.map((v) => normalizeObject(v));
+	if (Array.isArray(obj)) return obj.map((v) => normalizeObject(v, opts));
 
 	const out = {};
 	// Key order is not part of the wire contract — PHP's json_encode follows insertion
 	// order and a view's column order is not something either project promises — so keys
 	// are sorted before comparison. A *missing* or *extra* key is still a difference.
 	for (const key of Object.keys(obj).sort()) {
-		out[key] = normalizeValue(key, obj[key]);
+		out[key] = normalizeValue(key, obj[key], opts);
 	}
 	return out;
 }
@@ -130,8 +192,8 @@ function normalizeObject(obj) {
 // Lists come back in whatever order the engine felt like unless the endpoint documents
 // one. Sorting by id where every element has one removes that as a source of noise
 // without hiding a genuinely different set: the elements are still compared one by one.
-function normalizeBody(body) {
-	const normalized = normalizeObject(body);
+function normalizeBody(body, opts) {
+	const normalized = normalizeObject(body, opts);
 	if (Array.isArray(normalized) && normalized.every((e) => e && typeof e === 'object' && 'id' in e)) {
 		return [...normalized].sort((a, b) => Number(a.id) - Number(b.id));
 	}
@@ -174,7 +236,7 @@ function normalizeStrings(value, baseUrl) {
 	return value;
 }
 
-function normalizeRecord(record, baseUrl) {
+function normalizeRecord(record, baseUrl, opts) {
 	// A body that did not parse as JSON is compared as normalised text rather than being
 	// declared incomparable. Reporting "at least one side did not answer JSON" for the iCal
 	// feed — which is text/calendar on both sides and correct on both — was noise that hid
@@ -195,7 +257,7 @@ function normalizeRecord(record, baseUrl) {
 		method: record.method,
 		path: record.path,
 		status: record.status,
-		body: normalizeStrings(normalizeBody(record.body), baseUrl),
+		body: normalizeStrings(normalizeBody(record.body, opts), baseUrl),
 		parseError: record.parseError
 	};
 }
@@ -205,6 +267,10 @@ module.exports = {
 	normalizeRecord,
 	normalizeText,
 	VOLATILE_FIELDS,
+	TEMPORAL_FIELDS,
+	SECRET_FIELDS,
+	OPAQUE_FIELDS,
+	momentToMillis,
 	IDENTITY_FIELDS,
 	ENVIRONMENT_FIELDS,
 	FLOAT_PLACES,
