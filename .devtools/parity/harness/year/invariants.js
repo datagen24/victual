@@ -289,6 +289,37 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 			? `${derived.size} products, ${log.length} log rows`
 			: identityProblems.slice(0, 6).join('; '));
 
+	// --- 2b. And it is in the right places ---------------------------------------------------
+	//
+	// Totals are not positions. A transfer books a pair summing to zero and leaves the
+	// product's total untouched, so every check above passes whether it moved the right
+	// amount, the wrong amount or nothing. The monthly checkpoints assert position during the
+	// replay; this asserts it at the end, which is what an injected move between locations
+	// showed was missing — it changed nothing any end-state invariant looked at.
+	const locRecord = await instance.silently(() => instance.get('/objects/stock_current_locations'));
+	const liveAt = new Map();
+	for (const row of locRecord.body || []) {
+		liveAt.set(`${row.product_id}@${row.location_id}`, Number(row.amount));
+	}
+	const positionProblems = [];
+	const wantedPositions = plan.ledger.expectedLocations || [];
+	for (const pos of wantedPositions) {
+		const productKey = String(pos.productId).replace(/^product:/, '');
+		const locationKey = String(pos.locationId).replace(/^location:/, '');
+		const key = `${symbols[`product:${productKey}`]}@${symbols[`location:${locationKey}`]}`;
+		const got = liveAt.get(key);
+		if (got === undefined) positionProblems.push(`${productKey} holds nothing at ${locationKey}, ledger says ${pos.amount}`);
+		else if (Math.abs(got - pos.amount) > 1e-6) positionProblems.push(`${productKey}@${locationKey}: live ${got}, ledger ${pos.amount}`);
+		liveAt.delete(key);
+	}
+	for (const [key, amount] of [...liveAt].slice(0, 3)) {
+		positionProblems.push(`stock of ${amount} at ${key} that the ledger does not place there`);
+	}
+	ok(results, 'every product sits where the ledger put it', positionProblems.length === 0,
+		positionProblems.length === 0
+			? `${wantedPositions.length} positions agree`
+			: positionProblems.slice(0, 6).join('; '));
+
 	// --- 3. Each transaction type moved the amount the plan booked --------------------------
 	//
 	// Amounts rather than row counts, and that is not a softening: one consume can write

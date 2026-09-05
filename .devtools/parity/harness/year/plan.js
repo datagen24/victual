@@ -447,6 +447,11 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 			problems,
 			bookings: ledger.bookings.length,
 			expectedAmounts: Object.fromEntries(ledger.expectedAmounts()),
+			// Where the model ends up holding stock, so the end state can be checked by
+			// position and not only by total. Without it a location error introduced after
+			// the last monthly checkpoint survives to the end of the run unnoticed — which
+			// an injected move between locations demonstrated.
+			expectedLocations: ledger.locationAmounts(),
 			// The modelled bookings themselves, for the oracles that are expressed over the
 			// year's history rather than over its end state. Not part of the plan hash — the
 			// hash is over `ops`, which is what a replay actually performs.
