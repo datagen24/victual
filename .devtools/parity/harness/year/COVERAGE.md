@@ -158,9 +158,36 @@ so a connect failure cannot be rendered as a 500 and becomes an uncaught fatal i
 is worth fixing independently of this suite — a brief database outage should produce an error
 page, not a dead worker.
 
+Two things have since been measured, and one hypothesis ruled out.
+
+**The pool really does hold stale workers, and sequential probing hides them.** After eight
+consecutive fresh sequential replies, a round of four concurrent requests came back a full
+simulated day behind — `delta: -86397` — and stayed there for 82 probes. Sequential probing
+keeps landing on the one warm child; concurrency forces the others to answer, and they are
+behind. The readiness check is bounded sampling rather than proof (see `stepClock`), but it
+is measuring something real that the previous check could not see.
+
+**In the wedged state nothing is wrong with the application.** PostgreSQL is alive, listening,
+and has logged nothing since startup; the application's connects to it time out; and
+`podman exec` into the PostgreSQL container hangs. An `exec` does not use container
+networking, so whatever is stuck is inside that container's processes rather than between
+them, and the application cannot be its cause. Since the error-handler fix landed, what used
+to be an uncaught fatal is a clean `the database could not be asked for its schema version`
+log line — the escalation is gone, the hang is not.
+
+**Ruled out: contention on the clock file.** libfaketime re-reads the timestamp file on every
+cache lapse in every preloaded process — four php-fpm children and every PostgreSQL backend,
+which are forked per connection — so rewriting that file in place 365 times looked like a
+plausible source of blocked readers. Swapping it atomically with `rename()` instead **breaks
+the clock outright**: `/clk` is a read-only virtiofs mount, the container goes on resolving
+the old inode after a host-side rename, and libfaketime finds nothing and falls back to real
+time (`delta: +84465916`, about 2.7 years). In-place rewriting is what makes the update
+visible through that mount, so it is not the cause and cannot be changed. Reverted.
+
 Runs do complete: a committed run records 365 steps, zero clock violations, every invariant
-passing, in 797 seconds. The instability is intermittent and is recorded here rather than
-worked around, because a mitigation that hid it would also hide the escalation.
+passing, in 797 seconds, and the smoke profile passes reliably. The instability is
+intermittent, it is recorded here rather than worked around, and the cause is not yet
+established.
 
 ## Asserted, not yet demonstrated
 
