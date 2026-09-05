@@ -226,7 +226,16 @@ function checkWindow(op, record, where, problems, clockArtifacts) {
 			const hi = client ? (DATE_ONLY.has(key) ? dayToMs : toMs) : dayToMs;
 			if (ms < lo || ms >= hi) {
 				// **Exactly one simulated day behind, on a field the server stamps, is the
-				// known cache artifact** — not a finding about the application.
+				// clock contract being violated** — and the run says so.
+				//
+				// It is separated from application findings because its *cause* is the
+				// harness's clock, not the fork. But it is not an accepted difference and it
+				// does not permit a pass: a worker that was a day behind evaluated whatever
+				// it evaluated against the wrong date, and expiry, due-soon windows, chore
+				// scheduling and best-before comparisons are all decided against the clock.
+				// Classifying it as cosmetic would be asserting that only the timestamp was
+				// affected, which nothing here establishes. The run is reported INCOMPLETE
+				// and the inventory checks are printed beside it.
 				//
 				// php-fpm hands a request to whichever child is free and each child holds its
 				// own one-second faketime cache, refreshed only when it next runs. A child
@@ -275,6 +284,32 @@ function checkWindow(op, record, where, problems, clockArtifacts) {
 // The poll time counts toward it, so the usual extra wait is a few hundred milliseconds.
 const CACHE_LAPSE_MS = 1100;
 
+// Throwaway requests issued after each step, before any operation the plan depends on.
+//
+// **Measured, in three arms of the same workload, changing only the clock.** A short
+// reproducer (320 steps x 10 requests) settles what a 13-minute year run could not:
+//
+//   A  fixed time, 3000 requests, no stepping ....... 0 failures
+//   B  clock advancement, no warm-up, no psql ....... HTTP 500 at day 2, hung by day ~40
+//   C  clock advancement, 6 throwaway per step ...... 0 failures in 3200 requests, 320 steps
+//
+// So it is the clock advancement, not request volume, and not the `podman exec` readiness
+// calls — arm B made none and failed anyway. At the first 500 the system is entirely
+// healthy: one PostgreSQL backend, 37MB resident, 11% CPU, PostgreSQL's own log clean. A
+// *fresh* connect fails instantly with `SQLSTATE[08006] … timeout expired` against a server
+// that is answering, which is what a wall-clock deadline computed before a jump and checked
+// after it looks like.
+//
+// An earlier version removed the warm-up after runs with 8 and 40 probes died around day
+// 190, read at the time as the extra traffic exhausting the pod. Arm A refutes that: 3000
+// requests at fixed time cost nothing. Those runs were dying of *this*, and the warm-up was
+// removed on a wrong diagnosis.
+//
+// Six is enough to touch every worker: the pool is `pm = static` with `pm.max_children = 4`
+// (nix/runtime/fpm-conf.nix). Their outcomes are ignored, because their job is to be the
+// requests that meet the discontinuity instead of a planned operation meeting it.
+const WORKER_WARMUP = 6;
+
 // How many extra requests are sent after a step to warm the worker pool.
 //
 // **Warming, not gating.** Requiring N consecutive in-range replies looked stricter and was
@@ -299,23 +334,45 @@ const CACHE_LAPSE_MS = 1100;
 // child holds its own one-second faketime cache. Those are *reported* by the window check
 // rather than engineered around — a named, counted, sub-1% observation is worth more than a
 // mitigation that stops the suite finishing.
-// **Warming the worker pool with extra probes was tried and withdrawn.** The application
-// opens a PostgreSQL connection per request, and at 8 or 40 probes a step the extra traffic
-// exhausted the pod's ability to make new ones: php-fpm filled with workers blocked on
-// connects, nginx answered 504, and the run died around day 190 while PostgreSQL itself
-// answered its own socket instantly. Retrying a failed operation once was worse still — day
-// 36 — because re-issuing into a blocked pool adds exactly the load that is failing.
+// Throwaway requests issued after each step, before any operation the plan depends on.
 //
-// The fresh login below does the same job for free: it is one request per step, it is the
-// one that straddles the jump, and it is a session boundary the design wanted anyway.
+// **Measured, in three arms of the same workload, changing only the clock.** A short
+// reproducer (320 steps x 10 requests) settles what a 13-minute year run could not:
+//
+//   A  fixed time, 3000 requests, no stepping ....... 0 failures
+//   B  clock advancement, no warm-up, no psql ....... HTTP 500 at day 2, hung by day ~40
+//   C  clock advancement, 6 throwaway per step ...... 0 failures in 3200 requests, 320 steps
+//
+// So it is the clock advancement, not request volume, and not the `podman exec` readiness
+// calls — arm B made none and failed anyway. At the first 500 the system is entirely
+// healthy: one PostgreSQL backend, 37MB resident, 11% CPU, and PostgreSQL's own log clean.
+// A *fresh* connect fails instantly with `SQLSTATE[08006] … timeout expired` against a
+// server that is answering, which is what a wall-clock deadline computed before a jump and
+// checked after it looks like.
+//
+// An earlier version of this file removed the warm-up after runs with 8 and 40 probes died
+// around day 190, which was read as the extra traffic exhausting the pod. Arm A refutes
+// that: 3000 requests at fixed time cost nothing. Those runs were dying of *this*, and the
+// warm-up was removed on a wrong diagnosis.
+//
+// Six is enough to touch every worker: the pool is `pm = static` with `pm.max_children = 4`
+// (nix/runtime/fpm-conf.nix). Their outcomes are ignored, because their job is to be the
+// requests that meet the discontinuity instead of a planned operation meeting it.
 
 async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineMs = 60000, psql = null } = {}) {
 	const fs = require('fs');
 	if (!clockFile) return;
+	// **The session is dropped before the file is written, not after.** Writing first and
+	// clearing second left a window in which the clock had already moved while the old
+	// session was still the one in use — the opposite of what "no session spans a step"
+	// means. Clearing the jar is also only the client half: it does not wait for the
+	// server's own request teardown, which is what the warm-up below is for.
+	instance.cookies.clear();
+
 	const wroteAt = Date.now();
 	fs.writeFileSync(clockFile, `@${when}\n`);
 
-	// **The session ends before the clock moves and a new one begins after it.**
+	// **A new session begins after the clock has moved.**
 	//
 	// No real client holds a session across days, so nothing here should either — and making
 	// the session boundary coincide with the step is what stops a request being in flight
@@ -325,9 +382,8 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 	// expired` — always at exactly the step instant, while PostgreSQL answered its own socket
 	// immediately.
 	//
-	// The login is also the request that deliberately straddles the jump. It is not part of
-	// the plan, so its failing costs nothing, and it is retried rather than fatal.
-	instance.cookies.clear();
+	// The login is also a request that deliberately straddles the jump. It is not part of the
+	// plan, so its failing costs nothing, and it is retried rather than fatal.
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			await instance.silently(() => instance.login());
@@ -364,6 +420,10 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			const remaining = CACHE_LAPSE_MS - (Date.now() - wroteAt);
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
+			for (let probe = 0; probe < WORKER_WARMUP; probe++) {
+				try { await instance.silently(() => instance.get('/objects/locations?limit=1')); }
+				catch { /* the point of these is to absorb, so a failure here is the job */ }
+			}
 			return;
 		}
 

@@ -450,12 +450,15 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 			// The modelled bookings themselves, for the oracles that are expressed over the
 			// year's history rather than over its end state. Not part of the plan hash — the
 			// hash is over `ops`, which is what a replay actually performs.
-			bookingsDetail: ledger.bookings.map((b) => ({
+			bookingsDetail: ledger.bookings.map((b, index) => ({
+				seq: index,
 				type: b.type,
 				productKey: String(b.productId).replace(/^product:/, ''),
 				amount: b.amount,
 				price: b.price === undefined ? null : b.price,
 				purchasedDate: b.purchasedDate || null,
+				entryKey: b.entryKey === undefined ? null : b.entryKey,
+				touched: b.touched ? b.touched.map((t) => ({ key: t.key, amount: t.amount })) : null,
 				spoiled: b.spoiled || false,
 				undone: b.undone || false
 			}))

@@ -257,8 +257,10 @@ function editEntry({ ctx, day, ops }) {
 
 	// The model follows: the old amount comes off and the new one goes on, which is exactly
 	// what the two log rows say.
-	ledger.book('stock-edit-old', id, entry.amount);
-	ledger.book('stock-edit-new', id, newAmount);
+	// Priced and keyed to the entry, so the average-price oracle can apply the view's
+	// edited-entry rule rather than excluding the product from the comparison.
+	ledger.book('stock-edit-old', id, entry.amount, { price: entry.price, entryKey: entry.key });
+	ledger.book('stock-edit-new', id, newAmount, { price: entry.price, entryKey: entry.key });
 	entry.amount = newAmount;
 	ctx.verifyAfter(ops, product, day, 'edit');
 }

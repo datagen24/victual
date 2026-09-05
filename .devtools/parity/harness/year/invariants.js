@@ -10,8 +10,15 @@
 // independently of the application, so "what should the stock be" has an answer here that
 // was never read out of the thing under test.
 //
-// Every check names what it compared and why, because an invariant that fails with
-// "mismatch" costs more to diagnose than it saved by existing.
+// **A missing row must be as detectable as a wrong one.** Every check below iterates over
+// what the *plan* expects and looks each one up, rather than iterating over what the
+// database returned and comparing whatever happens to be there. The difference is not
+// academic: an earlier version of this file walked the rows `products_average_price` sent
+// back, so an empty view passed with zero comparisons; it skipped price history whenever the
+// history was empty; it asserted that each transaction type appeared *at least once* rather
+// than in the amounts the plan booked; it asked only that *some* undone row existed rather
+// than that the bookings the plan undid were the undone ones; and it excluded edited
+// products from the price oracle altogether. Five ways to pass by finding nothing.
 
 const { CONTRIBUTION } = require('./ledger');
 
@@ -46,8 +53,61 @@ async function readAll(instance, path, key = 'id', page = 500) {
 	return rows;
 }
 
+// The expected average price per product, computed from the plan's own booking history and
+// following `products_average_price` (db/pgsql/baseline/04_views_l1a.sql:77-95) exactly:
+//
+//   - purchase, inventory-correction and self-production count, but only for entries that
+//     were never edited;
+//   - for an entry that *was* edited, the newest `stock-edit-new` counts instead, weighted
+//     by `edited_origin_amount` — the edited amount plus whatever had already been consumed
+//     from that entry before the edit;
+//   - rows with price <= 0, amount <= 0 or undone <> 0 are excluded;
+//   - the weight is the amount.
+//
+// Modelling it is what lets edited products be *compared* rather than skipped. Skipping them
+// was a hole: the one product the year edits is the one whose price arithmetic is least
+// obvious, so it is exactly the product worth checking.
+function expectedAveragePrices(bookings) {
+	const editedEntries = new Map();   // entryKey -> newest stock-edit-new booking
+	for (const b of bookings) {
+		if (b.type !== 'stock-edit-new' || b.entryKey === null) continue;
+		const prior = editedEntries.get(b.entryKey);
+		if (!prior || b.seq > prior.seq) editedEntries.set(b.entryKey, b);
+	}
+
+	const consumedBefore = (entryKey, beforeSeq) => bookings
+		.filter((b) => b.type === 'consume' && !b.undone && b.seq < beforeSeq && b.touched)
+		.reduce((n, b) => n + b.touched
+			.filter((t) => t.key === entryKey)
+			.reduce((m, t) => m + t.amount, 0), 0);
+
+	const num = new Map();
+	const den = new Map();
+	const add = (productKey, weight, price) => {
+		if (!(price > 0) || !(weight > 0)) return;
+		num.set(productKey, (num.get(productKey) || 0) + weight * price);
+		den.set(productKey, (den.get(productKey) || 0) + weight);
+	};
+
+	for (const b of bookings) {
+		if (b.undone) continue;
+		if (!['purchase', 'inventory-correction', 'self-production'].includes(b.type)) continue;
+		if (b.entryKey !== null && editedEntries.has(b.entryKey)) continue;   // superseded by its edit
+		add(b.productKey, b.amount, b.price);
+	}
+	for (const edit of editedEntries.values()) {
+		if (edit.undone) continue;
+		add(edit.productKey, edit.amount + consumedBefore(edit.entryKey, edit.seq), edit.price);
+	}
+
+	const out = new Map();
+	for (const [productKey, weight] of den) out.set(productKey, num.get(productKey) / weight);
+	return out;
+}
+
 async function check({ instance, plan, symbols, psql = null }) {
 	const results = [];
+	const bookings = plan.ledger.bookingsDetail || [];
 	const idOf = (productKey) => symbols[`product:${productKey}`];
 	const keyOfId = new Map();
 	for (const [symbol, id] of Object.entries(symbols)) {
@@ -55,9 +115,6 @@ async function check({ instance, plan, symbols, psql = null }) {
 	}
 
 	// --- 1. Stock is what the shadow ledger says it is ------------------------------------
-	//
-	// The headline check: ~1800 bookings composed into the right number, verified against a
-	// model that never read the database.
 	const stockRecord = await instance.silently(() => instance.get('/stock'));
 	const liveAmount = new Map();
 	for (const row of stockRecord.body || []) {
@@ -68,9 +125,11 @@ async function check({ instance, plan, symbols, psql = null }) {
 	const mismatches = [];
 	for (const [symbol, want] of Object.entries(expected)) {
 		const productKey = symbol.slice('product:'.length);
-		const id = idOf(productKey);
-		const got = liveAmount.get(String(id)) || 0;
-		if (Math.abs(got - want) > 1e-6) mismatches.push(`${productKey}: live ${got}, ledger ${want}`);
+		const got = liveAmount.get(String(idOf(productKey)));
+		// `undefined` and 0 are different answers: a product the plan expects to hold nothing
+		// should still be *absent* from /stock only if the ledger says zero.
+		const actual = got === undefined ? 0 : got;
+		if (Math.abs(actual - want) > 1e-6) mismatches.push(`${productKey}: live ${got === undefined ? 'absent' : got}, ledger ${want}`);
 	}
 	ok(results, 'stock matches the shadow ledger', mismatches.length === 0,
 		mismatches.length === 0
@@ -85,11 +144,12 @@ async function check({ instance, plan, symbols, psql = null }) {
 	// *old* amount positively and has to be subtracted (StockService.php:756,797).
 	const log = await readAll(instance, '/objects/stock_log');
 	const derived = new Map();
-	const byType = new Map();
+	const liveByType = new Map();
 	for (const row of log) {
-		byType.set(row.transaction_type, (byType.get(row.transaction_type) || 0) + 1);
 		if (Number(row.undone) !== 0) continue;
-		const c = CONTRIBUTION[row.transaction_type];
+		const t = row.transaction_type;
+		liveByType.set(t, (liveByType.get(t) || 0) + Number(row.amount));
+		const c = CONTRIBUTION[t];
 		if (c === undefined) continue;
 		const pid = String(row.product_id);
 		derived.set(pid, (derived.get(pid) || 0) + c * Number(row.amount));
@@ -107,115 +167,136 @@ async function check({ instance, plan, symbols, psql = null }) {
 			? `${derived.size} products, ${log.length} log rows`
 			: identityProblems.slice(0, 6).join('; '));
 
-	// --- 3. Every transaction type the plan emitted actually landed -------------------------
-	const planned = {};
-	for (const op of plan.ops) {
-		const t = op.expect && op.expect.rowEquals && op.expect.rowEquals.transaction_type;
-		if (t) planned[t] = (planned[t] || 0) + 1;
-	}
-	const missing = Object.keys(planned).filter((t) => !byType.has(t));
-	ok(results, 'every planned transaction type appears in the log', missing.length === 0,
-		missing.length === 0
-			? [...byType].map(([t, n]) => `${t}=${n}`).sort().join(' ')
-			: `never written: ${missing.join(', ')}`);
-
-	// --- 4. Undo keeps its audit trail ------------------------------------------------------
+	// --- 3. Each transaction type moved the amount the plan booked --------------------------
 	//
-	// "Restores the prior state" means inventory state only. A build that undid by deleting
-	// the row would satisfy every amount check above and have destroyed its own history, so
-	// the row and its timestamp are asserted separately.
-	const undone = log.filter((r) => Number(r.undone) !== 0);
-	const undatedUndos = undone.filter((r) => !r.undone_timestamp);
-	// Whether the *plan* contains an undo at all. The smoke profile is one month long and its
-	// only month-start is day 0, when there is nothing yet to undo — so "no undone rows" is a
-	// true statement about that profile rather than a defect, and an invariant that failed on
-	// it would be asserting the profile rather than the application.
-	const plannedUndos = plan.ops.filter((o) => /\/undo$/.test(o.path || '')).length;
-	ok(results, 'undone bookings keep their row and a timestamp',
-		plannedUndos === 0 ? true : (undone.length > 0 && undatedUndos.length === 0),
-		plannedUndos === 0
-			? 'the plan contains no undos at this profile — not applicable'
-			: `${undone.length} undone rows, ${undatedUndos.length} without a timestamp`);
+	// Amounts rather than row counts, and that is not a softening: one consume can write
+	// several `stock_log` rows when it draws down several entries, so a row count would be
+	// asserting the application's splitting rather than the plan's intent. The *sum* per type
+	// is exact, and unlike "the type appears at least once" it fails when a booking is
+	// missing, duplicated or wrong.
+	const plannedByType = new Map();
+	for (const b of bookings) {
+		if (b.undone) continue;
+		plannedByType.set(b.type, (plannedByType.get(b.type) || 0) + b.amount);
+	}
+	const typeProblems = [];
+	for (const [type, want] of plannedByType) {
+		const got = liveByType.get(type);
+		if (got === undefined) { typeProblems.push(`${type}: nothing written, plan booked ${want}`); continue; }
+		if (Math.abs(got - want) > 1e-6) typeProblems.push(`${type}: log sums to ${got}, plan booked ${want}`);
+	}
+	for (const type of liveByType.keys()) {
+		if (!plannedByType.has(type)) typeProblems.push(`${type}: written but the plan never booked it`);
+	}
+	ok(results, 'every transaction type moved what the plan booked', typeProblems.length === 0,
+		typeProblems.length === 0
+			? [...plannedByType].map(([t, n]) => `${t}=${n}`).sort().join(' ')
+			: typeProblems.slice(0, 6).join('; '));
+
+	// --- 4. Every booking the plan undid is undone, and still there --------------------------
+	//
+	// Named, not counted. Asking only that *some* undone row existed would pass a build that
+	// undid the wrong booking, and asking nothing about the row's survival would pass one that
+	// undid by deleting — which satisfies every amount check above and destroys the audit
+	// trail.
+	const plannedUndos = plan.ops
+		.filter((op) => /\/stock\/bookings\/\{([^}]+)\}\/undo$/.test(op.path || ''))
+		.map((op) => op.path.match(/\{([^}]+)\}/)[1]);
+	const byLogId = new Map(log.map((r) => [String(r.id), r]));
+	const undoProblems = [];
+	for (const symbol of plannedUndos) {
+		const id = symbols[symbol];
+		if (id === undefined) { undoProblems.push(`${symbol} was never bound`); continue; }
+		const row = byLogId.get(String(id));
+		if (!row) { undoProblems.push(`booking ${id} (${symbol}) is not in the log at all`); continue; }
+		if (Number(row.undone) === 0) undoProblems.push(`booking ${id} (${symbol}) was undone by the plan but is not marked undone`);
+		else if (!row.undone_timestamp) undoProblems.push(`booking ${id} (${symbol}) is undone with no timestamp`);
+	}
+	// And nothing else is undone: a row the plan never touched being marked undone is as much
+	// a defect as one it undid not being.
+	const unexpectedUndone = log.filter((r) => Number(r.undone) !== 0)
+		.filter((r) => !plannedUndos.some((sym) => String(symbols[sym]) === String(r.id)));
+	for (const r of unexpectedUndone.slice(0, 3)) {
+		undoProblems.push(`log row ${r.id} (${r.transaction_type}) is undone but the plan never undid it`);
+	}
+	ok(results, 'exactly the bookings the plan undid are undone, and retained', undoProblems.length === 0,
+		undoProblems.length === 0
+			? (plannedUndos.length === 0
+				? 'the plan contains no undos at this profile'
+				: `${plannedUndos.length} undos, each named and retained`)
+			: undoProblems.slice(0, 6).join('; '));
 
 	// --- 5. The average-price oracle ---------------------------------------------------------
 	//
-	// Specified to what the view actually does (04_views_l1a.sql:77-95): purchase,
-	// inventory-correction and self-production, price > 0 and amount > 0, weighted by amount.
-	// Products whose entries were edited are skipped rather than guessed at — the view then
-	// weights by edited_origin_amount and takes only the newest stock-edit-new, and a model
-	// that approximated that would be asserting its own approximation.
-	const editedProducts = new Set(log.filter((r) => String(r.transaction_type).startsWith('stock-edit')).map((r) => String(r.product_id)));
-	const num = new Map();
-	const den = new Map();
-	for (const b of plan.ledger.bookingsDetail || []) {
-		if (b.undone) continue;
-		if (!['purchase', 'inventory-correction', 'self-production'].includes(b.type)) continue;
-		if (!(b.price > 0) || !(b.amount > 0)) continue;
-		const id = String(idOf(b.productKey));
-		if (editedProducts.has(id)) continue;
-		num.set(id, (num.get(id) || 0) + b.price * b.amount);
-		den.set(id, (den.get(id) || 0) + b.amount);
-	}
+	// Driven from the products the *plan* expects a price for. Walking the view's rows instead
+	// meant an empty view compared nothing and passed.
+	const wantPrices = expectedAveragePrices(bookings);
 	const avgRecord = await instance.silently(() => instance.get('/objects/products_average_price'));
+	const livePrice = new Map();
+	for (const row of avgRecord.body || []) livePrice.set(String(row.product_id), Number(row.price));
+
 	const priceProblems = [];
-	let compared = 0;
-	for (const row of avgRecord.body || []) {
-		const id = String(row.product_id);
-		if (!den.has(id)) continue;
-		const want = num.get(id) / den.get(id);
-		const got = Number(row.price);
-		compared++;
-		if (Math.abs(got - want) > 0.0001) {
-			priceProblems.push(`${keyOfId.get(id) || id}: view ${got.toFixed(4)}, ledger ${want.toFixed(4)}`);
+	for (const [productKey, want] of wantPrices) {
+		const id = String(idOf(productKey));
+		if (!livePrice.has(id)) { priceProblems.push(`${productKey}: no row in products_average_price, expected ${want.toFixed(4)}`); continue; }
+		const got = livePrice.get(id);
+		if (Math.abs(got - want) > 0.0001) priceProblems.push(`${productKey}: view ${got.toFixed(4)}, ledger ${want.toFixed(4)}`);
+	}
+	for (const id of livePrice.keys()) {
+		const productKey = keyOfId.get(id);
+		if (productKey && !wantPrices.has(productKey)) {
+			priceProblems.push(`${productKey}: the view priced it but the plan booked no priced entry`);
 		}
 	}
 	ok(results, 'products_average_price matches the ledger, to 4dp', priceProblems.length === 0,
 		priceProblems.length === 0
-			? `${compared} products compared, ${editedProducts.size} skipped as edited`
+			? `${wantPrices.size} products compared, including every edited one`
 			: priceProblems.slice(0, 6).join('; '));
 
 	// --- 6. The outbox drained ----------------------------------------------------------------
-	//
-	// Plan 18's whole claim, under a year of volume rather than one booking. `outbox` is not
-	// an ExposedEntity on purpose, so this is the one check that needs SQL.
 	if (psql) {
 		try {
 			const pending = Number(await psql('SELECT count(*) FROM outbox WHERE delivered_at IS NULL'));
 			const total = Number(await psql('SELECT count(*) FROM outbox'));
-			ok(results, 'the outbox drained completely', pending === 0,
-				`${total} events, ${pending} still pending`);
+			// **An empty outbox is not proof of delivery.** A build that never enqueued would
+			// satisfy "nothing pending", so the total is asserted against the plan's own count
+			// of events worth publishing as well.
+			const expectedEvents = bookings.filter((b) => !b.undone).length;
+			const problems = [];
+			if (pending !== 0) problems.push(`${pending} of ${total} still pending`);
+			if (total === 0 && expectedEvents > 0) problems.push(`the outbox is empty but the plan booked ${expectedEvents} events`);
+			ok(results, 'the outbox drained, and had something to drain', problems.length === 0,
+				problems.length === 0 ? `${total} events, none pending` : problems.join('; '));
 		} catch (e) {
-			ok(results, 'the outbox drained completely', false, `could not read outbox: ${String(e.message || e).slice(0, 120)}`);
+			ok(results, 'the outbox drained, and had something to drain', false,
+				`could not read outbox: ${String(e.message || e).slice(0, 120)}`);
 		}
 	}
 
-	// --- 7. Price history lands on the days the plan bought things -----------------------------
+	// --- 7. Price history covers every day the plan bought on ----------------------------------
 	//
-	// The strongest single piece of evidence that a *year* happened rather than a busy
-	// minute: purchased_date is client-supplied, so these dates come from the plan, and a
-	// suite whose clock or dates had collapsed would show them all on one day.
-	const sampleKeys = Object.keys(expected).slice(0, 5).map((s) => s.slice('product:'.length));
+	// The strongest single piece of evidence that a *year* happened rather than a busy minute:
+	// purchased_date is client-supplied, so these dates come from the plan. An empty history no
+	// longer passes — it used to, because the check skipped itself when it found nothing.
 	const historyProblems = [];
-	for (const productKey of sampleKeys) {
+	const sampled = [...new Set(bookings.filter((b) => b.type === 'purchase' && b.purchasedDate).map((b) => b.productKey))].slice(0, 5);
+	for (const productKey of sampled) {
 		const id = idOf(productKey);
-		if (!id) continue;
+		if (!id) { historyProblems.push(`${productKey}: never bound`); continue; }
 		const record = await instance.silently(() => instance.get(`/stock/products/${id}/price-history`));
-		// `date`, not `purchased_date`: the view names the column purchased_date but the
-		// endpoint renders it as `date` alongside a nested shopping_location. Reading the
-		// column name made every purchase day look absent from a history that had them all.
 		const days = new Set((record.body || []).map((r) => String(r.date).slice(0, 10)));
-		const wanted = new Set((plan.ledger.bookingsDetail || [])
-			.filter((b) => b.productKey === productKey && b.type === 'purchase' && b.purchasedDate)
+		const wanted = new Set(bookings
+			.filter((b) => b.productKey === productKey && b.type === 'purchase' && b.purchasedDate && !b.undone && b.price > 0)
 			.map((b) => b.purchasedDate));
+		if (wanted.size === 0) continue;
+		if (days.size === 0) { historyProblems.push(`${productKey}: the history is empty, ${wanted.size} purchase days expected`); continue; }
 		const absent = [...wanted].filter((d) => !days.has(d));
-		if (days.size > 0 && absent.length > 0) {
-			historyProblems.push(`${productKey}: ${absent.length}/${wanted.size} purchase days absent from the history`);
-		}
+		if (absent.length > 0) historyProblems.push(`${productKey}: ${absent.length}/${wanted.size} purchase days absent from the history`);
 	}
-	ok(results, 'price history covers the days the plan bought on', historyProblems.length === 0,
-		historyProblems.length === 0 ? `${sampleKeys.length} products checked` : historyProblems.join('; '));
+	ok(results, 'price history covers every day the plan bought on', historyProblems.length === 0,
+		historyProblems.length === 0 ? `${sampled.length} products checked` : historyProblems.join('; '));
 
 	return results;
 }
 
-module.exports = { check, readAll };
+module.exports = { check, readAll, expectedAveragePrices };

@@ -126,9 +126,10 @@ async function runAgainstInstance(args, plan) {
 
 	if (result.clockArtifacts.length > 0) {
 		console.log('');
-		console.log(`  \x1b[33m${result.clockArtifacts.length} timestamps were one simulated day behind\x1b[0m — ` +
-			'the php-fpm cache artifact described in year/replay.js');
-		console.log('    (found and counted, not failed: a server-stamped field, wrong by exactly one step)');
+		console.log(`  \x1b[31m${result.clockArtifacts.length} timestamps were one simulated day behind — the clock contract was violated\x1b[0m`);
+		console.log('    A worker that was a day behind evaluated expiry, due-soon windows and');
+		console.log('    scheduling against the wrong date, so what those operations decided is');
+		console.log('    not established by this run. See year/replay.js.');
 		for (const w of result.clockArtifacts.slice(0, 4)) console.log(`      ${w.op}: ${w.problems.join('; ')}`);
 	}
 
@@ -150,6 +151,10 @@ async function runAgainstInstance(args, plan) {
 
 	return {
 		failed: results.filter((r) => !r.ok).length + (result.windowProblems.length > 0 ? 1 : 0),
+		// Tracked apart from `failed`: a clock violation is not an application finding, and
+		// it does not become one by being counted with them — but it does stop the run
+		// claiming a verdict about a year it did not correctly simulate.
+		clockViolations: result.clockArtifacts.length,
 		results,
 		windowProblems: result.windowProblems
 	};
@@ -258,10 +263,20 @@ async function main() {
 	const run = await runAgainstInstance(args, plan);
 
 	console.log('');
-	console.log(run.failed === 0
-		? '\x1b[32mPASS — the year replayed and every invariant held\x1b[0m'
-		: `\x1b[31mFAIL — ${run.failed} invariants or window checks failed\x1b[0m`);
-	process.exit(run.failed === 0 ? 0 : 1);
+	if (run.failed > 0) {
+		console.log(`\x1b[31mFAIL — ${run.failed} invariants or window checks failed\x1b[0m`);
+		process.exit(1);
+	}
+	if (run.clockViolations > 0) {
+		// The inventory checks above stay visible on purpose: they are still evidence, and
+		// hiding them would trade one kind of silence for another.
+		console.log(`\x1b[31mINCOMPLETE — clock contract violated (${run.clockViolations} timestamps a day behind)\x1b[0m`);
+		console.log('  Every invariant above held, but the year was not correctly simulated,');
+		console.log('  so this is not a regression verdict.');
+		process.exit(3);
+	}
+	console.log('\x1b[32mPASS — the year replayed and every invariant held\x1b[0m');
+	process.exit(0);
 }
 
 main().catch((error) => {

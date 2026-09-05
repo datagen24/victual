@@ -117,7 +117,11 @@ class Ledger {
 		// purchasedDate travels with the booking because the average-price and
 		// price-history oracles are expressed in terms of the day the plan bought on, and
 		// that day is client-supplied — it is the evidence that a year happened.
-		this.book(type, productId, amount, { price, purchasedDate });
+		//
+		// `entryKey` travels with it because products_average_price treats an entry that was
+		// later *edited* differently from one that was not, and an oracle that cannot say
+		// which entry a booking created has to skip edited products rather than model them.
+		this.book(type, productId, amount, { price, purchasedDate, entryKey: entry.key });
 		return entry;
 	}
 
@@ -141,7 +145,9 @@ class Ledger {
 			touched.push({ key: entry.key, amount: take, price: entry.price });
 		}
 		this.entries = this.entries.filter((e) => e.amount > 0);
-		this.book('consume', productId, -amount, { spoiled });
+		// Which entries this drew down, because the view's `edited_origin_amount` is the
+		// edited amount plus whatever had already been consumed from that same entry.
+		this.book('consume', productId, -amount, { spoiled, touched });
 		return touched;
 	}
 
