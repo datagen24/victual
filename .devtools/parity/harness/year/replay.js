@@ -522,9 +522,16 @@ const CACHE_LAPSE_MS = 1100;
 // *collectively*, since no endpoint reports which child answered. A round is evidence that
 // four distinct children each answered freshly, not a per-child identity check.
 //
+// Warming and verifying are separate jobs and are done separately. A stale child refreshes
+// its faketime cache by *serving* a request, and the reply to that request is still the stale
+// value — so warming is inherently a sequence of requests that are expected to be wrong at
+// first. Sequential probing does that well and is what actually converges the pool. The
+// concurrent round then asks the question the sequential run cannot answer.
+//
 // Two clean rounds rather than one, because a child that finishes early can in principle
 // take a second request within the same round while another is still queued.
 const POOL_SIZE = 4;
+const WARM_AGREEMENT = 8;
 const CLEAN_ROUNDS = 2;
 const WORKER_PROBE_BUDGET = 80;
 
@@ -589,29 +596,38 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			const remaining = CACHE_LAPSE_MS - (Date.now() - wroteAt);
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
-			let clean = 0;
-			let probes = 0;
 			// What the probes actually saw. A failure reporting only a count cannot be
 			// diagnosed: a straggler a simulated day behind, a worker whose clock has run
 			// past the drift budget, and a pool answering 500 are three different faults and
 			// all of them look like "80 probes without agreement".
 			const seen = [];
-			while (clean < CLEAN_ROUNDS && probes < WORKER_PROBE_BUDGET) {
-				probes += POOL_SIZE;
-				// In flight together, so the pool cannot answer them all from one child.
-				const round = await Promise.all(Array.from({ length: POOL_SIZE }, async () => {
-					try {
-						const again = await instance.silently(() => instance.get('/system/time'));
-						const ts = again.body && Number(again.body.timestamp);
-						if (inRange(ts)) return true;
-						seen.push({ status: again.status, delta: Number.isFinite(ts) ? ts - target : null });
-						return false;
-					} catch (e) {
-						// A request that met the discontinuity; it has now warmed that worker.
-						seen.push({ error: e.message.slice(0, 120) });
-						return false;
-					}
-				}));
+			let probes = 0;
+			const probe = async () => {
+				probes++;
+				try {
+					const again = await instance.silently(() => instance.get('/system/time'));
+					const ts = again.body && Number(again.body.timestamp);
+					if (inRange(ts)) return true;
+					seen.push({ status: again.status, delta: Number.isFinite(ts) ? ts - target : null });
+					return false;
+				} catch (e) {
+					// A request that met the discontinuity; it has now warmed that worker.
+					seen.push({ error: e.message.slice(0, 120) });
+					return false;
+				}
+			};
+
+			// Warm, sequentially, until the pool is answering consistently.
+			let warm = 0;
+			while (warm < WARM_AGREEMENT && probes < WORKER_PROBE_BUDGET) {
+				warm = (await probe()) ? warm + 1 : 0;
+			}
+
+			// Then verify, concurrently: POOL_SIZE requests in flight cannot all be served
+			// by one child, so every reply being fresh says something about every worker.
+			let clean = 0;
+			while (warm >= WARM_AGREEMENT && clean < CLEAN_ROUNDS && probes < WORKER_PROBE_BUDGET) {
+				const round = await Promise.all(Array.from({ length: POOL_SIZE }, probe));
 				clean = round.every(Boolean) ? clean + 1 : 0;
 			}
 
@@ -621,10 +637,11 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			// the wrong date and there is nothing to do but report the year INCOMPLETE.
 			if (clean < CLEAN_ROUNDS) {
 				throw new Incomplete(
-					`the worker pool never agreed on ${when}: ${probes} probes without ` +
+					`the worker pool never agreed on ${when}: ${probes} probes, ` +
+					`${warm >= WARM_AGREEMENT ? 'warmed but never gave' : 'never even warmed to'} ` +
 					`${CLEAN_ROUNDS} rounds of ${POOL_SIZE} concurrent replies within ` +
 					`${maxDriftS}s of the new time`,
-					{ when, probes, maxDriftS, sawInstead: seen.slice(-10) });
+					{ when, probes, warmedTo: warm, maxDriftS, sawInstead: seen.slice(-10) });
 			}
 			return;
 		}
