@@ -128,22 +128,31 @@ function conversionProbe({ ctx, ops }) {
 		locationId: sym.location(loc), price: 12.5
 	});
 
-	// **The parent reports its children's stock, unconverted.** `stock_current`'s
-	// `amount_aggregated` is a plain `SUM(amount)` over the sub-products (migration 0081), so
-	// the parent shows 1000 — grams — even though its own stock unit is packs. That is worth
-	// pinning: it is surprising, it is what the amount check inside ConsumeProduct compares
-	// against, and a change to it would alter which consumes the application accepts.
+	// **The parent reports its children's stock in its own unit, and that uses the factor
+	// backwards.** `stock_current` joins the conversion on `from_qu_id = <the sub's stock
+	// unit>` and `to_qu_id = <the parent's stock unit>` (migration 0233:23-26) — gram to pack,
+	// the inverse of what the substitution consume below uses. Nothing was written for that
+	// direction: `quantity_unit_conversions_resolved` derives the inverse of every row it
+	// finds, so the single pack-to-gram override answers both questions.
+	//
+	// So this asserts the reciprocal, and the consume asserts the factor itself. A factor
+	// stored or resolved wrongly fails one of the two whichever way it is wrong.
+	//
+	// It is also what `ConsumeProduct` compares the requested amount against, so the units
+	// have to agree for the request below to be accepted at all.
 	ops.push(call({
 		method: 'GET', path: `/stock/products/{product:${PARENT.key}}`,
 		expect: {
 			status: 200, kind: 'object',
-			equals: { stock_amount_aggregated: STOCKED }
+			equals: {
+				stock_amount: 0,                                 // none of its own
+				stock_amount_aggregated: STOCKED / FACTOR,       // its children's, in packs
+				is_aggregated_amount: 1
+			}
 		},
 		window: cal.dayWindow(day),
-		// `stock_amount` for a parent holding nothing of its own is deliberately not asserted:
-		// migration 0081 wraps it in IFNULL(..., 0) but nothing establishes what the API layer
-		// makes of that, and the raw value stays in the trace where it can be read.
-		label: `conversion probe: ${PARENT.name} aggregates ${STOCKED} from its child`
+		label: `conversion probe: ${PARENT.name} holds nothing itself and aggregates ` +
+			`${STOCKED / FACTOR} ${PARENT.qu} from ${STOCKED} ${CHILD.qu}`
 	}));
 
 	// The operation the fixture exists for. One pack asked of the parent, `FACTOR` grams
@@ -191,6 +200,16 @@ function conversionProbe({ ctx, ops }) {
 		amount: ledger.amountOf(sym.product(CHILD.key)),
 		window: cal.dayWindow(day),
 		label: `conversion probe: ${CHILD.name} should hold ${ledger.amountOf(sym.product(CHILD.key))}`
+	}));
+
+	// And the reciprocal again, on a quantity that is not a whole number of packs — 250 g is
+	// half a pack, so a factor applied as an integer division reports 0 here.
+	const left = ledger.amountOf(sym.product(CHILD.key));
+	ops.push(call({
+		method: 'GET', path: `/stock/products/{product:${PARENT.key}}`,
+		expect: { status: 200, kind: 'object', equals: { stock_amount_aggregated: left / FACTOR } },
+		window: cal.dayWindow(day),
+		label: `conversion probe: ${PARENT.name} now aggregates ${left / FACTOR} ${PARENT.qu}`
 	}));
 }
 

@@ -2,8 +2,8 @@
 	"generatorVersion": 1,
 	"plans": {
 		"g1/smoke/seed-20260905/anchor-2025-01-01": {
-			"hash": "88f7d5f2516d20d87f15e6079dadf6c79b2d7f11cf88de50e05be9cfd3e764ac",
-			"recorded": 632,
+			"hash": "fb952f377f90dac0d8b60514141957ec172a3f17b8fa404eecb6a97451aa2010",
+			"recorded": 633,
 			"arranged": 71,
 			"bookings": 153,
 			"byLedgerKind": {
@@ -17,8 +17,8 @@
 			}
 		},
 		"g1/year/seed-20260905/anchor-2025-01-01": {
-			"hash": "9afcfdaf1226cc82d377fe0a459b408e4291b9785bd155789d6faa7b475ab91e",
-			"recorded": 5376,
+			"hash": "76ece7efc4a4f0a3ae050b14b54dfde3aa4928b8d4c713940270c00f04b84df2",
+			"recorded": 5377,
 			"arranged": 146,
 			"bookings": 1851,
 			"byLedgerKind": {

@@ -75,8 +75,20 @@ function substitute(text, symbols, where) {
 	});
 }
 
+// **A value that is nothing but one symbol keeps that symbol's type.**
+//
+// Ids arrive from the application as JSON numbers, and `substitute()` builds a string because
+// it has to handle `"{product:milk}"` embedded in a path. That was invisible until an
+// endpoint started validating types: `PUT /users/{id}/permissions` requires integer ids
+// (services/RolesService.php:75-79) and answered 400 for `["3"]`. A body that names a row by
+// symbol means the row's id, not its decimal spelling, so a lone symbol resolves to the value
+// as bound. Strings with anything else around them are unaffected, which is every path.
 function substituteDeep(value, symbols, where) {
-	if (typeof value === 'string') return substitute(value, symbols, where);
+	if (typeof value === 'string') {
+		const lone = value.match(/^\{([^{}]+)\}$/);
+		if (lone && Object.prototype.hasOwnProperty.call(symbols, lone[1])) return symbols[lone[1]];
+		return substitute(value, symbols, where);
+	}
 	if (Array.isArray(value)) return value.map((v) => substituteDeep(v, symbols, where));
 	if (value && typeof value === 'object') {
 		const out = {};
