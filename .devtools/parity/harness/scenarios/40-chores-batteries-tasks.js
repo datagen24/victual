@@ -83,6 +83,39 @@ module.exports = {
 
 		await api.get('/chores/999999', { label: 'chores: details for a missing chore' });
 
+		// A chore whose assignment type needs users and whose assignment_config names none.
+		// Upstream answers the execution
+		//   500 {"error_message":"array_rand(): Argument #1 ($array) must not be empty"}
+		// because the random strategy picks with array_rand() in the branch an empty group
+		// falls into; here the strategy has nobody to choose between and stores null, which
+		// is what the no-assignment type stores, so the execution succeeds. The
+		// empty-assignment-group entry in lib/accepted.js is the record.
+		//
+		// Last in the chores block deliberately: it is the one step whose two sides end in
+		// different states, and everything above it is compared before that is true.
+		const unassigned = await api.post('/objects/chores', {
+			name: 'Parity Unassigned Random Chore',
+			period_type: 'manually',
+			assignment_type: 'random'
+		}, { label: 'chores: create a random chore with nobody assigned' });
+
+		const unassignedId = unassigned.body && unassigned.body.created_object_id;
+
+		if (unassignedId) {
+			await api.post(`/chores/${unassignedId}/execute`, { tracked_time: TRACKED, done_by: 1 },
+				{ label: 'chores: execute a chore with an empty assignment group' });
+
+			// The chore row rather than the details view, because the row is the part that
+			// still agrees: next_execution_assigned_to_user_id is null on both sides —
+			// upstream because the execution never got that far, here because "nobody" is
+			// the answer — so this step asserts that the fork stored null and not some user
+			// it invented. The details view would differ in last_tracked and tracked_count,
+			// which is the accepted status difference seen downstream rather than anything
+			// further to decide.
+			await api.get(`/objects/chores/${unassignedId}`,
+				{ label: 'chores: the chore row after an empty-group execution' });
+		}
+
 		// --- batteries -------------------------------------------------------------------
 		const battery = await api.post('/objects/batteries', {
 			name: 'Parity Battery',
