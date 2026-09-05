@@ -34,6 +34,12 @@ class ChoresService extends BaseService
 	 * assigned to, honoring the chore's assignment type (a manual reschedule
 	 * assignment takes precedence over any strategy).
 	 *
+	 * A chore whose assignment group resolves to nobody - no assignment_config, or one
+	 * naming only users that no longer exist - is assigned null, whatever its
+	 * assignment_type says. Every strategy needs somebody to choose between and none of
+	 * them can invent one, so "nobody" is the answer rather than a failure; it is what
+	 * CHORE_ASSIGNMENT_TYPE_NO_ASSIGNMENT stores too.
+	 *
 	 * @param int $choreId
 	 * @throws \Exception When the chore does not exist
 	 */
@@ -54,7 +60,15 @@ class ChoresService extends BaseService
 		{
 			$choreLastTrackedTime = $this->DB->chores_log()->where('chore_id = :1 AND undone = 0', $choreId)->max('tracked_time');
 			$lastChoreLogRow = $this->DB->chores_log()->where('chore_id = :1 AND tracked_time = :2 AND undone = 0', $choreId, $choreLastTrackedTime)->orderBy('row_created_timestamp', 'DESC')->fetch();
-			$lastDoneByUserId = $lastChoreLogRow->done_by_user_id;
+
+			// A chore that has never been executed - every chore, once - has no last row,
+			// and reading ->done_by_user_id off it was "Attempt to read property on null".
+			// A warning rather than a 500, so it never surfaced as a failure; it merely
+			// fired on every newly created chore and evaluated to the null it is written
+			// out as here. Only the alphabetical strategy reads the value, and "nobody has
+			// done it yet" matches no user there, which is what starts the rotation at the
+			// first name.
+			$lastDoneByUserId = $lastChoreLogRow === null ? null : $lastChoreLogRow->done_by_user_id;
 
 			$users = UsersService::GetInstance()->GetUsersAsDto();
 			$assignedUsers = [];
@@ -74,10 +88,21 @@ class ChoresService extends BaseService
 				{
 					$nextExecutionUserId = array_shift($assignedUsers)->id;
 				}
-				else
+				elseif (count($assignedUsers) > 1)
 				{
 					$nextExecutionUserId = $assignedUsers[array_rand($assignedUsers)]->id;
 				}
+
+				// No third branch on purpose: nobody assigned means there is nobody to pick,
+				// and the answer is the null this variable already holds - the same value the
+				// no-assignment path gives. It was `else` until the empty case was found,
+				// which made array_rand() the branch an empty group fell into; array_rand([])
+				// is a ValueError, \Error is deliberately not caught (plan 11), so
+				// POST /api/chores/{id}/execute answered 500 for a chore whose assignment_type
+				// is "random" and whose assignment_config is empty. An empty group is not only
+				// a chore nobody was ever assigned to: assignment_config naming a user that has
+				// since been deleted resolves to the same nothing, so this cannot be closed by
+				// validating the write.
 			}
 			elseif ($chore->assignment_type == self::CHORE_ASSIGNMENT_TYPE_IN_ALPHABETICAL_ORDER)
 			{
@@ -102,7 +127,12 @@ class ChoresService extends BaseService
 				}
 
 				// If nothing has matched, probably it was the last user in the sorted list -> the first one is the next one
-				if ($nextExecutionUserId == null)
+				// (or there is no list at all, which array_shift() answers with null rather
+				// than a user - the same empty group the random branch above documents. Reading
+				// ->id off that null is a warning rather than an \Error, so this was never the
+				// 500 the random branch was; it evaluated to the null the guard now writes
+				// deliberately, and said so in the log on every request.)
+				if ($nextExecutionUserId == null && count($assignedUsers) > 0)
 				{
 					$nextExecutionUserId = array_shift($assignedUsers)->id;
 				}

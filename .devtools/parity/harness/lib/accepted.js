@@ -210,6 +210,34 @@ const ACCEPTED = [
 	},
 
 	{
+		id: 'empty-assignment-group',
+		reference: 'services/ChoresService.php',
+		reason:
+			'POST /chores/{id}/execute on a chore whose assignment_type needs users and whose ' +
+			'assignment_config names none is 200 here and 500 upstream. Upstream\'s ' +
+			'CalculateNextExecutionAssignment() picks the random strategy\'s user with ' +
+			'array_rand($assignedUsers) in an else branch, so a group of nobody falls into it and ' +
+			'array_rand([]) is a ValueError — which reaches the caller as ' +
+			'{"error_message":"array_rand(): Argument #1 ($array) must not be empty"}, since \\Error is ' +
+			'deliberately not caught (docs/plans/11-api-error-handling.md). Here that branch is guarded ' +
+			'and the chore is assigned null, the same value CHORE_ASSIGNMENT_TYPE_NO_ASSIGNMENT stores: ' +
+			'no strategy can invent a user, so "nobody" is the answer rather than a failure.\n\n' +
+			'**The fork is the conforming side and this must not be "fixed" towards upstream.** The spec ' +
+			'documents the endpoint as returning the created chores_log row, and ' +
+			'next_execution_assigned_to_user_id is a nullable integer; a 500 is neither. The value is ' +
+			'reachable without any misuse — a chore created with an assignment type and no users yet, or ' +
+			'one whose assigned user was later deleted, which is why this is a runtime guard and not a ' +
+			'validation on the write. .devtools/pgsql/run-tests.sh chores holds it on both engines.\n\n' +
+			'The matcher is narrow: this one path, this one status pair. A 500 from anywhere else under ' +
+			'/chores, or the fork answering 500 itself, is still reported.',
+		match: ({ step, difference }) =>
+			difference.kind === 'status' &&
+			difference.victual === 200 &&
+			difference.upstream === 500 &&
+			/^\/chores\/\d+\/execute$/.test(String(step.path))
+	},
+
+	{
 		id: 'fork-only-entities',
 		reference: 'docs/plans/README.md',
 		reason:

@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores]
 #
-# Ten kinds of check, for ten reasons. Views are compared by what they return, because
+# Eleven kinds of check, for eleven reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -85,6 +85,19 @@
 # phase whose input is a file in the repository rather than a database this script built,
 # and that is the point of it.
 #
+# The eleventh asks one engine at a time, like the rollback and schema phases, and it is
+# here because the alternative was nowhere. ChoresService::CalculateNextExecutionAssignment()
+# picks the next user for a chore, and two of its four strategies pick from an array PHP
+# built out of assignment_config - so a group that resolves to nobody is a pure-PHP hazard
+# no view comparison could see. "random" picked with array_rand() in the branch an empty
+# group fell into, which is a ValueError and reached a client as a 500;
+# "in-alphabetical-order" read ->id off the null array_shift() returns, which is a warning
+# and reached one as the null it should have answered with in the first place. A third
+# strategy, "who-least-did-first", reads chores_execution_users_statistics instead, which is
+# why the phase runs on both engines rather than one: what an empty group means to that view
+# is a per-engine answer. Each empty case is paired with a populated control, so a guard that
+# answered null to everything fails here rather than passing.
+#
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
 # difftest.php, trigdifftest.php and migratedifftest.php, which share their normalisation
@@ -105,6 +118,7 @@
 #   SUITE_PGSQL_FILES_DB                 database for the file import tests (default victual_files)
 #   SUITE_PGSQL_MQTT_DB                  database for the mqtt tests    (default victual_mqtt)
 #   SUITE_PGSQL_IMPORT_DB                database for the import tests  (default victual_import)
+#   SUITE_PGSQL_CHORES_DB                database for the chore assignment tests (default victual_chores)
 #   SUITE_MQTT_STANDIN_PORT              port for the stand-in InfluxDB (default 8390)
 #   SUITE_MQTT_BROKER_PORT               port for the recording MQTT stand-in (default 8391)
 #   SUITE_SCRATCH                        where the throwaway databases go
@@ -143,6 +157,7 @@ RICHTEXT_DB="${SUITE_PGSQL_RICHTEXT_DB:-victual_richtext}"
 FILES_DB="${SUITE_PGSQL_FILES_DB:-victual_files}"
 MQTT_DB="${SUITE_PGSQL_MQTT_DB:-victual_mqtt}"
 IMPORT_DB="${SUITE_PGSQL_IMPORT_DB:-victual_import}"
+CHORES_DB="${SUITE_PGSQL_CHORES_DB:-victual_chores}"
 MQTT_STANDIN_PORT="${SUITE_MQTT_STANDIN_PORT:-8390}"
 MQTT_BROKER_PORT="${SUITE_MQTT_BROKER_PORT:-8391}"
 
@@ -913,6 +928,47 @@ run_import_tests() {
 	fi
 }
 
+# --- Chore assignment tests -------------------------------------------------------
+#
+# One engine at a time, like the rollback and schema phases: the question is what the
+# service does with an assignment group that resolves to nobody, and only one of the four
+# strategies asks the database anything at all.
+#
+# No fixture on either side. The phase creates the users and chores it needs, because the
+# rows it wants - a chore assigned to a user that has since been deleted, among others -
+# are not rows any shared fixture should carry.
+
+run_chores_assignment_tests() {
+	local datapath="$SUITE_SCRATCH/chores-sqlite"
+
+	rm -rf "$datapath"
+	write_sqlite_config "$datapath"
+
+	VICTUAL_DATAPATH="$datapath" php "$VICTUAL_ROOT/bin/victual-migrate" --quiet \
+		|| fail 'could not migrate the chore assignment test database'
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" php "$SUITE_DIR/chores-assignment-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+
+	build_pgsql "$CHORES_DB"
+
+	local pgdatapath="$SUITE_SCRATCH/chores-pgsql"
+	rm -rf "$pgdatapath"
+	write_pgsql_config "$pgdatapath"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$pgdatapath" DIFFTEST_DB_NAME="$CHORES_DB" \
+		php "$SUITE_DIR/chores-assignment-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$pgdatapath"
+}
+
 # Before anything is built: a migration numbering mistake means the two engines are not
 # running the same set of changes, which would make every comparison below meaningless
 # rather than merely wrong. The same script also refuses a hole in the sequence above the
@@ -952,8 +1008,9 @@ case "$WHICH" in
 	files) run_files_import_tests ;;
 	mqtt) run_mqtt_tests ;;
 	import) run_import_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac or all)" ;;
+	chores) run_chores_assignment_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
