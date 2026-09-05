@@ -11,6 +11,7 @@
 #   .devtools/parity/bin/parity reset       throw both databases away and re-migrate
 #   .devtools/parity/bin/parity status      what is running
 #   .devtools/parity/bin/parity logs <name> podman logs for one container (app|web|upstream|…)
+#   .devtools/parity/bin/parity year       a simulated year (--plan-only for now)
 #   .devtools/parity/bin/parity clock-check the simulated-time acceptance matrix
 #   .devtools/parity/bin/parity psql <sql…> a read-only query against the parity postgres
 #   .devtools/parity/bin/parity down        stop everything and delete the volumes
@@ -184,7 +185,7 @@ phase_all() {
 usage() {
 	# tail -n +2 drops the shebang, which `grep '^#'` would otherwise print as
 	# "!/usr/bin/env bash" at the top of the help.
-	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -16 | sed 's/^# \{0,1\}//'
+	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -17 | sed 's/^# \{0,1\}//'
 }
 
 # --- Dispatch -------------------------------------------------------------------------------
@@ -204,6 +205,15 @@ case "${1:-all}" in
 		ensure_victual_images "$BUILD"
 		ensure_upstream_image
 		stack_up
+		;;
+	year)
+		shift
+		ensure_harness_deps
+		# No stack is booted here yet: the generator is offline by construction, which is
+		# what makes the year reviewable before anything runs. Replay lands in the next
+		# stage and will reset the stack first, because the year needs a virgin database
+		# for its two id sequences to start level.
+		node "$HARNESS/run-year.js" --out "$REPORTS" "$@"
 		;;
 	psql)
 		shift
