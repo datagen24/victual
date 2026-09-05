@@ -342,10 +342,23 @@ const CACHE_LAPSE_MS = 1100;
 // requests at fixed time cost nothing. Those runs were dying of *this*, and the warm-up was
 // removed on a wrong diagnosis.
 //
-// Six is enough to touch every worker: the pool is `pm = static` with `pm.max_children = 4`
-// (nix/runtime/fpm-conf.nix). Their outcomes are ignored, because their job is to be the
-// requests that meet the discontinuity instead of a planned operation meeting it.
-const WORKER_WARMUP = 6;
+// A fixed count of throwaway requests fixed the *stability* — the 500s and the hangs — but
+// not the *correctness*: a worker that stayed idle through all six still served the next
+// write from yesterday, and roughly two `used_date` values a run landed a simulated day
+// behind. So the warm-up became a warm-until-agreed: it keeps issuing requests until the
+// pool answers with the new time consistently, which both warms a straggler (its own probe
+// is what makes it re-read) and establishes that none is left behind.
+//
+// **The loop never restarts the step.** An earlier attempt treated a stale reply as "not
+// arrived" and went back round the outer loop — rewriting the clock file, re-polling
+// PostgreSQL, re-waiting — which restarted the wait on the very condition it was clearing
+// and stalled for the full timeout at 1 April. Here a stale reply only resets the run of
+// agreements; the probing continues, and the pool converges.
+//
+// The pool is `pm = static` with `pm.max_children = 4` (nix/runtime/fpm-conf.nix), so eight
+// consecutive agreements is comfortably more than one pass over it.
+const WORKER_AGREEMENT = 8;
+const WORKER_PROBE_BUDGET = 80;
 
 // How many extra requests are sent after a step to warm the worker pool.
 //
@@ -457,9 +470,29 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			const remaining = CACHE_LAPSE_MS - (Date.now() - wroteAt);
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
-			for (let probe = 0; probe < WORKER_WARMUP; probe++) {
-				try { await instance.silently(() => instance.get('/objects/locations?limit=1')); }
-				catch { /* the point of these is to absorb, so a failure here is the job */ }
+			let agreed = 0;
+			let probes = 0;
+			while (agreed < WORKER_AGREEMENT && probes < WORKER_PROBE_BUDGET) {
+				probes++;
+				let fresh = false;
+				try {
+					const again = await instance.silently(() => instance.get('/system/time'));
+					fresh = inRange(again.body && Number(again.body.timestamp));
+				} catch {
+					fresh = false;   // a request that met the discontinuity; it has now warmed that worker
+				}
+				agreed = fresh ? agreed + 1 : 0;
+			}
+
+			// **Failing to get agreement is a clock failure, said at the step.** The
+			// alternative is to carry on and discover it later as a timestamp a day behind,
+			// by which point the operations in between have already been evaluated against
+			// the wrong date and there is nothing to do but report the year INCOMPLETE.
+			if (agreed < WORKER_AGREEMENT) {
+				throw new Incomplete(
+					`the worker pool never agreed on ${when}: ${probes} probes without ` +
+					`${WORKER_AGREEMENT} consecutive replies at the new time`,
+					{ when, probes });
 			}
 			return;
 		}
