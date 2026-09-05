@@ -2,10 +2,10 @@
 	"generatorVersion": 1,
 	"plans": {
 		"g1/smoke/seed-20260905/anchor-2025-01-01": {
-			"hash": "729d8075715a1b34151ca8e6be02f3d81387822dfe56a6ad750123b8fce95f0f",
+			"hash": "a386b290264e8dd5660a019eaa22d6f17625370d95fd46221e44c4563e84bc3a",
 			"recorded": 384,
-			"arranged": 62,
-			"bookings": 138,
+			"arranged": 68,
+			"bookings": 141,
 			"byLedgerKind": {
 				"self-production": 1,
 				"edit": 1,
@@ -17,37 +17,37 @@
 			}
 		},
 		"g1/year/seed-20260905/anchor-2025-01-01": {
-			"hash": "602711911862508bc34220aecb7ffc989e53466185e72731d1bc5caa882e5d0f",
-			"recorded": 4300,
-			"arranged": 135,
-			"bookings": 1816,
+			"hash": "134d89c6e251c36040955b587cc78468e539c79362684966ecbe03d1f0dbd80e",
+			"recorded": 4294,
+			"arranged": 143,
+			"bookings": 1819,
 			"byLedgerKind": {
 				"purchase": 530,
 				"transfer": 53,
 				"consume": 1040,
 				"open": 52,
+				"spoil": 51,
 				"self-production": 11,
-				"undo": 11,
-				"edit": 4,
-				"spoil": 46,
-				"inventory": 23
+				"undo": 2,
+				"edit": 1,
+				"inventory": 24
 			}
 		},
 		"g1/dense/seed-20260905/anchor-2025-01-01": {
-			"hash": "dc80fce82c5dd662c4b0b154656b2e2d28ace95dd89187cff248a2c57486d24e",
-			"recorded": 5883,
-			"arranged": 135,
-			"bookings": 3393,
+			"hash": "82c4855fa2fbbb871245ec437d7e21afbb0ec54edd03dfec3b18650234a3d6ca",
+			"recorded": 5879,
+			"arranged": 143,
+			"bookings": 3400,
 			"byLedgerKind": {
 				"purchase": 1060,
 				"transfer": 53,
 				"consume": 2080,
 				"open": 52,
-				"spoil": 50,
+				"spoil": 52,
 				"self-production": 11,
-				"undo": 11,
-				"edit": 5,
-				"inventory": 24
+				"undo": 5,
+				"edit": 7,
+				"inventory": 22
 			}
 		}
 	}

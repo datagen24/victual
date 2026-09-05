@@ -112,7 +112,15 @@ function momentToMillis(value) {
 	if (typeof value === 'number' && Number.isFinite(value)) return value * 1000;
 	if (typeof value !== 'string') return null;
 	if (DATE_RE.test(value)) return Date.parse(`${value}T00:00:00Z`);
-	if (DATETIME_RE.test(value)) return Date.parse(`${value.replace(' ', 'T')}${/Z|[+-]\d{2}/.test(value) ? '' : 'Z'}`);
+	// **Anchored to the end of the string, and that is the whole point.** An unanchored
+	// /Z|[+-]\d{2}/ matches the date's own hyphens — "2024-12-01 09:00:00" contains "-12" —
+	// so the value was treated as already carrying a zone and parsed as *local* time. On a
+	// host at UTC that is invisible; on one at America/New_York it is a five-hour error, and
+	// it is what made the year phase's first replay decide the clock had never arrived.
+	if (DATETIME_RE.test(value)) {
+		const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(value);
+		return Date.parse(`${value.replace(' ', 'T')}${hasZone ? '' : 'Z'}`);
+	}
 	return null;
 }
 

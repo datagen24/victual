@@ -8,9 +8,10 @@
 // script.
 //
 // **Chosen for coverage, not for realism alone.** Shelf lives span 3 to 900 days so that
-// some products expire inside the year and others never do; two products carry a tare
+// some products expire inside the year and others never do; one product carries a tare
 // weight because `ConsumeProduct`'s tare branch (services/StockService.php:566-573) is
-// arithmetic nothing else exercises; several buy in a different unit than they stock so the
+// arithmetic nothing else exercises — and only one, because a tare product inside a recipe
+// would drag its gross-reading protocol into the cooking path (see narrative/tare.js); several buy in a different unit than they stock so the
 // quantity-unit conversion path runs on every booking; three sit at a default consume
 // location so `stock_next_use`'s first ordering term is not constant for the whole year.
 
@@ -78,7 +79,7 @@ const PRODUCTS = [
 	{ key: 'pizza',     name: 'Pizza',           group: 'frozen',    loc: 'freezer', shelfLife: 200, min: 1, qu: 'piece', freezeBonus: 120 },
 	{ key: 'coffee',    name: 'Coffee',          group: 'drinks',    loc: 'pantry',  shelfLife: 300, min: 1, qu: 'gram', quPurchase: 'pack', conversion: 500 },
 	{ key: 'juice',     name: 'Orange juice',    group: 'drinks',    loc: 'fridge',  shelfLife: 30,  min: 1, qu: 'millilitre', quPurchase: 'litre' },
-	{ key: 'flour',     name: 'Flour',           group: 'pantrygrp', loc: 'pantry',  shelfLife: 400, min: 1, qu: 'gram', quPurchase: 'kilogram', tare: 320 },
+	{ key: 'flour',     name: 'Flour',           group: 'pantrygrp', loc: 'pantry',  shelfLife: 400, min: 1, qu: 'gram', quPurchase: 'kilogram' },
 	{ key: 'oil',       name: 'Olive oil',       group: 'pantrygrp', loc: 'pantry',  shelfLife: 500, min: 1, qu: 'millilitre', quPurchase: 'litre' },
 	{ key: 'pasta',     name: 'Pasta',           group: 'pantrygrp', loc: 'pantry',  shelfLife: 700, min: 2, qu: 'gram', quPurchase: 'pack', conversion: 500 },
 	{ key: 'rice',      name: 'Rice',            group: 'pantrygrp', loc: 'pantry',  shelfLife: 900, min: 1, qu: 'gram', quPurchase: 'kilogram' },

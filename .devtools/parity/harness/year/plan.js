@@ -28,6 +28,7 @@ const cooking = require('./narrative/cooking');
 const household = require('./narrative/household');
 const shopping = require('./narrative/shopping');
 const audit = require('./narrative/audit');
+const tare = require('./narrative/tare');
 
 // Bumped when the generator's output changes on purpose. plan.lock.json is keyed by it, so
 // a deliberate change to the narrative and an accidental one look different in review.
@@ -37,6 +38,18 @@ const GENERATOR_VERSION = 1;
 // floating anchor loses the leap day in three years out of four, and a year suite that only
 // sometimes covers it is a year suite that does not.
 const CANONICAL_ANCHOR = '2025-01-01';
+
+// **Every fixture name is prefixed, because a virgin database is not an empty one.** The
+// migrations seed rows of their own — `Fridge` among the locations and `Piece` among the
+// quantity units on a database that has only just been migrated — and `locations.name` is
+// UNIQUE, so an unprefixed fixture collides with them. The first replay stopped on exactly
+// that: "Pantry" was created, because nothing seeds it, and "Fridge" was rejected two
+// operations later. `10-entities.js` prefixes its names for the same reason.
+//
+// The prefix lives here rather than in world.js so that file stays a readable description of
+// a household rather than of a test fixture.
+const FIXTURE_PREFIX = 'Y ';
+const named = (name) => `${FIXTURE_PREFIX}${name}`;
 
 // --- The fixture ---------------------------------------------------------------------------
 
@@ -59,12 +72,12 @@ function emitFixture(ctx, ops) {
 		label: `fixture: ${entity} ${key}`
 	}));
 
-	for (const l of world.locations) simple('locations', l.key, 'location', { name: l.name, is_freezer: l.is_freezer || 0 });
-	for (const s of world.shoppingLocations) simple('shopping_locations', s.key, 'shoppingLocation', { name: s.name });
-	for (const g of world.productGroups) simple('product_groups', g.key, 'productGroup', { name: g.name });
-	for (const q of world.quantityUnits) simple('quantity_units', q.key, 'quantityUnit', { name: q.name, name_plural: q.name_plural });
-	for (const c of world.taskCategories) simple('task_categories', c.key, 'taskCategory', { name: c.name });
-	for (const s of world.mealPlanSections) simple('meal_plan_sections', s.key, 'mealPlanSection', { name: s.name, sort_number: s.sort_number });
+	for (const l of world.locations) simple('locations', l.key, 'location', { name: named(l.name), is_freezer: l.is_freezer || 0 });
+	for (const s of world.shoppingLocations) simple('shopping_locations', s.key, 'shoppingLocation', { name: named(s.name) });
+	for (const g of world.productGroups) simple('product_groups', g.key, 'productGroup', { name: named(g.name) });
+	for (const q of world.quantityUnits) simple('quantity_units', q.key, 'quantityUnit', { name: named(q.name), name_plural: named(q.name_plural) });
+	for (const c of world.taskCategories) simple('task_categories', c.key, 'taskCategory', { name: named(c.name) });
+	for (const s of world.mealPlanSections) simple('meal_plan_sections', s.key, 'mealPlanSection', { name: named(s.name), sort_number: s.sort_number });
 
 	for (const conv of world.quantityUnitConversions) {
 		ops.push(arrange({
@@ -80,19 +93,48 @@ function emitFixture(ctx, ops) {
 		}));
 	}
 
+	// **Users are not a generic-CRUD entity**, so this is not `/objects/users` — that answers
+	// "Entity does not exist or is not exposed", which is where the second replay stopped.
+	// `POST /users` is the route and it returns 204 (UsersApiController:48-51), so the ids
+	// have to come from a list afterwards, matched by username rather than by position.
 	for (const u of world.users) {
 		ops.push(arrange({
-			method: 'POST', path: '/objects/users',
-			body: { username: u.username, first_name: u.display, password: 'parity-year' },
-			expect: CREATED,
-			bind: { [`user:${u.key}`]: 'created_object_id' },
+			method: 'POST', path: '/users',
+			body: { username: u.username, first_name: u.display, last_name: 'Year', password: 'parity-year' },
+			expect: { status: 204 },
 			label: `fixture: user ${u.username}`
+		}));
+	}
+	ops.push(arrange({
+		method: 'GET', path: '/users',
+		expect: { status: 200, kind: 'array', minLength: world.users.length },
+		bind: Object.fromEntries(world.users.map((u) => [`user:${u.key}`, `find(username=${u.username}).id`])),
+		label: 'fixture: the users, by username'
+	}));
+
+	// **And they need permissions, or the weeks that run as them do nothing.** A user created
+	// through POST /users has none, so the first week that switched session answered 403
+	// "Permission missing: SHOPPINGLIST_ITEMS_ADD" — which is correct behaviour and a fixture
+	// that had not finished setting itself up. ADMIN is the root of the permission tree, so
+	// granting it is granting everything; its id is read rather than assumed to be 1.
+	ops.push(arrange({
+		method: 'GET', path: '/objects/permission_hierarchy?order=id:asc',
+		expect: { status: 200, kind: 'array', minLength: 1 },
+		bind: { 'permission:admin': 'find(name=ADMIN).id' },
+		label: 'fixture: the ADMIN permission'
+	}));
+	for (const u of world.users) {
+		ops.push(arrange({
+			method: 'PUT', path: `/users/{user:${u.key}}/permissions`,
+			body: { permissions: ['{permission:admin}'] },
+			expect: { status: 204 },
+			label: `fixture: ${u.username} may use the household`
 		}));
 	}
 
 	for (const p of world.products) {
 		const body = {
-			name: p.name,
+			name: named(p.name),
 			product_group_id: `{productGroup:${p.group}}`,
 			location_id: `{location:${p.loc}}`,
 			qu_id_stock: `{quantityUnit:${p.qu}}`,
@@ -106,19 +148,25 @@ function emitFixture(ctx, ops) {
 		simple('products', p.key, 'product', body);
 	}
 
-	// Product-specific unit conversions, which need the product to exist first.
+	// **Product-specific conversions are edited, not created.** When a product's purchase
+	// and stock units differ and no global conversion resolves between them, the application
+	// creates one itself with a factor of 1 — Y Bread arrived with piece->slice already
+	// there. Posting the same triple then collides, which is where the fourth replay stopped.
+	// So the row the application made is found by the unit the fixture allocated and given
+	// its real factor.
 	for (const p of world.products.filter((x) => x.conversion)) {
 		ops.push(arrange({
-			method: 'POST', path: '/objects/quantity_unit_conversions',
-			body: {
-				product_id: `{product:${p.key}}`,
-				from_qu_id: `{quantityUnit:${p.quPurchase}}`,
-				to_qu_id: `{quantityUnit:${p.qu}}`,
-				factor: p.conversion
-			},
-			expect: CREATED,
-			bind: { [`conversion:${p.key}`]: 'created_object_id' },
-			label: `fixture: ${p.name} ${p.quPurchase}->${p.qu}`
+			method: 'GET',
+			path: `/objects/quantity_unit_conversions?query%5B%5D=product_id%3D{product:${p.key}}&order=id:asc`,
+			expect: { status: 200, kind: 'array', minLength: 1 },
+			bind: { [`conversion:${p.key}`]: `find(from_qu_id={quantityUnit:${p.quPurchase}}).id` },
+			label: `fixture: find ${p.name}'s ${p.quPurchase}->${p.qu} conversion`
+		}));
+		ops.push(arrange({
+			method: 'PUT', path: `/objects/quantity_unit_conversions/{conversion:${p.key}}`,
+			body: { factor: p.conversion },
+			expect: { status: 204 },
+			label: `fixture: ${p.name} ${p.quPurchase}->${p.qu} = ${p.conversion}`
 		}));
 	}
 
@@ -137,7 +185,7 @@ function emitFixture(ctx, ops) {
 	for (const r of world.recipes) {
 		ops.push(arrange({
 			method: 'POST', path: '/objects/recipes',
-			body: { name: r.name, base_servings: r.servings, desired_servings: r.servings },
+			body: { name: named(r.name), base_servings: r.servings, desired_servings: r.servings },
 			expect: CREATED,
 			bind: { [`recipe:${r.key}`]: 'created_object_id' },
 			label: `fixture: recipe ${r.name}`
@@ -168,14 +216,22 @@ function emitFixture(ctx, ops) {
 		}
 	}
 
+	// **Chores that assign work need someone to assign it to.** ChoresService:70-79 guards
+	// `count($assignedUsers) == 1` but not 0, so a `random` chore with nobody assigned
+	// answers HTTP 500 with a raw `array_rand(): Argument #1 ($array) must not be empty` on
+	// the first execution. The year found that on day 0 of its smallest profile. Assigning
+	// the household is what a real chore does anyway, and it is what makes the rotation this
+	// fixture exists to exercise actually rotate.
+	const assignedHousehold = world.users.map((u) => `{user:${u.key}}`).join(',');
 	for (const c of world.chores) {
 		ops.push(arrange({
 			method: 'POST', path: '/objects/chores',
 			body: {
-				name: c.name,
+				name: named(c.name),
 				period_type: c.period_type,
 				period_days: c.period_days,
 				assignment_type: c.assignment_type,
+				assignment_config: c.assignment_type === 'no-assignment' ? null : assignedHousehold,
 				track_date_only: 0,
 				start_date: ctx.cal.date(0)
 			},
@@ -188,7 +244,7 @@ function emitFixture(ctx, ops) {
 	for (const b of world.batteries) {
 		ops.push(arrange({
 			method: 'POST', path: '/objects/batteries',
-			body: { name: b.name, charge_interval_days: b.charge_interval_days },
+			body: { name: named(b.name), charge_interval_days: b.charge_interval_days },
 			expect: CREATED,
 			bind: { [`battery:${b.key}`]: 'created_object_id' },
 			label: `fixture: battery ${b.name}`
@@ -242,6 +298,9 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 
 	const ctx = {
 		world, profile, cal, ledger, sym,
+		// Everything the generic emitters may touch. A tare product speaks a different
+		// protocol on the wire (narrative/tare.js) and is handled only there.
+		plainProducts: world.products.filter((p) => !p.tare),
 		users: world.users,
 		choreState: household.initChoreSchedule(world),
 		batteryState: household.initBatterySchedule(world),
@@ -289,6 +348,8 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		if (weekday === 5) withStream('cooking', () => cooking.cook({ ctx, day, ops }));
 		if (weekday === 6) withStream('cooking', () => cooking.planWeek({ ctx, day, ops }));
 
+		withStream('tare', () => tare.refill({ ctx, day, ops }));
+		withStream('tare', () => tare.use({ ctx, day, ops }));
 		withStream('household', () => household.doChores({ ctx, day, ops }));
 		withStream('batteries', () => household.chargeBatteries({ ctx, day, ops }));
 		withStream('tasks', () => household.tasks({ ctx, day, ops }));
@@ -303,7 +364,12 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		if (lastPurchase && recentBookings.length < 40) {
 			const symbol = Object.keys(lastPurchase.bind).find((k) => k.startsWith('booking:'));
 			if (symbol && !recentBookings.some((b) => b.symbol === symbol)) {
-				recentBookings.push({ symbol, product: lastPurchase.ledger.product, amount: lastPurchase.ledger.amount });
+				recentBookings.push({
+					symbol,
+					product: lastPurchase.ledger.product,
+					amount: lastPurchase.ledger.amount,
+					seq: lastPurchase.ledger.seq
+				});
 			}
 		}
 
@@ -350,7 +416,19 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		ledger: {
 			problems,
 			bookings: ledger.bookings.length,
-			expectedAmounts: Object.fromEntries(ledger.expectedAmounts())
+			expectedAmounts: Object.fromEntries(ledger.expectedAmounts()),
+			// The modelled bookings themselves, for the oracles that are expressed over the
+			// year's history rather than over its end state. Not part of the plan hash — the
+			// hash is over `ops`, which is what a replay actually performs.
+			bookingsDetail: ledger.bookings.map((b) => ({
+				type: b.type,
+				productKey: String(b.productId).replace(/^product:/, ''),
+				amount: b.amount,
+				price: b.price === undefined ? null : b.price,
+				purchasedDate: b.purchasedDate || null,
+				spoiled: b.spoiled || false,
+				undone: b.undone || false
+			}))
 		},
 		days: profile.days,
 		ops

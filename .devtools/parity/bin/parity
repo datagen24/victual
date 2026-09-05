@@ -209,11 +209,42 @@ case "${1:-all}" in
 	year)
 		shift
 		ensure_harness_deps
-		# No stack is booted here yet: the generator is offline by construction, which is
-		# what makes the year reviewable before anything runs. Replay lands in the next
-		# stage and will reset the stack first, because the year needs a virgin database
-		# for its two id sequences to start level.
-		node "$HARNESS/run-year.js" --out "$REPORTS" "$@"
+		case " $* " in
+			# The generator is offline by construction, which is what makes the year
+			# reviewable before anything runs. These three never need a stack.
+			*" --plan-only "*|*" --print-meta "*|*" --update-plan-lock "*)
+				node "$HARNESS/run-year.js" --out "$REPORTS" "$@"
+				;;
+			*)
+				# **The clock is set before the stack boots, not after.** PostgreSQL
+				# initialises at whatever it first reads, and stepping backwards past a
+				# running server is a corrupted run rather than a failed one — so the plan's
+				# first day has to be known before start_postgres, which is why run-year.js
+				# has a --print-meta that prints it in shell form.
+				export PARITY_FAKETIME=on
+				meta="$(node "$HARNESS/run-year.js" --print-meta "$@")" || die "could not build the plan"
+				eval "$meta"
+				# shellcheck disable=SC2154
+				log "year: clock starts at $startDate"
+				ft_init "$startDate 09:00:00"
+
+				ensure_victual_images "$BUILD"
+				ensure_upstream_image
+				# A virgin database on both sides, and fresh mosquitto and influx with it:
+				# retained messages and old points would otherwise survive into this run and
+				# be counted as its own.
+				stack_up
+
+				ft_assert_loaded "$startDate 09:00:00"
+
+				PARITY_PSQL_CMD="'$HERE/parity' psql" \
+				node "$HARNESS/run-year.js" \
+					--victual "$VICTUAL_URL" \
+					--clock-file "$FT_CLOCK_FILE" \
+					--out "$REPORTS" \
+					"$@"
+				;;
+		esac
 		;;
 	psql)
 		shift

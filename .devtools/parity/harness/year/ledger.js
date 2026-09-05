@@ -114,7 +114,10 @@ class Ledger {
 			open: 0
 		};
 		this.entries.push(entry);
-		this.book(type, productId, amount, { price });
+		// purchasedDate travels with the booking because the average-price and
+		// price-history oracles are expressed in terms of the day the plan bought on, and
+		// that day is client-supplied — it is the evidence that a year happened.
+		this.book(type, productId, amount, { price, purchasedDate });
 		return entry;
 	}
 

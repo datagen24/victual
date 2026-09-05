@@ -38,10 +38,10 @@ function purchaseAmount(rng, product) {
 // two such entries are ordered arbitrarily and the two engines may pick different ones. The
 // ledger is asked before every add, and a collision simply skips the product this week.
 function shop({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym, profile } = ctx;
+	const { rng, cal, world, ledger, sym, profile, plainProducts } = ctx;
 	const count = intBetween(rng, 6, 10) * profile.cadence;
 	const shoppingLocation = world.shoppingLocations[cal.week(day) % world.shoppingLocations.length];
-	const chosen = sample(rng, world.products, Math.min(count, world.products.length));
+	const chosen = sample(rng, plainProducts, Math.min(count, plainProducts.length));
 
 	for (const product of chosen) {
 		const purchasedDate = cal.date(day);
@@ -84,16 +84,19 @@ function shop({ ctx, day, ops }) {
 			productId: sym.product(product.key), amount, bbd, purchasedDate,
 			locationId: sym.location(product.loc), price
 		});
+		// The index of the booking just made, carried on the operation so that an undo later
+		// in the year can name *this* booking rather than one that merely resembles it.
+		ops[ops.length - 1].ledger.seq = ledger.bookings.length - 1;
 	}
 }
 
 // Eating. Several days a week, drawn only from what the ledger says is there.
 function eat({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym, profile } = ctx;
+	const { rng, cal, world, ledger, sym, profile, plainProducts } = ctx;
 	const meals = intBetween(rng, 2, 4) * profile.cadence;
 
 	for (let i = 0; i < meals; i++) {
-		const stocked = world.products.filter((p) => ledger.amountOf(sym.product(p.key)) > 0);
+		const stocked = plainProducts.filter((p) => ledger.amountOf(sym.product(p.key)) > 0);
 		if (stocked.length === 0) return;
 		const product = pick(rng, stocked);
 		const have = ledger.amountOf(sym.product(product.key));
@@ -120,8 +123,8 @@ function eat({ ctx, day, ops }) {
 
 // Opening a package. The interesting case is the partial one, which splits the entry.
 function openSomething({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym } = ctx;
-	const candidates = world.products.filter((p) => {
+	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
+	const candidates = plainProducts.filter((p) => {
 		const id = sym.product(p.key);
 		return ledger.amountOf(id) > 0 && ledger.openAmountOf(id) === 0;
 	});
@@ -148,10 +151,10 @@ function openSomething({ ctx, day, ops }) {
 // Into the freezer. Exercises default_best_before_days_after_freezing, which recalculates
 // the best-before on the moved entry — arithmetic that only this path runs.
 function freeze({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym } = ctx;
-	const freezable = world.products.filter((p) =>
+	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
+	const freezable = plainProducts.filter((p) =>
 		p.freezeBonus && ledger.amountAtLocation(sym.product(p.key), sym.location(p.loc)) > 0 && p.loc !== 'freezer');
-	const movable = freezable.length > 0 ? freezable : world.products.filter((p) =>
+	const movable = freezable.length > 0 ? freezable : plainProducts.filter((p) =>
 		p.loc === 'fridge' && ledger.amountAtLocation(sym.product(p.key), sym.location('fridge')) > 0);
 	if (movable.length === 0) return;
 
@@ -182,9 +185,9 @@ function freeze({ ctx, day, ops }) {
 // Throwing away. Drawn from entries the ledger says are actually past their best-before on
 // this simulated day, so spoilage is a consequence of the calendar rather than a die roll.
 function spoil({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym } = ctx;
+	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
 	const today = cal.date(day);
-	const expired = world.products.filter((p) => {
+	const expired = plainProducts.filter((p) => {
 		const id = sym.product(p.key);
 		return ledger.ordered(id).some((e) => e.bbd < today);
 	});

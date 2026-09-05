@@ -17,6 +17,9 @@ const path = require('path');
 
 const { buildYearPlan, lockKey, GENERATOR_VERSION, CANONICAL_ANCHOR, PROFILES } = require('./year/plan');
 const { validate } = require('./year/validate');
+const { Instance } = require('./lib/instance');
+const { replay, Incomplete } = require('./year/replay');
+const invariants = require('./year/invariants');
 
 const LOCK_PATH = path.join(__dirname, 'year', 'plan.lock.json');
 
@@ -28,6 +31,10 @@ function parseArgs(argv) {
 		out: path.join(__dirname, '..', 'reports'),
 		planOnly: false,
 		updateLock: false,
+		printMeta: false,
+		invariantsOnly: false,
+		victual: process.env.PARITY_VICTUAL_URL || 'http://127.0.0.1:8080',
+		clockFile: process.env.PARITY_CLOCK_FILE || null,
 		unimplemented: []
 	};
 	for (let i = 2; i < argv.length; i++) {
@@ -38,9 +45,13 @@ function parseArgs(argv) {
 		else if (flag === '--out') args.out = argv[++i];
 		else if (flag === '--plan-only') args.planOnly = true;
 		else if (flag === '--update-plan-lock') args.updateLock = true;
+		else if (flag === '--print-meta') args.printMeta = true;
+		else if (flag === '--invariants-only') args.invariantsOnly = true;
+		else if (flag === '--victual') args.victual = argv[++i];
+		else if (flag === '--clock-file') args.clockFile = argv[++i];
 		// Parsed and refused rather than ignored: a run that quietly did something other
 		// than what was asked is worse than one that stops.
-		else if (['--deep', '--invariants-only', '--against', '--update-baseline', '--no-reset', '--verbose-report'].includes(flag)) {
+		else if (['--deep', '--against', '--update-baseline', '--no-reset', '--verbose-report'].includes(flag)) {
 			args.unimplemented.push(flag);
 			if (flag === '--against') i++;
 		}
@@ -56,7 +67,87 @@ function readLock() {
 	}
 }
 
-function main() {
+// Read-only SQL, handed down by bin/parity because how to reach this stack's PostgreSQL is
+// stack knowledge. Without it the outbox check reports that it could not run, rather than
+// silently not running.
+function psqlRunner() {
+	const command = process.env.PARITY_PSQL_CMD;
+	if (!command) return null;
+	const { execFileSync } = require('child_process');
+	return (sql) => execFileSync('sh', ['-c', `${command} ${JSON.stringify(sql)}`],
+		{ encoding: 'utf8', timeout: 30000 }).trim().split('\n').pop();
+}
+
+async function runAgainstInstance(args, plan) {
+	// A longer timeout than the api phase's 30s, on purpose: a checkpoint read over a year of
+	// accumulated stock is legitimately slower than the same read over a scenario's handful
+	// of rows, and the first full-year run aborted on one rather than reporting it.
+	const api = new Instance({
+		name: 'victual', baseUrl: args.victual, apiKeyHeader: 'VICTUAL-API-KEY', timeoutMs: 180000
+	});
+	await api.login();
+
+	const started = Date.now();
+	let lastDay = -1;
+	const result = await replay(plan, api, {
+		clockFile: args.clockFile,
+		psql: psqlRunner(),
+		onDay: (day) => {
+			if (day - lastDay >= 30 || day === 0) {
+				lastDay = day;
+				const mb = (process.memoryUsage().heapUsed / 1048576).toFixed(0);
+				process.stdout.write(`    day ${String(day).padStart(3)} of ${plan.meta.days}   ` +
+					`${((Date.now() - started) / 1000).toFixed(0)}s   heap ${mb}MB\n`);
+			}
+		}
+	});
+
+	console.log('');
+	console.log(`  replayed ${result.executed} recorded and ${result.arranged} arranged operations in ` +
+		`${((Date.now() - started) / 1000).toFixed(0)}s`);
+	// Measured rather than assumed: both full traces are held at once in parity mode, so the
+	// single-instance figure is the number that has to be doubled when the second lands.
+	console.log(`  peak heap ${(process.memoryUsage().heapUsed / 1048576).toFixed(0)}MB, trace ${api.trace.length} records`);
+
+	if (result.stepRetries.length > 0) {
+		console.log('');
+		console.log(`  \x1b[33m${result.stepRetries.length} operations answered 5xx with an empty body\x1b[0m`);
+		console.log('    (the clock-step artifact described in year/replay.js — libpq deadlines under a jumping clock)');
+		for (const r of result.stepRetries.slice(0, 5)) console.log(`      ${r.status}  ${r.op}`);
+	}
+
+	if (result.slowCalls.length > 0) {
+		console.log('');
+		console.log(`  ${result.slowCalls.length} calls took over 5s — the slowest:`);
+		for (const c of result.slowCalls.slice(0, 6)) {
+			console.log(`    ${(c.ms / 1000).toFixed(1)}s  ${c.op}`);
+		}
+	}
+
+	if (result.windowProblems.length > 0) {
+		console.log('');
+		console.log(`\x1b[31m  ${result.windowProblems.length} operations wrote a timestamp outside their simulated window\x1b[0m`);
+		for (const w of result.windowProblems.slice(0, 8)) {
+			console.log(`    ${w.op}: ${w.problems.join('; ')}`);
+		}
+	}
+
+	console.log('');
+	console.log('  invariants');
+	const results = await invariants.check({ instance: api, plan, symbols: result.symbols, psql: psqlRunner() });
+	for (const r of results) {
+		console.log(`    ${r.ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'}  ${r.name}`);
+		if (r.detail) console.log(`          ${r.detail}`);
+	}
+
+	return {
+		failed: results.filter((r) => !r.ok).length + (result.windowProblems.length > 0 ? 1 : 0),
+		results,
+		windowProblems: result.windowProblems
+	};
+}
+
+async function main() {
 	const args = parseArgs(process.argv);
 
 	if (args.unimplemented.length > 0) {
@@ -73,6 +164,14 @@ function main() {
 	const plan = buildYearPlan({ profile: args.profile, seed: args.seed, anchor: args.anchor });
 	const result = validate(plan);
 	const key = lockKey(plan.meta);
+
+	// Shell-readable, so bin/parity can set the clock to the plan's first day *before*
+	// booting PostgreSQL — the clock is a boot-time property and a backwards step past a
+	// running server is a corrupted run rather than a failed one.
+	if (args.printMeta) {
+		for (const [k, v] of Object.entries(plan.meta)) console.log(`${k}=${v}`);
+		process.exit(0);
+	}
 
 	console.log('');
 	console.log(`\x1b[1mA simulated year — profile ${plan.meta.profile}\x1b[0m`);
@@ -134,17 +233,40 @@ function main() {
 		console.log(`  plan: ${file}`);
 	}
 
-	console.log('');
-	console.log(result.problems.length === 0
-		? `\x1b[32mPASS — the plan generated and validated\x1b[0m`
-		: `\x1b[31mFAIL — ${result.problems.length} problems with the plan\x1b[0m`);
+	if (result.problems.length > 0) {
+		console.log('');
+		console.log(`\x1b[31mFAIL — ${result.problems.length} problems with the plan\x1b[0m`);
+		process.exit(1);
+	}
 
-	process.exit(result.problems.length === 0 ? 0 : 1);
+	if (!args.invariantsOnly) {
+		console.log('');
+		console.log('\x1b[32mPASS — the plan generated and validated\x1b[0m');
+		process.exit(0);
+	}
+
+	console.log('');
+	console.log(`  replaying against ${args.victual}${args.clockFile ? '' : '  (no clock file — running on the real clock)'}`);
+	const run = await runAgainstInstance(args, plan);
+
+	console.log('');
+	console.log(run.failed === 0
+		? '\x1b[32mPASS — the year replayed and every invariant held\x1b[0m'
+		: `\x1b[31mFAIL — ${run.failed} invariants or window checks failed\x1b[0m`);
+	process.exit(run.failed === 0 ? 0 : 1);
 }
 
-try {
-	main();
-} catch (error) {
+main().catch((error) => {
+	if (error instanceof Incomplete) {
+		// **INCOMPLETE, not FAIL.** The suite could not ask its question: an operation did
+		// not do what it said it would, so everything after it would have been measured
+		// against a database in a state nobody planned. The failing operation is preserved
+		// rather than summarised.
+		console.error('');
+		console.error(`\x1b[31mINCOMPLETE — ${error.message}\x1b[0m`);
+		if (error.detail) console.error(`  ${JSON.stringify(error.detail).slice(0, 800)}`);
+		process.exit(3);
+	}
 	console.error(error);
 	process.exit(2);
-}
+});

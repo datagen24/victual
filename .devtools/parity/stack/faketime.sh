@@ -161,6 +161,16 @@ ft_victual_args() {
 		-e "FAKETIME_CACHE_DURATION=$FT_CACHE_DURATION"
 }
 
+# **`FAKETIME_DONT_FAKE_MONOTONIC=1`, and a 365-day run is what proved it necessary.**
+# PostgreSQL schedules its checkpointer, autovacuum and latch waits on the monotonic clock.
+# Faking that alongside the wall clock means a one-day step tells the postmaster that a day
+# elapsed between two ticks — its own log reported `write=172800.002 s` for a checkpoint —
+# and after roughly 190 steps it stopped accepting connections altogether: the application
+# reported `SQLSTATE[08006] connection to server at "postgres" failed: timeout expired`, at
+# 09:00:00 on scattered simulated days, which is exactly when the clock moves. A 31-day
+# smoke run never reached it. What the suite needs faked is `LOCALTIMESTAMP`, which is wall
+# clock; the monotonic clock can and should stay real.
+#
 # **No LD_PRELOAD here on purpose.** Setting it as container environment hangs the official
 # postgres entrypoint: it re-execs itself through `gosu postgres` and the second pass never
 # reaches bash's first traced command — empty logs, no children, and it took a
@@ -173,7 +183,8 @@ ft_postgres_args() {
 	printf '%s\n' \
 		-v "$FT_CLOCK_DIR:/clk:ro" \
 		-e "FAKETIME_TIMESTAMP_FILE=/clk/now" \
-		-e "FAKETIME_CACHE_DURATION=$FT_CACHE_DURATION"
+		-e "FAKETIME_CACHE_DURATION=$FT_CACHE_DURATION" \
+		-e "FAKETIME_DONT_FAKE_MONOTONIC=1"
 }
 
 # Upstream is Alpine, so musl, so it cannot use the nixpkgs library at all — its image

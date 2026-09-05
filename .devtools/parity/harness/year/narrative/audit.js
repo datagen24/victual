@@ -6,13 +6,14 @@
 
 const { call, bookingRows } = require('../ops');
 const { intBetween, pick, sample, chance } = require('../rng');
+const { priceFor } = require('./groceries');
 
 // Quarterly stocktake. Half the corrections go up and half down, because the two take
 // different paths through InventoryProduct — up is an addition, down consumes in
 // stock_next_use order.
 function stocktake({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym } = ctx;
-	const counted = sample(rng, world.products, Math.min(8, world.products.length));
+	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
+	const counted = sample(rng, plainProducts, Math.min(8, plainProducts.length));
 
 	for (const product of counted) {
 		const id = sym.product(product.key);
@@ -26,12 +27,19 @@ function stocktake({ ctx, day, ops }) {
 		const purchasedDate = cal.date(day);
 		if (up && ledger.hasEntryWith(id, bbd, purchasedDate)) continue;
 
+		// **An inventory increase says what it cost.** Sending no price does not mean no
+		// price: the application fills one in, and products_average_price counts
+		// inventory-correction rows, so an oracle that booked them as priceless disagreed
+		// with the view in the fourth decimal place after a year — milk at 1.1845 against
+		// 1.1843. Stating the price is what makes the two comparable.
+		const price = priceFor(product, day, cal.days);
 		ops.push(call({
 			method: 'POST', path: `/stock/products/{product:${product.key}}/inventory`,
 			body: {
 				new_amount: newAmount,
 				best_before_date: bbd,
 				purchased_date: purchasedDate,
+				price: up ? price : undefined,
 				location_id: `{location:${product.loc}}`
 			},
 			expect: bookingRows({ transactionType: 'inventory-correction' }),
@@ -42,7 +50,7 @@ function stocktake({ ctx, day, ops }) {
 
 		ledger.inventory({
 			productId: id, newAmount, bbd, purchasedDate,
-			locationId: sym.location(product.loc), price: null
+			locationId: sym.location(product.loc), price: up ? price : null
 		});
 	}
 }
@@ -87,6 +95,19 @@ function undoSomething({ ctx, day, ops, recentBookings }) {
 	if (recentBookings.length === 0) return;
 	const booking = recentBookings.pop();
 
+	// **Only undo a purchase whose stock is still there.** The emission used to be
+	// unconditional while the model only followed when it could, so a purchase whose stock
+	// had since been eaten was undone on the instance and not in the ledger — the two then
+	// disagreed by that amount for the rest of the year. The first full-year replay hit it
+	// on day 60: nine oil purchases planned, seven left un-undone, and a consume the model
+	// thought was affordable that the application refused.
+	//
+	// It also stops the year asking for something whose outcome is not obviously defined:
+	// the log after those undos implied a negative stock for the product, which is a
+	// question worth asking deliberately and in isolation rather than by accident in March.
+	const id = sym.product(booking.product);
+	if (ledger.amountOf(id) < booking.amount) return;
+
 	ops.push(call({
 		method: 'POST', path: `/stock/bookings/{${booking.symbol}}/undo`,
 		body: {},
@@ -96,19 +117,18 @@ function undoSomething({ ctx, day, ops, recentBookings }) {
 		label: `d${day}: undo the ${booking.product} purchase`
 	}));
 
-	// Undoing a purchase removes the stock it added. The model has to follow, or every
-	// consume after this one is planned against stock that is no longer there.
-	const id = sym.product(booking.product);
-	const available = ledger.amountOf(id);
-	if (available >= booking.amount) {
-		ledger.consume({ productId: id, amount: booking.amount });
-		// It is not a consumption in the ledger identity — the original booking is marked
-		// undone instead, so the two cancel rather than adding a third row.
-		ledger.bookings.pop();
-		const original = ledger.bookings.findIndex((b) =>
-			b.type === 'purchase' && b.productId === id && b.amount === booking.amount && !b.undone);
-		if (original >= 0) ledger.bookings[original].undone = true;
-	}
+	// Undoing a purchase removes the stock it added, and the model follows unconditionally
+	// now that the operation is only emitted when it can.
+	ledger.consume({ productId: id, amount: booking.amount });
+	// Not a consumption in the ledger identity — the original booking is marked undone
+	// instead, so the two cancel rather than adding a third row.
+	ledger.bookings.pop();
+	// **By index, not by resemblance.** Matching on (type, product, amount) marked whichever
+	// purchase looked similar, and two purchases of the same amount at different prices are
+	// ordinary — so the model excluded one booking from the average-price oracle while the
+	// application had excluded another. It showed up as a fifth decimal place: milk at
+	// 1.1843 against 1.1845 after a year.
+	if (ledger.bookings[booking.seq]) ledger.bookings[booking.seq].undone = true;
 }
 
 // **The two isolated fixtures, and they are last on purpose.**
@@ -123,7 +143,7 @@ function undoSomething({ ctx, day, ops, recentBookings }) {
 // The merge is here for the same reason: it is destructive, and a year that merged in March
 // would spend nine months comparing the consequences.
 function isolatedTail({ ctx, ops }) {
-	const { cal, world, sym } = ctx;
+	const { cal, world, sym, ledger } = ctx;
 	const day = cal.days - 1;
 	const product = world.products[0];
 	const bbd = cal.dateOffset(day, 30);
@@ -144,6 +164,15 @@ function isolatedTail({ ctx, ops }) {
 			window: cal.dayWindow(day),
 			label: `tie probe: identical entry ${n} of ${product.name}`
 		}));
+		// **The probe is isolated from the narrative, not from the model.** Leaving it out of
+		// the ledger made the oracle short by exactly what the probe bought: the first
+		// end-to-end run reported milk as live 3 against ledger 2, and an average price of
+		// 1.2442 against 1.1600, both of which were the oracle being wrong rather than the
+		// application.
+		ledger.purchase({
+			productId: sym.product(product.key), amount: 1, bbd, purchasedDate,
+			locationId: sym.location(product.loc), price: n === 1 ? 1.11 : 2.22
+		});
 	}
 
 	// The consume that has to choose between them. Its *outcome* is deliberately not pinned
@@ -161,6 +190,7 @@ function isolatedTail({ ctx, ops }) {
 		window: cal.dayWindow(day),
 		label: 'tie probe: consume one of two indistinguishable entries'
 	}));
+	ledger.consume({ productId: sym.product(product.key), amount: 1 });
 }
 
 module.exports = { stocktake, selfProduce, undoSomething, isolatedTail };
@@ -178,8 +208,8 @@ module.exports = { stocktake, selfProduce, undoSomething, isolatedTail };
 // takes a filter and an explicit `order=id:asc`, which makes "the first row" mean the same
 // thing on both instances rather than whatever order a view happened to return.
 function editEntry({ ctx, day, ops }) {
-	const { rng, cal, world, ledger, sym } = ctx;
-	const stocked = world.products.filter((p) => ledger.amountOf(sym.product(p.key)) > 0);
+	const { rng, cal, world, ledger, sym, plainProducts } = ctx;
+	const stocked = plainProducts.filter((p) => ledger.amountOf(sym.product(p.key)) > 0);
 	if (stocked.length === 0) return;
 	const product = pick(rng, stocked);
 	const id = sym.product(product.key);
