@@ -5,6 +5,7 @@ namespace Victual\Controllers;
 use DI\Container;
 use Victual\Controllers\Api\BaseApiController;
 use Victual\Services\ApplicationService;
+use Victual\Services\DatabaseService;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
@@ -28,13 +29,19 @@ class ExceptionController extends BaseApiController
 	 */
 	public function __construct(Container $container, ResponseFactoryInterface $responseFactory, ?LoggerInterface $logger = null)
 	{
-		parent::__construct($container);
+		// false: this controller is constructed at bootstrap, in front of the error
+		// middleware it is handed to, so a connection opened here has nothing above it to
+		// catch its failure. See BaseController::__construct() and RenderErrorPage().
+		parent::__construct($container, false);
 		$this->ResponseFactory = $responseFactory;
 		$this->Logger = $logger;
 	}
 
 	private $ResponseFactory;
 	private ?LoggerInterface $Logger;
+
+	/** @var LoggerInterface|null The logger of the invocation being handled - see LogException() */
+	private ?LoggerInterface $ActiveLogger = null;
 
 	/**
 	 * Handles the given exception (Slim error handler signature).
@@ -55,6 +62,11 @@ class ExceptionController extends BaseApiController
 
 		$response = $this->ResponseFactory->createResponse();
 		$isApiRoute = IsApiRoutePath($request->getUri()->getPath());
+
+		// Kept for the whole invocation rather than passed down: RenderErrorPage() has a
+		// failure of its own to record, and it happens below the point Slim hands the
+		// logger in.
+		$this->ActiveLogger = $logger ?? $this->Logger;
 
 		$this->LogException($request, $exception, $logErrors, $logErrorDetails, $logger);
 
@@ -88,16 +100,18 @@ class ExceptionController extends BaseApiController
 
 		if ($exception instanceof HttpNotFoundException)
 		{
-			return $this->RenderPage($response->withStatus(404), 'errors/404', [
-				'exception' => $exception
-			]);
+			return $this->RenderErrorPage($response, 404, 'errors/404', function () use ($exception)
+			{
+				return ['exception' => $exception];
+			});
 		}
 
 		if ($exception instanceof HttpForbiddenException)
 		{
-			return $this->RenderPage($response->withStatus(403), 'errors/403', [
-				'exception' => $exception
-			]);
+			return $this->RenderErrorPage($response, 403, 'errors/403', function () use ($exception)
+			{
+				return ['exception' => $exception];
+			});
 		}
 
 		$status = self::HttpStatusOf($exception);
@@ -109,16 +123,120 @@ class ExceptionController extends BaseApiController
 			// error occured" page with a 500, which is wrong in both halves: it is the
 			// caller's request that could not be handled, and telling them the server broke
 			// invites a retry that will fail the same way. Plan 15-C4.
-			return $this->RenderPage($response->withStatus($status), 'errors/4xx', [
-				'exception' => $exception,
-				'status' => $status
-			]);
+			return $this->RenderErrorPage($response, $status, 'errors/4xx', function () use ($exception, $status)
+			{
+				return ['exception' => $exception, 'status' => $status];
+			});
 		}
 
-		return $this->RenderPage($response->withStatus(500), 'errors/500', [
-			'exception' => $exception,
-			'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo()
-		]);
+		// The template variables are built inside RenderErrorPage() rather than here: the
+		// system info reads the database (ApplicationService extends BaseService), so
+		// assembling them is part of what can fail and has to be inside its try.
+		return $this->RenderErrorPage($response, 500, 'errors/500', function () use ($exception)
+		{
+			return [
+				'exception' => $exception,
+				'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo()
+			];
+		});
+	}
+
+	/**
+	 * Renders an error page, falling back to a fixed one when rendering is itself
+	 * impossible.
+	 *
+	 * Rendering an error page is not a cheap operation and never was: RenderPage() reads
+	 * the sidebar userentities, Render() asks ApplicationService for the version and
+	 * LocalizationService for the translations, and the 500 page asks for the system
+	 * information on top - and every one of those is a service that opens the database.
+	 * So the page that reports a failure needs the database to be working, which is
+	 * exactly the assumption a database failure breaks. The exception thrown here escapes
+	 * into Slim's error *middleware*, which has no handler above it, and PHP ends the
+	 * request with a fatal: no status, no body, a connection the client sees only as its
+	 * proxy's read timeout, and a worker gone.
+	 *
+	 * The connection is therefore obtained here rather than in the constructor, and
+	 * everything that can reach it is inside one try. Throwable and not Exception: a null
+	 * or a type mismatch on a half-built connection is an \Error, and an \Error escaping
+	 * this method ends the request the same way a PDOException does.
+	 *
+	 * @param callable():array $data The template variables, built lazily for the same reason
+	 */
+	private function RenderErrorPage($response, int $status, string $viewName, callable $data)
+	{
+		try
+		{
+			if ($this->DB === null)
+			{
+				$this->DB = DatabaseService::GetInstance()->GetDbConnection();
+			}
+
+			return $this->RenderPage($response->withStatus($status), $viewName, $data());
+		}
+		catch (Throwable $renderFailure)
+		{
+			return $this->StaticErrorPage($status, $renderFailure);
+		}
+	}
+
+	/**
+	 * The error page for when the error page could not be rendered: fixed markup, written
+	 * straight into the response, depending on nothing.
+	 *
+	 * No Blade, no localization, no database - each of those is a thing that has already
+	 * failed by the time this is reached, and a fallback that can fail is not one. It is
+	 * plain English rather than a translated string for the same reason: the translations
+	 * come out of LocalizationService, which extends BaseService and opens a connection.
+	 *
+	 * The status the handler decided is kept rather than replaced with a 500. Routing
+	 * found no route, or authorization refused, before anything touched the database, so
+	 * that answer is still true and still the one a client should act on; only the page
+	 * saying it is missing. What went wrong here goes to the log, not into the body -
+	 * a connection failure names the host, the port and the role, and this response is
+	 * emitted without authentication. Same rule as
+	 * SchemaVersionMiddleware::DatabaseUnavailable().
+	 */
+	private function StaticErrorPage(int $status, Throwable $renderFailure)
+	{
+		if ($this->ActiveLogger !== null)
+		{
+			$this->ActiveLogger->error('The error page could not be rendered: ' . self::WithoutDriverText($renderFailure->getMessage()), [
+				'status' => $status,
+				'exception' => get_class($renderFailure),
+				'file' => $renderFailure->getFile(),
+				'line' => $renderFailure->getLine(),
+				'stack_trace' => $renderFailure->getTraceAsString()
+			]);
+		}
+		else
+		{
+			// Nothing was handed a logger - a construction path the application does not
+			// use, but silence here would lose the only record of a fatal-shaped failure
+			error_log('Victual: the error page could not be rendered: ' . $renderFailure->getMessage());
+		}
+
+		$headline = $status >= 500
+			? 'A server error occured while processing your request'
+			: 'This request could not be handled';
+
+		$body = '<!DOCTYPE html>' . PHP_EOL
+			. '<html lang="en">' . PHP_EOL
+			. '<head><meta charset="utf-8"><title>Victual - error ' . $status . '</title></head>' . PHP_EOL
+			. '<body>' . PHP_EOL
+			. '<h1>' . $headline . '</h1>' . PHP_EOL
+			. '<p>The error page itself could not be rendered, which usually means the database'
+			. ' is unreachable. The server log holds what failed.</p>' . PHP_EOL
+			. '</body>' . PHP_EOL
+			. '</html>' . PHP_EOL;
+
+		// A fresh response rather than the one the render was attempted on: PSR-7 clones
+		// share their body stream, so whatever that had already written to it would
+		// otherwise still be there, in front of this.
+		$response = $this->ResponseFactory->createResponse($status)
+			->withHeader('Content-Type', 'text/html; charset=utf-8');
+		$response->getBody()->write($body);
+
+		return $response;
 	}
 
 	/**
