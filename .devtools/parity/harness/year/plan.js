@@ -28,6 +28,7 @@ const cooking = require('./narrative/cooking');
 const household = require('./narrative/household');
 const shopping = require('./narrative/shopping');
 const audit = require('./narrative/audit');
+const prices = require('./narrative/prices');
 const tare = require('./narrative/tare');
 
 // Bumped when the generator's output changes on purpose. plan.lock.json is keyed by it, so
@@ -340,20 +341,21 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		lotCounter += 1;
 		if (!chose && !ALWAYS_LOTS.has(kind) && lotCounter % profile.verifyEvery !== 0) return;
 		const id = sym.product(product.key);
-		// Where two lots are indistinguishable to stock_next_use, the next consume's choice
-		// between them is undefined and the suite has nothing to assert. See
-		// ledger.hasOrderingTie().
-		if (ledger.hasOrderingTie(id)) return;
-		const entries = ledger.entriesOf(id).map((e) => ({
-			...e,
-			// The model names locations by symbol; the assertion is substituted at replay.
-			location_id: `{${e.location_id}}`
-		}));
+		// Where two lots are indistinguishable to stock_next_use, which one a consume drew
+		// from is undefined — but the amount removed, the product total, the tied group's own
+		// total and the locations it may occupy are all still determined. So the expectation
+		// is narrowed to those, not withdrawn. See ledger.lotExpectation().
+		const { exact, groups } = ledger.lotExpectation(id);
+		// The model names locations by symbol; the assertion is substituted at replay.
+		const asSymbol = (locationId) => `{${locationId}}`;
 		ops.push(verifyLots({
 			productKey: product.key,
-			entries,
+			exact: exact.map((e) => ({ ...e, location_id: asSymbol(e.location_id) })),
+			groups: groups.map((g) => ({ ...g, locations: g.locations.map(asSymbol) })),
 			window: cal.dayWindow(day),
-			label: `d${day}: after ${kind}, ${product.name || product.key} should hold ${entries.length} lot(s)` +
+			label: `d${day}: after ${kind}, ${product.name || product.key} should hold ` +
+				`${exact.length} determined lot(s)` +
+				(groups.length ? ` and ${groups.length} tied group(s)` : '') +
 				(chose ? ` (chosen from ${lotsBefore})` : '')
 		}));
 	};
@@ -381,6 +383,7 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 	}
 
 	const ops = [];
+	ledger.stampDay(cal.date(0));
 	ops.push(mark({ note: `fixture for profile ${profile.label}`, day: 0 }));
 	emitFixture(ctx, ops);
 
@@ -389,6 +392,7 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 
 	for (let day = 0; day < profile.days; day++) {
 		const weekday = cal.weekday(day);
+		ledger.stampDay(cal.date(day));
 		ops.push(mark({ note: `day ${day} — ${cal.date(day)}`, day }));
 
 		// One week a month runs as another user, so stock_log.user_id is not constant and
@@ -461,9 +465,11 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 	}
 
 	const lastDay = profile.days - 1;
+	ledger.stampDay(cal.date(lastDay));
 	ops.push(mark({ note: 'year end', day: lastDay }));
 	checkpoints.yearEnd({ ctx, day: lastDay, ops, expectedRows: { 'stock log': ledger.bookings.length } });
 
+	withStream('prices', () => prices.priceProbe({ ctx, ops }));
 	withStream('audit', () => audit.isolatedTail({ ctx, ops }));
 
 	const problems = ledger.selfCheck();
@@ -497,6 +503,10 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 				amount: b.amount,
 				price: b.price === undefined ? null : b.price,
 				purchasedDate: b.purchasedDate || null,
+				// The simulated day the booking was made, which is the day its delivered
+				// event must land on — distinct from purchasedDate, which the plan may
+				// backdate.
+				day: b.day || null,
 				entryKey: b.entryKey === undefined ? null : b.entryKey,
 				touched: b.touched ? b.touched.map((t) => ({ key: t.key, amount: t.amount })) : null,
 				spoiled: b.spoiled || false,

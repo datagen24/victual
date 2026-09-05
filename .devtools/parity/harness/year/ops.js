@@ -101,14 +101,27 @@ const OK_OBJECT = { status: 200, kind: 'object' };
 // wrong *selection* leaves behind while every total stays correct.
 const LOT_FIELDS = ['amount', 'best_before_date', 'purchased_date', 'price', 'open', 'location_id'];
 
-function verifyLots({ productKey, entries, label, window }) {
+// `exact` are lots whose every field is determined. `groups` are sets of lots the
+// application's own ordering cannot tell apart, where the split between them is arbitrary —
+// so the group is constrained by everything the tie does not touch (its total, the locations
+// it may occupy, the prices it may carry) and by nothing it does.
+//
+// **Relaxing the selected lot is not relaxing the assertion.** A tie leaves the amount
+// removed, the product total, the group's total and the set of valid source lots all exactly
+// constrained; only which member of the group shrank is open. Skipping the whole check —
+// which an earlier version did — gave all of that up to accommodate one unknown.
+function verifyLots({ productKey, exact, groups, label, window }) {
 	return call({
 		method: 'GET',
 		path: `/stock/products/{product:${productKey}}/entries`,
 		expect: {
 			status: 200,
 			kind: 'array',
-			rowsEqual: { fields: LOT_FIELDS, rows: entries.map((e) => LOT_FIELDS.map((f) => e[f])) }
+			lots: {
+				fields: LOT_FIELDS,
+				exact: exact.map((e) => LOT_FIELDS.map((f) => e[f])),
+				groups
+			}
 		},
 		window,
 		label

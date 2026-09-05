@@ -142,6 +142,20 @@ async function runAgainstInstance(args, plan) {
 		for (const w of result.clockArtifacts.slice(0, 4)) console.log(`      ${w.op}: ${w.problems.join('; ')}`);
 	}
 
+	// Not a verdict. An unknown price and an explicit zero are equivalent for a valuation,
+	// which is the only place the comparison treats them alike; that they are *represented*
+	// differently is unexplained, so it is reported as an observation and left visible rather
+	// than modelled away.
+	if (result.priceRepresentations && result.priceRepresentations.length > 0) {
+		console.log('');
+		console.log(`  \x1b[33mnote\x1b[0m  ${result.priceRepresentations.length} lot prices came back in a different representation than the plan recorded`);
+		console.log('          (null against 0). Equal by valuation, so no assertion failed; the rule');
+		console.log('          behind the difference is not established. Raw values are in the trace.');
+		for (const r of result.priceRepresentations.slice(0, 4)) {
+			console.log(`            ${r.op}: read ${JSON.stringify(r.raw)}, planned ${JSON.stringify(r.planned)}`);
+		}
+	}
+
 	if (result.windowProblems.length > 0) {
 		console.log('');
 		console.log(`\x1b[31m  ${result.windowProblems.length} operations wrote a timestamp outside their simulated window\x1b[0m`);
@@ -168,6 +182,9 @@ async function runAgainstInstance(args, plan) {
 	}
 
 	return {
+		assertions: result.assertions,
+		priceRepresentations: result.priceRepresentations || [],
+		slowCalls: result.slowCalls || [],
 		failed: results.filter((r) => !r.ok).length + (result.windowProblems.length > 0 ? 1 : 0),
 		// Tracked apart from `failed`: a clock violation is not an application finding, and
 		// it does not become one by being counted with them — but it does stop the run
@@ -176,6 +193,71 @@ async function runAgainstInstance(args, plan) {
 		results,
 		windowProblems: result.windowProblems
 	};
+}
+
+// **A milestone that lives only in a terminal is not preserved.** The verdict, what was
+// asserted, how long it took, whether the clock held, and which commit produced it are the
+// things a later run has to be compared against; a scrollback buffer carries none of them.
+//
+// The commit identity includes whether the tree was dirty, because a report from an
+// uncommitted working copy names a commit that does not contain the code that ran — which is
+// exactly the confusion this file exists to prevent.
+function writeRunReport(args, plan, run, { verdict, elapsedS }) {
+	const { execFileSync } = require('child_process');
+	const git = (cmdArgs) => {
+		try {
+			return execFileSync('git', cmdArgs, { cwd: __dirname, encoding: 'utf8' }).trim();
+		} catch { return null; }
+	};
+	const dirty = git(['status', '--porcelain']);
+
+	const report = {
+		verdict,
+		recordedAt: new Date().toISOString(),
+		commit: {
+			sha: git(['rev-parse', 'HEAD']),
+			describe: git(['log', '-1', '--format=%h %s']),
+			dirty: dirty === null ? null : dirty.length > 0,
+			// Named rather than counted: "3 files dirty" does not say whether they are the
+			// ones under test.
+			dirtyPaths: dirty ? dirty.split('\n').map((l) => l.trim()).slice(0, 40) : []
+		},
+		plan: {
+			profile: plan.meta.profile,
+			seed: plan.meta.seed,
+			anchor: plan.meta.anchor,
+			days: plan.meta.days,
+			startDate: plan.meta.startDate,
+			endDate: plan.meta.endDate,
+			hash: plan.meta.hash,
+			recordedCalls: plan.counts.recorded,
+			arrangedCalls: plan.counts.arranged,
+			bookings: plan.ledger.bookings
+		},
+		timing: { replaySeconds: elapsedS },
+		clock: {
+			violations: run.clockViolations,
+			// A run on the real clock is not a year; say so rather than reporting zero
+			// violations of a contract that was never in force.
+			enforced: Boolean(args.clockFile)
+		},
+		assertions: run.assertions || {},
+		invariants: (run.results || []).map((r) => ({ name: r.name, ok: r.ok, detail: r.detail || null })),
+		windowProblems: (run.windowProblems || []).length,
+		// Observations, not findings. Kept in the report so a later run can see whether the
+		// unexplained representation difference changed.
+		priceRepresentations: run.priceRepresentations || [],
+		slowestCalls: (run.slowCalls || []).slice(0, 5)
+	};
+
+	fs.mkdirSync(args.out, { recursive: true });
+	const file = path.join(args.out, `year-run-${plan.meta.profile}.json`);
+	fs.writeFileSync(file, `${JSON.stringify(report, null, '\t')}\n`);
+	console.log('');
+	console.log(`  run report: ${file}`);
+	if (report.commit.dirty) {
+		console.log('    \x1b[33mthe working tree was dirty\x1b[0m — this report does not describe the named commit');
+	}
 }
 
 async function main() {
@@ -278,7 +360,12 @@ async function main() {
 
 	console.log('');
 	console.log(`  replaying against ${args.victual}${args.clockFile ? '' : '  (no clock file — running on the real clock)'}`);
+	const startedAt = Date.now();
 	const run = await runAgainstInstance(args, plan);
+	const elapsedS = Math.round((Date.now() - startedAt) / 1000);
+
+	const verdict = run.failed > 0 ? 'FAIL' : (run.clockViolations > 0 ? 'INCOMPLETE' : 'PASS');
+	writeRunReport(args, plan, run, { verdict, elapsedS });
 
 	console.log('');
 	if (run.failed > 0) {

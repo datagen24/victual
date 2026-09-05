@@ -117,6 +117,20 @@ function expectedAveragePrices(bookings) {
 // moment the event was captured*, and carried a price; `stock_value` carries one point per
 // affected product per event.
 //
+// **"Carried a price" means `price !== null`, and that is not the rule the price views
+// use.** The publisher's gate is an explicit null check
+// (services/Influx/BookingEventPublisher.php:795, with the reasoning at :191 — "a booking
+// with no price is not a booking at a price of nothing"), so a purchase booked at an
+// explicit `0` publishes a `price_paid` point of 0.0000 while one booked with no price at
+// all publishes none. `products_average_price` uses `COALESCE(price, 0) > 0` and excludes
+// both.
+//
+// So the two surfaces genuinely disagree about whether an unknown price and a zero price
+// are the same thing, and an oracle that applied the view's rule here counted one point too
+// few. The price-representation fixture (narrative/prices.js) is what established it: its
+// explicitly-zero-priced lot produced an unexpected `butter|0.0000|5` point on its first
+// run. Each surface is now modelled by its own rule rather than by a shared assumption.
+//
 // That capture-time qualifier is what makes the undo case meaningful. A purchase undone in
 // March had already published its price_paid in February, and the undo publishes its own
 // event rather than retracting that one — so the historical point must still be there. An
@@ -127,7 +141,7 @@ async function checkDelivery({ plan, symbols, influx, mqtt, results }) {
 	const stop = `${new Date(Date.parse(`${plan.meta.endDate}T00:00:00Z`) + 3 * 86400000).toISOString().slice(0, 10)}T00:00:00Z`;
 
 	// --- price_paid, counted and valued from the plan ---------------------------------------
-	const expectedPriced = bookings.filter((b) => b.type === 'purchase' && b.price !== null && b.price > 0);
+	const expectedPriced = bookings.filter((b) => b.type === 'purchase' && b.price !== null);
 	let paid;
 	try {
 		paid = await queryPoints({ ...influx, measurement: 'price_paid', start, stop });
@@ -141,13 +155,22 @@ async function checkDelivery({ plan, symbols, influx, mqtt, results }) {
 	if (paid.pointCount !== expectedPriced.length) {
 		countProblems.push(`${paid.pointCount} points, the plan booked ${expectedPriced.length} priced purchases`);
 	}
-	// Values, as a multiset of (product, price, amount). Matching by booking id would be
+	// Values, as a multiset of (product, day, price, amount). Matching by booking id would be
 	// tighter still, but the plan does not bind an id for every purchase; a multiset already
 	// fails on a wrong price, a wrong amount, a missing point and a duplicated one.
-	const key = (productKey, price, amount) => `${productKey}|${Number(price).toFixed(4)}|${Number(amount)}`;
+	//
+	// **The day is part of the key because the point's timestamp is part of its meaning.**
+	// The publisher writes each point at the booking's own `row_created_timestamp` rather
+	// than at delivery time, precisely so a backlog drained after an outage lands where it
+	// belongs (BookingEventPublisher.php:16-18). Without the day in the key, a point that was
+	// otherwise correct but written on the wrong date compared equal to the right one, so the
+	// property the publisher goes out of its way to hold was the one thing not checked.
+	const key = (productKey, day, price, amount) =>
+		`${productKey}|${day}|${Number(price).toFixed(4)}|${Number(amount)}`;
+	const dayOf = (isoTime) => String(isoTime || '').slice(0, 10);
 	const wanted = new Map();
-    for (const b of expectedPriced) {
-		const k = key(b.productKey, b.price, b.amount);
+	for (const b of expectedPriced) {
+		const k = key(b.productKey, b.day, b.price, b.amount);
 		wanted.set(k, (wanted.get(k) || 0) + 1);
 	}
 	const keyOfId = new Map();
@@ -156,7 +179,7 @@ async function checkDelivery({ plan, symbols, influx, mqtt, results }) {
 	}
 	for (const point of paid.points) {
 		const productKey = keyOfId.get(String(point.tags.product_id));
-		const k = key(productKey, point.fields.price, point.fields.amount);
+		const k = key(productKey, dayOf(point.time), point.fields.price, point.fields.amount);
 		if (!wanted.has(k)) { countProblems.push(`unexpected point ${k}`); continue; }
 		const left = wanted.get(k) - 1;
 		if (left === 0) wanted.delete(k); else wanted.set(k, left);

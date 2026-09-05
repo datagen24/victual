@@ -111,7 +111,24 @@ function pluck(body, spec) {
 
 // --- Checking an outcome ---------------------------------------------------------------------
 
-function checkExpect(op, record, where) {
+// Which expectation forms an operation carries. Counted at evaluation rather than from the
+// plan: a run that stopped early planned every assertion and established none of them, and a
+// count taken from the plan could not tell those apart.
+const EXPECT_FORMS = ['status', 'kind', 'length', 'minLength', 'shape', 'rowShape', 'rowEquals',
+	'rowsSum', 'equals', 'rowsMatch', 'rowsAbsent', 'rowsEqual', 'lots'];
+
+function tallyExpect(expectation, tally) {
+	if (!expectation) return;
+	for (const form of EXPECT_FORMS) {
+		if (expectation[form] !== undefined) tally.set(form, (tally.get(form) || 0) + 1);
+	}
+	if (expectation.lots) {
+		tally.set('lots:exact', (tally.get('lots:exact') || 0) + (expectation.lots.exact || []).length);
+		tally.set('lots:tiedGroups', (tally.get('lots:tiedGroups') || 0) + (expectation.lots.groups || []).length);
+	}
+}
+
+function checkExpect(op, record, where, priceRepresentations = []) {
 	const e = op.expect;
 	const body = record.body;
 
@@ -174,21 +191,8 @@ function checkExpect(op, record, where) {
 	// ordering the API promises, and because two genuinely identical lots (the FIFO tie
 	// probe builds one such pair on purpose) must compare equal in either order.
 	if (e.rowsEqual) {
-		// **"No price" has two representations and they are treated as one.**
-		//
-		// A stock entry created without a price comes back as `null` in some situations and
-		// `0` in others: a self-produced lot read straight after its booking answered `null`,
-		// and an otherwise identical one answered `0`. Consuming part of it does not change
-		// which — that was tested and it stays `null` — so the rule behind it is not
-		// established here, and this comment does not pretend otherwise.
-		//
-		// Collapsing them is safe for what this assertion is *for*. The database's own price
-		// views already treat the two identically (`COALESCE(price, 0) > 0`), and a consume
-		// that drew from the wrong lot leaves a different *non-zero* price behind, which is
-		// still caught. What is given up is the ability to tell `null` from `0`, which no
-		// behaviour in the application appears to distinguish.
 		const norm = (v) => {
-			if (v === null || v === undefined) return 0;
+			if (v === null || v === undefined) return null;
 			const n = Number(v);
 			return Number.isFinite(n) && String(v).trim() !== '' ? Number(n.toFixed(6)) : String(v);
 		};
@@ -196,6 +200,18 @@ function checkExpect(op, record, where) {
 		const got = (Array.isArray(body) ? body : []).map(tupleOf).sort();
 		const want = e.rowsEqual.rows.map((r) => JSON.stringify(r.map(norm))).sort();
 		if (got.length !== want.length || got.some((t, i) => t !== want[i])) {
+			// A row that matches a group's dates but sits somewhere the tie could not have
+			// left it lands here rather than in the group. Say that, rather than reporting a
+			// count mismatch that hides which lot moved.
+			for (const row of loose) {
+				const g = (groups || []).find((x) => Object.entries(x.where)
+					.every(([k, v]) => String(numeric(row[k])) === String(numeric(v))));
+				if (g) {
+					throw new Incomplete(
+						`${where}: a tied lot sits at location ${row.location_id}, which is not one the plan allows`,
+						{ op: op.label, allowed: g.locations, row: { amount: row.amount, location_id: row.location_id } });
+				}
+			}
 			throw new Incomplete(
 				`${where}: the lots left behind are not the ones the plan expects ` +
 				`(${got.length} rows against ${want.length})`,
@@ -205,6 +221,98 @@ function checkExpect(op, record, where) {
 					got: got.slice(0, 6),
 					expected: want.slice(0, 6)
 				});
+		}
+	}
+
+	// **Lots: what is determined, compared exactly; what a tie leaves open, compared against
+	// the outcomes the application permits.**
+	if (e.lots) {
+		const { fields, exact, groups } = e.lots;
+		const rows = Array.isArray(body) ? body : [];
+
+		// Only where a valuation is what is being compared is an unknown price equivalent to
+		// an explicit zero. Everywhere else the raw value is kept, and a difference between
+		// the two representations is recorded as an observation rather than modelled away —
+		// they can mean different things in a contract even when a price view coalesces them.
+		const numeric = (v) => {
+			if (v === null || v === undefined) return null;
+			const n = Number(v);
+			return Number.isFinite(n) && String(v).trim() !== '' ? Number(n.toFixed(6)) : String(v);
+		};
+		const valuation = (v) => (numeric(v) === null ? 0 : numeric(v));
+
+		const matchesGroup = (row, g) => Object.entries(g.where)
+			.every(([k, v]) => String(numeric(row[k])) === String(numeric(v)));
+
+		const grouped = new Map((groups || []).map((g, i) => [i, []]));
+		const loose = [];
+		for (const row of rows) {
+			const index = (groups || []).findIndex((g) => matchesGroup(row, g));
+			if (index >= 0) grouped.get(index).push(row); else loose.push(row);
+		}
+
+		// The determined lots, exactly — with the raw price kept as an observation wherever
+		// it differs from the plan's while the valuation agrees.
+		for (const row of loose) {
+			const raw = numeric(row.price);
+			if (raw !== null && Number(raw) !== 0) continue;
+			const planned = (exact || [])
+				.map((r) => numeric(r[fields.indexOf('price')]))
+				.filter((v) => v === null || Number(v) === 0);
+			if (planned.length > 0 && !planned.some((v) => String(v) === String(raw))) {
+				priceRepresentations.push({ op: op.label, raw: row.price, planned: [...new Set(planned)] });
+			}
+		}
+		const tupleOf = (row) => JSON.stringify(fields.map((f) => (f === 'price' ? valuation(row[f]) : numeric(row[f]))));
+		const got = loose.map(tupleOf).sort();
+		const want = (exact || []).map((r) => JSON.stringify(
+			fields.map((f, i) => (f === 'price' ? valuation(r[i]) : numeric(r[i]))))).sort();
+		if (got.length !== want.length || got.some((t, i) => t !== want[i])) {
+			// A row that matches a group's dates but sits somewhere the tie could not have
+			// left it lands here rather than in the group. Say that, rather than reporting a
+			// count mismatch that hides which lot moved.
+			for (const row of loose) {
+				const g = (groups || []).find((x) => Object.entries(x.where)
+					.every(([k, v]) => String(numeric(row[k])) === String(numeric(v))));
+				if (g) {
+					throw new Incomplete(
+						`${where}: a tied lot sits at location ${row.location_id}, which is not one the plan allows`,
+						{ op: op.label, allowed: g.locations, row: { amount: row.amount, location_id: row.location_id } });
+				}
+			}
+			throw new Incomplete(
+				`${where}: the determined lots are not the ones the plan expects ` +
+				`(${got.length} rows against ${want.length})`,
+				{ op: op.label, fields, got: got.slice(0, 6), expected: want.slice(0, 6) });
+		}
+
+		// And each tied group, by everything the tie does not decide.
+		for (const [index, g] of (groups || []).entries()) {
+			const members = grouped.get(index) || [];
+			const total = members.reduce((n, r) => n + Number(r.amount || 0), 0);
+			if (Math.abs(total - g.total) > 1e-6) {
+				throw new Incomplete(
+					`${where}: tied lots ${JSON.stringify(g.where)} hold ${total}, the plan expects ${g.total}`,
+					{ op: op.label, members: members.map((m) => ({ amount: m.amount, location_id: m.location_id })) });
+			}
+			for (const m of members) {
+				if (!g.locations.some((l) => String(numeric(l)) === String(numeric(m.location_id)))) {
+					throw new Incomplete(
+						`${where}: a tied lot sits at location ${m.location_id}, which is not one the plan allows`,
+						{ op: op.label, allowed: g.locations });
+				}
+				if (g.prices && !g.prices.some((p) => valuation(p) === valuation(m.price))) {
+					throw new Incomplete(
+						`${where}: a tied lot carries price ${m.price}, which is not one the plan allows`,
+						{ op: op.label, allowed: g.prices });
+				}
+				// The representation difference itself, kept as evidence rather than a verdict.
+				if (g.prices && !g.prices.some((p) => String(numeric(p)) === String(numeric(m.price)))) {
+					priceRepresentations.push({
+						op: op.label, raw: m.price, planned: g.prices, where: g.where
+					});
+				}
+			}
 		}
 	}
 
@@ -398,59 +506,27 @@ const CACHE_LAPSE_MS = 1100;
 // and stalled for the full timeout at 1 April. Here a stale reply only resets the run of
 // agreements; the probing continues, and the pool converges.
 //
-// The pool is `pm = static` with `pm.max_children = 4` (nix/runtime/fpm-conf.nix), so eight
-// consecutive agreements is comfortably more than one pass over it.
-const WORKER_AGREEMENT = 8;
+// **Sequential probes cannot establish that every worker is fresh, and an earlier version
+// claimed they could.** php-fpm hands each request to whichever child is free, so a run of
+// eight consecutive fresh replies is consistent with one warm child answering all eight
+// while three stale ones sit idle. The claim was stronger than the evidence.
+//
+// Concurrency is what actually forces the pool to be sampled. The pool is `pm = static` with
+// `pm.max_children = 4` (nix/runtime/fpm-conf.nix:23,41) and a child serves one request at a
+// time, so `POOL_SIZE` requests in flight simultaneously cannot all be answered by the same
+// child: each in-flight request occupies a distinct one. Requiring every reply in a round to
+// be fresh therefore says something about every worker, which a sequential run does not.
+//
+// What this still does not establish, stated rather than glossed: it assumes the pool is
+// otherwise idle (it is — the harness is the only client), and it observes the pool
+// *collectively*, since no endpoint reports which child answered. A round is evidence that
+// four distinct children each answered freshly, not a per-child identity check.
+//
+// Two clean rounds rather than one, because a child that finishes early can in principle
+// take a second request within the same round while another is still queued.
+const POOL_SIZE = 4;
+const CLEAN_ROUNDS = 2;
 const WORKER_PROBE_BUDGET = 80;
-
-// How many extra requests are sent after a step to warm the worker pool.
-//
-// **Warming, not gating.** Requiring N consecutive in-range replies looked stricter and was
-// worse: php-fpm hands each request to whichever child is free, an idle child refreshes its
-// faketime cache only when it next runs, and so the *first* reply from each straggler is
-// stale by construction. A gate on consecutive freshness therefore restarted itself on the
-// very condition it was waiting to clear, and a 365-day run stalled for the full 60s at
-// 1 April with both runtimes reporting exactly the target time. Sending a handful of cheap
-// requests makes every idle child run once — which is what actually refreshes them — and any
-// straggler that still slips through is reported by the window check as a finding rather
-// than deadlocking the step.
-// **Warming the worker pool was tried and withdrawn.** Each probe is a request, the
-// application opens a PostgreSQL connection per request, and a year has enough steps that
-// the extra traffic exhausted the pod's ability to make new ones: php-fpm workers piled up
-// blocked on `connection to server at "postgres" … timeout expired`, nginx answered 504, and
-// the run died around day 190 — while PostgreSQL itself stayed healthy and answered its own
-// socket immediately. The run without any warm-up completed all 365 days; every run with it
-// wedged. The cure was worse than the disease.
-//
-// What the disease actually costs: roughly 8 consumes in 1168 recorded a `used_date` one
-// simulated day behind, because php-fpm hands a request to whichever child is free and each
-// child holds its own one-second faketime cache. Those are *reported* by the window check
-// rather than engineered around — a named, counted, sub-1% observation is worth more than a
-// mitigation that stops the suite finishing.
-// Throwaway requests issued after each step, before any operation the plan depends on.
-//
-// **Measured, in three arms of the same workload, changing only the clock.** A short
-// reproducer (320 steps x 10 requests) settles what a 13-minute year run could not:
-//
-//   A  fixed time, 3000 requests, no stepping ....... 0 failures
-//   B  clock advancement, no warm-up, no psql ....... HTTP 500 at day 2, hung by day ~40
-//   C  clock advancement, 6 throwaway per step ...... 0 failures in 3200 requests, 320 steps
-//
-// So it is the clock advancement, not request volume, and not the `podman exec` readiness
-// calls — arm B made none and failed anyway. At the first 500 the system is entirely
-// healthy: one PostgreSQL backend, 37MB resident, 11% CPU, and PostgreSQL's own log clean.
-// A *fresh* connect fails instantly with `SQLSTATE[08006] … timeout expired` against a
-// server that is answering, which is what a wall-clock deadline computed before a jump and
-// checked after it looks like.
-//
-// An earlier version of this file removed the warm-up after runs with 8 and 40 probes died
-// around day 190, which was read as the extra traffic exhausting the pod. Arm A refutes
-// that: 3000 requests at fixed time cost nothing. Those runs were dying of *this*, and the
-// warm-up was removed on a wrong diagnosis.
-//
-// Six is enough to touch every worker: the pool is `pm = static` with `pm.max_children = 4`
-// (nix/runtime/fpm-conf.nix). Their outcomes are ignored, because their job is to be the
-// requests that meet the discontinuity instead of a planned operation meeting it.
 
 async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineMs = 60000, psql = null } = {}) {
 	const fs = require('fs');
@@ -513,29 +589,42 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			const remaining = CACHE_LAPSE_MS - (Date.now() - wroteAt);
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
-			let agreed = 0;
+			let clean = 0;
 			let probes = 0;
-			while (agreed < WORKER_AGREEMENT && probes < WORKER_PROBE_BUDGET) {
-				probes++;
-				let fresh = false;
-				try {
-					const again = await instance.silently(() => instance.get('/system/time'));
-					fresh = inRange(again.body && Number(again.body.timestamp));
-				} catch {
-					fresh = false;   // a request that met the discontinuity; it has now warmed that worker
-				}
-				agreed = fresh ? agreed + 1 : 0;
+			// What the probes actually saw. A failure reporting only a count cannot be
+			// diagnosed: a straggler a simulated day behind, a worker whose clock has run
+			// past the drift budget, and a pool answering 500 are three different faults and
+			// all of them look like "80 probes without agreement".
+			const seen = [];
+			while (clean < CLEAN_ROUNDS && probes < WORKER_PROBE_BUDGET) {
+				probes += POOL_SIZE;
+				// In flight together, so the pool cannot answer them all from one child.
+				const round = await Promise.all(Array.from({ length: POOL_SIZE }, async () => {
+					try {
+						const again = await instance.silently(() => instance.get('/system/time'));
+						const ts = again.body && Number(again.body.timestamp);
+						if (inRange(ts)) return true;
+						seen.push({ status: again.status, delta: Number.isFinite(ts) ? ts - target : null });
+						return false;
+					} catch (e) {
+						// A request that met the discontinuity; it has now warmed that worker.
+						seen.push({ error: e.message.slice(0, 120) });
+						return false;
+					}
+				}));
+				clean = round.every(Boolean) ? clean + 1 : 0;
 			}
 
 			// **Failing to get agreement is a clock failure, said at the step.** The
 			// alternative is to carry on and discover it later as a timestamp a day behind,
 			// by which point the operations in between have already been evaluated against
 			// the wrong date and there is nothing to do but report the year INCOMPLETE.
-			if (agreed < WORKER_AGREEMENT) {
+			if (clean < CLEAN_ROUNDS) {
 				throw new Incomplete(
 					`the worker pool never agreed on ${when}: ${probes} probes without ` +
-					`${WORKER_AGREEMENT} consecutive replies at the new time`,
-					{ when, probes });
+					`${CLEAN_ROUNDS} rounds of ${POOL_SIZE} concurrent replies within ` +
+					`${maxDriftS}s of the new time`,
+					{ when, probes, maxDriftS, sawInstead: seen.slice(-10) });
 			}
 			return;
 		}
@@ -560,6 +649,12 @@ async function replay(plan, instance, options = {}) {
 	const slowCalls = [];
 	// Timestamps a step's cache lag explains — see checkWindow.
 	const clockArtifacts = [];
+	// Where a lot's price came back in a different representation than the plan recorded
+	// (null against 0). Not a failure — the valuation is equal — but not modelled away either.
+	const priceRepresentations = [];
+	// Assertions actually evaluated, by form. The verdict a milestone report records is only
+	// as good as the number of independent claims behind it.
+	const assertions = new Map();
 	// Operations that answered 5xx with an empty body: the clock-step artifact described at
 	// stepClock. Recorded and surfaced, never retried — a retry was tried and made the run
 	// strictly worse (it died at day 36 rather than 356), because re-issuing a request into
@@ -631,7 +726,9 @@ async function replay(plan, instance, options = {}) {
 		}
 
 
-		checkExpect({ ...op, expect: expectation }, record, where);
+		checkExpect({ ...op, expect: expectation }, record, where, priceRepresentations);
+		tallyExpect(expectation, assertions);
+		assertions.set('operations verified', (assertions.get('operations verified') || 0) + 1);
 		checkWindow(op, record, where, windowProblems, clockArtifacts);
 
 		for (const [symbol, rawSpec] of Object.entries(op.bind || {})) {
@@ -650,7 +747,11 @@ async function replay(plan, instance, options = {}) {
 	}
 
 	slowCalls.sort((a, b) => b.ms - a.ms);
-	return { symbols, executed, arranged, windowProblems, clockArtifacts, slowCalls, stepRetries };
+	return {
+		symbols, executed, arranged, windowProblems, clockArtifacts, priceRepresentations,
+		slowCalls, stepRetries,
+		assertions: Object.fromEntries([...assertions].sort((a, b) => b[1] - a[1]))
+	};
 }
 
 module.exports = { replay, stepClock, substitute, pluck, Incomplete };

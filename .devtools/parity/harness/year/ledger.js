@@ -53,6 +53,12 @@ class Ledger {
 		this.bookings = [];       // every stock_log row this year should produce
 		this.nextEntryKey = 1;
 		this.products = new Map();  // productId -> { defaultConsumeLocationId }
+		// productId -> Map(ordering signature -> { locations, prices }) — the candidates a tie
+		// left open. The candidate sets are recorded at the moment of the draw and kept
+		// afterwards, because the lot the *model* drained may be the one the application
+		// kept: an allowed-location set built only from what the model still holds would
+		// reject the application's equally valid choice.
+		this.ambiguous = new Map();
 	}
 
 	defineProduct(productId, { defaultConsumeLocationId = null } = {}) {
@@ -103,21 +109,32 @@ class Ledger {
 			e.productId === productId && e.bbd === bbd && e.purchasedDate === purchasedDate);
 	}
 
+	// The simulated date every subsequent booking is made on.
+	//
+	// **Delivered events are timestamped, and until this existed nothing compared that.** A
+	// `price_paid` point carries the booking's own `row_created_timestamp`, so a point with
+	// the right product, price and amount sitting on the wrong day satisfied a multiset
+	// comparison that only knew those three. The plan's day loop stamps the model as it
+	// advances, which costs one call a day and makes the expected day part of the evidence.
+	stampDay(date) {
+		this.today = date;
+	}
+
 	book(type, productId, amount, extra = {}) {
-		this.bookings.push({ type, productId, amount, ...extra });
+		this.bookings.push({ type, productId, amount, day: this.today || null, ...extra });
 	}
 
 	purchase({ productId, amount, bbd, purchasedDate, locationId, price, type = 'purchase' }) {
 		const entry = {
 			key: this.nextEntryKey++,
 			productId, amount, bbd, purchasedDate, locationId,
-			// **An entry created without a price holds 0, not null.** The application stores
-			// 0 on the stock row, and the price views use `COALESCE(price, 0) > 0`, so the
-			// two are indistinguishable there — which is why the model got away with null
-			// until the lot assertion compared the entries themselves and reported
-			// `price 0 against null` on a self-produced lot. The *booking* keeps whatever it
-			// was given; this is the entry.
-			price: price === null || price === undefined ? 0 : price,
+			// The price as given, null included. An earlier version coerced null to 0 after
+			// one observed response, which generalised a single case into a rule: an unknown
+			// price and an explicit zero can mean different things, and only one endpoint was
+			// ever looked at. The equivalence now lives where it is justified — the valuation
+			// comparison — and the representation difference is recorded as an observation
+			// rather than modelled away. See narrative/prices.js.
+			price: price === undefined ? null : price,
 			open: 0
 		};
 		this.entries.push(entry);
@@ -142,10 +159,18 @@ class Ledger {
 		if (!this.canConsume(productId, amount)) {
 			throw new Error(`ledger: consume ${amount} of product ${productId} with ${this.amountOf(productId)} in stock`);
 		}
+		// Which signatures had more than one lot at the moment of the draw: those are the
+		// choices the application made arbitrarily.
+		const pool = this.ordered(productId);
+		const bySignature = this.tieCounts(pool);
+
 		let left = amount;
 		const touched = [];
-		for (const entry of this.ordered(productId)) {
+		for (const entry of pool) {
 			if (left <= 0) break;
+			if ((bySignature.get(this.orderingSignature(entry)) || 0) > 1) {
+				this.noteTie(productId, this.orderingSignature(entry), pool);
+			}
 			const take = Math.min(entry.amount, left);
 			entry.amount -= take;
 			left -= take;
@@ -165,8 +190,13 @@ class Ledger {
 			throw new Error(`ledger: open ${amount} of product ${productId} with ${this.amountOf(productId)} in stock`);
 		}
 		let left = amount;
-		for (const entry of this.ordered(productId).filter((e) => !e.open)) {
+		const pool = this.ordered(productId).filter((e) => !e.open);
+		const bySignature = this.tieCounts(pool);
+		for (const entry of pool) {
 			if (left <= 0) break;
+			if ((bySignature.get(this.orderingSignature(entry)) || 0) > 1) {
+				this.noteTie(productId, this.orderingSignature(entry), pool);
+			}
 			if (entry.amount <= left) {
 				entry.open = 1;
 				left -= entry.amount;
@@ -186,8 +216,13 @@ class Ledger {
 			throw new Error(`ledger: transfer ${amount} of product ${productId} from location ${fromLocationId}`);
 		}
 		let left = amount;
-		for (const entry of this.ordered(productId).filter((e) => e.locationId === fromLocationId)) {
+		const pool = this.ordered(productId).filter((e) => e.locationId === fromLocationId);
+		const bySignature = this.tieCounts(pool);
+		for (const entry of pool) {
 			if (left <= 0) break;
+			if ((bySignature.get(this.orderingSignature(entry)) || 0) > 1) {
+				this.noteTie(productId, this.orderingSignature(entry), pool);
+			}
 			const take = Math.min(entry.amount, left);
 			entry.amount -= take;
 			left -= take;
@@ -217,8 +252,13 @@ class Ledger {
 			return delta;
 		}
 		let left = -delta;
-		for (const entry of this.ordered(productId)) {
+		const pool = this.ordered(productId);
+		const bySignature = this.tieCounts(pool);
+		for (const entry of pool) {
 			if (left <= 0) break;
+			if ((bySignature.get(this.orderingSignature(entry)) || 0) > 1) {
+				this.noteTie(productId, this.orderingSignature(entry), pool);
+			}
 			const take = Math.min(entry.amount, left);
 			entry.amount -= take;
 			left -= take;
@@ -228,50 +268,110 @@ class Ledger {
 		return delta;
 	}
 
-	// Whether two of this product's lots are indistinguishable to `stock_next_use`.
+	// The ordering key `stock_next_use` sorts on.
 	//
-	// **A transfer routinely creates such a pair.** It splits one lot in two that share a
-	// best-before date, a purchased date and a price, differing only by location — and
+	// **A transfer routinely creates a pair sharing it.** It splits one lot in two that share
+	// a best-before date, a purchased date and a price, differing only by location — and
 	// location only enters the ordering through
 	// `CASE WHEN COALESCE(default_consume_location_id, -1) = location_id THEN 0 ELSE 1 END`,
-	// which is 1 for both when the product has no default consume location. The remaining
-	// terms are then equal, `ROW_NUMBER()` picks arbitrarily, and which lot the next consume
-	// draws from is genuinely undefined.
-	//
-	// So the lot assertion is not emitted for such a product: the suite asserts what the
-	// application determines, and demanding an answer where it defines none would report a
-	// conforming choice as a defect. It was a year run reaching day 169 that established
-	// this — butter, transferred fridge to freezer, then consumed from the half the model
-	// had not picked.
-	hasOrderingTie(productId) {
-		const meta = this.products.get(productId) || { defaultConsumeLocationId: null };
+	// which is equal for both unless one of them sits at the product's default consume
+	// location. The remaining terms are then equal, `ROW_NUMBER()` picks arbitrarily, and
+	// which of the two a consume draws from is genuinely undefined. A year run reaching day
+	// 169 is what established this — butter, transferred fridge to freezer, then consumed
+	// from the half the model had not picked.
+	orderingSignature(entry) {
+		const meta = this.products.get(entry.productId) || { defaultConsumeLocationId: null };
 		const def = meta.defaultConsumeLocationId === null ? -1 : meta.defaultConsumeLocationId;
-		const seen = new Set();
-		for (const e of this.entries.filter((x) => x.productId === productId && x.amount > 0)) {
-			const rank = [e.locationId === def ? 0 : 1, e.open ? 1 : 0, e.bbd, e.purchasedDate].join('|');
-			if (seen.has(rank)) return true;
-			seen.add(rank);
-		}
-		return false;
+		return [entry.locationId === def ? 0 : 1, entry.open ? 1 : 0, entry.bbd, entry.purchasedDate].join('|');
 	}
 
-	// The lots the model currently holds for a product, as comparable tuples.
+	// How many lots in a draw pool share each ordering key. More than one means the
+	// application's choice between them is arbitrary.
+	tieCounts(pool) {
+		const counts = new Map();
+		for (const e of pool) {
+			const sig = this.orderingSignature(e);
+			counts.set(sig, (counts.get(sig) || 0) + 1);
+		}
+		return counts;
+	}
+
+	// Records that a draw was made from a tied set, together with the locations and prices
+	// that set could have left behind — captured now, while every candidate is still live.
+	noteTie(productId, sig, pool) {
+		if (!this.ambiguous.has(productId)) this.ambiguous.set(productId, new Map());
+		const byProduct = this.ambiguous.get(productId);
+		if (!byProduct.has(sig)) byProduct.set(sig, { locations: new Set(), prices: new Set() });
+		const rec = byProduct.get(sig);
+		for (const e of pool) {
+			if (this.orderingSignature(e) !== sig) continue;
+			rec.locations.add(e.locationId);
+			rec.prices.add(e.price === undefined ? null : e.price);
+		}
+	}
+
+	// Signatures whose per-lot split the model can no longer vouch for, because a draw was
+	// made from a set of tied lots and the application's choice between them is arbitrary.
 	//
-	// **This is what distinguishes a consume that drew from the right lot from one that drew
-	// the right *amount* from the wrong lot.** Every total is identical either way; what
-	// differs is which best-before dates and which prices are left behind. Since the model
-	// mirrors `stock_next_use`'s ordering exactly, it can say which lots should remain.
-	entriesOf(productId) {
-		return this.entries
-			.filter((e) => e.productId === productId && e.amount > 0)
-			.map((e) => ({
+	// **The ambiguity is carried, not resolved.** The model keeps an internal split so it can
+	// go on planning satisfiable operations, but it never asserts that split and never reads
+	// the application's choice back to adopt it — doing either would quietly invent the
+	// deterministic tie-break the application does not have. What stays exactly constrained
+	// is everything the tie does not touch: the amount removed, the product total, the group's
+	// own total, and the set of locations the group may occupy.
+	ambiguousSignatures(productId) {
+		const live = new Set();
+		for (const e of this.entries) {
+			if (e.productId === productId && e.amount > 0) live.add(this.orderingSignature(e));
+		}
+		return [...(this.ambiguous.get(productId) || new Map())].filter(([sig]) => live.has(sig));
+	}
+
+	// What the model is willing to assert about a product's lots, split into the part a tie
+	// leaves determined and the part it does not.
+	//
+	// **The point is to narrow the expectation, not to drop it.** An earlier version emitted
+	// no assertion at all once a product held tied lots, which gave up the amount removed,
+	// the product total, each group's own total and the set of valid locations — all still
+	// exactly determined — in order to accommodate the one thing that is not: which member of
+	// the tie shrank. Everything outside the tie stays exact; inside it, the group is
+	// compared against the outcomes the application permits.
+	//
+	// The model's own split within a group is deliberately not published. Reading the
+	// application's choice back and adopting it would introduce a deterministic tie-break the
+	// application does not define, and quietly make every later assertion agree with whatever
+	// the build under test happened to do.
+	lotExpectation(productId) {
+		const ambiguous = new Map(this.ambiguousSignatures(productId));
+		const exact = [];
+		const groups = new Map();
+		for (const e of this.entries) {
+			if (e.productId !== productId || e.amount <= 0) continue;
+			const sig = this.orderingSignature(e);
+			const row = {
 				amount: e.amount,
 				best_before_date: e.bbd,
 				purchased_date: e.purchasedDate,
 				price: e.price === undefined ? null : e.price,
 				open: e.open ? 1 : 0,
 				location_id: e.locationId
-			}));
+			};
+			if (!ambiguous.has(sig)) { exact.push(row); continue; }
+			if (!groups.has(sig)) {
+				const candidates = ambiguous.get(sig);
+				groups.set(sig, {
+					where: { best_before_date: row.best_before_date, purchased_date: row.purchased_date, open: row.open },
+					total: 0,
+					locations: [...candidates.locations],
+					prices: [...candidates.prices]
+				});
+			}
+			const g = groups.get(sig);
+			g.total += row.amount;
+			if (!g.locations.includes(row.location_id)) g.locations.push(row.location_id);
+			if (!g.prices.some((p) => p === row.price)) g.prices.push(row.price);
+		}
+		return { exact, groups: [...groups.values()] };
 	}
 
 	// Every (product, location) the model currently holds stock at.
