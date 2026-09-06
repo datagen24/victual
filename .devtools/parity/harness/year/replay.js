@@ -614,6 +614,14 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 	const MAX_SAMPLES = 60;
 	const KEEP_EVERY_MS = 400;
 	let sawFailure = false;
+	// **Struggling is not the same as "a probe came back stale".**
+	//
+	// A stale first probe after a step is not a fault, it is the thing warming exists to fix,
+	// so gating the diagnostic pacing on `sawFailure` slowed down every healthy step: a full
+	// year went from ~805s to ~1500s. Pacing belongs to a pool that is failing to converge —
+	// a concurrent round that was not clean, or an outer iteration that did not arrive —
+	// which is also when spreading the samples out is worth anything.
+	let struggling = false;
 	// Per source, because the two are being compared. Sharing one cadence meant every
 	// PostgreSQL sample was dropped for arriving just after an application one, which left
 	// the postgres advance unmeasurable — exactly the comparison this exists to make.
@@ -720,6 +728,7 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 		samples
 	});
 
+	let outerRounds = 0;
 	for (;;) {
 		const app = await observeApp();
 
@@ -742,10 +751,11 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			const probe = async () => {
 				probes++;
 				const fresh = inRange(await observeApp());
-				// Sampled alongside, sparsely: the failure below compares the two runtimes and
-				// the first version of this loop never asked PostgreSQL at all, so there was
-				// nothing to compare against.
-				if (psql && sinceStart() - lastDbAt >= KEEP_EVERY_MS) {
+				// Sampled alongside, sparsely, and only once the pool is struggling: the
+				// failure below compares the two runtimes and the first version of this loop
+				// never asked PostgreSQL at all, so there was nothing to compare against — but
+				// each reading is a `podman exec`, which a healthy step should not pay for.
+				if (psql && struggling && sinceStart() - lastDbAt >= KEEP_EVERY_MS) {
 					lastDbAt = sinceStart();
 					await observeDb();
 				}
@@ -770,14 +780,15 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 				const observed = samples.slice(before).map((x) => x.observed).filter((v) => v !== null);
 				rounds.push({ atMs: at, fresh: round.filter(Boolean).length, of: POOL_SIZE,
 					distinctTimes: new Set(observed).size });
-				clean = round.every(Boolean) ? clean + 1 : 0;
+				const allFresh = round.every(Boolean);
+				clean = allFresh ? clean + 1 : 0;
+				if (!allFresh) struggling = true;
 
-				// **Paced once something has gone wrong, and only then.** Eighty probes back
+				// **Paced once the pool is failing to converge, and only then.** Rounds back
 				// to back span a fraction of a second, which is why the earlier evidence could
-				// not distinguish a stopped clock from a late one. Slowing down after the
-				// first failure buys a window of seconds without costing the healthy path
-				// anything.
-				if (sawFailure) await new Promise((r) => setTimeout(r, 300));
+				// not distinguish a stopped clock from a late one. Slowing down buys a window
+				// of seconds; doing it on every step instead cost a year run its running time.
+				if (struggling) await new Promise((r) => setTimeout(r, 300));
 			}
 
 			// **Failing to get agreement is a clock failure, said at the step.** The
@@ -801,9 +812,12 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			return;
 		}
 
-		// Same pacing rationale as the probe loop: once something is wrong, spread the
-		// observations out far enough to be able to say what.
-		if (sawFailure) await new Promise((r) => setTimeout(r, 300));
+		// Same pacing rationale as the probe loop. A first iteration that has not arrived is
+		// ordinary — the clock file was written moments ago — so this counts iterations rather
+		// than treating the first stale reading as trouble.
+		outerRounds += 1;
+		if (outerRounds > 1) struggling = true;
+		if (struggling) await new Promise((r) => setTimeout(r, 300));
 
 		if (Date.now() - started > deadlineMs) {
 			const say = (v) => (Number.isFinite(v) ? new Date(v * 1000).toISOString() : 'nothing');
