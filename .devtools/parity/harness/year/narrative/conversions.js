@@ -94,19 +94,33 @@ function conversionProbe({ ctx, ops }) {
 		label: `conversion probe: 1 ${PARENT.qu} = ${FACTOR} ${CHILD.qu} for ${CHILD.name}`
 	}));
 
-	// **The factor, read back before anything depends on it.** A conversion row that was
-	// written wrong would otherwise surface only as a booking of the wrong size, which is a
-	// worse diagnosis than "the row says the wrong thing".
+	// **The factor, read back before anything depends on it — and there are two rows, not
+	// one.** Posting the pack-to-gram override makes the application store the inverse as a
+	// row of its own as well: `1 pack = 500 g` and `1 g = 0.002 pack`. An earlier version of
+	// this file asserted a single row and claimed in its comments that the inverse was derived
+	// by `quantity_unit_conversions_resolved` rather than stored. That was wrong, and it went
+	// unnoticed because `length` was accepted and never enforced — the read returned two rows
+	// and bound the first.
+	//
+	// Both are asserted now, which is stronger than the original intent: the aggregation below
+	// reads the inverse and the substitution reads the forward factor, so a build that stored
+	// one and not the other fails here rather than in whichever check happened to run first.
 	ops.push(call({
 		method: 'GET',
 		path: `/objects/quantity_unit_conversions?query%5B%5D=product_id%3D{product:${CHILD.key}}&order=id:asc`,
 		expect: {
-			status: 200, kind: 'array', length: 1,
+			status: 200, kind: 'array', length: 2,
 			rowShape: ['id', 'product_id', 'from_qu_id', 'to_qu_id', 'factor'],
-			rowEquals: { factor: FACTOR }
+			rowsEqual: {
+				fields: ['from_qu_id', 'to_qu_id', 'factor'],
+				rows: [
+					[`{quantityUnit:${PARENT.qu}}`, `{quantityUnit:${CHILD.qu}}`, FACTOR],
+					[`{quantityUnit:${CHILD.qu}}`, `{quantityUnit:${PARENT.qu}}`, 1 / FACTOR]
+				]
+			}
 		},
 		window: cal.dayWindow(day),
-		label: `conversion probe: the stored factor is ${FACTOR}`
+		label: `conversion probe: both directions are stored — ${FACTOR} and ${1 / FACTOR}`
 	}));
 
 	ledger.defineProduct(sym.product(CHILD.key), { defaultConsumeLocationId: null });

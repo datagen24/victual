@@ -129,6 +129,16 @@ function pluck(body, spec) {
 const EXPECT_FORMS = ['status', 'kind', 'length', 'minLength', 'shape', 'rowShape', 'rowEquals',
 	'rowsSum', 'equals', 'rowsMatch', 'rowsAbsent', 'rowsEqual', 'lots'];
 
+// **A comparison that decides "these differ" has to fail closed.**
+//
+// `Math.abs(NaN - want) > tol` is false, so every tolerance test written that way treated an
+// unusable value as agreement. The mirror-image form, `Math.abs(a - b) < tol`, already fails
+// closed and is left alone. Exported so the invariants use the same rule.
+function differsBy(got, want, tol = 1e-6) {
+	return !Number.isFinite(Number(got)) || !Number.isFinite(Number(want))
+		|| Math.abs(Number(got) - Number(want)) > tol;
+}
+
 function tallyExpect(expectation, tally) {
 	if (!expectation) return;
 	for (const form of EXPECT_FORMS) {
@@ -155,6 +165,18 @@ function checkExpect(op, record, where, priceRepresentations = []) {
 	if (e.kind === 'object' && (Array.isArray(body) || body === null || typeof body !== 'object')) {
 		throw new Incomplete(`${where}: expected an object, got ${Array.isArray(body) ? 'array' : typeof body}`, { op: op.label, body });
 	}
+	// **An exact length, enforced.** `length` was accepted, counted as an assertion, and never
+	// checked — so `length: 1` passed on two rows, and the edit fixtures that use it to
+	// establish an entry is uniquely identified before binding `[0].id` were binding the first
+	// of however many came back. Worse than absent: the assertion tally reported coverage that
+	// did not exist.
+	if (e.length !== undefined && (!Array.isArray(body) || body.length !== e.length)) {
+		throw new Incomplete(
+			`${where}: expected exactly ${e.length} row(s), got ` +
+			`${Array.isArray(body) ? body.length : 'a non-array'}`,
+			{ op: op.label, body });
+	}
+
 	if (e.minLength !== undefined && (!Array.isArray(body) || body.length < e.minLength)) {
 		throw new Incomplete(`${where}: expected at least ${e.minLength} rows, got ${Array.isArray(body) ? body.length : 'none'}`, { op: op.label, body });
 	}
@@ -173,8 +195,21 @@ function checkExpect(op, record, where, priceRepresentations = []) {
 	}
 	// The signed total the operation was meant to move.
 	if (e.rowsSum !== undefined) {
-		const sum = (Array.isArray(body) ? body : []).reduce((n, r) => n + Number((r && r.amount) || 0), 0);
-		if (Math.abs(sum - e.rowsSum) > 1e-6) {
+		const rows = Array.isArray(body) ? body : [];
+		// **Every amount has to be a number before any of them can be added up.** `Number()`
+		// of a non-numeric string is NaN, NaN propagates through the sum, and
+		// `Math.abs(NaN - want) > tol` is *false* — so a response carrying
+		// `amount: "garbage"` satisfied whatever `rowsSum` it was given. A booking row that
+		// cannot state its amount is a finding, not a zero.
+		const bad = rows.findIndex((r) => !Number.isFinite(Number(r && r.amount)));
+		if (bad !== -1) {
+			throw new Incomplete(
+				`${where}: row ${bad} has a non-numeric amount ` +
+				`(${JSON.stringify(rows[bad] && rows[bad].amount)}), so the booking total means nothing`,
+				{ op: op.label, body });
+		}
+		const sum = rows.reduce((n, r) => n + Number(r.amount), 0);
+		if (differsBy(sum, e.rowsSum)) {
 			throw new Incomplete(
 				`${where}: the booking moved ${sum}, the plan intended ${e.rowsSum}`,
 				{ op: op.label, rows: Array.isArray(body) ? body.map((r) => r.amount) : body });
@@ -302,7 +337,7 @@ function checkExpect(op, record, where, priceRepresentations = []) {
 		for (const [index, g] of (groups || []).entries()) {
 			const members = grouped.get(index) || [];
 			const total = members.reduce((n, r) => n + Number(r.amount || 0), 0);
-			if (Math.abs(total - g.total) > 1e-6) {
+			if (differsBy(total, g.total)) {
 				throw new Incomplete(
 					`${where}: tied lots ${JSON.stringify(g.where)} hold ${total}, the plan expects ${g.total}`,
 					{ op: op.label, members: members.map((m) => ({ amount: m.amount, location_id: m.location_id })) });
@@ -955,4 +990,6 @@ async function replay(plan, instance, options = {}) {
 	};
 }
 
-module.exports = { replay, stepClock, substitute, pluck, Incomplete };
+// `checkExpect` is exported for harness/selftest.js: the assertion forms are what the
+// suite's verdicts rest on, and they are worth testing directly rather than through a replay.
+module.exports = { replay, stepClock, substitute, pluck, differsBy, checkExpect, Incomplete };

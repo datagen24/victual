@@ -458,7 +458,10 @@ class Ledger {
 		for (const pid of productIds) {
 			const live = this.amountOf(pid);
 			const want = expected.get(pid) || 0;
-			if (Math.abs(live - want) > 1e-9) {
+			// Fails closed on a value that is not a number: `Math.abs(NaN - want) > tol` is
+			// false, so an unusable amount would have read as agreement between the entries
+			// and the bookings — the one comparison in the model that must not do that.
+			if (!Number.isFinite(live) || !Number.isFinite(want) || Math.abs(live - want) > 1e-9) {
 				problems.push(`product ${pid}: entries sum to ${live}, bookings imply ${want}`);
 			}
 		}

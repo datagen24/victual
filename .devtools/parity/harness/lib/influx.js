@@ -92,7 +92,13 @@ async function queryFlux({ url, token, org, flux, timeoutMs = DEFAULT_TIMEOUT_MS
 	const endpoint = `${String(url).replace(/\/+$/, '')}/api/v2/query?org=${encodeURIComponent(org)}`;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	// **The timeout has to cover reading the body.** `fetch()` resolves once the response
+	// headers arrive, so clearing the timer here left `response.text()` unbounded — the same
+	// defect fixed in Instance.raw(), and this is where it would hurt most: these queries run
+	// at the *end* of a year, after twenty-five minutes of replay, so a stalled body would
+	// hang the run at the point where it has the most to lose.
 	let response;
+	let csv;
 	try {
 		response = await fetch(endpoint, {
 			method: 'POST',
@@ -104,10 +110,11 @@ async function queryFlux({ url, token, org, flux, timeoutMs = DEFAULT_TIMEOUT_MS
 			body: flux,
 			signal: controller.signal
 		});
+		csv = await response.text();
 	} finally {
 		clearTimeout(timer);
 	}
-	return { status: response.status, csv: await response.text() };
+	return { status: response.status, csv };
 }
 
 // Everything that is not a field, a value or Flux bookkeeping is a tag, and the tag set is

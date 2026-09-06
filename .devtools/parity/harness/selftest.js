@@ -9,6 +9,8 @@
 const http = require('http');
 const assert = require('assert');
 const { Instance } = require('./lib/instance');
+const { checkExpect } = require('./year/replay');
+const { queryFlux } = require('./lib/influx');
 
 const cases = [];
 const test = (name, fn) => cases.push({ name, fn });
@@ -91,6 +93,67 @@ test('a complete response is still read in full', async () => {
 	} finally {
 		await new Promise((resolve) => server.close(resolve));
 	}
+});
+
+// **An exact length has to be exact.** `length` was accepted, counted as an assertion and
+// never enforced, so `length: 1` passed on two rows — and the fixtures that use it to
+// establish an entry is uniquely identified before binding `[0].id` were binding the first of
+// however many came back.
+test('an exact length assertion rejects the wrong number of rows', async () => {
+	const op = { label: 'exactly one row', expect: { status: 200, kind: 'array', length: 1 } };
+	const two = { status: 200, body: [{ id: 1 }, { id: 2 }] };
+	assert.throws(() => checkExpect(op, two, 'op 1'), /exactly 1 row/,
+		'two rows should not satisfy length: 1');
+	// and the assertion still accepts what it is meant to accept
+	checkExpect(op, { status: 200, body: [{ id: 1 }] }, 'op 1');
+});
+
+// **A booking whose amount is not a number is a finding, not a zero.** `Number("garbage")` is
+// NaN, NaN propagates through the sum, and `Math.abs(NaN - want) > tol` is *false* — so any
+// `rowsSum` assertion was satisfied by a response that could not state its amounts.
+test('a non-numeric amount fails the booking-sum assertion', async () => {
+	const op = { label: 'a booking of five', expect: { status: 200, kind: 'array', rowsSum: 5 } };
+	const garbage = { status: 200, body: [{ id: 1, amount: 'garbage' }] };
+	assert.throws(() => checkExpect(op, garbage, 'op 1'), /non-numeric amount/,
+		'a NaN sum should not satisfy rowsSum');
+	// a real disagreement is still reported as one, rather than as a type complaint
+	assert.throws(() => checkExpect(op, { status: 200, body: [{ id: 1, amount: 4 }] }, 'op 1'),
+		/moved 4/);
+	checkExpect(op, { status: 200, body: [{ id: 1, amount: 5 }] }, 'op 1');
+});
+
+// The Influx queries run at the *end* of a year, so a stalled body there hangs the run at the
+// point where it has the most to lose. Same defect as Instance.raw() had, same fix.
+test('a stalled Influx response body aborts within the timeout', async () => {
+	const server = http.createServer((req, res) => {
+		res.writeHead(200, { 'Content-Type': 'application/csv' });
+		res.write('#datatype,string\n');
+		// and never ends
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const { port } = server.address();
+
+	const timeoutMs = 1000;
+	const GUARD_MS = timeoutMs * 4;
+	const startedAt = Date.now();
+	let timedOut = false;
+	let threw = null;
+	try {
+		await Promise.race([
+			queryFlux({
+				url: `http://127.0.0.1:${port}`, token: 't', org: 'o',
+				flux: 'from(bucket:"b")', timeoutMs
+			}).catch((e) => { threw = e; }),
+			new Promise((resolve) => setTimeout(() => { timedOut = true; resolve(); }, GUARD_MS))
+		]);
+	} finally {
+		server.closeAllConnections();
+		await new Promise((resolve) => server.close(resolve));
+	}
+	assert.ok(!timedOut,
+		`the Influx query was still waiting after ${GUARD_MS}ms with a ${timeoutMs}ms timeout`);
+	assert.ok(threw, 'the query should have failed rather than resolving on a truncated body');
+	assert.ok(Date.now() - startedAt < GUARD_MS, 'no bound was applied');
 });
 
 (async () => {

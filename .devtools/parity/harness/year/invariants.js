@@ -22,6 +22,9 @@
 
 const { CONTRIBUTION } = require('./ledger');
 const { queryPoints } = require('../lib/influx');
+// The same fail-closed comparison the replay assertions use: an unusable number is a
+// mismatch, never an agreement. See differsBy() in replay.js.
+const { differsBy } = require('./replay');
 const { collectRetained } = require('../lib/mqtt');
 
 function ok(results, name, passed, detail) {
@@ -324,20 +327,74 @@ async function checkDelivery({ plan, symbols, influx, mqtt, results }) {
 			? `${paid.pointCount} points match the plan exactly`
 			: countProblems.slice(0, 5).join('; '));
 
-	// --- both halves of each event were delivered ---------------------------------------------
+	// --- every event delivered its stock_value points ------------------------------------------
+	//
+	// **Derived from the planned operations, not from the events that happened to arrive.**
+	// This used to walk `price_paid` event ids and check each had a `stock_value` partner,
+	// which says nothing at all about events that carry no price: consumes, transfers, opens,
+	// spoilage, inventory corrections and undos publish `stock_value` and never `price_paid`,
+	// so a build that delivered purchases and dropped everything else satisfied it completely.
+	// Confirmed by the reviewer with a purchase and a consume where only the purchase was
+	// delivered: both delivery checks passed.
+	//
+	// The publisher writes one point per product a transaction touched, at the booking's own
+	// timestamp (BookingEventPublisher.php:19-21), so the claim the plan can make is about
+	// *which product had an event on which day*. That is checked in both directions — a
+	// missing day is a lost delivery, an unexpected one is an event nobody planned.
+	//
+	// Undos are the one case the bookings cannot supply: undoing writes no booking of its own
+	// (it flips `undone` on the original), so the undo's own event is expected from the plan's
+	// operations instead.
 	let values;
 	try {
 		values = await queryPoints({ ...influx, measurement: 'stock_value', start, stop });
 	} catch (e) {
-		ok(results, 'every event delivered its stock_value points too', false, String(e.message || e).slice(0, 120));
+		ok(results, 'every product with a booking has its stock_value events, day by day',
+			false, String(e.message || e).slice(0, 120));
 		return;
 	}
+
+	const expectedDays = new Set();
+	for (const b of bookings) {
+		if (b.day) expectedDays.add(`${b.productKey}|${b.day}`);
+	}
+	for (const op of plan.ops || []) {
+		if (op.ledger && op.ledger.kind === 'undo' && op.window && op.window.from) {
+			expectedDays.add(`${op.ledger.product}|${String(op.window.from).slice(0, 10)}`);
+		}
+	}
+
+	const observedDays = new Set();
+	for (const point of values.points) {
+		const productKey = keyOfId.get(String(point.tags.product_id));
+		if (productKey) observedDays.add(`${productKey}|${dayOf(point.time)}`);
+	}
+
+	const missing = [...expectedDays].filter((k) => !observedDays.has(k));
+	const unexpected = [...observedDays].filter((k) => !expectedDays.has(k));
+	const deliveryProblems = [
+		...missing.slice(0, 4).map((k) => `no stock_value for ${k}`),
+		...unexpected.slice(0, 4).map((k) => `unplanned stock_value for ${k}`)
+	];
+	if (missing.length > 4) deliveryProblems.push(`… and ${missing.length - 4} more missing`);
+	if (unexpected.length > 4) deliveryProblems.push(`… and ${unexpected.length - 4} more unplanned`);
+
+	ok(results, 'every product with a booking has its stock_value events, day by day',
+		deliveryProblems.length === 0,
+		deliveryProblems.length === 0
+			? `${expectedDays.size} product-days, all delivered`
+			: deliveryProblems.join('; '));
+
+	// And the pairing that was here before, kept because it asserts something the day-level
+	// comparison cannot: that a priced purchase's two measurements travelled together under
+	// one event id.
 	const valueEvents = new Set(values.points.map((p) => p.tags.event_id));
 	const orphaned = [...new Set(paid.points.map((p) => p.tags.event_id))].filter((id) => !valueEvents.has(id));
-	ok(results, 'every event delivered its stock_value points too', orphaned.length === 0,
+	ok(results, 'every price_paid event delivered its stock_value points too',
+		orphaned.length === 0,
 		orphaned.length === 0
-			? `${valueEvents.size} events, ${values.pointCount} stock_value points`
-			: `${orphaned.length} price_paid events have no stock_value point`);
+			? `${valueEvents.size} events, both halves present`
+			: `${orphaned.length} price_paid events with no stock_value`);
 
 	// --- history survives an undo ---------------------------------------------------------------
 	const undonePurchases = bookings.filter((b) => b.undone && b.type === 'purchase' && b.price > 0);
@@ -406,7 +463,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 		// `undefined` and 0 are different answers: a product the plan expects to hold nothing
 		// should still be *absent* from /stock only if the ledger says zero.
 		const actual = got === undefined ? 0 : got;
-		if (Math.abs(actual - want) > 1e-6) mismatches.push(`${productKey}: live ${got === undefined ? 'absent' : got}, ledger ${want}`);
+		if (differsBy(actual, want)) mismatches.push(`${productKey}: live ${got === undefined ? 'absent' : got}, ledger ${want}`);
 	}
 	ok(results, 'stock matches the shadow ledger', mismatches.length === 0,
 		mismatches.length === 0
@@ -435,7 +492,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 	const identityProblems = [];
 	for (const [pid, want] of derived) {
 		const got = liveAmount.get(pid) || 0;
-		if (Math.abs(got - want) > 1e-6) {
+		if (differsBy(got, want)) {
 			identityProblems.push(`product ${keyOfId.get(pid) || pid}: stock ${got}, log implies ${want}`);
 		}
 	}
@@ -464,7 +521,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 		const key = `${symbols[`product:${productKey}`]}@${symbols[`location:${locationKey}`]}`;
 		const got = liveAt.get(key);
 		if (got === undefined) positionProblems.push(`${productKey} holds nothing at ${locationKey}, ledger says ${pos.amount}`);
-		else if (Math.abs(got - pos.amount) > 1e-6) positionProblems.push(`${productKey}@${locationKey}: live ${got}, ledger ${pos.amount}`);
+		else if (differsBy(got, pos.amount)) positionProblems.push(`${productKey}@${locationKey}: live ${got}, ledger ${pos.amount}`);
 		liveAt.delete(key);
 	}
 	for (const [key, amount] of [...liveAt].slice(0, 3)) {
@@ -491,7 +548,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 	for (const [type, want] of plannedByType) {
 		const got = liveByType.get(type);
 		if (got === undefined) { typeProblems.push(`${type}: nothing written, plan booked ${want}`); continue; }
-		if (Math.abs(got - want) > 1e-6) typeProblems.push(`${type}: log sums to ${got}, plan booked ${want}`);
+		if (differsBy(got, want)) typeProblems.push(`${type}: log sums to ${got}, plan booked ${want}`);
 	}
 	for (const type of liveByType.keys()) {
 		if (!plannedByType.has(type)) typeProblems.push(`${type}: written but the plan never booked it`);
@@ -548,7 +605,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 		const id = String(idOf(productKey));
 		if (!livePrice.has(id)) { priceProblems.push(`${productKey}: no row in products_average_price, expected ${want.toFixed(4)}`); continue; }
 		const got = livePrice.get(id);
-		if (Math.abs(got - want) > 0.0001) priceProblems.push(`${productKey}: view ${got.toFixed(4)}, ledger ${want.toFixed(4)}`);
+		if (differsBy(got, want, 0.0001)) priceProblems.push(`${productKey}: view ${Number(got).toFixed(4)}, ledger ${Number(want).toFixed(4)}`);
 	}
 	for (const id of livePrice.keys()) {
 		const productKey = keyOfId.get(id);
