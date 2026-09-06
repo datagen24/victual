@@ -131,6 +131,33 @@ that has to choose, and an edit.
 | `price_paid` presence, by the publisher's own null rule | the surfaces disagree; each is modelled by its own rule |
 | *not* which representation reads back | nothing establishes it — the raw row stays in the trace |
 
+## An application asymmetry the year found
+
+**Editing a stock entry moves `products_average_price` only if that entry was created by a
+booking of its own.** Two full-year runs disagreed with the oracle by exactly the same amount
+— `pasta: view 1.6228, ledger 1.6246` — and the reason is a join.
+
+`stock_edited_entries` (migration 0230:27-38) builds itself by matching each `stock-edit-new`
+row to a purchase, inventory-correction or self-production row **with the same `stock_id`**.
+An entry with no such row never enters the table, so `products_average_price` neither counts
+its edit nor excludes anything on its behalf: the correction is invisible to the average.
+
+Entries like that are ordinary rather than exotic. A partial open splits an entry, and the
+remainder becomes a new `stock` row with a fresh `stock_id` and **no log row of its own**
+(`services/StockService.php:1541+`). The year produced a chain of them on pasta —
+`66e2ad9101bdb` → `66ebe810438e7` → `6630b310442e0` → `66f5229059939` — each appearing in the
+log first as a consume or an open, none with a purchase.
+
+So: buy 500 at 1.74, open 100 (splitting off 400), correct that 400 to 350, and the average
+price still weights the product at the full 500. Correct an entry that was never split and it
+does not. Whether the average *should* follow a correction is a product question; that it
+follows one and not the other is not obviously intended, and nothing in the schema comments
+addresses it.
+
+The suite models the view rather than the intent — the oracle now requires an origin booking
+before counting an edit, exactly as the join does — and this is recorded rather than modelled
+away, because the asymmetry is the application's and not the oracle's.
+
 ## A known instability, and what it is
 
 A year run does not always finish. When it does not, the failure is always the same and it is
@@ -184,10 +211,37 @@ the old inode after a host-side rename, and libfaketime finds nothing and falls 
 time (`delta: +84465916`, about 2.7 years). In-place rewriting is what makes the update
 visible through that mount, so it is not the cause and cannot be changed. Reverted.
 
-Runs do complete: a committed run records 365 steps, zero clock violations, every invariant
-passing, in 797 seconds, and the smoke profile passes reliably. The instability is
-intermittent, it is recorded here rather than worked around, and the cause is not yet
-established.
+### Two failures, kept apart
+
+A later pair of full-year attempts failed differently, and the difference matters more than
+the similarity:
+
+- **A demonstrated clock-contract failure.** The application reached
+  `2024-04-02T09:00:00` while PostgreSQL still reported `2024-04-01T09:00:05` — a full
+  simulated day behind — and did not catch up within the step deadline. That invalidates the
+  run: operations after it would have been evaluated against two different dates.
+- **A fixture-stage hang, before any annual stepping.** `POST /users` at op 33 never
+  answered. The year had not started; the clock had been set once, at boot, and never
+  stepped.
+
+The second weakens any account that attributes every hang to repeated day jumps, because
+there had been none. **The same `SQLSTATE[08006]` and the same `09:00:00` do not establish the
+same cause** — `09:00:00` is simply the hour every simulated day begins, so it is also the
+hour of the *first* one.
+
+The monotonic-clock account recorded in `stack/faketime.sh` therefore stays a **hypothesis**
+here. It was arrived at by observing that PostgreSQL logged `write=172800.002 s` for a
+checkpoint and stopped accepting connections after roughly 190 steps, and setting
+`FAKETIME_DONT_FAKE_MONOTONIC=1` was followed by a run that completed. That is consistent with
+the mechanism; it does not isolate it, and it does not cover a hang with no steps behind it.
+
+Neither failure **currently establishes an application defect**. That is a narrower claim than
+"neither is an application finding": the clock failure invalidates its run and so establishes
+nothing either way, and the fixture hang is unattributed.
+
+A third pair of attempts, on unchanged code, completed all 365 days twice — 802 s and 814 s,
+zero clock violations — so the instability is intermittent rather than a barrier, and its
+cause is not established.
 
 ## Asserted, not yet demonstrated
 

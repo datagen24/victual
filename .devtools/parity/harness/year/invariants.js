@@ -77,6 +77,29 @@ function expectedAveragePrices(bookings) {
 		if (!prior || b.seq > prior.seq) editedEntries.set(b.entryKey, b);
 	}
 
+	// **An edit only reaches the average price if its entry has an origin booking.**
+	//
+	// `stock_edited_entries` (migration 0230:27-38) builds itself by joining `stock-edit-new`
+	// rows to a purchase, inventory-correction or self-production row *with the same
+	// stock_id*. An entry with no such row never enters the table, so the view neither counts
+	// its edit nor excludes anything on its behalf — the edit is simply invisible to the
+	// average.
+	//
+	// Entries like that are ordinary here, not exotic: a partial open splits an entry and the
+	// remainder is a new `stock` row with a fresh `stock_id` and no log row of its own
+	// (StockService.php:1541+). A year run produced a chain of them on pasta —
+	// 66e2ad9101bdb -> 66ebe810438e7 -> 6630b310442e0 -> 66f5229059939 — each first appearing
+	// in the log as a consume or an open, none with a purchase.
+	//
+	// So editing a split-off entry does not move the average while editing an unsplit one
+	// does. That asymmetry is the application's, and it is recorded in COVERAGE.md rather
+	// than modelled away; what changes here is only that the oracle now describes the view it
+	// is comparing against. Two full-year runs disagreed by 1.6246 against 1.6228 on pasta
+	// until it did.
+	const hasOrigin = (entryKey) => bookings.some((b) =>
+		b.entryKey === entryKey && !b.undone &&
+		['purchase', 'inventory-correction', 'self-production'].includes(b.type));
+
 	const consumedBefore = (entryKey, beforeSeq) => bookings
 		.filter((b) => b.type === 'consume' && !b.undone && b.seq < beforeSeq && b.touched)
 		.reduce((n, b) => n + b.touched
@@ -94,11 +117,14 @@ function expectedAveragePrices(bookings) {
 	for (const b of bookings) {
 		if (b.undone) continue;
 		if (!['purchase', 'inventory-correction', 'self-production'].includes(b.type)) continue;
-		if (b.entryKey !== null && editedEntries.has(b.entryKey)) continue;   // superseded by its edit
+		// Superseded by its edit — but only where the view actually supersedes it, which is
+		// where the edited entry has an origin row to be found by.
+		if (b.entryKey !== null && editedEntries.has(b.entryKey) && hasOrigin(b.entryKey)) continue;
 		add(b.productKey, b.amount, b.price);
 	}
 	for (const edit of editedEntries.values()) {
 		if (edit.undone) continue;
+		if (!hasOrigin(edit.entryKey)) continue;   // invisible to the view — see hasOrigin()
 		add(edit.productKey, edit.amount + consumedBefore(edit.entryKey, edit.seq), edit.price);
 	}
 
