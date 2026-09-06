@@ -51,7 +51,7 @@ class Instance {
 		}
 	}
 
-	async raw(method, path, { body, rawBody, headers = {}, form, redirect = 'manual' } = {}) {
+	async raw(method, path, { body, rawBody, headers = {}, form, redirect = 'manual', readText = false } = {}) {
 		const url = `${this.baseUrl}${path}`;
 		const init = { method, redirect, headers: { ...headers } };
 
@@ -70,18 +70,30 @@ class Instance {
 			init.body = JSON.stringify(body);
 		}
 
+		// **The timeout has to cover reading the body, not just receiving the headers.**
+		//
+		// `fetch()` resolves as soon as the response headers arrive, so clearing the timer
+		// there leaves `response.text()` unbounded: a server that sends headers and then
+		// stalls the body hangs the harness for as long as it likes. One did — a fixture-stage
+		// `POST /users` sat for 286 seconds against a 180-second timeout — and a suite whose
+		// stated timeout does not bound its requests cannot report a bounded failure.
+		//
+		// So the body is read inside the same abort window, and `readText` exists because the
+		// caller that needs the text is the one that has to be covered.
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 		init.signal = controller.signal;
 
 		let response;
+		let text;
 		try {
 			response = await fetch(url, init);
+			if (readText) text = await response.text();
 		} finally {
 			clearTimeout(timer);
 		}
 		this.absorbCookies(response);
-		return response;
+		return readText ? { response, text } : response;
 	}
 
 	// Logs in as admin/admin. Both projects create that user in migration 0027 with the
@@ -107,8 +119,7 @@ class Instance {
 	// scenario cannot accidentally depend on header order or on the stream being read
 	// twice, and appends it to the trace that gets diffed.
 	async api(method, path, body, options = {}) {
-		const response = await this.raw(method, `/api${path}`, { body, ...options });
-		const text = await response.text();
+		const { response, text } = await this.raw(method, `/api${path}`, { body, ...options, readText: true });
 
 		let parsed;
 		let parseError = null;

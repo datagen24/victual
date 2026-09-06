@@ -15,21 +15,57 @@ const { short } = require('./diff');
 // accepted.js explained it and named the record that decided it. The exit code is driven
 // by the reported count alone, and accepted differences are printed anyway.
 
-function classifyRun(scenarioResults) {
+// `mode` selects which accepted-difference entries may apply — parity has all of them,
+// deep starts with none (see accepted.js). `maxDifferencesPerStep` bounds what is *stored*
+// for a step.
+//
+// **Every difference is classified before anything is capped**, and the per-step totals are
+// recorded on the step before it is truncated. The problem the cap solves is amplification —
+// one systemic difference at a whole-table checkpoint becomes thousands of pointers — and a
+// cap that dropped differences before classifying them would solve it by hiding failures:
+// an unexplained difference beyond the cap must still fail the run, and it does, because
+// `reported` counted it. What the cap removes is detail, never a verdict.
+//
+// When it does truncate, unexplained differences are kept ahead of accepted ones. The
+// accepted ones are the ones whose explanation is already written down.
+function classifyRun(scenarioResults, options = {}) {
+	const mode = options.mode || 'parity';
+	const max = options.maxDifferencesPerStep;
 	let reported = 0;
 	let accepted = 0;
 
 	for (const scenario of scenarioResults) {
 		for (const step of scenario.steps) {
+			let stepReported = 0;
+			let stepAccepted = 0;
+
 			for (const difference of step.differences) {
-				const entry = classify(step, difference);
+				const entry = classify(step, difference, mode);
 				if (entry) {
 					difference.accepted = { id: entry.id, reference: entry.reference, reason: entry.reason };
 					accepted++;
+					stepAccepted++;
 				} else {
 					difference.accepted = null;
 					reported++;
+					stepReported++;
 				}
+			}
+
+			// Kept on the step so the renderers report what was *found*, not what survived
+			// the cap. Without this a truncated step would print a smaller number than the
+			// verdict it contributed to.
+			step.reported = stepReported;
+			step.accepted = stepAccepted;
+			step.truncated = 0;
+
+			if (Number.isFinite(max) && step.differences.length > max) {
+				const unexplained = step.differences.filter((d) => !d.accepted);
+				const explained = step.differences.filter((d) => d.accepted);
+				const kept = unexplained.slice(0, max);
+				if (kept.length < max) kept.push(...explained.slice(0, max - kept.length));
+				step.truncated = step.differences.length - kept.length;
+				step.differences = kept;
 			}
 		}
 	}
@@ -52,10 +88,11 @@ function renderTerminal(run) {
 	lines.push('');
 
 	for (const scenario of run.scenarios) {
+		// `s.reported`/`s.accepted` are what classifyRun found, before any truncation.
 		const reported = scenario.steps.reduce(
-			(n, s) => n + s.differences.filter((d) => !d.accepted).length, 0);
+			(n, s) => n + (s.reported !== undefined ? s.reported : s.differences.filter((d) => !d.accepted).length), 0);
 		const accepted = scenario.steps.reduce(
-			(n, s) => n + s.differences.filter((d) => d.accepted).length, 0);
+			(n, s) => n + (s.accepted !== undefined ? s.accepted : s.differences.filter((d) => d.accepted).length), 0);
 
 		let status;
 		if (scenario.error) status = red('ERROR');
@@ -75,6 +112,9 @@ function renderTerminal(run) {
 			lines.push(`      ${bold(step.label)}  ${dim(`${step.method || ''} ${step.path || ''}`)}`);
 			for (const d of notAccepted.slice(0, 8)) {
 				lines.push(`        ${d.pointer}  ${dim(`[${d.kind}]`)}  ${d.detail}`);
+			}
+			if (step.truncated) {
+				lines.push(dim(`        … and ${step.truncated} more, not stored (per-step cap); all of them counted`));
 			}
 			if (notAccepted.length > 8) {
 				lines.push(dim(`        … and ${notAccepted.length - 8} more in the JSON report`));
@@ -200,10 +240,12 @@ function renderMarkdown(run) {
 	return out.join('\n');
 }
 
-function write(run, outDir) {
+// `basename` so a phase writes its own pair of files beside the api phase's rather than
+// over them. Defaulted, so every existing caller keeps writing api-parity.{json,md}.
+function write(run, outDir, basename = 'api-parity') {
 	fs.mkdirSync(outDir, { recursive: true });
-	const jsonPath = path.join(outDir, 'api-parity.json');
-	const mdPath = path.join(outDir, 'api-parity.md');
+	const jsonPath = path.join(outDir, `${basename}.json`);
+	const mdPath = path.join(outDir, `${basename}.md`);
 	fs.writeFileSync(jsonPath, JSON.stringify(run, null, '\t'));
 	fs.writeFileSync(mdPath, renderMarkdown(run));
 	return { jsonPath, mdPath };

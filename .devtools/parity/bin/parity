@@ -11,6 +11,10 @@
 #   .devtools/parity/bin/parity reset       throw both databases away and re-migrate
 #   .devtools/parity/bin/parity status      what is running
 #   .devtools/parity/bin/parity logs <name> podman logs for one container (app|web|upstream|…)
+#   .devtools/parity/bin/parity year       replay a simulated year against a live stack
+#                                          (--plan-only builds and checks the plan instead)
+#   .devtools/parity/bin/parity clock-check the simulated-time acceptance matrix
+#   .devtools/parity/bin/parity psql <sql…> a read-only query against the parity postgres
 #   .devtools/parity/bin/parity down        stop everything and delete the volumes
 #
 # This is the *other* differential suite and the difference matters. `.devtools/pgsql/`
@@ -182,7 +186,7 @@ phase_all() {
 usage() {
 	# tail -n +2 drops the shebang, which `grep '^#'` would otherwise print as
 	# "!/usr/bin/env bash" at the top of the help.
-	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -14 | sed 's/^# \{0,1\}//'
+	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -17 | sed 's/^# \{0,1\}//'
 }
 
 # --- Dispatch -------------------------------------------------------------------------------
@@ -202,6 +206,69 @@ case "${1:-all}" in
 		ensure_victual_images "$BUILD"
 		ensure_upstream_image
 		stack_up
+		;;
+	year)
+		shift
+		ensure_harness_deps
+		case " $* " in
+			# The generator is offline by construction, which is what makes the year
+			# reviewable before anything runs. These three never need a stack.
+			*" --plan-only "*|*" --print-meta "*|*" --update-plan-lock "*)
+				node "$HARNESS/run-year.js" --out "$REPORTS" "$@"
+				;;
+			*)
+				# **The clock is set before the stack boots, not after.** PostgreSQL
+				# initialises at whatever it first reads, and stepping backwards past a
+				# running server is a corrupted run rather than a failed one — so the plan's
+				# first day has to be known before start_postgres, which is why run-year.js
+				# has a --print-meta that prints it in shell form.
+				export PARITY_FAKETIME=on
+				meta="$(node "$HARNESS/run-year.js" --print-meta "$@")" || die "could not build the plan"
+				eval "$meta"
+				# shellcheck disable=SC2154
+				log "year: clock starts at $startDate"
+				ft_init "$startDate 09:00:00"
+
+				ensure_victual_images "$BUILD"
+				ensure_upstream_image
+				# A virgin database on both sides, and fresh mosquitto and influx with it:
+				# retained messages and old points would otherwise survive into this run and
+				# be counted as its own.
+				stack_up
+
+				ft_assert_loaded "$startDate 09:00:00"
+
+				PARITY_PSQL_CMD="'$HERE/parity' psql" \
+				PARITY_INFLUX_TOKEN="$INFLUX_TOKEN" \
+				PARITY_INFLUX_ORG="$INFLUX_ORG" \
+				PARITY_INFLUX_BUCKET="$INFLUX_BUCKET" \
+				node "$HARNESS/run-year.js" \
+					--victual "$VICTUAL_URL" \
+					--clock-file "$FT_CLOCK_FILE" \
+					--influx "http://127.0.0.1:${INFLUX_PORT}" \
+					--mqtt "127.0.0.1:${MQTT_PORT}" \
+					--out "$REPORTS" \
+					"$@"
+				;;
+		esac
+		;;
+	selftest)
+		shift || true
+		ensure_harness_deps
+		node "$HARNESS/selftest.js" "$@"
+		;;
+	psql)
+		shift
+		[ $# -gt 0 ] || die "psql needs a statement, e.g. parity psql 'SELECT count(*) FROM outbox'"
+		pg_query "$@"
+		;;
+	clock-check)
+		shift
+		# Runs as its own process on purpose: the clock is a boot-time property — the
+		# timestamp file has to exist before PostgreSQL initialises — and this shell has
+		# already sourced stack.sh with faketime off. Re-sourcing it here would leave two
+		# sets of argument builders disagreeing about whether the stack is faked.
+		exec "$HERE/clock-check" "$@"
 		;;
 	down)
 		stack_down

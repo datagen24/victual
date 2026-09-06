@@ -1,0 +1,230 @@
+'use strict';
+
+// **The one place a quantity-unit conversion factor moves stock.**
+//
+// The coverage table used to say conversions could be exercised by "purchasing in the
+// purchase unit". They cannot: `AddProduct` (services/StockService.php:211) applies no
+// purchase-to-stock conversion at any point, so the `amount` on `/stock/products/{id}/add` is
+// in the *stock* unit and always was. Sending 1 for a 500 g pack books one gram.
+//
+// The factor is read in three places and only one of them changes what a booking removes:
+// sub-product substitution (`:620-623`, `:658`, `:1504`). Consuming a *parent* product with
+// `allow_subproduct_substitution` draws on its children's stock, converting the requested
+// amount from the parent's stock unit into each child's:
+//
+//     conversion = quantity_unit_conversions_resolved
+//                    WHERE product_id = <the child>
+//                      AND from_qu_id = <the parent's stock unit>
+//                      AND to_qu_id   = <the child's stock unit>
+//     amount = amount * conversion.factor
+//
+// So the assertion is `rowsSum` on the resulting booking: ask for 1 pack, expect 500 grams
+// removed. **A wrong factor changes that number and nothing else in the suite would notice** —
+// the totals, the positions and the prices are all consistent with whatever the factor says.
+//
+// This is a fixture rather than a thread through the year on purpose. It needs a parent/child
+// pair the household does not otherwise have, and the substitution consume must draw on a
+// single known lot: `GetProductStockEntries` selects from `stock_next_use`, which has no
+// ORDER BY of its own, so with two candidate lots the row order — and therefore which lot a
+// factor is applied to — is not determined by anything the application states.
+
+const { call, arrange, bookingRows, verifyStock, CREATED } = require('../ops');
+
+const PARENT = { key: 'coffeeany', name: 'Y Coffee (any)', qu: 'pack' };
+const CHILD = { key: 'coffeebeans', name: 'Y Coffee beans', qu: 'gram' };
+const FACTOR = 500;          // 1 pack = 500 g
+const STOCKED = 1000;        // two packs' worth, in the child's own unit
+
+function conversionProbe({ ctx, ops }) {
+	const { cal, ledger, sym, world } = ctx;
+	const day = cal.days - 1;
+	const purchasedDate = cal.date(day);
+	const bbd = cal.dateOffset(day, 400);
+	const group = world.productGroups[0].key;
+	const loc = 'pantry';
+
+	ops.push({ op: 'mark', note: 'isolated: quantity-unit conversion via sub-product substitution', day });
+
+	// The parent holds no stock of its own. Purchase unit equals stock unit on both, so the
+	// application does not create a conversion row of its own that this one would collide
+	// with — the pack->gram row below is the only override in play.
+	ops.push(arrange({
+		method: 'POST', path: '/objects/products',
+		body: {
+			name: PARENT.name,
+			product_group_id: `{productGroup:${group}}`,
+			location_id: `{location:${loc}}`,
+			qu_id_stock: `{quantityUnit:${PARENT.qu}}`,
+			qu_id_purchase: `{quantityUnit:${PARENT.qu}}`,
+			min_stock_amount: 0
+		},
+		expect: CREATED,
+		bind: { [`product:${PARENT.key}`]: 'created_object_id' },
+		label: `conversion probe: ${PARENT.name}, the parent`
+	}));
+
+	ops.push(arrange({
+		method: 'POST', path: '/objects/products',
+		body: {
+			name: CHILD.name,
+			parent_product_id: `{product:${PARENT.key}}`,
+			product_group_id: `{productGroup:${group}}`,
+			location_id: `{location:${loc}}`,
+			qu_id_stock: `{quantityUnit:${CHILD.qu}}`,
+			qu_id_purchase: `{quantityUnit:${CHILD.qu}}`,
+			min_stock_amount: 0
+		},
+		expect: CREATED,
+		bind: { [`product:${CHILD.key}`]: 'created_object_id' },
+		label: `conversion probe: ${CHILD.name}, the child`
+	}));
+
+	// The factor the substitution will apply, keyed exactly as the lookup expects: the row
+	// belongs to the *child*, and converts from the parent's stock unit to the child's.
+	ops.push(arrange({
+		method: 'POST', path: '/objects/quantity_unit_conversions',
+		body: {
+			product_id: `{product:${CHILD.key}}`,
+			from_qu_id: `{quantityUnit:${PARENT.qu}}`,
+			to_qu_id: `{quantityUnit:${CHILD.qu}}`,
+			factor: FACTOR
+		},
+		expect: CREATED,
+		bind: { 'conversion:coffee': 'created_object_id' },
+		label: `conversion probe: 1 ${PARENT.qu} = ${FACTOR} ${CHILD.qu} for ${CHILD.name}`
+	}));
+
+	// **The factor, read back before anything depends on it — and there are two rows, not
+	// one.** Posting the pack-to-gram override makes the application store the inverse as a
+	// row of its own as well: `1 pack = 500 g` and `1 g = 0.002 pack`. An earlier version of
+	// this file asserted a single row and claimed in its comments that the inverse was derived
+	// by `quantity_unit_conversions_resolved` rather than stored. That was wrong, and it went
+	// unnoticed because `length` was accepted and never enforced — the read returned two rows
+	// and bound the first.
+	//
+	// Both are asserted now, which is stronger than the original intent: the aggregation below
+	// reads the inverse and the substitution reads the forward factor, so a build that stored
+	// one and not the other fails here rather than in whichever check happened to run first.
+	ops.push(call({
+		method: 'GET',
+		path: `/objects/quantity_unit_conversions?query%5B%5D=product_id%3D{product:${CHILD.key}}&order=id:asc`,
+		expect: {
+			status: 200, kind: 'array', length: 2,
+			rowShape: ['id', 'product_id', 'from_qu_id', 'to_qu_id', 'factor'],
+			rowsEqual: {
+				fields: ['from_qu_id', 'to_qu_id', 'factor'],
+				rows: [
+					[`{quantityUnit:${PARENT.qu}}`, `{quantityUnit:${CHILD.qu}}`, FACTOR],
+					[`{quantityUnit:${CHILD.qu}}`, `{quantityUnit:${PARENT.qu}}`, 1 / FACTOR]
+				]
+			}
+		},
+		window: cal.dayWindow(day),
+		label: `conversion probe: both directions are stored — ${FACTOR} and ${1 / FACTOR}`
+	}));
+
+	ledger.defineProduct(sym.product(CHILD.key), { defaultConsumeLocationId: null });
+
+	ops.push(call({
+		method: 'POST', path: `/stock/products/{product:${CHILD.key}}/add`,
+		body: {
+			amount: STOCKED, price: 12.5,
+			best_before_date: bbd, purchased_date: purchasedDate,
+			transaction_type: 'purchase',
+			location_id: `{location:${loc}}`
+		},
+		expect: bookingRows({ transactionType: 'purchase', extra: { amount: STOCKED } }),
+		window: cal.dayWindow(day),
+		label: `conversion probe: buy ${STOCKED} ${CHILD.qu} of ${CHILD.name}`
+	}));
+	ledger.purchase({
+		productId: sym.product(CHILD.key), amount: STOCKED, bbd, purchasedDate,
+		locationId: sym.location(loc), price: 12.5
+	});
+
+	// **The parent reports its children's stock in its own unit, and that uses the factor
+	// backwards.** `stock_current` joins the conversion on `from_qu_id = <the sub's stock
+	// unit>` and `to_qu_id = <the parent's stock unit>` (migration 0233:23-26) — gram to pack,
+	// the inverse of what the substitution consume below uses. Nothing was written for that
+	// direction: `quantity_unit_conversions_resolved` derives the inverse of every row it
+	// finds, so the single pack-to-gram override answers both questions.
+	//
+	// So this asserts the reciprocal, and the consume asserts the factor itself. A factor
+	// stored or resolved wrongly fails one of the two whichever way it is wrong.
+	//
+	// It is also what `ConsumeProduct` compares the requested amount against, so the units
+	// have to agree for the request below to be accepted at all.
+	ops.push(call({
+		method: 'GET', path: `/stock/products/{product:${PARENT.key}}`,
+		expect: {
+			status: 200, kind: 'object',
+			equals: {
+				stock_amount: 0,                                 // none of its own
+				stock_amount_aggregated: STOCKED / FACTOR,       // its children's, in packs
+				is_aggregated_amount: 1
+			}
+		},
+		window: cal.dayWindow(day),
+		label: `conversion probe: ${PARENT.name} holds nothing itself and aggregates ` +
+			`${STOCKED / FACTOR} ${PARENT.qu} from ${STOCKED} ${CHILD.qu}`
+	}));
+
+	// The operation the fixture exists for. One pack asked of the parent, `FACTOR` grams
+	// removed from the child — and `rowsSum` is what says so.
+	const packs = 1;
+	ops.push(call({
+		method: 'POST', path: `/stock/products/{product:${PARENT.key}}/consume`,
+		body: { amount: packs, allow_subproduct_substitution: true },
+		expect: bookingRows({
+			transactionType: 'consume',
+			rowsSum: -(packs * FACTOR),
+			extra: { product_id: `{product:${CHILD.key}}` }
+		}),
+		window: cal.dayWindow(day),
+		label: `conversion probe: consume ${packs} ${PARENT.qu} of the parent ` +
+			`=> ${packs * FACTOR} ${CHILD.qu} of the child`
+	}));
+	ledger.consume({ productId: sym.product(CHILD.key), amount: packs * FACTOR });
+
+	ops.push(verifyStock({
+		productKey: CHILD.key,
+		amount: ledger.amountOf(sym.product(CHILD.key)),
+		window: cal.dayWindow(day),
+		label: `conversion probe: ${CHILD.name} should hold ${ledger.amountOf(sym.product(CHILD.key))}`
+	}));
+
+	// A fractional request, because a factor that were being rounded or integer-divided would
+	// survive the whole-pack case and fail here.
+	const half = 0.5;
+	ops.push(call({
+		method: 'POST', path: `/stock/products/{product:${PARENT.key}}/consume`,
+		body: { amount: half, allow_subproduct_substitution: true },
+		expect: bookingRows({
+			transactionType: 'consume',
+			rowsSum: -(half * FACTOR),
+			extra: { product_id: `{product:${CHILD.key}}` }
+		}),
+		window: cal.dayWindow(day),
+		label: `conversion probe: consume ${half} ${PARENT.qu} => ${half * FACTOR} ${CHILD.qu}`
+	}));
+	ledger.consume({ productId: sym.product(CHILD.key), amount: half * FACTOR });
+
+	ops.push(verifyStock({
+		productKey: CHILD.key,
+		amount: ledger.amountOf(sym.product(CHILD.key)),
+		window: cal.dayWindow(day),
+		label: `conversion probe: ${CHILD.name} should hold ${ledger.amountOf(sym.product(CHILD.key))}`
+	}));
+
+	// And the reciprocal again, on a quantity that is not a whole number of packs — 250 g is
+	// half a pack, so a factor applied as an integer division reports 0 here.
+	const left = ledger.amountOf(sym.product(CHILD.key));
+	ops.push(call({
+		method: 'GET', path: `/stock/products/{product:${PARENT.key}}`,
+		expect: { status: 200, kind: 'object', equals: { stock_amount_aggregated: left / FACTOR } },
+		window: cal.dayWindow(day),
+		label: `conversion probe: ${PARENT.name} now aggregates ${left / FACTOR} ${PARENT.qu}`
+	}));
+}
+
+module.exports = { conversionProbe, FACTOR, PARENT, CHILD };

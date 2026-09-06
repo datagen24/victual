@@ -122,6 +122,27 @@ const ACCEPTED = [
 	},
 
 	{
+		id: 'sqlite-localtime-is-empty-without-the-driver',
+		reference: 'docs/adr/0008-postgresql-only-runtime-engine.md',
+		reason:
+			'time_local_sqlite3 is "" here and a real timestamp upstream, for exactly the reason ' +
+			'sqlite_version is: getSqliteLocaltime() opens new PDO(\'sqlite::memory:\') and the ' +
+			'serving images carry no pdo_sqlite since ADR-0008, so it returns "" rather than ' +
+			'throwing (services/ApplicationService.php:210-215). What the field was for — ' +
+			'diagnosing clock skew between PHP and the storage engine — is not answered by a ' +
+			'second engine\'s client library once that engine stores nothing; time_local and ' +
+			'PostgreSQL\'s own now() answer it instead. ' +
+			'**This was invisible until the suite stopped masking temporal fields wholesale.** ' +
+			'time_local_sqlite3 was in VOLATILE_FIELDS, so "" and a timestamp compared equal; ' +
+			'splitting temporal fields out of that set is what surfaced it, which is the argument ' +
+			'for having split them. The behaviour is unchanged and older than this entry.',
+		match: ({ difference }) =>
+			difference.kind === 'value' &&
+			difference.pointer.endsWith('/time_local_sqlite3') &&
+			difference.victual === ''
+	},
+
+	{
 		id: 'fork-schema-is-ahead',
 		reference: 'docs/adr/0004-engine-specific-migrations.md',
 		reason:
@@ -423,8 +444,25 @@ function renamedPair(victualValue, upstreamValue) {
 }
 
 // Classifies one difference. Returns the entry that explains it, or null.
-function classify(step, difference) {
+// Which modes an entry speaks for.
+//
+// **An entry with no `modes` applies to parity and nowhere else**, and that default is the
+// point rather than a convenience. Every entry in this file explains a difference between
+// *this fork and upstream grocy* — a rename, an engine's key allocation, a driver that is
+// no longer installed. None of them is a reason for two builds of Victual to disagree, so
+// deep mode starts with an empty registry and an entry has to say `modes: ['parity',
+// 'deep']` out loud to excuse a regression between builds.
+//
+// The chore entries make the case. `ADR-0005-chores-next-estimated-execution-time` fires on
+// every executed chore, and a year phase executes hundreds; carrying it into deep mode would
+// mean a scheduling regression — exactly what the year exists to find — arrived pre-excused.
+function appliesInMode(entry, mode) {
+	return (entry.modes || ['parity']).includes(mode);
+}
+
+function classify(step, difference, mode = 'parity') {
 	for (const entry of ACCEPTED) {
+		if (!appliesInMode(entry, mode)) continue;
 		let matched = false;
 		try {
 			matched = entry.match({ step, difference });
@@ -438,4 +476,4 @@ function classify(step, difference) {
 	return null;
 }
 
-module.exports = { ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify };
+module.exports = { ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify, appliesInMode };
