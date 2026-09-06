@@ -206,10 +206,34 @@ its own.
 |---|---|---|
 | A stalled response body aborts within the configured timeout | `fetch()` resolves when the headers arrive, so clearing the abort timer there left `response.text()` unbounded — a server that sends headers and then goes silent hung the harness. One did: a fixture-stage `POST /users` sat for **286 seconds** against a 180-second timeout. | Against the unfixed code: `FAIL — the request was still waiting after 6000ms with a 1500ms timeout`. Against the fixed code: `PASS`. |
 | A complete response is still read in full | so the fix above did not simply break the ordinary path | `PASS` |
+| An exact length assertion rejects the wrong number of rows | `length` was accepted, **counted in the assertion tally**, and never enforced — so `length: 1` passed on two rows, and the fixtures using it to establish an entry is uniquely identified before binding `[0].id` were binding the first of however many came back | `PASS` after the fix; before it, nothing threw |
+| A non-numeric amount fails the booking-sum assertion | `Math.abs(NaN - want) > tol` is *false*, so a booking row carrying `amount: "garbage"` summed to NaN and satisfied whatever `rowsSum` it was given | `PASS` after; before, `rowsSum: 5` was satisfied by garbage |
+| A stalled Influx response body aborts within its timeout | `queryFlux()` cleared its abort timer once the headers arrived, then read the body — and these queries run at the *end* of a year | `PASS` after; before, a 500ms-delayed body beat a 100ms timeout |
+| `firstRowEquals` checks the first row, `everyRowEquals` checks them all | one form named `rowEquals` examined only the first row; a consume answering one consume row and one row of something else satisfied it | `PASS` |
 
 The stall test is guarded rather than left to hang. Reproducing an unbounded wait *by waiting*
 reports nothing and blocks whatever runs it, so the request races a hard cap and a cap that
 wins is a failure with a number in it.
+
+### Assertions that could not fail
+
+Four were found by review on #88 and one by the fix for the first of them. They are recorded
+here because they are the suite's own failure mode — a green run that established less than it
+claimed — and because four of the five had been *counted* in the assertion totals reported as
+evidence.
+
+| Assertion | What it actually did | Now |
+|---|---|---|
+| `length: n` | accepted, tallied, never checked | enforced before any handle is bound |
+| `rowsSum` | `NaN` compared as agreement | non-numeric amounts are a finding, and eleven `> tolerance` comparisons across the replay, the invariants and the model's self-check fail closed |
+| delivery of events | walked `price_paid` ids only, so consumes, transfers, opens, spoilage, inventory corrections and undos were unchecked | expected deliveries derived from the plan: every product with a booking must have a `stock_value` point on that booking's day, both directions |
+| Influx queries | body read outside the timeout | inside it |
+| `rowEquals`, `rowShape` | first row only, under names claiming otherwise | `firstRowEquals` (still needed — a transfer answers `transfer_from` *and* `transfer_to`) and `everyRowEquals`; `rowShape` checks every row |
+
+Enforcing the first of these immediately falsified a claim of this suite's own. The conversion
+probe asserted one stored conversion row, and its comments said the inverse was *derived* by
+`quantity_unit_conversions_resolved`. It is not: posting `1 pack = 500 g` makes the application
+store `1 g = 0.002 pack` as a row of its own. Both are asserted now.
 
 ## A known instability, and what it is
 
