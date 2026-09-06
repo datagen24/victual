@@ -20,7 +20,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | — | [PostgreSQL support](../../db/pgsql/README.md) | Landed | SQLite runtime retirement remains. |
 | 01 | [Database file storage](01-file-storage.md) | Landed | PostgreSQL; migration 0258. |
 | 02 | [MCP endpoint](02-mcp-endpoint.md) | Draft | Read the [interface spec](../mcp-interface-spec.md), which supersedes the body. Requires 11, 13, 14 piece 2, and 15-C1. |
-| 03 | [Category minimum stock](03-category-min-stock.md) | Draft | Wave 3b; independent of 07-Q6. |
+| 03 | [Category minimum stock](03-category-min-stock.md) | Landed | Wave 3b; PostgreSQL; migration 0268. Note-only shopping list row (Q1) remains a follow-up. |
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
 | 06 | [Location barcodes](06-location-barcodes.md) | Draft | 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning is deferred to a separate plan after 08. |
@@ -39,8 +39,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 19 | [Roles and data visibility](19-rbac.md) | Piece 1 implemented | Wave 3a: roles and six domain read permissions. Piece 2, including price visibility, remains with 14 piece 2 in wave 5. |
 | 20 | [Container infrastructure](20-container-infrastructure.md) | Piece 1 and part of 3 landed | Production Docker target retired. Pieces 2, remaining 3, 4, 5; credential split and SIGTERM verification remain. |
 | 21 | [Frontend sink discipline](21-frontend-sink-discipline.md) | Landed | CI payload checks and stored-HTML cleanup on upgrade/import included. |
-| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0268–0269. |
-| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0267. |
+| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0270–0271. |
+| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0269. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
 
 ## Order of operations
@@ -55,7 +55,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 2 | API correctness and authentication | Complete, 2026-09-04, with the follow-ups listed above. |
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
 | 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
-| 3b | 03 category minimums; 06 location labels; optionally 09 | New reads use 3a's permissions. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination. |
+| 3b | 03 category minimums; 06 location labels; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. 06 remains. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums. |
 | 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |
 

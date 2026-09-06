@@ -62,6 +62,18 @@
 					name="description">@if($mode == 'edit'){{ $group->description }}@endif</textarea>
 			</div>
 
+			@php if($mode == 'edit') { $value = $group->min_stock_amount; } else { $value = 0; } @endphp
+			@include('components.numberpicker', array(
+			'id' => 'min_stock_amount',
+			'label' => 'Minimum stock amount',
+			'min' => '0.',
+			'decimals' => $userSettings['stock_decimal_places_amounts'],
+			'value' => $value,
+			'additionalGroupCssClasses' => 'mb-1',
+			'additionalCssClasses' => 'locale-number-input locale-number-quantity-amount',
+			'hint' => $__t('The summed stock of this group\'s products, in each product\'s own stock quantity unit - amounts are not converted, so a group minimum is only meaningful when its products are measured comparably')
+			))
+
 			@include('components.userfieldsform', array(
 			'userfields' => $userfields,
 			'entity' => 'product_groups'

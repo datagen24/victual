@@ -68,6 +68,15 @@
 			<div id="info-missing-products"
 				data-status-filter="belowminstockamount"
 				class="normal-message status-filter-message responsive-button"></div>
+			{{-- Plan 03. Not a .status-filter-message: a short group is not a status a product
+			     row carries, and the click handler those share sets the status dropdown. The
+			     groups are listed rather than counted, and shown rather than folded away - a
+			     count is not something anybody can act on, and the names are the whole point
+			     of a feature whose premise is that the user chooses which member to buy. --}}
+			<div id="info-missing-product-groups"
+				class="normal-message responsive-button mr-2 d-none"></div>
+			<ul id="missing-product-groups-list"
+				class="list-unstyled small mb-0 mt-1"></ul>
 			<div class="float-right mt-1 @if($embedded) pr-5 @endif">
 				<a class="btn btn-sm btn-outline-info d-md-none"
 					data-toggle="collapse"

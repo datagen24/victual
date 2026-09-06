@@ -53,9 +53,10 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0265 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `users.must_change_password`, moved out of `user_settings` in review | in this tree |
 | 0266 | [plan 19](../docs/plans/19-rbac.md) — roles and read permissions (wave 3a) | in this tree |
 | 0267 | the split-entry defect in `products_average_price` — `stock_entry_origins`, and `stock_edited_entries` following it | in this tree |
-| 0268 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
-| 0269 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0270 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0268 | [plan 03](../docs/plans/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
+| 0269 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
+| 0270 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0271 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 ## The merge order this implies — discharged
 
@@ -73,7 +74,7 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-The next migration takes **0271** and claims it here first.
+The next migration takes **0272** and claims it here first.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering
@@ -81,26 +82,34 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0268 to 0270 are claimed by drafts and no file exists for any of them yet.**
-The highest number on disk is 0267 and there is no hole or waiver.
+**0269 to 0271 are claimed by drafts and no file exists for any of them yet.**
+The highest number on disk is 0268 and there is no hole or waiver.
 
-Plan 23 still merges before 22: it owns 0268 and supplies `locations.storage_class_id`;
-22 owns 0269–0270. The next unclaimed number is 0271.
+Plan 23 still merges before 22: it owns 0269 and supplies `locations.storage_class_id`;
+22 owns 0270–0271. The next unclaimed number is 0272.
 
-**These three have now moved three times without a line of SQL being written**: claimed as 0261–0262
+**These three have now moved five times without a line of SQL being written**: claimed as 0261–0262
 while `master` was landing 0261 for [#46](https://github.com/datagen24/victual/issues/46), then
-0262–0264 until wave 2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266. Each time the
+0262–0264 until wave 2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266, then
+0268–0270 to make room for 0267, and now 0269–0271 to make room for this one. Each time the
 correction cost one table edit,
 because nothing had been written to disk under the old numbers.
 
-The fourth move is this one, and it is the first where the number was taken by a change that
+The fourth move was the first where the number was taken by a change that
 had already been written rather than by one being planned. 0267 is a defect fix — it is
 neither a dependency of these three nor dependent on them, and it replaces
 `stock_edited_entries` in place with `CREATE OR REPLACE VIEW`, so it drops no view another
-migration might be rebuilding. Leaving it at 0270 would have left this tree with a hole at
+migration might be rebuilding. Leaving it at 0270 would have left that tree with a hole at
 0267–0269 and unmergeable until two unwritten plans landed, which is a long time for a
-one-table edit to save. That is the argument for
-claiming here before writing rather than before merging, made twice at the smallest possible
+one-table edit to save.
+
+The fifth is this one and it is the ordinary case the rule was written for: plan 03 is
+*scheduled* — wave 3b — while 22 and 23 are drafts with no delivery slot, so the number that
+is about to have a file behind it takes the lowest free slot and the drafts move up. Doing it
+the other way round would have put 0271 on disk above a three-number hole that nothing was
+working to close, and `check-migrations.php` would have refused the branch until two
+unscheduled plans landed. That is the argument for
+claiming here before writing rather than before merging, made five times at the smallest possible
 scale — and a reason a long-lived draft should re-check this table at every resync rather than
 trusting a number it claimed a week ago.
 

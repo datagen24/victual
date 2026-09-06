@@ -274,6 +274,14 @@ jobs:
         working-directory: .devtools/frontend
         run: node roles.js http://127.0.0.1:8085
 
+      # Plan 03. The form field and the short-group list are both things the PHP phase
+      # structurally cannot see: it asserts the column and the controller's row set, and this
+      # asserts that a person can set the value and act on the result. A probe nothing runs is
+      # documentation, which is the lesson this job's own header records.
+      - name: Run product group minimum stock checks
+        working-directory: .devtools/frontend
+        run: node group-min-stock.js http://127.0.0.1:8085
+
       # Uploaded on failure: the per-probe reasons are in the log, but the JSON carries
       # what was stored and read back, which is what tells a reader whether a failing probe
       # found a real sink or a broken seed.
