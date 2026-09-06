@@ -26,6 +26,26 @@
 -- is off, and config-dist.php defaults it on. The trigger tests were written against a
 -- database that had one, so it is created here.
 
+-- The one piece of schema in this file, and it is here because SQLite can no longer
+-- receive it any other way. stock_entry_origins arrives in migrations/0267.pgsql.sql, above
+-- DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, so bin/victual-migrate never creates
+-- it on this side. The rollback phase runs StockService against SQLite and drives
+-- OpenProduct(), which writes a row here whenever a partial open splits an entry -- so
+-- without the table that phase would fail on a missing table instead of on the failure it
+-- injects, and would still report a pass, which is precisely the miss rollback-tests.php
+-- says it is most likely to develop. Creating it in the fixture keeps the accommodation in
+-- the tooling that deliberately runs a frozen engine rather than putting an engine test
+-- inside StockService. PostgreSQL gets its own definition from the migration, never from
+-- here: this file is applied to SQLite only.
+CREATE TABLE stock_entry_origins (
+	id INTEGER PRIMARY KEY,
+	stock_id TEXT NOT NULL UNIQUE,
+	origin_stock_id TEXT NOT NULL,
+	row_created_timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
+	CHECK (stock_id <> origin_stock_id)
+);
+CREATE INDEX ix_stock_entry_origins_origin ON stock_entry_origins (origin_stock_id);
+
 -- Locations. id 1 is the one the trigger tests assume; id 3 is a freezer, so that
 -- anything keyed on is_freezer has both cases to look at.
 INSERT INTO locations (id, name, description, is_freezer) VALUES (1, 'Pantry', 'Base fixture location', 0);
