@@ -59,6 +59,13 @@ class Ledger {
 		// kept: an allowed-location set built only from what the model still holds would
 		// reject the application's equally valid choice.
 		this.ambiguous = new Map();
+		// entryKey -> the key of the entry carrying its origin booking, mirroring the
+		// application's `stock_entry_origins` (migration 0267). Only a partial open creates a
+		// link, because only `OpenProduct` records one (StockService.php:1561) — a transferred
+		// entry has no origin row in either place, and its edits are invisible to the average
+		// in both. Kept apart from `entries` because an entry can be consumed away while the
+		// bookings that need its lineage stay in the ledger.
+		this.origins = new Map();
 	}
 
 	defineProduct(productId, { defaultConsumeLocationId = null } = {}) {
@@ -138,6 +145,7 @@ class Ledger {
 			open: 0
 		};
 		this.entries.push(entry);
+		this.origins.set(entry.key, entry.key);
 		// purchasedDate travels with the booking because the average-price and
 		// price-history oracles are expressed in terms of the day the plan bought on, and
 		// that day is client-supplied — it is the evidence that a year happened.
@@ -201,7 +209,11 @@ class Ledger {
 				entry.open = 1;
 				left -= entry.amount;
 			} else {
-				this.entries.push({ ...entry, key: this.nextEntryKey++, amount: entry.amount - left });
+				// The remainder of a partial open: a new entry with no booking of its own,
+				// which is why its lineage has to be recorded rather than inferred.
+				const rest = this.nextEntryKey++;
+				this.entries.push({ ...entry, key: rest, amount: entry.amount - left });
+				this.origins.set(rest, this.origins.get(entry.key) || entry.key);
 				entry.amount = left;
 				entry.open = 1;
 				left = 0;

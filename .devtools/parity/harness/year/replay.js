@@ -664,26 +664,52 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 		}
 	};
 
-	// How far a source's observed clock moved against how much real time passed. A ratio near
-	// 1 is a clock running normally at the wrong offset; near 0 is a clock that has stopped.
-	// Below a second of span the question cannot be answered and this says so rather than
-	// producing a number that looks like an answer.
+	// How far an observed clock moved against how much real time passed — **measured within a
+	// cohort, because the pool is not one clock.**
+	//
+	// A first version compared a source's first and last sample and reported nonsense: php-fpm
+	// answers successive requests from different children, so a run of samples interleaves a
+	// worker at the right time with one a day behind, and the difference between the ends of
+	// that mixture is not any clock's progression. It reported `-86397s (stopped)` for a pool
+	// whose every member was in fact running normally.
+	//
+	// Samples are therefore grouped by whole-day offset, which is the one thing distinguishing
+	// the cohorts here, and each group is measured on its own. Within a group the advance is a
+	// real rate; across groups it is an artefact of which child answered.
 	const advanceOf = (source) => {
 		const seen = samples.filter((x) => x.source === source && x.observed !== null);
 		if (seen.length < 2) return null;
-		const first = seen[0];
-		const last = seen[seen.length - 1];
-		const realMs = last.atMs - first.atMs;
-		if (realMs < 1000) return { spanMs: Math.round(realMs), verdict: 'window too short to tell' };
-		const observedMs = (last.observed - first.observed) * 1000;
-		const ratio = observedMs / realMs;
-		return {
-			spanMs: Math.round(realMs),
-			observedMs: Math.round(observedMs),
-			ratio: Number(ratio.toFixed(3)),
-			verdict: ratio < 0.1 ? 'stopped'
-				: (ratio > 0.5 && ratio < 1.5 ? 'running, at the wrong offset' : 'advancing anomalously')
-		};
+		const byCohort = new Map();
+		for (const x of seen) {
+			const day = Math.round(x.delta / 86400);
+			if (!byCohort.has(day)) byCohort.set(day, []);
+			byCohort.get(day).push(x);
+		}
+		const cohorts = [...byCohort.entries()].map(([dayOffset, group]) => {
+			const first = group[0];
+			const last = group[group.length - 1];
+			const spanMs = Math.round(last.atMs - first.atMs);
+			if (group.length < 2 || spanMs < 500) {
+				return { dayOffset, samples: group.length, spanMs, verdict: 'window too short to tell' };
+			}
+			const observedMs = (last.observed - first.observed) * 1000;
+			const ratio = observedMs / spanMs;
+			return {
+				dayOffset, samples: group.length, spanMs, observedMs: Math.round(observedMs),
+				ratio: Number(ratio.toFixed(3)),
+				verdict: ratio < 0.1 ? 'stopped'
+					: (ratio > 0.5 && ratio < 1.6 ? 'running, at the wrong offset' : 'advancing anomalously')
+			};
+		}).sort((a, b) => a.dayOffset - b.dayOffset);
+		return { cohorts, distinctOffsets: cohorts.length };
+	};
+
+	// The cohort that is not where it should be, for the one-line summary.
+	const worstCohort = (source) => {
+		const a = advanceOf(source);
+		if (!a) return null;
+		const off = a.cohorts.filter((c) => c.dayOffset !== 0);
+		return off.length > 0 ? off[0] : (a.cohorts[0] || null);
 	};
 
 	const evidence = () => ({
@@ -712,7 +738,19 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
 			let probes = 0;
-			const probe = async () => { probes++; return inRange(await observeApp()); };
+			let lastDbAt = -Infinity;
+			const probe = async () => {
+				probes++;
+				const fresh = inRange(await observeApp());
+				// Sampled alongside, sparsely: the failure below compares the two runtimes and
+				// the first version of this loop never asked PostgreSQL at all, so there was
+				// nothing to compare against.
+				if (psql && sinceStart() - lastDbAt >= KEEP_EVERY_MS) {
+					lastDbAt = sinceStart();
+					await observeDb();
+				}
+				return fresh;
+			};
 
 			// Warm, sequentially, until the pool is answering consistently.
 			let warm = 0;
@@ -747,16 +785,16 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			// by which point the operations in between have already been evaluated against
 			// the wrong date and there is nothing to do but report the year INCOMPLETE.
 			if (clean < CLEAN_ROUNDS) {
-				const app = advanceOf('app');
+				const c = worstCohort('app');
 				throw new Incomplete(
 					`the worker pool never agreed on ${when}: ${probes} probes, ` +
 					`${warm >= WARM_AGREEMENT ? 'warmed but never gave' : 'never even warmed to'} ` +
 					`${CLEAN_ROUNDS} rounds of ${POOL_SIZE} concurrent replies within ` +
 					`${maxDriftS}s of the new time` +
-					(app && app.ratio !== undefined
-						? ` — over ${(app.spanMs / 1000).toFixed(1)}s of real time the ` +
-							`application's clock advanced ${(app.observedMs / 1000).toFixed(1)}s ` +
-							`(${app.verdict})`
+					(c && c.ratio !== undefined
+						? ` — the cohort ${c.dayOffset} day(s) out advanced ` +
+							`${(c.observedMs / 1000).toFixed(1)}s over ${(c.spanMs / 1000).toFixed(1)}s ` +
+							`real (${c.verdict})`
 						: ''),
 					{ ...evidence(), probes, warmedTo: warm, rounds });
 			}
@@ -772,10 +810,10 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			// Which of the two is behind is the question this failure exists to answer, so it
 			// carries the same evidence as the pool failure: per-source advance against real
 			// time, and samples spanning it.
-			const a = advanceOf('app');
-			const d = advanceOf('postgres');
+			const a = worstCohort('app');
+			const d = worstCohort('postgres');
 			const summarise = (name, x) => (x && x.ratio !== undefined
-				? `${name} advanced ${(x.observedMs / 1000).toFixed(1)}s over ` +
+				? `${name} at ${x.dayOffset} day(s) out advanced ${(x.observedMs / 1000).toFixed(1)}s over ` +
 					`${(x.spanMs / 1000).toFixed(1)}s real (${x.verdict})`
 				: null);
 			const reading = [summarise('app', a), summarise('postgres', d)].filter(Boolean).join('; ');

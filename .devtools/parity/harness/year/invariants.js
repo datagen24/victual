@@ -40,6 +40,10 @@ function ok(results, name, passed, detail) {
 // is fail the run when it *passes*: at that point either the defect was fixed and this marker
 // is stale, or the assertion stopped testing what it claims. Both need a person, and neither
 // should be found by someone noticing a line of output months later.
+//
+// Currently unused: the one assertion that needed it — split-entry edits reaching the average
+// price — was retired when PR #77 fixed the defect, and the marker reported STALE on the way
+// out. Kept because the next known defect should not have to re-invent it.
 function known(results, name, passed, detail, defect) {
 	results.push({
 		name, detail, defect,
@@ -77,55 +81,69 @@ async function readAll(instance, path, key = 'id', page = 500) {
 }
 
 // The expected average price per product, computed from the plan's own booking history and
-// following `products_average_price` (db/pgsql/baseline/04_views_l1a.sql:77-95) exactly:
+// following `products_average_price` and `stock_edited_entries` as migration 0267 leaves
+// them:
 //
-//   - purchase, inventory-correction and self-production count, but only for entries that
-//     were never edited;
-//   - for an entry that *was* edited, the newest `stock-edit-new` counts instead, weighted
-//     by `edited_origin_amount` — the edited amount plus whatever had already been consumed
-//     from that entry before the edit;
-//   - rows with price <= 0, amount <= 0 or undone <> 0 are excluded;
-//   - the weight is the amount.
+//   - an *origin group* is an entry that carries a booking, plus every entry split off it by
+//     a partial open (`stock_entry_origins`, which only `OpenProduct` writes —
+//     StockService.php:1561 — so a transferred entry is its own group and, having no booking,
+//     contributes nothing);
+//   - a group with no edit contributes each of its origin bookings at its own amount and
+//     price;
+//   - a group with an edit contributes once, at the price of its *newest* `stock-edit-new`,
+//     weighted by `origin_amount + SUM(new - old)` across every edit in the group — what was
+//     booked, adjusted by every correction;
+//   - rows with price <= 0, amount <= 0 or undone <> 0 are excluded.
 //
-// Modelling it is what lets edited products be *compared* rather than skipped. Skipping them
-// was a hole: the one product the year edits is the one whose price arithmetic is least
-// obvious, so it is exactly the product worth checking.
-function expectedAveragePrices(bookings) {
-	const editedEntries = new Map();   // entryKey -> newest stock-edit-new booking
+// **This replaced an oracle that modelled the previous behaviour.** Before 0267 the weight
+// was the edited amount plus whatever had been consumed from that entry beforehand, and an
+// edit whose entry had no booking of its own was ignored entirely — which is the asymmetry
+// the year found and PR #77 fixed. Modelling it is what lets edited products be *compared*
+// rather than skipped, and the year edits the one product whose price arithmetic is least
+// obvious.
+function expectedAveragePrices(bookings, entryOrigins = {}) {
+	const originOf = (entryKey) => {
+		if (entryKey === null || entryKey === undefined) return null;
+		const mapped = entryOrigins[entryKey];
+		return mapped === undefined ? entryKey : mapped;
+	};
+
+	// What each group started with, and which product it belongs to.
+	const groups = new Map();   // originKey -> { productKey, originAmount, corrections, newest }
+	const of = (key, productKey) => {
+		if (!groups.has(key)) {
+			groups.set(key, { productKey, originAmount: 0, corrections: 0, newest: null, edits: 0 });
+		}
+		return groups.get(key);
+	};
+
 	for (const b of bookings) {
-		if (b.type !== 'stock-edit-new' || b.entryKey === null) continue;
-		const prior = editedEntries.get(b.entryKey);
-		if (!prior || b.seq > prior.seq) editedEntries.set(b.entryKey, b);
+		if (b.undone) continue;
+		if (!['purchase', 'inventory-correction', 'self-production'].includes(b.type)) continue;
+		if (!(b.amount > 0)) continue;
+		const key = originOf(b.entryKey);
+		if (key === null) continue;
+		const g = of(key, b.productKey);
+		g.originAmount += b.amount;
+		g.bookings = (g.bookings || []).concat([b]);
 	}
 
-	// **An edit only reaches the average price if its entry has an origin booking.**
-	//
-	// `stock_edited_entries` (migration 0230:27-38) builds itself by joining `stock-edit-new`
-	// rows to a purchase, inventory-correction or self-production row *with the same
-	// stock_id*. An entry with no such row never enters the table, so the view neither counts
-	// its edit nor excludes anything on its behalf — the edit is simply invisible to the
-	// average.
-	//
-	// Entries like that are ordinary here, not exotic: a partial open splits an entry and the
-	// remainder is a new `stock` row with a fresh `stock_id` and no log row of its own
-	// (StockService.php:1541+). A year run produced a chain of them on pasta —
-	// 66e2ad9101bdb -> 66ebe810438e7 -> 6630b310442e0 -> 66f5229059939 — each first appearing
-	// in the log as a consume or an open, none with a purchase.
-	//
-	// So editing a split-off entry does not move the average while editing an unsplit one
-	// does. That asymmetry is the application's, and it is recorded in COVERAGE.md rather
-	// than modelled away; what changes here is only that the oracle now describes the view it
-	// is comparing against. Two full-year runs disagreed by 1.6246 against 1.6228 on pasta
-	// until it did.
-	const hasOrigin = (entryKey) => bookings.some((b) =>
-		b.entryKey === entryKey && !b.undone &&
-		['purchase', 'inventory-correction', 'self-production'].includes(b.type));
-
-	const consumedBefore = (entryKey, beforeSeq) => bookings
-		.filter((b) => b.type === 'consume' && !b.undone && b.seq < beforeSeq && b.touched)
-		.reduce((n, b) => n + b.touched
-			.filter((t) => t.key === entryKey)
-			.reduce((m, t) => m + t.amount, 0), 0);
+	// Each edit as a signed correction, paired with the `stock-edit-old` that preceded it on
+	// the same entry — which is how the application pairs them, and why an edit that raised
+	// an entry counts positively.
+	const lastOldOf = new Map();
+	for (const b of bookings) {
+		if (b.undone || b.entryKey === null) continue;
+		if (b.type === 'stock-edit-old') { lastOldOf.set(b.entryKey, b); continue; }
+		if (b.type !== 'stock-edit-new') continue;
+		const key = originOf(b.entryKey);
+		if (key === null) continue;
+		const g = of(key, b.productKey);
+		const old = lastOldOf.get(b.entryKey);
+		g.corrections += b.amount - (old ? old.amount : b.amount);
+		g.edits += 1;
+		if (!g.newest || b.seq > g.newest.seq) g.newest = b;
+	}
 
 	const num = new Map();
 	const den = new Map();
@@ -135,23 +153,47 @@ function expectedAveragePrices(bookings) {
 		den.set(productKey, (den.get(productKey) || 0) + weight);
 	};
 
-	for (const b of bookings) {
-		if (b.undone) continue;
-		if (!['purchase', 'inventory-correction', 'self-production'].includes(b.type)) continue;
-		// Superseded by its edit — but only where the view actually supersedes it, which is
-		// where the edited entry has an origin row to be found by.
-		if (b.entryKey !== null && editedEntries.has(b.entryKey) && hasOrigin(b.entryKey)) continue;
-		add(b.productKey, b.amount, b.price);
-	}
-	for (const edit of editedEntries.values()) {
-		if (edit.undone) continue;
-		if (!hasOrigin(edit.entryKey)) continue;   // invisible to the view — see hasOrigin()
-		add(edit.productKey, edit.amount + consumedBefore(edit.entryKey, edit.seq), edit.price);
+	for (const g of groups.values()) {
+		if (g.edits === 0) {
+			// Untouched: every origin booking counts as itself.
+			for (const b of g.bookings || []) add(b.productKey, b.amount, b.price);
+			continue;
+		}
+		// Corrected: the group contributes once, and its origin bookings do not.
+		if (!g.newest) continue;
+		add(g.newest.productKey, g.originAmount + g.corrections, g.newest.price);
 	}
 
 	const out = new Map();
 	for (const [productKey, weight] of den) out.set(productKey, num.get(productKey) / weight);
 	return out;
+}
+
+
+// Reads a growing table in pages, with an explicit stable ordering key.
+//
+// Gaps in that key are legitimate — deletions, merges and sequence allocation all produce
+// them — so completeness is "strictly increasing and unique, and the page sequence stopped
+// because a page came back short", never "contiguous".
+async function readAll(instance, path, key = 'id', page = 500) {
+	const rows = [];
+	let seenMax = -Infinity;
+	for (let offset = 0; ; offset += page) {
+		const sep = path.includes('?') ? '&' : '?';
+		const record = await instance.silently(() =>
+			instance.get(`${path}${sep}order=${key}:asc&limit=${page}&offset=${offset}`));
+		if (record.status !== 200 || !Array.isArray(record.body)) {
+			throw new Error(`reading ${path} answered HTTP ${record.status}`);
+		}
+		for (const row of record.body) {
+			const k = Number(row[key]);
+			if (!(k > seenMax)) throw new Error(`${path} returned ${key}=${k} after ${seenMax} — the ordering is not strict`);
+			seenMax = k;
+			rows.push(row);
+		}
+		if (record.body.length < page) break;
+	}
+	return rows;
 }
 
 // **The one check here that does not model the application.**
@@ -184,13 +226,17 @@ async function checkSplitEditEquivalence({ instance, symbols, results }) {
 		return;
 	}
 
+	// **Retired from known-failing, because the application now does this.** PR #77 added
+	// `stock_entry_origins` so `stock_edited_entries` can follow a split back to the booking
+	// it came from. The marker did its job on the way out: the first run against the fixed
+	// build reported STALE and failed, rather than leaving a claim about a defect standing
+	// after the defect was gone.
 	const agree = Math.abs(control - subject) < 1e-4;
-	known(results,
+	ok(results,
 		'an edit reaches the average price whether or not the entry was split',
 		agree,
 		`whole-entry edit gives ${control.toFixed(4)}, split-remainder edit gives ` +
-		`${subject.toFixed(4)} — the same stock at the same prices`,
-		'split-entry edits are invisible to products_average_price (COVERAGE.md)');
+		`${subject.toFixed(4)} — the same stock at the same prices`);
 }
 
 // What plan 18 should have delivered, checked against the series and the broker rather than
@@ -492,7 +538,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 	//
 	// Driven from the products the *plan* expects a price for. Walking the view's rows instead
 	// meant an empty view compared nothing and passed.
-	const wantPrices = expectedAveragePrices(bookings);
+	const wantPrices = expectedAveragePrices(bookings, plan.ledger.entryOrigins || {});
 	const avgRecord = await instance.silently(() => instance.get('/objects/products_average_price'));
 	const livePrice = new Map();
 	for (const row of avgRecord.body || []) livePrice.set(String(row.product_id), Number(row.price));

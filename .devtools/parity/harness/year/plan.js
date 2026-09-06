@@ -497,6 +497,9 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 			// the last monthly checkpoint survives to the end of the run unnoticed — which
 			// an injected move between locations demonstrated.
 			expectedLocations: ledger.locationAmounts(),
+			// entryKey -> origin entryKey, so the average-price oracle can follow a split
+			// back to the booking it came from exactly as `stock_entry_origins` does.
+			entryOrigins: Object.fromEntries(ledger.origins),
 			// The modelled bookings themselves, for the oracles that are expressed over the
 			// year's history rather than over its end state. Not part of the plan hash — the
 			// hash is over `ops`, which is what a replay actually performs.

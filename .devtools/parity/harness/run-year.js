@@ -434,7 +434,24 @@ main().catch((error) => {
 		// rather than summarised.
 		console.error('');
 		console.error(`\x1b[31mINCOMPLETE — ${error.message}\x1b[0m`);
-		if (error.detail) console.error(`  ${JSON.stringify(error.detail).slice(0, 800)}`);
+		if (error.detail) {
+			// **Written out, not truncated into the terminal.** The clock diagnostics carry
+			// sixty samples across both runtimes precisely so a failure can be reasoned about
+			// afterwards; slicing that to 800 characters produced an unparseable fragment and
+			// left the evidence effectively unrecorded. The short form still prints, so the
+			// terminal says what happened, and the whole of it lands in a file.
+			const short = JSON.stringify(error.detail, (k, v) => (k === 'samples' ? undefined : v));
+			console.error(`  ${short.slice(0, 800)}`);
+			try {
+				const args = parseArgs(process.argv);
+				fs.mkdirSync(args.out, { recursive: true });
+				const file = path.join(args.out, 'year-incomplete.json');
+				fs.writeFileSync(file, `${JSON.stringify(error.detail, null, '\t')}\n`);
+				console.error(`  full evidence: ${file}`);
+			} catch (e) {
+				console.error(`  (could not write the evidence file: ${e.message})`);
+			}
+		}
 		process.exit(3);
 	}
 	console.error(error);
