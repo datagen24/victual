@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average]
 #
-# Twelve kinds of check, for twelve reasons. Views are compared by what they return, because
+# Thirteen kinds of check, for thirteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -107,6 +107,18 @@
 # runs the same script against the migrated database and asserts the real Blade pages came
 # back. The second run is the load-bearing one - without it a fallback used for everything
 # would pass just as well as a fallback used for nothing.
+#
+# The thirteenth enters the application like the rollback, chores and error phases, and
+# asks PostgreSQL alone like the rbac one, because its subject is above the SQLite freeze.
+# products_average_price responded to an edit of a stock entry only where that entry carried
+# an origin booking with its own stock_id, and OpenProduct() splits an entry into a remainder
+# that has none - so the same correction counted or did not depending on whether an unrelated
+# open had happened. The view phase structurally cannot see this: it compares the two engines
+# rather than an expected value, so both agreeing on a wrong average passes, and its fixtures
+# contain no stock-edit rows at all, which leaves stock_edited_entries exercised only in its
+# empty state. Every split case here is paired with an unsplit control that has to produce the
+# same number, because a split case alone would be satisfied by any change that moved the
+# average rather than by the right one.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -321,6 +333,29 @@ run_rbac_tests() {
 	if ! VICTUAL_DATAPATH="$datapath" php "$SUITE_DIR/rbac-tests.php"; then
 		failures=$((failures + 1))
 	fi
+}
+
+# --- Average price tests ----------------------------------------------------------
+#
+# PostgreSQL only, and for the same reason the rbac phase is: the view under test is
+# replaced by migrations/0267.pgsql.sql, which is above the SQLite freeze, so there is no
+# second engine to ask. A migrated database and nothing else - the phase makes its own
+# products, and the base fixture's rows would only be noise in a weighted average.
+
+run_average_price_tests() {
+	local dbname="victual_average_price"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/average-price-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/average-price-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
 }
 
 # --- Migration tests --------------------------------------------------------------
@@ -1064,6 +1099,7 @@ build_pristine
 
 case "$WHICH" in
 	rbac) run_rbac_tests ;;
+	average) run_average_price_tests ;;
 	migrate) run_migration_tests ;;
 	views) run_view_tests ;;
 	triggers) run_trigger_tests ;;
@@ -1076,8 +1112,8 @@ case "$WHICH" in
 	import) run_import_tests ;;
 	chores) run_chores_assignment_tests ;;
 	errors) run_error_path_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors or all)" ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

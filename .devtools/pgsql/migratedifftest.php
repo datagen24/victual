@@ -31,11 +31,20 @@ use Victual\Services\Database\ValueComparison;
  * "files" (migrations/0258.pgsql.sql) is the first. It holds uploaded files as BYTEA when
  * FILE_STORAGE is "database", and ConfigurationValidator refuses that setting on any
  * driver but pgsql - so a SQLite counterpart would be a table nothing could ever read.
+ * "stock_entry_origins" (migrations/0267.pgsql.sql) is here for a different reason from the
+ * others: nothing about it is engine-specific, it is simply above the SQLite freeze, and a
+ * NNNN.sqlite.sql above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID is a file no
+ * engine here can run. Every table added from now on lands in this list for that reason
+ * alone, which is what the freeze means for this phase. The suite's own SQLite side does
+ * get the table, from fixtures/00_base.sql, because the rollback phase drives OpenProduct()
+ * against it - but this phase deliberately compares databases that have been migrated and
+ * nothing else, so the fixture is not in the picture here.
+ *
  * Adding it here rather than letting the table set comparison pass by accident: this
  * phase exists to make a missing table loud, and an exemption it does not know about is a
  * missing table wearing a different hat. See db/pgsql/README.md.
  */
-const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles'];
+const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles', 'stock_entry_origins'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

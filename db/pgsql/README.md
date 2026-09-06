@@ -119,6 +119,25 @@ still reports `files` as a target table with no source counterpart that stays em
 a household importing a SQLite installation wants to be told that its pictures have not
 come across with it.
 
+**Above the freeze this stops being about engine exclusivity at all.** ADR-0008 froze the
+SQLite line at `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID`, so a migration
+numbered above it creates its table on PostgreSQL and nowhere else — not because the other
+engine needs no change, but because there is no longer a file that could give it one. Every
+new table from now on therefore has to be named in `ENGINE_EXCLUSIVE_TABLES` too, and the
+name of that list is doing less work than it looks like: what it means for these entries is
+"SQLite is frozen", not "SQLite is deliberately different". `migrations/0267.pgsql.sql`'s
+`stock_entry_origins` is the first of them, and its entry says so rather than borrowing the
+`files` reasoning it does not share. These migrations carry no `@engine-exclusive` marker —
+`check-migrations.php` asks for one only below the freeze, where a lone engine-specific file
+really could be a missing counterpart.
+
+Where a phase runs the *application* against SQLite the table still has to exist, and it
+comes from `.devtools/pgsql/fixtures/00_base.sql` instead: the rollback phase drives
+`StockService::OpenProduct()` on both engines, and a partial open writes a
+`stock_entry_origins` row. `migratedifftest.php` does not see that fixture — it compares
+databases that have been migrated and nothing else — which is why the same table needs both
+the exemption and the fixture entry.
+
 The same script rejects an engine-specific file that silently shadows a portable one of the
 same number. Overriding is still legal — the loader prefers the specific file — but it has
 to say `@overrides-generic`, because left implicit it means one engine never runs the
