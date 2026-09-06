@@ -154,9 +154,43 @@ does not. Whether the average *should* follow a correction is a product question
 follows one and not the other is not obviously intended, and nothing in the schema comments
 addresses it.
 
-The suite models the view rather than the intent — the oracle now requires an origin booking
-before counting an edit, exactly as the join does — and this is recorded rather than modelled
-away, because the asymmetry is the application's and not the oracle's.
+**Modelling the join makes a compatibility oracle, not a correctness one.** The average-price
+oracle now requires an origin booking before counting an edit, exactly as the join does, so it
+establishes that behaviour has not *changed* — it cannot establish that the behaviour is
+right, and it must not be the only record of a defect it was taught to accept.
+
+So the property is asserted separately, without reference to the join, and kept executable.
+`narrative/splitedit.js` buys two products identically — 500 at 2.00 and 500 at 1.00 — and
+brings both to 400 dear units by different routes: the control edits its whole 500 entry down
+to 400; the subject opens 100 (splitting the lot) and edits the 400 remainder to 300. Both end
+holding 400 at 2.00 and 500 at 1.00. Nothing about the difference is visible in the resulting
+stock, so the average must agree. It does not:
+
+    KNOWN  an edit reaches the average price whether or not the entry was split
+           whole-entry edit gives 1.4444, split-remainder edit gives 1.5000
+           known: split-entry edits are invisible to products_average_price
+
+That assertion is registered as **known-failing**: it runs every time, reports every time, and
+does not turn the run red — but it **fails the run if it ever passes**, because at that point
+either the defect was fixed and the marker is a false statement about the application, or the
+assertion stopped testing what it claims. Verified in both directions: `KNOWN` while the
+defect stands, and `STALE` with a failing run when the comparison is made to pass. A filed
+task records a decision; only this re-runs.
+
+## The harness's own tests
+
+`parity selftest` covers properties the suite's verdicts depend on and no scenario exercises.
+It exists because a suite that reports on someone else's software still has to be right about
+its own.
+
+| Property | Why it is tested | Demonstrated |
+|---|---|---|
+| A stalled response body aborts within the configured timeout | `fetch()` resolves when the headers arrive, so clearing the abort timer there left `response.text()` unbounded — a server that sends headers and then goes silent hung the harness. One did: a fixture-stage `POST /users` sat for **286 seconds** against a 180-second timeout. | Against the unfixed code: `FAIL — the request was still waiting after 6000ms with a 1500ms timeout`. Against the fixed code: `PASS`. |
+| A complete response is still read in full | so the fix above did not simply break the ordinary path | `PASS` |
+
+The stall test is guarded rather than left to hang. Reproducing an unbounded wait *by waiting*
+reports nothing and blocks whatever runs it, so the request races a hard cap and a cap that
+wins is a failure with a number in it.
 
 ## A known instability, and what it is
 

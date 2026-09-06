@@ -30,6 +30,7 @@ const shopping = require('./narrative/shopping');
 const audit = require('./narrative/audit');
 const prices = require('./narrative/prices');
 const conversions = require('./narrative/conversions');
+const splitedit = require('./narrative/splitedit');
 const tare = require('./narrative/tare');
 
 // Bumped when the generator's output changes on purpose. plan.lock.json is keyed by it, so
@@ -472,6 +473,7 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 
 	withStream('prices', () => prices.priceProbe({ ctx, ops }));
 	withStream('conversions', () => conversions.conversionProbe({ ctx, ops }));
+	withStream('splitedit', () => splitedit.splitEditProbe({ ctx, ops }));
 	withStream('audit', () => audit.isolatedTail({ ctx, ops }));
 
 	const problems = ledger.selfCheck();

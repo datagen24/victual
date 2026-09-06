@@ -198,15 +198,31 @@ async function runAgainstInstance(args, plan) {
 		console.log('    \x1b[33mskipped\x1b[0m  delivered-event checks (no --influx given)');
 	}
 	for (const r of results) {
-		console.log(`    ${r.ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'}  ${r.name}`);
+		// A known-failing assertion is neither a pass nor a failure of this run: it is a
+		// standing claim about the application that the application does not yet meet. It is
+		// printed as such so a reader is not told the suite is green about something it
+		// knows is broken.
+		const label = r.regressed
+			? '\x1b[31mSTALE\x1b[0m'
+			: (r.known ? '\x1b[33mKNOWN\x1b[0m' : (r.ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'));
+		console.log(`    ${label}  ${r.name}`);
 		if (r.detail) console.log(`          ${r.detail}`);
+		if (r.regressed) {
+			console.log(`          this now passes, so the marker is stale: ${r.defect}`);
+		} else if (r.known) {
+			console.log(`          known: ${r.defect}`);
+		}
 	}
 
 	return {
 		assertions: result.assertions,
 		priceRepresentations: result.priceRepresentations || [],
 		slowCalls: result.slowCalls || [],
-		failed: results.filter((r) => !r.ok).length + (result.windowProblems.length > 0 ? 1 : 0),
+		// A known-failing assertion that started passing fails the run: the marker is then a
+		// false statement about the application, and a stale marker hides the very thing it
+		// was preserving.
+		failed: results.filter((r) => !r.ok || r.regressed).length +
+			(result.windowProblems.length > 0 ? 1 : 0),
 		// Tracked apart from `failed`: a clock violation is not an application finding, and
 		// it does not become one by being counted with them — but it does stop the run
 		// claiming a verdict about a year it did not correctly simulate.
@@ -263,7 +279,12 @@ function writeRunReport(args, plan, run, { verdict, elapsedS }) {
 			enforced: Boolean(args.clockFile)
 		},
 		assertions: run.assertions || {},
-		invariants: (run.results || []).map((r) => ({ name: r.name, ok: r.ok, detail: r.detail || null })),
+		invariants: (run.results || []).map((r) => ({
+			name: r.name, ok: r.ok, detail: r.detail || null,
+			// Recorded so a milestone report says which claims are standing-but-unmet rather
+			// than silently counting them as passes.
+			known: r.known || false, defect: r.defect || null, regressed: r.regressed || false
+		})),
 		windowProblems: (run.windowProblems || []).length,
 		// Observations, not findings. Kept in the report so a later run can see whether the
 		// unexplained representation difference changed.

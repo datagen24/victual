@@ -251,6 +251,11 @@ case "${1:-all}" in
 				;;
 		esac
 		;;
+	selftest)
+		shift || true
+		ensure_harness_deps
+		node "$HARNESS/selftest.js" "$@"
+		;;
 	psql)
 		shift
 		[ $# -gt 0 ] || die "psql needs a statement, e.g. parity psql 'SELECT count(*) FROM outbox'"

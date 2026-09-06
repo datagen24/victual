@@ -29,6 +29,27 @@ function ok(results, name, passed, detail) {
 	return passed;
 }
 
+// **An assertion of what the application should do, kept executable while it does not.**
+//
+// Modelling an application's own join makes a *compatibility* oracle: it establishes that
+// behaviour has not changed, not that it is right. Where the two differ the difference
+// deserves an assertion of its own, or the only record of a known defect is prose and a filed
+// task — and neither of those re-runs.
+//
+// So a known-failing invariant runs, reports, and does not turn the run red. What it does do
+// is fail the run when it *passes*: at that point either the defect was fixed and this marker
+// is stale, or the assertion stopped testing what it claims. Both need a person, and neither
+// should be found by someone noticing a line of output months later.
+function known(results, name, passed, detail, defect) {
+	results.push({
+		name, detail, defect,
+		ok: !passed,            // green while the defect stands
+		known: true,
+		regressed: !!passed
+	});
+	return passed;
+}
+
 // Reads a growing table in pages, with an explicit stable ordering key.
 //
 // Gaps in that key are legitimate — deletions, merges and sequence allocation all produce
@@ -131,6 +152,45 @@ function expectedAveragePrices(bookings) {
 	const out = new Map();
 	for (const [productKey, weight] of den) out.set(productKey, num.get(productKey) / weight);
 	return out;
+}
+
+// **The one check here that does not model the application.**
+//
+// Two products end holding exactly the same stock at exactly the same prices — 400 at 2.00
+// and 500 at 1.00 — differing only in that one of them reached 400 by editing a whole entry
+// and the other by opening 100 (which splits the lot) and editing the 400 remainder. Nothing
+// about that difference is visible in the resulting stock, so `products_average_price` must
+// answer the same number for both.
+//
+// It does not, and the reason is documented in COVERAGE.md: `stock_edited_entries` matches an
+// edit to an origin row with the same `stock_id`, a split remainder has no origin row, and so
+// its edit never reaches the average. Registered as known-failing rather than removed, so the
+// claim stays executable until the application decides what it should do.
+async function checkSplitEditEquivalence({ instance, symbols, results }) {
+	const idOf = (key) => symbols[`product:${key}`];
+	const read = async (key) => {
+		const id = idOf(key);
+		if (id === undefined) return null;
+		const record = await instance.get(`/stock/products/${id}`);
+		const value = record.body && record.body.avg_price;
+		return value === null || value === undefined ? null : Number(value);
+	};
+
+	const control = await read('sedplain');
+	const subject = await read('sedsplit');
+	if (control === null || subject === null) {
+		ok(results, 'an edit reaches the average price whether or not the entry was split',
+			false, 'the split-edit probe did not run, so nothing was established');
+		return;
+	}
+
+	const agree = Math.abs(control - subject) < 1e-4;
+	known(results,
+		'an edit reaches the average price whether or not the entry was split',
+		agree,
+		`whole-entry edit gives ${control.toFixed(4)}, split-remainder edit gives ` +
+		`${subject.toFixed(4)} — the same stock at the same prices`,
+		'split-entry edits are invisible to products_average_price (COVERAGE.md)');
 }
 
 // What plan 18 should have delivered, checked against the series and the broker rather than
@@ -498,6 +558,7 @@ async function check({ instance, plan, symbols, psql = null, influx = null, mqtt
 	ok(results, 'price history covers every day the plan bought on', historyProblems.length === 0,
 		historyProblems.length === 0 ? `${sampled.length} products checked` : historyProblems.join('; '));
 
+	await checkSplitEditEquivalence({ instance, symbols, results });
 	if (influx) await checkDelivery({ plan, symbols, influx, mqtt, results });
 
 	return results;
