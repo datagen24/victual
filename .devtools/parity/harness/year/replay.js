@@ -589,9 +589,113 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 	const started = Date.now();
 	const inRange = (observed) => Number.isFinite(observed) && observed - target >= 0 && observed - target <= maxDriftS;
 
+	// --- What a failed step records, and why it records this ---------------------------------
+	//
+	// **A constant delta over a sub-second window cannot tell a frozen clock from a running
+	// clock a day behind, and those are different faults.** Earlier failures reported ten
+	// samples all reading `delta: -86397`, which looked like a stopped clock and is equally
+	// consistent with a clock ticking normally one day in the past — the samples simply did
+	// not span enough real time to distinguish them. Fixing the wrong one of those is worse
+	// than fixing neither.
+	//
+	// So each sample carries the real monotonic time it was taken at, alongside the requested
+	// and observed simulated times, and the samples are made to span seconds rather than
+	// milliseconds. The measurement that matters is then arithmetic: how far the observed
+	// clock advanced against how much real time passed.
+	//
+	// Worker identity is *not* recorded, because nothing exposes it: php-fpm does not report
+	// which child served a request and no endpoint here surfaces a pid. Rather than leave that
+	// as a silent omission, each concurrent round records how many *distinct* observed times
+	// it saw, which is a lower bound on how many children answered it.
+	const stepStart = process.hrtime.bigint();
+	const sinceStart = () => Number(process.hrtime.bigint() - stepStart) / 1e6;
+
+	const samples = [];
+	const MAX_SAMPLES = 60;
+	const KEEP_EVERY_MS = 400;
+	let sawFailure = false;
+	// Per source, because the two are being compared. Sharing one cadence meant every
+	// PostgreSQL sample was dropped for arriving just after an application one, which left
+	// the postgres advance unmeasurable — exactly the comparison this exists to make.
+	const lastKeptAt = new Map();
+
+	const note = (sample) => {
+		const fresh = inRange(sample.observed);
+		const firstFailure = !fresh && !sawFailure;
+		if (firstFailure) sawFailure = true;
+		const since = sample.atMs - (lastKeptAt.get(sample.source) ?? -Infinity);
+		if (!firstFailure && since < KEEP_EVERY_MS) return;
+		samples.push(sample);
+		lastKeptAt.set(sample.source, sample.atMs);
+		// Dropped from the middle, so the first failure and the most recent observations both
+		// survive — keeping only a tail is what made the earlier evidence unusable.
+		if (samples.length > MAX_SAMPLES) samples.splice(Math.floor(MAX_SAMPLES / 2), 1);
+	};
+
+	const observeApp = async () => {
+		const atMs = sinceStart();
+		try {
+			const reply = await instance.silently(() => instance.get('/system/time'));
+			const observed = reply.body && Number(reply.body.timestamp);
+			const value = Number.isFinite(observed) ? observed : null;
+			note({ atMs: Math.round(atMs), source: 'app', status: reply.status,
+				requested: target, observed: value, delta: value === null ? null : value - target });
+			return value;
+		} catch (e) {
+			note({ atMs: Math.round(atMs), source: 'app', status: null,
+				requested: target, observed: null, delta: null, error: e.message.slice(0, 120) });
+			return null;
+		}
+	};
+
+	const observeDb = async () => {
+		if (!psql) return null;
+		const atMs = sinceStart();
+		try {
+			const observed = Number(await psql('SELECT EXTRACT(EPOCH FROM LOCALTIMESTAMP)::bigint'));
+			const value = Number.isFinite(observed) ? observed : null;
+			note({ atMs: Math.round(atMs), source: 'postgres', status: null,
+				requested: target, observed: value, delta: value === null ? null : value - target });
+			return value;
+		} catch (e) {
+			note({ atMs: Math.round(atMs), source: 'postgres', status: null,
+				requested: target, observed: null, delta: null, error: e.message.slice(0, 120) });
+			return null;
+		}
+	};
+
+	// How far a source's observed clock moved against how much real time passed. A ratio near
+	// 1 is a clock running normally at the wrong offset; near 0 is a clock that has stopped.
+	// Below a second of span the question cannot be answered and this says so rather than
+	// producing a number that looks like an answer.
+	const advanceOf = (source) => {
+		const seen = samples.filter((x) => x.source === source && x.observed !== null);
+		if (seen.length < 2) return null;
+		const first = seen[0];
+		const last = seen[seen.length - 1];
+		const realMs = last.atMs - first.atMs;
+		if (realMs < 1000) return { spanMs: Math.round(realMs), verdict: 'window too short to tell' };
+		const observedMs = (last.observed - first.observed) * 1000;
+		const ratio = observedMs / realMs;
+		return {
+			spanMs: Math.round(realMs),
+			observedMs: Math.round(observedMs),
+			ratio: Number(ratio.toFixed(3)),
+			verdict: ratio < 0.1 ? 'stopped'
+				: (ratio > 0.5 && ratio < 1.5 ? 'running, at the wrong offset' : 'advancing anomalously')
+		};
+	};
+
+	const evidence = () => ({
+		requested: when,
+		requestedEpoch: target,
+		maxDriftS,
+		advance: { app: advanceOf('app'), postgres: advanceOf('postgres') },
+		samples
+	});
+
 	for (;;) {
-		const record = await instance.silently(() => instance.get('/system/time'));
-		const app = record.body && Number(record.body.timestamp);
+		const app = await observeApp();
 
 		// **PostgreSQL has its own clock and its own cache, so waiting on the app alone is
 		// not waiting.** `row_created_timestamp` is a column default reading LOCALTIMESTAMP
@@ -599,39 +703,16 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 		// a second after php-fpm's. The first end-to-end replay stepped to 3 December, was
 		// told by the app that it had arrived, and wrote two purchases stamped 2 December.
 		// Both runtimes are asked, or neither has arrived.
-		let db = null;
-		if (psql && inRange(app)) {
-			try {
-				db = Number(await psql('SELECT EXTRACT(EPOCH FROM LOCALTIMESTAMP)::bigint'));
-			} catch {
-				db = null;  // unreadable is not "arrived"
-			}
-		}
+		// Asked whether or not the application has arrived: when the two disagree, which of
+		// them is behind is the whole question, and only sampling both can say.
+		const db = psql ? await observeDb() : null;
 
 		if (inRange(app) && (!psql || inRange(db))) {
 			const remaining = CACHE_LAPSE_MS - (Date.now() - wroteAt);
 			if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
-			// What the probes actually saw. A failure reporting only a count cannot be
-			// diagnosed: a straggler a simulated day behind, a worker whose clock has run
-			// past the drift budget, and a pool answering 500 are three different faults and
-			// all of them look like "80 probes without agreement".
-			const seen = [];
 			let probes = 0;
-			const probe = async () => {
-				probes++;
-				try {
-					const again = await instance.silently(() => instance.get('/system/time'));
-					const ts = again.body && Number(again.body.timestamp);
-					if (inRange(ts)) return true;
-					seen.push({ status: again.status, delta: Number.isFinite(ts) ? ts - target : null });
-					return false;
-				} catch (e) {
-					// A request that met the discontinuity; it has now warmed that worker.
-					seen.push({ error: e.message.slice(0, 120) });
-					return false;
-				}
-			};
+			const probe = async () => { probes++; return inRange(await observeApp()); };
 
 			// Warm, sequentially, until the pool is answering consistently.
 			let warm = 0;
@@ -639,12 +720,26 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 				warm = (await probe()) ? warm + 1 : 0;
 			}
 
-			// Then verify, concurrently: POOL_SIZE requests in flight cannot all be served
-			// by one child, so every reply being fresh says something about every worker.
+			// Then verify, concurrently: POOL_SIZE requests in flight raise how much of the
+			// pool a round is likely to touch, and each round records how many distinct times
+			// came back — a lower bound on how many children answered it.
 			let clean = 0;
+			const rounds = [];
 			while (warm >= WARM_AGREEMENT && clean < CLEAN_ROUNDS && probes < WORKER_PROBE_BUDGET) {
+				const at = Math.round(sinceStart());
+				const before = samples.length;
 				const round = await Promise.all(Array.from({ length: POOL_SIZE }, probe));
+				const observed = samples.slice(before).map((x) => x.observed).filter((v) => v !== null);
+				rounds.push({ atMs: at, fresh: round.filter(Boolean).length, of: POOL_SIZE,
+					distinctTimes: new Set(observed).size });
 				clean = round.every(Boolean) ? clean + 1 : 0;
+
+				// **Paced once something has gone wrong, and only then.** Eighty probes back
+				// to back span a fraction of a second, which is why the earlier evidence could
+				// not distinguish a stopped clock from a late one. Slowing down after the
+				// first failure buys a window of seconds without costing the healthy path
+				// anything.
+				if (sawFailure) await new Promise((r) => setTimeout(r, 300));
 			}
 
 			// **Failing to get agreement is a clock failure, said at the step.** The
@@ -652,22 +747,43 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 			// by which point the operations in between have already been evaluated against
 			// the wrong date and there is nothing to do but report the year INCOMPLETE.
 			if (clean < CLEAN_ROUNDS) {
+				const app = advanceOf('app');
 				throw new Incomplete(
 					`the worker pool never agreed on ${when}: ${probes} probes, ` +
 					`${warm >= WARM_AGREEMENT ? 'warmed but never gave' : 'never even warmed to'} ` +
 					`${CLEAN_ROUNDS} rounds of ${POOL_SIZE} concurrent replies within ` +
-					`${maxDriftS}s of the new time`,
-					{ when, probes, warmedTo: warm, maxDriftS, sawInstead: seen.slice(-10) });
+					`${maxDriftS}s of the new time` +
+					(app && app.ratio !== undefined
+						? ` — over ${(app.spanMs / 1000).toFixed(1)}s of real time the ` +
+							`application's clock advanced ${(app.observedMs / 1000).toFixed(1)}s ` +
+							`(${app.verdict})`
+						: ''),
+					{ ...evidence(), probes, warmedTo: warm, rounds });
 			}
 			return;
 		}
 
+		// Same pacing rationale as the probe loop: once something is wrong, spread the
+		// observations out far enough to be able to say what.
+		if (sawFailure) await new Promise((r) => setTimeout(r, 300));
+
 		if (Date.now() - started > deadlineMs) {
 			const say = (v) => (Number.isFinite(v) ? new Date(v * 1000).toISOString() : 'nothing');
+			// Which of the two is behind is the question this failure exists to answer, so it
+			// carries the same evidence as the pool failure: per-source advance against real
+			// time, and samples spanning it.
+			const a = advanceOf('app');
+			const d = advanceOf('postgres');
+			const summarise = (name, x) => (x && x.ratio !== undefined
+				? `${name} advanced ${(x.observedMs / 1000).toFixed(1)}s over ` +
+					`${(x.spanMs / 1000).toFixed(1)}s real (${x.verdict})`
+				: null);
+			const reading = [summarise('app', a), summarise('postgres', d)].filter(Boolean).join('; ');
 			throw new Incomplete(
 				`the clock did not reach ${when} within ${deadlineMs / 1000}s ` +
-				`(app reported ${say(app)}, postgres reported ${say(db)})`,
-				{ when });
+				`(app reported ${say(app)}, postgres reported ${say(db)})` +
+				(reading ? ` — ${reading}` : ''),
+				evidence());
 		}
 		await new Promise((r) => setTimeout(r, 250));
 	}
