@@ -438,6 +438,15 @@ async function main() {
 
 	console.log('');
 	console.log(`  replaying against ${args.victual}${args.clockFile ? '' : '  (no clock file — running on the real clock)'}`);
+
+	// **A run that ends INCOMPLETE never reaches writeRunReport, so any report left from a
+	// previous run has to go before this one starts.** It nearly cost something: a year that
+	// stopped on the clock at day 13 left the *previous* run's PASS sitting in
+	// `year-run-year.json`, and reading that file for "the verdict" would have reported a
+	// clean 365-day pass for a run that managed thirteen days.
+	const stale = path.join(args.out, `year-run-${plan.meta.profile}.json`);
+	try { fs.rmSync(stale, { force: true }); } catch { /* nothing to clear */ }
+
 	const startedAt = Date.now();
 	const run = await runAgainstInstance(args, plan);
 	const elapsedS = Math.round((Date.now() - startedAt) / 1000);
