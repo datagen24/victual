@@ -2413,15 +2413,27 @@ class StockService extends BaseService
 						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
 
 						// The split lineage moves with the stock_ids above, or it would point
-						// at an entry that no longer exists. The disappearing entry's own row
-						// goes rather than being rewritten: what survives the merge is one
-						// entry, and it keeps the origin it already had. Anything that was
-						// split off the disappearing entry now descends from the surviving
-						// one, because that is where its bookings just went. A row left
-						// pointing at itself is meaningless and is dropped.
+						// at an entry that no longer exists. Three statements, and the order
+						// is load-bearing.
+						//
+						// First the disappearing entry's own row goes rather than being
+						// rewritten: what survives the merge is one entry, and it keeps the
+						// origin it already had.
+						//
+						// Then the row, if any, that would be left describing the surviving
+						// entry as split off itself. The third statement is about to point
+						// everything that descended from the disappearing entry at the
+						// surviving one - which is right, because that is where the
+						// disappearing entry's bookings just went - and the surviving entry
+						// may be one of those descendants. Once its origin's bookings are its
+						// own, it is its own origin and the row says nothing; leaving it to be
+						// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
+						// and abort the whole compaction, and cleaning it up afterwards is not
+						// possible for the same reason - the constraint rejects the row the
+						// moment the update tries to write it, so no later DELETE can reach it.
 						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
+						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
 						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = origin_stock_id');
 					}
 				}
 

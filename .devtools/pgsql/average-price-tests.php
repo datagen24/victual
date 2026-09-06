@@ -130,7 +130,7 @@ function StockIdOfNewestEntry(int $productId): string
  * every field it is given, including the open flag, so the opened half has to be handed
  * back its own.
  */
-function CorrectTo(StockService $stock, PDO $pdo, string $stockId, float $fromAmount, float $toAmount): void
+function CorrectTo(StockService $stock, PDO $pdo, string $stockId, float $fromAmount, float $toAmount): string
 {
 	$statement = $pdo->prepare('SELECT id, amount, price, best_before_date, purchased_date, location_id, shopping_location_id, open FROM stock WHERE stock_id = ?');
 	$statement->execute([$stockId]);
@@ -146,7 +146,7 @@ function CorrectTo(StockService $stock, PDO $pdo, string $stockId, float $fromAm
 		throw new \Exception('Stock entry ' . $stockId . ' holds ' . $entry['amount'] . ', not the ' . $fromAmount . ' the case expected');
 	}
 
-	$stock->EditStockEntry((int)$entry['id'], $toAmount, $entry['best_before_date'], (int)$entry['location_id'],
+	return $stock->EditStockEntry((int)$entry['id'], $toAmount, $entry['best_before_date'], (int)$entry['location_id'],
 		(int)$entry['shopping_location_id'], (float)$entry['price'], (bool)$entry['open'], $entry['purchased_date']);
 }
 
@@ -257,6 +257,56 @@ $stock->OpenProduct($productId, 100, $bigEntryStockId, $transactionId);
 CorrectTo($stock, $pdo, StockIdOfNewestEntry($productId), 400, 350);
 CorrectTo($stock, $pdo, $bigEntryStockId, 100, 75);
 Case_('both halves corrected', $productId, (425 * 1.00 + 100 * 2.00) / 525);
+
+// --- undone bookings -----------------------------------------------------------------
+//
+// The three cases below are what the accumulating arithmetic gets right and the
+// reconstruction it replaces does not, and they are the region where getting the `undone`
+// filter wrong is most expensive: a group whose origin purchase is excluded and whose
+// replacement edit is then dropped for being undone loses its units from the average
+// altogether. Case 8 answered 2.00 rather than 1.166667 during review, and is here so that
+// it cannot do so again quietly.
+
+// 7. A consume marked undone AFTER an edit on the same entry. The reconstruction reads
+//    `undone` at query time, so it drops a consume that was real when the edit was made and
+//    answers 400 for an origin that is 500 less the 50 the edit removed; accumulating gives
+//    450, which is CORRECTED.
+//
+//    THE UNDO IS DONE IN SQL, and that is the finding rather than a shortcut.
+//    UndoBooking() refuses this (StockService.php:2073, "a booking can only be undone when
+//    it is the newest not yet undone one of its stock entry"), and undoing the edit first to
+//    get past the guard would leave the edit undone too, which takes the group out of the
+//    view entirely. So no sequence of service calls reaches this shape: it is what an
+//    imported database can hold, not what this application can produce. The case is kept
+//    because the migration argues from it and an argument nothing exercises is an argument
+//    that rots - but it is labelled for what it is.
+$productId = MakeProduct($pdo, $nextProductId++);
+$bigEntryStockId = TwoPurchases($stock, $productId);
+$transactionId = null;
+$stock->ConsumeProduct($productId, 50, false, StockService::TRANSACTION_TYPE_CONSUME, $bigEntryStockId, null, null, $transactionId);
+CorrectTo($stock, $pdo, $bigEntryStockId, 450, 400);
+$pdo->prepare('UPDATE stock_log SET undone = 1, undone_timestamp = ? WHERE transaction_id = ? AND transaction_type = ?')
+	->execute([date('Y-m-d H:i:s'), $transactionId, StockService::TRANSACTION_TYPE_CONSUME]);
+Case_('consume undone after an edit', $productId, CORRECTED);
+
+// 8. An undone edit on a split remainder. Undoing a correction has to put the units back,
+//    so the answer is the one the product had before the correction.
+$productId = MakeProduct($pdo, $nextProductId++);
+$bigEntryStockId = TwoPurchases($stock, $productId);
+$transactionId = null;
+$stock->OpenProduct($productId, 100, $bigEntryStockId, $transactionId);
+$editTransactionId = CorrectTo($stock, $pdo, StockIdOfNewestEntry($productId), 400, 350);
+$stock->UndoTransaction($editTransactionId);
+Case_('split remainder, correction undone', $productId, UNCORRECTED);
+
+// 9. The same without a split. This one is not a regression guard - it is a shape the view
+//    being replaced gets wrong today, dropping the entry from the average entirely instead
+//    of returning it to its purchased weight, and the filter that fixes case 8 fixes it too.
+$productId = MakeProduct($pdo, $nextProductId++);
+$bigEntryStockId = TwoPurchases($stock, $productId);
+$editTransactionId = CorrectTo($stock, $pdo, $bigEntryStockId, 500, 450);
+$stock->UndoTransaction($editTransactionId);
+Case_('unsplit entry, correction undone', $productId, UNCORRECTED);
 
 echo "\n";
 

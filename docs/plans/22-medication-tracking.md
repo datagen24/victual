@@ -308,15 +308,18 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two pairs, claiming **0268** (medication master data and subjects)
-  and **0269** (regimens, administrations, excursions), with rows added to
+- **Migration numbering.** Two pairs, claiming **0269** (medication master data and subjects)
+  and **0270** (regimens, administrations, excursions), with rows added to
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written, per
-  [ADR-0004](../adr/0004-engine-specific-migrations.md). 0267 belongs to
-  [23](23-storage-classes.md), which lands first. **These numbers have moved twice** — claimed
+  [ADR-0004](../adr/0004-engine-specific-migrations.md). 0268 belongs to
+  [23](23-storage-classes.md), which lands first. **These numbers have moved four times** — claimed
   as 0261–0262 until `master` landed 0261, then 0262–0264 until wave 2 landed 0262 through
-  0265 — so re-read that table at every resync rather than trusting a number this plan claimed
-  a week ago. Both corrections cost one table edit because nothing had been written under the
-  old numbers, which is the argument for claiming before writing rather than before merging.
+  0265, then 0267–0269 until wave 3a took 0266, then 0268–0269 to make room for 0267 — so
+  re-read that table at every resync rather than trusting a number this plan claimed a week
+  ago. Every correction cost one table edit because nothing had been written under the old
+  numbers, which is the argument for claiming before writing rather than before merging. The
+  last move is the one to know about: 0267 went to a defect fix that was already written, so
+  this plan's numbers moved for a change that had a file rather than for one being planned.
 
 ## Open questions
 
@@ -326,7 +329,7 @@ Collected because most of them are only visible from inside the existing code.
    > every `/objects/locations` client can see for the sake of a wine cooler and a
    > cheese cave as much as a medication fridge, and a schema change justified only
    > inside a medication plan is one nobody reading `locations` would think to open.
-   > 23 takes migration 0267 and lands first.
+   > 23 takes migration 0268 and lands first.
 
 2. **Where do lot numbers live?** A column on `stock` and `stock_log`, or a side table keyed on
    `stock_id`.

@@ -66,14 +66,42 @@
 --   1. Splits, which is the defect above. The reconstruction cannot express them at all,
 --      because the units sitting in the other half of a split entry were never consumed and
 --      never edited, so no amount of arithmetic over one stock_id can find them.
---   2. A consume that is undone after an edit. UndoBooking() clears the consume's `undone`
---      flag and puts the amount back as a separate `stock` row, but the reconstruction
---      reads `undone` at query time and so drops a consume that was real when the edit was
---      made: purchase 500, consume 50, edit 450 to 400, undo the consume, and it answers
+--   2. A consume marked undone after an edit on the same entry. The reconstruction reads
+--      `undone` at query time and so drops a consume that was real when the edit was made:
+--      purchase 500, consume 50, edit 450 to 400, mark the consume undone, and it answers
 --      400 for an origin that is 500 less the 50 the edit removed. The accumulation answers
---      450. This is the same defect seen from the other side -- reconstructing a total from
---      a running sum rather than accumulating what actually changed it -- and fixing one
---      without the other would mean keeping the arithmetic that produces it.
+--      450, which is the same defect seen from the other side -- reconstructing a total from
+--      a running sum rather than accumulating what actually changed it.
+--
+--      BUT THIS SHAPE IS NOT REACHABLE THROUGH THIS APPLICATION, which is worth stating
+--      because the first draft of this file argued from it as though it were a live bug.
+--      UndoBooking() refuses to undo a booking that is not the newest not yet undone one of
+--      its stock entry (services/StockService.php:2073), and the edit is newer than the
+--      consume; undoing the edit first to get past that guard leaves the edit undone too,
+--      which takes the group out of this view altogether. So the difference is real for a
+--      database whose rows arrived some other way -- an import, or SQL run by hand -- and
+--      hypothetical for one this application wrote. It is not, on its own, a reason to
+--      prefer the accumulation. The reason is (1).
+--
+-- UNDONE BOOKINGS ARE IGNORED, by both halves of the arithmetic: an undone origin booking
+-- is not counted as origin, and an undone edit is not counted as a correction. The old view
+-- filtered neither, which was survivable only because of the defect above -- a stock_id with
+-- no origin booking of its own produced no row at all, so an undone edit on a split
+-- remainder was invisible. Once the group is resolved it is not invisible any more, and
+-- leaving the filter out would have been strictly worse than the bug being fixed: the
+-- group's origin purchase is excluded by "stock_id NOT IN stock_edited_entries" while the
+-- "stock-edit-new" meant to replace it is dropped by the consumers' own "undone = 0", so the
+-- units vanish from the average entirely. Measured on 500 at 1.00 plus 100 at 2.00, opened
+-- and corrected and the correction then undone: 1.1667 before this migration, 2.00 with the
+-- group resolved and no filter, 1.1667 with it.
+--
+-- The same filter fixes that shape without a split, where the old view has it today and
+-- gets it wrong: purchase 500, edit to 450, undo the edit, and the entry disappears from the
+-- average instead of returning to 500. Same cause, and no way to fix one without the other.
+--
+-- The "stock-edit-old" partner is deliberately NOT filtered on undone. It is read only to
+-- measure how much its "stock-edit-new" removed, and UndoBooking() can mark the old half
+-- alone; a pair whose new half still stands still describes a correction that still stands.
 --
 -- An edit whose "stock-edit-old" partner cannot be found contributes no correction rather
 -- than an invented one. EditStockEntry() has always written the pair inside one
@@ -97,12 +125,30 @@ CREATE TABLE stock_entry_origins (
 -- collect a group's members.
 CREATE INDEX ix_stock_entry_origins_origin ON stock_entry_origins (origin_stock_id);
 
--- CREATE OR REPLACE rather than DROP, deliberately. products_average_price,
--- products_price_history and products_last_purchased all select from this view, and
--- PostgreSQL refuses to drop a view another view depends on -- 0261.pgsql.sql had to drop
--- and rebuild two of them for exactly that reason. Replacing in place is allowed while the
--- output columns keep their names, types and order, which these do: text, integer, double
--- precision. So the three dependents are untouched and inherit the fix.
+-- CREATE OR REPLACE rather than DROP, deliberately. Four views select from this one --
+-- products_average_price, products_price_history, products_last_purchased and
+-- stock_average_product_shelf_life -- and PostgreSQL refuses to drop a view another view
+-- depends on; 0261.pgsql.sql had to drop and rebuild two of them for exactly that reason.
+-- Replacing in place is allowed while the output columns keep their names, types and order,
+-- which these do: text, integer, double precision. So all four are untouched as text.
+--
+-- Three of them read this view the same way and inherit the fix unchanged. The fourth,
+-- stock_average_product_shelf_life (db/pgsql/baseline/04_views_l1a.sql:164), reads it
+-- differently and is worth stating rather than leaving to be found: its second branch is
+-- "stock_id IN (SELECT stock_id FROM stock_edited_entries)" with no
+-- stock_log_id_of_newest_edited_entry filter, so it takes every "stock-edit-new" row of
+-- every stock_id the view names. Under the group shape that now means every edit in the
+-- group rather than every edit on one entry.
+--
+-- What that changes: a product whose split remainder was edited stops taking its shelf-life
+-- sample from the original purchase and takes it from the corrected entry instead. Where
+-- the edit left the dates alone the number is identical; where it changed the due date the
+-- number moves (measured: 365 days to 181 on a remainder whose due date was corrected).
+-- That is the same consistency this migration is about -- an unsplit entry has always been
+-- sampled from its edit rather than its purchase, and the split case now matches - so it is
+-- left to follow rather than pinned to the old answer. The multiple-samples-per-entry wart
+-- is older than this change: an unsplit entry edited five times has always contributed five
+-- samples, because that branch never had a newest-edit filter.
 CREATE OR REPLACE VIEW stock_edited_entries AS
 /*
 	Returns stock_id's whose origin booking has been corrected by a manual edit.
@@ -122,6 +168,7 @@ WITH resolved AS (
 		sl.amount,
 		sl.transaction_type,
 		sl.correlation_id,
+		sl.undone,
 		COALESCE(seo.origin_stock_id, sl.stock_id) AS origin_stock_id
 	FROM stock_log sl
 	LEFT JOIN stock_entry_origins seo
@@ -135,7 +182,8 @@ origins AS (
 		r.origin_stock_id,
 		SUM(r.amount) AS origin_amount
 	FROM resolved r
-	WHERE r.transaction_type IN ('purchase', 'inventory-correction', 'self-production')
+	WHERE r.undone = 0
+		AND r.transaction_type IN ('purchase', 'inventory-correction', 'self-production')
 		AND r.amount > 0
 	GROUP BY r.origin_stock_id
 ),
@@ -148,8 +196,15 @@ corrections AS (
 		sl_new.amount - COALESCE(sl_old.amount, sl_new.amount) AS correction
 	FROM resolved sl_new
 	LEFT JOIN LATERAL (
+		-- stock_log rather than the resolved CTE on purpose. Nothing read here needs the
+		-- origin mapping, and resolved is referenced enough times that PostgreSQL
+		-- materialises it - which this would then scan once per edit row, with no index on
+		-- the tuplestore. Against the table, ix_stock_log_performance1 (stock_id,
+		-- transaction_type, amount) applies. It matters because the cache triggers rebuild
+		-- this view on every stock_log insert, and stock_edited_entries has no product_id
+		-- for their WHERE to push into.
 		SELECT sl_prev.amount
-		FROM resolved sl_prev
+		FROM stock_log sl_prev
 		WHERE sl_prev.transaction_type = 'stock-edit-old'
 			AND sl_prev.stock_id = sl_new.stock_id
 			AND sl_prev.id < sl_new.id
@@ -162,6 +217,7 @@ corrections AS (
 		LIMIT 1
 	) sl_old ON TRUE
 	WHERE sl_new.transaction_type = 'stock-edit-new'
+		AND sl_new.undone = 0
 ),
 corrected_origins AS (
 	SELECT
