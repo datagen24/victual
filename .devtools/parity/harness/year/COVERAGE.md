@@ -131,7 +131,7 @@ that has to choose, and an edit.
 | `price_paid` presence, by the publisher's own null rule | the surfaces disagree; each is modelled by its own rule |
 | *not* which representation reads back | nothing establishes it — the raw row stays in the trace |
 
-## An application asymmetry the year found
+## An application asymmetry the year found, and its fix
 
 **Editing a stock entry moves `products_average_price` only if that entry was created by a
 booking of its own.** Two full-year runs disagreed with the oracle by exactly the same amount
@@ -170,12 +170,31 @@ stock, so the average must agree. It does not:
            whole-entry edit gives 1.4444, split-remainder edit gives 1.5000
            known: split-entry edits are invisible to products_average_price
 
-That assertion is registered as **known-failing**: it runs every time, reports every time, and
-does not turn the run red — but it **fails the run if it ever passes**, because at that point
-either the defect was fixed and the marker is a false statement about the application, or the
-assertion stopped testing what it claims. Verified in both directions: `KNOWN` while the
-defect stands, and `STALE` with a failing run when the comparison is made to pass. A filed
-task records a decision; only this re-runs.
+That assertion was registered as **known-failing**: it ran every time, reported every time,
+and did not turn the run red — but it **failed the run if it ever passed**, because at that
+point either the defect was fixed and the marker is a false statement about the application,
+or the assertion stopped testing what it claims.
+
+**It fired.** PR #77 added `stock_entry_origins`, mapping a split entry's `stock_id` to the one
+carrying its origin booking, and taught `stock_edited_entries` to follow it. The first run
+against the fixed build reported
+
+    STALE  an edit reaches the average price whether or not the entry was split
+           this now passes, so the marker is stale
+
+and failed, which is the whole point of the mechanism: a claim about a defect did not outlive
+the defect quietly. The assertion is now an ordinary one and passes — 1.4444 both ways. The
+`known()` helper is kept though currently unused, so the next known defect does not have to
+re-invent it.
+
+**The oracle had to be rewritten too, and that is the cost of a compatibility oracle.** It had
+been taught to model the old join; with the join fixed it was wrong in the other direction and
+reported `sedsplit: view 1.4444, ledger 1.5000`. `edited_origin_amount` is no longer "the
+edited amount plus prior consumption" but `origin_amount + SUM(new - old)` across the origin
+group — what was booked, adjusted by every correction. The model now carries the same lineage
+the application does: `ledger.origins` maps an entry to the one holding its origin booking,
+written only where `OpenProduct` writes it (`StockService.php:1561`), so a transferred entry
+is its own group in both and its edits reach neither average.
 
 ## The harness's own tests
 
