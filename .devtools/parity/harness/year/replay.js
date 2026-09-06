@@ -657,19 +657,28 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 	// a concurrent round that was not clean, or an outer iteration that did not arrive —
 	// which is also when spreading the samples out is worth anything.
 	let struggling = false;
-	// Per source, because the two are being compared. Sharing one cadence meant every
-	// PostgreSQL sample was dropped for arriving just after an application one, which left
-	// the postgres advance unmeasurable — exactly the comparison this exists to make.
+	// Keyed by source *and* by which day the reply came from, because both are being compared.
+	//
+	// Sharing one cadence across sources dropped every PostgreSQL sample for arriving just
+	// after an application one. Sharing it across cohorts was the same mistake one level down:
+	// a pool interleaves a worker at the right time with one a day behind, so a stale reply
+	// 100ms after a fresh one was discarded as "too soon" — and a failure that probed eighty
+	// times kept exactly one stale sample, leaving the stale cohort's advance unmeasurable at
+	// the moment it was the only thing worth measuring.
 	const lastKeptAt = new Map();
+	const cohortOf = (sample) => (sample.delta === null || sample.delta === undefined
+		? 'unknown'
+		: Math.round(sample.delta / 86400));
 
 	const note = (sample) => {
 		const fresh = inRange(sample.observed);
 		const firstFailure = !fresh && !sawFailure;
 		if (firstFailure) sawFailure = true;
-		const since = sample.atMs - (lastKeptAt.get(sample.source) ?? -Infinity);
+		const bucket = `${sample.source}|${cohortOf(sample)}`;
+		const since = sample.atMs - (lastKeptAt.get(bucket) ?? -Infinity);
 		if (!firstFailure && since < KEEP_EVERY_MS) return;
 		samples.push(sample);
-		lastKeptAt.set(sample.source, sample.atMs);
+		lastKeptAt.set(bucket, sample.atMs);
 		// Dropped from the middle, so the first failure and the most recent observations both
 		// survive — keeping only a tail is what made the earlier evidence unusable.
 		if (samples.length > MAX_SAMPLES) samples.splice(Math.floor(MAX_SAMPLES / 2), 1);
@@ -797,10 +806,14 @@ async function stepClock(clockFile, instance, when, { maxDriftS = 120, deadlineM
 				return fresh;
 			};
 
-			// Warm, sequentially, until the pool is answering consistently.
+			// Warm, sequentially, until the pool is answering consistently. Warming that runs
+			// long is itself a symptom, and it is where a failure that never reaches the
+			// verify phase lives — so it can turn on the diagnostics too, or that failure
+			// arrives with no PostgreSQL comparison and no window to measure over.
 			let warm = 0;
 			while (warm < WARM_AGREEMENT && probes < WORKER_PROBE_BUDGET) {
 				warm = (await probe()) ? warm + 1 : 0;
+				if (probes > WARM_AGREEMENT * 3) struggling = true;
 			}
 
 			// Then verify, concurrently: POOL_SIZE requests in flight raise how much of the
