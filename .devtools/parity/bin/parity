@@ -11,7 +11,8 @@
 #   .devtools/parity/bin/parity reset       throw both databases away and re-migrate
 #   .devtools/parity/bin/parity status      what is running
 #   .devtools/parity/bin/parity logs <name> podman logs for one container (app|web|upstream|…)
-#   .devtools/parity/bin/parity year       a simulated year (--plan-only for now)
+#   .devtools/parity/bin/parity year       replay a simulated year against a live stack
+#                                          (--plan-only builds and checks the plan instead)
 #   .devtools/parity/bin/parity clock-check the simulated-time acceptance matrix
 #   .devtools/parity/bin/parity psql <sql…> a read-only query against the parity postgres
 #   .devtools/parity/bin/parity down        stop everything and delete the volumes

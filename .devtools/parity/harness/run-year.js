@@ -54,6 +54,9 @@ function parseArgs(argv) {
 		else if (flag === '--plan-only') args.planOnly = true;
 		else if (flag === '--update-plan-lock') args.updateLock = true;
 		else if (flag === '--print-meta') args.printMeta = true;
+		// Accepted and ignored. It used to be what turned replay on; replay is now the
+		// default, so every existing invocation and every line of documentation carrying this
+		// flag keeps working and means what it says.
 		else if (flag === '--invariants-only') args.invariantsOnly = true;
 		// **A negative test needs to corrupt the database between the replay and the check.**
 		// Injecting before the replay is undone by the replay; injecting after the run is too
@@ -103,7 +106,21 @@ async function runAgainstInstance(args, plan) {
 	const api = new Instance({
 		name: 'victual', baseUrl: args.victual, apiKeyHeader: 'VICTUAL-API-KEY', timeoutMs: 180000
 	});
-	await api.login();
+	// Replaying is the default now, so the common way to get here by accident is to run the
+	// runner directly with no stack up. Say that, rather than letting a raw fetch error stand
+	// in for it.
+	try {
+		await api.login();
+	} catch (e) {
+		throw new Incomplete(
+			`could not reach ${args.victual}: ${String(e.message || e).slice(0, 160)}`,
+			{
+				hint: 'A year replays against a running instance. Start one with ' +
+					'`.devtools/parity/bin/parity year`, which boots the stack and sets the ' +
+					'clock before PostgreSQL starts. To build and check the plan without an ' +
+					'instance, pass --plan-only.'
+			});
+	}
 
 	const started = Date.now();
 	let lastDay = -1;
@@ -302,6 +319,13 @@ function writeRunReport(args, plan, run, { verdict, elapsedS }) {
 	}
 }
 
+// Generation-only: build and validate the plan, contact nothing. Keep in step with the
+// `--plan-only|--print-meta|--update-plan-lock` case in bin/parity, which routes exactly
+// these past the stack.
+function generationOnly(args) {
+	return args.planOnly || args.printMeta || args.updateLock;
+}
+
 async function main() {
 	const args = parseArgs(process.argv);
 
@@ -394,9 +418,21 @@ async function main() {
 		process.exit(1);
 	}
 
-	if (!args.invariantsOnly) {
+	// **Replaying is the default, and skipping it takes an explicit flag.**
+	//
+	// This was the other way round, and it was a false pass of exactly the kind the rest of
+	// this file exists to prevent: `parity year` booted the whole stack, generated the plan,
+	// printed a green PASS and never contacted an instance, because the wrapper does not pass
+	// `--invariants-only` and the runner treated its absence as "generation only". A verdict
+	// that says PASS has to be about a year that ran.
+	//
+	// The three generation-only flags are the same three `bin/parity` routes past `stack_up`,
+	// and they are listed in both places on purpose: the wrapper and the runner disagreeing
+	// about which invocations execute anything is what produced the bug.
+	if (generationOnly(args)) {
 		console.log('');
 		console.log('\x1b[32mPASS — the plan generated and validated\x1b[0m');
+		console.log('  Nothing was replayed: this run only built the plan.');
 		process.exit(0);
 	}
 
