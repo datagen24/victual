@@ -46,6 +46,7 @@
 					<th>{{ $__t('Name') }}</th>
 					<th>{{ $__t('Description') }}</th>
 					<th>{{ $__t('Product count') }}</th>
+					<th>{{ $__t('Min. stock amount') }}</th>
 
 					@include('components.userfields_thead', array(
 					'userfields' => $userfields
@@ -83,6 +84,9 @@
 							href="{{ $U('/products?product-group=') . $productGroup->id }}">
 							<i class="fa-solid fa-external-link-alt"></i>
 						</a>
+					</td>
+					<td>
+						<span class="locale-number locale-number-quantity-amount">{{ $productGroup->min_stock_amount }}</span>
 					</td>
 
 					@include('components.userfields_tbody', array(

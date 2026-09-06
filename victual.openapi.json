@@ -7872,6 +7872,7 @@
 					"permission_hierarchy",
 					"uihelper_shopping_list",
 					"mqtt_product_entities",
+					"product_groups_missing",
 					"roles"
 				]
 			},
@@ -7897,6 +7898,7 @@
 					"product_barcodes_view",
 					"permission_hierarchy",
 					"uihelper_shopping_list",
+					"product_groups_missing",
 					"roles"
 				]
 			},
@@ -7915,6 +7917,7 @@
 					"product_barcodes_view",
 					"permission_hierarchy",
 					"uihelper_shopping_list",
+					"product_groups_missing",
 					"roles"
 				]
 			},

@@ -185,7 +185,8 @@ class StockController extends BaseController
 	/**
 	 * Serves the stock overview view (route GET /stockoverview); lists products in
 	 * stock or below their min stock amount (or all products, depending on the
-	 * user's stock_overview_show_all_out_of_stock_products setting).
+	 * user's stock_overview_show_all_out_of_stock_products setting), plus the active
+	 * members of any product group that is below its own minimum.
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
@@ -198,6 +199,22 @@ class StockController extends BaseController
 		if (boolval($userSettings['stock_overview_show_all_out_of_stock_products']))
 		{
 			$where = '1=1';
+		}
+		else
+		{
+			// Plan 03. A product group's minimum is met by whichever member happens to be in
+			// stock, so the members worth showing when a group is short are exactly the ones
+			// this filter otherwise removes: at zero stock, with no minimum of their own, and
+			// therefore is_in_stock_or_below_min_stock = 0. Without them the short-group list
+			// the overview renders is an instruction the page cannot carry out - selecting a
+			// group filters a table whose rows for that group were never rendered.
+			//
+			// Only in this branch. With the setting on, $where is already 1=1 and every
+			// product is present, so the union would be a more expensive way to say the same
+			// thing.
+			$where .= ' OR product_id IN (SELECT p.id FROM products p
+				JOIN product_groups_missing pgm ON p.product_group_id = pgm.id
+				WHERE COALESCE(p.active, 0) = 1)';
 		}
 
 		return $this->RenderPage($response, 'stockoverview', [

@@ -83,10 +83,20 @@ plan, and the one most likely to surprise someone who has been ticking that box 
 
 ### Migration
 
-One pair, claiming **0268** in [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any
-file is written, per [ADR-0004](../adr/0004-engine-specific-migrations.md). It is a table, a
+One file, claiming **0269** in [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any
+file is written. It is a table, a
 column and a seed — no views, and **no triggers**, since Q2 put derivation in the application
-— so the dual-engine tax here is the small kind, and stays that way.
+— so it is the small kind of migration, and stays that way.
+
+Not a pair: this plan was written when [ADR-0004](../adr/0004-engine-specific-migrations.md)
+asked for one, and ADR-0008's retirement has since frozen the SQLite line at
+`DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` = 0265. Above that number
+`check-migrations.php` refuses a `.sqlite.sql` outright, so this is a lone
+`0269.pgsql.sql` with no `@engine-exclusive` marker — that marker is asked for only below the
+freeze, where a lone engine-specific file really could be a missing counterpart. The new
+table also has to be named in `migratedifftest.php`'s `ENGINE_EXCLUSIVE_TABLES`, which above
+the freeze means "SQLite is frozen" rather than "SQLite is deliberately different"; see
+[db/pgsql/README.md](../../db/pgsql/README.md).
 
 ## Interaction with 08
 

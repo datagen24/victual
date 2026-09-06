@@ -15,6 +15,7 @@ class EntityReadPolicy
 		'quantity_unit_conversions' => User::PERMISSION_STOCK_VIEW,
 		'shopping_locations' => User::PERMISSION_STOCK_VIEW,
 		'product_groups' => User::PERMISSION_STOCK_VIEW,
+		'product_groups_missing' => User::PERMISSION_STOCK_VIEW,
 		'stock_log' => User::PERMISSION_STOCK_VIEW,
 		'stock' => User::PERMISSION_STOCK_VIEW,
 		'stock_current_locations' => User::PERMISSION_STOCK_VIEW,

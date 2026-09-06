@@ -102,7 +102,7 @@ $(".status-filter-message").on("click", function ()
 });
 
 // Resets all filters
-$("#clear-filter-button").on("click", function ()
+function ClearAllFilters()
 {
 	$("#search").val("");
 	$("#status-filter").val("all");
@@ -112,7 +112,9 @@ $("#clear-filter-button").on("click", function ()
 	stockOverviewTable.column(stockOverviewTable.colReorder.transpose(7)).search("").draw();
 	stockOverviewTable.column(stockOverviewTable.colReorder.transpose(8)).search("").draw();
 	stockOverviewTable.search("").draw();
-});
+}
+
+$("#clear-filter-button").on("click", ClearAllFilters);
 
 // Free-text search box, debounced via Delay()
 $("#search").on("keyup", Delay(function ()
@@ -299,7 +301,63 @@ function RefreshStatistics()
 			$("#info-missing-products").html('<span class="d-block d-md-none">' + missingProducts.length + ' <i class="fa-solid fa-exclamation-circle"></i></span><span class="d-none d-md-block">' + __n(missingProducts.length, '%s product is below defined min. stock amount', '%s products are below defined min. stock amount') + '</span>');
 		}
 	);
+
+	RefreshMissingProductGroups();
 }
+
+// Plan 03. The short product groups, named rather than counted: "two groups are below their
+// minimum" does not tell anybody what to buy, and the whole premise of a group minimum is
+// that the user picks which member to buy. So each group is listed with what it is short by,
+// and clicking one filters the table to that group's products.
+//
+// Every value that came out of the database is placed with .text() on a node built here -
+// never concatenated into a string handed to .html(). A product group name is user input and
+// jQuery parses a string beginning with "<" as HTML; see AGENTS.md and plan 21. The counter
+// line above is .html() only because the one value it interpolates is an array length.
+function RefreshMissingProductGroups()
+{
+	Victual.Api.Get('objects/product_groups_missing',
+		function (result)
+		{
+			var container = $("#info-missing-product-groups");
+			var list = $("#missing-product-groups-list");
+			list.empty();
+
+			if (result.length === 0)
+			{
+				container.addClass("d-none");
+				return;
+			}
+
+			container.removeClass("d-none");
+			container.html('<span class="d-block d-md-none">' + result.length + ' <i class="fa-solid fa-layer-group"></i></span><span class="d-none d-md-block">' + __n(result.length, '%s product group is below defined min. stock amount', '%s product groups are below defined min. stock amount') + '</span>');
+
+			result.forEach(function (group)
+			{
+				var button = $('<button class="btn btn-link btn-sm p-0 text-body missing-product-group-button" type="button"></button>');
+				button.attr("data-product-group-name", group.name);
+				button.text(group.name);
+
+				var shortfall = $('<span class="text-muted ml-2"></span>');
+				shortfall.text(__t('%s missing', group.amount_missing));
+
+				list.append($("<li></li>").append(button).append(shortfall));
+			});
+		}
+	);
+}
+
+// Clearing first is not tidiness. A row added to the page because its group is short has an
+// empty hidden location cell and an empty hidden status cell - it is in no location and has
+// no due state, both correctly - so a location or status filter left over from earlier in the
+// session hides the very rows this click exists to reveal.
+$(document).on("click", ".missing-product-group-button", function ()
+{
+	var name = $(this).attr("data-product-group-name");
+	ClearAllFilters();
+	$("#product-group-filter").val(name);
+	$("#product-group-filter").trigger("change");
+});
 RefreshStatistics();
 
 /**
