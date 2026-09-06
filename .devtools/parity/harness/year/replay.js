@@ -186,11 +186,17 @@ function checkExpect(op, record, where, priceRepresentations = []) {
 			throw new Incomplete(`${where}: response has no "${key}"`, { op: op.label, body });
 		}
 	}
+	// Every row, not just the first — the same correction as `everyRowEquals`. A response whose
+	// second row was missing a field satisfied this, and "rowShape" reads as a claim about the
+	// rows rather than about one of them.
 	if (e.rowShape) {
-		const row = Array.isArray(body) ? body[0] : body;
+		const rows = Array.isArray(body) ? body : [body];
 		for (const key of e.rowShape) {
-			if (!row || row[key] === undefined) {
-				throw new Incomplete(`${where}: first row has no "${key}"`, { op: op.label, row });
+			const index = rows.findIndex((r) => !r || r[key] === undefined);
+			if (index !== -1) {
+				throw new Incomplete(
+					`${where}: row ${index} of ${rows.length} has no "${key}"`,
+					{ op: op.label, row: rows[index] });
 			}
 		}
 	}
