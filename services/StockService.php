@@ -1537,6 +1537,7 @@ class StockService extends BaseService
 				{
 					// Stock entry amount is > than needed amount -> split the stock entry
 					$restStockAmount = $stockEntry->amount - $amount;
+					$restStockId = uniqid();
 
 					$newStockRow = $this->DB->stock()->createRow([
 						'product_id' => $stockEntry->product_id,
@@ -1545,11 +1546,19 @@ class StockService extends BaseService
 						'purchased_date' => $stockEntry->purchased_date,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
-						'stock_id' => uniqid(),
+						'stock_id' => $restStockId,
 						'price' => $stockEntry->price,
 						'note' => $stockEntry->note
 					]);
 					$newStockRow->save();
+
+					// The remainder gets a stock_id of its own and no booking of its own -
+					// the "product-opened" row below keeps the original one - so nothing in
+					// stock_log would tie it to the purchase its units arrived by. Without
+					// that tie an edit of this entry corrects nothing in
+					// products_average_price, while the same edit on an entry that was
+					// never split does. See migrations/0267.pgsql.sql.
+					$this->RecordSplitOrigin($stockEntry->stock_id, $restStockId);
 
 					$logRow = $this->DB->stock_log()->createRow([
 						'product_id' => $stockEntry->product_id,
@@ -2335,6 +2344,36 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * Records that a stock entry was split off another one, so that the views which weight
+	 * the average price by what was booked can find the booking this entry's units arrived by.
+	 *
+	 * The stock_id that carries the ORIGIN booking is stored, not the immediate parent. A
+	 * remainder can itself be split by a later partial open, and chains of four are ordinary;
+	 * storing the origin keeps stock_edited_entries a join rather than a recursion, and means
+	 * no rewrite of stock_ids can turn the table into a cycle.
+	 *
+	 * @param string $parentStockId The entry that was split
+	 * @param string $childStockId  The remainder, which has no booking of its own
+	 * @return void
+	 */
+	private function RecordSplitOrigin(string $parentStockId, string $childStockId)
+	{
+		$parentOrigin = $this->DB->stock_entry_origins()->where('stock_id = :1', $parentStockId)->fetch();
+		$originStockId = $parentOrigin === null ? $parentStockId : $parentOrigin->origin_stock_id;
+
+		if ($originStockId === $childStockId)
+		{
+			return;
+		}
+
+		$originRow = $this->DB->stock_entry_origins()->createRow([
+			'stock_id' => $childStockId,
+			'origin_stock_id' => $originStockId
+		]);
+		$originRow->save();
+	}
+
+	/**
 	 * Merges stock entries which are equal in every relevant attribute (product, due date,
 	 * purchased date, price, open state/date, location, shopping location and note) into a
 	 * single entry holding the summed amount.
@@ -2343,7 +2382,8 @@ class StockService extends BaseService
 	 * labels - stock_id starting with "x" - and entries with userfield values). For each group,
 	 * inside its own database transaction, all stock and stock_log rows are rewritten to the
 	 * surviving stock_id, the redundant stock rows are deleted and the kept row is set to the
-	 * group's total amount.
+	 * group's total amount. The split lineage in stock_entry_origins (see RecordSplitOrigin())
+	 * is rewritten with them.
 	 *
 	 * @param int|null $productId Limit compacting to this product; null compacts all products
 	 * @return void
@@ -2371,6 +2411,29 @@ class StockService extends BaseService
 					{
 						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
 						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+
+						// The split lineage moves with the stock_ids above, or it would point
+						// at an entry that no longer exists. Three statements, and the order
+						// is load-bearing.
+						//
+						// First the disappearing entry's own row goes rather than being
+						// rewritten: what survives the merge is one entry, and it keeps the
+						// origin it already had.
+						//
+						// Then the row, if any, that would be left describing the surviving
+						// entry as split off itself. The third statement is about to point
+						// everything that descended from the disappearing entry at the
+						// surviving one - which is right, because that is where the
+						// disappearing entry's bookings just went - and the surviving entry
+						// may be one of those descendants. Once its origin's bookings are its
+						// own, it is its own origin and the row says nothing; leaving it to be
+						// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
+						// and abort the whole compaction, and cleaning it up afterwards is not
+						// possible for the same reason - the constraint rejects the row the
+						// moment the update tries to write it, so no later DELETE can reach it.
+						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
+						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
+						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
 					}
 				}
 

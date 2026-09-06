@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Use BLUF format for output as defined in the global CLAUDE.md file.'"
+          }
+        ]
+      }
+    ]
+  }
+}
