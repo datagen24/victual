@@ -40,6 +40,17 @@ msgid_plural "%s products are below defined min. stock amount"
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "%s product group is below defined min. stock amount"
+msgid_plural "%s product groups are below defined min. stock amount"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s missing"
+msgstr ""
+
+msgid "The summed stock of this group's products, in each product's own stock quantity unit - amounts are not converted, so a group minimum is only meaningful when its products are measured comparably"
+msgstr ""
+
 msgid "Product"
 msgstr ""
 

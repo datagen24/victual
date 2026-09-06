@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock]
 #
-# Thirteen kinds of check, for thirteen reasons. Views are compared by what they return, because
+# Fourteen kinds of check, for fourteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -119,6 +119,17 @@
 # empty state. Every split case here is paired with an unsplit control that has to produce the
 # same number, because a split case alone would be satisfied by any change that moved the
 # average rather than by the right one.
+#
+# The fourteenth is PostgreSQL-only for the same reason the thirteenth is - its subject is
+# migrations/0268.pgsql.sql, above the freeze - but it is worth saying why the view phase
+# cannot cover it even in principle, because on the face of it a new view is exactly what that
+# phase is for. The view phase seeds SQLite and copies the tables into PostgreSQL through the
+# importer, which copies the columns the two sides share; product_groups.min_stock_amount
+# exists on one side only, so it arrives at its DEFAULT 0 for every row and every group is
+# trivially not short. A seed there would pass while asserting nothing. This phase also drives
+# StockController::Overview() and reads the rendered page, because the feature's UI names short
+# groups as things to act on and the page's default filter excludes precisely the out-of-stock
+# members that acting on them means buying.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -352,6 +363,35 @@ run_average_price_tests() {
 
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/average-price-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Product group minimum stock tests ---------------------------------------------
+#
+# PostgreSQL only: migrations/0268.pgsql.sql is above the SQLite freeze, so there is no second
+# engine holding either the column or the view. A migrated database and nothing else - the
+# phase makes its own groups and products, because what it asserts are exact shortfalls and
+# the base fixture's rows would only be terms in somebody else's sum.
+
+run_group_min_stock_tests() {
+	local dbname="victual_group_min_stock"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/group-min-stock-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	# HTMLPurifier serialises its definition cache under VIEWCACHE_PATH, which config-dist.php
+	# puts inside the data path. The phase writes a product group through the API, so the
+	# purifier runs; without the directory it warns on every write and the warnings are the
+	# loudest thing in a passing run.
+	mkdir -p "$datapath/viewcache"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/group-min-stock-tests.php"; then
 		failures=$((failures + 1))
 	fi
 
@@ -1112,8 +1152,9 @@ case "$WHICH" in
 	import) run_import_tests ;;
 	chores) run_chores_assignment_tests ;;
 	errors) run_error_path_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average or all)" ;;
+	groupminstock) run_group_min_stock_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
