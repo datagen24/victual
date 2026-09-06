@@ -126,8 +126,9 @@ function pluck(body, spec) {
 // Which expectation forms an operation carries. Counted at evaluation rather than from the
 // plan: a run that stopped early planned every assertion and established none of them, and a
 // count taken from the plan could not tell those apart.
-const EXPECT_FORMS = ['status', 'kind', 'length', 'minLength', 'shape', 'rowShape', 'rowEquals',
-	'rowsSum', 'equals', 'rowsMatch', 'rowsAbsent', 'rowsEqual', 'lots'];
+const EXPECT_FORMS = ['status', 'kind', 'length', 'minLength', 'shape', 'rowShape',
+	'firstRowEquals', 'everyRowEquals', 'rowsSum', 'equals', 'rowsMatch', 'rowsAbsent',
+	'rowsEqual', 'lots'];
 
 // **A comparison that decides "these differ" has to fail closed.**
 //
@@ -400,10 +401,30 @@ function checkExpect(op, record, where, priceRepresentations = []) {
 		}
 	}
 
-	for (const [key, want] of Object.entries(e.rowEquals || {})) {
+	// **Two forms, named for what they check.**
+	//
+	// This was one form called `rowEquals` that only ever examined the first row. Its failure
+	// message said so, but the name did not, and a name that claims more than it checks is the
+	// same defect as an assertion that is never enforced — it just fails to be noticed for
+	// longer. The first-row form is genuinely needed: a transfer answers a `transfer_from` row
+	// *and* a `transfer_to` row, and an edit answers `stock-edit-old` and `stock-edit-new`, so
+	// there is no value every row shares. Where every row does share one, saying so is
+	// stronger and now possible.
+	for (const [key, want] of Object.entries(e.firstRowEquals || {})) {
 		const row = Array.isArray(body) ? body[0] : body;
 		if (!row || String(row[key]) !== String(want)) {
 			throw new Incomplete(`${where}: first row's ${key} is ${row ? row[key] : 'absent'}, expected ${want}`, { op: op.label, row });
+		}
+	}
+
+	for (const [key, want] of Object.entries(e.everyRowEquals || {})) {
+		const rows = Array.isArray(body) ? body : [body];
+		const bad = rows.findIndex((r) => !r || String(r[key]) !== String(want));
+		if (bad !== -1) {
+			throw new Incomplete(
+				`${where}: row ${bad} of ${rows.length} has ${key} = ` +
+				`${rows[bad] ? rows[bad][key] : 'absent'}, expected ${want} on every row`,
+				{ op: op.label, row: rows[bad] });
 		}
 	}
 }

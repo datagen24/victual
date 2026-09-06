@@ -277,7 +277,7 @@ function editEntry({ ctx, day, ops }) {
 		expect: {
 			status: 200, kind: 'array', length: 1,
 			rowShape: ['id', 'product_id', 'amount'],
-			rowEquals: { amount: entry.amount }
+			everyRowEquals: { amount: entry.amount }
 		},
 		window: cal.dayWindow(day),
 		bind: { [`entry:${product.key}:${day}`]: '[0].id' },
@@ -298,7 +298,7 @@ function editEntry({ ctx, day, ops }) {
 			price: entry.price === null ? 0 : entry.price,
 			open: entry.open
 		},
-		expect: bookingRows({ transactionType: 'stock-edit-old', length: 2 }),
+		expect: bookingRows({ transactionType: 'stock-edit-old', length: 2, mixedTypes: true }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'edit', product: product.key, from: entry.amount, to: newAmount },
 		label: `m${cal.month(day)}: correct ${product.name} ${entry.amount} -> ${newAmount}` +

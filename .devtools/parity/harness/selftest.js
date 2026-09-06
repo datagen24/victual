@@ -122,6 +122,30 @@ test('a non-numeric amount fails the booking-sum assertion', async () => {
 	checkExpect(op, { status: 200, body: [{ id: 1, amount: 5 }] }, 'op 1');
 });
 
+// **A name that claims more than it checks is the same defect as one that checks nothing.**
+// `rowEquals` only ever examined the first row, so a booking that answered one consume row and
+// one row of something else satisfied it. The first-row form is still needed — a transfer
+// answers `transfer_from` *and* `transfer_to` — so both forms exist and each is named for what
+// it does.
+test('firstRowEquals checks the first row, everyRowEquals checks them all', async () => {
+	const mixed = { status: 200, body: [{ transaction_type: 'transfer_from' }, { transaction_type: 'transfer_to' }] };
+
+	// The first-row form accepts a genuinely mixed pair, which is why it exists.
+	checkExpect({ label: 'a transfer', expect: { status: 200, firstRowEquals: { transaction_type: 'transfer_from' } } },
+		mixed, 'op 1');
+
+	// The all-rows form does not.
+	assert.throws(
+		() => checkExpect({ label: 'a transfer', expect: { status: 200, everyRowEquals: { transaction_type: 'transfer_from' } } },
+			mixed, 'op 1'),
+		/row 1 of 2 has transaction_type = transfer_to/,
+		'a second row of another type should not satisfy everyRowEquals');
+
+	// and it accepts rows that really do agree
+	checkExpect({ label: 'a consume', expect: { status: 200, everyRowEquals: { transaction_type: 'consume' } } },
+		{ status: 200, body: [{ transaction_type: 'consume' }, { transaction_type: 'consume' }] }, 'op 1');
+});
+
 // The Influx queries run at the *end* of a year, so a stalled body there hangs the run at the
 // point where it has the most to lose. Same defect as Instance.raw() had, same fix.
 test('a stalled Influx response body aborts within the timeout', async () => {

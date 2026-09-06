@@ -98,7 +98,7 @@ function priceProbe({ ctx, ops }) {
 			expect: {
 				status: 200, kind: 'array', minLength: 1,
 				rowShape: ['id', 'product_id', 'amount', 'price', 'best_before_date'],
-				rowEquals: { amount: lot.amount }
+				everyRowEquals: { amount: lot.amount }
 			},
 			window: cal.dayWindow(day),
 			bind: { [`priced:${lot.tag}`]: '[0].id' },
@@ -143,7 +143,7 @@ function priceProbe({ ctx, ops }) {
 			location_id_from: `{location:${product.loc}}`,
 			location_id_to: `{location:${elsewhereKey}}`
 		},
-		expect: bookingRows({ transactionType: 'transfer_from', length: 2, rowsSum: 0 }),
+		expect: bookingRows({ transactionType: 'transfer_from', length: 2, rowsSum: 0, mixedTypes: true }),
 		window: cal.dayWindow(day),
 		label: `price probe: transfer 3 to ${elsewhereKey}, splitting a lot into a tied pair`
 	}));
@@ -178,7 +178,7 @@ function priceProbe({ ctx, ops }) {
 			price: 0,
 			open: entry.open
 		},
-		expect: bookingRows({ transactionType: 'stock-edit-old', length: 2 }),
+		expect: bookingRows({ transactionType: 'stock-edit-old', length: 2, mixedTypes: true }),
 		window: cal.dayWindow(day),
 		label: `price probe: edit the zero-priced lot ${entry.amount} -> ${newAmount}`
 	}));

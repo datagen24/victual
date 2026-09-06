@@ -59,13 +59,19 @@ const CREATED = { status: 200, shape: ['created_object_id'] };
 // so the response alone says whether the operation moved what the plan meant it to. Without
 // it a wrong amount in March is only caught by an aggregate in December, which reports
 // "milk disagrees" and names none of the 1,040 consumes that could have done it.
-function bookingRows({ transactionType, length = 1, rowsSum, extra = {} }) {
+// `mixedTypes` is for the calls that answer rows of more than one transaction type from a
+// single booking: a transfer writes `transfer_from` *and* `transfer_to`, an edit writes
+// `stock-edit-old` and `stock-edit-new`. Those can only be checked on the first row. Every
+// other booking answers rows that are all the same type, and saying so is stronger — a
+// consume that quietly returned one consume row and one of something else used to pass.
+function bookingRows({ transactionType, length = 1, rowsSum, extra = {}, mixedTypes = false }) {
+	const equals = { transaction_type: transactionType, ...extra };
 	const expect = {
 		status: 200,
 		kind: 'array',
 		minLength: length,
 		rowShape: ['id', 'product_id', 'amount', 'stock_id', 'transaction_id', 'transaction_type'],
-		rowEquals: { transaction_type: transactionType, ...extra }
+		...(mixedTypes ? { firstRowEquals: equals } : { everyRowEquals: equals })
 	};
 	if (rowsSum !== undefined) expect.rowsSum = rowsSum;
 	return expect;

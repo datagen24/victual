@@ -54,10 +54,11 @@ function validate(plan) {
 	// 4. The narrative still emits every transaction type it claims to.
 	const seen = new Set();
 	for (const op of plan.ops) {
-		if (!op.expect || !op.expect.rowEquals) continue;
-		if (op.expect.rowEquals.transaction_type) seen.add(op.expect.rowEquals.transaction_type);
+		const equals = op.expect && (op.expect.everyRowEquals || op.expect.firstRowEquals);
+		if (!equals) continue;
+		if (equals.transaction_type) seen.add(equals.transaction_type);
 	}
-	// Two operations write a *pair* of rows from one call, and `rowEquals` can only name the
+	// Two operations write a *pair* of rows from one call, and `firstRowEquals` can only name the
 	// first of each. A transfer books transfer_from and transfer_to; editing a stock entry
 	// books stock-edit-old and stock-edit-new (services/StockService.php:756,797). Pairing
 	// them here rather than loosening rowEquals keeps the assertion on the call specific.

@@ -183,7 +183,7 @@ function freeze({ ctx, day, ops }) {
 		},
 		// A transfer books a from/to pair that nets to zero: the product's total is unchanged
 		// and only its location moved.
-		expect: bookingRows({ transactionType: 'transfer_from', length: 2, rowsSum: 0 }),
+		expect: bookingRows({ transactionType: 'transfer_from', length: 2, rowsSum: 0, mixedTypes: true }),
 		window: cal.dayWindow(day),
 		ledger: { kind: 'transfer', product: product.key, amount, from: product.loc, to: 'freezer' },
 		label: `d${day}: freeze ${product.name} ${amount}`

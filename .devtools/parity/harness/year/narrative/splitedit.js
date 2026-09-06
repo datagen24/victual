@@ -114,7 +114,7 @@ function splitEditProbe({ ctx, ops }) {
 		expect: {
 			status: 200, kind: 'array', length: 1,
 			rowShape: ['id', 'product_id', 'amount'],
-			rowEquals: { amount }
+			everyRowEquals: { amount }
 		},
 		window: cal.dayWindow(day),
 		bind: { [`entry:${p.key}`]: '[0].id' },
@@ -132,7 +132,7 @@ function splitEditProbe({ ctx, ops }) {
 				amount: to, best_before_date: bbdDear, purchased_date: purchasedDate,
 				location_id: `{location:${loc}}`, price: DEAR, open: 0
 			},
-			expect: bookingRows({ transactionType: 'stock-edit-old', length: 2 }),
+			expect: bookingRows({ transactionType: 'stock-edit-old', length: 2, mixedTypes: true }),
 			window: cal.dayWindow(day),
 			label: `split-edit probe: ${p.name} corrects ${from} to ${to}`
 		}));
