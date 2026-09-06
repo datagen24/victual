@@ -70,7 +70,7 @@ choice and rationale.
 | [0016](0016-schedule-expansion-in-the-application.md) | Schedule expansion lives in the application, not the database | **Proposed**, an input to [0009](0009-database-as-the-logic-layer.md) | [22](../plans/22-medication-tracking.md) |
 | [0017](0017-doctrine-dbal-is-the-persistence-seam.md) | Doctrine DBAL is the persistence seam; engine portability is an affordance, not a promise | **Proposed**, depends on 0008 | [24](../plans/24-sqlite-runtime-retirement.md), [15](../plans/15-deliberate-cleanup.md) |
 | [0018](0018-role-grants-and-domain-reads.md) | Roles contribute grants; six domains require view permissions | **Proposed**, records wave 3a implementation of plan 19's answered questions | [19](../plans/19-rbac.md) |
-| [0019](0019-label-printers-are-master-data.md) | Label printers are master data; the print drainer reads its configuration at delivery time | **Proposed**, supplies the configuration model [0011](0011-label-namespace.md) item 4 left open; relies on 0010 | [22](../plans/22-medication-tracking.md) Q6 (unowned by it), [20](../plans/20-container-infrastructure.md) piece 5 |
+| [0019](0019-label-printers-are-master-data.md) | Label printers are master data; a separate worker pulls print jobs over an authenticated API | **Proposed**, supplies the configuration, transport and ownership split [0011](0011-label-namespace.md) item 4 left open; relies on 0010 | [22](../plans/22-medication-tracking.md) Q6 (unowned by it), [20](../plans/20-container-infrastructure.md) piece 5 |
 
 ## Review and implementation notes
 
