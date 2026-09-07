@@ -308,13 +308,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0270** (medication master data and subjects)
-  and **0271** (regimens, administrations, excursions), with rows added to
-  [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0269 belongs to
-  [23](23-storage-classes.md), which lands first. **These numbers have moved five times** — claimed
+- **Migration numbering.** Two files, claiming **0272** (medication master data and subjects)
+  and **0273** (regimens, administrations, excursions), with rows added to
+  [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0271 belongs to
+  [23](23-storage-classes.md), which lands first. **These numbers have moved six times** — claimed
   as 0261–0262 until `master` landed 0261, then 0262–0264 until wave 2 landed 0262 through
   0265, then 0267–0269 until wave 3a took 0266, then 0268–0270 to make room for 0267, then
-  0269–0271 to make room for wave 3b's [03](03-category-min-stock.md) — so
+  0269–0271 to make room for wave 3b's [03](03-category-min-stock.md), and now 0272–0273 to make
+  room for wave 3b's [25](25-label-infrastructure.md) — so
   re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
   numbers, which is the argument for claiming before writing rather than before merging. The
@@ -340,7 +341,7 @@ Collected because most of them are only visible from inside the existing code.
    > every `/objects/locations` client can see for the sake of a wine cooler and a
    > cheese cave as much as a medication fridge, and a schema change justified only
    > inside a medication plan is one nobody reading `locations` would think to open.
-   > 23 takes migration 0269 and lands first.
+   > 23 takes migration 0271 and lands first.
 
 2. **Where do lot numbers live?** A column on `stock` and `stock_log`, or a side table keyed on
    `stock_id`.
@@ -410,6 +411,17 @@ Collected because most of them are only visible from inside the existing code.
    subsystem's owner is the same mistake Q1 caught with storage classes.* Worth deciding
    out loud, because "medication needs QR codes" is exactly the argument that would otherwise
    drag an unscheduled subsystem into this plan's scope.
+
+   > **Answered 2026-09-06 by the second option, and not by this plan.**
+   > [25](25-label-infrastructure.md) owns ADR-0011's machinery — the `labels` table, the print
+   > job, printer configuration and the rendering worker — and is scheduled into wave 3b
+   > because [06](06-location-barcodes.md) hit the same wall from the locations side and could
+   > not ship a print action without it. Piece 7 waits for 25 rather than building anything,
+   > and the lean above is vindicated in the specific way it predicted: the plan that became
+   > the label subsystem's owner is one whose subject *is* labels. Note what 25 does not
+   > deliver, because piece 7 will want it: only `location` uids are minted in wave 3b, so a
+   > `medication` or stock-entry kind is 25's schema already allowing it rather than 25 having
+   > built it.
 
 7. **What is the storage class of a location used at two set points over the year?** The wine
    cooler again. One class per location and a second location for the second use, or a class

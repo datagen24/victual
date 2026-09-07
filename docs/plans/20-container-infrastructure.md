@@ -161,6 +161,14 @@ restating them. The MCP sidecar is a separate repository by 02-Q1's recorded res
 what it takes from here is the pattern rather than the code — which is an argument for
 keeping `images/lib.nix` small enough to copy.
 
+**The print drainer took the same shape, 2026-09-06.**
+[25](25-label-infrastructure.md) puts rendering and the printer drivers in their own
+repository, which this flake builds from a **pinned revision**. The sentence above still
+holds and is worth reading precisely: the image is in this flake, and the source is not.
+That split is what keeps "reproducible" true across a repository boundary — the pin is the
+part this tree owns. So two of the three workloads named here are now external code built
+here, and `images/lib.nix` carries more weight than piece 5 assumed when it was written.
+
 ## What this cannot fix
 
 - ~~**File attachments still need a real volume.**~~ **Resolved.** [01](01-file-storage.md)
