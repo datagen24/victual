@@ -3,11 +3,13 @@
 **Goal:** Machine readable codes on storage locations, so a future camera based inventory
 system can tell *where* it is looking and keep stock by location current without anyone
 typing anything.
-**Depends on:** [12](12-frontend-shared-core.md), per the README. Pairs naturally with
-[08](08-nested-locations.md) but does not need it.
+**Depends on:** [25](25-label-infrastructure.md)'s **first usable release** — the point at
+which a requested label physically prints — and [12](12-frontend-shared-core.md), per the
+README. Pairs naturally with [08](08-nested-locations.md) but does not need it.
 **Status:** draft for review, **narrowed 2026-09-04 by
-[ADR-0011](../adr/0011-label-namespace.md)** — see the section immediately below before
-reading the body.
+[ADR-0011](../adr/0011-label-namespace.md)** and **scoped 2026-09-06 against
+[25](25-label-infrastructure.md)** — see the two sections immediately below before reading
+the body.
 
 ## What ADR-0011 took, and what is left
 
@@ -52,6 +54,31 @@ response: it is the subject of [ADR-0012](../adr/0012-observations-are-proposals
 response reached for. Nothing here waits on it either way, and nothing here may route
 around it: a camera that reads one of this plan's labels and reports what it sees writes a
 proposal, not stock.
+
+## What plan 25 owns, and what "owned by nobody else" cost
+
+The section above was written on 2026-09-04 and said the locations UI was owned by nobody
+else. That was true of the UI and false of everything underneath it. ADR-0011 had decided the
+payload, the stability mechanism, the symbology and the print path, and had scheduled none of
+them; [22](22-medication-tracking.md)'s question 6 found the same gap and declined to close
+it. So this plan was left holding a print action with nothing to print — the `labels` table,
+the print job, the printer configuration and the worker that renders were all unowned.
+
+**[25](25-label-infrastructure.md) owns them, as of 2026-09-06**, and this plan depends on
+that plan's first usable release: the point at which a label requested in Victual physically
+comes off the printer. The division is:
+
+- **25:** opaque identities and their resolution, the transactional print job and its
+  delivery semantics, printer configuration and print-job monitoring, and the worker
+  repository that renders and prints.
+- **06, unchanged:** the locations print action on the list and the form, and what the label
+  says and where it goes. Everything in the bullets above stays this plan's.
+
+What this plan may not do while the two are in flight is route around 25 to ship something
+sooner. Location printing does not extend `VICTUAL_LABEL_PRINTER_WEBHOOK` and emits no
+Grocycode, both of which ADR-0011 settled and neither of which a delivery deadline reopens.
+The webhook survives wave 3b for the five entity types that already use it; that is a stage
+on the way to the retirement ADR-0011 accepted, not a reprieve from it.
 
 ## The use case drives the design
 

@@ -11,7 +11,7 @@ Plan numbers are permanent identifiers, not execution order.
 
 ## Status
 
-This table is the authority on delivery status, updated through 2026-09-05. “Landed” means
+This table is the authority on delivery status, updated through 2026-09-06. “Landed” means
 implemented; outstanding verification and follow-up work are listed separately. A plan's
 **Executed** section records what shipped and any differences from the proposed design.
 
@@ -23,7 +23,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 03 | [Category minimum stock](03-category-min-stock.md) | Landed | Wave 3b; PostgreSQL; migration 0268. Note-only shopping list row (Q1) remains a follow-up. |
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
-| 06 | [Location barcodes](06-location-barcodes.md) | Draft | 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning is deferred to a separate plan after 08. |
+| 06 | [Location barcodes](06-location-barcodes.md) | Draft | Wave 3b. Depends on 25's first usable release — the point at which a requested label physically prints. 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning is deferred to a separate plan after 08. |
 | 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work. |
 | 08 | [Nested locations](08-nested-locations.md) | Draft | 12 and 14's fixture tooling. |
 | 09 | [US barcode lookup sources](09-barcode-lookup-sources.md) | Deferred | Q1's kitchen experiment; S14 before adding sources. |
@@ -39,9 +39,10 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 19 | [Roles and data visibility](19-rbac.md) | Piece 1 implemented | Wave 3a: roles and six domain read permissions. Piece 2, including price visibility, remains with 14 piece 2 in wave 5. |
 | 20 | [Container infrastructure](20-container-infrastructure.md) | Piece 1 and part of 3 landed | Production Docker target retired. Pieces 2, remaining 3, 4, 5; credential split and SIGTERM verification remain. |
 | 21 | [Frontend sink discipline](21-frontend-sink-discipline.md) | Landed | CI payload checks and stored-HTML cleanup on upgrade/import included. |
-| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0270–0271. |
-| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0269. |
+| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
+| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
+| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b; owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. Migrations 0269–0270. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 
 ## Order of operations
 
@@ -55,7 +56,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 2 | API correctness and authentication | Complete, 2026-09-04, with the follow-ups listed above. |
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
 | 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
-| 3b | 03 category minimums; 06 location labels; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. 06 remains. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums. |
+| 3b | 03 category minimums; **25 label infrastructure, then 06 location labels**; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. **06 was rescoped 2026-09-06**: it cannot ship a print action over machinery ADR-0011 decided and nobody built, so 25 was created to own that machinery and 06 now depends on its first usable release. The wave delivers a *complete* location-label path — request, physical print, authorized scan back, demonstrated failure and reprint — not a table and a button. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums and 25 needs them too. |
 | 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |
 
@@ -72,9 +73,16 @@ publication. See [17](17-ecosystem-clients.md) for client contracts and impact r
 Unscheduled work includes MCP writes after read-only use is proven, 05 B if shopping trips
 justify it, 04's importer and datasets, remaining container work, plans 22/23, and the two
 retirements 24 deferred: archiving migrations 0001–0255, and the differential harness itself,
-both of which wait on 14 piece 2. Opaque
-label infrastructure (ADR-0011) and observation proposals (ADR-0012) are accepted but
-unbuilt; acceptance does not assign implementation ownership or a delivery slot.
+both of which wait on 14 piece 2.
+
+**Opaque label infrastructure now has an owner and a slot**: [25](25-label-infrastructure.md)
+implements ADR-0011 in wave 3b. Two things it deliberately does not do stay unscheduled —
+migrating the five entity types that already print through the webhook, and deleting
+`VICTUAL_LABEL_PRINTER_WEBHOOK` with its constants. Both are explicit follow-up work toward
+the retirement ADR-0011 already accepted, and the second carries an
+[ADR-0005](../adr/0005-wire-contract-is-the-invariant.md) question about what the five
+`*/printlabel` endpoints return. Observation proposals (ADR-0012) remain accepted and unbuilt;
+that acceptance still assigns no ownership and no delivery slot.
 
 ## Hardening
 
