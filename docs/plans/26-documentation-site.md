@@ -1,4 +1,4 @@
-# Plan 25: Documentation site
+# Plan 26: Documentation site
 
 Publish one MkDocs site on Read the Docs with two top-level sections: a **Manual** for
 someone running Victual, and a **Development** section for someone changing it.

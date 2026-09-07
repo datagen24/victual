@@ -44,11 +44,15 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   mapping table — and no row id leaves the database on paper. The fork parses `grcy:*`
   indefinitely and emits it never, so no new Grocycode type is added and `grcy:l:` is not
   minted; printing becomes an outbox a drainer consumes, so nothing new extends
-  `VICTUAL_LABEL_PRINTER_WEBHOOK`. None of that is built or scheduled — the tree still
-  prints Grocycodes through the webhook, as [docs/grocycode.md](docs/grocycode.md) and
-  [docs/label-printing.md](docs/label-printing.md) describe — so the record constrains new
-  work rather than describing the code. Plan [06](docs/plans/06-location-barcodes.md) was
-  narrowed to match: placement, the locations UI, and the current-location notion.
+  `VICTUAL_LABEL_PRINTER_WEBHOOK`. **None of it is built yet, and as of 2026-09-06 it is
+  scheduled**: plan [25](docs/plans/25-label-infrastructure.md) owns the machinery in wave 3b
+  and plan [06](docs/plans/06-location-barcodes.md) — narrowed to placement, the locations UI
+  and the current-location notion — depends on 25's first usable release. Until 25 lands, the
+  tree still prints Grocycodes through the webhook, as [docs/grocycode.md](docs/grocycode.md)
+  and [docs/label-printing.md](docs/label-printing.md) describe. Note what 25 does *not* do:
+  the five entity types that already print keep the webhook through wave 3b, which is a
+  delivery stage toward the retirement ADR-0011 accepted rather than a change to it. New
+  printing extends neither the webhook nor Grocycode.
 - **Observations propose; they never book.**
   [ADR-0012](docs/adr/0012-observations-are-proposals.md) was **accepted 2026-09-04**: a
   client with a confidence value writes a `proposals` row, and a person confirming it is
