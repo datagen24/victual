@@ -395,7 +395,7 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   unclaimed.** Unclaimed age is backlog and is visible; it is not an error. This is the
   failure [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a
   day eats a day of labels" — which the outbox removes, and it is distinct from decision
-  item 6's rule, which governs only what happens after an attempt was claimed.
+  item 6's rule, which starts at the claim.
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
   decision item 4's deleted-printer case.
 - **A printer with no compatible worker is a visible state.** Rule 3 failing for every
@@ -470,9 +470,9 @@ job say which rendering it meant. Three rules follow:
   The attempt records `blocked` naming the missing version and ends there. Like every other
   failed attempt it does not return the job to the queue: restoring the version makes
   another attempt *possible*, and a person authorizes it. A blocked attempt provably sent no
-  bytes, so it is the one failure that could be redispatched without risking a duplicate —
-  that carve-out is part of the deferred automatic-retry decision in item 6 and is not taken
-  here.
+  bytes, so it is the one failure that could be redispatched without risking a duplicate;
+  that remains a future exception to be approved explicitly, as part of the deferred
+  automatic-retry decision in item 6, and is not taken here.
 - **Reprinting and printing with a revised template are different operator actions.** A
   reprint enqueues a job pinning the same template version and the same captured content; a
   revised print pins the new version and is recorded as a different operation. Neither
@@ -491,16 +491,23 @@ setting `delivered_at`; the attempt rows are this consumer's record of what it t
 #### Claiming, leases and fencing
 
 **A job is claimable only for as many attempts as have been authorized.** The job row
-carries `attempts_authorized`, which starts at 1. A claim is legal only while the number of
-attempts inserted is below it, so **a failed or expired attempt does not make the job
-claimable again** — the invariant is a count, not a policy someone has to remember to apply.
-Authorizing another attempt increments the count, and only a person does that; decision item
-6 says what that means.
+carries `attempts_authorized`, which starts at 1. A claim consumes one authorization, so **a
+failed or expired attempt does not make the job claimable again**. Authorizing another
+attempt increments the count, and only a person does that; decision item 6 says what that
+means.
 
-- **A claim is atomic.** One transaction locks the job row (`SELECT … FOR UPDATE SKIP
-  LOCKED`, which ADR-0010 property 2 already names), refuses unless the authorization count
-  leaves an attempt available, inserts the attempt, and records it as the job's
-  `current_attempt_id`. Two workers cannot both leave that transaction holding the job.
+- **Consuming an authorization is atomic, and the database enforces it.** `print_attempts`
+  carries `attempt_number`, 1-based per job, under `UNIQUE (outbox_id, attempt_number)`. A
+  claim runs in one transaction that locks the job row (`SELECT … FOR UPDATE SKIP LOCKED`,
+  which ADR-0010 property 2 already names), reads `attempts_authorized`, counts the
+  attempts, and inserts `attempt_number = count + 1` only while `count <
+  attempts_authorized`, recording it as the job's `current_attempt_id`.
+
+  The lock serializes claimers; the unique constraint is what makes the guarantee
+  independent of the lock being taken. Two concurrent claims that both computed the same
+  `attempt_number` cannot both commit — the second violates the index and fails — so
+  "checked the count, then inserted" cannot interleave into two attempts consuming one
+  authorization, whatever a future code path forgets to lock.
 - **A lease is renewable, up to a bound.** The heartbeat route extends `lease_expires_at`
   while the attempt runs. Renewal stops at a maximum total execution time, past which the
   attempt is `abandoned` whatever the worker believes, so a wedged worker cannot hold a job
@@ -512,11 +519,20 @@ Authorizing another attempt increments the count, and only a person does that; d
   acknowledge the outbox row.
 - **Bookkeeping is idempotent, so a network retry never prints.** `sent`, `result`,
   `heartbeat` and `evidence` may each be delivered more than once. Repeating `sent` or
-  `result` for an attempt that already recorded one returns the stored value unchanged
-  rather than writing a second; evidence is deduplicated on
-  `(attempt_id, source, evidence_type, observed_at)`. None of these routes can enqueue work
-  or authorize an attempt, so retrying bookkeeping cannot produce a physical print under any
-  ordering.
+  `result` for an attempt that already recorded one returns the stored value unchanged rather
+  than writing a second. Evidence deduplicates on `(source, submission_id)` under a unique
+  constraint — a source-generated identifier, not a natural key, because two genuinely
+  distinct observations can share an attempt, a type and a timestamp, and collapsing them
+  would discard one. A retried submission carries the identifier it carried the first time
+  and lands on the stored row; a second observation carries a new one and is stored beside
+  it. None of these routes can enqueue work or authorize an attempt, so retrying bookkeeping
+  cannot produce a physical print under any ordering.
+- **Authorizing an attempt is idempotent too.** The operator's authorization is a
+  compare-and-set: the request names the `attempts_authorized` value it was shown, and the
+  increment applies only if that is still the value. A double-click or a retried request
+  carries the stale value, changes nothing, and is answered with the current authorization
+  state rather than an error — so the client cannot tell a successful retry from the original
+  success, and one operator action never authorizes two attempts.
 
 #### `print_evidence` records an observation, not a conclusion
 
@@ -525,6 +541,7 @@ One row per observation, and every row carries all five of:
 | Field | Content |
 |---|---|
 | `attempt_id` | The attempt this observation is about. Required — see decision item 6 |
+| `submission_id` | An identifier the source generates, unique per source. What deduplication is keyed on |
 | `evidence_type` | The kind of observation: a decoded scan, a device status report, an image |
 | `source` | The authenticated identity that submitted it |
 | `observed_at` | When the observation happened |
@@ -590,9 +607,11 @@ Victual does not is the ability to look at the printer.
 
 **Queued is not the same as failed.** A job no worker has claimed stays queued while its
 worker is offline, indefinitely, and prints when the worker returns. That is the failure
-[ADR-0011](0011-label-namespace.md) fact 2 named and the outbox removes it. The rule here is
-narrower: it governs what happens after an attempt was claimed, when a device has been
-spoken to.
+[ADR-0011](0011-label-namespace.md) fact 2 named and the outbox removes it. **The rule here
+starts at the claim**, and applies to every attempt from that moment — including one whose
+worker died before it reached the printer, and one that ended `blocked` having deliberately
+sent nothing. Whether bytes left the worker is not the test, because the state where nobody
+knows is precisely the state this rule exists for.
 
 **Automatic retry is deferred, not rejected.** Deciding it needs three things this record
 does not have: printer-specific knowledge of what a device does with a truncated job,
@@ -864,12 +883,14 @@ subsystem to be built before the architecture authorizing it is accepted.
    be a scratch branch.
 2. **Claiming, fencing and crash-after-send behave as decision items 5 and 6 specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
-   it; a failed or expired attempt leaves the job unclaimable until an attempt is authorized,
-   and two workers cannot both hold the authorized one; a late result from a superseded
-   attempt records against its own row without completing or overwriting the attempt that
-   replaced it; repeated deliveries of `sent`, `result` and `evidence` change nothing after
-   the first; and **a worker killed between `bytes_sent_at` and its terminal result leaves a
-   visible uncertain job and produces no second print.**
+   it; a failed or expired attempt leaves the job unclaimable until an attempt is authorized;
+   two concurrent claims against one authorization produce one attempt, with the loser
+   refused rather than queued behind it; a repeated authorization request authorizes one
+   attempt, not two; a late result from a superseded attempt records against its own row
+   without completing or overwriting the attempt that replaced it; repeated deliveries of
+   `sent`, `result` and `evidence` change nothing after the first; and **a worker killed
+   between `bytes_sent_at` and its terminal result leaves a visible uncertain job and
+   produces no second print.**
 3. **The schema subset is fixed against a named validator and a named form renderer.** Both
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
