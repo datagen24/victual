@@ -48,6 +48,8 @@ fn main() {
     let mut printer: Option<String> = None;
     let mut media = String::from("62");
     let mut dry_run = false;
+    let mut probe_text: Option<String> = None;
+    let mut probe_px: f32 = 200.0;
     while let Some(a) = args.next() {
         if a == "--dry-run" { dry_run = true; continue; }
         let v = args.next().unwrap_or_default();
@@ -58,7 +60,19 @@ fn main() {
             "--out" => out = PathBuf::from(v),
             "--print" => printer = Some(v),
             "--media" => media = v,
+            "--probe" => probe_text = Some(v),
+            "--probe-px" => probe_px = v.parse().unwrap_or(200.0),
             _ => {}
+        }
+    }
+    if let Some(t) = probe_text.clone() {
+        match probe(&fonts, &t, probe_px, &out) {
+            Ok(report) => { println!("{}", report); return; }
+            Err(e) => {
+                println!("{}", serde_json::json!({
+                    "ok": false, "code": e.code, "detail": e.detail }));
+                std::process::exit(3);
+            }
         }
     }
     if printer.is_some() || dry_run {
@@ -81,6 +95,74 @@ fn main() {
             std::process::exit(3);
         }
     }
+}
+
+/// Render one string on its own and report where the ink landed.
+///
+/// This exists for the three qualification checks the renderer comparison still owed:
+/// kerning, right-to-left shaping, and cost. It reports geometry rather than opinions --
+/// ink bounding box and the column clusters ink falls into -- so the expected values can
+/// be computed from the font tables by something that is not this binary.
+fn probe(font_file: &Path, text: &str, size_px: f32, out: &Path) -> Result<String, Fail> {
+    let font_bytes = std::fs::read(font_file)
+        .map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{}: {}", font_file.display(), e)))?;
+    let mut db = fontdb::Database::new();
+    db.load_font_data(font_bytes.clone());
+    let family = db.faces().next()
+        .and_then(|face| face.families.first().map(|(n, _)| n.clone()))
+        .unwrap_or_else(|| "sans-serif".into());
+
+    let (w, h, x0, base) = (4000u32, 600u32, 200.0f32, 450.0f32);
+    // No background rect: the root bounding box has to be the text's own ink, and the
+    // pixmap is filled white before rendering anyway.
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><text x="{x0}" y="{base}" font-family="{family}" font-size="{size_px}" fill="#000000">{}</text></svg>"##,
+        escape(text));
+
+    let mut opt = usvg::Options::default();
+    opt.fontdb = std::sync::Arc::new(db.clone());
+    let tree = usvg::Tree::from_str(&svg, &opt)
+        .map_err(|e| fail("RENDER_FAILED", None, format!("{e}")))?;
+    let bbox = tree.root().abs_bounding_box();
+
+    let mut pixmap = tiny_skia::Pixmap::new(w, h)
+        .ok_or_else(|| fail("RENDER_FAILED", None, "pixmap allocation failed"))?;
+    pixmap.fill(tiny_skia::Color::WHITE);
+    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+
+    // Per-column ink, thresholded, then grouped into runs separated by blank columns.
+    let px = pixmap.pixels();
+    let mut inked = vec![false; w as usize];
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            let p = px[y * w as usize + x];
+            let lum = 0.299 * p.red() as f32 + 0.587 * p.green() as f32 + 0.114 * p.blue() as f32;
+            if lum < 128.0 { inked[x] = true; }
+        }
+    }
+    let mut clusters: Vec<(usize, usize)> = Vec::new();
+    let mut run: Option<usize> = None;
+    for x in 0..w as usize {
+        match (inked[x], run) {
+            (true, None) => run = Some(x),
+            (false, Some(s)) => { clusters.push((s, x - 1)); run = None; }
+            _ => {}
+        }
+    }
+    if let Some(s) = run { clusters.push((s, w as usize - 1)); }
+
+    if !out.as_os_str().is_empty() {
+        pixmap.save_png(out).map_err(|e| fail("RENDER_FAILED", None, format!("{e}")))?;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true, "text": text, "family": family, "size_px": size_px,
+        "origin_x": x0, "baseline_y": base,
+        "ink_x0": bbox.x(), "ink_x1": bbox.x() + bbox.width(), "ink_width": bbox.width(),
+        "ink_columns": inked.iter().filter(|b| **b).count(),
+        "clusters": clusters.iter().map(|(a, b)| serde_json::json!([a, b])).collect::<Vec<_>>(),
+        "cluster_count": clusters.len()
+    }).to_string())
 }
 
 fn render(dir: &Path, case_id: &str, fonts: &Path, out: &Path) -> Result<String, Fail> {
