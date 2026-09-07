@@ -346,7 +346,8 @@ Every other route is authorized the same way, against the row rather than the ke
 
 | Route | Authorized when |
 |---|---|
-| `heartbeat`, `sent`, `result` | The attempt's `worker` is the caller, and the attempt is the job's current one — see decision item 5 |
+| `sent`, `result` | The attempt's `worker` is the caller. **Accepted for a superseded or expired attempt too** — a worker may always report what its own attempt did; whether that report completes the job is a separate question decision item 5 answers |
+| `heartbeat` | The attempt's `worker` is the caller **and** the attempt is the job's current one and has neither expired nor ended. A heartbeat never revives an expired, abandoned or superseded attempt |
 | `status` | The caller is the assigned worker of the printer named in the path |
 | `evidence` | The caller owns the attempt, **or** holds a verifier grant for that printer |
 | `claim` | The three rules above |
@@ -497,12 +498,17 @@ failed or expired attempt does not make the job claimable again**. Authorizing a
 attempt increments the count, and only a person does that; decision item 6 says what that
 means.
 
+- **A claim has four preconditions, all checked in the claiming transaction.** The job is
+  not delivered; it has no attempt that is still running — one with no terminal outcome and
+  a lease in the future; the authorization count leaves an attempt available; and the
+  authorization rules below have already been satisfied. The first two are stated
+  separately from the count rather than derived from it, because a claim path that only
+  counts would depend on the authorization rules being correct to stay safe.
 - **Consuming an authorization is atomic, and the database enforces it.** `print_attempts`
   carries `attempt_number`, 1-based per job, under `UNIQUE (outbox_id, attempt_number)`. A
   claim runs in one transaction that locks the job row (`SELECT … FOR UPDATE SKIP LOCKED`,
-  which ADR-0010 property 2 already names), reads `attempts_authorized`, counts the
-  attempts, and inserts `attempt_number = count + 1` only while `count <
-  attempts_authorized`, recording it as the job's `current_attempt_id`.
+  which ADR-0010 property 2 already names), checks the four preconditions, and inserts
+  `attempt_number = count + 1`, recording it as the job's `current_attempt_id`.
 
   The lock serializes claimers; the unique constraint is what makes the guarantee
   independent of the lock being taken. Two concurrent claims that both computed the same
@@ -519,11 +525,18 @@ means.
   neither delivered nor claimable, and `OutboxService`'s undelivered set is not by itself
   the set of work this consumer will do. Anything reporting backlog for
   `label.print_requested` reads the authorization state, not `delivered_at` alone.
-- **Results are fenced by `current_attempt_id`.** `heartbeat`, `sent` and `result` are
-  accepted only when the caller owns the attempt. A result for an attempt that is no longer
-  the job's current one is recorded on **its own row**, marked superseded: it does not
-  complete the newer attempt, does not overwrite that attempt's outcome, and does not
-  acknowledge the outbox row.
+- **A late result is recorded; only a current attempt's result completes the job.** These
+  are two rules and conflating them loses one of them. **Recording:** an authenticated
+  owner may submit `sent` or `result` for its own attempt at any time, including after that
+  attempt expired or was superseded, and the value lands on that attempt's row. Refusing it
+  would discard the only account of what the worker actually did, which is the evidence a
+  person needs to decide whether a label exists. **Completing:** only the job's
+  `current_attempt_id` can acknowledge the outbox row or set the job's outcome. A result
+  arriving for a superseded attempt is marked as such on its own row and touches nothing
+  else — not the newer attempt's outcome, not the job. `heartbeat` is the exception to the
+  recording rule, because it is not a report of what happened but a claim on the future: it
+  is refused for an attempt that is not current, has expired, or has ended, so no late
+  heartbeat can revive an attempt or extend a lease that has already passed to another.
 - **Bookkeeping is idempotent, so a network retry never prints.** `sent`, `result`,
   `heartbeat` and `evidence` may each be delivered more than once. Repeating `sent` or
   `result` for an attempt that already recorded one returns the stored value unchanged rather
@@ -534,12 +547,21 @@ means.
   and lands on the stored row; a second observation carries a new one and is stored beside
   it. None of these routes can enqueue work or authorize an attempt, so retrying bookkeeping
   cannot produce a physical print under any ordering.
-- **Authorizing an attempt is idempotent too.** The operator's authorization is a
-  compare-and-set: the request names the `attempts_authorized` value it was shown, and the
-  increment applies only if that is still the value. A double-click or a retried request
-  carries the stale value, changes nothing, and is answered with the current authorization
-  state rather than an error — so the client cannot tell a successful retry from the original
-  success, and one operator action never authorizes two attempts.
+- **Authorizing an attempt names the attempt being reviewed, and cannot be banked.** The
+  request identifies the failed, blocked or uncertain attempt the operator looked at, and
+  one transaction under the job row lock verifies three things: that attempt is still the
+  job's `current_attempt_id`, it has ended — a terminal outcome, an expiry, or abandonment
+  — and `attempts_authorized` equals the number of attempts already made, so no unused
+  authorization is outstanding. Only then is the count incremented.
+
+  Each condition removes a distinct failure. Naming the attempt means an operator authorizes
+  a retry of the failure they were shown rather than of whatever has happened since. The
+  ended check stops B being authorized while A is still printing, which is the case that
+  produces two labels from one job with no fault anywhere in the worker. The
+  no-unused-authorization check stops authorizations accumulating into a job that can be
+  claimed several times over, and it is also what makes the action idempotent: a
+  double-click or a retried request finds the authorization it just created still unused,
+  changes nothing, and is answered with the current state rather than an error.
 
 #### `print_evidence` records an observation, not a conclusion
 
@@ -603,8 +625,8 @@ the two happened rather than presenting them as the same fact.
 
 **No automatic redispatch after a claimed attempt.** A failed attempt records its error; an
 expired attempt is uncertain. Neither makes the job claimable again. A person authorizes
-another attempt, and both the earlier attempt and its evidence are preserved beside the new
-one rather than replaced.
+another attempt, naming the ended attempt they reviewed, and both that attempt and its
+evidence are preserved beside the new one rather than replaced.
 
 The crash-after-send case is why. A worker killed between writing bytes and posting its
 result is indistinguishable from one whose bytes never arrived — the printer may already
@@ -891,14 +913,15 @@ subsystem to be built before the architecture authorizing it is accepted.
    be a scratch branch.
 2. **Claiming, fencing and crash-after-send behave as decision items 5 and 6 specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
-   it; a failed or expired attempt leaves the job unclaimable until an attempt is authorized;
+   it; a failed or expired attempt leaves the job unclaimable until an attempt is
+   authorized; authorization is refused while an attempt is still running, and refused again
+   while an authorization it already granted is unused, so authorizations cannot accumulate;
    two concurrent claims against one authorization produce one attempt, with the loser
-   refused rather than queued behind it; a repeated authorization request authorizes one
-   attempt, not two; a late result from a superseded attempt records against its own row
-   without completing or overwriting the attempt that replaced it; repeated deliveries of
-   `sent`, `result` and `evidence` change nothing after the first; and **a worker killed
-   between `bytes_sent_at` and its terminal result leaves a visible uncertain job and
-   produces no second print.**
+   refused rather than queued behind it; a late result from a superseded attempt is
+   **accepted and recorded on its own row** while completing nothing, and a late heartbeat
+   for the same attempt is refused; repeated deliveries of `sent`, `result` and `evidence`
+   change nothing after the first; and **a worker killed between `bytes_sent_at` and its
+   terminal result leaves a visible uncertain job and produces no second print.**
 3. **The schema subset is fixed against a named validator and a named form renderer.** Both
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
