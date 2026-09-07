@@ -288,6 +288,12 @@ creates the `labels` row, so a rollback takes the job with it.
   Confidence never promotes uncertain to confirmed; a missing verification reprints nothing.
   Images are managed storage references, never URLs — sweep finding S14 is the tree's one
   instance of that pattern and it is a finding, not a precedent.
+- **A late report is kept beside the lease outcome, and the monitor shows the combination.**
+  ADR-0019 decision item 5, amended 2026-09-07: `print_attempts` carries `reported_outcome` and
+  `reported_at` separately from the outcome the server concluded, because a worker delayed past
+  its lease has its attempt reaped as `uncertain` while the label is finished and in the output
+  slot. The row that matters to an operator is `uncertain` **plus** a later worker report of
+  completion — that is where authorizing another attempt prints twice.
 - **Failure is visible in the application, not only in a log.** Somewhere a person looks is
   piece 3. Note that `OutboxService`'s undelivered set is *not* this consumer's work queue: an
   unresolved job is neither delivered nor claimable, so backlog for `label.print_requested`
@@ -324,7 +330,9 @@ configured printer, request a print, inspect the outcome.*
   sanitising, so a nested settings document would reach the database unexamined.
   [03](03-category-min-stock.md) already edited those enums in this wave; merge order matters.
 - **Monitoring is a view of jobs and attempts**, not a dashboard: queued, claimed, sent,
-  reported, failed with its error, uncertain, dead-lettered. Enough to answer "did my label
+  reported, failed with its error, uncertain, dead-lettered — and **uncertain-but-reported**,
+  which is its own state rather than a shade of uncertain, and the one an operator must see
+  before authorizing another attempt. Enough to answer "did my label
   print, and if not, why" without a database client — and to authorize the next attempt, which
   is an operator action rather than a timer.
 - **What is deliberately not here:** the label designer, template editing, previews and
@@ -517,7 +525,12 @@ surface now lives, rather than a waiver.
    claim returns the eligible job rather than a refusal. That is the defect the gate 2 spike
    found, and a suite that only ever holds one job cannot see it.
 7. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
-   job and produces **no second print**. Two concurrent claims against one authorization
+   job and produces **no second print**. A worker that rotates its credential mid-attempt keeps
+   that attempt: the superseded credential is refused without discarding anything, and the
+   successor's report lands on the same attempt. A report arriving **after** the lease expired is
+   recorded rather than refused, and the monitor shows the attempt as uncertain with a later
+   worker report of completion — the state in which authorizing another attempt would print
+   twice. Two concurrent claims against one authorization
    produce one attempt. A late result from a superseded attempt is recorded on its own row
    while completing nothing; a late heartbeat for it is refused.
 8. A payload a version cannot read is dead-lettered with a reason, and does not block the rows

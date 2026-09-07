@@ -1350,8 +1350,14 @@ subsystem to be built before the architecture authorizing it is accepted.
    promise this gate actually makes: that no path loses an attempt's outcome *to a credential
    refusal*. **An integrated case is required before this gate closes** — a worker that claims,
    sends bytes, rotates mid-attempt, and then reports its result, showing the report is accepted
-   for the attempt it belongs to and that no credential state discards it. The cases already
-   run: a lost rotation response retried with the same
+   for the attempt it belongs to and that no credential state discards it.
+   **Run 2026-09-07.** Rotating mid-attempt leaves the attempt open with its bytes recorded and
+   its lease live; the superseded credential is refused with a 401 that discards nothing; the
+   successor reports the same attempt and completes it; one attempt exists throughout, and the
+   crash variant recovers the same successor by replay and reports on that same attempt. It also
+   found the late-report defect amended into decision item 5 above, which is the argument for
+   running this case rather than the credential cases alone.
+   The earlier cases, also run: a lost rotation response retried with the same
    `rotation_request_id` recovers under whichever mechanism was chosen, without issuing a
    second successor; a worker killed before storing the
    successor recovers to exactly one credential on restart; an old heartbeat or result
