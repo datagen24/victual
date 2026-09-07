@@ -46,10 +46,22 @@ Three constraints came out of the research and bear on the choice.
 `grep -rhoE '\]\((\.\./)?plans/[0-9]+[^)]*\)' docs/adr/ | wc -l` returns 173, of which 13 are
 the index's Source column. Any boundary drawn between them severs those links.
 
-**Read the Docs has no first-class PHP.** Its `build.tools` key accepts `python`, `nodejs`,
-`ruby`, `rust` and `golang`. A PHP runtime would have to come from `build.apt_packages`,
-which takes Ubuntu standard-repository packages only, supports no PPAs, and cannot be
-combined with `build.commands`. Nothing in its documentation offers a Docker daemon.
+**Read the Docs has no first-class PHP and no Docker, but it can install PHP.** Its
+`build.tools` key accepts `python`, `nodejs`, `ruby`, `rust` and `golang`, and nothing in its
+documentation offers a Docker daemon, so the `docker run` in `.github/CONTRIBUTING.md` cannot
+run there. `build.apt_packages` can, however, install Ubuntu standard-repository packages;
+it is incompatible only with `build.commands`, not with the `build.jobs` hooks. phpDocumentor
+3 requires PHP 8.1.2 or higher and the `mbstring` extension, and ships as a PHAR. Ubuntu
+24.04 carries PHP 8.3, so `php-cli` and `php-mbstring` satisfy it.
+
+**Read the Docs cannot accept a documentation build made elsewhere.** Its API v3 exposes
+`GET` for build listings and details and `POST .../versions/<slug>/builds/` to trigger a
+build; there is no endpoint that uploads prebuilt HTML. Uploading pre-built documentation
+has been an open request since 2014
+([readthedocs.org#1083](https://github.com/readthedocs/readthedocs.org/issues/1083)).
+`build.commands` is the project's answer to "use your own tool", and it still runs on their
+infrastructure. So a GitHub Action cannot build the site and hand it to Read the Docs; it
+could only trigger a build, or leave an artifact for one to fetch.
 
 **`phpdoc.dist.xml` documents private members on a stated premise.** Its comment reads:
 "Private members are documented too: this is an internal reference, not a published library
@@ -148,17 +160,15 @@ this needs. Advertisements on a manual a household reads during installation are
 presentation cost; if they prove unacceptable the alternative is GitHub Pages, which changes
 plan 25's build and not this record.
 
-**Publishing the PHP API reference by calling a container puts pressure on the vehicle.**
-Read the Docs runs each build inside its own container from the image named by `build.os`,
-and its documentation offers no Docker daemon and no root; `build.apt_packages` is the
-documented way to obtain system dependencies, it accepts Ubuntu standard-repository packages
-only, and it cannot be combined with `build.commands`. So the `docker run` in
-`.github/CONTRIBUTING.md` is not something the Read the Docs documentation supports. Two
-documented paths remain there — `apt_packages: [php-cli]` driving the phpDocumentor PHAR,
-which needs a spike to confirm the PHP version and extensions phpDocumentor requires are
-what Ubuntu ships, or fetching output built elsewhere — and one path has no uncertainty at
-all: run the whole documentation build in GitHub Actions, where PHP and a container runtime
-already exist for the test suite, and publish to GitHub Pages. Open question 4 decides.
+**The PHP API reference is generated two ways, because Read the Docs cannot run a
+container.** The container call stays the documented local path: it pins `phpdoc/phpdoc:3`
+and needs no PHP installed on the machine. Read the Docs installs `php-cli` and
+`php-mbstring` through `build.apt_packages` and runs a pinned phpDocumentor PHAR in a
+`build.jobs` hook instead. Both read the same `phpdoc.dist.xml` and write the same
+`.phpdoc/build`, so the output is the same and the documentation build script chooses
+whichever runtime is present. The cost is one branch in that script and a second thing to
+keep working; the alternative was a second host, and this keeps the site on the vehicle
+already chosen.
 
 **The reference documents private members, and that was justified on a premise this record
 removes.** `phpdoc.dist.xml` includes `private` visibility with the comment "this is an
@@ -221,14 +231,20 @@ documentation that would substitute describes a different system.
    evaluating a Proposed record. Publishing it accepts a small amount of the staleness the
    plan exclusion exists to avoid.
 
-4. **Where does the documentation build run?** Question 1's answer requires a container
-   runtime, which Read the Docs does not document. The choice is between staying on Read the
-   Docs and reaching the PHP API reference another way — `apt_packages: [php-cli]` with the
-   PHAR, subject to a spike, or fetching output built elsewhere — and moving the whole build
-   to GitHub Actions publishing to GitHub Pages, where the container call in
-   `.github/CONTRIBUTING.md` runs unchanged and one pipeline produces everything. The second
-   costs Read the Docs' pull-request previews and version selector, and adds a workflow
-   holding write permission to the repository. It is the only option with no unknown in it.
+4. **Where does the documentation build run?** Narrowed by research after question 1 was
+   answered, and the narrowing favours staying put. Read the Docs cannot run the container
+   and cannot be handed a build made elsewhere — its API has no upload endpoint — but it can
+   install PHP, and phpDocumentor's requirements are modest enough that `php-cli` plus
+   `php-mbstring` meet them. So the site stays on Read the Docs and the build script carries
+   two ways to reach the same output, as the consequence above describes.
+
+   What is left to decide is whether that split is acceptable, or whether one runtime
+   everywhere is worth more. Making the PHAR the only path removes the branch and the
+   `docker run` from `.github/CONTRIBUTING.md`, at the cost of requiring PHP 8.1.2 and
+   `mbstring` on a contributor's machine where today they need only Docker. Moving the whole
+   build to GitHub Actions and GitHub Pages also removes the branch, and costs Read the Docs'
+   pull-request previews and version selector plus a workflow holding write permission to the
+   repository.
 
 ## Acceptance prerequisites
 

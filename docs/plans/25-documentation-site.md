@@ -229,19 +229,27 @@ the barcode lookup plugins and the root entry points, and it already writes to
 `.phpdoc/build`, which stays gitignored. The generated output remains a build artifact and
 is still not committed.
 
-**This is what forces [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s open
-question 4.** A container call needs a container runtime, and
-Read the Docs documents none — its `build.tools` has no PHP, `build.apt_packages` takes
-Ubuntu standard-repository packages only and cannot be combined with `build.commands`, and
-nothing in its documentation offers a Docker daemon. Running the whole build in GitHub
-Actions and publishing to GitHub Pages is the option with no unknown in it, because PHP and
-a container runtime are already there for the test suite. Staying on Read the Docs means
-reaching the reference another way — `apt_packages: [php-cli]` driving the phpDocumentor
-PHAR, which needs a spike, or fetching output built elsewhere.
+**Read the Docs cannot run that container, and cannot be handed a build made elsewhere.**
+Its `build.tools` has no PHP and its documentation offers no Docker daemon; its API v3
+exposes build listing, build detail and a trigger endpoint, and nothing that uploads
+prebuilt HTML — an open request since 2014
+([readthedocs.org#1083](https://github.com/readthedocs/readthedocs.org/issues/1083)). A
+GitHub Action therefore cannot build the site and push it to Read the Docs. It could only
+trigger a build there, or leave an artifact for one to fetch.
 
-The staging step should therefore treat the reference as an input it copies rather than a
-command it must run, so that a contributor without a container runtime still gets a working
-site build with that one section absent.
+**It can, however, install PHP, and phpDocumentor needs very little.** phpDocumentor 3
+requires PHP 8.1.2 or higher and the `mbstring` extension, and ships as a PHAR. Ubuntu 24.04
+carries PHP 8.3, and `build.apt_packages` installs Ubuntu standard-repository packages; it is
+incompatible only with `build.commands`, not with the `build.jobs` hooks this build uses. So
+Read the Docs runs a pinned PHAR where a developer runs the container, both reading the same
+`phpdoc.dist.xml` and writing the same `.phpdoc/build`.
+
+The build script therefore picks a runtime rather than requiring one: the container when a
+container runtime is present, the PHAR when `php` is, and neither when a contributor has
+only MkDocs — in which case the site still builds with the API reference section absent
+rather than the build failing. Pin the PHAR to a release rather than fetching the floating
+`https://phpdoc.org/phpDocumentor.phar`, so a documentation build is reproducible the way
+the rest of the repository's builds are.
 
 ### Generator: MkDocs
 
@@ -275,12 +283,20 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.12"
+  apt_packages:
+    - php-cli
+    - php-mbstring
   jobs:
     pre_build:
       - python3 .devtools/docs/stage.py
 mkdocs:
   configuration: mkdocs.yml
 ```
+
+`apt_packages` and `build.jobs` coexist; only `build.commands`, the full override, excludes
+`apt_packages`, and this build does not need it. The staging script is the one entry point:
+it generates the API reference through whichever runtime it finds, assembles the tree, and
+rewrites the links.
 
 The repository is public and nothing published is private, so Read the Docs Community
 applies: free, advertisement-supported. Business at $50 per month buys nothing this needs.
@@ -428,33 +444,41 @@ whole site behind the slowest part of it.
 7. The phpDocumentor output is reachable from the Development navigation, and a class page —
    `StockService` — loads with its methods listed. Confirm the build regenerated it rather
    than serving a stale copy by checking that a method added in the same commit appears.
-8. The staging step run without a container runtime available still produces a site, with the
-   API reference section absent rather than the build failing. A contributor without Docker
+8. The staging step produces the same API reference from either runtime. Generate it once
+   through the container and once through the PHAR and compare the file lists; a class
+   present in one and not the other means the two paths are not reading `phpdoc.dist.xml`
+   the same way.
+9. The staging step run with neither runtime available still produces a site, with the API
+   reference section absent rather than the build failing. A contributor with only MkDocs
    must be able to build the documentation.
-9. The build succeeds from a clean checkout with the committed configuration alone — no
-   settings entered in a hosting dashboard — so the build is reproducible from the
-   repository.
-10. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
+10. The Read the Docs build installs `php-cli` and `php-mbstring` and fetches the pinned
+    PHAR. This is the one step that assumes outbound network access from a Read the Docs
+    build beyond PyPI; confirm it on a real build rather than by reasoning, and if it is
+    blocked, vendor the PHAR or fall back to open question 4's alternatives.
+11. The build succeeds from a clean checkout with the committed configuration alone — no
+    settings entered in a hosting dashboard — so the build is reproducible from the
+    repository.
+12. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
     and the same pull request skips the differential suite, confirming the check runs on the
     Markdown-only path rather than requiring a code change to trigger.
-11. The landing page of a site whose only section is Development tells a user looking for
+13. The landing page of a site whose only section is Development tells a user looking for
     installation help where to go. This is the cost of shipping the pieces in this order and
     it has to be paid on the page, not assumed away.
-12. No page in the Development section is incomprehensible without a plan. This is
+14. No page in the Development section is incomprehensible without a plan. This is
     [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s fourth acceptance
     prerequisite.
 
 ### Piece 2 — the Manual
 
-13. `docs/usage.md` is gone and nothing links to it:
+15. `docs/usage.md` is gone and nothing links to it:
     `grep -rn 'usage\.md' --include='*.md' .` returns only references to its new location.
-14. Every one of the 84 settings in `config-dist.php` appears in the Configuration part.
+16. Every one of the 84 settings in `config-dist.php` appears in the Configuration part.
     Compare against `grep -cE "^(if \(!defined|Setting\()" config-dist.php`; a setting in
     one and not the other is the defect this check exists to find.
-15. A reader following Getting started on a machine with no prior Victual installation
+17. A reader following Getting started on a machine with no prior Victual installation
     reaches a login prompt using only the Manual. Establish this against both installation
     paths — checkout and Nix images — since they diverge completely.
-16. The Manual contains no link into the Development section that a reader must follow to
+18. The Manual contains no link into the Development section that a reader must follow to
     complete an installation.
-17. The site's landing page no longer defers the Manual, and the notice added under piece 1
-    check 11 is removed.
+19. The site's landing page no longer defers the Manual, and the notice added under piece 1
+    check 13 is removed.
