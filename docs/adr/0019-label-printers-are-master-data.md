@@ -10,8 +10,9 @@
   `VICTUAL_LABEL_PRINTER_*` constants are retired; it did not say where the printer's
   configuration lives, how the worker reaches a job, or which repository the worker's
   source belongs to. This record answers those three.
-- **Relies on** two properties of [ADR-0010](0010-workload-standard.md), which is
-  **Proposed** — see *Reliance on ADR-0010* below.
+- **Relies on** two properties of [ADR-0010](0010-workload-standard.md), **accepted
+  2026-09-07** and scoped against this record on the way through — see
+  *Reliance on ADR-0010* below.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
   [22](../plans/22-medication-tracking.md).
@@ -1096,10 +1097,11 @@ The `labels` table ADR-0011 requires is
 separate; [plan 25](../plans/25-label-infrastructure.md) owns it as of 2026-09-06, and this
 record does not claim it.
 
-## Reliance on ADR-0010, which is Proposed
+## Reliance on ADR-0010, accepted 2026-09-07
 
-Two properties of [ADR-0010](0010-workload-standard.md) carry weight here, and this record
-does not treat a proposal as binding:
+**This section was written while 0010 was Proposed and is kept rather than deleted**, because
+the reason each reliance was defensible without 0010 is the reason it is still defensible if
+0010 is ever superseded. Two of its properties carry weight here:
 
 - **"Consumers may multiply; contracts may not"** — the reason decision item 5 reuses the
   outbox rather than minting a queue. This rule has two homes that are not 0010: the
@@ -1111,10 +1113,19 @@ does not treat a proposal as binding:
   reach is a manifest property. This is also in the constitution's workload standard, and
   its concrete form for the existing images is ADR-0013 decision item 6.
 
-Both reliances are arguments for accepting 0010, not claims that it is accepted. If 0010 is
-rejected, decision items 2 and 5 need re-arguing on the constitution alone, which is a
-weaker but not empty basis. Neither is load-bearing for decision item 3: whether printers
-are master data does not depend on 0010 at all.
+Both reliances were written as arguments for accepting 0010 rather than as claims that it was
+accepted, and **0010 was accepted on 2026-09-07**, so they are now reliance on a binding
+record. What that changes is smaller than it looks: the independent grounding above still
+holds, so a future record superseding 0010 does not by itself unseat decision items 2 and 5 —
+they would fall back to the constitution, which is a weaker but not empty basis. Neither was
+ever load-bearing for decision item 3: whether printers are master data does not depend on
+0010 at all.
+
+Two of 0010's properties bind this record rather than merely supporting it, and both are
+already discharged in the decision above: the worker is unprivileged with its own identity
+(a typed API key over nine routes), and it is declared — an image in this flake with probes
+and limits, per decision item 1. The paired mode's departure from property 1 is named as an
+exception in *Consequences*, which is the form 0010 now requires an exception to take.
 
 **0010 was revised in light of this record, and the two no longer read as contradicting
 each other.** Its decision item 3 said "its own database role" without qualification,
@@ -1123,7 +1134,22 @@ property 1 said "stateless" the same way, which the paired configuration mode ab
 cannot satisfy either. 0010 now scopes the first to workloads that hold a database
 connection (a worker with none is outside the property's scope, not a violation of it)
 and states the second as departable by name in the record proposing the exception, citing
-the paired worker above as that instance. Neither amendment weakens 0010's reliance value
+the paired worker above as that instance.
+
+**One discrepancy survives that crossing and is this record's to carry, not 0010's.** 0010's
+accepted text describes the paired worker as keeping "one durable value, its own credential".
+That was true of this record when 0010 was written and is no longer true of it: an acceptance
+review on 2026-09-07 found that a recoverable rotation cannot be built on a single stored
+value, so the paired worker persists **two** — its credential, and a pending-rotation record
+while an exchange is in flight. This record was corrected; 0010 is Accepted and is not edited
+here, and it does not need to be for its decision to hold. What 0010 decides is that a
+departure from property 1 is stated by name in the record proposing the workload, with the
+value held, why no operator mechanism covers it, and what recovery looks like. That is
+satisfied by two values exactly as it was by one, and *What a worker actually persists* above
+is where the count is authoritative. If 0010's illustration is ever restated, it is a
+superseding record's business.
+
+Neither amendment weakens 0010's reliance value
 here: it is the same standard, stated so that this record's two departures are the
 argued exceptions they were always written to be, rather than a silent conflict between
 two Proposed records each assuming the other would give way.

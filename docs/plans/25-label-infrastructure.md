@@ -423,7 +423,10 @@ surface now lives, rather than a waiver.
 9. A worker key is refused on a route it is not authorized for, and a revoked key is refused
    everywhere while the printer's assignment to its worker row survives the revocation.
 10. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
-    with no shell, per `nix/checks.nix`.
+    with no shell, per `nix/checks.nix`. The worker's deploy manifest passes
+    `.devtools/ci/check_deploy_manifest.py` — health probes and resource limits — which
+    [ADR-0010](../adr/0010-workload-standard.md)'s acceptance made a binding condition of a
+    workload shipping rather than a proposed one.
 11. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
 12. **A physical location label is printed, and scanned back to the correct location by an
     authorized user.** This is the check the plan exists for and no earlier check substitutes
@@ -488,8 +491,15 @@ answered in review on 2026-09-07**, and the responses are inline below.
    > here and the reason `nix/runtime/webcheck.c` exists for the web tier. The preview endpoint
    > is declined for this wave: layout is inspected from saved render artifacts, which needs no
    > server and no access-control story, and a preview server would need one because it renders
-   > label content on request. Note also that ADR-0010, which is where the probe requirement
-   > comes from, is itself Proposed.
+   > label content on request.
+   >
+   > **Amended 2026-09-07:** this response originally noted that ADR-0010, where the probe
+   > requirement comes from, was itself Proposed. **It was accepted on 2026-09-07**, so the
+   > probe is a binding requirement rather than a proposed one — which does not change the
+   > answer, since the answer was already "health only". What it does change is that
+   > "declared: it exists in the deploy tree with health probes and resource limits, or it does
+   > not exist" is now a condition of the worker shipping, and
+   > `.devtools/ci/check_deploy_manifest.py` checks the manifest for it.
 5. **Label retirement.** ADR-0011's question 4 leans to never deleting labels and setting
    `retired_at` when the target is consumed or removed. Locations are both soft-deletable
    (`active`) and hard-deletable through `objects/locations`. *Lean: hard delete retires the
