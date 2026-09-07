@@ -43,7 +43,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
 | 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. Migrations 0269–0270, nine tables. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
-| 26 | [Documentation site](26-documentation-site.md) | Draft, unscheduled | Two pieces: the developer section first, the manual when its task documentation exists. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), Proposed with four prerequisites; do not schedule ahead of it. Piece 1 needs 92 for the data model pages and ADR-0020 Q4 for where a build with a container runtime runs. Q7 holds the manual's task documentation, the bulk of the work; the install chapter cannot be complete before 20, and 19 piece 2 will revise the roles chapter. |
+| 26 | [Documentation site](26-documentation-site.md) | Piece 1 implemented | Wave-independent. Piece 1, the developer section, is built: staging script, MkDocs and Read the Docs configuration, the pinned phpDocumentor reference, and a strict build in the `lint` job. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed**; piece 1 is the evidence its prerequisites 2 and 4 ask for. Piece 2, the manual, waits on Q7's task documentation across 81 pages. |
 
 ## Order of operations
 
@@ -85,10 +85,12 @@ the retirement ADR-0011 already accepted, and the second carries an
 `*/printlabel` endpoints return. Observation proposals (ADR-0012) remain accepted and unbuilt;
 that acceptance still assigns no ownership and no delivery slot.
 
-**Plan 26 is independent of the wave order**, since it touches no runtime code. It implements
-[ADR-0020](../adr/0020-documentation-publication-boundary.md), which is Proposed; its piece 1,
-the developer section of the documentation site, is assembly and ships within the build's own
-effort, while its piece 2, the manual, waits on new writing covering 81 undocumented pages.
+**Plan 26 is independent of the wave order**, since it touches no runtime code. Its piece 1,
+the developer section of the documentation site, is implemented; its piece 2, the manual, waits
+on new writing covering 81 undocumented pages. It implements
+[ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed** — piece 1
+was built first deliberately, because two of that record's four acceptance prerequisites ask
+for evidence only a working build can supply.
 
 ## Hardening
 

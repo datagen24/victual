@@ -29,7 +29,7 @@
   remembers to add. 0010 is Proposed and this record does not assume otherwise: what
   follows stands on the build-system argument alone.
 - **Supersedes:** the `Dockerfile`'s `production` target, which
-  [10](10-cold-start-statelessness.md) landed on 2026-08-31. **Not** its `dev` target,
+  [10](../plans/10-cold-start-statelessness.md) landed on 2026-08-31. **Not** its `dev` target,
   which is a different artifact for a different job and stays — and which this acceptance
   makes the `Dockerfile`'s *only* job. Retiring the production stage is scheduled rather
   than done here, as [plan 20](../plans/20-container-infrastructure.md)'s piece 3: it

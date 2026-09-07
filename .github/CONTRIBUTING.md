@@ -73,8 +73,14 @@ The PHP side of the codebase carries PHPDoc throughout, and phpDocumentor turns 
 a browsable reference:
 
 ```
-docker run --rm -v "$(pwd):/data" phpdoc/phpdoc:3
+docker run --rm -v "$(pwd):/data" \
+  phpdoc/phpdoc@sha256:312ebf61ed88a6ea79aac768e43c9e9af0dd5bf3e710ed6d40ab8e53bfeeb121
 ```
+
+That digest is phpDocumentor 3.10.0. It is pinned rather than floating on `:3` because the
+documentation site generates the same reference from a pinned PHAR where it cannot run a
+container, and the two have to name one version — `.devtools/docs/stage.py` fails the build
+if they drift apart.
 
 That reads [phpdoc.dist.xml](../phpdoc.dist.xml) and writes `.phpdoc/build`; open
 `.phpdoc/build/index.html`. Both the output and the cache are gitignored — the

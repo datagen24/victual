@@ -3,6 +3,7 @@ embedded.txt
 /packages
 /public/packages
 /.phpdoc
+/.docs-build
 /phpdoc.xml
 
 # Coverage output: the per-process .cov files go to scratch, but SUITE_COVERAGE_CLOVER

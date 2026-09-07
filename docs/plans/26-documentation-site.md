@@ -464,9 +464,10 @@ whole site behind the slowest part of it.
    link deliberately and confirm the build fails and names the file and the link.
 2. No `not_found` warning appears in a clean build log, establishing that every relative link
    in the published set resolves.
-3. Every one of the 173 ADR-to-plan links resolves to a GitHub URL that returns the plan.
-   Compare the count in the built HTML against the source count, so a link silently dropped
-   by the rewrite is caught rather than counted as success.
+3. Every ADR-to-plan link resolves to a GitHub URL that returns the plan. Compare the count
+   in the built HTML against the source count rather than against a number written here, so
+   a link silently dropped by the rewrite is caught and the check does not go stale as the
+   corpus grows.
 4. A page linking to a staged README resolves within the site, and the same unmodified source
    line still resolves on GitHub. Check both against `db/pgsql/README.md`, which carries 14 of
    the 42 links.
@@ -516,3 +517,40 @@ whole site behind the slowest part of it.
     complete an installation.
 20. The site's landing page no longer defers the Manual, and the notice added under piece 1
     check 14 is removed.
+
+## Executed
+
+### Piece 1 — the Development section, 2026-09-07
+
+Shipped as designed. `.devtools/docs/stage.py` assembles a 37-page tree into `.docs-build/`,
+`mkdocs.yml` and `.readthedocs.yaml` build it, `.devtools/docs/requirements.txt` pins MkDocs
+1.6.1 and Material 9.7.7, and the `lint` job in `tests.yml` runs `stage.py --no-api` followed
+by `mkdocs build --strict`. `phpdoc.dist.xml`'s premise comment is corrected per ADR-0020's
+answered question 2, and `.github/CONTRIBUTING.md` names the pinned image digest.
+
+**Measured on the delivering machine, 2026-09-07.** The pinned container parsed 106 PHP files
+into 242 output files in 3 seconds. `mkdocs build --strict` completes in under half a second
+and emits no warnings. A staging run with neither a container runtime nor `php` on `PATH`
+produces the site with the API reference and its link both absent, rather than failing or
+leaving a dangling link.
+
+**Divergences from the design above.**
+
+- **The ADR-to-plan link count is 184, not the 173 measured at `ab9d157b`.** The corpus grew
+  while this plan was open. Verification check 3 was rewritten to compare the built count
+  against the source count rather than against a number in this document, which is what it
+  should have said in the first place.
+- **A second already-broken link was found, by the mechanism this plan predicted.**
+  `docs/adr/0013-nix-built-container-images.md` linked plan 10 as
+  `[10](10-cold-start-statelessness.md)` with no `../plans/` prefix, which resolves to
+  `docs/adr/10-cold-start-statelessness.md` and does not exist. It was the only warning in the
+  first strict build. Fixed in the same change.
+- **`.devtools/docs/README.md` is published**, which the design did not list because it did
+  not exist when the design was written. It documents the build the reader is looking at.
+- **`docs/data-model.md` no longer links `[diagrams/](diagrams/)`.** A directory link has no
+  page on the site, so it was rewritten to GitHub and sent a reader off-site to see a file
+  listing of diagrams that are on the site. The sentence now points at the table below it.
+
+**Not verified.** Check 10 — that a Read the Docs build reaches GitHub releases to fetch the
+PHAR — cannot be established from here. It needs a real build on Read the Docs, and it is the
+one step assuming outbound network access beyond PyPI. If it is blocked, vendor the PHAR.

@@ -2,8 +2,8 @@
 
 Victual stores everything in one PostgreSQL database: 46 tables defined in DDL, 44 views
 layered on top of them, and 55 triggers that stand in for the constraints the schema does
-not declare. This document names what is where; the diagrams in [diagrams/](diagrams/)
-show how the pieces connect.
+not declare. This document names what is where; the six diagrams listed below show how
+the pieces connect.
 
 Two facts shape every diagram below and are worth stating before the pictures:
 
