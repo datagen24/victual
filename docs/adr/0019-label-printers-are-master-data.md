@@ -1383,7 +1383,8 @@ subsystem to be built before the architecture authorizing it is accepted.
    successor by replay and reports on the same attempt. It also found the late-report defect
    amended into decision item 5 above, which is the argument for running this case rather than
    the credential cases alone — and the re-run is against the amended behaviour, not the one
-   that produced the defect.
+   that produced the defect. **On that evidence this gate is discharged**: the integrated case
+   closes the one it was missing.
    The earlier cases, also run: a lost rotation response retried with the same
    `rotation_request_id` recovers under whichever mechanism was chosen, without issuing a
    second successor; a worker killed before storing the
@@ -1409,16 +1410,24 @@ subsystem to be built before the architecture authorizing it is accepted.
    editor returns 422 and renders in the form as a field-level error. The rerun produced the two
    amendments above.
 
-   **The gate stays open.** Four things are specified and not yet demonstrated, and the record
-   should not treat a specification as evidence:
-   - **Structural validation against the subset**, not merely "the schema evaluates without
-     throwing". A schema can evaluate cleanly and still use a keyword outside the subset.
-   - **Deterministic combination selection.** Two combinations sharing a discriminator tuple
-     must be a registration refusal, not a first-match race.
-   - **Assertions that a rejected or exception-producing write leaves storage unchanged.** The
-     rerun's endpoint stored nothing, so it could not assert this and did not.
-   - **A test for the property pointer**, so the lifted `field` is exercised rather than
-     described.
+   **Those four were run on 2026-09-07 against a real PostgreSQL store — 29 checks, 29 passed —
+   and this gate is met.**
+   - **Structural validation against the subset**, by walking the schema against the version 1
+     keyword set rather than asking whether a validator threw. `allOf` is refused as outside the
+     subset though it would evaluate perfectly, and a non-schema value under `properties` is
+     caught structurally as well as by evaluation, so neither layer is load-bearing alone.
+   - **Deterministic combination selection.** Two combinations sharing a discriminator tuple are
+     refused at registration — "selecting a schema by it would not be deterministic" — so
+     selection can never be a first-match race.
+   - **Rejected and exception-producing writes leave storage unchanged**, asserted with
+     before/after snapshots of both tables across five paths: a property the combination lacks,
+     a value outside an enum, an unknown property, an unsupported combination, and an
+     unevaluable stored schema. A valid write is the control, and it does store.
+   - **The lifted property pointer is exercised, including its display where no control exists.**
+     `field=darkness` with a code distinguishing a forbidden property from a forbidden value;
+     rendered, a refusal naming a field the form has a control for attaches to that control,
+     and one naming a field it does not appears in its own region saying so — which is the case
+     lifting the pointer creates.
 5. **The capability contract version 1 expresses two real driver families.** Brother QL and
    one other, written out on paper against the contract, including an endless-tape length
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
