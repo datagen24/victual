@@ -201,8 +201,8 @@ reuse detection below.
 
 #### Rotation is a recoverable exchange
 
-A rotation that is not recoverable is worse than no rotation: it turns a dropped response
-into a bricked worker or, if retried naively, into a revocation of the honest party.
+An unrecoverable rotation turns a dropped response into a bricked worker, or — retried
+naively — into a revocation of the honest party.
 
 - **The worker generates a `rotation_request_id` and persists it before calling.** Victual
   records that id against the credential it consumed. **A repeat of the same
@@ -946,28 +946,25 @@ worker holds instead is a typed API key whose reach is bounded by the nine route
 call and, on each, by the printer or attempt named in the request — and, for a paired worker,
 by an expiry.
 
-**A paired worker is stateful, and its stored credential is not really protected.** Two
-things this record does not pretend away. The first is a departure from
-[ADR-0010](0010-workload-standard.md) property 1: a paired worker keeps one durable value —
-its credential — so killing it does lose something, and recovery is re-pairing rather than a
-restart. It is bounded to that one value, and it exists only where there is no operator
-mechanism to inject a Secret; the declared worker keeps the property in full.
+**A paired worker is stateful.** It departs from
+[ADR-0010](0010-workload-standard.md) property 1: it keeps one durable value — its
+credential — so killing it does lose something, and recovery is re-pairing rather than a
+restart. The departure is bounded to that one value, and confined to deployments with no
+operator mechanism to inject a Secret; the declared worker keeps the property in full.
 
-The second is about the store, and it needs stating precisely because the intuitive version
-of it is wrong. **Encryption whose key lives on the same storage protects against nothing
-that copies that storage.** A pulled SD card carries the ciphertext and the key together, so
-the card is readable wherever it is taken. Encryption at rest is protection only when the
+**Its stored credential is not protected in the sense the word usually carries.** **Encryption whose key lives on the same storage protects against
+nothing that copies that storage:** a pulled SD card carries the ciphertext and the key
+together, and is readable wherever it is taken. Encryption at rest protects only when the
 decryption key stays outside what was copied — hardware-backed storage such as a TPM or a
-secure element, or a passphrase supplied at start — and where the platform offers one of
-those, the worker should use it. File permissions are worth having and are also narrower than
-they sound: they keep another local user out, and they stop nothing that has the device.
+secure element, or a passphrase supplied at start — and the worker should use one where the
+platform offers it. File permissions keep another local user out; they stop nothing that has
+the device.
 
-**What actually bounds the exposure is the session clock, not the store and not rotation.** A
-credential on a device the operator does not control should be assumed readable by anyone who
-takes the device. Rotation makes a second holder detectable, and the session expiry makes
-possession finite regardless of detection, which is why decision item 2 has two clocks rather
-than one. The cost is operational and worth stating: a worker switched off past its session
-expiry needs a person to pair it again, which for a seasonally used printer is a real
+**The session clock bounds the exposure; the store and rotation do not.** A credential on a
+device the operator does not control should be assumed readable by anyone who takes the
+device. Rotation makes a second holder detectable; the session expiry makes possession finite
+whether or not detection fires. The cost is operational: a worker switched off past its
+session expiry needs a person to pair it again, which for a seasonally used printer is a real
 annoyance rather than a theoretical one.
 
 **A worker writes five kinds of row, and two of them are definitions.** Attempts, status
@@ -1007,11 +1004,10 @@ tape feed direction. Both checks are required.
 or triggers: `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
 `label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence`.
 Each holds a different lifetime — worker identities and admin-edited instances, immutable
-driver definitions,
-immutable template definitions, current per-worker advertisements, worker-overwritten status,
-append-only attempts, and append-only observations with the shortest retention. That is a
-large surface for one subsystem, and it is the cost of keeping definitions immutable while
-what workers advertise changes underneath them. The `labels` table ADR-0011 requires is
+driver definitions, immutable template definitions, current per-worker advertisements,
+worker-overwritten status, append-only attempts, and append-only observations with the
+shortest retention. It is a large surface for one subsystem, and the cost of keeping
+definitions immutable while what workers advertise changes underneath them. The `labels` table ADR-0011 requires is
 separate and still unowned; this record does not claim it.
 
 ## Reliance on ADR-0010, which is Proposed
