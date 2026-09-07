@@ -5,7 +5,7 @@
 # ADR-0019 acceptance gate 1 is exactly this image existing and passing `nix flake check`.
 {
   dockerTools,
-  labelWorker,
+  labelWorkerRust,
   imageLib,
 }:
 
@@ -25,7 +25,7 @@ dockerTools.streamLayeredImage (
       # The worker holds no database credential and makes no database connection
       # (ADR-0019 decision item 2). It reaches Victual over HTTP and a printer over TCP,
       # and both addresses arrive as configuration rather than being baked here.
-      Cmd = [ "${labelWorker}/bin/victual-label-render" ];
+      Cmd = [ "${labelWorkerRust}/bin/rsrender" ];
     };
   }
 )

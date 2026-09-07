@@ -29,7 +29,7 @@
   version,
 
   # ADR-0019 packaging spike (gate 1), disposable.
-  labelWorker,
+  labelWorkerRust,
 }:
 
 let
@@ -124,11 +124,11 @@ in
   label-worker-image-has-no-shell =
     runCommand "victual-check-worker-no-shell"
       {
-        closure = closureInfo { rootPaths = [ labelWorker ]; };
+        closure = closureInfo { rootPaths = [ labelWorkerRust ]; };
       }
       ''
         found=""
-        for forbidden in ${lib.escapeShellArgs (lib.subtractLists [ "python3" ] forbiddenInRuntimeClosure)}; do
+        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
           if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
             found="$found $forbidden"
           fi
@@ -153,14 +153,14 @@ in
   label-worker-renders-a-label =
     runCommand "victual-check-worker-render" { } ''
       export HOME="$PWD"
-      ${lib.getExe labelWorker} \
-        --uid 0123456789ABC \
-        --name "Pantry — top shelf" \
-        --out "$PWD/label.png" \
-        --rasterize | tee "$out"
+      ${lib.getExe labelWorkerRust} \
+        --dir ${../.spike-renderer/contract} \
+        --case c1_wrap \
+        --fonts ${../.spike-renderer/fonts} \
+        --out "$PWD/label.png" | tee "$out"
 
       test -s "$PWD/label.png"
-      grep -q "rasterized" "$out"
+      grep -q '"ok":true' "$out"
     '';
 
   # 3. The document root the web tier serves contains no PHP. The web image has no

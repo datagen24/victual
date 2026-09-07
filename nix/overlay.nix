@@ -111,6 +111,12 @@ in
         ;
     };
 
+    # The worker as it is now: one Rust binary, no interpreter. `labelWorker` below is the
+    # Python one the packaging gate rejected, kept only until the spike is deleted.
+    labelWorkerRust = self.callPackage ./worker/rsrender.nix {
+      workerSource = ../.spike-renderer/rsrender;
+    };
+
     labelWorker = self.callPackage ./worker/package.nix {
       workerSource = final.victualLabelWorkerSource;
       python3Packages = self.pythonNoShell.pkgs;
