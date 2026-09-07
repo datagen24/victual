@@ -78,11 +78,11 @@ reach the printer.
 
 | Owned by this repository | Owned by the worker repository |
 |---|---|
-| The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the schema each advertises |
-| The driver registry: which drivers exist, at which schema versions | The rasterizer and imaging code |
-| The print job event and its payload contract | Label templates and their definitions |
+| The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the settings schema and capability document each advertises |
+| The driver registry, and the capability contract those documents are written against | The rasterizer and imaging code |
+| The print job event and its payload contract, including pinned template identity | Label templates, their versions, and their declared capability requirements |
 | The claim/acknowledge/register API and its OpenAPI contract | Device transport (TCP, USB, whatever a driver needs) |
-| The attempt record and the observed-status record | The worker's own tests, including geometry assertions |
+| The attempt, evidence and observed-status records | The worker's own tests, including geometry assertions |
 | The flake input pinning the worker's revision, and the image built from it | |
 
 Victual owns **configuration and monitoring**. The worker owns **rendering, device contact
@@ -90,9 +90,10 @@ and driver implementation**. This preserves ADR-0011's consequence that renderin
 this repository: template semantics, driver quirks and imaging bugs move on their own
 schedule, and none of them is a reason to cut a Victual release.
 
-The seam is a **capability contract**. A worker advertises what its drivers accept; Victual
-holds that description, renders configuration from it, validates against it and stores the
-result. Neither side hardcodes the other's vocabulary.
+The seam is a **capability contract** this repository defines and workers write against. A
+worker advertises what its drivers support and accept; Victual holds those documents,
+renders configuration from them, validates against them and stores the result. Neither side
+hardcodes the other's vocabulary, and neither invents the vocabulary unilaterally.
 
 `flake.nix` gains the worker repository as a pinned input and builds its image from that
 revision through `nix/images/lib.nix`, so the artifact carries the same uid, labels and
@@ -192,9 +193,9 @@ than a failed print an hour later.
 
 #### The registry: `label_drivers`
 
-One row per `(driver_id, schema_version)`: the JSON Schema for that driver's settings, a
-capability document describing what the driver can do, the worker identity that registered
-it, and when. **Append-only and immutable.**
+One row per `(driver_id, schema_version)`: the settings schema, the capability document
+written against the contract below, the worker identity that registered it, and when.
+**Append-only and immutable.**
 
 - **Driver identity** is a stable namespaced string naming a *contract*, not an
   implementation — `brother.ql`, not `brother_ql` as one Python package spells it, and
@@ -214,6 +215,75 @@ it, and when. **Append-only and immutable.**
   new major is an explicit admin action that revalidates its settings and rewrites
   `driver_schema_version`. A major bump is a change the stored settings may not survive, so
   nothing adopts one automatically.
+
+#### The capability contract
+
+The capability document is not free-form. This repository defines a versioned contract and
+drivers write against it, so that a template can ask "does this printer do two colours"
+without knowing which driver answers.
+
+Version 1 carries:
+
+| Key | Content |
+|---|---|
+| `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups` |
+| `media` | Supported media identities, each with its printable geometry |
+| `geometry` | Printable width and length in **micrometres**, and the feed direction, so orientation is stated rather than inferred |
+| `resolutions` | Supported DPI values |
+| `color_modes` | `monochrome`, or `two_color` naming the second colour |
+| `completion_evidence` | What the driver can report: `none`, `transport`, or `device_reported` |
+
+Explicit units are load-bearing: issue [#90](https://github.com/datagen24/victual/issues/90)
+is a geometry defect produced by two components disagreeing about which dot count a
+dimension meant, and a contract that says "width: 696" repeats it.
+
+**Supported, configured and observed are three different statements**, and the contract
+keeps them apart:
+
+| | Says | Lives in | Written by |
+|---|---|---|---|
+| Supported | What the driver can do | `label_drivers` capability document | The worker, at registration |
+| Configured | What the admin selected | `label_printers` | An admin |
+| Observed | What the device currently reports | `label_printer_status` | A worker, reporting |
+
+Registration advertises support; **it does not prove that an attached printer currently has
+the capability available.** A driver supporting `62red` and a printer configured for `62red`
+still print nothing when the device reports black tape loaded, and that is an observed-state
+failure rather than a configuration error.
+
+**Namespaced extensions are allowed**, as `x-<driver_id>.<key>`, and generic templates
+ignore them. **Generic templates declare the capabilities they require**, and a job is
+refused at enqueue when the target printer's driver does not support the combination — not
+at print time, where the person who asked for the label is no longer watching.
+
+#### The settings schema subset
+
+The dialect is pinned to what the chosen PHP validator and the form renderer **both**
+support; the intersection is the subset, and it is chosen by checking the two together
+rather than picking a dialect and discovering the renderer's limits afterwards.
+
+Version 1 accepts an object whose properties are strings, booleans, integers, numbers or
+enums, with `required`, numeric and length bounds, `pattern`, `title` and `description`.
+Unknown properties in a settings document are rejected. External `$ref` is rejected
+outright — resolving one would be a fetch of a schema named by a registration, which is the
+class of outbound call this record removes. **Registration rejects a schema using anything
+outside the subset**, rather than accepting it and ignoring the parts it cannot handle.
+
+**Flat scalars cannot express which combinations of model, media, resolution and colour are
+valid**, and that is the constraint the subset has to answer. Under a pull-only transport
+Victual cannot ask a worker to resolve a schema for a selection the admin just made, so any
+mechanism has to be registered ahead of time. The registration therefore declares its
+**discriminator properties** — typically model and media — and supplies **one resolved
+schema per supported combination**. Selecting a model and media selects a schema; no
+conditional evaluation is needed in either the validator or the renderer, which is what
+keeps the subset flat. A registration whose combination count exceeds a stated limit is
+refused rather than accepted and rendered slowly. Bounded `if`/`then` conditionals on
+declared discriminators are the alternative and would need conditional support in both
+libraries for no gain here, since both mechanisms must pre-register.
+
+**The generated form is an editor, not a gate.** Server-side validation on write and the
+worker's own validation before printing are the authoritative checks, and a settings
+document that reaches the database through any other path is still validated by both.
 
 #### Worker assignment
 
@@ -307,29 +377,91 @@ behaviour in `Setting()` constants, per-person preference in `user_settings`, ap
 templates. Admission to `settings` is enforced rather than argued: a driver declared the
 field, or it cannot be stored.
 
-### 4. The job names a printer; the configuration is resolved at claim time
+### 4. What a job pins, and what it resolves at claim time
 
-The outbox payload carries the label uid, the template name, the rendered text fields as
-they stood when the job was created, and a `printer_id` — not a connection, not a media
-identity, not a settings document. The claim response resolves that printer's current row
-and returns its typed columns, its validated `settings`, and the `driver_id` and
-`driver_schema_version` they were validated against, so the worker knows which of its
-builds' expectations apply. A job whose printer has been deleted
-or deactivated is dead-lettered with `last_error` saying so, rather than handed out against
-a device that is gone.
+The outbox payload pins the label uid, the captured text fields as they stood when the job
+was created, `payload_version`, and **`template_id` with an immutable `template_version` or
+content digest**. It names a `printer_id` and nothing else about the device — no connection,
+no media identity, no settings document.
 
-### 5. The outbox is reused; attempts are a separate evidence log
+The claim response resolves that printer's current row and returns its typed columns, its
+validated `settings`, and the `driver_id` and `driver_schema_version` they were validated
+against, so the worker knows which of its builds' expectations apply. A job whose printer
+has been deleted or deactivated is dead-lettered with `last_error` saying so, rather than
+handed out against a device that is gone.
+
+**A template name alone is not an identity.** A worker can recognise the name while its
+implementation has changed underneath, producing a label that differs from the one the
+operator asked for with nothing recording that it did. Pinning a version or digest makes the
+job say which rendering it meant. Three rules follow:
+
+- **A worker upgrade retains the template versions queued jobs pin**, or the upgrade carries
+  an explicit migration of those jobs to a version it does have.
+- **An unavailable version is a visible blocked outcome, never a fallback to the latest.**
+  The attempt records `blocked` naming the missing version, the lease ends, and the job
+  returns to the queue — a redeployed worker carrying that version can still print it, so
+  this is neither an error to retry in a loop nor a dead letter. The job is not offered
+  again to a worker that already reported `blocked` on that pinned version until that worker
+  re-registers.
+- **Reprinting and printing with a revised template are different operator actions.** A
+  reprint enqueues a job pinning the same template version and the same captured content; a
+  revised print pins the new version and is recorded as a different operation. Neither
+  mutates the original job.
+
+### 5. The outbox is reused; attempts and evidence are separate records
 
 Event type `label.print_requested`, in the existing `outbox` table, under the existing
 `payload_version` discipline. No second queue.
 
-A `print_attempts` table records one row per claim: `attempt_id`, the outbox row it
-belongs to, the worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`,
-`device_reported_at`, outcome, error text, and a nullable evidence reference. It is not a
-second queue: the outbox row remains the unit of work and is acknowledged by setting
-`delivered_at`, while the attempt rows are this consumer's record of what it tried. A claim
-is the insertion of an attempt row, so exclusivity is a database constraint rather than a
-protocol promise, and an expired lease returns the job by making the next claim legal.
+`print_attempts` records one row per claim: `attempt_id`, the outbox row it belongs to, the
+worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`, `device_reported_at`,
+outcome, and error text. The outbox row remains the unit of work and is acknowledged by
+setting `delivered_at`; the attempt rows are this consumer's record of what it tried. A
+claim is the insertion of an attempt row, so exclusivity is a database constraint rather
+than a protocol promise, and an expired lease returns the job by making the next claim
+legal.
+
+#### `print_evidence` records an observation, not a conclusion
+
+One row per observation, and every row carries all five of:
+
+| Field | Content |
+|---|---|
+| `attempt_id` | The attempt this observation is about. Required — see decision item 6 |
+| `evidence_type` | The kind of observation: a decoded scan, a device status report, an image |
+| `source` | The authenticated identity that submitted it |
+| `observed_at` | When the observation happened |
+| `received_at` | When Victual took it |
+
+The rest depend on `evidence_type`: `decoded_uid`, `printer_status`, `image_ref`,
+`confidence`. All optional, and none is a verdict — the row says what was seen, and decision
+item 6 says what may be concluded from it.
+
+**An image is a managed storage reference, never a URL.** It is stored through the existing
+file storage under a new `FileGroups` value, and `image_ref` holds that identifier. Victual
+does not fetch an address a submitter supplies; sweep finding S14 is the tree's one instance
+of that pattern, and it is a finding rather than a precedent.
+
+#### Retention
+
+One policy, several lifetimes. Images are the largest rows and the shortest-lived;
+structured attempts and evidence outlive them; outbox rows outlive both.
+
+What retention never removes:
+
+- **Pending jobs, uncertain outcomes and unresolved dead letters**, regardless of age. An
+  attempt that never reached a terminal outcome keeps its rows, because that is the history
+  someone needs to explain a print nobody can account for.
+- **Enough history to explain an unresolved print.** Removing an image leaves its evidence
+  row, recording that an image existed and was retained until a stated date. Removing
+  evidence leaves the attempt.
+- **Label identities and retirement mappings.** ADR-0011's `labels` table is outside
+  print-history cleanup: a printed label outlives every deployment, so the mapping that
+  resolves it cannot be pruned on a print-history schedule.
+
+**Nothing is removed solely because its parent outbox row was delivered.** Cleanup preserves
+referential integrity — no row outlives what it points at — and exact durations belong to
+the implementation plan.
 
 ### 6. Delivery semantics
 
@@ -356,11 +488,28 @@ while a missing one is a physical artifact that does not exist for something the
 was booked. The `attempts` counter and the attempt rows make a repeatedly duplicating
 printer visible.
 
-**Camera verification is evidence, never control flow.** Evidence attaches to an
-`attempt_id`, not to a label uid: a uid is stable by construction under ADR-0011, so it
-cannot distinguish an original from a reprint, and evidence keyed on it would confirm the
-wrong attempt. A missing verification re-prints nothing automatically — it is a discrepancy
-for a person, as ADR-0011 makes a scan of a retired uid.
+**The verifier correlates its observation with an attempt; Victual does not infer the
+correlation.** `attempt_id` is required on every evidence row. A uid is stable by
+construction under ADR-0011, so a matching uid says a label exists — not which attempt
+produced it, and not which of several reprints succeeded. An observer that can read a label
+but cannot name the attempt it is checking is not a print verifier, and this endpoint is not
+where its observation belongs.
+
+**Confidence never promotes uncertain to confirmed.** A confidence value is a property of an
+observation, and no threshold applied to one moves an attempt out of *uncertain*. That state
+ends when a worker posts a terminal result or a person resolves it. A missing verification
+re-prints nothing automatically — it is a discrepancy for a person, as ADR-0011 makes a scan
+of a retired uid.
+
+**Print evidence never books inventory, and it is not automatically an ADR-0012 proposal.**
+[ADR-0012](0012-observations-are-proposals.md) governs confidence-bearing claims about
+*bookings* — writes to the stock ledger — and "a label came out of the printer" is not one.
+The two are separable in the case that mixes them: a camera that reads a shelf and reports
+both "this label exists" and "there are three of these here" submits the first as print
+evidence and the second as a proposal, and the proposal is ADR-0012's to govern. Should
+confidence-based print confirmation ever be wanted, the rule is here rather than borrowed: a
+person confirms it, there is no auto-confirm threshold, and confirming a print confirms a
+print — it writes no stock.
 
 ### 7. Retirement is the destination, sequenced
 
@@ -556,12 +705,12 @@ CI. The rotation *sign* is not catchable that way: no library default competes w
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
 tape feed direction. Both checks are required.
 
-**Four tables under the migration discipline**, PostgreSQL-only and plain, with no views or
-triggers: `label_printers`, `label_drivers`, `label_printer_status` and `print_attempts`.
-Four tables because device settings, the schemas that validate them, observed status and
-attempt history have four lifetimes: admin-edited, append-only, worker-overwritten and
-append-only. The `labels` table ADR-0011 requires is separate and still unowned; this record
-does not claim it.
+**Five tables under the migration discipline**, PostgreSQL-only and plain, with no views
+or triggers: `label_printers`, `label_drivers`, `label_printer_status`, `print_attempts` and
+`print_evidence`. Five because device settings, the schemas that validate them, observed
+status, attempt history and observations have five lifetimes — admin-edited, append-only,
+worker-overwritten, append-only, and append-only with the shortest retention. The `labels`
+table ADR-0011 requires is separate and still unowned; this record does not claim it.
 
 ## Reliance on ADR-0010, which is Proposed
 
@@ -606,32 +755,43 @@ Gates, not suggestions. Each is evidence the accepting pull request reports.
    once that row is corrected; a worker registered at a lower minor than a printer's pinned
    version is not offered that printer's jobs; and a printer whose settings are invalid for
    its driver is refused at configuration time.
+5. **Template identity survives a worker upgrade.** A job pinning a template version an
+   upgraded worker no longer carries produces a `blocked` outcome naming the missing
+   version, prints nothing, and prints correctly once that version is restored. A reprint
+   and a revised print of the same label are distinguishable in the attempt record.
+6. **The capability contract version 1 is written and exercised by two drivers.** Both
+   drivers' capability documents validate against it; a template declaring a requirement a
+   driver does not support is refused at enqueue; and supported, configured and observed are
+   separately visible for media, with a device reporting tape other than the configured one
+   producing a discrepancy rather than either value overwriting the other.
+7. **The schema subset is fixed against the validator and the form renderer together.** Both
+   libraries are named, the subset is the intersection they both support, and registration
+   refuses what falls outside it: a schema using an unsupported feature, an external `$ref`,
+   and a settings document carrying an unknown property are each rejected. The
+   model/media-dependent case is exercised — a registration declaring its discriminators and
+   supplying one resolved schema per supported combination, and a combination count over the
+   limit refused.
 
 ## Open questions
 
-1. **What does an evidence row contain?** It attaches to an `attempt_id`; whether it holds
-   a decoded uid, an image reference or a confidence value is undecided. *Lean: a decoded
-   uid plus an image reference. If a confidence value appears,
-   [ADR-0012](0012-observations-are-proposals.md) governs what may be done with it —
-   "this label was printed" asserted with a confidence is an observation.*
-2. **Retention.** Nothing prunes delivered outbox rows today, by 0259's deferral, and
-   `print_attempts` grows faster than the outbox. *Lean: decide both together.*
-3. **Template versioning across a pinned-revision bump.** A worker revision that changes
-   what a template name means will render queued jobs differently from how they were
-   intended. *Lean: the job carries the template name and the worker refuses a name it does
-   not know, dead-lettering rather than guessing — the same discipline `PAYLOAD_VERSION`
-   applies to payload shapes.*
-4. **What the capability document contains, as distinct from the settings schema.** The
-   settings schema says what an admin may configure; the capability document says what the
-   driver can do, and templates read it — two-colour availability, printable geometry,
-   whether the device reports completion. Its shape is undecided. *Lean: let the first
-   driver's document be whatever the first template needs, and standardise only the keys a
-   second driver family proves general.*
-5. **Which JSON Schema dialect, and which subset the form generator supports.** One
-   question: the generator's supported subset is what registration enforces. *Lean: a draft
-   the chosen PHP library implements, restricted to object schemas of scalar and enumerated
-   properties with titles and descriptions, with anything beyond that refused at
-   registration.*
+The boundaries above are decided; these are the values inside them, and they belong to the
+implementation plan rather than to this record.
+
+1. **The per-type evidence fields.** Decision item 5 fixes the five required fields and the
+   rule that images are storage references. Which optional fields each `evidence_type`
+   requires, and what a `printer_status` observation contains, follow from what the first
+   verifier can actually report.
+2. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
+   is never removed, and referential integrity. The numbers need a measured growth rate for
+   `print_evidence` images, which no deployment has yet.
+3. **Which capability keys a second driver family proves general.** Version 1 is the six
+   keys in decision item 3, and a second family is what shows whether any of them is
+   Brother-shaped or whether a seventh is missing. The contract is versioned so that finding
+   out is a version bump rather than a redesign.
+4. **The blocked-job backstop.** A job pinning a template version no deployed worker carries
+   returns to the queue indefinitely. Whether it should eventually become a dead letter, and
+   after what, depends on whether an operator-visible blocked count turns out to be enough
+   on its own.
 
 ## Research
 
@@ -655,6 +815,10 @@ Gates, not suggestions. Each is evidence the accepting pull request reports.
   therefore passes through it unexamined. `ExposedEntityNoEdit` holds fifteen entities
   today, so reading generically and writing through a purpose-built endpoint is an existing
   pattern.
+- The files API's `FileGroups` enum in `victual.openapi.json` holds five values
+  (`equipmentmanuals`, `recipepictures`, `productpictures`, `userfiles`, `userpictures`) and
+  is allow-listed on every file route; sweep finding S14 is the one place the tree fetches a
+  URL a plugin returned, and it is recorded as a finding. Checked 2026-09-06.
 - Plan 06 is wave 3b in the [plans index](../plans/README.md); wave 3b's row records 03 as
   complete and 06 as remaining, and notes that shared route and spec edits in that wave
   need coordination because 03 took the `ExposedEntity` enums.
