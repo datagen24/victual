@@ -247,9 +247,24 @@ Read the Docs runs a pinned PHAR where a developer runs the container, both read
 The build script therefore picks a runtime rather than requiring one: the container when a
 container runtime is present, the PHAR when `php` is, and neither when a contributor has
 only MkDocs — in which case the site still builds with the API reference section absent
-rather than the build failing. Pin the PHAR to a release rather than fetching the floating
-`https://phpdoc.org/phpDocumentor.phar`, so a documentation build is reproducible the way
-the rest of the repository's builds are.
+rather than the build failing.
+
+**Both are pinned to phpDocumentor 3.10.0**, released 2026-05-13, checked 2026-09-07:
+
+| Runtime | Pin |
+|---|---|
+| Container | `phpdoc/phpdoc@sha256:312ebf61ed88a6ea79aac768e43c9e9af0dd5bf3e710ed6d40ab8e53bfeeb121` (the multi-architecture manifest for `3.10.0`, so it resolves on arm64 and amd64 alike) |
+| PHAR | `https://github.com/phpDocumentor/phpDocumentor/releases/download/v3.10.0/phpDocumentor.phar`, 33,769,609 bytes, SHA-256 `fe1e7c23ba3329aa6f19ac3c807446159a431a195ec5d9163b0c281a15105207` |
+
+The release also carries a `phpDocumentor.phar.asc` signature. Verifying it needs the
+project's signing key, which is more machinery than a checksum in the repository buys back;
+the checksum is what the build asserts.
+
+Two consequences. `.github/CONTRIBUTING.md`'s `docker run --rm -v "$(pwd):/data"
+phpdoc/phpdoc:3` becomes the digest form, because a floating major tag defeats the point of
+pinning the PHAR. And an upgrade has to move both pins together: a mismatched pair produces
+two different references with nothing in the output to say so, which is what verification
+check 8 exists to catch.
 
 ### Generator: MkDocs
 
@@ -282,21 +297,37 @@ version: 2
 build:
   os: ubuntu-24.04
   tools:
-    python: "3.12"
+    python: "3.13"
   apt_packages:
     - php-cli
     - php-mbstring
   jobs:
     pre_build:
       - python3 .devtools/docs/stage.py
+python:
+  install:
+    - requirements: .devtools/docs/requirements.txt
 mkdocs:
   configuration: mkdocs.yml
 ```
 
-`apt_packages` and `build.jobs` coexist; only `build.commands`, the full override, excludes
-`apt_packages`, and this build does not need it. The staging script is the one entry point:
-it generates the API reference through whichever runtime it finds, assembles the tree, and
-rewrites the links.
+Four things about it are deliberate rather than copied from Read the Docs' starter template,
+which assumes Sphinx and leaves the Python requirements commented out.
+
+- **`mkdocs.configuration` replaces `sphinx.configuration`.** The two keys are mutually
+  exclusive and name the generator.
+- **`python.install` is not optional here.** MkDocs and Material are pip packages; without
+  this block the build has no generator and fails. `.devtools/docs/requirements.txt` pins
+  them by version, which is what Read the Docs' own reproducible-builds guidance asks for and
+  what the rest of this repository already does with its dependencies.
+- **`apt_packages` and `build.jobs` coexist.** Only `build.commands`, the full override,
+  excludes `apt_packages`, and this build does not need it.
+- **`python: "3.13"`** matches what the current starter template offers; nothing in the build
+  requires a specific minor version, and pinning it keeps the environment from moving under
+  the site.
+
+The staging script is the one entry point: it generates the API reference through whichever
+runtime it finds, assembles the tree, and rewrites the links.
 
 The repository is public and nothing published is private, so Read the Docs Community
 applies: free, advertisement-supported. Business at $50 per month buys nothing this needs.
@@ -452,33 +483,36 @@ whole site behind the slowest part of it.
    reference section absent rather than the build failing. A contributor with only MkDocs
    must be able to build the documentation.
 10. The Read the Docs build installs `php-cli` and `php-mbstring` and fetches the pinned
-    PHAR. This is the one step that assumes outbound network access from a Read the Docs
-    build beyond PyPI; confirm it on a real build rather than by reasoning, and if it is
-    blocked, vendor the PHAR or fall back to open question 4's alternatives.
-11. The build succeeds from a clean checkout with the committed configuration alone — no
+    PHAR, and the fetch is rejected when the SHA-256 does not match. This is the one step
+    that assumes outbound network access from a Read the Docs build beyond PyPI; confirm it
+    on a real build rather than by reasoning, and if it is blocked, vendor the PHAR.
+11. The container digest and the PHAR release name the same phpDocumentor version. A check
+    that reads both pins from their files and compares them fails on a half-finished
+    upgrade, which is cheaper than discovering it through check 8's file-list comparison.
+12. The build succeeds from a clean checkout with the committed configuration alone — no
     settings entered in a hosting dashboard — so the build is reproducible from the
     repository.
-12. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
+13. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
     and the same pull request skips the differential suite, confirming the check runs on the
     Markdown-only path rather than requiring a code change to trigger.
-13. The landing page of a site whose only section is Development tells a user looking for
+14. The landing page of a site whose only section is Development tells a user looking for
     installation help where to go. This is the cost of shipping the pieces in this order and
     it has to be paid on the page, not assumed away.
-14. No page in the Development section is incomprehensible without a plan. This is
+15. No page in the Development section is incomprehensible without a plan. This is
     [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s fourth acceptance
     prerequisite.
 
 ### Piece 2 — the Manual
 
-15. `docs/usage.md` is gone and nothing links to it:
+16. `docs/usage.md` is gone and nothing links to it:
     `grep -rn 'usage\.md' --include='*.md' .` returns only references to its new location.
-16. Every one of the 84 settings in `config-dist.php` appears in the Configuration part.
+17. Every one of the 84 settings in `config-dist.php` appears in the Configuration part.
     Compare against `grep -cE "^(if \(!defined|Setting\()" config-dist.php`; a setting in
     one and not the other is the defect this check exists to find.
-17. A reader following Getting started on a machine with no prior Victual installation
+18. A reader following Getting started on a machine with no prior Victual installation
     reaches a login prompt using only the Manual. Establish this against both installation
     paths — checkout and Nix images — since they diverge completely.
-18. The Manual contains no link into the Development section that a reader must follow to
+19. The Manual contains no link into the Development section that a reader must follow to
     complete an installation.
-19. The site's landing page no longer defers the Manual, and the notice added under piece 1
-    check 13 is removed.
+20. The site's landing page no longer defers the Manual, and the notice added under piece 1
+    check 14 is removed.

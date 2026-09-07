@@ -161,14 +161,19 @@ presentation cost; if they prove unacceptable the alternative is GitHub Pages, w
 plan 25's build and not this record.
 
 **The PHP API reference is generated two ways, because Read the Docs cannot run a
-container.** The container call stays the documented local path: it pins `phpdoc/phpdoc:3`
-and needs no PHP installed on the machine. Read the Docs installs `php-cli` and
-`php-mbstring` through `build.apt_packages` and runs a pinned phpDocumentor PHAR in a
-`build.jobs` hook instead. Both read the same `phpdoc.dist.xml` and write the same
-`.phpdoc/build`, so the output is the same and the documentation build script chooses
-whichever runtime is present. The cost is one branch in that script and a second thing to
-keep working; the alternative was a second host, and this keeps the site on the vehicle
-already chosen.
+container.** The container call stays the documented local path — it needs no PHP on the
+machine — and Read the Docs installs `php-cli` and `php-mbstring` through
+`build.apt_packages` and runs the phpDocumentor PHAR in a `build.jobs` hook. Both read the
+same `phpdoc.dist.xml` and write the same `.phpdoc/build`, and the build script uses
+whichever runtime is present.
+
+**Both runtimes are pinned to one phpDocumentor release, and the pins have to move
+together.** `.github/CONTRIBUTING.md` currently names the floating tag `phpdoc/phpdoc:3`;
+under this record it names a digest, and the PHAR is pinned to the matching release and
+checksum. Two pins for one version is a maintenance obligation an upgrade has to honour, and
+a mismatched pair is a real failure mode: the two paths would produce different references
+and nobody would notice from the output alone. Plan 25 carries a check that compares them,
+which is what makes the obligation enforceable rather than remembered.
 
 **The reference documents private members, and that was justified on a premise this record
 removes.** `phpdoc.dist.xml` includes `private` visibility with the comment "this is an
@@ -231,20 +236,15 @@ documentation that would substitute describes a different system.
    evaluating a Proposed record. Publishing it accepts a small amount of the staleness the
    plan exclusion exists to avoid.
 
-4. **Where does the documentation build run?** Narrowed by research after question 1 was
-   answered, and the narrowing favours staying put. Read the Docs cannot run the container
-   and cannot be handed a build made elsewhere — its API has no upload endpoint — but it can
-   install PHP, and phpDocumentor's requirements are modest enough that `php-cli` plus
-   `php-mbstring` meet them. So the site stays on Read the Docs and the build script carries
-   two ways to reach the same output, as the consequence above describes.
+4. **Where does the documentation build run, and does the build script carry two runtimes?**
 
-   What is left to decide is whether that split is acceptable, or whether one runtime
-   everywhere is worth more. Making the PHAR the only path removes the branch and the
-   `docker run` from `.github/CONTRIBUTING.md`, at the cost of requiring PHP 8.1.2 and
-   `mbstring` on a contributor's machine where today they need only Docker. Moving the whole
-   build to GitHub Actions and GitHub Pages also removes the branch, and costs Read the Docs'
-   pull-request previews and version selector plus a workflow holding write permission to the
-   repository.
+   > **Response** (maintainer, 2026-09-07): Keep the container branch, and pin the PHAR.
+
+   Settled. Read the Docs cannot run the container and cannot be handed a build made
+   elsewhere — its API has no upload endpoint — but it can install PHP, so the site stays on
+   Read the Docs and the build script reaches the same output either way. Both runtimes are
+   pinned to the same phpDocumentor release; see the consequence above for what that costs to
+   maintain.
 
 ## Acceptance prerequisites
 
