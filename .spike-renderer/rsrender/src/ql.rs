@@ -36,12 +36,16 @@ pub struct Job {
     /// agree with the resolution the artifact was rendered at, or the label comes out at twice
     /// or half its intended length — which is issue #90's failure arriving from the other end.
     pub dpi_600: bool,
+    /// The tape width the *loaded roll* is, in millimetres. It has to match what is in the
+    /// printer or the device refuses the job with "wrong roll type" — the declaration is a
+    /// claim about the media, not a request.
+    pub tape_mm: u8,
 }
 
 impl Default for Job {
     fn default() -> Self {
         Job { two_colour: false, cut_at_end: true, auto_cut: true, high_quality: true,
-              dpi_600: false }
+              dpi_600: false, tape_mm: 62 }
     }
 }
 
@@ -71,9 +75,19 @@ pub fn pack(ink: &[bool], width: usize, height: usize) -> Plane {
 pub fn build(black: &Plane, red: Option<&Plane>, rows: usize, job: &Job) -> Vec<u8> {
     let mut d: Vec<u8> = Vec::new();
 
+    // `ESC i a 1` goes **before** the invalidate as well as after the initialize, which is what
+    // `brother_ql` does and what this spike's first physical attempt did not.
+    //
+    // The reason is device state rather than protocol taste: a QL-820NWBc configured with
+    // "P-touch Template" emulation reads the incoming stream as template commands, so a raster
+    // job that only switches mode *after* the invalidate has already been misread by then — the
+    // printer answered "Wrong Roll Type / Check Print Data" while holding exactly the 62 mm
+    // continuous tape the job declared. The emulation mode is observed device state that a job
+    // has to assert over, not a setting the operator should have to change first.
+    d.extend_from_slice(b"\x1B\x69\x61\x01"); // ESC i a 1   raster mode
     d.extend(std::iter::repeat(0u8).take(INVALIDATE_BYTES)); // clear the command buffer
     d.extend_from_slice(b"\x1B\x40"); // ESC @   initialize
-    d.extend_from_slice(b"\x1B\x69\x61\x01"); // ESC i a 1   raster mode
+    d.extend_from_slice(b"\x1B\x69\x61\x01"); // ESC i a 1   raster mode, again
     d.extend_from_slice(b"\x1B\x69\x53"); // ESC i S   status information request
 
     // ESC i z — media and quality. Flags say which of the following fields are meaningful.
@@ -85,7 +99,7 @@ pub fn build(black: &Plane, red: Option<&Plane>, rows: usize, job: &Job) -> Vec<
     if job.high_quality { flags |= 1 << 6; }
     d.push(flags);
     d.push(0x0A); // endless label
-    d.push(62); // tape width, mm
+    d.push(job.tape_mm); // tape width, mm
     d.push(0); // length, 0 for endless
     d.extend_from_slice(&(rows as u32).to_le_bytes());
     d.push(0); // first page

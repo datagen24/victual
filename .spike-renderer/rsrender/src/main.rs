@@ -46,6 +46,7 @@ fn main() {
     let (mut dir, mut case_id, mut fonts, mut out) =
         (PathBuf::new(), String::new(), PathBuf::new(), PathBuf::new());
     let mut printer: Option<String> = None;
+    let mut media = String::from("62");
     let mut dry_run = false;
     while let Some(a) = args.next() {
         if a == "--dry-run" { dry_run = true; continue; }
@@ -56,11 +57,12 @@ fn main() {
             "--fonts" => fonts = PathBuf::from(v),
             "--out" => out = PathBuf::from(v),
             "--print" => printer = Some(v),
+            "--media" => media = v,
             _ => {}
         }
     }
     if printer.is_some() || dry_run {
-        match print_label(&dir, &case_id, &fonts, &out, printer.as_deref(), dry_run) {
+        match print_label(&dir, &case_id, &fonts, &out, printer.as_deref(), dry_run, &media) {
             Ok(report) => { println!("{}", report); return; }
             Err(e) => {
                 println!("{}", serde_json::json!({
@@ -258,7 +260,7 @@ fn render(dir: &Path, case_id: &str, fonts: &Path, out: &Path) -> Result<String,
 
 /// Render, threshold to ink, pack to QL raster, and either send it or report what it would be.
 fn print_label(dir: &Path, case_id: &str, fonts: &Path, out: &Path,
-               printer: Option<&str>, dry_run: bool) -> Result<String, Fail> {
+               printer: Option<&str>, dry_run: bool, media: &str) -> Result<String, Fail> {
     // The artifact is produced by exactly the same path as any other render — no separate
     // "printing" pipeline, so what goes on the tape is what the preview showed.
     let report = render(dir, case_id, fonts, out)?;
@@ -281,8 +283,23 @@ fn print_label(dir: &Path, case_id: &str, fonts: &Path, out: &Path,
             .map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{e}")))?)
         .map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{e}")))?;
     let dpi_y = prof["dpi_y"].as_f64().unwrap_or(300.0);
-    let job = ql::Job { two_colour: red.is_some(), dpi_600: dpi_y >= 600.0, ..Default::default() };
-    let stream = ql::build(&black, red.as_ref(), height, &job);
+    // Two-colour tape is a different roll type, not a rendering option: a job that declares
+    // plain media while 62red is loaded is refused by the device before anything prints. So the
+    // media the operator says is loaded decides the mode, and an empty red plane is still sent.
+    let two_colour = media == "62red" || red.is_some();
+    let job = ql::Job {
+        two_colour,
+        dpi_600: dpi_y >= 600.0,
+        tape_mm: 62,
+        ..Default::default()
+    };
+    let empty = ql::Plane(vec![0u8; ql::BYTES_PER_ROW * height]);
+    let red_plane: Option<&ql::Plane> = if two_colour {
+        Some(red.as_ref().unwrap_or(&empty))
+    } else {
+        None
+    };
+    let stream = ql::build(&black, red_plane, height, &job);
 
     let sent = if dry_run || printer.is_none() {
         std::fs::write(out.with_extension("prn"), &stream).ok();
@@ -304,6 +321,7 @@ fn print_label(dir: &Path, case_id: &str, fonts: &Path, out: &Path,
         "raster_bytes": stream.len(),
         "bytes_sent": sent,
         "printer": printer.unwrap_or("(none: wrote .prn)"),
+        "media": media,
     }).to_string())
 }
 
