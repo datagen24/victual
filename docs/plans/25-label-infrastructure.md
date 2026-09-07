@@ -70,14 +70,6 @@ and a separate worker pulls print jobs over an authenticated API* — reached th
   Nine tables rather than the one `label_printers` this plan first sketched. A printer's
   settings are validated against the schema its driver advertises, so a second driver family
   is a registration rather than a migration.
-
-And one thing went the other way. Writing migration 0270 against the record found decision
-item 5 requiring a job row — `attempts_authorized`, `current_attempt_id`, the job's outcome —
-that none of the eight tables it named was, and that could not go on the shared `outbox`
-without breaking the very rule the record relies on to reuse it. **That was fixed in ADR-0019
-on 2026-09-07 rather than worked around here**, which is what a Proposed record is for: it now
-names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
-compensates for a gap in a record leaves the next reader of the record with the gap.
 - **This plan's delivery policy was wrong and is replaced.** The first draft argued for
   automatic retry on the grounds that a duplicate label is cheaper than a silent gap. ADR-0019
   decision item 6 decides the opposite: **no automatic redispatch after a claimed attempt**.
@@ -86,6 +78,14 @@ compensates for a gap in a record leaves the next reader of the record with the 
   redispatching resolves the ambiguity by guessing, and guesses in the direction that prints.
   What a person has and Victual does not is the ability to look at the printer. The corrected
   policy is in piece 2.
+
+And one thing went the other way. Writing migration 0270 against the record found decision
+item 5 requiring a job row — `attempts_authorized`, `current_attempt_id`, the job's outcome —
+that none of the eight tables it named was, and that could not go on the shared `outbox`
+without breaking the very rule the record relies on to reuse it. **That was fixed in ADR-0019
+on 2026-09-07 rather than worked around here**, which is what a Proposed record is for: it now
+names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
+compensates for a gap in a record leaves the next reader of the record with the gap.
 
 ## Gates
 
