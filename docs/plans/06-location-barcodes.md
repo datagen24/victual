@@ -68,11 +68,32 @@ the print job, the printer configuration and the worker that renders were all un
 that plan's first usable release: the point at which a label requested in Victual physically
 comes off the printer. The division is:
 
-- **25:** opaque identities and their resolution, the transactional print job and its
-  delivery semantics, printer configuration and print-job monitoring, and the worker
+- **25:** opaque identities and the authorized resolution API, the transactional print job
+  and its delivery semantics, printer configuration and print-job monitoring, and the worker
   repository that renders and prints.
-- **06, unchanged:** the locations print action on the list and the form, and what the label
-  says and where it goes. Everything in the bullets above stays this plan's.
+- **06:** the locations print action on the list and the form, what the label says and where
+  it goes, and — added 2026-09-07 — **the surface that resolves a scanned `vctl:` code to its
+  location**. Everything in the bullets above stays this plan's.
+
+### The scan surface, and why it is not the thing this plan deferred
+
+A label nobody can scan back does not close [issue 79](https://github.com/datagen24/victual/issues/79),
+whose third criterion is that a printed label scans to the correct location *for an authorized
+user*. 25 owns the resolution API; nothing owned the place a person uses it, which is a
+locations UI question and therefore this plan's.
+
+**It is not the "current location" notion deferred on 2026-09-04, and the distinction is the
+whole reason this can be added without reopening that decision.** What was deferred is a
+*session* concept: scan the shelf, and subsequent scans of items are booked against it. That
+touches the stock forms, it holds state between requests, and it still gets its own plan after
+[08](08-nested-locations.md). What is added here is **stateless**: a `vctl:` code entered or
+scanned resolves to one location and shows it. Nothing is remembered, no stock form changes,
+and no booking targets it. If an implementation of this starts holding a selected location
+across requests, it has crossed into the deferred plan and should stop.
+
+Resolution stays authorized by the permission that reads a location, per 25 piece 1 — an
+unknown uid, a retired uid and a uid the caller may not read are three distinguishable
+outcomes, and the third leaks nothing about existence.
 
 What this plan may not do while the two are in flight is route around 25 to ship something
 sooner. Location printing does not extend `VICTUAL_LABEL_PRINTER_WEBHOOK` and emits no

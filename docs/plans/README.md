@@ -23,7 +23,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 03 | [Category minimum stock](03-category-min-stock.md) | Landed | Wave 3b; PostgreSQL; migration 0268. Note-only shopping list row (Q1) remains a follow-up. |
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
-| 06 | [Location barcodes](06-location-barcodes.md) | Draft | Wave 3b. Depends on 25's first usable release — the point at which a requested label physically prints. 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning is deferred to a separate plan after 08. |
+| 06 | [Location barcodes](06-location-barcodes.md) | Draft | Wave 3b, [issue 79](https://github.com/datagen24/victual/issues/79). Depends on 25's first usable release — the point at which a requested label physically prints. Owns the print actions, the label's content and placement, and the stateless surface that resolves a scanned `vctl:` code to its location. 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning — the session concept — is still deferred to a separate plan after 08. |
 | 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work. |
 | 08 | [Nested locations](08-nested-locations.md) | Draft | 12 and 14's fixture tooling. |
 | 09 | [US barcode lookup sources](09-barcode-lookup-sources.md) | Deferred | Q1's kitchen experiment; S14 before adding sources. |
@@ -42,7 +42,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
 | 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
-| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b; owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. Migrations 0269–0270. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
+| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. Migrations 0269–0270, nine tables. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 
 ## Order of operations
 

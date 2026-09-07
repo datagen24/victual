@@ -282,10 +282,16 @@ already on the network over TCP.
 
 ### Piece 5 — the consumer
 
-[06](06-location-barcodes.md) owns the locations print action on the list and the form, and
-what the label says. Named here so the seam is explicit: 06 depends on this plan's first
-usable release, meaning pieces 1 through 4 delivered far enough that a requested label
-physically prints.
+[06](06-location-barcodes.md) owns the locations print action on the list and the form, what
+the label says, and the surface that resolves a scanned `vctl:` code to its location. Named
+here so the seam is explicit: 06 depends on this plan's first usable release, meaning pieces 1
+through 4 delivered far enough that a requested label physically prints.
+
+**This plan owns the resolution API; 06 owns the place a person uses it.** That split was left
+implicit until 2026-09-07 and the consequence was a gap — a label nobody could scan back,
+against a closing criterion that requires exactly that. 06 also draws the line that keeps its
+new surface stateless, and so distinct from the "current location" session concept it deferred
+on 2026-09-04.
 
 The human-readable line carries the location **name** in wave 3b.
 [08](08-nested-locations.md) adds the tree path later, and 06's Q5 response is unchanged by
