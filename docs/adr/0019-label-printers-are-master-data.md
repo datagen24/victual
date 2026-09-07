@@ -492,9 +492,14 @@ printer family: a Brother QL supports red only on `62red` tape, and not at every
 by a QL-820NWBc with "Communications Command Error", while the same content at two-colour and
 300 dpi printed correctly. The capability document written for gate 5 has `62red` at 300 × 300
 and no 600 dpi row, so it had already said that combination does not exist — the job simply
-never consulted it. Which is the second half of this rule and is now also evidence: **a job must
-be validated against `combinations` before it is built**, not only when a printer's settings are
-written, or an impossible job reaches the device and fails in front of the operator.
+never consulted it.
+
+**So the combination is validated twice, and both are required.** Once **at enqueue**, against
+the driver's `combinations`, so an impossible job is refused where the person asking can see
+it; and again **against the printer's resolved configuration immediately before device I/O**,
+because a printer's media or driver version may have changed between the two moments. The
+proof obligation is specific: an unsupported two-colour-at-600-dpi request must result in
+**zero bytes reaching the device**, asserted rather than assumed.
 Each entry names a `model`, a `media`, a `resolution_x` and `resolution_y` in dpi, and a
 `color_mode` — and carries the geometry for that entry alone:
 
@@ -549,24 +554,44 @@ keeps them apart:
 | Observed | What the device currently reports | `label_printer_status` | A worker, reporting |
 
 **A job asserts its own command mode; the device's configured emulation is not a
-precondition.** Verified 2026-09-07 on a QL-820NWBc: the identical byte stream printed
-correctly with the printer set to Raster and again with it set to P-touch Template, provided
-`ESC i a 01` leads the stream as well as following the initialize. So nothing about command
+precondition, and no configuration setting is needed.** Verified 2026-09-07 on a QL-820NWBc:
+the identical byte stream printed correctly with the printer set to Raster and again with it
+set to P-touch Template, because the stream establishes raster mode itself. **The leading
+`ESC i a 01` is preserved** — every stream that printed had it before the invalidate as well as
+after the initialize, and whether a trailing-only switch would suffice is **unverified**. So nothing about command
 mode belongs in `label_printers` or in a deployment step — Victual drives a QL as it finds it.
 Recorded because it was wrongly suspected first: a "Wrong Roll Type" refusal was read as an
 emulation problem when it was a media mismatch, and the printer's own status page reports
 `62mm` without distinguishing two-colour tape, which is what made the two indistinguishable
 from outside.
 
-**`completion_evidence` is a property of the transport, not of the driver family.** The same
-QL-820NWBc answers nothing to a status request on raw port 9100 — tested after the mode switch
-was known to be honoured, so the null result is not an artefact of the wrong emulation — while
-the same device has IPP and AirPrint enabled, and IPP answers `job-state` the way the laser
-family does. A driver reaching a printer over 9100 can honestly claim only `transport`; the
-same driver over IPP could claim `device_reported`. Version 1 attaches `completion_evidence`
-to the driver, which cannot express that, so a driver serving both transports must state the
-weaker of the two or overclaim. **An amendment before acceptance:** it belongs per
-`connection_type`, or per combination, rather than once per driver.
+**Evidence and capability are properties of the driver, the connection type and the
+combination together — not of the driver alone.** Version 1 attaches `completion_evidence` once
+per driver, and one device demonstrated on 2026-09-07 that this cannot be expressed:
+
+| QL-820NWBc | raw port 9100 | IPP |
+|---|---|---|
+| Two-colour | works | declared `monochrome, auto, auto-monochrome` |
+| Declared formats | not applicable | `application/octet-stream`, `image/urf` |
+| Resolution | 300 or 600 dpi | `300dpi` |
+| Delivery evidence | **none** — no reply to a status request | `job-state`, `job-impressions-completed` |
+
+The same driver is therefore `transport` over one connection type and `device_reported` over
+the other, and its *supported combinations* differ too: no `black_red` row exists over IPP.
+
+**And the declared IPP attributes understate the device.** The identical two-colour raster,
+submitted over IPP as `application/octet-stream`, printed the same black-and-red label and the
+job reached `job-state = completed`, `job-completed-successfully`,
+`job-impressions-completed = 1`. So `application/octet-stream` is a passthrough, and what IPP
+*declares* describes its own driver path rather than what the device does when handed native
+commands. A capability document that reads only the declared attributes would record a
+monochrome 300 dpi printer that cannot do what this one just did.
+
+**Amendment owed before acceptance:** `completion_evidence` and `artifact_forms` move from the
+driver to the `(driver, connection_type, combination)` triple. **Until each path is
+demonstrated on its own terms, each keeps what it has been shown to do** — `transport` for the
+tested raw-9100 path, and `device_reported` for the tested IPP passthrough, neither inferred
+from the other.
 
 Registration advertises support; **it does not prove that an attached printer currently has
 the capability available.** A driver supporting `62red` and a printer configured for `62red`

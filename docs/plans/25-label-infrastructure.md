@@ -358,6 +358,14 @@ configuration and encode it for the device. The two may share a repository or a 
 and their contracts stay separate — a render may be retried automatically because it cannot
 touch a printer, and no rendering retry becomes a second physical attempt.
 
+**Rendering and delivery are separate invocations even when they share a binary.** One Rust
+program renders a label and drives the device, which is a packaging convenience and must not
+become a coupling: a render is retried automatically precisely because it cannot touch a
+printer, and a delivery is never retried automatically at all. So the render invocation is
+given **no printer access** — no address, no socket — and an automatically retried render can
+therefore not print by construction rather than by discipline. Sharing code between them is
+fine; sharing an invocation is not.
+
 **The worker is Rust and carries no interpreter** (maintainer, 2026-09-07). The packaging gate
 found that nixpkgs' CPython references bash — through `subprocess.py`, `python3-config` and
 `ctypes/macholib/fetch_macholib` — so a Python worker ships an executable shell; removing the
@@ -533,9 +541,13 @@ surface now lives, rather than a waiver.
 5. A print request and its `labels` row are one transaction: a forced rollback leaves neither.
 6. **A job whose `(model, media, resolution, colour_mode)` is absent from the driver's
    `combinations` is refused at enqueue**, naming what is unsupported — not built, not sent, and
-   not left to fail at the device. Demonstrated the wrong way round on 2026-09-07: a two-colour
-   job at 600 dpi was assembled and sent, and the QL-820NWBc refused it with "Communications
-   Command Error" although the capability document already said that combination does not exist.
+   not left to fail at the device — **and checked again against the printer's resolved
+   configuration immediately before device I/O**, because media or driver version may have
+   changed in between. The assertion is that an unsupported two-colour-at-600-dpi request
+   results in **zero bytes reaching the device**, counted rather than assumed. Demonstrated the
+   wrong way round on 2026-09-07: such a job was assembled and sent, and the QL-820NWBc refused
+   it with "Communications Command Error" although the capability document already said that
+   combination does not exist.
 7. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
    another, and authorization is refused while an attempt is still running and refused again
    while an authorization it already granted is unused.
