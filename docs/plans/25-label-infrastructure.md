@@ -358,6 +358,19 @@ configuration and encode it for the device. The two may share a repository or a 
 and their contracts stay separate — a render may be retried automatically because it cannot
 touch a printer, and no rendering retry becomes a second physical attempt.
 
+**The worker is Rust and carries no interpreter** (maintainer, 2026-09-07). The packaging gate
+found that nixpkgs' CPython references bash — through `subprocess.py`, `python3-config` and
+`ctypes/macholib/fetch_macholib` — so a Python worker ships an executable shell; removing the
+reference means rebuilding the Python package set under an interpreter that breaks the test
+suites of anything shelling out, cffi and six included. A Rust worker satisfies
+[ADR-0013](../adr/0013-nix-built-container-images.md) with nothing removed: **62,644,200 bytes
+over seven store paths, zero shell or interpreter references**, rendering and driving the device
+in one binary.
+
+`brother_ql-inventree` therefore becomes a **reference for constants rather than a dependency** —
+90 bytes per row and 400 invalidate bytes from its `models.py`, 732/696/12/35 for label `62`
+from its `labels.py`. What a QL actually needs is the raster command stream and a socket.
+
 - **Why separate.** [20](20-container-infrastructure.md) piece 5 says the print drainer is
   "an image in this flake". That stays true and is not in tension with a separate repository:
   the flake owns the image, the pin and the deployment; the other repository owns the driver
@@ -378,8 +391,8 @@ touch a printer, and no rendering retry becomes a second physical attempt.
   a pairing session on a long absolute clock. The session, not the rotation, is what bounds a
   stolen credential. Wave 3b needs only the declared mode; the paired mode is what the USB
   case will want and its rules are decided rather than built.
-- **Seed material.** The prototype at `grocy-label-printer-brother` supplies the device half:
-  the `brother_ql` raster and transport path, and its tests. Its Flask `/print` route is the
+- **Seed material.** The prototype at `grocy-label-printer-brother` documents the device half —
+  the raster and transport path — and is read for its constants rather than ported. Its Flask `/print` route is the
   webhook ADR-0011 retires and does not survive the port. Its **imaging** code — layout,
   endless versus die-cut, 2-colour, short-date highlighting — is seed material for
   [27](27-label-templates-and-rendering.md)'s renderer rather than for this worker, and the
@@ -518,13 +531,18 @@ surface now lives, rather than a waiver.
    re-key check the plan carried until 2026-09-07: ADR-0021 decision item 3 withdrew that
    obligation as unimplementable, because no source the importer accepts can carry a label.
 5. A print request and its `labels` row are one transaction: a forced rollback leaves neither.
-6. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
+6. **A job whose `(model, media, resolution, colour_mode)` is absent from the driver's
+   `combinations` is refused at enqueue**, naming what is unsupported — not built, not sent, and
+   not left to fail at the device. Demonstrated the wrong way round on 2026-09-07: a two-colour
+   job at 600 dpi was assembled and sent, and the QL-820NWBc refused it with "Communications
+   Command Error" although the capability document already said that combination does not exist.
+7. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
    another, and authorization is refused while an attempt is still running and refused again
    while an authorization it already granted is unused.
    **A regression for starvation:** with an exhausted job ordered ahead of an eligible one, a
    claim returns the eligible job rather than a refusal. That is the defect the gate 2 spike
    found, and a suite that only ever holds one job cannot see it.
-7. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
+8. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
    job and produces **no second print**. A worker that rotates its credential mid-attempt keeps
    that attempt: the superseded credential is refused without discarding anything, and the
    successor's report lands on the same attempt. A report arriving **after** the lease expired is
@@ -533,25 +551,30 @@ surface now lives, rather than a waiver.
    twice. Two concurrent claims against one authorization
    produce one attempt. A late result from a superseded attempt is recorded on its own row
    while completing nothing; a late heartbeat for it is refused.
-8. A payload a version cannot read is dead-lettered with a reason, and does not block the rows
+9. A payload a version cannot read is dead-lettered with a reason, and does not block the rows
    queued behind it. A job whose validated artifact is not yet attached is **not claimable**;
    one whose target printer's worker does not accept the job's artifact and profile contract
    versions records `blocked` naming what is missing, and does not fall back to the latest.
-9. A worker key is refused on a route it is not authorized for, and a revoked key is refused
+10. A worker key is refused on a route it is not authorized for, and a revoked key is refused
    everywhere while the printer's assignment to its worker row survives the revocation.
-10. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
+11. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
     with no shell, per `nix/checks.nix`. The worker's deploy manifest passes
     `.devtools/ci/check_deploy_manifest.py` — health probes and resource limits — which
     [ADR-0010](../adr/0010-workload-standard.md)'s acceptance made a binding condition of a
     workload shipping rather than a proposed one.
-11. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
-12. **A physical location label is printed, and scanned back to the correct location by an
+12. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
+13. **A physical location label is printed, and scanned back to the correct location by an
     authorized user.** This is the check the plan exists for and no earlier check substitutes
     for it.
-13. Issue #90's assertion — zero resize calls across `convert()` for `62` and `62red` at both
+    **The device half was demonstrated 2026-09-07**, ahead of the application half: a
+    two-colour label printed on the QL-820NWBc from the Rust encoder over raw port 9100 and
+    scanned back to its uid. What that does not yet cover is the path *through Victual* — a
+    label requested, a job enqueued, an artifact attached, a worker claiming it — which is what
+    this check is finally about.
+14. Issue #90's assertion — zero resize calls across `convert()` for `62` and `62red` at both
     DPI settings — passes in the worker repository, and the rotation sign is confirmed by a
     printed label rather than by reading.
-14. A failure is demonstrated end to end: printer unreachable, the job visible as failed with
+15. A failure is demonstrated end to end: printer unreachable, the job visible as failed with
     its error, a person authorizing a second attempt naming the first, and the label printing
     when the printer returns.
 

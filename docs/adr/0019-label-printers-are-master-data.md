@@ -93,6 +93,14 @@ reach the printer.
 
 ### 1. Ownership: the worker's source is a separate repository
 
+**The worker carries no interpreter** (2026-09-07). Its language is not this record's to fix
+in general, but the decision behind the current one belongs here because it changes what
+"packages as an image on no base image" costs: a Python worker cannot satisfy
+[ADR-0013](0013-nix-built-container-images.md)'s no-shell property without rebuilding the
+Python package set under an interpreter that breaks their test suites, and a Rust one satisfies
+it with nothing removed. The Brother driver is reimplemented against the published constants
+rather than depended on — the part a QL needs is the raster command stream and a socket.
+
 | Owned by this repository | Owned by the worker repository |
 |---|---|
 | The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the settings schema and capability document each advertises |
@@ -479,6 +487,14 @@ Version 1 carries:
 **`combinations` is a list, not the product of several lists.** Independent lists of media,
 resolutions and colour modes claim every crossing of them works, which is false of every
 printer family: a Brother QL supports red only on `62red` tape, and not at every resolution.
+
+**Demonstrated on hardware, 2026-09-07.** A job declaring two-colour *and* 600 dpi was refused
+by a QL-820NWBc with "Communications Command Error", while the same content at two-colour and
+300 dpi printed correctly. The capability document written for gate 5 has `62red` at 300 × 300
+and no 600 dpi row, so it had already said that combination does not exist — the job simply
+never consulted it. Which is the second half of this rule and is now also evidence: **a job must
+be validated against `combinations` before it is built**, not only when a printer's settings are
+written, or an impossible job reaches the device and fails in front of the operator.
 Each entry names a `model`, a `media`, a `resolution_x` and `resolution_y` in dpi, and a
 `color_mode` — and carries the geometry for that entry alone:
 
@@ -1348,11 +1364,27 @@ a generated form, authentication and authorization end to end, a real upgrade �
 the plan that owns this work, which does not exist yet. Putting it here would require the
 subsystem to be built before the architecture authorizing it is accepted.
 
-1. **The worker packages as an image on no base image.** `brother-ql-inventree` is not in
-   nixpkgs, and a packaging failure would invalidate plan 20 piece 5's designation. A built
-   image from a pinned revision through `nix/images/lib.nix`, passing `nix flake check`
-   including `image-has-no-shell`, with its closure size recorded. The pinned revision may
-   be a scratch branch.
+1. **The worker packages as an image on no base image.** A built image from a pinned revision
+   through `nix/images/lib.nix`, passing `nix flake check` including `image-has-no-shell`, with
+   its closure size recorded. The pinned revision may be a scratch branch.
+
+   **Run 2026-09-07, and the answer changed what the worker is.** Packaging
+   `brother-ql-inventree` was easy — every dependency it declares is in nixpkgs — but the
+   *interpreter* was not: nixpkgs' CPython references bash from `subprocess.py`,
+   `python3-config` and `ctypes/macholib/fetch_macholib`, so a Python image ships an executable
+   shell and this check fails, correctly. Removing the reference is possible and was
+   demonstrated, at a price: `self = pythonNoShell` rebinds the package set, the set is then
+   rebuilt by an interpreter that cannot run a shell, and every dependency whose test suite
+   shells out fails — cffi first, then six through `subprocess.getstatusoutput`, a stdlib
+   function that is `shell=True` by definition.
+
+   **So the worker is written in Rust and carries no interpreter** (maintainer, 2026-09-07).
+   The measured artifact renders *and* drives the device in one binary: **62,644,200 bytes over
+   seven store paths, zero shell or interpreter references** — glibc, libgcc, libidn2,
+   libunistring and itself. `brother_ql-inventree` becomes a **reference for constants** rather
+   than a dependency: 90 bytes per row and 400 invalidate bytes from its `models.py`, and
+   732/696/12/35 for label `62` from its `labels.py`. A two-colour label printed from that
+   binary on the QL-820NWBc on 2026-09-07 and scanned back to its uid.
 2. **Claiming, fencing, pairing and crash-after-send behave as decision items 2, 5 and 6
    specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
