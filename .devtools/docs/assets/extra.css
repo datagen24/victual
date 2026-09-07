@@ -1,0 +1,50 @@
+/* The diagram-design skin's families, so an inlined diagram renders in the type it
+   was drawn for rather than in the theme's Roboto. */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
+
+/* Victual's palette, from branding/logo.svg and branding/color_scheme.txt.
+   These target [data-md-color-primary=custom] rather than :root because the theme
+   sets its own values through that attribute, which outranks a :root declaration —
+   hence `primary: custom` and `accent: custom` in mkdocs.yml. */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color:        #174b3a;
+  --md-primary-fg-color--light: #2a6b54;
+  --md-primary-fg-color--dark:  #0f3527;
+  --md-primary-bg-color:        #f2e7d3;
+  --md-primary-bg-color--light: rgba(242, 231, 211, 0.7);
+}
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #c85a3d;
+}
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: #e07a57;
+}
+
+/* The header is the brand's deep green and the mark is drawn in it, so the header
+   carries the cream variant the staging script writes. Both colours are the
+   brand's; this is a recolour within the palette, not a filter. */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  content: url("icon-dark.svg");
+}
+
+/* An inlined diagram keeps the width it was drawn at and scrolls inside its own
+   box, rather than shrinking to unreadable on a narrow screen. The page body must
+   never scroll sideways because of one. */
+.diagram {
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+}
+.diagram svg {
+  display: block;
+  width: 100%;
+  min-width: var(--diagram-min-width, 1100px);
+}
+
+/* The wordmark on the home page: cream strokes on dark, green on light. Qualified
+   with .md-typeset because the theme's own `img` rule would otherwise win. */
+.md-typeset img.wordmark { max-width: 280px; margin: 0 0 1rem; }
+[data-md-color-scheme="slate"] .md-typeset img.wordmark.light,
+[data-md-color-scheme="default"] .md-typeset img.wordmark.dark { display: none; }

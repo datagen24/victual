@@ -92,6 +92,11 @@ def rewrite_link(target: str, source_repo_path: str, staged_path: str) -> str:
         return target
 
     destination = staged_for(resolved)
+    # A diagram is staged both as the standalone file and as a page of the site.
+    # Links from prose should land on the page, which carries the navigation; the
+    # "open on its own page" link each page writes for itself keeps the file.
+    if destination and destination.startswith("development/diagrams/") and destination.endswith(".html"):
+        destination = destination[: -len(".html")] + ".md"
     if destination is None:
         # Not published. Point at the repository, and keep a trailing slash meaning
         # "directory" so the URL lands on a tree listing rather than a 404.
@@ -213,6 +218,63 @@ def build_api_reference(out: Path, cache: Path) -> bool:
     return True
 
 
+BRAND_INK = "#174B3A"
+BRAND_CREAM = "#F2E7D3"
+
+
+def stage_brand_assets(out: Path) -> None:
+    """Copy the marks, plus a cream variant of each for the dark scheme.
+
+    Both marks are drawn in the brand's deep green, which disappears on a dark
+    header. The variant swaps that one fill for the brand's cream: both values are
+    from `branding/color_scheme.txt` and the logo itself, so this recolours within
+    the palette rather than inventing one.
+    """
+    assets = out / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    for name in ("icon.svg", "logo.svg"):
+        source = (REPO / "branding" / name).read_text()
+        (assets / name).write_text(source, encoding="utf-8")
+        (assets / f"{Path(name).stem}-dark.svg").write_text(
+            source.replace(BRAND_INK, BRAND_CREAM), encoding="utf-8"
+        )
+    shutil.copy2(REPO / "branding/icon-32.png", assets / "icon-32.png")
+    shutil.copy2(Path(__file__).parent / "assets/extra.css", assets / "extra.css")
+
+
+SVG_BLOCK = re.compile(r"(<svg\b.*?</svg>)", re.S)
+H1 = re.compile(r"<h1>(.*?)</h1>", re.S)
+MIN_WIDTH = re.compile(r"min-width:\s*(\d+)px")
+
+
+def stage_diagram_pages(out: Path) -> None:
+    """Turn each generated diagram into a page of the site.
+
+    The diagrams are self-contained HTML, and copying them through leaves a reader
+    on a bare page with no navigation. Lifting the `<svg>` into a Markdown page puts
+    them inside the site instead; the standalone file stays beside each one, because
+    a full-bleed ERD is genuinely easier to read at its own size.
+    """
+    staged = out / "development/diagrams"
+    for html in sorted(staged.glob("*.html")):
+        source = html.read_text()
+        svg = SVG_BLOCK.search(source)
+        heading = H1.search(source)
+        if not svg or not heading:
+            raise SystemExit(f"{html.name} is not a generated diagram: no <svg> or <h1>")
+        width = MIN_WIDTH.search(source)
+        min_width = int(width.group(1)) if width else 1100
+        title = re.sub(r"<[^>]+>", "", heading.group(1)).strip()
+        (staged / f"{html.stem}.md").write_text(
+            f"# {title}\n\n"
+            f'<div class="diagram" style="--diagram-min-width: {min_width}px">\n'
+            f"{svg.group(1)}\n</div>\n\n"
+            f"[Open this diagram on its own page]({html.name}), without the site around "
+            "it.\n",
+            encoding="utf-8",
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -242,6 +304,9 @@ def main() -> int:
 
     for name in ("index.md", "development/index.md"):
         shutil.copy2(Path(__file__).parent / "pages" / name, out / name)
+
+    stage_brand_assets(out)
+    stage_diagram_pages(out)
 
     pages = sum(1 for _ in out.rglob("*.md"))
     try:

@@ -29,6 +29,29 @@ published becomes a relative link to its new home; a link to anything else — a
 source file, a migration — becomes an absolute GitHub URL. Sources are never modified, so
 the same link text keeps working when the file is read on GitHub.
 
+## Branding and diagrams
+
+`stage.py` also stages three things the repository does not keep in a documentation
+directory.
+
+- **The marks**, from `branding/`. Both are drawn in the brand's deep green, which is also
+  the header colour, so the script writes a cream variant of each by swapping that one fill;
+  both values come from the brand palette, so this is a recolour within it rather than an
+  invented colour. `assets/extra.css` uses the cream mark in the header and switches the
+  home page's wordmark by colour scheme.
+- **The generated diagrams**, as pages. Each `docs/diagrams/*.html` is self-contained, and
+  copying it through leaves a reader on a bare page with no navigation. The script lifts the
+  `<svg>` out and writes a Markdown page around it, so the diagram sits inside the site with
+  its nav and search. Links from prose are rewritten to the page; the standalone file stays
+  beside it, and each page links to it, because a full-bleed ER diagram is genuinely easier
+  to read at its own size.
+- **`assets/extra.css`**, which carries the palette, the diagram's scroll container, and the
+  font families the diagrams were drawn in.
+
+The palette overrides target `[data-md-color-primary="custom"]` rather than `:root`, and
+`mkdocs.yml` sets `primary: custom` and `accent: custom` to match. The theme sets its own
+values through that attribute, and an attribute selector outranks `:root`.
+
 `PAGES` and `TREES` at the top of the script are the whole map. Adding a page to the site
 means adding a line there and a `nav` entry in `mkdocs.yml`; a page in one and not the other
 fails `mkdocs build --strict`, which is the point.

@@ -1,3 +1,6 @@
+<img class="wordmark light" src="assets/logo.svg" alt="Victual">
+<img class="wordmark dark" src="assets/logo-dark.svg" alt="Victual">
+
 # Victual
 
 Victual is a self-hosted groceries and household management application, maintained by
