@@ -25,7 +25,7 @@ fn f(v: &Value, k: &str) -> f32 { v.get(k).and_then(|x| x.as_f64()).unwrap_or(0.
 fn measure(text: &str, family: &str, font_px: f32, db: &fontdb::Database) -> f32 {
     if text.is_empty() { return 0.0; }
     let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100000" height="1000"><text x="0" y="500" font-family="{}" font-size="{}">{}</text></svg>"#,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="100000" height="1000"><text x="0" y="500" font-family="{}" font-size="{}">{}</text></svg>"##,
         family, font_px, escape(text));
     let mut opt = usvg::Options::default();
     opt.fontdb = std::sync::Arc::new(db.clone());
@@ -172,13 +172,13 @@ fn render(dir: &Path, case_id: &str, fonts: &Path, out: &Path) -> Result<String,
     // Assemble. Text sits inside an anisotropic scale so outlines — not pixels — are
     // stretched; every y inside that group is divided by the scale to stay in place.
     let mut svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect width="100%" height="100%" fill="#ffffff"/>"#,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect width="100%" height="100%" fill="#ffffff"/>"##,
         w = width, h = height as u32);
 
     if let Some(r) = rect_el {
         if case.get("accent").and_then(|v| v.as_bool()).unwrap_or(false) {
             svg.push_str(&format!(
-                r#"<rect x="{}" y="{}" width="{}" height="{}" fill="#ff0000"/>"#,
+                r##"<rect x="{}" y="{}" width="{}" height="{}" fill="#ff0000"/>"##,
                 px_x(f(&r["at"], "x_mm")), px_y(f(&r["at"], "y_mm")),
                 px_x(f(&r["size"], "width_mm")), px_y(f(&r["size"], "height_mm"))));
         }
@@ -190,17 +190,17 @@ fn render(dir: &Path, case_id: &str, fonts: &Path, out: &Path) -> Result<String,
         for x in 0..qr_total {
             if qr.get_module(x - quiet, y - quiet) {
                 svg.push_str(&format!(
-                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="#000000" shape-rendering="crispEdges"/>"#,
+                    r##"<rect x="{}" y="{}" width="{}" height="{}" fill="#000000" shape-rendering="crispEdges"/>"##,
                     qx + x as f32 * mod_x, qy + y as f32 * mod_y, mod_x, mod_y));
             }
         }
     }
 
     let tx = px_x(f(&text_el["box"], "x_mm"));
-    svg.push_str(&format!(r#"<g transform="scale(1,{aniso})" font-family="{family}" font-size="{font_px_x}" fill="#000000">"#));
+    svg.push_str(&format!(r##"<g transform="scale(1,{aniso})" font-family="{family}" font-size="{font_px_x}" fill="#000000">"##));
     for (i, l) in lines.iter().enumerate() {
         let baseline_y = (text_top + line_h_y * (i as f32 + 1.0)) / aniso;
-        svg.push_str(&format!(r#"<text x="{tx}" y="{baseline_y}">{}</text>"#, escape(l)));
+        svg.push_str(&format!(r##"<text x="{tx}" y="{baseline_y}">{}</text>"##, escape(l)));
     }
     svg.push_str("</g></svg>");
     std::fs::write(out.with_extension("svg"), &svg).ok();
