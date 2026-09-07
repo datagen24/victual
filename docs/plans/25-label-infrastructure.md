@@ -102,8 +102,12 @@ the nine worker routes, and delivery. Three consequences inside it:
 
 - **Piece 3's migration 0270 carries eight tables, not nine.** `label_templates` moves to 27
   and becomes Victual's template identity; workers advertise the **artifact and profile
-  contract versions** they accept rather than the layouts they carry, which is ADR-0019
-  decision item 3's registration rule reconciled rather than dropped.
+  contract versions** they accept rather than the layouts they carry.
+  **ADR-0019's decision items 1, 2 and 3 were reconciled in place on 2026-09-07** and now say
+  this — a Proposed record is edited rather than compensated around. What that reconciliation
+  deliberately left alone is named at the end of its item 3: what a job pins, and the claim
+  precondition that matches a template version, both of which wait on ADR-0021's artifact
+  format.
 - **Piece 2's job gains a readiness condition.** A job exists while its render is pending and
   **is not claimable until a validated artifact is attached**, so claimability reads readiness
   and authorization rather than `delivered_at` alone — which this plan already said, for the

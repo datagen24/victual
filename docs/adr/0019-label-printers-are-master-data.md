@@ -13,6 +13,15 @@
 - **Relies on** two properties of [ADR-0010](0010-workload-standard.md), **accepted
   2026-09-07** and scoped against this record on the way through — see
   *Reliance on ADR-0010* below.
+- **Reconciled against [ADR-0021](0021-label-templates-are-application-data.md), 2026-09-07.**
+  That record — also Proposed — supersedes ADR-0011's assignment of templates to the drainer,
+  so template documents become Victual's and a third component, the headless renderer, takes
+  the rasterizer. Decision items 1 and 3 are edited accordingly, along with the two bullets in
+  item 2 that restate them. **Nothing else about this record changes**: the pull transport, the
+  driver registry and capability contract, claiming, fencing, leases, the four delivery facts
+  and the no-automatic-redispatch rule are untouched. Both records are Proposed and each is
+  accepted on its own pull request; neither acceptance implies the other's. What still needs
+  reconciling is named at the end of decision item 3.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
   [22](../plans/22-medication-tracking.md).
@@ -80,16 +89,30 @@ reach the printer.
 | Owned by this repository | Owned by the worker repository |
 |---|---|
 | The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the settings schema and capability document each advertises |
-| The registry of driver and template definitions, and the capability contract they are written against | The rasterizer and imaging code |
-| The print job event and its payload contract, including pinned template identity | Label templates, their versions, and their declared capability requirements |
+| The registry of driver definitions, and the capability contract they are written against | Nothing about a label's appearance — templates and rendering are owned elsewhere, see below |
+| The print job event and its payload contract, the pinned template identity, and the artifact the job carries | Verifying an artifact against the printer's resolved configuration before device I/O |
 | The claim/acknowledge/register API and its OpenAPI contract | Device transport (TCP, USB, whatever a driver needs) |
 | The attempt, evidence and observed-status records | The worker's own tests, including geometry assertions |
 | The flake input pinning the worker's revision, and the image built from it | |
 
-Victual owns **configuration and monitoring**. The worker owns **rendering, device contact
-and driver implementation**. This preserves ADR-0011's consequence that rendering leaves
-this repository: template semantics, driver quirks and imaging bugs move on their own
-schedule, and none of them is a reason to cut a Victual release.
+Victual owns **configuration and monitoring**. The worker owns **device contact and driver
+implementation**.
+
+**Rendering is a third component, and it is not the worker.**
+[ADR-0021](0021-label-templates-are-application-data.md) makes the template document
+application data and puts font shaping, layout, QR generation and rasterization in a headless
+renderer that reads it. The split is three ways rather than two: Victual owns the template
+document, its versions, assets and media profiles; the renderer turns one of those plus
+captured fields into an immutable artifact; the worker turns an artifact into device
+instructions and reports what happened. The renderer and the worker may share a repository or
+a deployment, and their **contracts stay separate** — a render may be retried automatically
+precisely because it cannot touch a printer, and no rendering retry may become a second
+physical attempt. [Plan 27](../plans/27-label-templates-and-rendering.md) owns the renderer
+and the document; this record's worker keeps the device. This preserves ADR-0011's consequence that rendering leaves
+this repository: driver quirks and imaging bugs move on their own schedule, and neither is a
+reason to cut a Victual release. Template *semantics* no longer travel with them — ADR-0021
+moved the document into this repository precisely because a household editing a label's
+appearance should not need a worker release — but the code that renders it still does.
 
 The seam is a **capability contract** this repository defines and workers write against. A
 worker advertises what its drivers support and accept; Victual holds those documents,
@@ -112,13 +135,15 @@ endpoints, all additive. Two of them exist only to get a credential onto a worke
 - `POST /api/labels/credentials/rotate` — exchanges a current credential for its successor,
   invalidating the one presented.
 - `POST /api/labels/register` — the worker advertises what it carries: each
-  `(driver_id, schema_version)` and each `(template_id, template_version)`, with the
-  definitions for any Victual has not seen. Idempotent, append-only in its definitions, and
-  refused when it would contradict a stored one — see decision item 3.
+  `(driver_id, schema_version)`, with the definitions for any Victual has not seen, and the
+  **artifact and profile contract versions it accepts**. Per ADR-0021 it advertises no
+  template versions, because it carries no templates. Idempotent, append-only in its
+  definitions, and refused when it would contradict a stored one — see decision item 3.
 - `POST /api/labels/jobs/claim` — the worker asks for up to *n* jobs for the printers it is
   authorized to serve. The response carries, per job, the label uid, the pinned template
-  identity, the captured text fields, **the printer's configuration resolved now**, an
-  `attempt_id`, and a lease expiry.
+  identity, the captured text fields, **the artifact manifest and scoped access to its bytes**
+  (ADR-0021), **the printer's configuration resolved now**, an `attempt_id`, and a lease
+  expiry.
 - `POST /api/labels/attempts/{attempt_id}/heartbeat` — extends the lease while the attempt
   is still running.
 - `POST /api/labels/attempts/{attempt_id}/sent` — bytes reached the device.
@@ -324,8 +349,10 @@ form, cannot validate a write, and discovers a bad configuration when a label fa
 print.
 
 **Workers advertise versioned configuration schemas; Victual owns the UI, the persisted
-instances and the validation.** Five tables: the printer instances, the driver and template
-definitions, what each worker advertises, and the observed status.
+instances and the validation.** Four kinds of row: the printer instances, the driver
+definitions, what each worker advertises, and the observed status. Template definitions are
+**not** among them — ADR-0021 makes the template document application data, owned by
+[plan 27](../plans/27-label-templates-and-rendering.md) rather than registered by a worker.
 
 #### Common fields stay typed columns
 
@@ -358,14 +385,15 @@ possible.
 
 **Definitions are immutable and shared.** `label_drivers` holds one row per
 `(driver_id, schema_version)`: the settings schema **and** the capability document, both
-fixed by that row. `label_templates` holds one row per `(template_id, template_version)`:
-the template's input contract — which captured fields it consumes — and the capability
-requirements it declares. Neither row is ever rewritten.
+fixed by that row. It is never rewritten. There is no worker-registered template row: a
+template's input contract — which captured fields it consumes — and the capability
+requirements it declares live in Victual's own published template version, per ADR-0021.
 
 **Advertisements are per worker and current.** `label_worker_capabilities` records which
-`(driver_id, schema_version)` and `(template_id, template_version)` pairs each worker
-advertises, and when it last registered. A worker may advertise several versions of the same
-driver or template at once, and dropping one is a registration that no longer lists it.
+`(driver_id, schema_version)` pairs each worker advertises, which **artifact and profile
+contract versions** it accepts, and when it last registered. A worker may advertise several
+versions of the same driver at once, and dropping one is a registration that no longer lists
+it.
 
 The rules on those rows:
 
@@ -377,8 +405,9 @@ The rules on those rows:
   schema or a different capability document is refused.** Printer rows were validated
   against the stored schema, and templates were checked against the stored capability
   document, so replacing either would leave stored decisions claiming a validity nobody
-  checked. A worker whose schema or capabilities changed publishes a new version. The same
-  rule applies to `(template_id, template_version)`.
+  checked. A worker whose schema or capabilities changed publishes a new version. Victual's
+  published template versions are immutable for the same reason and by their own rule
+  (ADR-0021), which is not this registration's to enforce.
 - **A version number is a label, not a compatibility claim.** `major.minor` is a naming
   convention and nothing is inferred from it. A newer minor can validate every printer row
   saved today and still reject a configuration the older schema would have permitted
@@ -389,13 +418,18 @@ The rules on those rows:
   revalidates its settings against that version and rewrites `driver_schema_version`.
   Nothing adopts a version automatically, in either direction.
 
-**Template registration is what makes enqueue validation possible.** Victual pins a template
-version into every job and refuses a job whose template requires a capability the target
-printer's driver does not offer. Both need the template's requirements to be held here rather
-than only in the worker repository, and both need to know which workers carry which
-versions — otherwise a job can be enqueued against a template no deployed worker has, and
-the failure surfaces as decision item 4's blocked outcome instead of as a refusal at the
-moment a person asked for the label.
+**Enqueue validation no longer depends on a worker having registered a template.** Victual
+pins one of its own published template versions into every job and refuses a job whose
+template requires a capability the target printer's driver does not offer — it holds both
+sides of that comparison now, which is the half of this rule ADR-0021 makes simpler rather
+than removes.
+
+What registration must still establish is the other half: **that some worker authorized to
+serve the target printer accepts the artifact and profile contract versions the job will
+carry.** Otherwise a job is enqueued that no deployed worker can consume, and the failure
+surfaces as decision item 4's blocked outcome instead of as a refusal at the moment a person
+asked for the label. That was the point of the original rule and it survives the change of
+what is being matched.
 
 #### The capability contract
 
@@ -447,9 +481,10 @@ still print nothing when the device reports black tape loaded, and that is an ob
 failure rather than a configuration error.
 
 **Namespaced extensions are allowed**, as `x-<driver_id>.<key>`, and generic templates
-ignore them. **Generic templates declare the capabilities they require**, and a job is
-refused at enqueue when the target printer's driver does not support the combination — not
-at print time, where the person who asked for the label is no longer watching.
+ignore them. **A template declares the capabilities it requires** — in Victual's published
+template version under ADR-0021, rather than in a worker registration — and a job is refused
+at enqueue when the target printer's driver does not support the combination, not at print
+time, where the person who asked for the label is no longer watching.
 
 #### The settings schema subset
 
@@ -556,8 +591,8 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
   decision item 4's deleted-printer case.
 - **A printer whose assigned worker cannot drive it is a visible state.** When that worker
-  does not advertise the printer's exact driver version, or the pinned template version a
-  job needs, the job is never offered — and the configuration screen says which of the two
+  does not advertise the printer's exact driver version, or the artifact and profile contract
+  versions a job needs, the job is never offered — and the configuration screen says which of the two
   is missing rather than leaving a queue that grows for no visible reason.
 
 #### Where the three kinds of setting live
@@ -565,7 +600,7 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
 | Kind | Set by | Lives in | Example |
 |---|---|---|---|
 | Device settings | An admin | `label_printers` columns and its validated `settings` | Which tape is loaded; the connection |
-| Template settings | The template author | The worker repository | The font; rendering the due date in red |
+| Template settings | The template author | Victual's published template version ([27](../plans/27-label-templates-and-rendering.md)) | The font; rendering the due date in red |
 | Observed status | A worker, reporting | `label_printer_status` | The tape the device says is loaded; a paper-out warning |
 
 The rule for placing a value: if a person sets it, it is device settings; if a worker
@@ -576,9 +611,9 @@ capability document is how the template learns it.
 
 #### How these entities are reached
 
-All nine tables — `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
+All eight tables — `label_workers`, `label_printers`, `label_drivers`,
 `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
-`print_evidence` —
+`print_evidence` — 
 are added to the OpenAPI `ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and
 `ExposedEntityNoDelete`, and each gains a `PERMISSION_ADMIN` row in
 `EntityReadPolicy::PERMISSIONS`, which is fail-closed and throws "Entity has no read policy"
@@ -606,6 +641,27 @@ Configuration that is not a property of a printing device stays where it is — 
 behaviour in `Setting()` constants, per-person preference in `user_settings`, appearance in
 templates. Admission to `settings` is enforced rather than argued: a driver declared the
 field, or it cannot be stored.
+
+#### What ADR-0021 leaves unreconciled here, deliberately
+
+Decision items 1, 2 and 3 are reconciled above. Two things in items 4 and 5 are **not**, and
+naming them is better than editing them early:
+
+- **What a job pins.** Item 4 pins `template_id` with a version or digest and the captured
+  fields; ADR-0021 adds an immutable artifact and makes *its bytes* the authority for a
+  reprint. Those compose rather than conflict — the template identity is provenance, the
+  artifact is what prints — but the exact payload cannot be written until ADR-0021's
+  prerequisite 2 settles whether an artifact is a raster or a page description, because that
+  decides what the worker is handed and how much geometry it still owns.
+- **Claim preconditions.** Item 5's fourth precondition matches the job's exact
+  `(template_id, template_version)` against what the claiming worker advertises. Under
+  ADR-0021 a worker advertises artifact and profile contract versions instead, and a job is
+  claimable only once a validated artifact is attached. The precondition therefore changes
+  shape, and it should change once, when the artifact contract is fixed.
+
+Both are ADR-0021's to settle and this record's to carry afterwards. Neither is a reason to
+delay either acceptance: the boundary these two records disagree about is *what a claim hands
+over*, and no schema, route or UI is written under either plan before both are accepted.
 
 ### 4. What a job pins, and what it resolves at claim time
 
@@ -1004,10 +1060,12 @@ For "the product was renamed after the label was queued", no — the label recor
 intended when the booking happened, per the constitution's rule that physical artifacts are
 contracts. `printer_id` is late-bound; the uid and the rendered text are not.
 
-**Two repositories to release, and a pin between them.** A template fix or a driver bump
-is a revision bump and a `flake.lock` change here, which is slower than a one-repository
-change. In exchange, imaging bugs do not gate Victual releases and a second driver family
-arrives without touching this tree.
+**Two repositories to release, and a pin between them.** A driver bump is a revision bump
+and a `flake.lock` change here, which is slower than a one-repository change. In exchange,
+imaging bugs do not gate Victual releases and a second driver family arrives without touching
+this tree. Since ADR-0021 a *template* fix is neither: it is a published version in this
+database, made by a person with `ADMIN` and no release at all, which is most of that record's
+argument.
 
 **The worker needs no database role, which removes a problem rather than adding one.**
 [Plan 20](../plans/20-container-infrastructure.md)'s verification check 8 — "the credential
@@ -1041,13 +1099,14 @@ whether or not detection fires. The cost is operational: a worker switched off p
 session expiry needs a person to pair it again, which for a seasonally used printer is a real
 annoyance rather than a theoretical one.
 
-**A worker writes five kinds of row, and two of them are definitions.** Attempts, status
-and evidence are bookkeeping about work it did. Driver and template definitions are
-different: a machine identity supplies documents that govern what an admin may later store
-and what a job may later pin. Decision item 3 bounds them structurally — a definition is
-append-only and a registration contradicting a stored one is refused, so a compromised or
-buggy worker can publish a driver or template nobody uses, but cannot rewrite a definition
-that existing printer rows and queued jobs were validated against.
+**A worker writes four kinds of row, and one of them is a definition.** Attempts, status and
+evidence are bookkeeping about work it did. A driver definition is different: a machine
+identity supplies a document that governs what an admin may later store. Decision item 3
+bounds it structurally — a definition is append-only and a registration contradicting a stored
+one is refused, so a compromised or buggy worker can publish a driver nobody uses, but cannot
+rewrite a definition that existing printer rows were validated against. Template definitions
+were the second kind until ADR-0021 moved them out of a worker's reach entirely, which is a
+smaller machine-writable surface rather than a differently bounded one.
 
 **A JSON Schema validator becomes a dependency.** `composer.json`'s eighteen
 requirements include none. Two consequences beyond the package: it is the second addition
@@ -1074,15 +1133,16 @@ CI. The rotation *sign* is not catchable that way: no library default competes w
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
 tape feed direction. Both checks are required.
 
-**Nine tables under the migration discipline**, PostgreSQL-only and plain, with no views
-or triggers: `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
+**Eight tables under the migration discipline**, PostgreSQL-only and plain, with no views
+or triggers: `label_workers`, `label_printers`, `label_drivers`,
 `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
 `print_evidence`.
 Each holds a different lifetime — worker identities and admin-edited instances, immutable
-driver definitions, immutable template definitions, current per-worker advertisements,
-worker-overwritten status, mutable per-job authorization state, append-only attempts, and
-append-only observations with the
-shortest retention. It is a large surface for one subsystem, and the cost of keeping
+driver definitions, current per-worker advertisements, worker-overwritten status, mutable
+per-job authorization state, append-only attempts, and append-only observations with the
+shortest retention. `label_templates` was the ninth until ADR-0021 made it Victual's template
+identity rather than a worker's registration; it is [27](../plans/27-label-templates-and-rendering.md)'s
+now, and this subsystem's migration drops it. It is a large surface for one subsystem, and the cost of keeping
 definitions immutable while what workers advertise changes underneath them.
 
 `print_jobs` was the eighth table this record did not name until 2026-09-07, when
