@@ -224,13 +224,15 @@ documentation that would substitute describes a different system.
    Settled, and folded into the Decision. What it leaves is question 4: a container call
    needs a container runtime, and Read the Docs does not document one.
 
-2. **If it is published, do private members stay in it?** `phpdoc.dist.xml` includes
-   `private` visibility on the stated grounds that the output is "an internal reference, not
-   a published library API". Publishing it makes that sentence false. Either the
-   configuration drops private members, which loses the service layer's private helpers that
-   the comment says matter, or this record is amended to accept that Victual publishes its
-   internals. Neither is obviously right; Victual is an application, not a library, so there
-   is no API-stability promise that publishing a private method would break.
+2. **If it is published, do private members stay in it?**
+
+   > **Response** (maintainer, 2026-09-07): They stay. Correct the comment.
+
+   Settled: `phpdoc.dist.xml` keeps `private` visibility and its premise sentence changes,
+   because Victual is an application rather than a library and no API-stability promise is
+   broken by publishing a private method. The reference documents the service layer's private
+   helpers, which is what the comment said they were there for. Plan 26 piece 1 makes the
+   edit.
 
 3. **Does the ADR index's review-notes table go on the site?** It is the one published
    artifact carrying delivery-adjacent statements, and it is genuinely useful to a reader
@@ -255,8 +257,9 @@ documentation that would substitute describes a different system.
 2. [Plan 26](../plans/26-documentation-site.md) records how the 173 ADR-to-plan links are
    rewritten, and a build demonstrates them resolving to the repository rather than 404ing.
    A build that leaves them broken fails this gate.
-3. Open questions 2 and 4 are answered, and `phpdoc.dist.xml` is either changed to exclude
-   private members or its premise comment is corrected to match what this record does.
+3. Open questions 2 and 4 are answered — both were, on 2026-09-07 — and
+   `phpdoc.dist.xml`'s premise comment is corrected to match what this record does. The
+   answers are recorded; the edit is outstanding.
 4. A built Development section is inspected and no page in it is incomprehensible without a
    plan. The 173 rewritten links are citations a reader may follow, not reading the section
    depends on. The equivalent check for the Manual is plan 26's, since the Manual ships
