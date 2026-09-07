@@ -161,10 +161,36 @@ not minted in that enum**, which makes the generic upload, serve and delete rout
 by the check they already run, and leaves dedicated authorized endpoints as the only path.
 That is not decoration: `ServeFile` gates reads by a hardcoded per-group chain and lets
 unlisted groups through on authentication alone — the posture recorded under S2 and filed
-generally as **S32**. Two consequences follow: artifacts must not be exposed through
-`ExposedEntity` either, for the reason migration 0258 already gives for `files` itself; and a
-deployment running the filesystem backend would put artifacts on disk, so this plan must state
-whether artifact storage follows `FILE_STORAGE` or requires the database backend regardless.
+generally as **S32**. Artifacts must not be exposed through `ExposedEntity` either, for the
+reason migration 0258 already gives for `files` itself.
+
+**Artifact storage requires the database backend, and the requirement is checked at startup**
+(question 7). `FILE_STORAGE=filesystem` would put captured household data and every printed
+label on disk, reintroducing the persistent volume [10](10-cold-start-statelessness.md) exists
+to remove. So the check is conditional on the label subsystem being enabled, in the shape
+`ConfigurationValidator::checkMqttSettings()` and `::checkInfluxDbSettings()` already use —
+return early when the subsystem is off, and otherwise refuse a configuration it cannot honour
+with an `EInvalidConfig` naming both settings. **There is no fallback to filesystem storage**,
+silent or otherwise: a household that enables labels with the wrong backend finds out at
+startup, when it can still change its mind, rather than when an artifact goes somewhere it was
+not meant to live. That is `checkFileStorage()`'s own stated reason for refusing at startup
+rather than at first upload.
+
+Two consequences to carry rather than discover:
+
+- **The enabling flag is a new one, not `FEATURE_FLAG_LABEL_PRINTER`.** That constant exists
+  (`config-dist.php`, default false) and gates the *webhook* path's buttons across nine
+  `public/viewjs` call sites. Binding the storage requirement to it would make turning on the
+  existing product/stock-entry printing demand database storage — a behaviour change to the
+  path [ADR-0019](../adr/0019-label-printers-are-master-data.md) item 7 deliberately leaves
+  alone through wave 3b. A separate flag keeps the two paths independent during coexistence
+  and gives step 3 something to delete.
+- **The label subsystem cannot be enabled in `demo` or `prerelease` mode.**
+  `checkFileStorage()` already refuses `FILE_STORAGE=database` there, because
+  `FilesystemStorage` gives each demo instance its own sub-folder and `files`'
+  `UNIQUE(file_group, name)` has no column for that suffix (plan 01 Q4). Requiring the
+  database backend therefore excludes those modes transitively, and the error a demo operator
+  sees should say so directly rather than making them derive it from two separate refusals.
 
 ### Piece 6 — previews, and promoting one to a print
 
@@ -386,6 +412,18 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    the persistent volume [10](10-cold-start-statelessness.md) exists to remove. *Lean: require
    the database backend for artifacts and say so at boot, rather than silently honouring a
    setting that changes where household data lives.*
+
+   > **Response (maintainer, 2026-09-07):** Require PostgreSQL-backed artifact storage. It
+   > matches the agreed image-storage contract and preserves the deployment's lack of a
+   > persistent file volume. Make the configuration check **conditional on the label subsystem
+   > being enabled**: if its storage requirement is unmet, fail startup with a clear error.
+   > Do not silently fall back to filesystem storage.
+
+   > **Note, 2026-09-07:** carried into piece 5, with two things the answer implies rather than
+   > states. The enabling flag is a new one rather than `FEATURE_FLAG_LABEL_PRINTER`, whose
+   > nine call sites gate the webhook path this wave leaves alone. And requiring the database
+   > backend excludes `demo` and `prerelease` mode transitively, since `checkFileStorage()`
+   > already refuses `FILE_STORAGE=database` there — the error should say that directly.
 
 8. **Is the renderer credential a key type, a scope set, or a per-request grant?** ADR-0021
    question 1. It needs the authorization model piece 7 lands against, not a guess now.
