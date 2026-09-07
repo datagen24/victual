@@ -103,9 +103,13 @@ revision through `nix/images/lib.nix`, so the artifact carries the same uid, lab
 ### 2. Transport: an authenticated pull API, not direct database access
 
 **The worker holds no database credential and makes no database connection.** It
-authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Seven
-endpoints, all additive:
+authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Nine
+endpoints, all additive. Two of them exist only to get a credential onto a worker:
 
+- `POST /api/labels/pair` — exchanges single-use pairing material for a worker credential.
+  The only route reachable without a worker key.
+- `POST /api/labels/credentials/rotate` — exchanges a current credential for its successor,
+  invalidating the one presented.
 - `POST /api/labels/register` — the worker advertises what it carries: each
   `(driver_id, schema_version)` and each `(template_id, template_version)`, with the
   definitions for any Victual has not seen. Idempotent, append-only in its definitions, and
@@ -126,13 +130,59 @@ endpoints, all additive:
 **Every one of these is authorized against the caller, not merely authenticated** —
 decision item 3's *Worker authorization*.
 
-**Worker identity is an API key of a new type**, `ApiKeyService::API_KEY_TYPE_LABEL_WORKER`,
-alongside the two existing constants (`services/ApiKeyService.php:15-16`) and the `mcp`
-type the [MCP interface spec](../mcp-interface-spec.md) proposes. Keys are already stored
-as a SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` on the
-`api_keys` table, and are already validated per route — so a label-worker key is granted
-and revoked independently of general API keys, and `ApiKeyAuthenticator` gains one type in
-its accepted set for these seven routes only. No new authentication machinery.
+**A worker is a row, not a credential.** `label_workers` holds one row per worker — name,
+description, configuration mode, `active` — and `label_printers.worker_id` references it.
+Keys are issued against that row, so **rotating or revoking a key does not change the
+identity**, and a printer's assignment survives its worker's credential being replaced.
+Deactivating the row makes every printer assigned to it unclaimable, which the configuration
+screen shows for the same reason it shows a worker that cannot drive a printer.
+
+**Credentials are API keys of a new type**, `ApiKeyService::API_KEY_TYPE_LABEL_WORKER`,
+alongside the two existing constants (`services/ApiKeyService.php:15-16`) and the `mcp` type
+the [MCP interface spec](../mcp-interface-spec.md) proposes. Keys are already stored as a
+SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` on the `api_keys`
+table, and are already validated per route — so a label-worker key is granted and revoked
+independently of general API keys, and `ApiKeyAuthenticator` gains one type in its accepted
+set for these nine routes only. No new authentication machinery.
+
+#### Two configuration modes, because two deployments
+
+|  | Declared | Paired |
+|---|---|---|
+| Where it runs | In the cluster, under a manifest | Anywhere that can reach Victual — the USB case |
+| How it gets a credential | A Secret, injected as environment | Single-use pairing material in the environment, exchanged once at first start |
+| Credential lifetime | Operator-managed; no expiry | Rotates on an interval, with an absolute expiry |
+| Durable state on the worker | None | One stored credential |
+| [ADR-0010](0010-workload-standard.md) property 1 | Holds | A stated exception — see *Consequences* |
+| Recovery after credential loss | Restart | Re-pair |
+
+**Pairing is one opaque string, and it is short-lived.** An admin creates the worker row in
+Victual and is shown pairing material that encodes Victual's own base URL and a single-use
+secret. The worker takes it from the environment on first start and exchanges it at
+`POST /api/labels/pair` for a credential. One value to transfer rather than an address and a
+key; the long-lived credential is never displayed, never typed, and never sits in an
+environment variable. That last point is the reason for the indirection rather than a
+convenience: pairing material in the environment is readable by anything that can read the
+process environment on that host, which is acceptable for a value that is single-use and
+expires and is not acceptable for one that is neither.
+
+**Pairing conveys a Victual credential and nothing else.** No database address, no database
+credential, and no broker credential — decision item 2's first sentence is not softened by
+the pairing path. A worker that later wants the broker address discovers it from the API it
+is already authenticated to.
+
+**Rotation is the control; the worker's local store is hygiene.** A paired worker exchanges
+its credential for a successor on an interval, and a credential not rotated within its
+absolute expiry stops working, so a worker offline longer than that window must be paired
+again. Rotation is single-use in both directions: **presenting a credential that has already
+been rotated away is treated as evidence of duplication**, not as a stale client. The chain
+is revoked, the worker is marked as requiring re-pairing, and the event is surfaced —
+because two parties holding one credential is exactly what rotation exists to detect, and a
+silent refusal would discard the detection.
+
+The declared worker does not rotate. Its credential is the operator's to manage through the
+Secret, which keeps it stateless; rotation is what a worker does when there is no operator
+mechanism to do it for it.
 
 **Why pull rather than the alternatives**, since this is the item the deployment shape
 decides:
@@ -177,7 +227,7 @@ definitions, what each worker advertises, and the observed status.
 | Column | Why Victual reads it |
 |---|---|
 | `id`, `name`, `description`, `row_created_timestamp`, `active`, `is_default` | Lifecycle and UI, as `shopping_locations` has them |
-| `worker` | The one worker authorized to serve this printer. Not nullable |
+| `worker_id` | The one worker authorized to serve this printer, referencing `label_workers`. Not nullable |
 | `driver_id`, `driver_schema_version` | Validation, and claim-time compatibility |
 | `connection` | The outbound destination, kept a column so every address the deployment will dial is auditable in one place. Interpreted by the driver: a TCP endpoint, a USB device path, a queue name. One field rather than host and port, which assumes one transport |
 | `model` | Every capability document keys its combinations by model, so the contract makes this field universal. Shown in the UI. The vocabulary is the driver's; the presence is not |
@@ -329,8 +379,8 @@ document that reaches the database through any other path is still validated by 
 this"; it does not say "you may send me this household's print content and this printer's
 connection details". The two are separate, and only an admin grants the second.
 
-`label_printers.worker` is **not nullable**. Every printer names exactly one authorized
-worker identity, and a printer with no assignment cannot exist, so there is no state in
+`label_printers.worker_id` is **not nullable**. Every printer references exactly one
+authorized worker row, and a printer with no assignment cannot exist, so there is no state in
 which any worker advertising the right driver may claim a job. Moving a printer to a spare
 worker is an admin edit of that column — an explicit act with a record, rather than a race
 between whoever claims first.
@@ -338,7 +388,7 @@ between whoever claims first.
 A job is offered to a claiming worker when all three hold:
 
 1. The printer is `active`.
-2. `label_printers.worker` equals the caller's worker identity.
+2. `label_printers.worker_id` is the caller's worker, and that worker row is `active`.
 3. The caller currently advertises the printer's **exact** `(driver_id,
    driver_schema_version)` and the job's **exact** `(template_id, template_version)`.
 
@@ -346,9 +396,11 @@ Every other route is authorized the same way, against the row rather than the ke
 
 | Route | Authorized when |
 |---|---|
-| `sent`, `result` | The attempt's `worker` is the caller. **Accepted for a superseded or expired attempt too** — a worker may always report what its own attempt did; whether that report completes the job is a separate question decision item 5 answers |
-| `heartbeat` | The attempt's `worker` is the caller **and** the attempt is the job's current one and has neither expired nor ended. A heartbeat never revives an expired, abandoned or superseded attempt |
+| `sent`, `result` | The attempt's `worker_id` is the caller. **Accepted for a superseded or expired attempt too** — a worker may always report what its own attempt did; whether that report completes the job is a separate question decision item 5 answers |
+| `heartbeat` | The attempt's `worker_id` is the caller **and** the attempt is the job's current one and has neither expired nor ended. A heartbeat never revives an expired, abandoned or superseded attempt |
 | `status` | The caller is the assigned worker of the printer named in the path |
+| `pair` | Valid, unexpired, unconsumed pairing material for a worker row that is `active`. No worker key required, and this is the only such route |
+| `rotate` | The caller presents its current credential. A superseded one revokes the chain instead of rotating it |
 | `evidence` | The caller owns the attempt, **or** holds a verifier grant for that printer |
 | `claim` | The three rules above |
 
@@ -417,7 +469,7 @@ capability document is how the template learns it.
 
 #### How these entities are reached
 
-All seven tables — `label_printers`, `label_drivers`, `label_templates`,
+All eight tables — `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
 `label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence` —
 are added to the OpenAPI `ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and
 `ExposedEntityNoDelete`, and each gains a `PERMISSION_ADMIN` row in
@@ -485,7 +537,7 @@ Event type `label.print_requested`, in the existing `outbox` table, under the ex
 `payload_version` discipline. No second queue.
 
 `print_attempts` records one row per claim: `attempt_id`, `attempt_number`, the outbox row
-it belongs to, the worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`,
+it belongs to, `worker_id`, `claimed_at`, `lease_expires_at`, `bytes_sent_at`,
 `device_reported_at`, outcome, error text, and whether the attempt was superseded. The
 outbox row remains the unit of work and is acknowledged by setting `delivered_at`; the
 attempt rows are this consumer's record of what it tried.
@@ -680,8 +732,8 @@ different prerequisites.
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
    endpoint today, so this is purely additive: the new entities and their event type, the
-   seven worker routes of decision item 2, the printer administration routes, and a print
-   action on the locations pages. **No existing response changes.**
+   nine worker routes of decision item 2, the printer and worker administration routes, and
+   a print action on the locations pages. **No existing response changes.**
 2. **The five existing endpoints migrate afterwards** — products, stock entries, recipes,
    chores, batteries (`routes.php:239-240,256,265,276`). This is the step that changes the
    wire, and the resolution below gates *this step*, not step 1.
@@ -831,8 +883,32 @@ arrives without touching this tree.
 [Plan 20](../plans/20-container-infrastructure.md)'s verification check 8 — "the credential
 split is real", recorded as "Not done. Needs a role with no DDL rights; the bootstrap uses
 one superuser" — stays a two-role problem instead of becoming a three-role one. What the
-worker holds instead is a typed API key whose reach is bounded by the seven routes it may
-call and, on each, by the printer or attempt named in the request.
+worker holds instead is a typed API key whose reach is bounded by the nine routes it may
+call and, on each, by the printer or attempt named in the request — and, for a paired worker,
+by an expiry.
+
+**A paired worker is stateful, and its stored credential is not really protected.** Two
+things this record does not pretend away. The first is a departure from
+[ADR-0010](0010-workload-standard.md) property 1: a paired worker keeps one durable value —
+its credential — so killing it does lose something, and recovery is re-pairing rather than a
+restart. It is bounded to that one value, and it exists only where there is no operator
+mechanism to inject a Secret; the declared worker keeps the property in full.
+
+The second is about the store itself. A credential encrypted on a device whose key is also
+on that device is obfuscation, not protection: an attacker with code execution on the worker
+has both. What it does buy is the disclosure case that is actually likely at household scale
+— a pulled SD card, a backup, a device sold on — where the store is read somewhere the
+decryption key is not. Where the platform offers a keyring or a TPM the worker should use
+it; where it does not, a file with restrictive permissions is what there is, and calling that
+protection would be a claim nobody could defend.
+
+**Rotation is what makes the previous paragraph tolerable.** A credential that rotates on an
+interval and expires absolutely turns "the key on that Pi might be readable" from an
+open-ended exposure into a bounded one, and reuse detection turns a copied credential into an
+event someone sees rather than a quiet second client. The cost is operational and worth
+stating: a worker switched off for longer than the expiry window needs a person to pair it
+again, which for a printer that is only used seasonally is a real annoyance rather than a
+theoretical one.
 
 **A worker writes five kinds of row, and two of them are definitions.** Attempts, status
 and evidence are bookkeeping about work it did. Driver and template definitions are
@@ -867,10 +943,11 @@ CI. The rotation *sign* is not catchable that way: no library default competes w
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
 tape feed direction. Both checks are required.
 
-**Seven tables under the migration discipline**, PostgreSQL-only and plain, with no views
-or triggers: `label_printers`, `label_drivers`, `label_templates`,
+**Eight tables under the migration discipline**, PostgreSQL-only and plain, with no views
+or triggers: `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
 `label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence`.
-Each holds a different lifetime — admin-edited instances, immutable driver definitions,
+Each holds a different lifetime — worker identities and admin-edited instances, immutable
+driver definitions,
 immutable template definitions, current per-worker advertisements, worker-overwritten status,
 append-only attempts, and append-only observations with the shortest retention. That is a
 large surface for one subsystem, and it is the cost of keeping definitions immutable while
@@ -911,7 +988,8 @@ subsystem to be built before the architecture authorizing it is accepted.
    image from a pinned revision through `nix/images/lib.nix`, passing `nix flake check`
    including `image-has-no-shell`, with its closure size recorded. The pinned revision may
    be a scratch branch.
-2. **Claiming, fencing and crash-after-send behave as decision items 5 and 6 specify.**
+2. **Claiming, fencing, credential rotation and crash-after-send behave as decision items 2,
+   5 and 6 specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
    it; a failed or expired attempt leaves the job unclaimable until an attempt is
    authorized; authorization is refused while an attempt is still running, and refused again
@@ -920,8 +998,10 @@ subsystem to be built before the architecture authorizing it is accepted.
    refused rather than queued behind it; a late result from a superseded attempt is
    **accepted and recorded on its own row** while completing nothing, and a late heartbeat
    for the same attempt is refused; repeated deliveries of `sent`, `result` and `evidence`
-   change nothing after the first; and **a worker killed between `bytes_sent_at` and its
-   terminal result leaves a visible uncertain job and produces no second print.**
+   change nothing after the first; **a worker killed between `bytes_sent_at` and its
+   terminal result leaves a visible uncertain job and produces no second print**; and
+   pairing material is consumed by its first use, a rotated credential stops working, and
+   presenting a superseded credential revokes the chain rather than issuing a new one.
 3. **The schema subset is fixed against a named validator and a named form renderer.** Both
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
@@ -945,14 +1025,18 @@ implementation plan rather than to this record.
    rule that images are storage references. Which optional fields each `evidence_type`
    requires, and what a `printer_status` observation contains, follow from what the first
    verifier can actually report.
-3. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
+3. **The rotation interval and the absolute expiry.** Decision item 2 fixes the mechanism
+   and the reuse-detection rule; the two durations trade how long a stolen credential is
+   usable against how often a seasonal printer needs re-pairing. Neither number has evidence
+   behind it yet.
+4. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
    is never removed, and referential integrity. The numbers need a measured growth rate for
    `print_evidence` images, which no deployment has yet.
-4. **What a second driver family shows the capability contract is missing.** Gate 4
+5. **What a second driver family shows the capability contract is missing.** Gate 4
    exercises two families on paper; a second family in service is what shows whether a key
    is Brother-shaped or whether one is absent. The contract is versioned so that finding out
    is a version bump rather than a redesign.
-5. **Automatic retry, and whether any failure class earns an exception.** Decision item 6
+6. **Automatic retry, and whether any failure class earns an exception.** Decision item 6
    defers it and names what deciding it needs: printer-specific behaviour under a truncated
    job, validated delivery reporting, and a policy decision about who bears a duplicate. The
    `blocked` outcome is the strongest candidate for an early exception, since it provably
