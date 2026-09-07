@@ -1431,15 +1431,31 @@ subsystem to be built before the architecture authorizing it is accepted.
    formats and their applicable combinations written out, since that key did not exist when the
    two documents were first drafted.
 
-   **The second family should be the networked laser, not Zebra.** The deployment has a
-   Brother QL-820NWBc and a networked laser printer, and **no ZPL device** — so a Zebra document
-   can only ever be written from datasheets, and nothing in it is falsifiable here. A laser over
-   IPP is a real second family, owned and reachable: it exercises a genuinely different
-   `artifact_forms` value, a page description rather than a raster, which is the distinction
-   that key was added for and the same question
-   [ADR-0021](0021-label-templates-are-application-data.md) prerequisite 2 is deciding. Zebra
-   stays a backlogged exercise for whenever such a device exists; it is not a prerequisite for
-   this record.
+   **The second family is the networked laser, not Zebra.** The deployment has a Brother
+   QL-820NWBc and a networked laser, and **no ZPL device** — so a Zebra document could only ever
+   be written from datasheets and nothing in it would be falsifiable here. Zebra is neither a
+   requirement nor a backlog item of this record; it is simply not the second family.
+
+   **Re-exercised 2026-09-07 against both families under the amended contract, and this gate's
+   requirement is met.** Both documents now carry `artifact_forms`, and they make the
+   distinction the key was added for in opposite directions: `brother.ql` accepts
+   `raster/png-indexed;v=1` only and reports at `transport` level; `ipp.everywhere` accepts
+   `pdf/1.4`, `postscript/3`, `pcl/xl` and `raster/urf;rs=600` and reports `device_reported`.
+
+   The laser's document was written from `ipptool` Get-Printer-Attributes rather than a
+   datasheet, and every claim in it that could be tested was: `application/pdf` is advertised
+   **and** a job sent in it was accepted and reached `job-state = completed` with
+   `job-impressions-completed = 1`, and on the printed page the 100 mm ruler and the
+   50.0 × 30.0 mm box measure true with the QR scanning off paper. An advertised format, a job
+   accepted in it, a device-reported completion, correct dimensions and a readable code — none
+   of it taken on trust.
+
+   One thing to keep straight about what the pair shows. All three stresses this gate names are
+   **expressed**, which is what it asks for: the endless-tape range, asymmetric 300 × 600
+   resolution and `black_red` on `62red` alone are all in the Brother document. What no pair of
+   devices here can do is *physically* demonstrate all three, since the laser is 600 dpi with
+   colour on every combination — so those two are Brother-only, and their physical verification
+   is [plan 25](../plans/25-label-infrastructure.md)'s QL-820NWBc work rather than this gate's.
 
 ## Open questions
 
