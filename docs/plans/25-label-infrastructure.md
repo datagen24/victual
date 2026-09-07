@@ -251,6 +251,14 @@ creates the `labels` row, so a rollback takes the job with it.
   printer's row *now* — its typed columns, its validated `settings`, and the driver and schema
   version they were validated against. A job whose printer has been deleted or deactivated is
   dead-lettered saying so rather than handed out against a device that is gone.
+- **A claim's preconditions live in the query that selects the job, not after it.** Found by
+  the gate 2 spike on 2026-09-07, and worth stating because the wrong version passes every
+  single-job test: an implementation that picks the lowest matching job and *then* checks
+  authorization and liveness answers "no authorization" forever once one exhausted job sits at
+  the head of the queue, and nothing behind it is ever offered. One blocked job starves the
+  subsystem, which no part of [ADR-0019](../adr/0019-label-printers-are-master-data.md) says
+  should happen. `SELECT … FOR UPDATE SKIP LOCKED` makes the fix free, since the row that is
+  picked is one that already passed every precondition.
 - **Claiming is authorized, leased and fenced.** `print_attempts` holds one row per claim
   under `UNIQUE (outbox_id, attempt_number)`. A claim locks the job row
   (`SELECT … FOR UPDATE SKIP LOCKED`), checks four preconditions and inserts the next attempt
@@ -505,6 +513,9 @@ surface now lives, rather than a waiver.
 6. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
    another, and authorization is refused while an attempt is still running and refused again
    while an authorization it already granted is unused.
+   **A regression for starvation:** with an exhausted job ordered ahead of an eligible one, a
+   claim returns the eligible job rather than a refusal. That is the defect the gate 2 spike
+   found, and a suite that only ever holds one job cannot see it.
 7. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
    job and produces **no second print**. Two concurrent claims against one authorization
    produce one attempt. A late result from a superseded attempt is recorded on its own row

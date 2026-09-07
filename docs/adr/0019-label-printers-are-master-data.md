@@ -251,24 +251,46 @@ naively — into a revocation of the honest party.
   same directory, flushed, and renamed over the current one, so the store never holds a
   half-written credential and never holds none.
 
-**Replay conflicts with hashed storage, and this record does not yet say how.** API keys are
-stored as a SHA-256 hash with a `key_hint` (migration 0264), which is the property that makes a
-database disclosure not a credential disclosure — and it means Victual **cannot** hand back the
-successor it issued, because it does not have it. "Returns the same successor" as written is
-therefore not implementable against the existing storage. The options are not equivalent and
-picking one on paper would be guessing:
+**Replay against hashed storage: the successor is derived, not stored.** API keys are stored
+as a SHA-256 hash with a `key_hint` (migration 0264), which is the property that makes a
+database disclosure not a credential disclosure — so Victual cannot hand back a successor it
+kept, because it keeps none. This record earlier listed three options and declined to pick one
+on paper. **The rotation acceptance spike ran on 2026-09-07 and the second is chosen**: the
+successor is derivable from material the worker supplies, so a replay reproduces it **without
+Victual durably storing it**. Victual does compute the successor and return it in the response;
+what it does not do is retain it.
 
-- Retain the successor's plaintext briefly against the `rotation_request_id`, which
-  reintroduces exactly the exposure hashing removes, for a bounded window.
-- Make the successor **derivable rather than stored** — the worker contributes material to the
-  exchange so that a replay reproduces the same value without Victual holding it.
-- Narrow the guarantee: a replay is answered "this rotation already completed" and the worker,
-  unable to obtain the successor, re-pairs. Recoverable, but it turns a dropped packet into an
-  admin action, which is the failure mode this section exists to remove.
+The mechanism, exactly:
 
-**Resolving this is part of the rotation acceptance prerequisite** rather than a detail for
-implementation, because the answer may change what the storage is. Wave 3b's declared worker
-does not rotate, so nothing in that wave is blocked on it.
+- **The worker generates two values with a CSPRNG before it calls**, and persists both with its
+  pending-rotation record: a `rotation_request_id` and secret `material`, each **32 bytes**,
+  transmitted as **lowercase hexadecimal**. Material is single-use per rotation and is never
+  reused across rotations, sessions or workers.
+- **Derivation is** `successor = HMAC-SHA256(key = material_bytes, message = from_credential_id
+  || ":" || rotation_request_id)`, where `from_credential_id` is the decimal id and the message
+  is UTF-8. The successor is the 32-byte MAC rendered as lowercase hexadecimal, and it is what
+  the worker presents on later calls.
+- **Victual stores `SHA-256(successor)` and a `key_hint`**, as every other key is stored, plus a
+  pending-rotation row holding the request id, the credential it started from, the credential it
+  produced, and **`SHA-256(material)`** — a hash, never the material. That hash is what binds a
+  replay: same credential, same request id, same material, or it is not a replay.
+- **Replay binding is all three.** A repeat presenting a different credential is refused; a
+  repeat presenting different material under a stored request id is **refused rather than
+  served**, because deriving from new material would mint a second successor under one
+  authorization. Only an exact repeat re-derives and returns the same value.
+- **Checks before any of that.** The presented credential must exist, be unrevoked, have an
+  unexpired session, and — for a *new* rotation — be unconsumed. A **consumed** credential
+  presented under a **different** request id is reuse of a credential the worker should have
+  replaced, and revokes the whole session. Presenting a superseded credential on an ordinary
+  route is a 401 that revokes nothing: stale traffic is not theft.
+
+**The property this trades for not storing plaintext, stated rather than hidden:** a
+credential's entropy is now the worker's to supply. A worker with a defective CSPRNG weakens its
+own credential and no other, and Victual can still refuse a successor whose hash collides with a
+live one.
+
+Wave 3b's declared worker does not rotate, so nothing in that wave is blocked on this.
+
 
 #### Stale traffic is not reuse
 
@@ -451,6 +473,7 @@ Version 1 carries:
 | `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups` |
 | `models` | The device models this driver supports |
 | `combinations` | The authoritative list of what actually works — see below |
+| `artifact_forms` | The input formats **this driver implementation accepts**, versioned — see below |
 | `completion_evidence` | What the driver can report: `none`, `transport`, or `device_reported` |
 
 **`combinations` is a list, not the product of several lists.** Independent lists of media,
@@ -467,6 +490,33 @@ Each entry names a `model`, a `media`, a `resolution_x` and `resolution_y` in dp
 Horizontal and vertical resolution are separate because they differ on real hardware — a
 600 dpi Brother QL is 600 along the feed and 300 across it — and a single `dpi` invites the
 caller to assume they are equal.
+
+**`artifact_forms` says what the driver accepts, which is not what the printer speaks.**
+Added 2026-09-07, after the capability-contract acceptance spike wrote two families out and
+found every version 1 key describing the *device* and none describing its *input*. A Brother QL
+adapter takes a raster and converts it to Brother's raster commands; a Zebra adapter may take
+ZPL, or may equally take a raster and encode it into `^GF` itself — that is a property of the
+adapter, not of the printer, and two workers advertising `zebra.zpl` may differ. Without the
+key Victual cannot refuse a job whose artifact is the wrong form, so the mismatch surfaces as a
+failed print rather than a refusal at enqueue, which is exactly the outcome this section exists
+to prevent.
+
+So the key is **explicit, versioned format identifiers, not a category**. `page-description` is
+not a value: `zpl/2` is, and so is `raster/png-indexed;v=1`. Each entry names the form and the
+combinations it applies to, because a driver may accept a raster at one resolution and not
+another:
+
+```json
+"artifact_forms": [
+  {"form": "raster/png-indexed;v=1", "applies_to": ["*"]},
+  {"form": "zpl/2", "applies_to": [{"model": "ZT411"}]}
+]
+```
+
+A job names its artifact's form; a claim requires the serving worker to advertise it. This is
+also what makes [ADR-0021](0021-label-templates-are-application-data.md)'s open
+raster-versus-page-description question expressible rather than a fork in the road — a
+deployment may carry both, and the capability document says which printers take which.
 
 Explicit units are load-bearing: issue [#90](https://github.com/datagen24/victual/issues/90)
 is a geometry defect produced by two components disagreeing about which dot count a
@@ -501,6 +551,14 @@ rather than picking a dialect and discovering the renderer's limits afterwards.
 
 Version 1 accepts an object whose properties are strings, booleans, integers, numbers or
 enums, with `required`, numeric and length bounds, `pattern`, `title` and `description`.
+**Measured 2026-09-07** against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2, by rendering
+and validating the Brother model/media case rather than by reading feature lists: the validator
+handled everything including `allOf` and `if`/`then`; the renderer **ignored the conditional
+entirely** — a document the validator rejects produced no form errors — and additionally
+rendered the `allOf` branches as phantom controls beside the real fields. So **conditionals are
+outside the subset**, which is what the per-combination mechanism below already assumed. The
+renderer does drop unknown properties, so `additionalProperties: false` cannot be violated from
+the form; that is a convenience, not the enforcement.
 Unknown properties in a settings document are rejected. External `$ref` is rejected
 outright — resolving one would be a fetch of a schema named by a registration, which is the
 class of outbound call this record removes. **Registration rejects a schema using anything
@@ -518,9 +576,15 @@ refused rather than accepted and rendered slowly. Bounded `if`/`then` conditiona
 declared discriminators are the alternative and would need conditional support in both
 libraries for no gain here, since both mechanisms must pre-register.
 
-**The generated form is an editor, not a gate.** Server-side validation on write and the
-worker's own validation before printing are the authoritative checks, and a settings
-document that reaches the database through any other path is still validated by both.
+**The generated form is an editor, not a gate, and combination validation is mandatory on the
+server.** The measurement above is why this is a requirement rather than a reassurance: the
+renderer will submit a configuration it cannot see is invalid. Two server-side checks are
+therefore compulsory on every write, whatever path it arrives by — the settings document against
+the schema registered for that `(driver_id, schema_version)`, **and** the resulting
+`(model, media, resolution, colour_mode)` selection against the driver's `combinations`. A
+selection absent from `combinations` is refused with an error naming the field and the
+selection, not stored. The worker's own validation before printing remains a third check and
+does not substitute for either.
 
 #### Worker authorization
 
@@ -1279,10 +1343,15 @@ subsystem to be built before the architecture authorizing it is accepted.
    terminal result leaves a visible uncertain job and produces no second print**; and
    pairing material is consumed by its first use, and a rotated credential stops working.
 3. **Rotation survives its failure modes, and stale traffic is not treated as theft.**
-   **First, the replay mechanism is chosen** from the three options in *Rotation is a
-   recoverable exchange* and written into this record, because "returns the same successor" is
-   not implementable against hashed key storage and the choice may change what that storage is.
-   Then, in the same spike: a lost rotation response retried with the same
+   **The replay mechanism was chosen and written into this record on 2026-09-07** — the
+   successor is derived from worker-supplied material rather than stored, and the storage did
+   not have to change. **The gate is not closed.** The spike ran the credential cases in
+   isolation and therefore created no print attempts, which means it did **not** establish the
+   promise this gate actually makes: that no path loses an attempt's outcome *to a credential
+   refusal*. **An integrated case is required before this gate closes** — a worker that claims,
+   sends bytes, rotates mid-attempt, and then reports its result, showing the report is accepted
+   for the attempt it belongs to and that no credential state discards it. The cases already
+   run: a lost rotation response retried with the same
    `rotation_request_id` recovers under whichever mechanism was chosen, without issuing a
    second successor; a worker killed before storing the
    successor recovers to exactly one credential on restart; an old heartbeat or result
@@ -1298,11 +1367,24 @@ subsystem to be built before the architecture authorizing it is accepted.
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
    Recorded as the subset, not as a form generator.
+   **Run 2026-09-07 against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2, and still open.**
+   The intersection is measured and recorded above, and it excludes conditionals. What remains
+   is to **rerun the model/media cases through the revised design** — per-combination schemas
+   selected by discriminator, with mandatory server-side `combinations` validation — and to show
+   two things the first run did not: how the form **presents an incompatible choice** to a
+   person, and how a server refusal of a combination **reaches that form as an error** rather
+   than as a failed save. The gate closes when those work.
 5. **The capability contract version 1 expresses two real driver families.** Brother QL and
    one other, written out on paper against the contract, including an endless-tape length
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
    some combinations. A key the exercise shows is missing amends the contract before
    acceptance rather than after.
+   **Run 2026-09-07 against Brother QL and Zebra ZPL.** All three stresses were expressed, and
+   the exercise showed one key missing: **`artifact_forms`**, now added above. Per this gate's
+   own rule the amendment lands before acceptance — and the gate **closes only once the amended
+   contract is exercised against both families again**, with each driver's accepted input
+   formats and their applicable combinations written out, since that key did not exist when the
+   two documents were first drafted.
 
 ## Open questions
 
