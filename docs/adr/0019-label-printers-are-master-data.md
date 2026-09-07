@@ -79,7 +79,7 @@ reach the printer.
 | Owned by this repository | Owned by the worker repository |
 |---|---|
 | The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the settings schema and capability document each advertises |
-| The driver registry, and the capability contract those documents are written against | The rasterizer and imaging code |
+| The registry of driver and template definitions, and the capability contract they are written against | The rasterizer and imaging code |
 | The print job event and its payload contract, including pinned template identity | Label templates, their versions, and their declared capability requirements |
 | The claim/acknowledge/register API and its OpenAPI contract | Device transport (TCP, USB, whatever a driver needs) |
 | The attempt, evidence and observed-status records | The worker's own tests, including geometry assertions |
@@ -103,7 +103,7 @@ revision through `nix/images/lib.nix`, so the artifact carries the same uid, lab
 ### 2. Transport: an authenticated pull API, not direct database access
 
 **The worker holds no database credential and makes no database connection.** It
-authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Six
+authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Seven
 endpoints, all additive:
 
 - `POST /api/labels/register` — the worker advertises what it carries: each
@@ -133,10 +133,6 @@ as a SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` o
 `api_keys` table, and are already validated per route — so a label-worker key is granted
 and revoked independently of general API keys, and `ApiKeyAuthenticator` gains one type in
 its accepted set for these seven routes only. No new authentication machinery.
-
-**Assignment is checked, not conventional** — see decision item 3's *Worker assignment*.
-It combines a column naming the printer's worker with the driver registration the caller
-holds, so a worker is never offered a job it could not render.
 
 **Why pull rather than the alternatives**, since this is the item the deployment shape
 decides:
@@ -171,7 +167,8 @@ form, cannot validate a write, and discovers a bad configuration when a label fa
 print.
 
 **Workers advertise versioned configuration schemas; Victual owns the UI, the persisted
-instances and the validation.** Three tables.
+instances and the validation.** Five tables: the printer instances, the driver and template
+definitions, what each worker advertises, and the observed status.
 
 #### Common fields stay typed columns
 
@@ -183,7 +180,7 @@ instances and the validation.** Three tables.
 | `worker` | The one worker authorized to serve this printer. Not nullable |
 | `driver_id`, `driver_schema_version` | Validation, and claim-time compatibility |
 | `connection` | The outbound destination, kept a column so every address the deployment will dial is auditable in one place. Interpreted by the driver: a TCP endpoint, a USB device path, a queue name. One field rather than host and port, which assumes one transport |
-| `model`, `dpi` | Present on every raster label printer, and shown in the UI. The vocabulary is the driver's; the presence is not |
+| `model` | Every capability document keys its combinations by model, so the contract makes this field universal. Shown in the UI. The vocabulary is the driver's; the presence is not |
 
 #### Driver-specific settings are a validated document
 
@@ -369,8 +366,8 @@ remove, and a spare that requires one admin edit is a cheap price for keeping it
 
 `label_printer_status` holds what the device last reported: `last_seen_at`, the media the
 device says is loaded, error or warning state, and the worker that reported it. It is
-written only through the status endpoint by a label-worker key, is never admin-editable,
-and is never read as configuration.
+written only through the status endpoint, and only by the printer's assigned worker; it is
+never admin-editable and never read as configuration.
 
 **Configured media and reported media are different fields in different tables, and
 neither overwrites the other.** A mismatch is a discrepancy a person resolves — the same
@@ -398,9 +395,10 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   item 6's rule, which starts at the claim.
   Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
   decision item 4's deleted-printer case.
-- **A printer with no compatible worker is a visible state.** Rule 3 failing for every
-  registered worker means its jobs are never offered, and the configuration screen says
-  so.
+- **A printer whose assigned worker cannot drive it is a visible state.** When that worker
+  does not advertise the printer's exact driver version, or the pinned template version a
+  job needs, the job is never offered — and the configuration screen says which of the two
+  is missing rather than leaving a queue that grows for no visible reason.
 
 #### Where the three kinds of setting live
 
@@ -418,12 +416,14 @@ capability document is how the template learns it.
 
 #### How these entities are reached
 
-`label_printers`, `label_drivers` and `label_printer_status` are added to the OpenAPI
-`ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and `ExposedEntityNoDelete`, and
-each gains a `PERMISSION_ADMIN` row in `EntityReadPolicy::PERMISSIONS` — which is
-fail-closed, throwing "Entity has no read policy" for an entity absent from it. Reads go
-through `GenericEntityApiController` and the UI is a `Victual.EntityList` list page as
-`shoppinglocations` is.
+All seven tables — `label_printers`, `label_drivers`, `label_templates`,
+`label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence` —
+are added to the OpenAPI `ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and
+`ExposedEntityNoDelete`, and each gains a `PERMISSION_ADMIN` row in
+`EntityReadPolicy::PERMISSIONS`, which is fail-closed and throws "Entity has no read policy"
+for an entity absent from it. Reads go through `GenericEntityApiController` and the UI is a
+`Victual.EntityList` list page as `shoppinglocations` is. Nothing is writable there: every
+write arrives through a worker route or the dedicated administration controller.
 
 **Writes go through a dedicated controller**, which validates the settings document
 against the registry and requires `PERMISSION_ADMIN`. `GenericEntityApiController` has no
@@ -483,10 +483,11 @@ job say which rendering it meant. Three rules follow:
 Event type `label.print_requested`, in the existing `outbox` table, under the existing
 `payload_version` discipline. No second queue.
 
-`print_attempts` records one row per claim: `attempt_id`, the outbox row it belongs to, the
-worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`, `device_reported_at`,
-outcome, and error text. The outbox row remains the unit of work and is acknowledged by
-setting `delivered_at`; the attempt rows are this consumer's record of what it tried.
+`print_attempts` records one row per claim: `attempt_id`, `attempt_number`, the outbox row
+it belongs to, the worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`,
+`device_reported_at`, outcome, error text, and whether the attempt was superseded. The
+outbox row remains the unit of work and is acknowledged by setting `delivered_at`; the
+attempt rows are this consumer's record of what it tried.
 
 #### Claiming, leases and fencing
 
@@ -512,6 +513,12 @@ means.
   while the attempt runs. Renewal stops at a maximum total execution time, past which the
   attempt is `abandoned` whatever the worker believes, so a wedged worker cannot hold a job
   indefinitely by heartbeating. An expiry ends the attempt; it does not return the job.
+- **An unresolved job stays undelivered without being retried**, which is a departure from
+  what `delivered_at IS NULL` means for the outbox's existing event type. A job whose only
+  attempt ended uncertain has no acknowledgment and no further authorization, so it is
+  neither delivered nor claimable, and `OutboxService`'s undelivered set is not by itself
+  the set of work this consumer will do. Anything reporting backlog for
+  `label.print_requested` reads the authorization state, not `delivered_at` alone.
 - **Results are fenced by `current_attempt_id`.** `heartbeat`, `sent` and `result` are
   accepted only when the caller owns the attempt. A result for an attempt that is no longer
   the job's current one is recorded on **its own row**, marked superseded: it does not
@@ -536,7 +543,7 @@ means.
 
 #### `print_evidence` records an observation, not a conclusion
 
-One row per observation, and every row carries all five of:
+One row per observation, and every row carries all six of:
 
 | Field | Content |
 |---|---|
@@ -586,7 +593,7 @@ missing label:
 |---|---|---|
 | **Sent** | The worker wrote the job to the device without a transport error | `bytes_sent_at` |
 | **Reported complete** | The device itself reported the job finished | `device_reported_at` plus outcome |
-| **Verified** | Optional external evidence that a physical label exists | An evidence row referencing this attempt |
+| **Verified** | Optional external evidence about this attempt has been recorded | An evidence row referencing this attempt. Evidence is attached, not adjudicated: it informs a person, it does not resolve a state |
 | **Uncertain** | The attempt ended with no terminal result | Neither timestamp reached a terminal outcome. A resting state, not a transient one |
 
 **Sent is not printed.** A device can accept bytes and then jam, run out of tape, or be
@@ -805,12 +812,13 @@ one superuser" — stays a two-role problem instead of becoming a three-role one
 worker holds instead is a typed API key whose reach is bounded by the seven routes it may
 call and, on each, by the printer or attempt named in the request.
 
-**A worker writes three kinds of row, and one of them is a schema.** Attempts and status
-are per-device bookkeeping. The driver registry is different: a machine identity supplies a
-document that governs what an admin may later store. Decision item 3 bounds it structurally
-— a registration is append-only, refused when it contradicts a stored one, and refused when
-it would invalidate an existing printer row. A compromised or buggy worker can add a driver
-nobody uses; it cannot rewrite the rules under configurations that already exist.
+**A worker writes five kinds of row, and two of them are definitions.** Attempts, status
+and evidence are bookkeeping about work it did. Driver and template definitions are
+different: a machine identity supplies documents that govern what an admin may later store
+and what a job may later pin. Decision item 3 bounds them structurally — a definition is
+append-only and a registration contradicting a stored one is refused, so a compromised or
+buggy worker can publish a driver or template nobody uses, but cannot rewrite a definition
+that existing printer rows and queued jobs were validated against.
 
 **A JSON Schema validator becomes a dependency.** `composer.json`'s eighteen
 requirements include none. Two consequences beyond the package: it is the second addition
@@ -910,7 +918,7 @@ implementation plan rather than to this record.
    [22](../plans/22-medication-tracking.md) question 6 declined the label machinery and
    [06](../plans/06-location-barcodes.md) covers the locations half only. The verification
    these gates deliberately exclude has to land somewhere, and a plan is where.
-2. **The per-type evidence fields.** Decision item 5 fixes the five required fields and the
+2. **The per-type evidence fields.** Decision item 5 fixes the six required fields and the
    rule that images are storage references. Which optional fields each `evidence_type`
    requires, and what a `printer_status` observation contains, follow from what the first
    verifier can actually report.
