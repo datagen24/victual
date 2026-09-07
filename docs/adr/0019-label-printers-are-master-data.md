@@ -81,17 +81,22 @@ an afterthought.
 
 | Owned by this repository | Owned by the worker repository |
 |---|---|
-| The printer inventory (`label_printers`) and its CRUD and UI | The rasterizer and imaging code |
+| The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the schema each advertises |
+| The driver registry: which drivers exist, at which schema versions | The rasterizer and imaging code |
 | The print job event and its payload contract | Label templates and their definitions |
-| The claim/acknowledge API and its OpenAPI contract | Printer drivers and driver capability data |
-| The attempt record: what was tried, what came back, what evidence exists | Device transport (TCP, USB, whatever a driver needs) |
-| The flake input pinning the worker's revision, and the image built from it | The worker's own tests, including geometry assertions |
+| The claim/acknowledge/register API and its OpenAPI contract | Device transport (TCP, USB, whatever a driver needs) |
+| The attempt record and the observed-status record | The worker's own tests, including geometry assertions |
+| The flake input pinning the worker's revision, and the image built from it | |
 
-Victual owns **configuration and monitoring**. The worker owns **rendering and device
-contact**. This preserves ADR-0011's consequence that rendering leaves this repository,
-and it makes the reason structural rather than a convention: template semantics, driver
-quirks and imaging bugs move on their own schedule, and none of them should be a reason to
-cut a Victual release.
+Victual owns **configuration and monitoring**. The worker owns **rendering, device contact
+and driver implementation**. This preserves ADR-0011's consequence that rendering leaves
+this repository, and it makes the reason structural rather than a convention: template
+semantics, driver quirks and imaging bugs move on their own schedule, and none of them
+should be a reason to cut a Victual release.
+
+The seam between the two halves is a **capability contract**: a worker advertises what its
+drivers accept, and Victual holds that description, renders configuration from it,
+validates against it and stores the result. Neither side hardcodes the other's vocabulary.
 
 `flake.nix` gains the worker repository as a pinned input and builds its image from that
 revision through `nix/images/lib.nix`, so the artifact carries the same uid, labels and
@@ -101,16 +106,22 @@ revision through `nix/images/lib.nix`, so the artifact carries the same uid, lab
 ### 2. Transport: an authenticated pull API, not direct database access
 
 **The worker holds no database credential and makes no database connection.** It
-authenticates to Victual's HTTP API and pulls work. Four endpoints, all additive:
+authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Six
+endpoints, all additive:
 
+- `POST /api/labels/drivers` — the worker registers each driver it carries, as
+  `(driver_id, schema_version, schema, capabilities)`. Idempotent, append-only, and
+  refused when it would contradict a stored registration — see decision item 3.
 - `POST /api/labels/jobs/claim` — the worker asks for up to *n* jobs for the printers
-  assigned to it. The response carries, per job, the label uid, the template name, the
-  rendered text fields as captured at enqueue, **the printer's configuration resolved
-  now**, an `attempt_id`, and a lease expiry.
+  assigned to it and drivable by it. The response carries, per job, the label uid, the
+  template name, the rendered text fields as captured at enqueue, **the printer's
+  configuration resolved now**, an `attempt_id`, and a lease expiry.
 - `POST /api/labels/attempts/{attempt_id}/sent` — bytes reached the device.
 - `POST /api/labels/attempts/{attempt_id}/result` — terminal outcome, with the device's
   report or the error.
 - `POST /api/labels/attempts/{attempt_id}/evidence` — optional, for camera verification.
+- `POST /api/labels/printers/{id}/status` — observed status: what the device last
+  reported. Write-only for workers, and never configuration — see decision item 3.
 
 **Worker identity is an API key of a new type**, `ApiKeyService::API_KEY_TYPE_LABEL_WORKER`,
 alongside the two existing constants (`services/ApiKeyService.php:15-16`) and the `mcp`
@@ -118,13 +129,11 @@ type the [MCP interface spec](../mcp-interface-spec.md) proposes. Keys are alrea
 as a SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` on the
 `api_keys` table, and are already validated per route — so a label-worker key is granted
 and revoked independently of general API keys, and `ApiKeyAuthenticator` gains one type in
-its accepted set for these four routes only. No new authentication machinery.
+its accepted set for these six routes only. No new authentication machinery.
 
-**Assigned printers are a column, not a convention.** `label_printers.worker` names the
-worker identity that serves that printer; the claim endpoint returns jobs only for
-printers naming the caller. A null means any worker may take it, which is the
-single-worker installation. This is what makes a remote USB worker and a cluster worker
-coexist without either seeing the other's queue.
+**Assignment is checked, not conventional** — see decision item 3's *Worker assignment*.
+It combines a column naming the printer's worker with the driver registration the caller
+holds, so a worker is never offered a job it could not render.
 
 **Why pull rather than the alternatives**, since this is the item the deployment shape
 decides:
@@ -148,57 +157,179 @@ decides:
 Pull inverts the direction: Victual is the server, never the client. A worker anywhere
 that can reach Victual can print, and Victual needs to reach nothing.
 
-### 3. `label_printers` is master data, with the device/template boundary drawn first
+### 3. A driver registry and a capability contract, not a fixed column set
 
-One row per physical device. It carries `id`, `name`, `description`,
-`row_created_timestamp` and `active` as `shopping_locations` has them, plus:
+A printer's configuration is not one shape. A Brother QL wants a tape identity and a
+two-colour flag; a Zebra wants ZPL darkness and a tear-off offset; a CUPS-attached device
+wants a queue name and options. Freezing the union of those as columns means the second
+driver family arrives as a migration, and the first family's vocabulary becomes the schema
+everyone else is bent into. Freezing them as one opaque blob means Victual cannot render a
+form, cannot validate a write, and discovers a bad configuration when a label fails to
+print.
 
-- `driver` — the driver identity the worker resolves, e.g. `brother_ql`. **Not a model
-  string in one library's namespace.** The driver names the family; the family decides how
-  the rest of the row is interpreted.
-- `model` — the device model within that driver's vocabulary.
-- `connection` — interpreted by the driver: a TCP endpoint, a USB device path, a queue
-  name. A single field, because "host and port" is already an assumption about one
-  transport and the USB worker breaks it.
-- `media` — the loaded tape or die-cut stock in the driver's vocabulary (`62`, `62red`).
-- `dpi`, and the capability facts a template must respect: whether the loaded media is
-  two-colour, and the printable geometry the driver reports.
-- `worker` — the assigned worker identity, nullable.
-- `is_default`.
+**Workers advertise versioned configuration schemas; Victual owns the UI, the persisted
+instances and the validation.** Three tables, and the split between them is the point.
 
-**Fonts, per-element colour choices and the short-date threshold are not on this table.**
-They are template configuration, and they belong to templates, which belong to the worker
-repository. The boundary rule: a column belongs to `label_printers` if it describes what
-the device *is or has loaded*, and to a template if it describes what a label *should look
-like*. A printer's media being two-colour is a device fact; a template choosing to render
-the due date in red is a template choice that is valid only where the device fact is true.
-Freezing font and colour columns now would freeze them against one printer family before a
-second driver exists to test the shape against.
+#### Common fields stay typed columns
 
-**Reached the way every other master-data entity is.** `label_printers` is added to the
-OpenAPI `ExposedEntity` enum and to `ExposedEntityEditRequiresAdmin`, so
-`GenericEntityApiController` serves `/api/objects/label_printers` and requires
-`PERMISSION_ADMIN` on write. It also gains a row in `EntityReadPolicy::PERMISSIONS`, which
-is fail-closed — an entity absent from that map throws "Entity has no read policy" — and
-that row is `PERMISSION_ADMIN` as well, because the row is a network address and no
-ordinary application path reads it. The UI is a `Victual.EntityList` list page and a
-`Victual.EntityForm` form, as `shoppinglocations` is. The migration is PostgreSQL-only;
-the SQLite line is frozen at 0265 by [plan 24](../plans/24-sqlite-runtime-retirement.md).
+`label_printers` carries, as ordinary columns, exactly what **Victual itself** reads:
 
-**What stops this becoming a settings framework.** Nothing in the table is a key/value
-pair. Every column is a typed property of a physical device, and the test for admitting a
-new one is whether a driver reads it: if no driver does, it is not a printer column.
-Configuration that is not a property of a device stays where it is — instance-wide
-behaviour in `Setting()` constants, per-person preference in `user_settings`, appearance in
-templates. This record creates one master-data entity and no mechanism.
+| Column | Why Victual reads it |
+|---|---|
+| `id`, `name`, `description`, `row_created_timestamp`, `active`, `is_default` | Lifecycle and UI, as `shopping_locations` has them |
+| `worker` | Routing: which worker is offered this printer's jobs. Nullable |
+| `driver_id`, `driver_schema_version` | Validation, and claim-time compatibility |
+| `connection` | The outbound destination. **Typed and auditable on purpose** — the security posture below depends on being able to point at every destination the deployment will dial, and a value buried inside a JSON document is not greppable. Interpreted by the driver: a TCP endpoint, a USB device path, a queue name. One field rather than host and port, because the latter already assumes one transport and the USB worker breaks it |
+| `model`, `dpi` | Present on every raster label printer, and shown in the UI. The vocabulary is the driver's; the presence is not |
+
+#### Driver-specific settings are a validated document
+
+Everything a *driver* reads and Victual does not — media identity, colour capability, cut
+behaviour, darkness, margins — lives in a `settings` JSON document on the same row,
+**validated on write against the schema registered for that `driver_id` at that
+`driver_schema_version`**. Victual never interprets its contents; it only enforces that
+they match what the driver said it accepts.
+
+The configuration form is generated from the registered schema, so adding a driver adds a
+form without a frontend change. The same schema is what makes an invalid setting a 400 at
+configuration time instead of a failed print an hour later.
+
+#### The registry: `label_drivers`
+
+One row per `(driver_id, schema_version)`: the JSON Schema for that driver's settings, a
+capability document describing what the driver can do, the worker identity that registered
+it, and when. **Append-only and immutable.**
+
+- **Driver identity** is a stable namespaced string naming a *contract*, not an
+  implementation — `brother.ql`, not `brother_ql` as one Python package spells it, and
+  never a version. Two different workers may register the same `driver_id`, which is
+  exactly what lets a spare worker take over an assigned printer. The identity is owned by
+  the repository that implements the driver.
+- **Schema compatibility** is `major.minor`. A major bump means the settings shape changed
+  incompatibly; a minor bump means it grew additively.
+- **Re-registering an existing `(driver_id, schema_version)` with a different schema
+  document is refused.** Printer rows were validated against the stored one, so silently
+  replacing it would leave stored settings claiming a validity nobody checked. A worker
+  whose schema changed bumps the version. This is the rule that makes the version number
+  mean something rather than being an assertion nobody tests.
+- **A new minor is accepted only if every stored printer row on that driver's earlier
+  minors still validates against it.** Victual does not attempt schema subsumption — it
+  runs the rows it actually has. That is cheaper than reasoning about the schemas and it
+  tests the property that matters.
+- **A new major is accepted freely and adopts nothing.** Moving a printer instance to a
+  new major is an explicit admin action that revalidates its settings and rewrites
+  `driver_schema_version`. Never automatic, because a major bump is by definition a change
+  the stored settings may not survive.
+
+#### Worker assignment
+
+A job is offered to a claiming worker when all of the following hold. Each is a check, not
+a convention:
+
+1. The printer is `active`.
+2. `label_printers.worker` is null, or equals the caller's worker identity.
+3. The caller has a current registration for the printer's `driver_id` at the **same
+   major** and a **minor greater than or equal to** the row's pinned minor.
+
+Rule 3 is what stops a worker being handed a job whose settings use a property its build
+does not know about. A null `worker` with several workers registered means whichever claims
+first takes it, which is safe because a claim is an insert.
+
+#### Observed status is a separate table, written only by workers
+
+`label_printer_status` holds what the device last reported: `last_seen_at`, the media the
+device says is loaded, error or warning state, and the worker that reported it. It is
+written only through the status endpoint by a label-worker key, is never admin-editable,
+and is never read as configuration.
+
+The separation earns its keep at exactly one place, and it is worth naming: **configured
+media and reported media are different fields in different tables, and neither overwrites
+the other.** A mismatch is a discrepancy a person resolves — the same stance ADR-0011 takes
+for a scan of a retired uid. A design that let the device's report update the configuration
+would make "someone loaded the wrong tape" indistinguishable from "someone changed the
+configuration", and a design that let configuration overwrite the report would discard the
+only evidence of what is physically in the machine.
+
+There is no `online` boolean. Status goes **stale**, not false: "reported healthy three
+days ago" and "reported healthy three seconds ago" must not render identically, which a
+boolean cannot express and a `last_seen_at` with a staleness rule can.
+
+#### Offline behaviour
+
+- **Registrations are persisted, not a live session.** A worker going away deregisters
+  nothing. Stored printer rows depend on their schema remaining available to be
+  interpreted and re-validated, so deregistration is an explicit admin action, not a
+  timeout.
+- **Configuration works with nothing running.** The admin can create and edit printers
+  against the stored schema while every worker is down.
+- **Jobs queue, and nothing dead-letters for being unclaimed.** This is the precise failure
+  [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a day eats
+  a day of labels" — and the outbox exists to remove it. Unclaimed age is backlog, which is
+  visible; it is not an error. Dead-lettering stays for what 0259 defined it for, a payload
+  no version can read, plus decision item 4's deleted-printer case.
+- **A printer with no compatible worker is a visible state, not a silent one.** Rule 3
+  failing for every registered worker means the printer's jobs are never offered; the
+  configuration screen says so, because the alternative is a queue that grows for a reason
+  nobody can see.
+
+#### Where the three kinds of setting live
+
+| Kind | Set by | Lives in | Example |
+|---|---|---|---|
+| Device settings | An admin | `label_printers` columns and its validated `settings` | Which tape is loaded; the connection |
+| Template settings | The template author | The worker repository | The font; rendering the due date in red |
+| Observed status | A worker, reporting | `label_printer_status` | The tape the device says is loaded; a paper-out warning |
+
+The rule for placing a value: if a person sets it, it is device settings; if a worker
+reports it, it is status; if it describes what a label looks like, it is a template
+setting. Nothing crosses. A printer's media being two-colour is a device fact; a template
+choosing to render the due date in red is a template choice that is only valid where that
+device fact is true, and the capability document is how the template learns it.
+
+#### How these entities are reached
+
+`label_printers`, `label_drivers` and `label_printer_status` are added to the OpenAPI
+`ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and `ExposedEntityNoDelete`, and
+each gains a `PERMISSION_ADMIN` row in `EntityReadPolicy::PERMISSIONS` — which is
+fail-closed, throwing "Entity has no read policy" for an entity absent from it. Reads go
+through `GenericEntityApiController` and the UI is a `Victual.EntityList` list page as
+`shoppinglocations` is.
+
+**Writes do not go through the generic path, and that is a departure from this record's
+first draft worth stating plainly.** Two reasons, one of them concrete:
+`GenericEntityApiController` has no per-entity validation hook, and
+`BaseApiController::GetParsedAndFilteredRequestBody` explicitly skips arrays when
+sanitising ("HTMLPurifier removes boolean values and arrays, so explicitly keep them"), so
+a nested settings document would reach the database through it unexamined. Schema
+validation would then be the only gate on that document, applied nowhere. A dedicated
+controller validates against the registry and requires `PERMISSION_ADMIN` directly. The
+read-generically, write-purposefully pattern is not new: `ExposedEntityNoEdit` already
+holds fifteen entities including `roles`, which plan 19 writes through its own endpoints.
+
+The migrations are PostgreSQL-only; the SQLite line is frozen at 0265 by
+[plan 24](../plans/24-sqlite-runtime-retirement.md).
+
+#### What stops this becoming a settings framework
+
+The registry is a mechanism, and the previous draft's claim that this record creates none
+no longer holds. What bounds it: a registration describes **one driver's device settings**,
+and nothing else may be stored through it. The schema is supplied by a label-worker key and
+is reachable only from the label-worker routes. Configuration that is not a property of a
+printing device stays where it is — instance-wide behaviour in `Setting()` constants,
+per-person preference in `user_settings`, appearance in templates. The test for admitting a
+field to `settings` is unchanged and now enforced rather than argued: a driver declared it,
+or it cannot be stored.
 
 ### 4. The job names a printer; the configuration is resolved at claim time
 
 The outbox payload carries the label uid, the template name, the rendered text fields as
 they stood when the job was created, and a `printer_id` — not a connection, not a media
-identity. The claim response resolves that printer's current row and returns it with the
-job. A job whose printer has been deleted or deactivated is dead-lettered with
-`last_error` saying so, rather than handed out against a device that is gone.
+identity, not a settings document. The claim response resolves that printer's current row
+and returns its typed columns, its validated `settings`, and the `driver_id` and
+`driver_schema_version` they were validated against, so the worker knows which of its
+builds' expectations apply rather than inferring them. A job whose printer has been deleted
+or deactivated is dead-lettered with `last_error` saying so, rather than handed out against
+a device that is gone.
 
 ### 5. The outbox is reused; attempts are a separate evidence log
 
@@ -312,9 +443,26 @@ scoping, defaults, precedence against environment variables, who may read which 
 a printer is a poor specimen to design those against. Rejected as premature; if a general
 settings table is ever wanted, `label_printers` is not evidence against it.
 
-**C. A `label_printers` master-data table.** The proposal. One entity, the CRUD and UI
-machinery every other master-data entity already uses, no new mechanism, and multiple
-printers and multiple workers fall out of it.
+**C. A `label_printers` master-data table.** The proposal. Persisted instances, an admin
+UI, and multiple printers and multiple workers falling out of it rather than being designed
+in.
+
+### How a printer's settings are shaped
+
+**A. A fixed column set, wide enough for the printers in hand.** What the first draft of
+this record proposed. It is simple until the second driver family arrives, at which point
+it is a migration per family, and the first family's vocabulary is the schema every later
+one is bent into. Rejected.
+
+**B. One opaque JSON column.** No migration per family, and no validation, no generated
+form, and no way to tell a typo from an intentional setting until a print fails. Rejected:
+it moves the failure from configuration time to print time, which is the direction this
+record is trying to move things away from.
+
+**C. A registry of worker-advertised, versioned schemas, with common fields typed.** The
+proposal. Costs a JSON Schema dependency and a registry the workers write to; buys
+validation at configuration time, a form Victual can generate for a driver it has never
+heard of, and a second driver family that arrives with no migration and no frontend change.
 
 ### How the worker gets its work
 
@@ -360,8 +508,9 @@ position is stated rather than waived:
   by the worker's own network policy under [ADR-0010](0010-workload-standard.md) property
   3. The control belongs to the worker's manifest, which is where the accepting change
   should put it.
-- The writer is an admin (`ExposedEntityEditRequiresAdmin` plus the `EntityReadPolicy`
-  row), not any authenticated household member. Under
+- The writer is an admin: `connection` is set through the dedicated write controller,
+  which requires `PERMISSION_ADMIN`, and read through an entity whose `EntityReadPolicy`
+  row is `PERMISSION_ADMIN`. Not any authenticated household member. Under
   [ADR-0006](0006-authenticated-issues-in-scope.md) that narrows who can reach it; it does
   not excuse it.
 
@@ -398,8 +547,34 @@ tree at all.
 [Plan 20](../plans/20-container-infrastructure.md)'s verification check 8 — "the credential
 split is real", recorded as "Not done. Needs a role with no DDL rights; the bootstrap uses
 one superuser" — stays a two-role problem instead of becoming a three-role one. What the
-worker holds instead is a typed API key whose permission set is bounded by the four routes
+worker holds instead is a typed API key whose permission set is bounded by the six routes
 it may call.
+
+**A worker now writes three kinds of row, and one of them is a schema.** Attempts and
+status are per-device bookkeeping and unremarkable. The driver registry is different: a
+machine identity supplies a document that later governs what an admin may store. The bound
+is in decision item 3 rather than in trust — a registration is append-only, is refused when
+it contradicts a stored one, and is refused when it would invalidate an existing printer
+row. So a compromised or buggy worker can add a driver nobody uses; it cannot rewrite the
+rules under configurations that already exist, and it cannot make a stored printer stop
+validating.
+
+**A JSON Schema validator becomes a dependency, and there is none in the tree.**
+`composer.json`'s eighteen requirements include no schema validator, so this is a new
+package. Two consequences beyond the package itself: it is the second addition this fork
+has made to `composer.json` after `php-mqtt/client`, which plan 18's security notes say the
+sweep's dependency review should pick up; and a `composer.lock` change moves the
+fixed-output hash in `nix/hashes.nix`, which ADR-0013 records as one of two hashes
+maintained by hand. Both are known costs rather than surprises, and the alternative —
+hand-rolled validation of an arbitrary driver-supplied schema — is worse.
+
+**The configuration form is generated, which is a frontend capability the tree does not
+have.** `Victual.EntityForm` binds fixed fields to an entity. Rendering a form from a JSON
+Schema is new work, and it is the largest single cost in this record. What it buys is that
+a second driver family ships with no frontend change at all; what it risks is a form
+generator growing to cover schema features nobody needs. The bound: the generator supports
+the subset a driver actually uses, and a schema using more than that is rejected at
+registration rather than rendered badly.
 
 **The render/print seam is verified two ways, because it has two kinds of defect.**
 [Issue #90](https://github.com/datagen24/victual/issues/90) records both against the
@@ -413,9 +588,14 @@ says so, having established that no library default competes with the prototype'
 `-90`, and it needs one physical print against the tape feed direction. Both are required;
 neither substitutes for the other.
 
-**One more table under the migration discipline**, PostgreSQL-only, plain, with no views or
-triggers, plus `print_attempts`. The `labels` table ADR-0011 requires is separate and still
-unowned; this record does not claim it.
+**Four tables under the migration discipline**, PostgreSQL-only and plain, with no views or
+triggers: `label_printers`, `label_drivers`, `label_printer_status` and `print_attempts`.
+That is more than the first draft's one, and the reason is that device settings, the schemas
+that validate them, observed status and attempt history are four different lifetimes —
+admin-edited, append-only, worker-overwritten and append-only respectively. Collapsing any
+pair of them is what produces the failure modes decision item 3 exists to avoid. The
+`labels` table ADR-0011 requires is separate and still unowned; this record does not claim
+it.
 
 ## Reliance on ADR-0010, which is Proposed
 
@@ -454,9 +634,16 @@ the lifecycle's bookkeeping-only rule; none asks that pull request to decide any
    `bytes_sent_at` and its terminal result produces a duplicate label rather than a lost
    one.
 3. **The worker's identity is provisioned and its reach measured.** A
-   `label_worker`-type key can claim and acknowledge, and is refused on `GET /api/stock`
-   and on `/api/objects/label_printers`; a `default`-type key is refused on the four label
-   routes. Reported as observed responses, not as a reading of the middleware.
+   `label_worker`-type key can register, claim and acknowledge, and is refused on
+   `GET /api/stock` and on writing `label_printers`; a `default`-type key is refused on the
+   six label routes. Reported as observed responses, not as a reading of the middleware.
+4. **The registry's compatibility rules hold under the cases that motivate them**, against
+   two registered drivers so the rules are exercised rather than described:
+   re-registering an existing `(driver_id, schema_version)` with a changed schema is
+   refused; a new minor that would invalidate a stored printer row is refused, and the same
+   minor is accepted once that row is corrected; a worker registered at a lower minor than a
+   printer's pinned version is not offered that printer's jobs; and a printer whose settings
+   are invalid for its driver is refused at configuration time rather than at print time.
 
 ## Open questions
 
@@ -475,11 +662,19 @@ the lifecycle's bookkeeping-only rule; none asks that pull request to decide any
    intended. *Lean: the job carries the template name and the worker refuses a name it does
    not know, dead-lettering rather than guessing — the same discipline `PAYLOAD_VERSION`
    applies to payload shapes.*
-4. **The capability model for a second driver family.** Decision item 3 draws the
-   device/template boundary but leaves the driver capability vocabulary to the worker.
-   *Lean: keep it in the worker until a second family exists; the first driver's needs are
-   a bad specification for the general case, which is the mistake the Brother-specific
-   column set would have made.*
+4. **What the capability document contains, as distinct from the settings schema.** The
+   settings schema says what an admin may configure; the capability document says what the
+   driver can do, and templates read it — whether two colours are available, the printable
+   geometry, whether the device reports completion. Its shape is not decided here. *Lean:
+   let the first driver's document be whatever the first template needs, and standardise
+   only the two or three keys a second driver family proves are general. A capability
+   vocabulary designed against one family is the mistake the fixed column set would have
+   made, one level up.*
+5. **Which JSON Schema dialect and which subset the form generator supports.** These are
+   the same question asked twice: the generator's supported subset is what registration
+   should enforce. *Lean: a draft the chosen PHP library implements, restricted to object
+   schemas of scalar and enumerated properties with titles and descriptions, and a
+   registration using anything outside that refused with a message saying so.*
 
 ## Research
 
@@ -493,6 +688,17 @@ the lifecycle's bookkeeping-only rule; none asks that pull request to decide any
   `ApiKeyService`'s two type constants with hashed storage and `key_hint` since migration
   0264; the `outbox` table and `OutboxService`'s event-type and payload-version discipline;
   `bin/victual-publish-state` as the existing in-repository consumer.
+- **No JSON Schema validator is in `composer.json`**, whose `require` block holds eighteen
+  packages, the most recent additions being `ramsey/uuid` and `php-mqtt/client`. Checked
+  2026-09-06.
+- **`GenericEntityApiController` has no per-entity validation hook**, and
+  `BaseApiController::GetParsedAndFilteredRequestBody` sanitises scalar values while
+  explicitly skipping arrays and booleans — its comment says "HTMLPurifier removes boolean
+  values (true/false) and arrays, so explicitly keep them". A nested settings document
+  therefore passes through it unexamined, which is why decision item 3 writes through a
+  dedicated controller. `ExposedEntityNoEdit` holds fifteen entities today, so
+  read-generically and write-purposefully is the tree's existing pattern rather than a new
+  one.
 - Plan 06 is wave 3b in the [plans index](../plans/README.md); wave 3b's row records 03 as
   complete and 06 as remaining, and notes that shared route and spec edits in that wave
   need coordination because 03 took the `ExposedEntity` enums.
