@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://victual.invalid/label-drivers/brother.ql/1.0/settings.json",
+  "title": "Brother QL printer settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model", "media"],
+  "properties": {
+    "model": {
+      "title": "Model",
+      "type": "string",
+      "enum": ["QL-700", "QL-800", "QL-810W", "QL-820NWB", "QL-1100"]
+    },
+    "media": {
+      "title": "Loaded media",
+      "type": "string",
+      "enum": ["12", "29", "38", "50", "62", "62red", "102", "17x54", "29x90", "62x100"]
+    },
+    "two_colour": {
+      "title": "Two-colour printing",
+      "type": "boolean",
+      "default": false,
+      "description": "Only meaningful on 62red media in a two-colour capable model."
+    },
+    "dpi_600": { "title": "600 dpi along the feed", "type": "boolean", "default": false },
+    "cut_behaviour": {
+      "title": "Cutting",
+      "type": "string",
+      "enum": ["each", "end", "none"],
+      "default": "each"
+    },
+    "compress": { "title": "Compress raster", "type": "boolean", "default": true }
+  },
+  "allOf": [
+    {
+      "//": "The model/media case the gate names: red is not a property of the model alone.",
+      "if": { "properties": { "two_colour": { "const": true } }, "required": ["two_colour"] },
+      "then": {
+        "properties": {
+          "media": { "enum": ["62red"] },
+          "model": { "enum": ["QL-800", "QL-810W", "QL-820NWB"] }
+        }
+      }
+    },
+    {
+      "//": "Die-cut media cannot be cut per label the way continuous media can.",
+      "if": { "properties": { "media": { "enum": ["17x54", "29x90", "62x100"] } }, "required": ["media"] },
+      "then": { "properties": { "cut_behaviour": { "enum": ["end", "none"] } } }
+    }
+  ]
+}
