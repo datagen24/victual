@@ -91,9 +91,10 @@ scanned resolves to one location and shows it. Nothing is remembered, no stock f
 and no booking targets it. If an implementation of this starts holding a selected location
 across requests, it has crossed into the deferred plan and should stop.
 
-Resolution stays authorized by the permission that reads a location, per 25 piece 1 — an
-unknown uid, a retired uid and a uid the caller may not read are three distinguishable
-outcomes, and the third leaks nothing about existence.
+Resolution stays authorized by the permission that reads a location, per 25 piece 1. An
+authorized user sees three outcomes — resolved, retired with what the label was, and unknown.
+An unauthorized one sees the unknown answer whether the uid exists or not, because a caller
+who can tell "exists, not yours" from "no such uid" has been told the label exists.
 
 What this plan may not do while the two are in flight is route around 25 to ship something
 sooner. Location printing does not extend `VICTUAL_LABEL_PRINTER_WEBHOOK` and emits no
