@@ -17,15 +17,68 @@ import yaml
 
 PROBES = ("startupProbe", "livenessProbe", "readinessProbe")
 
+
+def _template_spec(doc):
+    return ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+
+
 # Kinds this check knows how to find containers in, and where. Kinds outside this set
 # (ConfigMap, Secret, Service) are skipped rather than rejected: this file validates
 # workload security and resourcing, not every object deploy/** may ever carry.
 POD_SPEC_PATHS = {
     "Pod": lambda doc: doc.get("spec") or {},
-    "Deployment": lambda doc: ((doc.get("spec") or {}).get("template") or {}).get("spec") or {},
-    "StatefulSet": lambda doc: ((doc.get("spec") or {}).get("template") or {}).get("spec") or {},
-    "DaemonSet": lambda doc: ((doc.get("spec") or {}).get("template") or {}).get("spec") or {},
+    "Deployment": _template_spec,
+    "StatefulSet": _template_spec,
+    "DaemonSet": _template_spec,
+    "Job": _template_spec,
+    "CronJob": lambda doc: _template_spec((doc.get("spec") or {}).get("jobTemplate") or {}),
 }
+
+# Workloads whose containers run once and exit. They carry every security and resourcing
+# obligation a serving container does, and none of the liveness obligations: a probe on a
+# container that is *meant* to terminate either never runs or reports a failure that is the
+# normal end of the work. This is the same exemption init containers already had, applied to
+# the kinds ADR-0021's renderer needs — a scale-to-zero render job is exactly this shape.
+RUN_TO_COMPLETION_KINDS = frozenset({"Job", "CronJob"})
+
+# Keys whose value is a list of container definitions, wherever they appear.
+CONTAINER_KEYS = ("containers", "initContainers")
+
+
+def _container_lists(node):
+    """Yield every container list nested anywhere under `node`."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in CONTAINER_KEYS and isinstance(value, list):
+                yield value
+            else:
+                yield from _container_lists(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _container_lists(item)
+
+
+def _unrecognized_workload_errors(doc):
+    """Refuse a document that holds containers this check cannot find the pod spec for.
+
+    The gap ADR-0021's prerequisite 6 named was not that Job and CronJob were missing --
+    it was that *any* unknown kind passed by not being examined, silently, with no
+    difference between "this object has no containers" and "this object has containers I
+    could not reach". Adding two kinds fixes today's instance; failing closed on the rest
+    is what stops the next one recurring. A ConfigMap still passes: its `data` values are
+    strings, so no container list is reachable inside it.
+    """
+    kind = doc.get("kind", "<no kind>")
+    name = (doc.get("metadata") or {}).get("name", "<unnamed>")
+    if any(
+        any(isinstance(container, dict) for container in containers)
+        for containers in _container_lists(doc)
+    ):
+        return [
+            f"{kind}/{name}: containers found in a kind this check cannot locate a pod "
+            f"spec for; add it to POD_SPEC_PATHS"
+        ]
+    return []
 
 
 def _security_errors(kind, name, security_context):
@@ -46,13 +99,19 @@ def validate(doc):
     Every init and serving container must run non-root with a read-only filesystem, no
     escalated privileges and no capability it did not ask for (ADR-0010 property 3's
     manifest half), and must declare a memory limit (property 4). Serving containers —
-    not init containers, which run once to completion and exit — must also declare at
-    least one probe.
+    not init containers, and not the containers of a Job or CronJob, all of which run once
+    to completion and exit — must also declare at least one probe.
+
+    A document of a kind this file does not know is skipped only when it holds no
+    containers; one that holds containers is an error, because passing it silently is
+    indistinguishable from checking it.
     """
-    spec_of = POD_SPEC_PATHS.get(doc.get("kind"))
+    kind = doc.get("kind")
+    spec_of = POD_SPEC_PATHS.get(kind)
     if spec_of is None:
-        return []
+        return _unrecognized_workload_errors(doc)
     spec = spec_of(doc)
+    needs_probe = kind not in RUN_TO_COMPLETION_KINDS
 
     errors = []
     for container in spec.get("initContainers") or []:
@@ -66,7 +125,7 @@ def validate(doc):
         errors += _security_errors("container", name, container.get("securityContext"))
         if not ((container.get("resources") or {}).get("limits") or {}).get("memory"):
             errors.append(f"container/{name}: resources.limits.memory must be set")
-        if not any(container.get(probe) for probe in PROBES):
+        if needs_probe and not any(container.get(probe) for probe in PROBES):
             errors.append(f"container/{name}: no startupProbe, livenessProbe or readinessProbe")
 
     return errors
