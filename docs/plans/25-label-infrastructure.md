@@ -118,7 +118,8 @@ the nine worker routes, and delivery. Three consequences inside it:
   `bin/victual-db-import` accepts can carry a label — and replaces it with an explicit policy:
   the import **refuses** a target holding live labels, `--force` included, enforced **inside
   the import transaction under a lock the issuance path also takes** rather than as a
-  precheck. Retired labels and their historical identity survive an import, so neither a label
+  precheck, **plus a monotonic import epoch on the request** for the consecutive case the lock
+  cannot see. Retired labels and their historical identity survive an import, so neither a label
   row nor its retirement snapshot may carry a foreign key into `TRUNCATE … CASCADE`'s path.
   Verification 4 below is superseded by that policy and is restated in this plan's terms when
   ADR-0021 is accepted.
@@ -233,8 +234,19 @@ products, and locations" — but only `location` is minted in wave 3b.
   an issuance commits one, and the import replaces its target underneath. Retired labels and
   their historical identity **survive** an import that proceeds, which constrains the schema:
   neither a label row nor its retirement snapshot may carry a foreign key into
-  `TRUNCATE … CASCADE`'s path. Verified by the concurrency and survival cases in verification 4,
-  not asserted.
+  `TRUNCATE … CASCADE`'s path.
+
+  **The lock is necessary and not sufficient, which ADR-0021's prerequisite 3 spike found by
+  running it.** The lock orders issuance against a *concurrent* import; it says nothing about a
+  *consecutive* one. A request composed before an import and executed after it mints a label
+  for whatever now holds that id — a row that is internally consistent and is not what anybody
+  asked for. So **`locations` carries a monotonic import epoch, the print request carries the
+  epoch it was composed at, and issuance refuses when the two no longer match**, naming both.
+  One integer, one comparison, and the last window closes.
+
+  None of this is asserted: the spike reproduced the precheck defect first — a uid resolving to
+  the row that replaced the one it was minted for — and then showed each of the three cases
+  behaving, which is what verification 4 now specifies.
 
 ### Piece 2 — the print job
 
@@ -534,10 +546,18 @@ surface now lives, rather than a waiver.
 4. `bin/victual-db-import` **refuses** a target holding live labels, `--force` included, and
    the refusal is taken inside the import transaction under a lock the issuance path also
    takes — issuance running concurrently with an import ends with the import refused or the
-   label intact and correctly targeted, never with a label naming a replaced target. An import
-   that proceeds leaves retired labels and their historical identity intact. This replaces the
-   re-key check the plan carried until 2026-09-07: ADR-0021 decision item 3 withdrew that
-   obligation as unimplementable, because no source the importer accepts can carry a label.
+   label intact and correctly targeted, never with a label naming a replaced target. **A print
+   request composed before an import and executed after it is refused, naming the epoch it was
+   composed at and the current one**, and mints nothing. An import that proceeds leaves retired
+   labels and their historical identity intact, the freed id can be labelled again, and the old
+   uid still reports what it was rather than following the id to its new occupant. This
+   replaces the re-key check the plan carried until 2026-09-07: ADR-0021 decision item 3
+   withdrew that obligation as unimplementable, because no source the importer accepts can
+   carry a label.
+
+   The first of these must be written as a **reproduction of the defect first**: a test that
+   only exercises the guard passes just as happily against a guard that never had the race,
+   which is how a precheck came to look sufficient in the first place.
 5. A print request and its `labels` row are one transaction: a forced rollback leaves neither.
 6. **A job whose `(model, media, resolution, colour_mode)` is absent from the driver's
    `combinations` is refused at enqueue**, naming what is unsupported — not built, not sent, and
