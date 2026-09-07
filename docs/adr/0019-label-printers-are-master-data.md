@@ -156,33 +156,92 @@ set for these nine routes only. No new authentication machinery.
 | [ADR-0010](0010-workload-standard.md) property 1 | Holds | A stated exception — see *Consequences* |
 | Recovery after credential loss | Restart | Re-pair |
 
-**Pairing is one opaque string, and it is short-lived.** An admin creates the worker row in
-Victual and is shown pairing material that encodes Victual's own base URL and a single-use
-secret. The worker takes it from the environment on first start and exchanges it at
-`POST /api/labels/pair` for a credential. One value to transfer rather than an address and a
-key; the long-lived credential is never displayed, never typed, and never sits in an
-environment variable. That last point is the reason for the indirection rather than a
-convenience: pairing material in the environment is readable by anything that can read the
-process environment on that host, which is acceptable for a value that is single-use and
-expires and is not acceptable for one that is neither.
+**Pairing is one opaque string.** An admin creates the worker row in Victual and is shown
+pairing material encoding Victual's own base URL and a single-use secret. The worker takes it
+from the environment on first start and exchanges it at `POST /api/labels/pair` for a
+credential and a session. One value to transfer rather than an address and a key.
+
+**Environment credentials are not prohibited; the two modes differ in provisioning and
+recovery.** A declared worker's credential is injected from a Secret and lives in its
+environment for the life of the pod — that is the platform's own mechanism, the operator
+rotates it, and a host that can read that environment is already a cluster compromise. A
+paired worker sits on a device the operator does not otherwise manage, where the value is
+placed by a person or a script and where nobody will notice it sitting in a shell history or
+a unit file. Single-use expiring material is what makes that exposure worth little, and it
+makes recovery a re-pair rather than a hunt for where a long-lived key was copied to. Same
+mechanism, different threat and different recovery — not a rule that environment variables
+are unsafe.
 
 **Pairing conveys a Victual credential and nothing else.** No database address, no database
 credential, and no broker credential — decision item 2's first sentence is not softened by
 the pairing path. A worker that later wants the broker address discovers it from the API it
 is already authenticated to.
 
-**Rotation is the control; the worker's local store is hygiene.** A paired worker exchanges
-its credential for a successor on an interval, and a credential not rotated within its
-absolute expiry stops working, so a worker offline longer than that window must be paired
-again. Rotation is single-use in both directions: **presenting a credential that has already
-been rotated away is treated as evidence of duplication**, not as a stale client. The chain
-is revoked, the worker is marked as requiring re-pairing, and the event is surfaced —
-because two parties holding one credential is exactly what rotation exists to detect, and a
-silent refusal would discard the detection.
+#### Two clocks: the credential and the session
 
-The declared worker does not rotate. Its credential is the operator's to manage through the
-Secret, which keeps it stateless; rotation is what a worker does when there is no operator
-mechanism to do it for it.
+**A credential's lifetime and a pairing session's lifetime are different things, and only
+the second bounds an attacker.** Rotation on its own bounds nothing: whoever holds the
+current bearer credential can rotate it themselves and draw successors indefinitely, and if
+the legitimate worker is switched off nothing contradicts them. What rotation gives is
+detection, and it fires on the *victim's* next rotation rather than on the attacker's.
+
+So there are two expiries:
+
+- **The credential** expires on a short clock and is replaced by rotation. A credential not
+  rotated in time stops working; the worker rotates again from its stored one if that is
+  still within the session, and re-pairs if it is not.
+- **The pairing session** expires on a long absolute clock that rotation does not extend.
+  Past it no credential in the chain is honoured and no rotation is accepted — only fresh
+  pairing, which requires an admin. **This is the bound**: a stolen credential is usable
+  until the session ends however diligently the thief rotates, and the session ending is not
+  something a credential holder can postpone.
+
+A session also ends when an admin revokes it, when the worker row is deactivated, or on the
+reuse detection below.
+
+#### Rotation is a recoverable exchange
+
+A rotation that is not recoverable is worse than no rotation: it turns a dropped response
+into a bricked worker or, if retried naively, into a revocation of the honest party.
+
+- **The worker generates a `rotation_request_id` and persists it before calling.** Victual
+  records that id against the credential it consumed. **A repeat of the same
+  `(credential, rotation_request_id)` returns the same successor** rather than issuing a new
+  one, so a lost response is recovered by retrying the identical request.
+- **The stored pending rotation names the credential it started from.** On restart a worker
+  holding a pending rotation compares it with the credential it has: if they match, the
+  rotation did not complete and it retries with the same id; if they do not, the successor
+  was already stored and it clears the pending record. A crash anywhere in the exchange
+  therefore resolves without guessing.
+- **The local replacement is atomic.** The successor is written to a temporary file in the
+  same directory, flushed, and renamed over the current one, so the store never holds a
+  half-written credential and never holds none.
+
+#### Stale traffic is not reuse
+
+These are different events and conflating them revokes honest workers:
+
+| Event | Response |
+|---|---|
+| An expired or superseded credential on any ordinary route — `claim`, `heartbeat`, `sent`, `result`, `evidence`, `status`, `register` | **401 and nothing more.** Routine: a request in flight across a rotation, a retry, a worker that has not rotated yet. Never revokes anything |
+| A rotation repeating a `rotation_request_id` already recorded against that credential | The same successor, returned again. A retry, by construction |
+| A rotation presenting an **already-consumed** credential with a **different** `rotation_request_id` | **Reuse.** The session is revoked, the worker is marked as requiring re-pairing, and the event is surfaced |
+
+The third row is the only suspicious pattern, and it is suspicious because a worker that
+already obtained a successor has no reason to rotate its predecessor again under a new id.
+The honest case that lands there is a worker restored from an older backup of its store,
+which presents a credential the live chain has moved past — and that worker *is* a second
+holder of a credential, so revoke-and-re-pair is the right outcome for it too.
+
+**A worker never discards an unreported outcome because a credential was refused.** A 401 on
+`result` or `evidence` means retry after rotating, or after re-pairing; it does not mean the
+attempt's outcome is lost. `result` is idempotent per attempt and evidence per
+`(source, submission_id)`, so a report held across a re-pairing lands exactly once when it
+finally arrives.
+
+The declared worker does not rotate and has no session clock. Its credential is the
+operator's to manage through the Secret, which keeps it stateless; rotation and sessions are
+what a worker needs when there is no operator mechanism to do it for it.
 
 **Why pull rather than the alternatives**, since this is the item the deployment shape
 decides:
@@ -400,7 +459,7 @@ Every other route is authorized the same way, against the row rather than the ke
 | `heartbeat` | The attempt's `worker_id` is the caller **and** the attempt is the job's current one and has neither expired nor ended. A heartbeat never revives an expired, abandoned or superseded attempt |
 | `status` | The caller is the assigned worker of the printer named in the path |
 | `pair` | Valid, unexpired, unconsumed pairing material for a worker row that is `active`. No worker key required, and this is the only such route |
-| `rotate` | The caller presents its current credential. A superseded one revokes the chain instead of rotating it |
+| `rotate` | The caller presents its current credential within a live session. A repeat of a recorded `rotation_request_id` returns the same successor; a consumed credential under a *different* id revokes the session |
 | `evidence` | The caller owns the attempt, **or** holds a verifier grant for that printer |
 | `claim` | The three rules above |
 
@@ -894,21 +953,22 @@ its credential — so killing it does lose something, and recovery is re-pairing
 restart. It is bounded to that one value, and it exists only where there is no operator
 mechanism to inject a Secret; the declared worker keeps the property in full.
 
-The second is about the store itself. A credential encrypted on a device whose key is also
-on that device is obfuscation, not protection: an attacker with code execution on the worker
-has both. What it does buy is the disclosure case that is actually likely at household scale
-— a pulled SD card, a backup, a device sold on — where the store is read somewhere the
-decryption key is not. Where the platform offers a keyring or a TPM the worker should use
-it; where it does not, a file with restrictive permissions is what there is, and calling that
-protection would be a claim nobody could defend.
+The second is about the store, and it needs stating precisely because the intuitive version
+of it is wrong. **Encryption whose key lives on the same storage protects against nothing
+that copies that storage.** A pulled SD card carries the ciphertext and the key together, so
+the card is readable wherever it is taken. Encryption at rest is protection only when the
+decryption key stays outside what was copied — hardware-backed storage such as a TPM or a
+secure element, or a passphrase supplied at start — and where the platform offers one of
+those, the worker should use it. File permissions are worth having and are also narrower than
+they sound: they keep another local user out, and they stop nothing that has the device.
 
-**Rotation is what makes the previous paragraph tolerable.** A credential that rotates on an
-interval and expires absolutely turns "the key on that Pi might be readable" from an
-open-ended exposure into a bounded one, and reuse detection turns a copied credential into an
-event someone sees rather than a quiet second client. The cost is operational and worth
-stating: a worker switched off for longer than the expiry window needs a person to pair it
-again, which for a printer that is only used seasonally is a real annoyance rather than a
-theoretical one.
+**What actually bounds the exposure is the session clock, not the store and not rotation.** A
+credential on a device the operator does not control should be assumed readable by anyone who
+takes the device. Rotation makes a second holder detectable, and the session expiry makes
+possession finite regardless of detection, which is why decision item 2 has two clocks rather
+than one. The cost is operational and worth stating: a worker switched off past its session
+expiry needs a person to pair it again, which for a seasonally used printer is a real
+annoyance rather than a theoretical one.
 
 **A worker writes five kinds of row, and two of them are definitions.** Attempts, status
 and evidence are bookkeeping about work it did. Driver and template definitions are
@@ -988,8 +1048,8 @@ subsystem to be built before the architecture authorizing it is accepted.
    image from a pinned revision through `nix/images/lib.nix`, passing `nix flake check`
    including `image-has-no-shell`, with its closure size recorded. The pinned revision may
    be a scratch branch.
-2. **Claiming, fencing, credential rotation and crash-after-send behave as decision items 2,
-   5 and 6 specify.**
+2. **Claiming, fencing, pairing and crash-after-send behave as decision items 2, 5 and 6
+   specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
    it; a failed or expired attempt leaves the job unclaimable until an attempt is
    authorized; authorization is refused while an attempt is still running, and refused again
@@ -1000,13 +1060,19 @@ subsystem to be built before the architecture authorizing it is accepted.
    for the same attempt is refused; repeated deliveries of `sent`, `result` and `evidence`
    change nothing after the first; **a worker killed between `bytes_sent_at` and its
    terminal result leaves a visible uncertain job and produces no second print**; and
-   pairing material is consumed by its first use, a rotated credential stops working, and
-   presenting a superseded credential revokes the chain rather than issuing a new one.
-3. **The schema subset is fixed against a named validator and a named form renderer.** Both
+   pairing material is consumed by its first use, and a rotated credential stops working.
+3. **Rotation survives its failure modes, and stale traffic is not treated as theft.** In
+   the same spike: a lost rotation response retried with the same `rotation_request_id`
+   returns the same successor rather than a second one; a worker killed before storing the
+   successor recovers to exactly one credential on restart; an old heartbeat or result
+   arriving after a rotation is refused with a 401 and revokes nothing; a consumed credential
+   presented under a different `rotation_request_id` revokes the session; and no path through
+   any of these loses an attempt's outcome or produces another print.
+4. **The schema subset is fixed against a named validator and a named form renderer.** Both
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
    Recorded as the subset, not as a form generator.
-4. **The capability contract version 1 expresses two real driver families.** Brother QL and
+5. **The capability contract version 1 expresses two real driver families.** Brother QL and
    one other, written out on paper against the contract, including an endless-tape length
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
    some combinations. A key the exercise shows is missing amends the contract before
@@ -1025,10 +1091,11 @@ implementation plan rather than to this record.
    rule that images are storage references. Which optional fields each `evidence_type`
    requires, and what a `printer_status` observation contains, follow from what the first
    verifier can actually report.
-3. **The rotation interval and the absolute expiry.** Decision item 2 fixes the mechanism
-   and the reuse-detection rule; the two durations trade how long a stolen credential is
-   usable against how often a seasonal printer needs re-pairing. Neither number has evidence
-   behind it yet.
+3. **The credential lifetime and the session lifetime.** Decision item 2 fixes the two
+   clocks, the recovery rules and what counts as reuse; the durations are open. The session
+   length is the one that matters, since it and not rotation is what bounds a stolen
+   credential, and it trades that bound against how often a seasonally used printer needs an
+   admin to pair it again. Neither number has evidence behind it yet.
 4. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
    is never removed, and referential integrity. The numbers need a measured growth rate for
    `print_evidence` images, which no deployment has yet.
