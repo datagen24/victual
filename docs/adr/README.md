@@ -71,6 +71,7 @@ choice and rationale.
 | [0017](0017-doctrine-dbal-is-the-persistence-seam.md) | Doctrine DBAL is the persistence seam; engine portability is an affordance, not a promise | **Proposed**, depends on 0008 | [24](../plans/24-sqlite-runtime-retirement.md), [15](../plans/15-deliberate-cleanup.md) |
 | [0018](0018-role-grants-and-domain-reads.md) | Roles contribute grants; six domains require view permissions | **Proposed**, records wave 3a implementation of plan 19's answered questions | [19](../plans/19-rbac.md) |
 | [0019](0019-label-printers-are-master-data.md) | Label printers are master data; a separate worker pulls print jobs over an authenticated API | **Proposed**, supplies the configuration, transport and ownership split [0011](0011-label-namespace.md) item 4 left open; relies on 0010 | [22](../plans/22-medication-tracking.md) Q6 (unowned by it), [20](../plans/20-container-infrastructure.md) piece 5 |
+| [0020](0020-documentation-publication-boundary.md) | The documentation site publishes the manual, the developer reference and the ADRs; plans stay in the repository | **Proposed**, four acceptance prerequisites | [25](../plans/25-documentation-site.md) Q1 |
 
 ## Review and implementation notes
 
@@ -86,6 +87,7 @@ Gate review recorded 2026-09-04; consult each record for its full requirements.
 | 0014 | Proposed; see the record for the user-administration rule and its existing implementation. |
 | 0015 / 0016 | Proposed, not assessed by the 2026-09-04 gate review. 0015 requires two reviews; 0016 requires a snapshot-table decision before plan 22 piece 4. Read 0016 when evaluating 0009. |
 | 0017 | Proposed. Three acceptance prerequisites: a view-introspection spike, 14 piece 2 before its stage 3, and a measured image closure. Decide it before 14 piece 2 removes the differential suite, which is what currently justifies the dialect seam. Read it when evaluating 0009, whose direction reduces what the seam can carry. |
+| 0020 | Proposed, recorded 2026-09-07 and not assessed by the 2026-09-04 gate review. Four acceptance prerequisites: PR 92 landed, plan 25 handling the 173 ADR-to-plan links, the PHP API reference question answered, and the manual verified to stand alone. Note that accepting it makes every later ADR a published document. |
 
 ## Known unfiled decisions
 

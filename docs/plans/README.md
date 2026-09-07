@@ -42,7 +42,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6 leaves ownership of label infrastructure unresolved. Reservations 0270–0271. |
 | 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0269. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
-| 25 | [User manual](25-documentation-site.md) | Draft, unscheduled | Q1 answered: a manual, not the corpus, so no ADR is required. Q6/Q7 hold the task documentation, which is the bulk of the work. The install chapter cannot be complete before 20; 19 piece 2 will revise the roles chapter. |
+| 25 | [Documentation site](25-documentation-site.md) | Draft, unscheduled | Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), Proposed with four prerequisites; do not schedule ahead of it. Q7 holds the manual's task documentation, which is the bulk of the work. Needs 92 for the data model pages; the install chapter cannot be complete before 20; 19 piece 2 will revise the roles chapter. |
 
 ## Order of operations
 
@@ -74,8 +74,9 @@ Unscheduled work includes MCP writes after read-only use is proven, 05 B if shop
 justify it, 04's importer and datasets, remaining container work, plans 22/23/25, and the two
 retirements 24 deferred: archiving migrations 0001–0255, and the differential harness itself,
 both of which wait on 14 piece 2. 25 is independent of the wave order — it touches no
-runtime code — but its Using Victual part is new writing covering 81 pages, and Q6 decides
-whether anything can be published before that exists. Opaque
+runtime code — but it implements ADR-0020, which is Proposed, and its manual's Using Victual
+part is new writing covering 81 pages; Q6 decides whether the developer section can ship
+before that exists. Opaque
 label infrastructure (ADR-0011) and observation proposals (ADR-0012) are accepted but
 unbuilt; acceptance does not assign implementation ownership or a delivery slot.
 
