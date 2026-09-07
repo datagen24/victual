@@ -5,12 +5,18 @@ someone running Victual, and a **Development** section for someone changing it.
 [ADR-0020](../adr/0020-documentation-publication-boundary.md) owns what crosses into the
 site and why; this plan owns the build, the navigation, and the writing.
 
-Two things dominate the effort, and neither is configuration. The Manual's task
-documentation — what a user does across the application's 81 non-API pages — does not exist
-in this repository or upstream, and is new writing. The Development section is mostly
-assembly of material that already exists, but it is spread across `docs/`, five READMEs that
-sit beside the code they describe, and `.github/`, so it needs a staging step rather than a
-`docs_dir`.
+It ships in two pieces, in this order.
+
+**Piece 1 — the Development section, and the build that carries it.** Mostly assembly of
+material that already exists, though it is spread across `docs/`, `.github/`, and five
+READMEs that sit beside the code they describe, so it needs a staging step rather than a
+`docs_dir`. It also generates the PHP API reference by calling the phpDocumentor container.
+This piece can ship without the Manual existing.
+
+**Piece 2 — the Manual.** `docs/usage.md` splits into it, the 84 configuration settings get
+a reference, and the task documentation gets written. That last part — what a user does
+across the application's 81 non-API pages — does not exist in this repository or upstream,
+and is the reason the pieces are ordered this way rather than the other.
 
 ## Problem and outcome
 
@@ -108,10 +114,13 @@ drifted and were corrected against the current file.
 
 ## Scope
 
-Included: the site's two-section structure and navigation, the migration of `docs/usage.md`
-into the Manual, the initial task documentation, the staging step that assembles the
-Development section, an MkDocs configuration, a Read the Docs configuration, and a CI check
-that fails a pull request on a broken link.
+**Piece 1** — the staging step, the MkDocs and hosting configuration, the navigation, the
+Development section's pages, the phpDocumentor call, and a CI check that fails a pull request
+on a broken link.
+
+**Piece 2** — the Manual: `docs/usage.md` split into it, the configuration reference over the
+84 settings, the task documentation, and the operator reference. Piece 2 adds pages and a nav
+branch to a site piece 1 has already built.
 
 Excluded because [ADR-0020](../adr/0020-documentation-publication-boundary.md) excludes them:
 the 25 plans, both architecture reviews, the security sweep, the MCP interface specification,
@@ -155,6 +164,9 @@ contributor runs first, and CI has to run the same one.
 
 ### Where `docs/usage.md` goes
 
+This belongs to piece 2; piece 1 leaves the file where it is, and the site's landing page
+links to it in the repository until the Manual exists.
+
 It moves into the Manual and is deleted from `docs/`. Duplication is not an option — the
 conventions make one document the authoritative home for a fact — and the inbound cost is one
 line: three files mention `usage.md`, of which [`README.md`](../../README.md) line 57 is the
@@ -186,6 +198,7 @@ unchanged: the Manual describes behaviour, and the ADR remains the home for why.
 3. **Decisions** — the ADR index and all 19 records.
 4. **Build and deployment** — `nix/README.md`, `deploy/README.md`, the `.devtools` READMEs.
 5. **Formats** — grocycode, and the OpenAPI specification by link.
+6. **PHP API reference** — the phpDocumentor output, served as generated.
 
 An explicit `nav` is required; the default alphanumeric listing produces neither order. With
 `validation.nav.omitted_files: warn` under `mkdocs build --strict`, a new ADR or manual page
@@ -203,13 +216,32 @@ Serve the HTML as it is and revisit only if the missing navigation proves to mat
 
 ### The PHP API reference
 
-Read the Docs cannot build it. Its `build.tools` key accepts `python`, `nodejs`, `ruby`,
-`rust` and `golang`; there is no PHP, and the build environment has no root. Since
-`phpdoc.dist.xml`, the command and the output path already exist and work locally, the
-options are to generate it in GitHub Actions — where PHP already runs for the test suite —
-and publish it separately with the Development section linking across, or to leave it the
-local artifact it is today. Open question 8 decides; the design above assumes the second, so
-that nothing in the site build depends on the answer.
+The build script calls the phpDocumentor container and copies `.phpdoc/build` into the
+staging tree under the Development section, where MkDocs serves it unaltered the same way it
+serves the six diagrams. The call is the one `.github/CONTRIBUTING.md` already documents:
+
+```
+docker run --rm -v "$(pwd):/data" phpdoc/phpdoc:3
+```
+
+Nothing about `phpdoc.dist.xml` changes for this: it already covers the four PSR-4 roots,
+the barcode lookup plugins and the root entry points, and it already writes to
+`.phpdoc/build`, which stays gitignored. The generated output remains a build artifact and
+is still not committed.
+
+**This is what forces [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s open
+question 4.** A container call needs a container runtime, and
+Read the Docs documents none — its `build.tools` has no PHP, `build.apt_packages` takes
+Ubuntu standard-repository packages only and cannot be combined with `build.commands`, and
+nothing in its documentation offers a Docker daemon. Running the whole build in GitHub
+Actions and publishing to GitHub Pages is the option with no unknown in it, because PHP and
+a container runtime are already there for the test suite. Staying on Read the Docs means
+reaching the reference another way — `apt_packages: [php-cli]` driving the phpDocumentor
+PHAR, which needs a spike, or fetching output built elsewhere.
+
+The staging step should therefore treat the reference as an input it copies rather than a
+command it must run, so that a contributor without a container runtime still gets a working
+site build with that one section absent.
 
 ### Generator: MkDocs
 
@@ -283,10 +315,11 @@ selector, and adds a deploy workflow holding write permission to the repository.
 documentation conventions, as above. It would simplify the build to a plain `docs_dir` at the
 cost of emptying the directories those files exist to orient a reader inside.
 
-**Publish the Manual first and add the Development section later.** Viable, and it front-loads
-the half with no existing material. Rejected as a plan structure because the Development
-section is mostly assembly and would ship far sooner than the Manual's part 3; sequencing them
-the other way round delivers something usable earlier. See open question 6.
+**Publish the Manual first and add the Development section later.** It front-loads the half
+with no existing material. Rejected by open question 6's answer, and for the reason that
+answer implies: the Development section is assembly and ships within the build's own effort,
+while the Manual's part 3 covers 81 undocumented pages, so ordering it first would hold the
+whole site behind the slowest part of it.
 
 ## Dependencies
 
@@ -345,12 +378,17 @@ the other way round delivers something usable earlier. See open question 6.
    exists, because a decision record is not version-scoped the way an installation instruction
    is — an ADR accepted after a tag is still in force for someone running that tag.
 
-6. **Does the site ship in one piece or in two?** The Development section is assembly and
-   could ship within the effort of the build itself; the Manual's part 3 covers 81 pages and
-   does not exist. Publishing the site with a complete Development section and a Manual whose
-   Using Victual part is a stub is a worse first impression than publishing the Development
-   section alone and adding the Manual when it is written. The answer sets whether this plan
-   delivers once or twice.
+6. **Does the site ship in one piece or in two?**
+
+   > **Response** (maintainer, 2026-09-07): Two. The Development section ships first; the
+   > Manual follows when its part 3 is written.
+
+   The plan is structured as piece 1 and piece 2 accordingly. One consequence to hold onto:
+   piece 1 ships a site whose only section is Development, so its landing page and its name
+   have to make sense to a user who arrives looking for installation help and finds a
+   contributor reference. A line saying the Manual is being written, with the existing
+   `docs/usage.md` linked in the repository, is enough and is cheaper than the alternative of
+   holding the site back.
 
 7. **Who writes the Manual's part 3, and from what?** Nothing in the repository describes what
    the 81 pages do; the knowledge is in the running application and in whoever uses it. The
@@ -358,42 +396,65 @@ the other way round delivers something usable earlier. See open question 6.
    localization strings. This is the plan's largest unestimated cost and it is not a
    configuration problem.
 
-8. **Is the PHP API reference published, and if so from where?** Read the Docs cannot build
-   it, so the options are generating it in GitHub Actions and publishing it separately with
-   the site linking across, or leaving it the local artifact it is today. If it is published,
-   `phpdoc.dist.xml`'s inclusion of private members needs deciding too — its own comment
-   justifies that setting on the grounds that the output is "an internal reference, not a
-   published library API". This is open question 1 and 2 of ADR-0020; the answer belongs
-   there, and this plan implements it.
+8. **Is the PHP API reference published, and if so how is it generated?**
+
+   > **Response** (maintainer, 2026-09-07): Published, generated by calling the phpDocumentor
+   > container from the documentation build script.
+
+   Recorded as [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s answered
+   question 1 and implemented in the design above. Two things it does not settle stay with
+   that record: whether private members remain in the output, since `phpdoc.dist.xml`
+   justifies including them on the grounds that it is "not a published library API" (its
+   question 2), and where a build with a container runtime actually runs (its question 4).
+   The second determines whether this site stays on Read the Docs.
 
 ## Verification
 
+### Piece 1 — the Development section
+
 1. `mkdocs build --strict` succeeds with `validation.links.not_found`,
-   `validation.nav.omitted_files` and `validation.links.anchors` set to `warn`. Break one link
-   deliberately and confirm the build fails and names the file and the link.
-2. No `not_found` warning appears in a clean build log, establishing that all 895 relative
-   links and all 42 that leave `docs/` resolve.
+   `validation.nav.omitted_files` and `validation.links.anchors` set to `warn`. Break one
+   link deliberately and confirm the build fails and names the file and the link.
+2. No `not_found` warning appears in a clean build log, establishing that every relative link
+   in the published set resolves.
 3. Every one of the 173 ADR-to-plan links resolves to a GitHub URL that returns the plan.
-   Check the count in the built HTML against the source count, so a link silently dropped by
-   the rewrite is caught rather than counted as success.
+   Compare the count in the built HTML against the source count, so a link silently dropped
+   by the rewrite is caught rather than counted as success.
 4. A page linking to a staged README resolves within the site, and the same unmodified source
    line still resolves on GitHub. Check both against `db/pgsql/README.md`, which carries 14 of
    the 42 links.
-5. A new page added without a nav entry fails `mkdocs build --strict`.
-6. `docs/usage.md` is gone and nothing links to it:
-   `grep -rn 'usage\.md' --include='*.md' .` returns only references to its new location.
-7. Every one of the 84 settings in `config-dist.php` appears in the Manual's Configuration
-   part. Compare against `grep -cE "^(if \(!defined|Setting\()" config-dist.php`; a setting in
-   one and not the other is the defect this check exists to find.
-8. The six diagram pages load from the built site and render their SVG.
-9. A reader following Getting started on a machine with no prior Victual installation reaches
-   a login prompt using only the Manual. Establish this against both installation paths —
-   checkout and Nix images — since they diverge completely.
-10. The Manual contains no link into the Development section that a reader must follow to
-    complete an installation. This is ADR-0020's fourth acceptance prerequisite.
-11. The Read the Docs build succeeds from a clean checkout with `.readthedocs.yaml` alone — no
-    configuration entered in the Read the Docs dashboard, so the build is reproducible from
-    the repository.
-12. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
-    and the same pull request skips the differential suite — confirming the check runs on the
+5. A new ADR added without a nav entry fails `mkdocs build --strict`.
+6. The six diagram pages load from the built site and render their SVG.
+7. The phpDocumentor output is reachable from the Development navigation, and a class page —
+   `StockService` — loads with its methods listed. Confirm the build regenerated it rather
+   than serving a stale copy by checking that a method added in the same commit appears.
+8. The staging step run without a container runtime available still produces a site, with the
+   API reference section absent rather than the build failing. A contributor without Docker
+   must be able to build the documentation.
+9. The build succeeds from a clean checkout with the committed configuration alone — no
+   settings entered in a hosting dashboard — so the build is reproducible from the
+   repository.
+10. A pull request adding a Markdown file with a broken relative link fails the `lint` job,
+    and the same pull request skips the differential suite, confirming the check runs on the
     Markdown-only path rather than requiring a code change to trigger.
+11. The landing page of a site whose only section is Development tells a user looking for
+    installation help where to go. This is the cost of shipping the pieces in this order and
+    it has to be paid on the page, not assumed away.
+12. No page in the Development section is incomprehensible without a plan. This is
+    [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s fourth acceptance
+    prerequisite.
+
+### Piece 2 — the Manual
+
+13. `docs/usage.md` is gone and nothing links to it:
+    `grep -rn 'usage\.md' --include='*.md' .` returns only references to its new location.
+14. Every one of the 84 settings in `config-dist.php` appears in the Configuration part.
+    Compare against `grep -cE "^(if \(!defined|Setting\()" config-dist.php`; a setting in
+    one and not the other is the defect this check exists to find.
+15. A reader following Getting started on a machine with no prior Victual installation
+    reaches a login prompt using only the Manual. Establish this against both installation
+    paths — checkout and Nix images — since they diverge completely.
+16. The Manual contains no link into the Development section that a reader must follow to
+    complete an installation.
+17. The site's landing page no longer defers the Manual, and the notice added under piece 1
+    check 11 is removed.
