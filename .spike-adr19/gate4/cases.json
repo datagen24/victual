@@ -1,0 +1,11 @@
+[
+ {"why": "plain continuous, valid",              "expect": true,  "doc": {"model":"QL-820NWB","media":"62"}},
+ {"why": "two-colour on 62red, capable model",   "expect": true,  "doc": {"model":"QL-820NWB","media":"62red","two_colour":true}},
+ {"why": "two-colour on plain 62 — must fail",   "expect": false, "doc": {"model":"QL-820NWB","media":"62","two_colour":true}},
+ {"why": "two-colour on an incapable model",     "expect": false, "doc": {"model":"QL-700","media":"62red","two_colour":true}},
+ {"why": "die-cut with per-label cut — fail",    "expect": false, "doc": {"model":"QL-1100","media":"62x100","cut_behaviour":"each"}},
+ {"why": "die-cut cutting at the end",           "expect": true,  "doc": {"model":"QL-1100","media":"62x100","cut_behaviour":"end"}},
+ {"why": "unknown media",                        "expect": false, "doc": {"model":"QL-820NWB","media":"99"}},
+ {"why": "unknown property",                     "expect": false, "doc": {"model":"QL-820NWB","media":"62","darkness":3}},
+ {"why": "missing required media",               "expect": false, "doc": {"model":"QL-820NWB"}}
+]

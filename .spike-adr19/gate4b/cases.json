@@ -1,0 +1,11 @@
+[
+ {"why":"plain continuous, valid",             "expect":true,  "body":{"model":"QL-820NWB","media":"62","settings":{"cut_behaviour":"each"}}},
+ {"why":"two-colour on 62red, capable model",  "expect":true,  "body":{"model":"QL-820NWB","media":"62red","settings":{"two_colour":true}}},
+ {"why":"two-colour on plain 62 — must fail",  "expect":false, "body":{"model":"QL-820NWB","media":"62","settings":{"two_colour":true}}},
+ {"why":"two-colour on an incapable model",    "expect":false, "body":{"model":"QL-700","media":"62red","settings":{"two_colour":true}}},
+ {"why":"die-cut with per-label cut — fail",   "expect":false, "body":{"model":"QL-820NWB","media":"62x100","settings":{"cut_behaviour":"each"}}},
+ {"why":"die-cut cutting at the end",          "expect":true,  "body":{"model":"QL-820NWB","media":"62x100","settings":{"cut_behaviour":"end"}}},
+ {"why":"unknown media",                       "expect":false, "body":{"model":"QL-820NWB","media":"99","settings":{}}},
+ {"why":"unknown property",                    "expect":false, "body":{"model":"QL-820NWB","media":"62","settings":{"darkness":3}}},
+ {"why":"missing media",                       "expect":false, "body":{"model":"QL-820NWB","settings":{}}}
+]

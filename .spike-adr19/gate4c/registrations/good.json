@@ -1,0 +1,10 @@
+{"driver_id":"brother.ql","schema_version":"1.0","discriminators":["model","media"],
+ "combinations":[
+  {"model":"QL-820NWB","media":"62","resolution_x":300,"resolution_y":300,"color_mode":"mono",
+   "settings_schema":{"type":"object","additionalProperties":false,"properties":{
+     "cut_behaviour":{"title":"Cutting","type":"string","enum":["each","end","none"],"default":"each"},
+     "compress":{"title":"Compress raster","type":"boolean","default":true}}}},
+  {"model":"QL-820NWB","media":"62red","resolution_x":300,"resolution_y":300,"color_mode":"black_red",
+   "settings_schema":{"type":"object","additionalProperties":false,"properties":{
+     "cut_behaviour":{"title":"Cutting","type":"string","enum":["each","end","none"],"default":"each"},
+     "two_colour":{"title":"Print the highlight in red","type":"boolean","default":true}}}}]}

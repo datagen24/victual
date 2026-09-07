@@ -1,0 +1,29 @@
+[
+ {
+  "id": "c1_wrap",
+  "why": "multi-line wrapping",
+  "location.name": "Pantry top shelf behind the flour bin"
+ },
+ {
+  "id": "c2_glyph",
+  "why": "pinned font, missing glyph",
+  "location.name": "\u51b7\u8535\u5eab"
+ },
+ {
+  "id": "c3_qr_geometry",
+  "why": "QR modules under asymmetric dpi",
+  "location.name": "Cellar"
+ },
+ {
+  "id": "c4_colour",
+  "why": "black/red palette",
+  "location.name": "Freezer",
+  "accent": true
+ },
+ {
+  "id": "c5_length",
+  "why": "continuous length vs length_rules",
+  "location.name": "A very long shelf name that should push the automatic height past the profile maximum so the length bound is exercised rather than merely described in prose and then some more words to be sure of it",
+  "size_pt": 5.0
+ }
+]

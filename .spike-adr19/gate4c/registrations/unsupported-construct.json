@@ -1,0 +1,7 @@
+{"driver_id":"brother.ql","schema_version":"1.2","discriminators":["model","media"],
+ "combinations":[
+  {"model":"QL-820NWB","media":"62","resolution_x":300,"resolution_y":300,"color_mode":"mono",
+   "settings_schema":{"type":"object","additionalProperties":false,
+     "properties":{"cut_behaviour":{"type":"string","enum":["each","end"]}},
+     "allOf":[{"if":{"properties":{"cut_behaviour":{"const":"each"}}},
+               "then":{"properties":{"compress":{"type":"boolean"}}}}]}}]}

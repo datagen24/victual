@@ -1,0 +1,32 @@
+{
+ "schema_version": 1,
+ "profile_id": "brother.ql/62red",
+ "version": 1,
+ "media_id": "62red",
+ "printable_area": {
+  "width_mm": 62.0,
+  "height_mm": null
+ },
+ "dpi_x": 300,
+ "dpi_y": 300,
+ "raster_width_px": 696,
+ "length_rules": {
+  "min_mm": 12.0,
+  "max_mm": 200.0,
+  "increment_mm": 0.085
+ },
+ "orientation": {
+  "image_x": "across_tape",
+  "image_y": "along_feed"
+ },
+ "colour_mode": "black_red",
+ "pixel_policy": {
+  "version": 1,
+  "threshold": 128,
+  "palette": [
+   "#000000",
+   "#ff0000",
+   "#ffffff"
+  ]
+ }
+}

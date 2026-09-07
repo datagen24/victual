@@ -1,0 +1,181 @@
+{
+  "driver_id": "brother.ql",
+  "schema_version": "1.0",
+  "contract_version": 1,
+  "discriminators": [
+    "model",
+    "media"
+  ],
+  "connection_types": [
+    "tcp",
+    "usb"
+  ],
+  "completion_evidence": "transport",
+  "artifact_forms": [
+    {
+      "form": "raster/png-indexed;v=1",
+      "applies_to": [
+        "*"
+      ]
+    }
+  ],
+  "//": "One resolved schema per combination. No if/then, no allOf: selecting a combination selects a schema, which is what keeps the subset flat and inside what both libraries support.",
+  "combinations": [
+    {
+      "model": "QL-820NWB",
+      "media": "62",
+      "resolution_x": 300,
+      "resolution_y": 300,
+      "color_mode": "mono",
+      "geometry": {
+        "raster_width_px": 696,
+        "printable_width_um": 58900,
+        "printable_length_um": {
+          "min": 12700,
+          "max": 1000000
+        },
+        "feed_direction": "y"
+      },
+      "settings_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cut_behaviour": {
+            "title": "Cutting",
+            "type": "string",
+            "enum": [
+              "each",
+              "end",
+              "none"
+            ],
+            "default": "each"
+          },
+          "compress": {
+            "title": "Compress raster",
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    {
+      "model": "QL-820NWB",
+      "media": "62red",
+      "resolution_x": 300,
+      "resolution_y": 300,
+      "color_mode": "black_red",
+      "geometry": {
+        "raster_width_px": 696,
+        "printable_width_um": 58900,
+        "printable_length_um": {
+          "min": 12700,
+          "max": 1000000
+        },
+        "feed_direction": "y"
+      },
+      "settings_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cut_behaviour": {
+            "title": "Cutting",
+            "type": "string",
+            "enum": [
+              "each",
+              "end",
+              "none"
+            ],
+            "default": "each"
+          },
+          "compress": {
+            "title": "Compress raster",
+            "type": "boolean",
+            "default": true
+          },
+          "two_colour": {
+            "title": "Print the highlight in red",
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    {
+      "model": "QL-820NWB",
+      "media": "62x100",
+      "resolution_x": 300,
+      "resolution_y": 300,
+      "color_mode": "mono",
+      "geometry": {
+        "raster_width_px": 696,
+        "printable_width_um": 58900,
+        "printable_length_um": {
+          "fixed": 100000
+        },
+        "feed_direction": "y"
+      },
+      "settings_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cut_behaviour": {
+            "title": "Cutting",
+            "type": "string",
+            "enum": [
+              "end",
+              "none"
+            ],
+            "default": "end"
+          },
+          "compress": {
+            "title": "Compress raster",
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "$comment": "Die-cut stock cannot be cut per label the way continuous tape can, so the value is simply absent from this combination's enum rather than forbidden by a conditional."
+      }
+    },
+    {
+      "model": "QL-700",
+      "media": "62",
+      "resolution_x": 300,
+      "resolution_y": 300,
+      "color_mode": "mono",
+      "geometry": {
+        "raster_width_px": 696,
+        "printable_width_um": 58900,
+        "printable_length_um": {
+          "min": 12700,
+          "max": 1000000
+        },
+        "feed_direction": "y"
+      },
+      "settings_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cut_behaviour": {
+            "title": "Cutting",
+            "type": "string",
+            "enum": [
+              "each",
+              "end",
+              "none"
+            ],
+            "default": "each"
+          },
+          "compress": {
+            "title": "Compress raster",
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    }
+  ]
+}

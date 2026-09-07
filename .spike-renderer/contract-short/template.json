@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "template_id": "location.shelf",
+  "version": 1,
+  "name": "Location shelf label",
+  "entity_kind": "location",
+  "size": {"width_mm": 62.0, "height_mm": "auto", "bottom_spacing_mm": 3.0},
+  "fields": [
+    {"name": "location.name", "type": "text", "required": true, "max_length": 120},
+    {"name": "label.payload", "type": "payload", "required": true}
+  ],
+  "assets": [
+    {"id": "font.sans", "kind": "font", "file": "NotoSans-Regular.ttf"}
+  ],
+  "requirements": {"colour_mode": "black_red"},
+  "elements": [
+    {
+      "id": "qr",
+      "type": "qr",
+      "binding": "label.payload",
+      "at": {"x_mm": 3.0, "y_mm": 3.0},
+      "error_correction": "L",
+      "min_module_mm": 0.5,
+      "quiet_zone_modules": 4,
+      "colour": "black"
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "binding": "location.name",
+      "font": "font.sans",
+      "size_pt": 11.0,
+      "box": {"x_mm": 26.0, "y_mm": 3.0, "width_mm": 33.0, "height_mm": "auto"},
+      "align": "left",
+      "wrap": true,
+      "line_spacing": 1.15,
+      "overflow": "error",
+      "colour": "black"
+    },
+    {
+      "id": "accent",
+      "type": "rect",
+      "at": {"x_mm": 3.0, "y_mm": 0.8},
+      "size": {"width_mm": 56.0, "height_mm": 0.8},
+      "colour": "red"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="utf-8"><title>gate 4 round 3 — lifted pointer display</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/json-editor/2.15.2/jsoneditor.min.js"></script>
+<style>body{font:13px system-ui;margin:16px;max-width:720px}
+ .attached{color:#a12;font-weight:600;margin:2px 0 8px}
+ .unattached{background:#fdeaea;border:1px solid #e0b4b4;padding:8px;margin:8px 0;border-radius:4px}
+ .unattached b{color:#a12}
+ #out{white-space:pre-wrap;background:#f4f4f4;padding:8px;font:12px ui-monospace}</style>
+</head><body>
+<h3>Printer settings — QL-820NWB / 62</h3>
+<div id="ed"></div>
+<div id="unattached"></div>
+<h4>probe report</h4><div id="out">running…</div>
+<script>
+const report = {};
+function controlFor(field) {
+  return document.querySelector(`#ed [name$="[${field}]"], #ed [name="${field}"]`);
+}
+function showErrors(errors) {
+  document.querySelectorAll('.attached').forEach(n => n.remove());
+  const orphans = [];
+  for (const e of errors) {
+    const ctl = controlFor(e.field);
+    if (ctl) {
+      const d = document.createElement('div');
+      d.className = 'attached';
+      d.textContent = `↑ ${e.message}`;
+      ctl.parentNode.insertBefore(d, ctl.nextSibling);
+    } else {
+      orphans.push(e);
+    }
+  }
+  // A refusal naming a property the form has no control for still has to be readable. It is
+  // shown in its own region, naming the field, rather than dropped or pinned to the form root
+  // with no indication of what it was about.
+  document.getElementById('unattached').innerHTML = orphans.length
+    ? orphans.map(e => `<div class="unattached">No field for <b>${e.field}</b> in this
+        combination — ${e.message} <i>(${e.code})</i></div>`).join('')
+    : '';
+  return {attached: errors.length - orphans.length, unattached: orphans.length};
+}
+async function post(settings) {
+  const res = await fetch('/printer/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({model:'QL-820NWB', media:'62', settings})});
+  const data = await res.json();
+  return {status: res.status, errors: data.errors || [], stored: data.stored};
+}
+(async () => {
+  const schema = await fetch('/schema?model=QL-820NWB&media=62').then(r => r.json());
+  const editor = new JSONEditor(document.getElementById('ed'), {schema, theme:'html', disable_edit_json:true, disable_properties:true});
+  await new Promise(r => setTimeout(r, 500));
+  report.controls_rendered = [...document.querySelectorAll('#ed select,#ed input')].map(e => e.name).filter(Boolean);
+
+  // 1. An error for a field the form DOES have a control for.
+  let r = await post({cut_behaviour: 'sideways'});
+  report.value_error = {status: r.status, field: r.errors[0]?.field, code: r.errors[0]?.code};
+  report.value_error_placement = showErrors(r.errors);
+  report.value_error_visible_next_to_control = !!document.querySelector('.attached');
+
+  // 2. An error naming a property with NO control — the case the lifted pointer creates.
+  r = await post({darkness: 3});
+  report.orphan_error = {status: r.status, field: r.errors[0]?.field, code: r.errors[0]?.code};
+  report.orphan_placement = showErrors(r.errors);
+  report.orphan_visible_text = document.querySelector('.unattached')?.textContent.replace(/\s+/g,' ').trim();
+
+  // 3. And one the combination genuinely lacks, which is the same shape.
+  r = await post({two_colour: true});
+  report.not_in_combination = {status: r.status, field: r.errors[0]?.field, code: r.errors[0]?.code};
+  showErrors(r.errors);
+  report.not_in_combination_visible = document.querySelector('.unattached')?.textContent.replace(/\s+/g,' ').trim();
+
+  document.getElementById('out').textContent = JSON.stringify(report, null, 1);
+  window.__report = report;
+})();
+</script></body></html>
