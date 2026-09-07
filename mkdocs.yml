@@ -18,6 +18,8 @@ docs_dir: .docs-build
 
 theme:
   name: material
+  logo: assets/icon.svg
+  favicon: assets/icon-32.png
   features:
     - navigation.sections
     - navigation.top
@@ -26,14 +28,21 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+
+extra_css:
+  - assets/extra.css
 
 markdown_extensions:
   - admonition
@@ -67,6 +76,12 @@ nav:
       - Data model:
           - Overview: development/data-model.md
           - PostgreSQL: development/postgresql.md
+          - Data access: development/diagrams/orm-stack.md
+          - Schema map: development/diagrams/schema-map.md
+          - ER · stock and products: development/diagrams/erd-stock.md
+          - ER · recipes and meal plan: development/diagrams/erd-recipes.md
+          - ER · identity and access: development/diagrams/erd-identity.md
+          - ER · household: development/diagrams/erd-household.md
       - Decisions:
           - Index: development/adr/README.md
           - 0001 PostgreSQL alongside SQLite: development/adr/0001-postgresql-alongside-sqlite.md

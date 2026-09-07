@@ -207,12 +207,17 @@ unindexed document a build failure rather than a file nobody finds.
 
 ### The generated diagrams
 
-MkDocs copies non-Markdown files under `docs_dir` to the built site without alteration, so
-the six diagrams are served as they are and `docs/data-model.md`'s links to them resolve with
-no change. They will not carry the site's navigation or search, because they are not pages the
-generator renders. Exporting each to SVG and embedding it in a Markdown page is the
-alternative; it costs the horizontal-scroll container the wider ERDs need below about 1100px.
-Serve the HTML as it is and revisit only if the missing navigation proves to matter.
+Each diagram becomes a page. `stage.py` lifts the `<svg>` out of the self-contained HTML and
+writes a Markdown page around it, in a container that scrolls sideways at the width the
+diagram was drawn for — so the diagram sits inside the site with its navigation and search,
+and the page body still never scrolls sideways on a narrow screen.
+
+The standalone file is staged beside each page and linked from it, because a full-bleed ER
+diagram is easier to read at its own size. Links from prose are rewritten to the page rather
+than the file, so a reader following one from the data model stays in the site.
+
+This replaces an earlier decision to copy the HTML through and link it directly. That was
+cheaper and it was wrong: it put the reader on a bare page with no way back.
 
 ### The PHP API reference
 
@@ -572,3 +577,31 @@ produces**, which is verification check 8 satisfied on real output rather than b
 
 That build also found a bug in the staging script: `--out` pointing outside the repository
 crashed the progress line on `Path.relative_to`. Fixed.
+
+### Piece 1 follow-up — branding and inline diagrams, 2026-09-07
+
+Two omissions from the first delivery, both raised on review.
+
+**The marks were nowhere on the site.** `theme.logo` and `theme.favicon` now carry
+`branding/icon.svg`, and the home page carries the `logo.svg` wordmark. Both marks are drawn
+in the brand's deep green, which is also the header colour, so `stage.py` writes a cream
+variant of each by swapping that one fill — cream and deep green are both from
+`branding/logo.svg`, so this recolours within the palette rather than inventing one. CSS
+selects between them by colour scheme.
+
+Setting the header to the brand green needed `primary: custom` and `accent: custom` in
+`mkdocs.yml` with the values on `[data-md-color-primary="custom"]`. The theme sets its own
+palette through that attribute, and an attribute selector outranks a `:root` declaration —
+the first attempt put them on `:root` and the header stayed indigo.
+
+**The diagrams were linked, not shown.** The design copied the self-contained HTML through
+and linked it, which put a reader on a bare page with no navigation and no way back.
+`stage.py` now lifts the `<svg>` out of each and writes a Markdown page around it, in a
+container that scrolls at the width the diagram was drawn for. The standalone file stays
+beside each page and is linked from it, since a full-bleed ER diagram is easier to read at
+its own size, and links from prose are rewritten to the page rather than the file. The site
+grew from 37 pages to 43.
+
+`assets/extra.css` also imports the Instrument Serif, Geist and Geist Mono families the
+diagrams were drawn in, so an inlined diagram renders in its own type rather than the
+theme's.
