@@ -18,7 +18,26 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "victual-label-worker": "victual-label-worker"
+      }
+    },
+    "victual-label-worker": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788801019,
+        "narHash": "sha256-RAC0pkc8HKjNEldjgZdymh7PacLIwhZhEC0LhegVjNw=",
+        "ref": "main",
+        "rev": "64381f45f1e3677478d70491c433693edd79307e",
+        "revCount": 2,
+        "type": "git",
+        "url": "file:///worker"
+      },
+      "original": {
+        "ref": "main",
+        "rev": "64381f45f1e3677478d70491c433693edd79307e",
+        "type": "git",
+        "url": "file:///worker"
       }
     }
   },

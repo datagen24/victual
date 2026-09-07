@@ -15,10 +15,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # ADR-0019 packaging spike (gate 1), disposable. The worker's source lives in its
+    # own repository and this flake builds its image from a *pinned revision* — decision
+    # item 1. The spike pins a scratch branch of a local clone, which the record
+    # explicitly permits; the real input is the published repository at the same shape.
+    victual-label-worker = {
+      url = "git+file:///worker?ref=main&rev=64381f45f1e3677478d70491c433693edd79307e";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, victual-label-worker }:
     let
       inherit (nixpkgs) lib;
 
@@ -41,7 +50,12 @@
         system:
         import nixpkgs {
           inherit system;
-          overlays = [ self.overlays.default ];
+          overlays = [
+            # The worker's pinned source, injected as a package attribute so the overlay
+            # stays a plain `final: prev:` file that imports nothing from the flake.
+            (_: _: { victualLabelWorkerSource = victual-label-worker; })
+            self.overlays.default
+          ];
         };
     in
     {
@@ -72,6 +86,9 @@
             image-app
             image-web
             image-migrate
+            image-label-worker
+            brother-ql-inventree
+            labelWorker
             ;
           # `nix build` with no attribute gives the thing most people want first.
           default = v.image-app;

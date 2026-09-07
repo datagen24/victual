@@ -91,6 +91,29 @@ in
 
     imageLib = self.callPackage ./images/lib.nix { };
 
+    # --- ADR-0019 packaging spike (gate 1), disposable ---------------------------
+    # The driver nixpkgs does not carry, the worker built from its pinned revision, and
+    # the image built through the same imageLib as the other three.
+    brother-ql-inventree = self.callPackage ./worker/brother-ql-inventree.nix {
+      inherit (final) makeBinaryWrapper;
+      inherit (final.python3Packages)
+        buildPythonPackage
+        fetchPypi
+        setuptools
+        click
+        packbits
+        pillow
+        pyusb
+        attrs
+        ;
+    };
+
+    labelWorker = self.callPackage ./worker/package.nix {
+      workerSource = final.victualLabelWorkerSource;
+    };
+
+    image-label-worker = self.callPackage ./images/worker.nix { };
+
     image-app = self.callPackage ./images/app.nix { };
     image-web = self.callPackage ./images/web.nix { };
     image-migrate = self.callPackage ./images/migrate.nix { };

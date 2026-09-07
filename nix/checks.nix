@@ -27,6 +27,9 @@
   runtime,
   imageLib,
   version,
+
+  # ADR-0019 packaging spike (gate 1), disposable.
+  labelWorker,
 }:
 
 let
@@ -102,6 +105,63 @@ in
 
         cp "$closure/store-paths" "$out"
       '';
+
+  # 2b. The label worker's image holds no shell either — but python3 *is* its runtime.
+  #
+  #     This is a finding of the packaging spike, not a relaxation. The list above is
+  #     named `forbiddenInRuntimeClosure` and reads "no shell, no scripting runtime other
+  #     than PHP", which conflates two different rules: ADR-0013 forbids a shell and a
+  #     package manager in a production image, and the PHP clause is a statement about
+  #     *those three images* rather than about every artifact this flake will ever build.
+  #     A Python worker cannot satisfy the PHP-shaped version of the rule and still run,
+  #     so the rule is stated per image: every image forbids a shell, and each names its
+  #     own interpreter.
+  #
+  #     What this check therefore asserts about the worker is the part that is actually
+  #     load-bearing: no bash, dash, busybox, zsh, ksh, toybox or perl reachable from the
+  #     image's roots. `kubectl exec … sh` fails here for the same reason it fails in the
+  #     other three.
+  label-worker-image-has-no-shell =
+    runCommand "victual-check-worker-no-shell"
+      {
+        closure = closureInfo { rootPaths = [ labelWorker ]; };
+      }
+      ''
+        found=""
+        for forbidden in ${lib.escapeShellArgs (lib.subtractLists [ "python3" ] forbiddenInRuntimeClosure)}; do
+          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
+            found="$found $forbidden"
+          fi
+        done
+
+        if [ -n "$found" ]; then
+          echo "The label worker's runtime closure contains:$found" >&2
+          echo "Find the reference with: nix why-depends .#labelWorker <store path>" >&2
+          exit 1
+        fi
+
+        cp "$closure/store-paths" "$out"
+      '';
+
+  # 2c. The worker actually renders a label from the installed layout.
+  #
+  #     This is the check the packaging gate is really about: a TrueType font loaded out
+  #     of package data, Pillow compositing, a QR from `qrcode`, and `brother_ql` turning
+  #     the result into printer instructions — all from the built artifact rather than
+  #     from a checkout. A closure missing any of those fails here instead of at a
+  #     deployment in front of a printer.
+  label-worker-renders-a-label =
+    runCommand "victual-check-worker-render" { } ''
+      export HOME="$PWD"
+      ${lib.getExe labelWorker} \
+        --uid 0123456789ABC \
+        --name "Pantry — top shelf" \
+        --out "$PWD/label.png" \
+        --rasterize | tee "$out"
+
+      test -s "$PWD/label.png"
+      grep -q "rasterized" "$out"
+    '';
 
   # 3. The document root the web tier serves contains no PHP. The web image has no
   #    interpreter, so a .php file there could only ever be served as source.
