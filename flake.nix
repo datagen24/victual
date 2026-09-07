@@ -89,6 +89,7 @@
             image-label-worker
             brother-ql-inventree
             labelWorker
+            labelWorkerRust
             pythonNoShell
             ;
           # `nix build` with no attribute gives the thing most people want first.
