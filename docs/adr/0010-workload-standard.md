@@ -1,6 +1,11 @@
 # ADR-0010: Fork-owned workloads are stateless, idempotent, unprivileged and declared
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Accepted, 2026-09-07.** Fork-owned workloads are stateless, idempotent,
+  unprivileged and declared, per decision items 1-4. No acceptance prerequisites are
+  named: the standard binds what ships from here forward rather than gating on a
+  build. The main application image's one remaining gap — the database credential
+  split — is accepted as the tracked work item this record's own *Consequences*
+  already calls it, per plan 20 verification check 8, not as a blocker to acceptance.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-31, revised 2026-09-07 against the acceptance review's findings:

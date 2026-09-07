@@ -61,7 +61,7 @@ choice and rationale.
 | [0007](0007-auth-state-outlives-the-process.md) | Authentication rate-limit state lives outside the process | **Accepted** 2026-08-29 | [security sweep](../security-sweep.md) S12 |
 | [0008](0008-postgresql-only-runtime-engine.md) | PostgreSQL becomes the only runtime engine; SQLite becomes an import format | **Accepted** 2026-08-31, **supersedes [0001](0001-postgresql-alongside-sqlite.md)** | — |
 | [0009](0009-database-as-the-logic-layer.md) | The database is the logic layer | **Proposed**, depends on 0008 | — |
-| [0010](0010-workload-standard.md) | Fork-owned workloads are stateless, idempotent, unprivileged and declared | **Proposed** | [constitution](../constitution.md) |
+| [0010](0010-workload-standard.md) | Fork-owned workloads are stateless, idempotent, unprivileged and declared | **Accepted** 2026-09-07 | [constitution](../constitution.md) |
 | [0011](0011-label-namespace.md) | Labels carry stable opaque identifiers; grocycode becomes an input symbology | **Accepted** 2026-09-04 | [06](../plans/06-location-barcodes.md) (narrowed by it) |
 | [0012](0012-observations-are-proposals.md) | Observations write proposals, never bookings | **Accepted** 2026-09-04 | [06](../plans/06-location-barcodes.md) Q2 (routed out of it) |
 | [0013](0013-nix-built-container-images.md) | Production images are built by Nix from a flake in this repository | **Accepted** 2026-09-04, **supersedes the `Dockerfile`'s `production` target** | [20](../plans/20-container-infrastructure.md), [nix/](../../nix/README.md), [deploy/](../../deploy/README.md) |
