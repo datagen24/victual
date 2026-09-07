@@ -548,6 +548,26 @@ keeps them apart:
 | Configured | What the admin selected | `label_printers` | An admin |
 | Observed | What the device currently reports | `label_printer_status` | A worker, reporting |
 
+**A job asserts its own command mode; the device's configured emulation is not a
+precondition.** Verified 2026-09-07 on a QL-820NWBc: the identical byte stream printed
+correctly with the printer set to Raster and again with it set to P-touch Template, provided
+`ESC i a 01` leads the stream as well as following the initialize. So nothing about command
+mode belongs in `label_printers` or in a deployment step — Victual drives a QL as it finds it.
+Recorded because it was wrongly suspected first: a "Wrong Roll Type" refusal was read as an
+emulation problem when it was a media mismatch, and the printer's own status page reports
+`62mm` without distinguishing two-colour tape, which is what made the two indistinguishable
+from outside.
+
+**`completion_evidence` is a property of the transport, not of the driver family.** The same
+QL-820NWBc answers nothing to a status request on raw port 9100 — tested after the mode switch
+was known to be honoured, so the null result is not an artefact of the wrong emulation — while
+the same device has IPP and AirPrint enabled, and IPP answers `job-state` the way the laser
+family does. A driver reaching a printer over 9100 can honestly claim only `transport`; the
+same driver over IPP could claim `device_reported`. Version 1 attaches `completion_evidence`
+to the driver, which cannot express that, so a driver serving both transports must state the
+weaker of the two or overclaim. **An amendment before acceptance:** it belongs per
+`connection_type`, or per combination, rather than once per driver.
+
 Registration advertises support; **it does not prove that an attached printer currently has
 the capability available.** A driver supporting `62red` and a printer configured for `62red`
 still print nothing when the device reports black tape loaded, and that is an observed-state
