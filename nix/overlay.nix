@@ -94,9 +94,12 @@ in
     # --- ADR-0019 packaging spike (gate 1), disposable ---------------------------
     # The driver nixpkgs does not carry, the worker built from its pinned revision, and
     # the image built through the same imageLib as the other three.
+    # CPython with no shell in its closure — spike 1's blocker, removed rather than waived.
+    pythonNoShell = self.callPackage ./worker/python-no-shell.nix { };
+
     brother-ql-inventree = self.callPackage ./worker/brother-ql-inventree.nix {
       inherit (final) makeBinaryWrapper;
-      inherit (final.python3Packages)
+      inherit (self.pythonNoShell.pkgs)
         buildPythonPackage
         fetchPypi
         setuptools
@@ -110,6 +113,8 @@ in
 
     labelWorker = self.callPackage ./worker/package.nix {
       workerSource = final.victualLabelWorkerSource;
+      python3Packages = self.pythonNoShell.pkgs;
+      inherit (final) makeBinaryWrapper;
     };
 
     image-label-worker = self.callPackage ./images/worker.nix { };
