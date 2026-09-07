@@ -16,12 +16,13 @@
 - **Reconciled against [ADR-0021](0021-label-templates-are-application-data.md), 2026-09-07.**
   That record — also Proposed — supersedes ADR-0011's assignment of templates to the drainer,
   so template documents become Victual's and a third component, the headless renderer, takes
-  the rasterizer. Decision items 1 and 3 are edited accordingly, along with the two bullets in
-  item 2 that restate them. **Nothing else about this record changes**: the pull transport, the
-  driver registry and capability contract, claiming, fencing, leases, the four delivery facts
-  and the no-automatic-redispatch rule are untouched. Both records are Proposed and each is
-  accepted on its own pull request; neither acceptance implies the other's. What still needs
-  reconciling is named at the end of decision item 3.
+  the rasterizer. Decision items 1 through 5 are edited accordingly.
+  **Nothing else about this record changes**: the pull transport, the driver registry and
+  capability contract, claiming, fencing, leases, the four delivery facts and the
+  no-automatic-redispatch rule are untouched. Both records are Proposed and each is accepted on
+  its own pull request; neither acceptance implies the other's. Two format-dependent details
+  are **outstanding acceptance work**, owed to this record before it is accepted and listed at
+  the end of decision item 3.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
   [22](../plans/22-medication-tracking.md).
@@ -532,7 +533,16 @@ A job is offered to a claiming worker when all three hold:
 1. The printer is `active`.
 2. `label_printers.worker_id` is the caller's worker, and that worker row is `active`.
 3. The caller currently advertises the printer's **exact** `(driver_id,
-   driver_schema_version)` and the job's **exact** `(template_id, template_version)`.
+   driver_schema_version)` and is **compatible with the job's artifact and profile contract
+   versions**.
+
+   Template-version matching was the second half of this precondition until ADR-0021, and it
+   is removed rather than deferred: workers advertise no template versions now, so a
+   precondition requiring one could never succeed and would offer no job to any worker. What
+   replaces it is the same question asked about what a worker is actually handed — an
+   artifact against a profile. **The precise fields compared are settled by ADR-0021's
+   prerequisite 2**, since a raster and a page description put different obligations on the
+   worker; that it is the artifact and profile contract, and not a template, is settled here.
 
 Every other route is authorized the same way, against the row rather than the key type:
 
@@ -642,26 +652,28 @@ behaviour in `Setting()` constants, per-person preference in `user_settings`, ap
 templates. Admission to `settings` is enforced rather than argued: a driver declared the
 field, or it cannot be stored.
 
-#### What ADR-0021 leaves unreconciled here, deliberately
+#### What ADR-0021 still owes this record before acceptance
 
-Decision items 1, 2 and 3 are reconciled above. Two things in items 4 and 5 are **not**, and
-naming them is better than editing them early:
+Decision items 1 through 5 are reconciled: nothing above depends on a worker registering a
+template, and no precondition requires an advertisement that can no longer exist. **Blocking
+implementation until both records are accepted would not have made a contradictory accepted
+contract safe**, which is why item 5's template-version match was removed outright rather than
+left for later — a precondition that cannot succeed offers no job to any worker.
 
-- **What a job pins.** Item 4 pins `template_id` with a version or digest and the captured
-  fields; ADR-0021 adds an immutable artifact and makes *its bytes* the authority for a
-  reprint. Those compose rather than conflict — the template identity is provenance, the
-  artifact is what prints — but the exact payload cannot be written until ADR-0021's
-  prerequisite 2 settles whether an artifact is a raster or a page description, because that
-  decides what the worker is handed and how much geometry it still owns.
-- **Claim preconditions.** Item 5's fourth precondition matches the job's exact
-  `(template_id, template_version)` against what the claiming worker advertises. Under
-  ADR-0021 a worker advertises artifact and profile contract versions instead, and a job is
-  claimable only once a validated artifact is attached. The precondition therefore changes
-  shape, and it should change once, when the artifact contract is fixed.
+What is left is narrower, and it is **outstanding acceptance work rather than deferred
+reconciliation**: two places name the artifact and profile contract without saying what is
+compared, because that follows from whether an artifact is a raster or a page description.
 
-Both are ADR-0021's to settle and this record's to carry afterwards. Neither is a reason to
-delay either acceptance: the boundary these two records disagree about is *what a claim hands
-over*, and no schema, route or UI is written under either plan before both are accepted.
+| Owed | Where | Settled by |
+|---|---|---|
+| What the artifact adds to the job payload, and how much geometry the worker still decides | Item 4 | ADR-0021 prerequisite 2 |
+| Which fields the claim precondition compares for artifact/profile compatibility | Item 5 | ADR-0021 prerequisite 2 |
+
+**Both must be written into this record before it is accepted**, and neither blocks the work
+that settles them: ADR-0021's renderer comparison (prerequisite 1) and its artifact-format
+comparison (prerequisite 2) proceed against the template contract without needing these fields
+fixed first. The order is comparison, then these two edits, then each record's own
+bookkeeping-only acceptance pull request.
 
 ### 4. What a job pins, and what it resolves at claim time
 
@@ -669,6 +681,19 @@ The outbox payload pins the label uid, the captured text fields as they stood wh
 was created, `payload_version`, and **`template_id` with an immutable `template_version` or
 content digest**. It names a `printer_id` and nothing else about the device — no connection,
 no media identity, no settings document.
+
+**Since [ADR-0021](0021-label-templates-are-application-data.md) the job also carries an
+immutable artifact, and the two have different jobs to do.** Template identity and captured
+fields are **provenance**: they record which design and which values the label was meant to
+express, which is what makes a wrong label diagnosable and a revised print distinguishable
+from a reprint. The **artifact bytes are the authority**: they are what the worker sends and
+what an exact reprint replays, and no rerender may be substituted for them. Where provenance
+and bytes could ever disagree, the bytes are what was printed.
+
+That distinction holds whatever the artifact turns out to be. **What the artifact's format
+adds to this payload — and how much geometry it leaves the worker to decide — follows
+ADR-0021's prerequisite 2**, because a raster and a page description hand the device adapter
+different work.
 
 The claim response resolves that printer's current row and returns its typed columns, its
 validated `settings`, and the `driver_id` and `driver_schema_version` they were validated
@@ -681,9 +706,15 @@ implementation has changed underneath, producing a label that differs from the o
 operator asked for with nothing recording that it did. Pinning a version or digest makes the
 job say which rendering it meant. Three rules follow:
 
-- **A worker upgrade retains the template versions queued jobs pin**, or the upgrade carries
-  an explicit migration of those jobs to a version it does have.
-- **An unavailable version is a visible blocked outcome, never a fallback to the latest.**
+- **A worker upgrade retains the contract versions queued jobs need**, or the upgrade carries
+  an explicit migration of those jobs. Before ADR-0021 the thing a worker had to keep was the
+  pinned *template* version; now it is the artifact and profile contract, because that is what
+  it is handed. The rule is unchanged in substance: an upgrade may not silently strand work
+  that was already queued against it.
+- **An unavailable version is a visible blocked outcome, never a fallback to the latest** —
+  and after ADR-0021 that covers a missing artifact as much as a missing contract version: a
+  job whose artifact has not been validated and attached is not claimable, and one whose bytes
+  are gone is refused rather than rerendered.
   The attempt records `blocked` naming the missing version and ends there. Like every other
   failed attempt it does not return the job to the queue: restoring the version makes
   another attempt *possible*, and a person authorizes it. A blocked attempt provably sent no

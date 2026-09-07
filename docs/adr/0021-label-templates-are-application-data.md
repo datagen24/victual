@@ -12,10 +12,14 @@
   Grocycode as a read-only input symbology, and the retirement of
   `VICTUAL_LABEL_PRINTER_WEBHOOK`.
 - **Relationship:** [ADR-0019](0019-label-printers-are-master-data.md) is **Proposed** and
-  its decision item 1 gives template definitions to the worker repository. That row and its
-  registration rules change with this record; the rest of 0019 — printer configuration as
-  master data, the pull transport, claim/fence semantics and no automatic redispatch —
-  is unaffected and is not reopened here.
+  its decision item 1 gave template definitions to the worker repository. **Its decision items
+  1 through 5 were reconciled against this record on 2026-09-07** — ownership, what a
+  registration advertises, what a claim hands over, and the claim precondition that matched a
+  template version, which no worker can satisfy any more and was removed rather than deferred.
+  The rest of 0019 — printer configuration as master data, the pull transport, claim/fence
+  semantics and no automatic redispatch — is unaffected and is not reopened here. Two
+  format-dependent details are outstanding acceptance work on that record; prerequisite 2 below
+  settles them.
 - **Would affect:** [25](../plans/25-label-infrastructure.md),
   [27](../plans/27-label-templates-and-rendering.md), [06](../plans/06-location-barcodes.md),
   [01](../plans/01-file-storage.md), [17](../plans/17-ecosystem-clients.md).
@@ -233,6 +237,12 @@ beginning of the implementation.
 2. **The artifact format comparison is written**: raster against page-description, including
    whether a downstream service exists that verifiably converts *and* delivers with readable
    evidence, and what each format leaves the device adapter to decide about geometry.
+   **Two edits to [ADR-0019](0019-label-printers-are-master-data.md) follow from it and are
+   owed to that record before *it* is accepted** — what the artifact adds to the job payload
+   and how much geometry the worker decides (its item 4), and which fields the claim
+   precondition compares for artifact and profile compatibility (its item 5). Its items 1
+   through 5 were otherwise reconciled on 2026-09-07; the template-version match that could no
+   longer succeed was removed then rather than deferred to here.
 3. **The import refusal is demonstrated under concurrency** — issuance running against an
    import ends with the import refused or the label intact and correctly targeted, never with
    a label naming a replaced target — and retired snapshots are shown to survive an import
