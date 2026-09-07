@@ -274,9 +274,11 @@ already on the network over TCP.
   in wave 3b emits one. That removes `treepoem` and Ghostscript from an image built from
   `scratch`, which is a large closure difference.
 - **The worker is unprivileged and has its own identity**, per
-  [ADR-0010](../adr/0010-workload-standard.md) rule 3. This is also
-  [20](20-container-infrastructure.md)'s verification check 8, which is open; this plan either
-  closes it or reports precisely why it did not.
+  [ADR-0010](../adr/0010-workload-standard.md) rule 3 — a typed API key granted and revoked
+  independently of general API keys. This plan's first draft said that also closed
+  [20](20-container-infrastructure.md)'s verification check 8. It does not: check 8 is
+  `victual-app` running with a database role that has no DDL rights, and ADR-0019's transport
+  means the worker holds no database credential at all. Check 8 stays open and stays plan 20's.
 
 ### Piece 5 — the consumer
 
