@@ -34,15 +34,23 @@ label says, and the stateless `vctl:` resolve surface.
 
 ## Gates
 
-**ADR-0021 is Proposed, not Accepted**, and it carries six acceptance prerequisites. **No
-schema, no route and no UI is written under this plan before that acceptance.** Two of those
-prerequisites are this plan's to run — the renderer comparison and the artifact-format
-comparison — and both are written comparisons or disposable spikes rather than the beginning
-of the implementation.
+**ADR-0021 is Proposed, not Accepted**, and **no schema, no route and no UI is written under
+this plan before that acceptance.** That gate has not moved.
 
-**ADR-0019 must be reconciled in the same window.** Its decision item 1 ownership table and
-item 3 template-registration rules change; nothing else about it does. Both records being
-Proposed is what makes that reconciliation rather than a second supersede.
+**Its six acceptance prerequisites are met**, as of 2026-09-07 — the renderer comparison and
+the artifact-format comparison, which were this plan's to run, and the four that were not. Each
+one's evidence is in that record; what this plan gained from them is recorded in the pieces
+above rather than left as findings in a spike: the runtime is selected (piece 4), the artifact
+form is fixed and the renderer's PNG encoding is a defect to fix (piece 4), the canonicalizer
+has to be written here and has an acceptance test to port (piece 5), and the manifest gate now
+examines the kind this plan's renderer will be (piece 8).
+
+**ADR-0019 was reconciled in the same window**, on 2026-09-07. Its decision item 1 ownership
+table and item 3 template-registration rules changed; nothing else about it did, and its two
+format-dependent details were written over form identifiers rather than formats, so the
+artifact-format comparison confirmed them rather than supplying them. Both records being
+Proposed is what made that reconciliation rather than a second supersede. **ADR-0021 is
+accepted first**, because 0019's ownership model is the one this record decides.
 
 ## Pieces
 
@@ -136,21 +144,34 @@ caller-controlled fetch destination.
   claim fencing, and recover a lost invocation — no request may depend on a live Victual
   process remembering to launch it.
 
-**Runtime selection is open — candidate C recommended, not selected** (question 3 records the
-run). It is decided by rendering the contract, per ADR-0021's prerequisite 1: the same document through at least two candidates, exercising multi-line
-wrapping, a pinned font with a missing glyph, QR at a declared module size with asymmetric
-resolutions, black/red output, and continuous length against `length_rules` — with each
-candidate's image closure measured against ADR-0013's no-shell assertion. **Fabric.js is
-selected for browser editing only.** A headless runtime qualifies by reading the document, not
+**The runtime is candidate C: a single Rust binary over `usvg`/`tiny-skia`**, selected
+2026-09-07 when ADR-0021's prerequisite 1 closed. It was decided by rendering the contract —
+the same document through three candidates over multi-line wrapping, a pinned font with a
+missing glyph, QR at a declared module size with asymmetric resolutions, black/red output and
+continuous length against `length_rules` — then by kerning, right-to-left shaping and cost.
+Question 3 holds every number and the reproduction. Its closure is 62,632,768 bytes over seven
+paths with no shell and no interpreter, which is what ADR-0013 asks of it. **Fabric.js is
+selected for browser editing only.** A headless runtime qualified by reading the document, not
 by sharing the editor's engine; the authoritative preview is the render, so the browser canvas
 is a design aid rather than a fidelity claim.
 
-**The artifact format is a comparison, not a settled choice** (ADR-0021 prerequisite 2). The
-proposal is an opaque raster; a page-description artifact is live, and removes the device
-adapter **only** if a downstream service verifiably converts *and* delivers with evidence this
-fork can read. Neither format removes the geometry question — something still decides device
-pixels per module and whether content was resampled — so the comparison records what each
-leaves the adapter to decide.
+**The artifact is `raster/png-indexed;v=1`** — ADR-0021 prerequisite 2, settled. PNG **colour
+type 3 at bit depth 2** over the profile's `pixel_policy.palette`, with the pixel grid fixed by
+the resolved combination (ADR-0019's `geometry: fixed_grid`), so the worker scales nothing and
+a grid that does not match the combination is a refusal rather than a resize. `pdf/1.4` with
+`geometry: device_placed` stays registerable and unshipped, for a deployment whose printers can
+take one; the QL advertises no page-description format on either transport, which is what made
+that the wrong form to build wave 3b on.
+
+Two consequences for this piece, both of them work rather than notes:
+
+- **The renderer emits indexed PNG, not RGBA.** `tiny_skia`'s `save_png` writes RGBA8, which is
+  14× the bytes for identical pixels and is not the thing `raster/png-indexed;v=1` names. The
+  encoder is the renderer's, not a post-processing step, because the thresholding that produces
+  the palette indices already happens there.
+- **The form identifier pins colour type and bit depth**, not merely "PNG". Without that, "the
+  same form" spans artifacts differing by more than an order of magnitude in size and by whether
+  the worker has to quantise before it can send.
 
 ### Piece 5 — artifacts and their manifests
 
@@ -166,6 +187,27 @@ reuses stored bytes rather than duplicating them.
 - **Structured digests use [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) canonical JSON**
   and artifact digests cover exact bytes. Ordinary serialization order is not a digest
   contract, and no client-supplied digest is trusted without server verification.
+
+**The canonicalizer is written here, because nothing available is one.** ADR-0021
+prerequisite 5 established both halves: `composer.json` carries no JSON Canonicalization
+Scheme library, and PHP's `json_encode` is not one — it writes `1.0e+30` for `1e+30`,
+`1.0e-7` for `1e-7`, `a\/b` for `a/b` and `\u00e9` for `é`, so the ECMAScript number layout
+and the string escaping both have to be implemented. Three rules the spike forced out, each of
+which a plausible implementation gets wrong:
+
+- **Keys sort by UTF-16 code unit, which is not UTF-8 byte order.** An astral character is a
+  surrogate pair below `U+E000`, so `😀` sorts before `ﬀ` and a byte-order sort reverses them —
+  for exactly the keys a household's own language data is most likely to carry.
+- **Numbers follow ECMAScript `Number::toString`.** PHP's shortest-round-trip digits are right
+  and its layout is not; the `1e+21` and `1e-7` boundaries and the smallest subnormal are where
+  a hand-rolled formatter goes wrong.
+- **Integers are refused by exact representability, not by the safe-integer range.** 2^53 is
+  representable and 2^53+1 is not, and NaN and Infinity are refused rather than encoded.
+
+The spike verified this two ways: twenty-three vector assertions on PHP 8.5.9, then a
+differential test against a fifteen-line ECMAScript oracle that is correct by construction —
+**2,206 documents, 2,000 of them doubles from random bit patterns, byte-identical**. That
+oracle is the acceptance test to port alongside the implementation.
 
 **Where the bytes live, and how the generic files API is kept away from them.** Plan 01's
 `files` table takes the bytes: `file_group` is an ordinary column, while
@@ -272,13 +314,20 @@ The renderer needs Victual's assigned assets and its result API — not printers
 outbound destinations — and runs under bounded memory, pixels, elements, text length and
 execution time.
 
-**The manifest gate must actually see the renderer.** `.devtools/ci/check_deploy_manifest.py`
-resolves containers for Pod, Deployment, StatefulSet and DaemonSet and returns no errors for a
-kind it does not know, so a Job or CronJob renderer passes today **by not being examined** —
-the one new workload the gate exists for. Either the checker learns those kinds, with a
-run-to-completion rule for probes that mirrors its existing init-container exemption, or the
-renderer is a kind it already checks. This is ADR-0021 prerequisite 6 and it is this plan's to
-discharge.
+**The manifest gate now sees the renderer.** `.devtools/ci/check_deploy_manifest.py` resolved
+containers for Pod, Deployment, StatefulSet and DaemonSet and returned no errors for a kind it
+did not know, so a Job or CronJob renderer passed **by not being examined** — the one new
+workload the gate exists for. Discharged 2026-09-07 as ADR-0021 prerequisite 6: the checker
+learns `Job` and `CronJob`, whose containers are exempt from the probe requirement for the same
+reason init containers already were, and every security and resourcing obligation still applies
+to them.
+
+The fix went one step wider than the prerequisite asked, because two kinds was the instance and
+not the gap: **any** unrecognised kind carrying a container list is now an error naming
+`POD_SPEC_PATHS`, so the next workload kind fails closed rather than passing silently.
+ConfigMaps and Services still pass, and the existing manifest is unchanged. So this plan's
+renderer manifest has a gate to satisfy before it is written, which is the order that makes a
+gate worth having.
 
 ## Migration inventory
 
@@ -451,9 +500,65 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    > `subprocess.py`, found by ADR-0019 gate 1 — is a separate decision on a separate service
    > and is untouched by this result.
    >
-   > **Still required before selection**, and ADR-0021 prerequisite 1 stays open until they
-   > support it: a font with real kerning pairs, right-to-left shaping, and render-time and
-   > resource measurements against piece 8's bounds.
+   > **Qualified and selected, 2026-09-07.** The three remaining checks ran on
+   > `claude/opus5_adr0021-prerequisites` at `4a3b0713`, natively on `aarch64-darwin` with
+   > cargo 1.95.0. Each expectation is computed by something that is not the renderer, which is
+   > the only way a shaping check means anything.
+   >
+   > **Kerning.** `fontTools` walks NotoSans' GPOS and predicts each pair's advance from the
+   > font's own tables; the renderer shapes it with rustybuzz. Five pairs, exact agreement, each
+   > distinguishable from the unkerned sum:
+   >
+   > | Pair | Kern (units/em) | Predicted px | Unkerned px | Measured px |
+   > |---|---|---|---|---|
+   > | `AV` | −40 | 599.50 | 619.50 | 599.50 |
+   > | `To` | −70 | 545.50 | 580.50 | 545.50 |
+   > | `PA` | −50 | 597.00 | 622.00 | 597.00 |
+   > | `AT` | −70 | 562.50 | 597.50 | 562.50 |
+   > | `LT` | −20 | 530.00 | 540.00 | 530.00 |
+   >
+   > **A correction this produced, and it matters for piece 3.** usvg reports a text node's
+   > bounding box as **the run's advance**, not its ink extent. Six single glyphs measured their
+   > `hmtx` advance exactly — A 639, V 600, P 605, T 556, o 605, L 524 units at 0.5 px/unit. The
+   > line-breaking code is therefore comparing advances against the box, which is correct, but a
+   > reading of that call as "ink bounds" would be wrong and would make the overflow rule mean
+   > something different.
+   >
+   > **Right-to-left**, against a font carrying both scripts. Eight of eight:
+   >
+   > | Assertion | Independently expected because | Result |
+   > |---|---|---|
+   > | Hebrew renders two ink clusters | two letters, no joining | 2 |
+   > | The rightmost cluster is the final mem | Hebrew is strong RTL, so the first logical character is rightmost; the glyf bbox says mem is 136.2 px and yod 69.6 | 137 px right, 70 px left |
+   > | Arabic beh joins to one cluster | beh joins on both sides | 1 cluster |
+   > | The joined advance is `init` + `fina` | GSUB resolves `uniFE91` and `uniFE90` | 319.19 px, matching to 0.01 |
+   > | …and is not twice the isolated form | joining is not spacing | 319.19 against 462.60 |
+   > | A ZWNJ restores the isolated advance and the gap | U+200C suppresses joining | 462.60 px, 2 clusters |
+   >
+   > **Cost**, twenty runs per case, wall clock and peak resident set of the whole process —
+   > start, font load, shape, raster, threshold and write — because a render job is one
+   > invocation with no daemon to amortise a start:
+   >
+   > | Case | Mean | p95 | Peak RSS | Artifact |
+   > |---|---|---|---|---|
+   > | `c1_wrap` | 12.2 ms | 15.0 ms | 8.9 MiB | 37,145 B |
+   > | `c2_glyph` (refusal) | 2.5 ms | 2.8 ms | 3.0 MiB | none |
+   > | `c3_qr_geometry` | 8.2 ms | 8.9 ms | 8.5 MiB | 24,252 B |
+   > | `c4_colour` | 7.9 ms | 8.5 ms | 8.5 MiB | 24,434 B |
+   > | `c5_length` | 22.9 ms | 24.8 ms | 9.1 MiB | 54,202 B |
+   >
+   > Reproduce: `python3 .spike-renderer/qualify/kerning.py`,
+   > `python3 .spike-renderer/qualify/rtl.py <font with Hebrew and Arabic>`,
+   > `python3 .spike-renderer/qualify/cost.py`.
+   >
+   > **Candidate C is selected.** ADR-0021 prerequisite 1 is met.
+   >
+   > **One defect this exposed in the spike renderer, and it is piece 4's to fix.** Those
+   > artifact sizes are RGBA, because `tiny_skia`'s `save_png` writes RGBA8 — the same pixels
+   > as a 2-bit indexed PNG over the profile palette are **2,573 bytes against 37,145**, a
+   > factor of 14, and the re-encode is lossless: decoded palette counts match the renderer's
+   > own reported 38,439 black / 0 red / 339,489 white exactly. An RGBA artifact is also not
+   > what `raster/png-indexed;v=1` names, so this is a correctness point before it is a size one.
 
 4. **Which limits and retention periods apply?**
 
