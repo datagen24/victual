@@ -26,9 +26,11 @@
   assigns templates to the drainer and whose Consequences put the label's appearance outside
   this repository. Accepting this record while that one still stands would leave two accepted
   records contradicting each other, with no answer to who owns a template. 0021 supersedes those
-  boundaries; only then does the text above rest on an uncontradicted footing. Two format-dependent details
-  are **outstanding acceptance work**, owed to this record before it is accepted and listed at
-  the end of decision item 3.
+  boundaries; only then does the text above rest on an uncontradicted footing. The two
+  format-dependent details this record once owed — what the artifact adds to the job payload,
+  and what the claim precondition compares — are written into items 4 and 5, and neither
+  depended on the format after all. Nothing substantive is outstanding; what is left is the
+  ordering, recorded at the end of decision item 3.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
   [22](../plans/22-medication-tracking.md).
@@ -476,13 +478,14 @@ without knowing which driver answers.
 
 Version 1 carries:
 
-| Key | Content |
-|---|---|
-| `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups` |
-| `models` | The device models this driver supports |
-| `combinations` | The authoritative list of what actually works — see below |
-| `artifact_forms` | The input formats **this driver implementation accepts**, versioned — see below |
-| `completion_evidence` | What the driver can report: `none`, `transport`, or `device_reported` |
+| Key | Content | Scoped to |
+|---|---|---|
+| `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups`, `ipp` | The driver |
+| `models` | The device models this driver supports | The driver |
+| `combinations` | The authoritative list of what actually works — see below | Each entry names its own `connection_type`, model, media, resolution and colour mode |
+| `artifact_forms` | The input formats **this driver implementation accepts**, versioned — see below | The combinations each form applies to |
+| `completion_evidence` | What can be reported on that path: `none`, `transport`, or `device_reported` | The `(driver, connection_type, combination)` triple |
+| `provenance` | `demonstrated` or `advertised` — see below | Required on every `combinations`, `artifact_forms` and `completion_evidence` entry |
 
 **`combinations` is a list, not the product of several lists.** Independent lists of media,
 resolutions and colour modes claim every crossing of them works, which is false of every
@@ -529,15 +532,32 @@ another:
 
 ```json
 "artifact_forms": [
-  {"form": "raster/png-indexed;v=1", "applies_to": ["*"]},
-  {"form": "zpl/2", "applies_to": [{"model": "ZT411"}]}
+  {
+    "form": "raster/ql;passthrough;v=1",
+    "applies_to": [{"connection_type": "tcp"}, {"connection_type": "ipp"}],
+    "geometry": "fixed_grid",
+    "provenance": "demonstrated"
+  },
+  {
+    "form": "raster/urf;rs=600",
+    "applies_to": [{"connection_type": "ipp", "model": "QL-820NWBc"}],
+    "geometry": "device_placed",
+    "provenance": "advertised"
+  }
 ]
 ```
 
-A job names its artifact's form; a claim requires the serving worker to advertise it. This is
-also what makes [ADR-0021](0021-label-templates-are-application-data.md)'s open
-raster-versus-page-description question expressible rather than a fork in the road — a
-deployment may carry both, and the capability document says which printers take which.
+`applies_to` is a list of combination selectors, and **an entry without one is refused** — a
+form that applies to every path is a claim about paths nobody tested, which is the mistake the
+QL exposed. `geometry` is the form's own declaration of the division decision item 4 relies on:
+`fixed_grid` means the worker scales nothing, `device_placed` means it imposes the resolved
+combination's geometry.
+
+A job names its artifact's form; a claim requires the serving worker to advertise it for the
+combination that printer resolves to. This is also what makes
+[ADR-0021](0021-label-templates-are-application-data.md)'s open raster-versus-page-description
+question expressible rather than a fork in the road — a deployment may carry both, and the
+capability document says which printers take which over which transport.
 
 Explicit units are load-bearing: issue [#90](https://github.com/datagen24/victual/issues/90)
 is a geometry defect produced by two components disagreeing about which dot count a
@@ -587,11 +607,31 @@ job reached `job-state = completed`, `job-completed-successfully`,
 commands. A capability document that reads only the declared attributes would record a
 monochrome 300 dpi printer that cannot do what this one just did.
 
-**Amendment owed before acceptance:** `completion_evidence` and `artifact_forms` move from the
-driver to the `(driver, connection_type, combination)` triple. **Until each path is
-demonstrated on its own terms, each keeps what it has been shown to do** — `transport` for the
-tested raw-9100 path, and `device_reported` for the tested IPP passthrough, neither inferred
-from the other.
+**So version 1 scopes both keys to the `(driver, connection_type, combination)` triple**, and a
+`combinations` entry names its `connection_type` alongside its model, media, resolution and
+colour mode. A registration advertising `completion_evidence` once for the driver, or an
+`artifact_forms` entry without an `applies_to`, is **refused at registration** rather than
+averaged into a claim about paths nobody tested. Until each path is demonstrated on its own
+terms, each keeps what it has been shown to do — `transport` for the tested raw-9100 path and
+`device_reported` for the tested IPP passthrough, neither inferred from the other.
+
+**Every row says where its claim comes from.** `provenance` is `demonstrated` or `advertised`,
+and it is required on each `combinations`, `artifact_forms` and `completion_evidence` entry:
+
+- `demonstrated` — this exact path was exercised against a device and the outcome observed.
+- `advertised` — the device or its driver says so, and nothing here has tested it.
+
+The QL is why this is in the contract rather than in a footnote. It advertises `monochrome`
+only over IPP, and a two-colour job printed through IPP anyway. A device that does **more**
+than it advertises is as much a surprise as one that does less, so a document recording only
+"supported" would have been wrong about that path in the direction that hides the error.
+
+Provenance changes no enforcement: an `advertised` row is honoured at enqueue exactly as a
+`demonstrated` one is, because refusing to print until somebody has physically tried a
+combination would make the contract unusable on the day a driver is added. What it changes is
+how a failure is read. A job that failed on an `advertised` row is a capability document to
+correct; one that failed on a `demonstrated` row is a device or a deployment that changed since
+it was shown to work — two different investigations, and the row says which one to open.
 
 Registration advertises support; **it does not prove that an attached printer currently has
 the capability available.** A driver supporting `62red` and a printer configured for `62red`
@@ -695,9 +735,32 @@ A job is offered to a claiming worker when all three hold:
    is removed rather than deferred: workers advertise no template versions now, so a
    precondition requiring one could never succeed and would offer no job to any worker. What
    replaces it is the same question asked about what a worker is actually handed — an
-   artifact against a profile. **The precise fields compared are settled by ADR-0021's
-   prerequisite 2**, since a raster and a page description put different obligations on the
-   worker; that it is the artifact and profile contract, and not a template, is settled here.
+   artifact against a profile, and it compares exactly two things:
+
+   - **The job's artifact `form` appears in the caller's `artifact_forms`**, on an entry whose
+     `applies_to` covers the combination this printer resolves to. Identifiers are compared
+     whole, version suffix included: `raster/png-indexed;v=1` does not satisfy a worker
+     advertising `v=2`. A version is a label rather than a compatibility claim here as
+     everywhere else in this record, so it cannot be range-matched.
+   - **The job's profile contract version is one the caller advertises.** The profile is the
+     geometry the artifact was produced against; a worker that cannot read it cannot check what
+     it was handed.
+
+   Neither comparison depends on whether the form is a raster or a page description, which is
+   what settles it here rather than in ADR-0021: prerequisite 2 chooses which forms exist, not
+   what is compared about one.
+
+   **Failing this check is a visible blocked outcome, not a silent pass-over.** Conditions 1
+   and 2 mean the job was never this caller's to take. Condition 3 is different: the caller
+   *is* the printer's assigned worker and the printer *is* active, and because a printer has
+   exactly one assigned worker there is nobody else who could ever claim it. So the claim opens
+   an attempt that immediately records `blocked`, naming the form or profile version no longer
+   accepted, and ends — the same treatment item 4 gives an unavailable version, and provably
+   zero bytes sent. Restoring the advertisement makes another attempt possible; a person
+   authorizes it. The enqueue-time check exists to make this rare rather than to make it
+   impossible: it refuses a job the assigned worker cannot consume at the moment somebody asks
+   for the label, and reaching this precondition and failing it means the advertisement changed
+   after that.
 
 Every other route is authorized the same way, against the row rather than the key type:
 
@@ -815,20 +878,25 @@ implementation until both records are accepted would not have made a contradicto
 contract safe**, which is why item 5's template-version match was removed outright rather than
 left for later — a precondition that cannot succeed offers no job to any worker.
 
-What is left is narrower, and it is **outstanding acceptance work rather than deferred
-reconciliation**: two places name the artifact and profile contract without saying what is
-compared, because that follows from whether an artifact is a raster or a page description.
+**The two format-dependent places are now written, and neither waited on prerequisite 2.**
+They were owed because each named the artifact and profile contract without saying what was
+carried or compared, and that looked as though it followed from whether an artifact is a raster
+or a page description. It does not:
 
-| Owed | Where | Settled by |
+| Was owed | Where | How it is settled |
 |---|---|---|
-| What the artifact adds to the job payload, and how much geometry the worker still decides | Item 4 | ADR-0021 prerequisite 2 |
-| Which fields the claim precondition compares for artifact/profile compatibility | Item 5 | ADR-0021 prerequisite 2 |
+| What the artifact adds to the job payload, and how much geometry the worker still decides | Item 4 | The payload carries a reference, a `form` identifier and the resolved combination. The geometry division is declared by the form, not per job |
+| Which fields the claim precondition compares | Item 5 | The job's `form` against the caller's `artifact_forms` for the resolved combination, and the profile contract version. Whole-string, no range matching |
 
-**Both must be written into this record before it is accepted**, and neither blocks the work
-that settles them: ADR-0021's renderer comparison (prerequisite 1) and its artifact-format
-comparison (prerequisite 2) proceed against the template contract without needing these fields
-fixed first. The order is comparison, then these two edits, then each record's own
-bookkeeping-only acceptance pull request.
+In both, ADR-0021's prerequisite 2 chooses **which forms wave 3b ships** and this record fixes
+**what is done with a form**. There is no answer that comparison could return which changes
+either paragraph, because a form that did not declare its own geometry division could not be
+registered.
+
+So what remains before this record is accepted is **ordering, not content**: ADR-0021 is
+accepted first, since items 1, 4 and 5 above now rely on its decisions about template
+ownership and reprint semantics, and an accepted record may not depend on a proposed one.
+Each acceptance is its own bookkeeping-only pull request.
 
 ### 4. What a job pins, and what it resolves at claim time
 
@@ -845,10 +913,27 @@ from a reprint. The **artifact bytes are the authority**: they are what the work
 what an exact reprint replays, and no rerender may be substituted for them. Where provenance
 and bytes could ever disagree, the bytes are what was printed.
 
-That distinction holds whatever the artifact turns out to be. **What the artifact's format
-adds to this payload — and how much geometry it leaves the worker to decide — follows
-ADR-0021's prerequisite 2**, because a raster and a page description hand the device adapter
-different work.
+That distinction holds whatever the artifact turns out to be, and so does what the payload
+carries about it. The job names three things and no more:
+
+1. **A reference to the stored bytes**, which the worker fetches rather than receives inline.
+2. **The artifact's `form`** — one of the versioned identifiers `artifact_forms` uses, such as
+   `raster/png-indexed;v=1` or `pdf/1.4`. A category is not a form.
+3. **The resolved combination the artifact was produced against**, so the worker can compare
+   what it was handed against the device it is holding rather than assume the two agree.
+
+**How much geometry that leaves the worker is a property of the form, declared once in the
+`artifact_forms` entry's `geometry` key, and never decided per job.** `fixed_grid` means the
+form fixes the pixel grid: the worker scales nothing and a mismatch against the resolved
+combination is a refusal. `device_placed` means placement is the device's, and the worker
+imposes that combination's geometry. Both kinds may exist in one deployment; what may not exist
+is a form that leaves the question open, because the ambiguity would be resolved differently by
+two workers, and issue [#90](https://github.com/datagen24/victual/issues/90) is what that
+costs.
+
+This is why the payload does not wait on ADR-0021's prerequisite 2. That comparison chooses
+**which forms wave 3b ships**; this record fixes **what is done with a form**, and a form that
+did not state its own geometry division could not be registered in the first place.
 
 The claim response resolves that printer's current row and returns its typed columns, its
 validated `settings`, and the `driver_id` and `driver_schema_version` they were validated
@@ -1555,7 +1640,9 @@ subsystem to be built before the architecture authorizing it is accepted.
    A row whose provenance is *advertised* is a claim about what the device says of itself; a row
    marked *demonstrated* is a claim about what it did. The contract carries both and says which,
    because the QL showed they can disagree in the direction that matters — a device doing more
-   than it advertises is as much a surprise as one doing less.
+   than it advertises is as much a surprise as one doing less. **That is what the `provenance`
+   key in decision item 3 is**, and this gate is where it came from: the distinction is in the
+   contract every driver writes against, not in this note about how the contract was tested.
 
    **The second family is the networked laser, not Zebra.** The deployment has a Brother
    QL-820NWBc and a networked laser, and **no ZPL device** — so a Zebra document could only ever
