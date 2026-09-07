@@ -391,11 +391,13 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   timeout.
 - **Configuration works with nothing running.** The admin can create and edit printers
   against the stored schema while every worker is down.
-- **Jobs queue, and nothing dead-letters for being unclaimed.** Unclaimed age is backlog
-  and is visible; it is not an error. This is the failure
-  [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a day eats
-  a day of labels" — which the outbox removes. Dead-lettering stays for what 0259 defined
-  it for, a payload no version can read, plus decision item 4's deleted-printer case.
+- **Unclaimed jobs stay queued, indefinitely, and nothing dead-letters for being
+  unclaimed.** Unclaimed age is backlog and is visible; it is not an error. This is the
+  failure [ADR-0011](0011-label-namespace.md) fact 2 named — "a printer that is off for a
+  day eats a day of labels" — which the outbox removes, and it is distinct from decision
+  item 6's rule, which governs only what happens after an attempt was claimed.
+  Dead-lettering stays for what 0259 defined it for, a payload no version can read, plus
+  decision item 4's deleted-printer case.
 - **A printer with no compatible worker is a visible state.** Rule 3 failing for every
   registered worker means its jobs are never offered, and the configuration screen says
   so.
@@ -465,11 +467,12 @@ job say which rendering it meant. Three rules follow:
 - **A worker upgrade retains the template versions queued jobs pin**, or the upgrade carries
   an explicit migration of those jobs to a version it does have.
 - **An unavailable version is a visible blocked outcome, never a fallback to the latest.**
-  The attempt records `blocked` naming the missing version, the lease ends, and the job
-  returns to the queue — a redeployed worker carrying that version can still print it, so
-  this is neither an error to retry in a loop nor a dead letter. The job is not offered
-  again to a worker that already reported `blocked` on that pinned version until that worker
-  re-registers.
+  The attempt records `blocked` naming the missing version and ends there. Like every other
+  failed attempt it does not return the job to the queue: restoring the version makes
+  another attempt *possible*, and a person authorizes it. A blocked attempt provably sent no
+  bytes, so it is the one failure that could be redispatched without risking a duplicate —
+  that carve-out is part of the deferred automatic-retry decision in item 6 and is not taken
+  here.
 - **Reprinting and printing with a revised template are different operator actions.** A
   reprint enqueues a job pinning the same template version and the same captured content; a
   revised print pins the new version and is recorded as a different operation. Neither
@@ -487,27 +490,33 @@ setting `delivered_at`; the attempt rows are this consumer's record of what it t
 
 #### Claiming, leases and fencing
 
-Inserting a row does not by itself establish ownership across an expiry, so ownership is
-stated rather than assumed:
+**A job is claimable only for as many attempts as have been authorized.** The job row
+carries `attempts_authorized`, which starts at 1. A claim is legal only while the number of
+attempts inserted is below it, so **a failed or expired attempt does not make the job
+claimable again** — the invariant is a count, not a policy someone has to remember to apply.
+Authorizing another attempt increments the count, and only a person does that; decision item
+6 says what that means.
 
 - **A claim is atomic.** One transaction locks the job row (`SELECT … FOR UPDATE SKIP
-  LOCKED`, which ADR-0010 property 2 already names), refuses if a live attempt exists — one
-  with no terminal outcome and a `lease_expires_at` in the future — inserts the attempt, and
-  records it as the job's `current_attempt_id`. Two workers cannot both leave that
-  transaction holding the job.
+  LOCKED`, which ADR-0010 property 2 already names), refuses unless the authorization count
+  leaves an attempt available, inserts the attempt, and records it as the job's
+  `current_attempt_id`. Two workers cannot both leave that transaction holding the job.
 - **A lease is renewable, up to a bound.** The heartbeat route extends `lease_expires_at`
   while the attempt runs. Renewal stops at a maximum total execution time, past which the
   attempt is `abandoned` whatever the worker believes, so a wedged worker cannot hold a job
-  indefinitely by heartbeating.
+  indefinitely by heartbeating. An expiry ends the attempt; it does not return the job.
 - **Results are fenced by `current_attempt_id`.** `heartbeat`, `sent` and `result` are
-  accepted only when the caller owns the attempt and that attempt is still the job's current
-  one. If attempt A expires, B claims the job, and A's result arrives afterwards, A's row
-  records the late outcome and is marked superseded; it does not complete B, does not
-  overwrite B's outcome, and does not acknowledge the outbox row.
-- **Physical duplication remains the policy; database ownership does not.** A superseded
-  late result may well mean a second label came out of the printer, and decision item 6
-  accepts that. What it may not do is leave two rows both claiming to be the outcome of one
-  job.
+  accepted only when the caller owns the attempt. A result for an attempt that is no longer
+  the job's current one is recorded on **its own row**, marked superseded: it does not
+  complete the newer attempt, does not overwrite that attempt's outcome, and does not
+  acknowledge the outbox row.
+- **Bookkeeping is idempotent, so a network retry never prints.** `sent`, `result`,
+  `heartbeat` and `evidence` may each be delivered more than once. Repeating `sent` or
+  `result` for an attempt that already recorded one returns the stored value unchanged
+  rather than writing a second; evidence is deduplicated on
+  `(attempt_id, source, evidence_type, observed_at)`. None of these routes can enqueue work
+  or authorize an attempt, so retrying bookkeeping cannot produce a physical print under any
+  ordering.
 
 #### `print_evidence` records an observation, not a conclusion
 
@@ -561,20 +570,35 @@ missing label:
 | **Sent** | The worker wrote the job to the device without a transport error | `bytes_sent_at` |
 | **Reported complete** | The device itself reported the job finished | `device_reported_at` plus outcome |
 | **Verified** | Optional external evidence that a physical label exists | An evidence row referencing this attempt |
-| **Uncertain** | The lease expired with no terminal result | Neither timestamp reached a terminal outcome |
+| **Uncertain** | The attempt ended with no terminal result | Neither timestamp reached a terminal outcome. A resting state, not a transient one |
 
 **Sent is not printed.** A device can accept bytes and then jam, run out of tape, or be
 switched off mid-job. Where a driver can report completion, the outbox row is acknowledged
 on the report; where it cannot, it is acknowledged on send, and the record says which of
 the two happened rather than presenting them as the same fact.
 
-**Crash after send: retry, and accept a duplicate label.** A worker killed between
-writing bytes and posting its result leaves an attempt that expires, and the job is claimed
-again. Under at-least-once delivery that case is indistinguishable from "the bytes never
-arrived", and the costs are not symmetric: a duplicate label is a few centimetres of tape,
-while a missing one is a physical artifact that does not exist for something the ledger says
-was booked. The `attempts` counter and the attempt rows make a repeatedly duplicating
-printer visible.
+**No automatic redispatch after a claimed attempt.** A failed attempt records its error; an
+expired attempt is uncertain. Neither makes the job claimable again. A person authorizes
+another attempt, and both the earlier attempt and its evidence are preserved beside the new
+one rather than replaced.
+
+The crash-after-send case is why. A worker killed between writing bytes and posting its
+result is indistinguishable from one whose bytes never arrived — the printer may already
+hold a label, and nothing in Victual can tell. Redispatching automatically resolves that
+ambiguity by guessing, and it guesses in the direction that prints. What a person has and
+Victual does not is the ability to look at the printer.
+
+**Queued is not the same as failed.** A job no worker has claimed stays queued while its
+worker is offline, indefinitely, and prints when the worker returns. That is the failure
+[ADR-0011](0011-label-namespace.md) fact 2 named and the outbox removes it. The rule here is
+narrower: it governs what happens after an attempt was claimed, when a device has been
+spoken to.
+
+**Automatic retry is deferred, not rejected.** Deciding it needs three things this record
+does not have: printer-specific knowledge of what a device does with a truncated job,
+validation that delivery reporting is trustworthy enough to distinguish "not sent" from
+"sent and unacknowledged", and an explicit policy decision about who bears the cost of a
+duplicate. It is outside wave 3b.
 
 **The verifier correlates its observation with an attempt; Victual does not infer the
 correlation.** `attempt_id` is required on every evidence row. A uid is stable by
@@ -739,9 +763,9 @@ rather than each transaction's own, which is the difference between at-least-onc
 being safe and being lossy in a new way." That argument is about facts. Printer
 configuration is not a fact about the past; it is the current description of a device, and
 the failure modes point opposite ways. Re-reading the ledger at delivery loses information.
-Embedding the connection at enqueue loses the fix: a queue of jobs that failed because the
-media was wrong retries forever with the wrong media, and correcting it means deleting and
-recreating every queued job.
+Embedding the connection at enqueue loses the fix: a queue of jobs enqueued against the
+wrong media would print against the wrong media whenever it drained, and correcting it would
+mean deleting and recreating every queued job rather than editing one row.
 
 The bound: a payload field may be late-bound only if it describes the *delivery device*,
 never if it describes *what happened*. The test is whether a person who changed the value
@@ -839,11 +863,13 @@ subsystem to be built before the architecture authorizing it is accepted.
    including `image-has-no-shell`, with its closure size recorded. The pinned revision may
    be a scratch branch.
 2. **Claiming, fencing and crash-after-send behave as decision items 5 and 6 specify.**
-   Against a fake device, in throwaway code: two workers cannot both hold a job across a
-   lease expiry; a heartbeat extends a lease and the bound ends it; a late result from a
-   superseded attempt records against its own row without completing or overwriting the
-   attempt that replaced it; and a worker killed between `bytes_sent_at` and its terminal
-   result produces a duplicate label rather than a lost one.
+   Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
+   it; a failed or expired attempt leaves the job unclaimable until an attempt is authorized,
+   and two workers cannot both hold the authorized one; a late result from a superseded
+   attempt records against its own row without completing or overwriting the attempt that
+   replaced it; repeated deliveries of `sent`, `result` and `evidence` change nothing after
+   the first; and **a worker killed between `bytes_sent_at` and its terminal result leaves a
+   visible uncertain job and produces no second print.**
 3. **The schema subset is fixed against a named validator and a named form renderer.** Both
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
@@ -874,9 +900,11 @@ implementation plan rather than to this record.
    exercises two families on paper; a second family in service is what shows whether a key
    is Brother-shaped or whether one is absent. The contract is versioned so that finding out
    is a version bump rather than a redesign.
-5. **The blocked-job backstop.** A job pinning a template version no deployed worker carries
-   returns to the queue indefinitely. Whether it should eventually become a dead letter, and
-   after what, depends on whether an operator-visible blocked count is enough on its own.
+5. **Automatic retry, and whether any failure class earns an exception.** Decision item 6
+   defers it and names what deciding it needs: printer-specific behaviour under a truncated
+   job, validated delivery reporting, and a policy decision about who bears a duplicate. The
+   `blocked` outcome is the strongest candidate for an early exception, since it provably
+   sent no bytes. Outside wave 3b either way.
 
 ## Research
 
