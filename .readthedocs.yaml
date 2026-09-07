@@ -6,12 +6,16 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.13"
-  # phpDocumentor 3 needs PHP 8.1.2+ and mbstring; Ubuntu 24.04 carries PHP 8.3.
-  # Read the Docs has no Docker daemon, so the staging script runs the pinned PHAR
-  # here where a developer's machine runs the pinned container.
+  # phpDocumentor 3.10.0 requires PHP 8.1+ with ctype, hash, iconv, json, mbstring,
+  # simplexml and xml, and reaches dom through symfony/console. Ubuntu 24.04 carries
+  # PHP 8.3; php-cli supplies ctype, hash, iconv and json, php-mbstring supplies
+  # mbstring, and php-xml supplies dom, simplexml and xml. Read the Docs has no Docker
+  # daemon, so the staging script runs the pinned PHAR here where a developer's machine
+  # runs the pinned container.
   apt_packages:
     - php-cli
     - php-mbstring
+    - php-xml
   jobs:
     pre_build:
       - python3 .devtools/docs/stage.py

@@ -551,6 +551,24 @@ leaving a dangling link.
   page on the site, so it was rewritten to GitHub and sent a reader off-site to see a file
   listing of diagrams that are on the site. The sentence now points at the table below it.
 
-**Not verified.** Check 10 — that a Read the Docs build reaches GitHub releases to fetch the
-PHAR — cannot be established from here. It needs a real build on Read the Docs, and it is the
-one step assuming outbound network access beyond PyPI. If it is blocked, vendor the PHAR.
+**Check 10, verified on Read the Docs, 2026-09-07 — and it found a defect the design had
+missed.** Build 34435105 against commit `9aa40fd` reached GitHub releases and fetched the
+PHAR with its checksum matching, so the assumption about outbound network access beyond PyPI
+holds and vendoring the PHAR is unnecessary. phpDocumentor then failed on that build with
+`Extension DOM is required`.
+
+The `apt_packages` list was short. phpDocumentor 3.10.0's `composer.json` requires `ctype`,
+`hash`, `iconv`, `json`, `mbstring`, `simplexml` and `xml`, and reaches `dom` through
+`symfony/console`; the design named only `mbstring`, because that is the one extension
+phpDocumentor's own installation page lists. On Ubuntu 24.04 `php-cli` supplies `ctype`,
+`hash`, `iconv` and `json`, and `php-xml` supplies `dom`, `simplexml` and `xml`. Adding
+`php-xml` fixes it.
+
+The fix was verified against a reproduction of the Read the Docs environment rather than by
+another round trip through it: `ubuntu:24.04` with `php-cli`, `php-mbstring`, `php-xml` and
+`python3`, running the staging script over a mounted checkout. All eight extensions are
+present, and phpDocumentor produced **242 files — the same count the pinned container
+produces**, which is verification check 8 satisfied on real output rather than by inspection.
+
+That build also found a bug in the staging script: `--out` pointing outside the repository
+crashed the progress line on `Path.relative_to`. Fixed.

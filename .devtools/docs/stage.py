@@ -174,11 +174,20 @@ def build_api_reference(out: Path, cache: Path) -> bool:
         )
     elif shutil.which("php"):
         print("  phpDocumentor via PHAR")
-        subprocess.run(
+        result = subprocess.run(
             ["php", str(fetch_phar(cache)), "--config", "phpdoc.dist.xml"],
             cwd=REPO,
-            check=True,
+            check=False,
         )
+        if result.returncode != 0:
+            raise SystemExit(
+                "phpDocumentor failed under the PHAR.\n"
+                "  It needs PHP 8.1+ with ctype, hash, iconv, json, mbstring, simplexml\n"
+                "  and xml, and reaches dom through symfony/console. On Ubuntu that is\n"
+                "  php-cli, php-mbstring and php-xml — a missing php-xml reports itself as\n"
+                '  "Extension DOM is required", which names neither the package nor this.\n'
+                "  The container path carries its own PHP and does not need any of them."
+            )
     else:
         print("  no container runtime and no php: API reference omitted")
         return False
@@ -235,7 +244,11 @@ def main() -> int:
         shutil.copy2(Path(__file__).parent / "pages" / name, out / name)
 
     pages = sum(1 for _ in out.rglob("*.md"))
-    print(f"  staged {pages} Markdown pages into {out.relative_to(REPO)}")
+    try:
+        where = out.relative_to(REPO)
+    except ValueError:
+        where = out
+    print(f"  staged {pages} Markdown pages into {where}")
 
     if not args.no_api:
         build_api_reference(out, REPO / ".phpdoc/cache")
