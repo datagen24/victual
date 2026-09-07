@@ -40,11 +40,27 @@ jobs:
         with:
           php-version: '8.4'
 
+      # check_deploy_manifest.py is the one script under .devtools/ci that parses a
+      # real document format rather than treating text as regex input, so it is the
+      # one with a dependency. PyYAML is pure Python and has no build step.
+      - name: Install manifest-check dependencies
+        run: pip install --quiet pyyaml==6.0.1
+
       - name: Check CI validation scripts
         run: python3 -m unittest discover -s .devtools/ci
 
       - name: Check changed ADR headers
         run: python3 .devtools/ci/check_adr_headers.py
+
+      # ADR-0010 property 3 (unprivileged) and property 4 (declared, with probes and
+      # limits) as they apply to deploy/**'s manifests rather than to the images
+      # nix/checks.nix already covers. This runs unconditionally, on the whole
+      # deploy/** tree, rather than being folded into the nix workflow's path filter:
+      # a manifest is not a Nix build input, so gating it behind a full image rebuild
+      # would answer a YAML-only change with a ten-minute job. See
+      # docs/adr/0010-workload-standard.md open question 2.
+      - name: Check deploy manifests
+        run: python3 .devtools/ci/check_deploy_manifest.py
 
       # There is no configured linter in this repository, so this is a syntax sweep
       # rather than a style check. It is cheap and it catches the parse error that

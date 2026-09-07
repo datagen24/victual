@@ -1066,6 +1066,18 @@ rejected, decision items 2 and 5 need re-arguing on the constitution alone, whic
 weaker but not empty basis. Neither is load-bearing for decision item 3: whether printers
 are master data does not depend on 0010 at all.
 
+**0010 was revised in light of this record, and the two no longer read as contradicting
+each other.** Its decision item 3 said "its own database role" without qualification,
+which this worker cannot satisfy — it makes no database connection at all — and its
+property 1 said "stateless" the same way, which the paired configuration mode above
+cannot satisfy either. 0010 now scopes the first to workloads that hold a database
+connection (a worker with none is outside the property's scope, not a violation of it)
+and states the second as departable by name in the record proposing the exception, citing
+the paired worker above as that instance. Neither amendment weakens 0010's reliance value
+here: it is the same standard, stated so that this record's two departures are the
+argued exceptions they were always written to be, rather than a silent conflict between
+two Proposed records each assuming the other would give way.
+
 ## Acceptance prerequisites
 
 Gates, not suggestions. Each tests a decision this record makes and is **a disposable

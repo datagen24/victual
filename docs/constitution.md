@@ -52,7 +52,8 @@ not. Every fork-owned workload is:
 - **Idempotent.** Every consumer is an at-least-once consumer; every side effect is
   idempotent or deduplicated. Queues are drained, not fired-and-forgotten.
 - **Unprivileged.** Non-root, read-only filesystem, no capabilities it did not ask for,
-  and its own identity — its own credential, its own database role, least privilege.
+  and its own identity — its own credential, its own database role where it holds one,
+  least privilege for the job it does.
 - **Declared.** It exists in the deploy tree with probes and limits, or it does not exist.
 
 Consumers may multiply; contracts may not. One outbox schema with event types, one

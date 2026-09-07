@@ -79,7 +79,7 @@ Gate review recorded 2026-09-04; consult each record for its full requirements.
 | Record | Remaining review or delivery work |
 |---|---|
 | 0009 | 0008 dependency met. Measure whether the deployed pod sleeps after 18; complete the Anonymizer spike. The record requires rejection if the sleep premise fails. |
-| 0010 | No named acceptance prerequisites. Enforcement remains an open question. The deploy tree and non-root runtime now exist. |
+| 0010 | No named acceptance prerequisites. Enforcement (open question 2) is answered: `.devtools/ci/check_deploy_manifest.py` checks the manifest; `nix/checks.nix` already checked the images. The deploy tree, non-root runtime, probes and limits exist; the database credential split is the one tracked gap left. Decision item 3 is scoped against [0019](0019-label-printers-are-master-data.md)'s no-database worker and its paired-worker exception. |
 | 0011 | Accepted; label mapping and print outbox unbuilt. Plan 06 covers location-specific work. |
 | 0012 | Accepted; proposal table and API unbuilt, with no owning plan. Confirmation permissions and `proposed_fields` semantics are in the Decision. |
 | 0013 | Accepted with all five gates met. Images build and serve; production Docker target retired. Remaining deployment work is in plan 20. |
