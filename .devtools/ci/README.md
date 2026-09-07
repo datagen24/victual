@@ -47,3 +47,29 @@ To check the entire corpus locally:
 ```sh
 python3 .devtools/ci/check_adr_headers.py --all
 ```
+
+## Deploy manifests
+
+The `lint` job runs `check_deploy_manifest.py` against every `deploy/**/*.yaml`
+document unconditionally, rather than folding it into the `nix` workflow's path
+filter — the manifest is not a Nix build input, so gating it behind a full image
+rebuild would answer a YAML-only change with a ten-minute job for no reason.
+
+It checks [ADR-0010](../../docs/adr/0010-workload-standard.md)'s manifest-level
+properties for every `Pod`, `Deployment`, `StatefulSet` and `DaemonSet` document: every
+init and serving container sets `securityContext.readOnlyRootFilesystem: true`,
+`allowPrivilegeEscalation: false` and drops the `ALL` capability, and declares
+`resources.limits.memory`; every serving container also declares at least one of
+`startupProbe`, `livenessProbe` or `readinessProbe`. `nix/checks.nix`'s
+`image-runs-unprivileged` and `image-has-no-shell` already assert this property's
+image-level half against the built artifact; this is the manifest's half, which
+nothing checked before ADR-0010's acceptance review found the gap. It is deliberately
+a structural check, not a linter — it does not assess whether the manifest is well
+designed, only whether the required fields are present and correctly valued. Other
+object kinds (`ConfigMap`, `Secret`, `Service`) are skipped rather than rejected.
+
+To check it locally:
+
+```sh
+python3 .devtools/ci/check_deploy_manifest.py
+```
