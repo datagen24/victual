@@ -125,6 +125,9 @@ in
 
     image-label-worker = self.callPackage ./images/worker.nix { };
 
+    # Built only so the no-shell check can be shown to reject it. See images/worker-with-shell.nix.
+    image-label-worker-with-shell = self.callPackage ./images/worker-with-shell.nix { };
+
     image-app = self.callPackage ./images/app.nix { };
     image-web = self.callPackage ./images/web.nix { };
     image-migrate = self.callPackage ./images/migrate.nix { };

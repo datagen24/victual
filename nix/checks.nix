@@ -30,6 +30,8 @@
 
   # ADR-0019 packaging spike (gate 1), disposable.
   labelWorkerRust,
+  image-label-worker,
+  image-label-worker-with-shell,
 }:
 
 let
@@ -54,6 +56,32 @@ let
     "perl"
     "python3"
   ];
+  # **Assert against the image, not against the package it was built from.**
+  #
+  # The closure of a package is not the contents of an image: `extraCommands` runs in a builder
+  # that has a shell, and anything it copies in lands in the customisation layer without
+  # appearing in any root path's closure. So this unpacks the streamed tar, walks every layer,
+  # and looks at the file names actually shipped.
+  #
+  # It is deliberately paired with a negative control below. A detector that never fires is
+  # indistinguishable from one that cannot, and this one is worth exactly as much as the proof
+  # that it rejects an image with a shell in it.
+  shellNamesPattern =
+    "nix/store/[a-z0-9]{32}-(" + lib.concatStringsSep "|" forbiddenInRuntimeClosure + ")(-[0-9]|/)";
+
+  scanImage = image: ''
+    ${image} > image.tar
+    mkdir -p layers && tar -C layers -xf image.tar
+    : > all-entries
+    for layer in $(find layers -name '*.tar' -o -name 'layer.tar'); do
+      tar -tf "$layer" >> all-entries || true
+    done
+    wc -l < all-entries > entry-count
+
+    grep -hoE '${shellNamesPattern}' all-entries | sort -u > found-store || true
+    grep -hE '(^|/)bin/sh$' all-entries | sort -u > found-binsh || true
+    cat found-store found-binsh > found || true
+  '';
 in
 {
   # 1. Every image runs as uid 65532.
@@ -106,42 +134,50 @@ in
         cp "$closure/store-paths" "$out"
       '';
 
-  # 2b. The label worker's image holds no shell either — but python3 *is* its runtime.
+  # 2b. **The label worker's image holds no shell**, asserted against the image's own contents.
   #
-  #     This is a finding of the packaging spike, not a relaxation. The list above is
-  #     named `forbiddenInRuntimeClosure` and reads "no shell, no scripting runtime other
-  #     than PHP", which conflates two different rules: ADR-0013 forbids a shell and a
-  #     package manager in a production image, and the PHP clause is a statement about
-  #     *those three images* rather than about every artifact this flake will ever build.
-  #     A Python worker cannot satisfy the PHP-shaped version of the rule and still run,
-  #     so the rule is stated per image: every image forbids a shell, and each names its
-  #     own interpreter.
-  #
-  #     What this check therefore asserts about the worker is the part that is actually
-  #     load-bearing: no bash, dash, busybox, zsh, ksh, toybox or perl reachable from the
-  #     image's roots. `kubectl exec … sh` fails here for the same reason it fails in the
-  #     other three.
+  #     The earlier version of this check read the worker *package's* closure and exempted
+  #     python3, because the worker was a Python one. Both halves are gone: the worker is a
+  #     Rust binary with no interpreter, so nothing is exempted, and the assertion is made
+  #     against the shipped layers so that anything image assembly introduces is caught too.
   label-worker-image-has-no-shell =
-    runCommand "victual-check-worker-no-shell"
+    runCommand "victual-check-worker-image-no-shell" { } ''
+      ${scanImage image-label-worker}
+
+      if [ -s found ]; then
+        echo "The label worker image ships a shell:" >&2
+        cat found >&2
+        exit 1
+      fi
+
       {
-        closure = closureInfo { rootPaths = [ labelWorkerRust ]; };
-      }
-      ''
-        found=""
-        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
-          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
-            found="$found $forbidden"
-          fi
-        done
+        echo "image entries scanned: $(cat entry-count)"
+        echo "forbidden names: ${lib.concatStringsSep " " forbiddenInRuntimeClosure}"
+        echo "found: none"
+      } > "$out"
+    '';
 
-        if [ -n "$found" ]; then
-          echo "The label worker's runtime closure contains:$found" >&2
-          echo "Find the reference with: nix why-depends .#labelWorker <store path>" >&2
-          exit 1
-        fi
+  # 2b-control. **The check above rejects an image that does have a shell.**
+  #
+  #     Without this, a detector that silently scanned nothing would pass forever. The
+  #     disposable image here is the worker image with bash added to `contents`, and this check
+  #     passes only when the scan finds it.
+  label-worker-image-check-detects-a-shell =
+    runCommand "victual-check-worker-image-detector" { } ''
+      ${scanImage image-label-worker-with-shell}
 
-        cp "$closure/store-paths" "$out"
-      '';
+      if [ ! -s found ]; then
+        echo "The negative control did not fire: an image containing bash was scanned" >&2
+        echo "and reported clean, so the no-shell check proves nothing." >&2
+        exit 1
+      fi
+
+      {
+        echo "negative control fired as intended; the detector rejects a shell it is shown"
+        echo "entries scanned: $(cat entry-count)"
+        cat found
+      } > "$out"
+    '';
 
   # 2c. The worker actually renders a label from the installed layout.
   #
