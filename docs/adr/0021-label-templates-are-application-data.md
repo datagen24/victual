@@ -236,6 +236,12 @@ beginning of the implementation.
    candidate's image closure is measured and checked against ADR-0013's no-shell assertion.
    **Fabric.js is selected for browser editing only** and is not a candidate here by default;
    a headless runtime qualifies by reading the document, not by sharing the editor's engine.
+   **Run 2026-09-07 against three candidates and not yet discharged**: a single binary over
+   `usvg`/`tiny-skia` is the recommendation — it is the only candidate that emitted a
+   palette-conformant artifact and the only one with no shell and no interpreter in its
+   closure — but selection waits on kerning, right-to-left shaping, and render-time and
+   resource measurements. [Plan 27](../plans/27-label-templates-and-rendering.md) question 3
+   holds the evidence, the tested revision and the reproduction.
 2. **The artifact format comparison is written**: raster against page-description, including
    whether a downstream service exists that verifiably converts *and* delivers with readable
    evidence, and what each format leaves the device adapter to decide about geometry.

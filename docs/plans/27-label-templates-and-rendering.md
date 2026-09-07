@@ -59,6 +59,19 @@ references and creates an immutable version with a digest.
 - **Text** pins a font asset, size in points, box, alignment, wrapping and line spacing. The
   default overflow policy is `error`; `ellipsis` and bounded `shrink_to_fit` are explicit.
   A missing glyph is an error rather than silent font substitution.
+- **A point is a physical size, and the device has two resolutions.** One point is 1/72 inch.
+  **Horizontal geometry resolves against `dpi_x` and vertical geometry against `dpi_y`**, and
+  measuring, wrapping and painting must all use that same physical coordinate model — a glyph
+  at 11 pt on a 300 × 600 device is 45.8 device pixels wide and 91.7 tall, and a renderer
+  reaches that by scaling outlines anisotropically rather than by resampling a raster.
+
+  This is stated because leaving it implicit produced a real defect. In the renderer comparison
+  of 2026-09-07, two candidates sized the font at `size_pt × dpi_y / 72` and then measured
+  *horizontal* advances in that space, making every string twice as wide as its physical size:
+  the same document wrapped to five lines instead of three, and through the automatic-height
+  rule that changes the label's length in millimetres. It is the same class of silent geometry
+  error as [issue #90](https://github.com/datagen24/victual/issues/90), arriving from the
+  document format rather than from a driver.
 - **QR** binds to the server-supplied `label.payload` — never a user-editable literal for a
   production location label — with a declared error correction level and minimum physical
   module size, a four-module quiet zone, and whole device pixels per module on each axis.
@@ -122,8 +135,8 @@ caller-controlled fetch destination.
   claim fencing, and recover a lost invocation — no request may depend on a live Victual
   process remembering to launch it.
 
-**Runtime selection is open and is decided by rendering the contract**, per ADR-0021's
-prerequisite 1: the same document through at least two candidates, exercising multi-line
+**Runtime selection is open — candidate C recommended, not selected** (question 3 records the
+run). It is decided by rendering the contract, per ADR-0021's prerequisite 1: the same document through at least two candidates, exercising multi-line
 wrapping, a pinned font with a missing glyph, QR at a declared module size with asymmetric
 resolutions, black/red output, and continuous length against `length_rules` — with each
 candidate's image closure measured against ADR-0013's no-shell assertion. **Fabric.js is
@@ -331,6 +344,12 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
 3. Multi-line wrapping, a missing glyph, overflow, black/red output, continuous length and
    asymmetric resolutions each produce a validated artifact **or a specific error naming the
    element** — never a silently approximated label.
+   **Text width is asserted against an independently calculated physical size**, not against
+   the renderer's own measurement: a known string in a known font at a known point size has a
+   width computable from the font's advance metrics and `dpi_x` alone, and the painted ink must
+   match it within a stated tolerance. A test that only checks that measuring and painting
+   agree passes just as happily when both are wrong on the same axis — which is exactly the
+   defect the 2026-09-07 comparison found.
 4. A physical QR scans back to the pinned uid; the adapter detects any unexpected resizing;
    a physical print confirms feed orientation and dimensions.
 5. **A reprint is renderer-independent**: with the renderer unavailable, an exact reprint of a
@@ -376,6 +395,57 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
 
    > **Note, 2026-09-07:** carried into ADR-0021 prerequisite 1 as a comparison run against the
    > template contract. Sharing the editor's engine is explicitly not a qualification.
+
+   > **Comparison run, 2026-09-07 — candidate C recommended, selection pending.**
+   >
+   > Tested revision `a5f593fc` on `claude/opus5_adr0021-renderer-comparison`; nixpkgs pinned at
+   > `3ed67ec0a4d3c7ab4ae1f04f8ee8df07bfa506a2`; built and run for `aarch64-linux` inside a
+   > podman `nixos/nix` container against one template document, one media profile at
+   > **300 × 600 dpi**, and five cases under `.spike-renderer/contract/`.
+   >
+   > Reproduce, from that branch, in a builder container with the worktree mounted at `/src`:
+   >
+   > ```
+   > nix build --impure -f /tmp/rsrender.nix          # rustPlatform over .spike-renderer/rsrender
+   > rsrender --dir /src/.spike-renderer/contract --case <id>    >          --fonts /src/.spike-renderer/fonts --out /tmp/<id>.png
+   > ```
+   >
+   > **Candidates.** A: Python + Pillow. B: a Python emitter in front of the resvg CLI.
+   > **C: a single Rust binary over `usvg`/`tiny-skia`** that measures the same text node it
+   > paints. Fabric.js was not a candidate — it is selected for editing only. Chromium was
+   > measured for reference as the one runtime that could share the editor's engine.
+   >
+   > **Candidate C's five results**
+   >
+   > | Case | Result |
+   > |---|---|
+   > | `c1_wrap` | 696 × 543 px, 23.0 mm, 3 lines |
+   > | `c2_glyph` | `MISSING_GLYPH` naming `冷蔵庫`, refused before drawing |
+   > | `c3_qr_geometry` | 33 modules at 6 × 12 device px, anisotropy 2.0, decodes to the pinned uid |
+   > | `c4_colour` | artifact contains exactly `#000000`, `#ff0000`, `#ffffff` |
+   > | `c5_length` | 22.8 mm; against a 20 mm profile, `MEDIA_INCOMPATIBLE` naming both numbers |
+   >
+   > **Closures**, with shell and interpreter references counted as `image-has-no-shell` counts
+   > them: **C 62,632,768 B over 7 paths, 0 references**; resvg CLI alone 101,943,896 B, 7, 0;
+   > Pillow environment 316,784,648 B, 56, 1; emitter environment 332,754,904 B, 57, 1;
+   > Chromium 1,842,653,336 B, 340, 2. C's closure is glibc, libgcc, libidn2, libunistring and
+   > itself.
+   >
+   > **Why the others are out.** Pillow exposes no FreeType transform, so it cannot scale a
+   > glyph anisotropically and its only route resamples the text layer — forbidden by piece 3.
+   > The emitter-plus-CLI candidate measured with `hmtx` advances and painted with rustybuzz;
+   > those disagreed by up to 5.77% on kerning-heavy strings. **Corrected observation:** on
+   > these five cases candidate B's painted text nonetheless stayed inside its box, so the
+   > divergence is a measured hazard rather than an overflow observed here.
+   >
+   > **What C does not settle.** It resolves the *renderer's* shell and closure question only.
+   > The Python Brother worker's packaging blocker — nixpkgs' CPython referencing bash from
+   > `subprocess.py`, found by ADR-0019 gate 1 — is a separate decision on a separate service
+   > and is untouched by this result.
+   >
+   > **Still required before selection**, and ADR-0021 prerequisite 1 stays open until they
+   > support it: a font with real kerning pairs, right-to-left shaping, and render-time and
+   > resource measurements against piece 8's bounds.
 
 4. **Which limits and retention periods apply?**
 
