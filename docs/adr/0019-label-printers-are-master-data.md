@@ -1424,12 +1424,33 @@ subsystem to be built before the architecture authorizing it is accepted.
    function that is `shell=True` by definition.
 
    **So the worker is written in Rust and carries no interpreter** (maintainer, 2026-09-07).
-   The measured artifact renders *and* drives the device in one binary: **62,644,200 bytes over
-   seven store paths, zero shell or interpreter references** — glibc, libgcc, libidn2,
-   libunistring and itself. `brother_ql-inventree` becomes a **reference for constants** rather
-   than a dependency: 90 bytes per row and 400 invalidate bytes from its `models.py`, and
-   732/696/12/35 for label `62` from its `labels.py`. A two-colour label printed from that
-   binary on the QL-820NWBc on 2026-09-07 and scanned back to its uid.
+   `brother_ql-inventree` becomes a **reference for constants** rather than a dependency: 90
+   bytes per row and 400 invalidate bytes from its `models.py`, and 732/696/12/35 for label `62`
+   from its `labels.py`. A two-colour label printed from that binary on the QL-820NWBc on
+   2026-09-07 and scanned back to its uid.
+
+   **This gate is met, and the check that discharges it now reads the image.** It previously
+   read the worker *package's* closure, which is not the same question: `extraCommands` runs in
+   a builder that has a shell, and anything it copies into the customisation layer appears in no
+   root path's closure. `label-worker-image-has-no-shell` unpacks the streamed tar, walks every
+   layer and inspects the names actually shipped. It is paired with
+   `label-worker-image-check-detects-a-shell`, a **negative control** over an image built with
+   bash in `contents` for no purpose but to be rejected — because a detector that never fires is
+   indistinguishable from one that cannot.
+
+   | The passing run, 2026-09-07 | |
+   |---|---|
+   | Revision | `9a237d86f0cb7ea127d4ce0cd9f2acf398ce1d99` (`claude/opus5_adr0019-spike-1-packaging`) |
+   | `nix flake check` | all checks passed |
+   | Worker closure | 62,644,200 bytes, 7 store paths, 0 shell or interpreter references |
+   | Image | 64,102,400 bytes, 12 layers, uid 65532, `sha256:da80c5a888b4583678b97f0c607ca89674d52316bc493deca3aeaaa3899ea14e` |
+   | Loaded image id | `0153c3fb584ec5040666343a06444be6397d90f3c2b46d6e50d02273a642fcb9` |
+   | Image scan | 1,256 entries, none matching `bash dash busybox zsh ksh toybox perl python3`, no `bin/sh` |
+   | Negative control | fired: `./bin/sh` and `bash-interactive-5.3p15/bin/sh` out of 4,601 entries |
+
+   Note the forbidden list no longer exempts `python3`. The exemption existed because the worker
+   was a Python one; there is now no interpreter to exempt, which is the difference between
+   satisfying [ADR-0013](0013-nix-built-container-images.md) and being excused from it.
 2. **Claiming, fencing, pairing and crash-after-send behave as decision items 2, 5 and 6
    specify.**
    Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
@@ -1510,12 +1531,31 @@ subsystem to be built before the architecture authorizing it is accepted.
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
    some combinations. A key the exercise shows is missing amends the contract before
    acceptance rather than after.
-   **Run 2026-09-07 against Brother QL and Zebra ZPL.** All three stresses were expressed, and
-   the exercise showed one key missing: **`artifact_forms`**, now added above. Per this gate's
-   own rule the amendment lands before acceptance — and the gate **closes only once the amended
-   contract is exercised against both families again**, with each driver's accepted input
-   formats and their applicable combinations written out, since that key did not exist when the
-   two documents were first drafted.
+   **Run 2026-09-07 against Brother QL and Zebra ZPL**, then re-run against the laser that
+   exists, then re-run again once `artifact_forms` and `completion_evidence` moved onto the
+   `(driver, connection_type, combination)` triple. All three stresses are expressed, and the
+   amendments the exercise forced are in the record above.
+
+   **The rule the third pass had to hold, and the reason it needed a third pass:** an advertised
+   capability and a demonstrated one are different claims, and the contract must not blur them.
+   The QL advertises `monochrome` only over IPP, and a two-colour job nonetheless printed
+   through IPP as `application/octet-stream` with `job-state = completed`. **What that proves is
+   the tested path**, not that every combination absent from the advertised attributes works. So
+   each `(driver, connection_type, combination)` row carries what has been shown for *that* row:
+
+   | Row | Source of the claim |
+   |---|---|
+   | `brother.ql` / `tcp` / `62red`, 300 dpi, `black_red` | demonstrated — printed and scanned |
+   | `brother.ql` / `tcp` / evidence `transport` | demonstrated — no reply to a status request |
+   | `brother.ql` / `ipp` / `raster/ql;passthrough` with `black_red`, evidence `device_reported` | demonstrated — same artifact, `job-completed-successfully`, one impression |
+   | `brother.ql` / `ipp` / anything else | **advertised only** — `image/urf`, `monochrome`, 300 dpi, per Get-Printer-Attributes, and untested |
+   | `ipp.everywhere` / `ipp` / letter, 600 dpi, `pdf/1.4`, evidence `device_reported` | demonstrated — printed, measured, scanned |
+   | `ipp.everywhere` / `ipp` / PostScript, PCL-XL, URF, custom media range | **advertised only** |
+
+   A row whose provenance is *advertised* is a claim about what the device says of itself; a row
+   marked *demonstrated* is a claim about what it did. The contract carries both and says which,
+   because the QL showed they can disagree in the direction that matters — a device doing more
+   than it advertises is as much a surprise as one doing less.
 
    **The second family is the networked laser, not Zebra.** The deployment has a Brother
    QL-820NWBc and a networked laser, and **no ZPL device** — so a Zebra document could only ever
