@@ -6,6 +6,8 @@
 //! usvg's own text conversion, measured by converting the very text node that will be
 //! painted; anisotropy is a transform on outlines, so nothing is resampled.
 
+mod ql;
+
 use std::path::{Path, PathBuf};
 use serde_json::Value;
 
@@ -43,14 +45,29 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let (mut dir, mut case_id, mut fonts, mut out) =
         (PathBuf::new(), String::new(), PathBuf::new(), PathBuf::new());
+    let mut printer: Option<String> = None;
+    let mut dry_run = false;
     while let Some(a) = args.next() {
+        if a == "--dry-run" { dry_run = true; continue; }
         let v = args.next().unwrap_or_default();
         match a.as_str() {
             "--dir" => dir = PathBuf::from(v),
             "--case" => case_id = v,
             "--fonts" => fonts = PathBuf::from(v),
             "--out" => out = PathBuf::from(v),
+            "--print" => printer = Some(v),
             _ => {}
+        }
+    }
+    if printer.is_some() || dry_run {
+        match print_label(&dir, &case_id, &fonts, &out, printer.as_deref(), dry_run) {
+            Ok(report) => { println!("{}", report); return; }
+            Err(e) => {
+                println!("{}", serde_json::json!({
+                    "ok": false, "case": case_id, "code": e.code,
+                    "element": e.element, "detail": e.detail }));
+                std::process::exit(3);
+            }
         }
     }
     match render(&dir, &case_id, &fonts, &out) {
@@ -236,4 +253,80 @@ fn render(dir: &Path, case_id: &str, fonts: &Path, out: &Path) -> Result<String,
         "aniso": aniso, "palette": {"black": counts.0, "red": counts.1, "white": counts.2},
         "has_red": counts.1 > 0
     }).to_string())
+}
+
+
+/// Render, threshold to ink, pack to QL raster, and either send it or report what it would be.
+fn print_label(dir: &Path, case_id: &str, fonts: &Path, out: &Path,
+               printer: Option<&str>, dry_run: bool) -> Result<String, Fail> {
+    // The artifact is produced by exactly the same path as any other render — no separate
+    // "printing" pipeline, so what goes on the tape is what the preview showed.
+    let report = render(dir, case_id, fonts, out)?;
+    let parsed: Value = serde_json::from_str(&report).unwrap();
+    let width = parsed["width_px"].as_u64().unwrap() as usize;
+    let height = parsed["height_px"].as_u64().unwrap() as usize;
+
+    if width != ql::PRINTABLE_DOTS {
+        return Err(fail("MEDIA_INCOMPATIBLE", None,
+            format!("rendered {width} dots across; label 62 is {} printable", ql::PRINTABLE_DOTS)));
+    }
+
+    let img = image_ink(out, width, height)?;
+    let black = ql::pack(&img.0, width, height);
+    let red = if img.1.iter().any(|v| *v) { Some(ql::pack(&img.1, width, height)) } else { None };
+
+    // The job's vertical resolution must match the profile the artifact was rendered against.
+    let prof: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("profile.json"))
+            .map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{e}")))?)
+        .map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{e}")))?;
+    let dpi_y = prof["dpi_y"].as_f64().unwrap_or(300.0);
+    let job = ql::Job { two_colour: red.is_some(), dpi_600: dpi_y >= 600.0, ..Default::default() };
+    let stream = ql::build(&black, red.as_ref(), height, &job);
+
+    let sent = if dry_run || printer.is_none() {
+        std::fs::write(out.with_extension("prn"), &stream).ok();
+        0
+    } else {
+        ql::send(printer.unwrap(), &stream)
+            .map_err(|e| fail("TRANSPORT_FAILED", None, format!("{e}")))?
+    };
+
+    Ok(serde_json::json!({
+        "ok": true, "case": case_id,
+        "width_px": width, "height_px": height,
+        "device_dots": ql::DEVICE_DOTS, "printable_dots": ql::PRINTABLE_DOTS,
+        "offset_dots": ql::DEVICE_DOTS - ql::PRINTABLE_DOTS - ql::RIGHT_MARGIN_DOTS,
+        "resizes": 0,
+        "two_colour": job.two_colour,
+        "dpi_600": job.dpi_600,
+        "length_mm": (height as f64) * 25.4 / dpi_y,
+        "raster_bytes": stream.len(),
+        "bytes_sent": sent,
+        "printer": printer.unwrap_or("(none: wrote .prn)"),
+    }).to_string())
+}
+
+/// Read the artifact back and split it into a black plane and a red plane.
+///
+/// Reading the PNG rather than keeping the pixmap in hand is deliberate: it is the artifact
+/// bytes that ADR-0021 makes authoritative, so the thing that prints is the thing that was
+/// stored, not a parallel buffer that might differ.
+fn image_ink(path: &Path, width: usize, height: usize) -> Result<(Vec<bool>, Vec<bool>), Fail> {
+    let data = std::fs::read(path).map_err(|e| fail("ASSET_UNAVAILABLE", None, format!("{e}")))?;
+    let img = png_decode(&data).ok_or_else(|| fail("RENDER_FAILED", None, "cannot decode the artifact"))?;
+    let mut black = vec![false; width * height];
+    let mut red = vec![false; width * height];
+    for i in 0..(width * height).min(img.len() / 4) {
+        let (r, g, b) = (img[i * 4], img[i * 4 + 1], img[i * 4 + 2]);
+        let is_red = r > 128 && g < 128 && b < 128;
+        let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+        if is_red { red[i] = true; } else if lum < 128.0 { black[i] = true; }
+    }
+    Ok((black, red))
+}
+
+fn png_decode(data: &[u8]) -> Option<Vec<u8>> {
+    let pixmap = tiny_skia::Pixmap::decode_png(data).ok()?;
+    Some(pixmap.data().to_vec())
 }
