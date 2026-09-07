@@ -13,6 +13,9 @@ Version 1 keys, per ADR-0019 decision item 3: `connection_types`, `models`, `com
   "connection_types": ["tcp", "usb"],
   "models": ["QL-700", "QL-800", "QL-810W", "QL-820NWB", "QL-1100"],
   "completion_evidence": "transport",
+  "artifact_forms": [
+    {"form": "raster/png-indexed;v=1", "applies_to": ["*"]}
+  ],
   "combinations": [
     {"model": "QL-820NWB", "media": "62",     "resolution_x": 300, "resolution_y": 300,
      "color_mode": "mono",
@@ -86,7 +89,36 @@ plain 62 tape, which is the failure the list-of-combinations shape exists to pre
 Its settings document carries `x-zebra.zpl.darkness` and `x-zebra.zpl.tear_off_offset` as
 namespaced extensions, which a generic template ignores.
 
-## What the exercise shows is missing
+## Re-exercised against the amended contract, 2026-09-07
+
+`artifact_forms` was the key this exercise found missing, and both families are now written
+with it. The two documents make the distinction the key exists for, and they make it in
+opposite directions:
+
+| | `brother.ql` | `ipp.everywhere` |
+|---|---|---|
+| `artifact_forms` | `raster/png-indexed;v=1` only | `pdf/1.4`, `postscript/3`, `pcl/xl`, `raster/urf;rs=600` |
+| `completion_evidence` | `transport` | `device_reported` |
+| Verified how | driver behaviour and the geometry work behind issue #90 | attributes read from the device, then a physical print |
+
+The laser's document is in [capability-laser.md](capability-laser.md), written from
+`ipptool` output rather than a datasheet.
+
+**Physical verification of the laser, 2026-09-07.** The PDF was accepted as `application/pdf`
+over IPP, the job reached `completed` with `job-impressions-completed = 1`, and on the printed
+page the **100 mm ruler and the 50.0 × 30.0 mm box measure true and the QR scans off paper**.
+So for this family the chain is verified end to end: an advertised input format, a job accepted
+in it, a device-reported completion, correct physical dimensions, and a readable code.
+
+**What the pair does and does not demonstrate.** All three stresses gate 5 names are
+*expressed* — the endless-tape length range, asymmetric 300 × 600 resolution and `black_red` on
+`62red` alone are all in the Brother document, which is what the gate asks for. What no pair of
+devices here can do is *physically* demonstrate all three: the laser is 600 dpi with colour on
+every combination, so asymmetric resolution and conditional colour are Brother-only and their
+physical verification belongs to [plan 25](../../docs/plans/25-label-infrastructure.md)'s
+QL-820NWBc checks rather than to this gate.
+
+## What the exercise showed was missing
 
 **`artifact_forms`.** Every key in version 1 describes the *device* — what it is, what it
 holds, what it can report. Nothing describes **what the driver accepts as input**, and the two

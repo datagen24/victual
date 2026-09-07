@@ -79,5 +79,9 @@ precisely what `artifact_forms` and `completion_evidence` were added and defined
 The printed page carries three measurable things, and the numbers are what the artifact
 claims: a **100 mm ruler** with 10 mm ticks, a box exactly **50.0 × 30.0 mm**, and a QR of
 **33 × 33 modules at 1.0 mm**, so 33.0 mm square. The QR decoded to `vctl:0123456789ABC` from
-the pre-print render. Whether it decodes off paper, and whether the ruler and box measure true,
-is the check a person makes with a ruler and a scanner.
+the pre-print render.
+
+**Confirmed on paper, 2026-09-07 (maintainer):** the ruler and the box measure true, and the
+QR scans off the printed page. So the chain holds end to end for this family — an advertised
+format, a job accepted in it, a device-reported completion, correct physical dimensions, and a
+readable code — with no step of it taken on trust.
