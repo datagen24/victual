@@ -218,9 +218,23 @@ products, and locations" — but only `location` is minted in wave 3b.
   authorization check therefore runs **before** the lookup's outcome reaches the response, and
   the shape and timing of the two answers do not differ. `EntityReadPolicy::PERMISSIONS` is
   fail-closed already, which is the right default here for the same reason.
-- **Mapping preservation is verified, not asserted.** ADR-0011 decision item 5 puts an
-  obligation on `bin/victual-db-import` to re-key label targets with the rows it creates while
-  uids never change. That gets a fixture and a test, not a sentence.
+- **An import refuses a target holding live labels, atomically.** ADR-0011 decision item 5 put
+  an obligation on `bin/victual-db-import` to re-key label targets with the rows it creates;
+  **ADR-0021 decision item 3 withdrew that obligation as unimplementable** and this plan
+  implements what replaced it, because `labels` is this plan's table. No source the importer
+  accepts can carry a label — `DatabaseImporter::GetCommonTables()` intersects the target's
+  tables with the SQLite source's, and every accepted source predates `labels` — so there was
+  never anything to re-key, while `labels` survived a truncate that replaced `locations` and
+  left uids naming different shelves.
+
+  What is built instead: the importer **refuses** when the target holds live labels, `--force`
+  included, naming the count. The check is taken **inside the import transaction, under a lock
+  the label-issuance path also takes**, because a precheck races — it sees no live label,
+  an issuance commits one, and the import replaces its target underneath. Retired labels and
+  their historical identity **survive** an import that proceeds, which constrains the schema:
+  neither a label row nor its retirement snapshot may carry a foreign key into
+  `TRUNCATE … CASCADE`'s path. Verified by the concurrency and survival cases in verification 4,
+  not asserted.
 
 ### Piece 2 — the print job
 
