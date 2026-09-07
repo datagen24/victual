@@ -87,6 +87,40 @@ on 2026-09-07 rather than worked around here**, which is what a Proposed record 
 names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
 compensates for a gap in a record leaves the next reader of the record with the gap.
 
+## What ADR-0021 moved out, 2026-09-07
+
+[ADR-0021](../adr/0021-label-templates-are-application-data.md) — **Proposed** — supersedes
+three boundaries of accepted [ADR-0011](../adr/0011-label-namespace.md), and two of them change
+this plan's scope. Template documents become application data rather than the worker's, and a
+reprint becomes a new job over retained artifact bytes rather than "resetting a row". The
+machinery that follows from those — the designer, the headless renderer, previews, and the
+artifacts a reprint replays — is [27](27-label-templates-and-rendering.md)'s, written the same
+week and scheduled alongside this plan.
+
+**This plan keeps** identity, the print job and its attempts, printer and worker configuration,
+the nine worker routes, and delivery. Three consequences inside it:
+
+- **Piece 3's migration 0270 carries eight tables, not nine.** `label_templates` moves to 27
+  and becomes Victual's template identity; workers advertise the **artifact and profile
+  contract versions** they accept rather than the layouts they carry, which is ADR-0019
+  decision item 3's registration rule reconciled rather than dropped.
+- **Piece 2's job gains a readiness condition.** A job exists while its render is pending and
+  **is not claimable until a validated artifact is attached**, so claimability reads readiness
+  and authorization rather than `delivered_at` alone — which this plan already said, for the
+  different reason that an unresolved job is not delivered either.
+- **This plan owns the import refusal**, because `labels` is its table. ADR-0021 decision
+  item 3 withdraws ADR-0011's re-key obligation as unimplementable — no source
+  `bin/victual-db-import` accepts can carry a label — and replaces it with an explicit policy:
+  the import **refuses** a target holding live labels, `--force` included, enforced **inside
+  the import transaction under a lock the issuance path also takes** rather than as a
+  precheck. Retired labels and their historical identity survive an import, so neither a label
+  row nor its retirement snapshot may carry a foreign key into `TRUNCATE … CASCADE`'s path.
+  Verification 4 below is superseded by that policy and is restated in this plan's terms when
+  ADR-0021 is accepted.
+
+**Both records are Proposed**, so nothing here is settled until each is accepted on its own
+pull request, and ADR-0019's decision items 1 and 3 are reconciled before its acceptance.
+
 ## Gates
 
 One gate, and it is not a formality.

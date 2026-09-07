@@ -493,6 +493,37 @@ hidden. That is not a defect against any stated policy, because the fork has nev
 one; it is recorded here so that "the price columns are hidden" is never mistaken for
 "prices are protected".
 
+**S32 | Low — a new file group is readable by every authenticated account, and nothing makes
+it declare otherwise.** Filed 2026-09-07 while
+[ADR-0021](adr/0021-label-templates-are-application-data.md) was deciding where print
+artifacts live, and recorded as its own finding because it is a property of the files API
+rather than of that record. `FilesApiController::ServeFile` gates reads with a hardcoded
+chain — `productpictures` requires `STOCK_VIEW`, `recipepictures` requires `RECIPES_VIEW` —
+and every other group falls through to authentication alone. For the five groups that exist
+that is the posture S2's fix chose deliberately and said so: "Reads are deliberately left open
+to any authenticated user … the finding is about writes and content type, not about who may
+look." The finding here is what happens *next*: the default for a group nobody thought about
+is open, the two gates that do exist were added one at a time as
+[19](plans/19-rbac.md) landed its domain reads, and there is no structure that fails a group
+whose read gate was never decided. `EntityReadPolicy::PERMISSIONS` is the same question asked
+the other way round and it throws for an entity absent from it — the files API is the one
+place in the tree where forgetting is silently permissive.
+
+Rated Low rather than Info because, unlike [S30](#findings), it is not a stated posture but a
+gap in how a stated posture is maintained; and rated no higher because every group that exists
+today is either deliberately open or gated. Its cost is entirely in what gets added: print
+artifacts carry captured household data, which is why
+[27](plans/27-label-templates-and-rendering.md) stores them under group names deliberately
+absent from the OpenAPI `FileGroups` enum, so `ServeFile`'s existing allow-list refuses them
+and dedicated authorized endpoints are the only path. That works, and it works by one plan
+remembering.
+
+Remediation: give the files API a group-to-read-permission table with the same fail-closed
+shape as `EntityReadPolicy::PERMISSIONS`, listing every group — including the four whose answer
+is "open to any authenticated user", so that answer is written down rather than implied by an
+absent branch — and refusing a group that is not in it. Owner: [27](plans/27-label-templates-and-rendering.md),
+which is the first plan to add a group and the first that must not get this wrong.
+
 Two plans should absorb items rather than a hotfix: **14 piece 2** takes the
 `/system/config` contract test (R1), the body-schema validation that closes S16, and a
 filter-contract line for S15; **02** must not inherit the query-string key path (S11)
