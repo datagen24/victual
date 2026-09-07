@@ -106,19 +106,25 @@ revision through `nix/images/lib.nix`, so the artifact carries the same uid, lab
 authenticates to Victual's HTTP API, advertises what it can drive, and pulls work. Six
 endpoints, all additive:
 
-- `POST /api/labels/drivers` — the worker registers each driver it carries, as
-  `(driver_id, schema_version, schema, capabilities)`. Idempotent, append-only, and
-  refused when it would contradict a stored registration — see decision item 3.
-- `POST /api/labels/jobs/claim` — the worker asks for up to *n* jobs for the printers
-  assigned to it and drivable by it. The response carries, per job, the label uid, the
-  template name, the rendered text fields as captured at enqueue, **the printer's
-  configuration resolved now**, an `attempt_id`, and a lease expiry.
+- `POST /api/labels/register` — the worker advertises what it carries: each
+  `(driver_id, schema_version)` and each `(template_id, template_version)`, with the
+  definitions for any Victual has not seen. Idempotent, append-only in its definitions, and
+  refused when it would contradict a stored one — see decision item 3.
+- `POST /api/labels/jobs/claim` — the worker asks for up to *n* jobs for the printers it is
+  authorized to serve. The response carries, per job, the label uid, the pinned template
+  identity, the captured text fields, **the printer's configuration resolved now**, an
+  `attempt_id`, and a lease expiry.
+- `POST /api/labels/attempts/{attempt_id}/heartbeat` — extends the lease while the attempt
+  is still running.
 - `POST /api/labels/attempts/{attempt_id}/sent` — bytes reached the device.
 - `POST /api/labels/attempts/{attempt_id}/result` — terminal outcome, with the device's
   report or the error.
-- `POST /api/labels/attempts/{attempt_id}/evidence` — optional, for camera verification.
+- `POST /api/labels/attempts/{attempt_id}/evidence` — optional observations.
 - `POST /api/labels/printers/{id}/status` — observed status: what the device last
   reported. Write-only for workers, and never configuration — see decision item 3.
+
+**Every one of these is authorized against the caller, not merely authenticated** —
+decision item 3's *Worker authorization*.
 
 **Worker identity is an API key of a new type**, `ApiKeyService::API_KEY_TYPE_LABEL_WORKER`,
 alongside the two existing constants (`services/ApiKeyService.php:15-16`) and the `mcp`
@@ -126,7 +132,7 @@ type the [MCP interface spec](../mcp-interface-spec.md) proposes. Keys are alrea
 as a SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` on the
 `api_keys` table, and are already validated per route — so a label-worker key is granted
 and revoked independently of general API keys, and `ApiKeyAuthenticator` gains one type in
-its accepted set for these six routes only. No new authentication machinery.
+its accepted set for these seven routes only. No new authentication machinery.
 
 **Assignment is checked, not conventional** — see decision item 3's *Worker assignment*.
 It combines a column naming the printer's worker with the driver registration the caller
@@ -174,7 +180,7 @@ instances and the validation.** Three tables.
 | Column | Why Victual reads it |
 |---|---|
 | `id`, `name`, `description`, `row_created_timestamp`, `active`, `is_default` | Lifecycle and UI, as `shopping_locations` has them |
-| `worker` | Routing: which worker is offered this printer's jobs. Nullable |
+| `worker` | The one worker authorized to serve this printer. Not nullable |
 | `driver_id`, `driver_schema_version` | Validation, and claim-time compatibility |
 | `connection` | The outbound destination, kept a column so every address the deployment will dial is auditable in one place. Interpreted by the driver: a TCP endpoint, a USB device path, a queue name. One field rather than host and port, which assumes one transport |
 | `model`, `dpi` | Present on every raster label printer, and shown in the UI. The vocabulary is the driver's; the presence is not |
@@ -191,30 +197,51 @@ The configuration form is generated from the registered schema, so adding a driv
 form without a frontend change, and an invalid setting a 400 at configuration time rather
 than a failed print an hour later.
 
-#### The registry: `label_drivers`
+#### The registry: definitions, and who advertises them
 
-One row per `(driver_id, schema_version)`: the settings schema, the capability document
-written against the contract below, the worker identity that registered it, and when.
-**Append-only and immutable.**
+Registration writes two kinds of row, and separating them is what makes exact matching
+possible.
+
+**Definitions are immutable and shared.** `label_drivers` holds one row per
+`(driver_id, schema_version)`: the settings schema **and** the capability document, both
+fixed by that row. `label_templates` holds one row per `(template_id, template_version)`:
+the template's input contract — which captured fields it consumes — and the capability
+requirements it declares. Neither row is ever rewritten.
+
+**Advertisements are per worker and current.** `label_worker_capabilities` records which
+`(driver_id, schema_version)` and `(template_id, template_version)` pairs each worker
+advertises, and when it last registered. A worker may advertise several versions of the same
+driver or template at once, and dropping one is a registration that no longer lists it.
+
+The rules on those rows:
 
 - **Driver identity** is a stable namespaced string naming a *contract*, not an
-  implementation — `brother.ql`, not `brother_ql` as one Python package spells it, and
-  never a version. Two workers may register the same `driver_id`, which is how a spare
-  takes over an assigned printer. The identity is owned by the repository implementing the
-  driver.
-- **Schema compatibility** is `major.minor`. A major bump means the settings shape changed
-  incompatibly; a minor bump means it grew additively.
-- **Re-registering an existing `(driver_id, schema_version)` with a different schema
-  document is refused.** Printer rows were validated against the stored one, so replacing
-  it would leave stored settings claiming a validity nobody checked. A worker whose schema
-  changed bumps the version.
-- **A new minor is accepted only if every stored printer row on that driver's earlier
-  minors still validates against it.** Victual runs the rows it has rather than attempting
-  schema subsumption.
-- **A new major is accepted freely and adopts nothing.** Moving a printer instance to a
-  new major is an explicit admin action that revalidates its settings and rewrites
-  `driver_schema_version`. A major bump is a change the stored settings may not survive, so
-  nothing adopts one automatically.
+  implementation — `brother.ql`, not `brother_ql` as one Python package spells it, and never
+  a version. Two workers may advertise the same `driver_id`; the identity is owned by the
+  repository implementing the driver.
+- **Re-registering an existing `(driver_id, schema_version)` with a different settings
+  schema or a different capability document is refused.** Printer rows were validated
+  against the stored schema, and templates were checked against the stored capability
+  document, so replacing either would leave stored decisions claiming a validity nobody
+  checked. A worker whose schema or capabilities changed publishes a new version. The same
+  rule applies to `(template_id, template_version)`.
+- **A version number is a label, not a compatibility claim.** `major.minor` is a naming
+  convention and nothing is inferred from it. A newer minor can validate every printer row
+  saved today and still reject a configuration the older schema would have permitted
+  tomorrow, so "newer minor serves older printer" is not a property a version number
+  establishes. Compatibility comes from a worker advertising the exact version, which is
+  a statement it makes about itself rather than an inference Victual draws about it.
+- **Moving a printer to a different schema version is an explicit admin action** that
+  revalidates its settings against that version and rewrites `driver_schema_version`.
+  Nothing adopts a version automatically, in either direction.
+
+**Template registration is what makes enqueue validation possible.** Victual pins a template
+version into every job and refuses a job whose template requires a capability the target
+printer's driver does not offer. Both need the template's requirements to be held here rather
+than only in the worker repository, and both need to know which workers carry which
+versions — otherwise a job can be enqueued against a template no deployed worker has, and
+the failure surfaces as decision item 4's blocked outcome instead of as a refusal at the
+moment a person asked for the label.
 
 #### The capability contract
 
@@ -227,22 +254,36 @@ Version 1 carries:
 | Key | Content |
 |---|---|
 | `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups` |
-| `media` | Supported media identities, each with its printable geometry |
-| `geometry` | Printable width and length in **micrometres**, and the feed direction, so orientation is stated rather than inferred |
-| `resolutions` | Supported DPI values |
-| `color_modes` | `monochrome`, or `two_color` naming the second colour |
+| `models` | The device models this driver supports |
+| `combinations` | The authoritative list of what actually works — see below |
 | `completion_evidence` | What the driver can report: `none`, `transport`, or `device_reported` |
+
+**`combinations` is a list, not the product of several lists.** Independent lists of media,
+resolutions and colour modes claim every crossing of them works, which is false of every
+printer family: a Brother QL supports red only on `62red` tape, and not at every resolution.
+Each entry names a `model`, a `media`, a `resolution_x` and `resolution_y` in dpi, and a
+`color_mode` — and carries the geometry for that entry alone:
+
+- `printable_width_um`, in micrometres.
+- `printable_length_um`, either a fixed value for die-cut media or a `{min, max}` range for
+  endless tape, whose length is a property of the job rather than of the stock.
+- `feed_direction`, so orientation is stated rather than inferred.
+
+Horizontal and vertical resolution are separate because they differ on real hardware — a
+600 dpi Brother QL is 600 along the feed and 300 across it — and a single `dpi` invites the
+caller to assume they are equal.
 
 Explicit units are load-bearing: issue [#90](https://github.com/datagen24/victual/issues/90)
 is a geometry defect produced by two components disagreeing about which dot count a
-dimension meant, and a contract that says "width: 696" repeats it.
+dimension meant, and a contract that says "width: 696" repeats it. A record of an endless
+label's length as a range rather than a number is the same defect's other half.
 
 **Supported, configured and observed are three different statements**, and the contract
 keeps them apart:
 
 | | Says | Lives in | Written by |
 |---|---|---|---|
-| Supported | What the driver can do | `label_drivers` capability document | The worker, at registration |
+| Supported | What the driver can do | `label_drivers` capability document | The worker, in a registration |
 | Configured | What the admin selected | `label_printers` | An admin |
 | Observed | What the device currently reports | `label_printer_status` | A worker, reporting |
 
@@ -285,18 +326,44 @@ libraries for no gain here, since both mechanisms must pre-register.
 worker's own validation before printing are the authoritative checks, and a settings
 document that reaches the database through any other path is still validated by both.
 
-#### Worker assignment
+#### Worker authorization
+
+**Registering a driver is a capability claim, not an authorization.** It says "I can drive
+this"; it does not say "you may send me this household's print content and this printer's
+connection details". The two are separate, and only an admin grants the second.
+
+`label_printers.worker` is **not nullable**. Every printer names exactly one authorized
+worker identity, and a printer with no assignment cannot exist, so there is no state in
+which any worker advertising the right driver may claim a job. Moving a printer to a spare
+worker is an admin edit of that column — an explicit act with a record, rather than a race
+between whoever claims first.
 
 A job is offered to a claiming worker when all three hold:
 
 1. The printer is `active`.
-2. `label_printers.worker` is null, or equals the caller's worker identity.
-3. The caller has a current registration for the printer's `driver_id` at the **same
-   major** and a **minor greater than or equal to** the row's pinned minor.
+2. `label_printers.worker` equals the caller's worker identity.
+3. The caller currently advertises the printer's **exact** `(driver_id,
+   driver_schema_version)` and the job's **exact** `(template_id, template_version)`.
 
-Rule 3 stops a worker being handed a job whose settings use a property its build does not
-know. A null `worker` with several workers registered means whichever claims first takes it;
-a claim is an insert, so that is safe.
+Every other route is authorized the same way, against the row rather than the key type:
+
+| Route | Authorized when |
+|---|---|
+| `heartbeat`, `sent`, `result` | The attempt's `worker` is the caller, and the attempt is the job's current one — see decision item 5 |
+| `status` | The caller is the assigned worker of the printer named in the path |
+| `evidence` | The caller owns the attempt, **or** holds a verifier grant for that printer |
+| `claim` | The three rules above |
+
+**Evidence has its own grant.** A camera is not a print worker, so a verifier authenticates
+with `ApiKeyService::API_KEY_TYPE_LABEL_VERIFIER`, whose only route is the evidence
+endpoint, and is granted per printer by an admin. A worker may also post evidence, but only
+about its own attempts — device status it read back from the printer it was talking to. The
+`source` field records which of the two submitted the row.
+
+An authorized worker pool — several workers permitted to serve one printer, failing over
+between themselves — is the alternative to a single assignment, and it is not taken here.
+Automatic failover between workers is the ownership ambiguity decision item 5 exists to
+remove, and a spare that requires one admin edit is a cheap price for keeping it removed.
 
 #### Observed status is a separate table, written only by workers
 
@@ -416,10 +483,31 @@ Event type `label.print_requested`, in the existing `outbox` table, under the ex
 `print_attempts` records one row per claim: `attempt_id`, the outbox row it belongs to, the
 worker identity, `claimed_at`, `lease_expires_at`, `bytes_sent_at`, `device_reported_at`,
 outcome, and error text. The outbox row remains the unit of work and is acknowledged by
-setting `delivered_at`; the attempt rows are this consumer's record of what it tried. A
-claim is the insertion of an attempt row, so exclusivity is a database constraint rather
-than a protocol promise, and an expired lease returns the job by making the next claim
-legal.
+setting `delivered_at`; the attempt rows are this consumer's record of what it tried.
+
+#### Claiming, leases and fencing
+
+Inserting a row does not by itself establish ownership across an expiry, so ownership is
+stated rather than assumed:
+
+- **A claim is atomic.** One transaction locks the job row (`SELECT … FOR UPDATE SKIP
+  LOCKED`, which ADR-0010 property 2 already names), refuses if a live attempt exists — one
+  with no terminal outcome and a `lease_expires_at` in the future — inserts the attempt, and
+  records it as the job's `current_attempt_id`. Two workers cannot both leave that
+  transaction holding the job.
+- **A lease is renewable, up to a bound.** The heartbeat route extends `lease_expires_at`
+  while the attempt runs. Renewal stops at a maximum total execution time, past which the
+  attempt is `abandoned` whatever the worker believes, so a wedged worker cannot hold a job
+  indefinitely by heartbeating.
+- **Results are fenced by `current_attempt_id`.** `heartbeat`, `sent` and `result` are
+  accepted only when the caller owns the attempt and that attempt is still the job's current
+  one. If attempt A expires, B claims the job, and A's result arrives afterwards, A's row
+  records the late outcome and is marked superseded; it does not complete B, does not
+  overwrite B's outcome, and does not acknowledge the outbox row.
+- **Physical duplication remains the policy; database ownership does not.** A superseded
+  late result may well mean a second label came out of the printer, and decision item 6
+  accepts that. What it may not do is leave two rows both claiming to be the outcome of one
+  job.
 
 #### `print_evidence` records an observation, not a conclusion
 
@@ -519,8 +607,9 @@ different prerequisites.
 
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
-   endpoint today, so this is purely additive: a new entity, a new event type, four new
-   API routes, and a print action on the locations pages. **No existing response changes.**
+   endpoint today, so this is purely additive: the new entities and their event type, the
+   seven worker routes of decision item 2, the printer administration routes, and a print
+   action on the locations pages. **No existing response changes.**
 2. **The five existing endpoints migrate afterwards** — products, stock entries, recipes,
    chores, batteries (`routes.php:239-240,256,265,276`). This is the step that changes the
    wire, and the resolution below gates *this step*, not step 1.
@@ -670,8 +759,8 @@ arrives without touching this tree.
 [Plan 20](../plans/20-container-infrastructure.md)'s verification check 8 — "the credential
 split is real", recorded as "Not done. Needs a role with no DDL rights; the bootstrap uses
 one superuser" — stays a two-role problem instead of becoming a three-role one. What the
-worker holds instead is a typed API key whose permission set is bounded by the six routes
-it may call.
+worker holds instead is a typed API key whose reach is bounded by the seven routes it may
+call and, on each, by the printer or attempt named in the request.
 
 **A worker writes three kinds of row, and one of them is a schema.** Attempts and status
 are per-device bookkeeping. The driver registry is different: a machine identity supplies a
@@ -705,12 +794,15 @@ CI. The rotation *sign* is not catchable that way: no library default competes w
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
 tape feed direction. Both checks are required.
 
-**Five tables under the migration discipline**, PostgreSQL-only and plain, with no views
-or triggers: `label_printers`, `label_drivers`, `label_printer_status`, `print_attempts` and
-`print_evidence`. Five because device settings, the schemas that validate them, observed
-status, attempt history and observations have five lifetimes — admin-edited, append-only,
-worker-overwritten, append-only, and append-only with the shortest retention. The `labels`
-table ADR-0011 requires is separate and still unowned; this record does not claim it.
+**Seven tables under the migration discipline**, PostgreSQL-only and plain, with no views
+or triggers: `label_printers`, `label_drivers`, `label_templates`,
+`label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence`.
+Each holds a different lifetime — admin-edited instances, immutable driver definitions,
+immutable template definitions, current per-worker advertisements, worker-overwritten status,
+append-only attempts, and append-only observations with the shortest retention. That is a
+large surface for one subsystem, and it is the cost of keeping definitions immutable while
+what workers advertise changes underneath them. The `labels` table ADR-0011 requires is
+separate and still unowned; this record does not claim it.
 
 ## Reliance on ADR-0010, which is Proposed
 
@@ -734,64 +826,57 @@ are master data does not depend on 0010 at all.
 
 ## Acceptance prerequisites
 
-Gates, not suggestions. Each is evidence the accepting pull request reports.
+Gates, not suggestions. Each tests a decision this record makes and is **a disposable
+spike**: throwaway code on a scratch branch, kept only until it has answered its question,
+and not the beginning of the implementation. Delivery verification — working registration,
+a generated form, authentication and authorization end to end, a real upgrade — belongs to
+the plan that owns this work, which does not exist yet. Putting it here would require the
+subsystem to be built before the architecture authorizing it is accepted.
 
 1. **The worker packages as an image on no base image.** `brother-ql-inventree` is not in
-   nixpkgs, and a packaging failure would invalidate plan 20 piece 5's designation. The
-   gate is a built image from a pinned revision of the worker repository through
-   `nix/images/lib.nix`, passing `nix flake check` including `image-has-no-shell`, with its
-   closure size recorded.
-2. **Claim, acknowledge and crash-after-send behave as decision item 6 specifies**, against
-   a fake device: two workers cannot hold the same job, an expired lease returns a job to
-   the queue, and a worker killed between `bytes_sent_at` and its terminal result produces a
-   duplicate label rather than a lost one.
-3. **The worker's identity is provisioned and its reach measured.** A `label_worker`-type
-   key can register, claim and acknowledge, and is refused on `GET /api/stock` and on
-   writing `label_printers`; a `default`-type key is refused on the six label routes.
-   Reported as observed responses.
-4. **The registry's compatibility rules hold**, against two registered drivers:
-   re-registering an existing `(driver_id, schema_version)` with a changed schema is
-   refused; a new minor that would invalidate a stored printer row is refused, then accepted
-   once that row is corrected; a worker registered at a lower minor than a printer's pinned
-   version is not offered that printer's jobs; and a printer whose settings are invalid for
-   its driver is refused at configuration time.
-5. **Template identity survives a worker upgrade.** A job pinning a template version an
-   upgraded worker no longer carries produces a `blocked` outcome naming the missing
-   version, prints nothing, and prints correctly once that version is restored. A reprint
-   and a revised print of the same label are distinguishable in the attempt record.
-6. **The capability contract version 1 is written and exercised by two drivers.** Both
-   drivers' capability documents validate against it; a template declaring a requirement a
-   driver does not support is refused at enqueue; and supported, configured and observed are
-   separately visible for media, with a device reporting tape other than the configured one
-   producing a discrepancy rather than either value overwriting the other.
-7. **The schema subset is fixed against the validator and the form renderer together.** Both
-   libraries are named, the subset is the intersection they both support, and registration
-   refuses what falls outside it: a schema using an unsupported feature, an external `$ref`,
-   and a settings document carrying an unknown property are each rejected. The
-   model/media-dependent case is exercised — a registration declaring its discriminators and
-   supplying one resolved schema per supported combination, and a combination count over the
-   limit refused.
+   nixpkgs, and a packaging failure would invalidate plan 20 piece 5's designation. A built
+   image from a pinned revision through `nix/images/lib.nix`, passing `nix flake check`
+   including `image-has-no-shell`, with its closure size recorded. The pinned revision may
+   be a scratch branch.
+2. **Claiming, fencing and crash-after-send behave as decision items 5 and 6 specify.**
+   Against a fake device, in throwaway code: two workers cannot both hold a job across a
+   lease expiry; a heartbeat extends a lease and the bound ends it; a late result from a
+   superseded attempt records against its own row without completing or overwriting the
+   attempt that replaced it; and a worker killed between `bytes_sent_at` and its terminal
+   result produces a duplicate label rather than a lost one.
+3. **The schema subset is fixed against a named validator and a named form renderer.** Both
+   libraries are chosen, and the subset is the intersection they both support, established
+   by trying the model/media case against the pair rather than by reading two feature lists.
+   Recorded as the subset, not as a form generator.
+4. **The capability contract version 1 expresses two real driver families.** Brother QL and
+   one other, written out on paper against the contract, including an endless-tape length
+   range, asymmetric horizontal and vertical resolution, and a colour mode available on only
+   some combinations. A key the exercise shows is missing amends the contract before
+   acceptance rather than after.
 
 ## Open questions
 
 The boundaries above are decided; these are the values inside them, and they belong to the
 implementation plan rather than to this record.
 
-1. **The per-type evidence fields.** Decision item 5 fixes the five required fields and the
+1. **Which plan owns delivery.** No plan does today —
+   [22](../plans/22-medication-tracking.md) question 6 declined the label machinery and
+   [06](../plans/06-location-barcodes.md) covers the locations half only. The verification
+   these gates deliberately exclude has to land somewhere, and a plan is where.
+2. **The per-type evidence fields.** Decision item 5 fixes the five required fields and the
    rule that images are storage references. Which optional fields each `evidence_type`
    requires, and what a `printer_status` observation contains, follow from what the first
    verifier can actually report.
-2. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
+3. **Retention durations.** Decision item 5 fixes the policy shape — several lifetimes, what
    is never removed, and referential integrity. The numbers need a measured growth rate for
    `print_evidence` images, which no deployment has yet.
-3. **Which capability keys a second driver family proves general.** Version 1 is the six
-   keys in decision item 3, and a second family is what shows whether any of them is
-   Brother-shaped or whether a seventh is missing. The contract is versioned so that finding
-   out is a version bump rather than a redesign.
-4. **The blocked-job backstop.** A job pinning a template version no deployed worker carries
+4. **What a second driver family shows the capability contract is missing.** Gate 4
+   exercises two families on paper; a second family in service is what shows whether a key
+   is Brother-shaped or whether one is absent. The contract is versioned so that finding out
+   is a version bump rather than a redesign.
+5. **The blocked-job backstop.** A job pinning a template version no deployed worker carries
    returns to the queue indefinitely. Whether it should eventually become a dead letter, and
-   after what, depends on whether an operator-visible blocked count turns out to be enough
-   on its own.
+   after what, depends on whether an operator-visible blocked count is enough on its own.
 
 ## Research
 
