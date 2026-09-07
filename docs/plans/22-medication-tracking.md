@@ -29,7 +29,7 @@ the tree — which is the reason to build on stock rather than alongside it.
 **What already fits.** `products.due_type = 2` is hard expiry.
 `default_best_before_days_after_open` is a beyond-use date and `OpenProduct` already applies
 it, capped so it can never exceed the original due date
-([StockService.php:1457](../../services/StockService.php:1457)) — the 28-day inhaler and the
+(`StockService.php:1466`) — the 28-day inhaler and the
 30-day pierced vial are this field, not new machinery. `move_on_open` plus
 `default_consume_location_id` moves a vial from the fridge to the in-use tray on opening.
 `hide_on_stock_overview` keeps medications out of the general stock view.
@@ -87,7 +87,7 @@ That last default is this plan's answer to [ADR-0011](../adr/0011-label-namespac
 which asks whether per-unit labelling stays the default granularity and leans to letting the
 consuming plans decide. For medication it does, and for a specific reason: `stockLabelType = 2`
 gives each physical unit its own stock entry and its own `stock_id`
-([StockService.php:204](../../services/StockService.php:204)), which is exactly what a vial or
+(`StockService.php:204`), which is exactly what a vial or
 a pen needs — its own pierce date, its own 30-day clock, its own lot. Per-unit labelling is not
 a printing preference here; it is what makes piece 2 correct.
 
@@ -104,7 +104,7 @@ Columns: `lot_number`, `serial_number`, `national_code` (NDC/DIN/PZN), manufactu
 
 **The split hazard.** `OpenProduct` splits an entry covering more than the requested amount
 and gives *the unopened remainder a new `stock_id`*
-([StockService.php:1385](../../services/StockService.php:1385)); `TransferProduct` does the
+(`StockService.php:1540`); `TransferProduct` does the
 same. An attribute row keyed to the original `stock_id` silently stops describing the
 remainder. Every split site must copy the attribute row — Q4 is where that copy lives. Piece
 1's per-unit labelling default reduces how often this fires but does not remove it, because a
@@ -283,7 +283,7 @@ Collected because most of them are only visible from inside the existing code.
   clock that starts at reconstitution and is usually refrigerated afterwards — a different
   storage class as well as a different date.
 - **Verify the beyond-use cap against a missing due date.** The cap at
-  [StockService.php:1461](../../services/StockService.php:1461) takes the *earlier* of the
+  `StockService.php:1472` takes the *earlier* of the
   computed date and the original, which is right. What is unverified is the behaviour when
   `best_before_date` is absent or a far-future sentinel; a 28-day clock that silently evaluates
   to "no date" would be a quiet safety hole. Confirm before relying on it — this is a check to
