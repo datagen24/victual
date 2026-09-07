@@ -61,9 +61,10 @@ references and creates an immutable version with a digest.
   A missing glyph is an error rather than silent font substitution.
 - **A point is a physical size, and the device has two resolutions.** One point is 1/72 inch.
   **Horizontal geometry resolves against `dpi_x` and vertical geometry against `dpi_y`**, and
-  measuring, wrapping and painting must all use that same physical coordinate model — a glyph
-  at 11 pt on a 300 × 600 device is 45.8 device pixels wide and 91.7 tall, and a renderer
-  reaches that by scaling outlines anisotropically rather than by resampling a raster.
+  measuring, wrapping and painting must all use that same physical coordinate model — 11 pt on
+  a 300 × 600 device is a **nominal em of 45.8 × 91.7 device pixels**, and a renderer reaches
+  it by scaling outlines anisotropically rather than by resampling a raster. That is the em,
+  not a glyph: actual advances and ink bounds depend on the font and on shaping.
 
   This is stated because leaving it implicit produced a real defect. In the renderer comparison
   of 2026-09-07, two candidates sized the font at `size_pt × dpi_y / 72` and then measured
@@ -345,11 +346,18 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    asymmetric resolutions each produce a validated artifact **or a specific error naming the
    element** — never a silently approximated label.
    **Text width is asserted against an independently calculated physical size**, not against
-   the renderer's own measurement: a known string in a known font at a known point size has a
-   width computable from the font's advance metrics and `dpi_x` alone, and the painted ink must
-   match it within a stated tolerance. A test that only checks that measuring and painting
-   agree passes just as happily when both are wrong on the same axis — which is exactly the
-   defect the 2026-09-07 comparison found.
+   the renderer's own measurement. A test that only checks that measuring and painting agree
+   passes just as happily when both are wrong on the same axis — which is exactly the defect the
+   2026-09-07 comparison found. The expected value has to come from somewhere the renderer is
+   not, and what that takes differs by case:
+
+   - **Plain width** uses a deliberately simple fixture — a font with known advances and no
+     kerning between the chosen characters — so the expected width is those advances scaled by
+     `dpi_x`, computed outside the renderer.
+   - **Kerning and right-to-left** cannot be checked that way: summing character advances is
+     not what shaping produces. Those need independently expected shaping results — a reference
+     the fixture states, from a second implementation or from values fixed by inspection and
+     recorded — and the assertion is against that, not against a sum.
 4. A physical QR scans back to the pinned uid; the adapter detects any unexpected resizing;
    a physical print confirms feed orientation and dimensions.
 5. **A reprint is renderer-independent**: with the renderer unavailable, an exact reprint of a
