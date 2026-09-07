@@ -564,6 +564,16 @@ outright — resolving one would be a fetch of a schema named by a registration,
 class of outbound call this record removes. **Registration rejects a schema using anything
 outside the subset**, rather than accepting it and ignoring the parts it cannot handle.
 
+**And it rejects a schema that is not a schema, by evaluating it rather than reading it.**
+Added 2026-09-07 after the gate 4 rerun: one combination's schema carried a `"//"` comment key
+inside `properties`, where every value must itself be a schema. The validator threw at *write*
+time, and an endpoint that did not guard the call answered 200 — so an invalid schema became
+**no validation at all** for that combination, silently, which is exactly the outcome a
+fail-closed policy exists to prevent. Two rules follow, and they are cheap: a registration is
+accepted only if every combination's schema evaluates without throwing, and **a write-time
+validation that throws refuses the write** rather than passing it. A stored schema that cannot
+be evaluated is a registration defect, never a route to the database.
+
 **Flat scalars cannot express which combinations of model, media, resolution and colour are
 valid**, and that is the constraint the subset has to answer. Under a pull-only transport
 Victual cannot ask a worker to resolve a schema for a selection the admin just made, so any
@@ -575,6 +585,13 @@ keeps the subset flat. A registration whose combination count exceeds a stated l
 refused rather than accepted and rendered slowly. Bounded `if`/`then` conditionals on
 declared discriminators are the alternative and would need conditional support in both
 libraries for no gain here, since both mechanisms must pre-register.
+
+**Error identity: the offending property belongs in the machine-readable field.** An
+`additionalProperties` violation locates itself at the document, so a refusal that passes the
+JSON Schema pointer through says `field: "(document)"` while its message names the property.
+A form can then only show a banner rather than attaching the error to the control the person
+touched. The offending property is lifted into `field` — measured in the gate 4 rerun, where
+the refusal reached the form correctly and landed in the wrong place.
 
 **The generated form is an editor, not a gate, and combination validation is mandatory on the
 server.** The measurement above is why this is a requirement rather than a reassurance: the
@@ -1373,13 +1390,15 @@ subsystem to be built before the architecture authorizing it is accepted.
    libraries are chosen, and the subset is the intersection they both support, established
    by trying the model/media case against the pair rather than by reading two feature lists.
    Recorded as the subset, not as a form generator.
-   **Run 2026-09-07 against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2, and still open.**
-   The intersection is measured and recorded above, and it excludes conditionals. What remains
-   is to **rerun the model/media cases through the revised design** — per-combination schemas
-   selected by discriminator, with mandatory server-side `combinations` validation — and to show
-   two things the first run did not: how the form **presents an incompatible choice** to a
-   person, and how a server refusal of a combination **reaches that form as an error** rather
-   than as a failed save. The gate closes when those work.
+   **Run 2026-09-07 against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2.** The
+   intersection is measured and recorded above, and it excludes conditionals. **Rerun the same
+   day through the revised design** — per-combination schemas selected by discriminator, with
+   mandatory server-side `combinations` validation — and it holds: nine of nine model/media
+   cases agree; the form **cannot present** an incompatible choice, because `two_colour` is
+   absent from the plain-`62` schema and die-cut offers only `end` and `none`; and a refusal
+   forced past the editor returns 422 and renders in the form as a field-level error. The rerun
+   produced the two amendments above — registration-time schema evaluation with a fail-closed
+   write path, and the offending property lifted into `field` — which land before acceptance.
 5. **The capability contract version 1 expresses two real driver families.** Brother QL and
    one other, written out on paper against the contract, including an endless-tape length
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
@@ -1391,6 +1410,16 @@ subsystem to be built before the architecture authorizing it is accepted.
    contract is exercised against both families again**, with each driver's accepted input
    formats and their applicable combinations written out, since that key did not exist when the
    two documents were first drafted.
+
+   **The second family should be the networked laser, not Zebra.** The deployment has a
+   Brother QL-820NWBc and a networked laser printer, and **no ZPL device** — so a Zebra document
+   can only ever be written from datasheets, and nothing in it is falsifiable here. A laser over
+   IPP is a real second family, owned and reachable: it exercises a genuinely different
+   `artifact_forms` value, a page description rather than a raster, which is the distinction
+   that key was added for and the same question
+   [ADR-0021](0021-label-templates-are-application-data.md) prerequisite 2 is deciding. Zebra
+   stays a backlogged exercise for whenever such a device exists; it is not a prerequisite for
+   this record.
 
 ## Open questions
 
