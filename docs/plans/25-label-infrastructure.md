@@ -70,14 +70,6 @@ and a separate worker pulls print jobs over an authenticated API* — reached th
   Nine tables rather than the one `label_printers` this plan first sketched. A printer's
   settings are validated against the schema its driver advertises, so a second driver family
   is a registration rather than a migration.
-
-And one thing went the other way. Writing migration 0270 against the record found decision
-item 5 requiring a job row — `attempts_authorized`, `current_attempt_id`, the job's outcome —
-that none of the eight tables it named was, and that could not go on the shared `outbox`
-without breaking the very rule the record relies on to reuse it. **That was fixed in ADR-0019
-on 2026-09-07 rather than worked around here**, which is what a Proposed record is for: it now
-names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
-compensates for a gap in a record leaves the next reader of the record with the gap.
 - **This plan's delivery policy was wrong and is replaced.** The first draft argued for
   automatic retry on the grounds that a duplicate label is cheaper than a silent gap. ADR-0019
   decision item 6 decides the opposite: **no automatic redispatch after a claimed attempt**.
@@ -86,6 +78,14 @@ compensates for a gap in a record leaves the next reader of the record with the 
   redispatching resolves the ambiguity by guessing, and guesses in the direction that prints.
   What a person has and Victual does not is the ability to look at the printer. The corrected
   policy is in piece 2.
+
+And one thing went the other way. Writing migration 0270 against the record found decision
+item 5 requiring a job row — `attempts_authorized`, `current_attempt_id`, the job's outcome —
+that none of the eight tables it named was, and that could not go on the shared `outbox`
+without breaking the very rule the record relies on to reuse it. **That was fixed in ADR-0019
+on 2026-09-07 rather than worked around here**, which is what a Proposed record is for: it now
+names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
+compensates for a gap in a record leaves the next reader of the record with the gap.
 
 ## Gates
 
@@ -118,9 +118,22 @@ whatever the rejection says.
 
 ## Proposed change
 
-Five pieces. Pieces 1 and 2 are independently useful and independently mergeable; 3 and 4
-carry the gates; 5 is [06](06-location-barcodes.md)'s and is named here only so the seam is
-visible.
+Five pieces, in **three dependency groups**. This plan's first draft called pieces 1 and 2
+independently mergeable, which was wrong: piece 2's job service needs `print_jobs` and
+`print_attempts`, and those tables are in piece 3's migration. Nothing is gained by pretending
+the queue can land before the schema it writes to.
+
+| Group | Pieces | Note |
+|---|---|---|
+| A | 1 | Identity. Migration 0269 and the uid/resolution work. Genuinely standalone — nothing else in this plan is needed to make a label uid exist and resolve |
+| B | 2 + 3 | The job service and the schema it requires. **One group, merged together or in schema-then-service order within it.** Splitting them across merges leaves a service with no tables or tables with no writer |
+| C | 4 | The worker and its deployment. Depends on B's routes existing |
+
+Piece 5 is [06](06-location-barcodes.md)'s and is named here only so the seam is visible.
+
+**None of A, B or C starts before ADR-0019 is accepted**, so the grouping is about merge order
+inside the implementation rather than about what can begin now. The answer to "what can begin
+now" is the acceptance spikes and nothing else.
 
 ### Piece 1 — identity
 
@@ -137,10 +150,19 @@ products, and locations" — but only `location` is minted in wave 3b.
   by the permission that reads that thing — `MASTER_DATA_EDIT` is not the right gate for a
   read, and [19](19-rbac.md) piece 1's six domain view permissions are the vocabulary to use.
   A caller who may not read locations does not learn from a scan that a location exists.
-- **Unknown and retired fail distinctly and loudly.** ADR-0011 is explicit that a retired
-  label seen in the world is a discrepancy signal, not an error to swallow. Three outcomes,
-  three responses: resolved, retired-with-what-it-was, unknown. Never a silent null and never
-  a 404 that conflates the last two.
+- **Distinctness is a property of the authorized answer, not of the endpoint.** ADR-0011 is
+  explicit that a retired label seen in the world is a discrepancy signal, not an error to
+  swallow, so **an authorized caller gets three outcomes and three responses**: resolved,
+  retired-with-what-it-was, and unknown. Never a silent null, and never a 404 that conflates
+  the last two.
+
+  **An unauthorized caller gets one**, and it is the same answer an unknown uid gets. This
+  plan's first draft asked for three distinguishable outcomes *and* for the unauthorized case
+  to leak nothing, which are incompatible: a caller who can tell "exists, not yours" from
+  "no such uid" has been told the label exists, which is the fact being withheld. The
+  authorization check therefore runs **before** the lookup's outcome reaches the response, and
+  the shape and timing of the two answers do not differ. `EntityReadPolicy::PERMISSIONS` is
+  fail-closed already, which is the right default here for the same reason.
 - **Mapping preservation is verified, not asserted.** ADR-0011 decision item 5 puts an
   obligation on `bin/victual-db-import` to re-key label targets with the rows it creates while
   uids never change. That gets a fixture and a test, not a sentence.
@@ -177,8 +199,10 @@ creates the `labels` row, so a rollback takes the job with it.
   worker is offline and prints when the worker returns. That is precisely the failure ADR-0011
   fact 2 named and the outbox removes. The no-redispatch rule starts *at the claim*.
 - **A print is four facts, not a boolean.** *Sent* — bytes reached the device without a
-  transport error. *Reported complete* — the device itself said so. *Verified* — optional
-  evidence about this attempt was recorded. *Uncertain* — the attempt ended with no terminal
+  transport error. *Reported complete* — the device itself said so. *Evidence recorded* —
+  an observation about this attempt was stored; the name is deliberately not "verified",
+  because evidence is attached rather than adjudicated and recording one settles nothing.
+  *Uncertain* — the attempt ended with no terminal
   result, which is a resting state rather than a transient one. Sent is not printed: a device
   can accept bytes and then jam. Where a driver can report completion the outbox row is
   acknowledged on the report; where it cannot, on send — and the record says which happened.
@@ -349,14 +373,18 @@ rather than resolving to the wrong shelf — carried as coupling 4 in
 
 ## Security
 
-The application tier ends this plan with **fewer** outbound capabilities than it started with,
-and it is worth stating why, because the naive reading is the opposite. A printer address
-configured in the database is a user-configurable outbound destination, which the security
-posture in [AGENTS.md](../../AGENTS.md) warns against. It lives in the worker, and the pull
-transport is what keeps it there: **Victual is the server and never the client.** The
-application never connects to a printer and never connects to the worker; it writes rows and
-answers requests. The webhook remains the tree's only outbound call until step 3 removes it,
-and nothing here adds a second.
+This plan adds **no application outbound capability**, and the claim is exactly that — not
+that the application ends with fewer. The webhook is still there when this wave finishes, and
+it is removed by ADR-0019 item 7's step 3, which is deferred. Claiming a reduction now would
+be claiming credit for work this plan explicitly does not do.
+
+What the plan does add is a printer address configured in the database, which is a
+user-configurable outbound destination and exactly what the security posture in
+[AGENTS.md](../../AGENTS.md) warns against. It lives in the worker, and the pull transport is
+what keeps it there: **Victual is the server and never the client.** The application never
+connects to a printer and never connects to the worker; it writes rows and answers requests.
+So the tree's outbound surface at the end of this wave is the webhook it already had, and no
+second one.
 
 Two consequences worth naming rather than leaving implicit. Evidence images are stored through
 the existing file storage under a new `FileGroups` value and referenced by identifier —
@@ -375,8 +403,10 @@ surface now lives, rather than a waiver.
    recovers.
 2. Canonicalization resolves `vctl:` payloads containing `I`, `L`, `O` and lowercase to the
    same label as the canonical form.
-3. Resolution of an unknown uid, a retired uid and a uid the caller may not read produce three
-   distinguishable responses, and the third leaks nothing about existence.
+3. **For an authorized caller**, a live uid, a retired uid and an unknown uid produce three
+   distinguishable responses. **For an unauthorized caller**, an existing uid and an unknown
+   uid are indistinguishable — same status, same body, and no timing difference that separates
+   a lookup that hit from one that missed.
 4. `bin/victual-db-import` over a fixture preserves every uid and re-keys every target; a uid
    resolves to the same location before and after.
 5. A print request and its `labels` row are one transaction: a forced rollback leaves neither.
@@ -393,7 +423,10 @@ surface now lives, rather than a waiver.
 9. A worker key is refused on a route it is not authorized for, and a revoked key is refused
    everywhere while the printer's assignment to its worker row survives the revocation.
 10. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
-    with no shell, per `nix/checks.nix`.
+    with no shell, per `nix/checks.nix`. The worker's deploy manifest passes
+    `.devtools/ci/check_deploy_manifest.py` — health probes and resource limits — which
+    [ADR-0010](../adr/0010-workload-standard.md)'s acceptance made a binding condition of a
+    workload shipping rather than a proposed one.
 11. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
 12. **A physical location label is printed, and scanned back to the correct location by an
     authorized user.** This is the check the plan exists for and no earlier check substitutes
@@ -410,7 +443,8 @@ surface now lives, rather than a waiver.
 The transport question this plan's first draft carried is gone: ADR-0019 decided it, and the
 job-state hole this plan found in that record was closed in it on 2026-09-07 rather than
 worked around here. What is left is the values inside its boundaries, which it explicitly
-assigns to the implementation plan, plus two questions of this plan's own.
+assigns to the implementation plan, plus two questions of this plan's own. **All six were
+answered in review on 2026-09-07**, and the responses are inline below.
 
 1. **The credential lifetime and the session lifetime** (ADR-0019 question 3). The session
    length is the one that matters, since it and not rotation bounds a stolen credential, and
@@ -418,25 +452,76 @@ assigns to the implementation plan, plus two questions of this plan's own.
    it. *Lean: pick numbers with the reasoning written down and revisit after the first real
    deployment; neither has evidence behind it yet, and wave 3b's declared worker does not
    rotate at all.*
+
+   > **Response:** Defer production durations to paired-worker delivery. Wave 3b uses declared
+   > credentials, which do not rotate and have no session clock, so neither number is exercised
+   > by anything this wave ships and inventing operational defaults now would be guessing that
+   > later reads as a decision. Exercise the *expiry boundaries* with short test values in the
+   > rotation acceptance spike — the point there is that the clocks work, not what they are set
+   > to.
 2. **Retention durations** (ADR-0019 question 4). The policy shape is fixed; the numbers need
    a measured growth rate for `print_evidence` images that no deployment has. *Lean: state
    conservative durations and record that they are unmeasured.*
+
+   > **Response:** No automatic pruning in wave 3b. Measure structured-history growth instead,
+   > and set durations when there is a rate to set them against. Camera images are deferred, so
+   > image retention — the largest rows and the reason the policy has several lifetimes — need
+   > not gate this release at all. What the wave must still honour is the part of the policy
+   > that is not a duration: unresolved attempts and uncertain outcomes are never removed, and
+   > `labels` is outside print-history cleanup entirely, because a printed label outlives every
+   > deployment.
 3. **The per-type evidence fields** (ADR-0019 question 2). Which optional fields each
    `evidence_type` requires follows from what the first verifier can report, and wave 3b has
    no verifier. *Lean: implement the six required fields and one `evidence_type`, leaving the
    others to the plan that brings a verifier.*
+
+   > **Response:** Start with a device-report evidence type, and only if the QL driver supplies
+   > something meaningful to put in it. The six envelope fields on their own are not evidence —
+   > they say an observation happened without saying what was observed — so the type ships with
+   > a required type-specific payload or it does not ship. Camera payloads and image upload are
+   > deferred with the verifier that would produce them.
 4. **Does the worker keep an HTTP surface of its own?** A health probe is required by
    ADR-0010 rule 4. A label preview endpoint is useful for tuning layout. *Lean: both, with
    the rule that the application never calls the worker — a preview is something a person
    opens, not something a Victual page fetches, or the outbound surface returns by the back
    door.*
+
+   > **Response:** Health only. A probe does not inherently require HTTP — choose whatever the
+   > deployment can actually execute against an image with no shell, which is a real constraint
+   > here and the reason `nix/runtime/webcheck.c` exists for the web tier. The preview endpoint
+   > is declined for this wave: layout is inspected from saved render artifacts, which needs no
+   > server and no access-control story, and a preview server would need one because it renders
+   > label content on request.
+   >
+   > **Amended 2026-09-07:** this response originally noted that ADR-0010, where the probe
+   > requirement comes from, was itself Proposed. **It was accepted on 2026-09-07**, so the
+   > probe is a binding requirement rather than a proposed one — which does not change the
+   > answer, since the answer was already "health only". What it does change is that
+   > "declared: it exists in the deploy tree with health probes and resource limits, or it does
+   > not exist" is now a condition of the worker shipping, and
+   > `.devtools/ci/check_deploy_manifest.py` checks the manifest for it.
 5. **Label retirement.** ADR-0011's question 4 leans to never deleting labels and setting
    `retired_at` when the target is consumed or removed. Locations are both soft-deletable
    (`active`) and hard-deletable through `objects/locations`. *Lean: hard delete retires the
    label; `active = 0` does not, because a disabled location is still that shelf.*
+
+   > **Response:** Agreed — hard deletion retires the label, deactivation does not. Three
+   > requirements come with that and are the actual work: retirement happens in the same
+   > transaction as the deletion, so a deleted target can never leave a live label pointing at
+   > nothing; enough historical identity is preserved to answer *what this label was* when a
+   > retired uid is scanned, which is the discrepancy signal ADR-0011 question 4 wants; and a
+   > reused target id must not revive an old label — PostgreSQL identity columns will hand out a
+   > previously used id after an import or a reseed, and a retired row matched on
+   > `(kind, target_id)` alone would silently attach to the new occupant of that id.
 6. **Packaging risk.** `brother-ql-inventree` is not in nixpkgs and the image is built from
    `scratch`. This is also ADR-0019's acceptance gate 1. *Lean: run it first; it is the
    highest-risk item in the sequence and the one most likely to move the schedule.*
+
+   > **Response:** Confirmed — run the packaging spike first. Scope it to what a physical QL
+   > print actually needs rather than to `brother-ql-inventree` alone: the QR generator, the
+   > fonts, and the imaging stack, all packaged into an image built on no base image. A spike
+   > that packages the driver and discovers Pillow or the font path at deployment time has not
+   > answered the question it was run to answer.
 
 ## Effort
 
