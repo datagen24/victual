@@ -528,8 +528,9 @@ capability document is how the template learns it.
 
 #### How these entities are reached
 
-All eight tables — `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
-`label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence` —
+All nine tables — `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
+`label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
+`print_evidence` —
 are added to the OpenAPI `ExposedEntity` enum for reading, to `ExposedEntityNoEdit` and
 `ExposedEntityNoDelete`, and each gains a `PERMISSION_ADMIN` row in
 `EntityReadPolicy::PERMISSIONS`, which is fail-closed and throws "Entity has no read policy"
@@ -600,6 +601,28 @@ it belongs to, `worker_id`, `claimed_at`, `lease_expires_at`, `bytes_sent_at`,
 `device_reported_at`, outcome, error text, and whether the attempt was superseded. The
 outbox row remains the unit of work and is acknowledged by setting `delivered_at`; the
 attempt rows are this consumer's record of what it tried.
+
+**`print_jobs` holds this consumer's per-job state, one row per outbox row.** The sections
+below give a job an authorization count, a current attempt and an outcome, and none of those
+can live where the first draft of this record implied. They cannot go on `outbox`: that table
+is shared with [plan 18](../plans/18-mqtt-state-publication.md)'s event type under the "one
+outbox schema discriminated by event type" rule this record relies on, and columns meaningful
+to one consumer are exactly what that rule exists to prevent. They cannot be derived from
+`print_attempts` either — `current_attempt_id` could be, as the highest `attempt_number` for
+the job, but `attempts_authorized` is a counter a person increments and an authorization
+granted but not yet consumed leaves no attempt row to derive it from. That state is precisely
+what distinguishes "waiting for a person" from "waiting for a worker", so it needs a row.
+
+| Column | Content |
+|---|---|
+| `outbox_id` | The job. Unique, so the one-to-one with the outbox row is enforced rather than assumed |
+| `printer_id` | Denormalized from the payload, because the claim query filters by the printers a worker may serve and must do so under the row lock rather than by extracting JSON in the hot path |
+| `attempts_authorized` | Starts at 1; only a person increments it |
+| `current_attempt_id` | The attempt that may complete the job |
+| `outcome` | The job's resolution, distinct from any single attempt's |
+
+A row is written in the same transaction as the outbox row, so a job never exists without its
+state. This is a ninth table, and the *Consequences* count below says so.
 
 #### Claiming, leases and fencing
 
@@ -1000,15 +1023,28 @@ CI. The rotation *sign* is not catchable that way: no library default competes w
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
 tape feed direction. Both checks are required.
 
-**Eight tables under the migration discipline**, PostgreSQL-only and plain, with no views
+**Nine tables under the migration discipline**, PostgreSQL-only and plain, with no views
 or triggers: `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
-`label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence`.
+`label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
+`print_evidence`.
 Each holds a different lifetime — worker identities and admin-edited instances, immutable
 driver definitions, immutable template definitions, current per-worker advertisements,
-worker-overwritten status, append-only attempts, and append-only observations with the
+worker-overwritten status, mutable per-job authorization state, append-only attempts, and
+append-only observations with the
 shortest retention. It is a large surface for one subsystem, and the cost of keeping
-definitions immutable while what workers advertise changes underneath them. The `labels` table ADR-0011 requires is
-separate and still unowned; this record does not claim it.
+definitions immutable while what workers advertise changes underneath them.
+
+`print_jobs` was the eighth table this record did not name until 2026-09-07, when
+[plan 25](../plans/25-label-infrastructure.md) went to write the migration and found decision
+item 5 requiring a job row that none of the eight was. The count was wrong rather than the
+design: reusing the shared `outbox` for the queue means the consumer's own per-job state needs
+somewhere to live, and that is the same conclusion the "contracts may not multiply" rule
+reaches from the other direction. Recorded here because a table count that disagrees with the
+decision it summarises is how a record stops being usable as a specification.
+
+The `labels` table ADR-0011 requires is
+separate; [plan 25](../plans/25-label-infrastructure.md) owns it as of 2026-09-06, and this
+record does not claim it.
 
 ## Reliance on ADR-0010, which is Proposed
 
@@ -1083,6 +1119,14 @@ implementation plan rather than to this record.
    [22](../plans/22-medication-tracking.md) question 6 declined the label machinery and
    [06](../plans/06-location-barcodes.md) covers the locations half only. The verification
    these gates deliberately exclude has to land somewhere, and a plan is where.
+
+   > **Answered 2026-09-06 by [25](../plans/25-label-infrastructure.md)**, written the same
+   > day as this record and in another branch, which is why neither knew of the other. 25 owns
+   > the machinery, is scheduled into wave 3b, and carries the delivery verification these
+   > gates exclude — including the two checks no spike can stand in for: a physical label
+   > printed on the QL-820NWBc, and that label scanned back to the correct location by an
+   > authorized user. 06 depends on 25's first usable release. 22 question 6 is annotated with
+   > the same answer.
 2. **The per-type evidence fields.** Decision item 5 fixes the six required fields and the
    rule that images are storage references. Which optional fields each `evidence_type`
    requires, and what a `printer_status` observation contains, follow from what the first

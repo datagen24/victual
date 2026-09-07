@@ -67,9 +67,17 @@ and a separate worker pulls print jobs over an authenticated API* — reached th
   draft carried it as an open question with the pull API as a recommendation. It is no longer
   a recommendation and no longer this plan's to decide.
 - **Configuration is a driver registry and a capability contract, not a fixed column set.**
-  Eight tables rather than the one `label_printers` this plan first sketched. A printer's
+  Nine tables rather than the one `label_printers` this plan first sketched. A printer's
   settings are validated against the schema its driver advertises, so a second driver family
   is a registration rather than a migration.
+
+And one thing went the other way. Writing migration 0270 against the record found decision
+item 5 requiring a job row — `attempts_authorized`, `current_attempt_id`, the job's outcome —
+that none of the eight tables it named was, and that could not go on the shared `outbox`
+without breaking the very rule the record relies on to reuse it. **That was fixed in ADR-0019
+on 2026-09-07 rather than worked around here**, which is what a Proposed record is for: it now
+names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
+compensates for a gap in a record leaves the next reader of the record with the gap.
 - **This plan's delivery policy was wrong and is replaced.** The first draft argued for
   automatic retry on the grounds that a duplicate label is cheaper than a silent gap. ADR-0019
   decision item 6 decides the opposite: **no automatic redispatch after a claimed attempt**.
@@ -189,9 +197,10 @@ creates the `labels` row, so a rollback takes the job with it.
 Gated on ADR-0019's acceptance. The bar is exactly the wave's bar and no higher: *select a
 configured printer, request a print, inspect the outcome.*
 
-- **Eight tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
+- **Nine tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
   `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
-  `label_worker_capabilities`, `label_printer_status`, `print_attempts` and `print_evidence`.
+  `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
+  `print_evidence`. `print_jobs` is the one this plan found missing — see below.
   That is a large surface for one subsystem and ADR-0019 says why it is the cost of keeping
   driver and template definitions immutable while what workers advertise changes underneath
   them.
@@ -203,7 +212,7 @@ configured printer, request a print, inspect the outcome.*
 - **A worker is a row, not a credential.** `label_workers` holds the identity;
   `label_printers.worker_id` references it; keys are issued against the row, so rotating or
   revoking a key does not change the identity and a printer's assignment survives it.
-- **Reads are generic; writes are not.** All eight tables go into `ExposedEntity` for reading
+- **Reads are generic; writes are not.** All nine tables go into `ExposedEntity` for reading
   plus `ExposedEntityNoEdit` and `ExposedEntityNoDelete`, each with a `PERMISSION_ADMIN` row
   in `EntityReadPolicy::PERMISSIONS` — which is fail-closed and throws for an entity absent
   from it. Every write arrives through a worker route or a dedicated administration
@@ -390,41 +399,34 @@ surface now lives, rather than a waiver.
 
 ## Open questions
 
-The transport question this plan's first draft carried is gone: ADR-0019 decided it. What is
-left is the values inside that record's boundaries, which it explicitly assigns to the
-implementation plan, plus one hole in it and two questions of this plan's own.
+The transport question this plan's first draft carried is gone: ADR-0019 decided it, and the
+job-state hole this plan found in that record was closed in it on 2026-09-07 rather than
+worked around here. What is left is the values inside its boundaries, which it explicitly
+assigns to the implementation plan, plus two questions of this plan's own.
 
-1. **Where does per-job authorization state live?** ADR-0019 names eight tables and requires a
-   job row carrying `attempts_authorized` and `current_attempt_id`, and none of the eight is
-   obviously that row. `outbox` cannot grow the columns: it is shared with
-   [18](18-mqtt-state-publication.md)'s event type, and the "one outbox schema discriminated
-   by event type" rule the record itself relies on is what would break. *Lean: a ninth table,
-   `print_jobs`, keyed one-to-one on the outbox row and holding this consumer's job state.
-   Worth confirming against the record's authors before writing 0270 — it may be an omission
-   rather than a decision.*
-2. **The credential lifetime and the session lifetime** (ADR-0019 question 3). The session
+1. **The credential lifetime and the session lifetime** (ADR-0019 question 3). The session
    length is the one that matters, since it and not rotation bounds a stolen credential, and
    it trades that bound against how often a seasonally used printer needs an admin to re-pair
    it. *Lean: pick numbers with the reasoning written down and revisit after the first real
    deployment; neither has evidence behind it yet, and wave 3b's declared worker does not
    rotate at all.*
-3. **Retention durations** (ADR-0019 question 4). The policy shape is fixed; the numbers need
+2. **Retention durations** (ADR-0019 question 4). The policy shape is fixed; the numbers need
    a measured growth rate for `print_evidence` images that no deployment has. *Lean: state
    conservative durations and record that they are unmeasured.*
-4. **The per-type evidence fields** (ADR-0019 question 2). Which optional fields each
+3. **The per-type evidence fields** (ADR-0019 question 2). Which optional fields each
    `evidence_type` requires follows from what the first verifier can report, and wave 3b has
    no verifier. *Lean: implement the six required fields and one `evidence_type`, leaving the
    others to the plan that brings a verifier.*
-5. **Does the worker keep an HTTP surface of its own?** A health probe is required by
+4. **Does the worker keep an HTTP surface of its own?** A health probe is required by
    ADR-0010 rule 4. A label preview endpoint is useful for tuning layout. *Lean: both, with
    the rule that the application never calls the worker — a preview is something a person
    opens, not something a Victual page fetches, or the outbound surface returns by the back
    door.*
-6. **Label retirement.** ADR-0011's question 4 leans to never deleting labels and setting
+5. **Label retirement.** ADR-0011's question 4 leans to never deleting labels and setting
    `retired_at` when the target is consumed or removed. Locations are both soft-deletable
    (`active`) and hard-deletable through `objects/locations`. *Lean: hard delete retires the
    label; `active = 0` does not, because a disabled location is still that shelf.*
-7. **Packaging risk.** `brother-ql-inventree` is not in nixpkgs and the image is built from
+6. **Packaging risk.** `brother-ql-inventree` is not in nixpkgs and the image is built from
    `scratch`. This is also ADR-0019's acceptance gate 1. *Lean: run it first; it is the
    highest-risk item in the sequence and the one most likely to move the schedule.*
 

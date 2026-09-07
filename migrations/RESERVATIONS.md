@@ -55,7 +55,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0267 | the split-entry defect in `products_average_price` — `stock_entry_origins`, and `stock_edited_entries` following it | in this tree |
 | 0268 | [plan 03](../docs/plans/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
 | 0269 | [plan 25](../docs/plans/25-label-infrastructure.md) — `labels`, the uid-to-target mapping [ADR-0011](../docs/adr/0011-label-namespace.md) requires (wave 3b) | **claimed, unwritten** |
-| 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) — the eight tables of [ADR-0019](../docs/adr/0019-label-printers-are-master-data.md): `label_workers`, `label_printers`, `label_drivers`, `label_templates`, `label_worker_capabilities`, `label_printer_status`, `print_attempts`, `print_evidence`, plus per-job authorization state (wave 3b) | **claimed, unwritten** |
+| 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) — the nine tables of [ADR-0019](../docs/adr/0019-label-printers-are-master-data.md): `label_workers`, `label_printers`, `label_drivers`, `label_templates`, `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts`, `print_evidence` (wave 3b) | **claimed, unwritten** |
 | 0271 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
 | 0272 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0273 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
