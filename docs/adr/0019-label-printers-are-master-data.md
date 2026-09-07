@@ -20,7 +20,13 @@
   **Nothing else about this record changes**: the pull transport, the driver registry and
   capability contract, claiming, fencing, leases, the four delivery facts and the
   no-automatic-redispatch rule are untouched. Both records are Proposed and each is accepted on
-  its own pull request; neither acceptance implies the other's. Two format-dependent details
+  its own pull request — but **not in either order: ADR-0021 must be accepted first, and this
+  record cannot be accepted before it.** The ownership model above is the one 0021 decides, and
+  it contradicts still-Accepted [ADR-0011](0011-label-namespace.md), whose decision item 4
+  assigns templates to the drainer and whose Consequences put the label's appearance outside
+  this repository. Accepting this record while that one still stands would leave two accepted
+  records contradicting each other, with no answer to who owns a template. 0021 supersedes those
+  boundaries; only then does the text above rest on an uncontradicted footing. Two format-dependent details
   are **outstanding acceptance work**, owed to this record before it is accepted and listed at
   the end of decision item 3.
 - **Would affect:** [06](../plans/06-location-barcodes.md),

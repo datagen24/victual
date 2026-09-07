@@ -19,7 +19,9 @@
   The rest of 0019 — printer configuration as master data, the pull transport, claim/fence
   semantics and no automatic redispatch — is unaffected and is not reopened here. Two
   format-dependent details are outstanding acceptance work on that record; prerequisite 2 below
-  settles them.
+  settles them. **This record is accepted first.** Until it is, ADR-0011's assignment of
+  templates to the drainer still stands, and accepting 0019's reconciled ownership model ahead
+  of this one would put two accepted records in contradiction.
 - **Would affect:** [25](../plans/25-label-infrastructure.md),
   [27](../plans/27-label-templates-and-rendering.md), [06](../plans/06-location-barcodes.md),
   [01](../plans/01-file-storage.md), [17](../plans/17-ecosystem-clients.md).
