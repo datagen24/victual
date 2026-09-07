@@ -26,6 +26,10 @@ PostgreSQL installations load the pair once instead of replaying a migration his
 were never part of; `DatabaseMigrationService` then records migrations 1-255 as applied
 and continues from 0256 onwards.
 
+For what the tables and views hold rather than how they are built,
+[docs/data-model.md](../../docs/data-model.md) names all 46 tables by cluster and links six
+diagrams of the schema and the data-access path.
+
 ## Both halves, or the database is not usable
 
 The seeder is not an optional extra. A third of the migrations the baseline stands in for

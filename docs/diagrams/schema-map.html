@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schema map · 46 tables in six clusters</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ARCHITECTURE · VICTUAL</p>
+    <h1>Schema map · 46 tables in six clusters</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="schema-map-title schema-map-desc">
+      <title id="schema-map-title">Victual schema map</title>
+      <desc id="schema-map-desc">Six table clusters around a stock and products hub: recipes, household chores and tasks, identity and access, extensibility, and caches. Arrows are the columns that name another cluster's rows; a read layer of 44 views sits below the hub.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4a6459"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#c85a3d"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1e6e7a"/></marker>
+      </defs>
+    <path d="M 300,168 V 308 Q 300,316 308,316 H 340" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="308" y="220" width="60" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="338" y="229" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PRODUCT_ID</text>
+    <path d="M 600,168 V 288" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="608" y="212" width="60" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="638" y="221" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PRODUCT_ID</text>
+    <path d="M 740,124 H 840" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="768" y="104" width="44" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="790" y="113" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">USER_ID</text>
+    <path d="M 680,288 V 216 Q 680,208 688,208 H 972 Q 980,208 980,200 V 168" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="808" y="188" width="44" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="830" y="197" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">USER_ID</text>
+    <path d="M 740,320 H 840" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="766" y="300" width="48" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="790" y="309" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">TRIGGERS</text>
+    <path d="M 280,364 H 340" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <rect x="282" y="344" width="56" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="310" y="353" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">OBJECT_ID</text>
+    <path d="M 540,392 V 496" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <rect x="548" y="428" width="48" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="572" y="437" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">44 VIEWS</text>
+    <rect x="80" y="80" width="280" height="88" rx="6" fill="#f2e7d3"/>
+    <rect x="80" y="80" width="280" height="88" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="92" y="90" width="52" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="118" y="99" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">5 TABLES</text>
+    <text x="220" y="140" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Recipes &amp; meal plan</text>
+    <text x="220" y="156" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">recipes · recipes_pos · meal_plan</text>
+    <rect x="460" y="80" width="280" height="88" rx="6" fill="#f2e7d3"/>
+    <rect x="460" y="80" width="280" height="88" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="472" y="90" width="52" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="498" y="99" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">7 TABLES</text>
+    <text x="600" y="140" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Household</text>
+    <text x="600" y="156" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">chores · tasks · batteries · equipment</text>
+    <rect x="840" y="80" width="280" height="88" rx="6" fill="#f2e7d3"/>
+    <rect x="840" y="80" width="280" height="88" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="852" y="90" width="60" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="882" y="99" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">11 TABLES</text>
+    <text x="980" y="140" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Identity &amp; access</text>
+    <text x="980" y="156" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">users · roles · permissions · sessions</text>
+    <rect x="80" y="288" width="200" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="80" y="288" width="200" height="104" rx="6" fill="rgba(23,75,58,0.02)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="92" y="298" width="52" height="12" rx="2" fill="none" stroke="#6b8579" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="118" y="307" fill="#6b8579" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">4 TABLES</text>
+    <text x="180" y="364" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Extensibility</text>
+    <text x="180" y="380" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">userfields · userentities</text>
+    <rect x="340" y="288" width="400" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="340" y="288" width="400" height="104" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="352" y="298" width="60" height="12" rx="2" fill="none" stroke="#c85a3d" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="382" y="307" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">12 TABLES</text>
+    <text x="540" y="364" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Stock &amp; products</text>
+    <text x="540" y="380" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">products · stock · stock_log · locations</text>
+    <rect x="840" y="288" width="280" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="840" y="288" width="280" height="104" rx="6" fill="rgba(23,75,58,0.05)" stroke="#4a6459" stroke-width="1"/>
+    <rect x="852" y="298" width="52" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="878" y="307" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">7 TABLES</text>
+    <text x="980" y="364" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Caches &amp; infrastructure</text>
+    <text x="980" y="380" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">cache__* · outbox · files · mqtt_*</text>
+    <rect x="340" y="496" width="400" height="88" rx="6" fill="#f2e7d3"/>
+    <rect x="340" y="496" width="400" height="88" rx="6" fill="rgba(23,75,58,0.05)" stroke="#4a6459" stroke-width="1"/>
+    <rect x="352" y="506" width="48" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="376" y="515" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DERIVED</text>
+    <text x="540" y="556" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Read layer</text>
+    <text x="540" y="572" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">44 views · 3 of them materialised as cache__*</text>
+    <line x1="40" y1="624" x2="1160" y2="624" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="640" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="658" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="668" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Hub domain</text>
+    <rect x="146" y="658" width="16" height="12" rx="2" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <text x="170" y="668" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Table cluster</text>
+    <rect x="265" y="658" width="16" height="12" rx="2" fill="rgba(23,75,58,0.05)" stroke="#4a6459" stroke-width="1"/>
+    <text x="289" y="668" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Derived or infrastructural</text>
+    <line x1="444" y1="664" x2="468" y2="664" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="476" y="668" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Untyped reference (object_id is plain text)</text>
+    <line x1="709" y1="664" x2="733" y2="664" stroke="#4a6459" stroke-width="1"/>
+    <text x="741" y="668" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Column named for its target</text>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>

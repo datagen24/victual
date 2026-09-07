@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data access · from request to engine</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1000px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ARCHITECTURE · VICTUAL</p>
+    <h1>Data access · from request to engine</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="orm-stack-title orm-stack-desc">
+      <title id="orm-stack-title">Victual data access stack</title>
+      <desc id="orm-stack-desc">Controllers and services both hold a LessQL connection; every statement, including raw SQL, passes through DatabaseService, which owns the single PDO connection, the PostgreSQL dialect, transaction nesting and change tracking, and defers outbox, MQTT and Influx publishing until after the outermost commit.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4a6459"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#c85a3d"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1e6e7a"/></marker>
+      </defs>
+    <path d="M 300,144 V 168 Q 300,176 308,176 H 412 Q 420,176 420,184 V 200" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="328" y="156" width="64" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="360" y="165" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ENTITY CRUD</text>
+    <path d="M 640,144 V 168 Q 640,176 632,176 H 588 Q 580,176 580,184 V 200" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="572" y="156" width="76" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="610" y="165" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DOMAIN WRITES</text>
+    <path d="M 700,144 V 344 Q 700,352 692,352 H 650" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="708" y="232" width="44" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="730" y="241" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">RAW SQL</text>
+    <path d="M 500,272 V 328" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="508" y="292" width="80" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="548" y="301" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">QUERY CALLBACK</text>
+    <path d="M 350,368 H 270" fill="none" stroke="#4a6459" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="288" y="348" width="44" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="310" y="357" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DIALECT</text>
+    <path d="M 650,384 H 730" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <rect x="662" y="364" width="56" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="690" y="373" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ON COMMIT</text>
+    <path d="M 500,408 V 464" fill="none" stroke="#c85a3d" stroke-width="1" marker-end="url(#arrow-accent)"/>
+    <rect x="508" y="428" width="48" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="532" y="437" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PDO EXEC</text>
+    <rect x="180" y="72" width="240" height="72" rx="6" fill="#f2e7d3"/>
+    <rect x="180" y="72" width="240" height="72" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="192" y="82" width="32" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="208" y="91" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">HTTP</text>
+    <text x="300" y="116" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Controllers</text>
+    <text x="300" y="132" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">routes.php · 16 API controllers</text>
+    <rect x="520" y="72" width="240" height="72" rx="6" fill="#f2e7d3"/>
+    <rect x="520" y="72" width="240" height="72" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="532" y="82" width="44" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="554" y="91" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DOMAIN</text>
+    <text x="640" y="116" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Services</text>
+    <text x="640" y="132" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">BaseService · 20 singletons</text>
+    <rect x="350" y="200" width="300" height="72" rx="6" fill="#f2e7d3"/>
+    <rect x="350" y="200" width="300" height="72" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="362" y="210" width="28" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="376" y="219" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ORM</text>
+    <text x="500" y="244" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LessQL\Database</text>
+    <text x="500" y="260" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">$this-&gt;DB-&gt;products()-&gt;where()</text>
+    <rect x="350" y="328" width="300" height="80" rx="6" fill="#f2e7d3"/>
+    <rect x="350" y="328" width="300" height="80" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="362" y="338" width="32" height="12" rx="2" fill="none" stroke="#c85a3d" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="378" y="347" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CORE</text>
+    <text x="500" y="380" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">DatabaseService</text>
+    <text x="500" y="396" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">one PDO · transactions · change tracking</text>
+    <rect x="70" y="336" width="200" height="64" rx="6" fill="#f2e7d3"/>
+    <rect x="70" y="336" width="200" height="64" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="82" y="346" width="48" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="106" y="355" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DIALECT</text>
+    <text x="170" y="372" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PostgresDialect</text>
+    <text x="170" y="388" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">quoting · locks · changed-time</text>
+    <rect x="730" y="336" width="200" height="64" rx="6" fill="#f2e7d3"/>
+    <rect x="730" y="336" width="200" height="64" rx="6" fill="rgba(23,75,58,0.02)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="742" y="346" width="40" height="12" rx="2" fill="none" stroke="#6b8579" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="762" y="355" fill="#6b8579" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ASYNC</text>
+    <text x="830" y="372" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Outbox · MQTT · Influx</text>
+    <text x="830" y="388" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">after outermost commit</text>
+    <rect x="350" y="464" width="300" height="80" rx="6" fill="#f2e7d3"/>
+    <rect x="350" y="464" width="300" height="80" rx="6" fill="rgba(23,75,58,0.05)" stroke="#4a6459" stroke-width="1"/>
+    <rect x="362" y="474" width="44" height="12" rx="2" fill="none" stroke="#4a6459" stroke-opacity="0.45" stroke-width="0.8"/>
+    <text x="384" y="483" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ENGINE</text>
+    <text x="500" y="516" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PostgreSQL 16</text>
+    <text x="500" y="532" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">46 tables · 44 views · 55 triggers</text>
+    <line x1="40" y1="572" x2="960" y2="572" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="588" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="606" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="616" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Single point of access</text>
+    <rect x="201" y="606" width="16" height="12" rx="2" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <text x="225" y="616" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">PHP class</text>
+    <rect x="302" y="606" width="16" height="12" rx="2" fill="rgba(23,75,58,0.05)" stroke="#4a6459" stroke-width="1"/>
+    <text x="326" y="616" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Engine</text>
+    <rect x="389" y="606" width="16" height="12" rx="2" fill="rgba(23,75,58,0.02)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="413" y="616" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Deferred to commit</text>
+    <line x1="531" y1="612" x2="555" y2="612" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="563" y="616" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Asynchronous</text>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>

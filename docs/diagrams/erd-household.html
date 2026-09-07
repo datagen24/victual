@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Household · chores, tasks, batteries, userfields</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ER · VICTUAL</p>
+    <h1>Household · chores, tasks, batteries, userfields</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1200 860" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="erd-household-title erd-household-desc">
+      <title id="erd-household-title">Victual household and userfield data model</title>
+      <desc id="erd-household-desc">Three parallel pairs — chores, tasks and batteries, each with a log or category table — plus the userfields pair, whose object_id is plain text and so can address a row in any of them without naming which.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+    <path d="M 740,172 H 860" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="748" y="152" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="162" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="836" y="152" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="162" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 740,416 H 860" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="748" y="396" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="406" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="836" y="396" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="406" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 740,660 H 860" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="748" y="640" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="650" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="836" y="640" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="650" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 190,364 V 444" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="198" y="376" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="206" y="386" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="198" y="424" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="206" y="434" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 340,486 H 372 Q 380,486 380,478 V 216 Q 380,208 388,208 H 420" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="388" y="300" width="60" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="418" y="309" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ANY ENTITY</text>
+    <rect x="40" y="200" width="300" height="164" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="200" width="300" height="164" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="200" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="236" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="244" x2="340" y2="244" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="216" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">SCHEMA</text>
+    <text x="56" y="234" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">userfields</text>
+    <text x="56" y="264" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="324" y="264" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="284" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">entity</text>
+    <text x="324" y="284" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="304" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="324" y="304" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="324" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">type</text>
+    <text x="324" y="324" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="344" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">input_required</text>
+    <text x="324" y="344" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="40" y="444" width="300" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="444" width="300" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="444" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="480" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="488" x2="340" y2="488" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="460" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">VALUE · UNTYPED</text>
+    <text x="56" y="478" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">userfield_values</text>
+    <text x="56" y="508" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="324" y="508" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="528" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ field_id</text>
+    <text x="324" y="528" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="548" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">object_id</text>
+    <text x="324" y="548" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="56" y="568" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">value</text>
+    <text x="324" y="568" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <rect x="420" y="80" width="320" height="184" rx="6" fill="#f2e7d3"/>
+    <rect x="420" y="80" width="320" height="184" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="420" y="80" width="320" height="44" rx="6" fill="rgba(200,90,61,0.10)" stroke="none"/>
+    <rect x="420" y="116" width="320" height="8" fill="rgba(200,90,61,0.10)"/>
+    <line x1="420" y1="124" x2="740" y2="124" stroke="rgba(200,90,61,0.40)" stroke-width="1"/>
+    <text x="436" y="96" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY · HUB</text>
+    <text x="436" y="114" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">chores</text>
+    <text x="436" y="144" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="724" y="144" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="164" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="724" y="164" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="436" y="184" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">period_type</text>
+    <text x="724" y="184" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="436" y="204" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ product_id ↗</text>
+    <text x="724" y="204" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">products</text>
+    <text x="436" y="224" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ next_exec_user_id ↗</text>
+    <text x="724" y="224" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="436" y="244" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">active</text>
+    <text x="724" y="244" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="860" y="80" width="300" height="184" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="80" width="300" height="184" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="80" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="116" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="124" x2="1160" y2="124" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="96" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEDGER</text>
+    <text x="876" y="114" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">chores_log</text>
+    <text x="876" y="144" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="144" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="164" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ chore_id</text>
+    <text x="1144" y="164" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="184" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">tracked_time</text>
+    <text x="1144" y="184" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+    <text x="876" y="204" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ done_by_user_id ↗</text>
+    <text x="1144" y="204" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <text x="876" y="224" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">undone</text>
+    <text x="1144" y="224" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="876" y="244" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">skipped</text>
+    <text x="1144" y="244" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="420" y="344" width="320" height="164" rx="6" fill="#f2e7d3"/>
+    <rect x="420" y="344" width="320" height="164" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="420" y="344" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="420" y="380" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="420" y1="388" x2="740" y2="388" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="436" y="360" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY</text>
+    <text x="436" y="378" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">tasks</text>
+    <text x="436" y="408" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="724" y="408" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="428" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="724" y="428" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="436" y="448" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">due_date</text>
+    <text x="724" y="448" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">date</text>
+    <text x="436" y="468" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ category_id</text>
+    <text x="724" y="468" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="488" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ assigned_to_user_id ↗</text>
+    <text x="724" y="488" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">users</text>
+    <rect x="860" y="344" width="300" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="344" width="300" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="344" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="380" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="388" x2="1160" y2="388" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="360" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY</text>
+    <text x="876" y="378" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">task_categories</text>
+    <text x="876" y="408" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="408" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="428" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="1144" y="428" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="876" y="448" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">description</text>
+    <text x="1144" y="448" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="876" y="468" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">active</text>
+    <text x="1144" y="468" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="420" y="588" width="320" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="420" y="588" width="320" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="420" y="588" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="420" y="624" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="420" y1="632" x2="740" y2="632" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="436" y="604" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY</text>
+    <text x="436" y="622" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">batteries</text>
+    <text x="436" y="652" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="724" y="652" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="672" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="724" y="672" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="436" y="692" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">charge_interval_days</text>
+    <text x="724" y="692" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="712" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">active</text>
+    <text x="724" y="712" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="860" y="588" width="300" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="588" width="300" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="588" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="624" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="632" x2="1160" y2="632" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="604" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEDGER</text>
+    <text x="876" y="622" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">battery_charge_cycles</text>
+    <text x="876" y="652" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="652" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="672" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ battery_id</text>
+    <text x="1144" y="672" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="692" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">tracked_time</text>
+    <text x="1144" y="692" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+    <text x="876" y="712" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">undone</text>
+    <text x="1144" y="712" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <line x1="40" y1="772" x2="1160" y2="772" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="788" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="806" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="816" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Hub entity</text>
+    <text x="146" y="816" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">→</text>
+    <text x="166" y="816" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Reference column</text>
+    <text x="275" y="816" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">↗</text>
+    <text x="295" y="816" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Target lives in another diagram</text>
+    <line x1="473" y1="812" x2="497" y2="812" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="505" y="816" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Convention only — no FOREIGN KEY declared</text>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>
