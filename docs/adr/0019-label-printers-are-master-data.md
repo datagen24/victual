@@ -566,13 +566,20 @@ outside the subset**, rather than accepting it and ignoring the parts it cannot 
 
 **And it rejects a schema that is not a schema, by evaluating it rather than reading it.**
 Added 2026-09-07 after the gate 4 rerun: one combination's schema carried a `"//"` comment key
-inside `properties`, where every value must itself be a schema. The validator threw at *write*
-time, and an endpoint that did not guard the call answered 200 — so an invalid schema became
-**no validation at all** for that combination, silently, which is exactly the outcome a
-fail-closed policy exists to prevent. Two rules follow, and they are cheap: a registration is
-accepted only if every combination's schema evaluates without throwing, and **a write-time
-validation that throws refuses the write** rather than passing it. A stored schema that cannot
-be evaluated is a registration defect, never a route to the database.
+inside `properties`, where every value must itself be a schema. The validator **threw** at write
+time, and an endpoint that did not guard the call **answered HTTP 200 with a fatal error in the
+body**.
+
+What that demonstrates, stated precisely: the **response contract** failed — a refusal was
+reported as a success. It does **not** demonstrate that an invalid settings document was
+stored, because the endpoint under test persisted nothing; no write was attempted and none can
+be claimed. The reason it still matters is that a caller cannot distinguish that 200 from a real
+one, and a client that treats 200 as "stored and valid" proceeds on a false premise. Two rules
+follow, and both are cheap: a registration is accepted only if every combination's schema is
+**structurally valid against the supported subset**, checked rather than assumed; and **a
+write-time validation that throws refuses the write** rather than answering anything else. A
+stored schema that cannot be evaluated is a registration defect, and the write path must treat
+an unevaluable schema as a refusal.
 
 **Flat scalars cannot express which combinations of model, media, resolution and colour are
 valid**, and that is the constraint the subset has to answer. Under a pull-only transport
@@ -1368,12 +1375,15 @@ subsystem to be built before the architecture authorizing it is accepted.
    refusal*. **An integrated case is required before this gate closes** — a worker that claims,
    sends bytes, rotates mid-attempt, and then reports its result, showing the report is accepted
    for the attempt it belongs to and that no credential state discards it.
-   **Run 2026-09-07.** Rotating mid-attempt leaves the attempt open with its bytes recorded and
-   its lease live; the superseded credential is refused with a 401 that discards nothing; the
-   successor reports the same attempt and completes it; one attempt exists throughout, and the
-   crash variant recovers the same successor by replay and reports on that same attempt. It also
-   found the late-report defect amended into decision item 5 above, which is the argument for
-   running this case rather than the credential cases alone.
+   **Run 2026-09-07, and re-run against the amended implementation.** Claim → send → rotate →
+   report passes: rotating mid-attempt leaves the attempt open with its bytes recorded and its
+   lease live; the superseded credential is refused with a 401 that discards nothing, the
+   attempt staying reportable and the job open; the successor reports **that same attempt** and
+   completes it; one attempt exists throughout; and the crash variant recovers the same
+   successor by replay and reports on the same attempt. It also found the late-report defect
+   amended into decision item 5 above, which is the argument for running this case rather than
+   the credential cases alone — and the re-run is against the amended behaviour, not the one
+   that produced the defect.
    The earlier cases, also run: a lost rotation response retried with the same
    `rotation_request_id` recovers under whichever mechanism was chosen, without issuing a
    second successor; a worker killed before storing the
@@ -1393,12 +1403,22 @@ subsystem to be built before the architecture authorizing it is accepted.
    **Run 2026-09-07 against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2.** The
    intersection is measured and recorded above, and it excludes conditionals. **Rerun the same
    day through the revised design** — per-combination schemas selected by discriminator, with
-   mandatory server-side `combinations` validation — and it holds: nine of nine model/media
-   cases agree; the form **cannot present** an incompatible choice, because `two_colour` is
-   absent from the plain-`62` schema and die-cut offers only `end` and `none`; and a refusal
-   forced past the editor returns 422 and renders in the form as a field-level error. The rerun
-   produced the two amendments above — registration-time schema evaluation with a fail-closed
-   write path, and the offending property lifted into `field` — which land before acceptance.
+   mandatory server-side `combinations` validation. Nine of nine model/media cases agree; the
+   form **cannot present** an incompatible choice, because `two_colour` is absent from the
+   plain-`62` schema and die-cut offers only `end` and `none`; and a refusal forced past the
+   editor returns 422 and renders in the form as a field-level error. The rerun produced the two
+   amendments above.
+
+   **The gate stays open.** Four things are specified and not yet demonstrated, and the record
+   should not treat a specification as evidence:
+   - **Structural validation against the subset**, not merely "the schema evaluates without
+     throwing". A schema can evaluate cleanly and still use a keyword outside the subset.
+   - **Deterministic combination selection.** Two combinations sharing a discriminator tuple
+     must be a registration refusal, not a first-match race.
+   - **Assertions that a rejected or exception-producing write leaves storage unchanged.** The
+     rerun's endpoint stored nothing, so it could not assert this and did not.
+   - **A test for the property pointer**, so the lifted `field` is exercised rather than
+     described.
 5. **The capability contract version 1 expresses two real driver families.** Brother QL and
    one other, written out on paper against the contract, including an endless-tape length
    range, asymmetric horizontal and vertical resolution, and a colour mode available on only
