@@ -1,0 +1,4 @@
+# Pinned so a documentation build is reproducible; see
+# docs/plans/26-documentation-site.md and Read the Docs' reproducible-builds guidance.
+mkdocs==1.6.1
+mkdocs-material==9.7.7

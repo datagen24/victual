@@ -56,8 +56,11 @@
 				<extension>php</extension>
 			</extensions>
 
-			<!-- Private members are documented too: this is an internal reference, not a
-			     published library API, and the service layer's private helpers matter -->
+			<!-- Private members are documented too. This reference is published
+			     (ADR-0020), and that is deliberate rather than an oversight: Victual is an
+			     application, not a library, so there is no API-stability promise a
+			     published private method could break, and the service layer's private
+			     helpers are a large part of what makes the reference worth reading. -->
 			<visibility>public</visibility>
 			<visibility>protected</visibility>
 			<visibility>private</visibility>

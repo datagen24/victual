@@ -1,0 +1,102 @@
+# Victual documentation site.
+#
+# docs_dir is a staging tree assembled by .devtools/docs/stage.py, not a directory in
+# this repository: the developer section draws from docs/, .github/, and READMEs that
+# sit beside the code they describe. Run the staging script before mkdocs.
+#
+# Design: docs/plans/26-documentation-site.md
+# What is published and why: docs/adr/0020-documentation-publication-boundary.md
+site_name: Victual
+site_description: A self-hosted groceries and household management application, forked from grocy.
+site_url: https://victual.readthedocs.io/
+repo_url: https://github.com/datagen24/victual
+repo_name: datagen24/victual
+edit_uri: ""
+copyright: MIT, in two layers — see the licensing section of Contributing.
+
+docs_dir: .docs-build
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+# A page that is not in the nav, or a link that does not resolve, fails the build under
+# --strict. That is deliberate: an unindexed document should be a build failure rather
+# than a file nobody finds.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Development:
+      - Overview: development/index.md
+      - Orientation:
+          - Constitution: development/constitution.md
+          - Contributing: development/contributing.md
+          - Documentation conventions: development/documentation-conventions.md
+      - Data model:
+          - Overview: development/data-model.md
+          - PostgreSQL: development/postgresql.md
+      - Decisions:
+          - Index: development/adr/README.md
+          - 0001 PostgreSQL alongside SQLite: development/adr/0001-postgresql-alongside-sqlite.md
+          - 0002 Squashed baseline: development/adr/0002-squashed-baseline.md
+          - 0003 Seed data in PHP: development/adr/0003-seed-data-in-php.md
+          - 0004 Engine-specific migrations: development/adr/0004-engine-specific-migrations.md
+          - 0005 The wire contract is the invariant: development/adr/0005-wire-contract-is-the-invariant.md
+          - 0006 Authenticated issues in scope: development/adr/0006-authenticated-issues-in-scope.md
+          - 0007 Auth state outlives the process: development/adr/0007-auth-state-outlives-the-process.md
+          - 0008 PostgreSQL only: development/adr/0008-postgresql-only-runtime-engine.md
+          - 0009 The database as the logic layer: development/adr/0009-database-as-the-logic-layer.md
+          - 0010 Workload standard: development/adr/0010-workload-standard.md
+          - 0011 Label namespace: development/adr/0011-label-namespace.md
+          - 0012 Observations are proposals: development/adr/0012-observations-are-proposals.md
+          - 0013 Nix-built container images: development/adr/0013-nix-built-container-images.md
+          - 0014 Administering a user: development/adr/0014-administering-a-user-is-a-subset-question.md
+          - 0015 Records medication, never advises: development/adr/0015-medication-records-never-advises.md
+          - 0016 Schedule expansion in the application: development/adr/0016-schedule-expansion-in-the-application.md
+          - 0017 Doctrine DBAL is the persistence seam: development/adr/0017-doctrine-dbal-is-the-persistence-seam.md
+          - 0018 Role grants and domain reads: development/adr/0018-role-grants-and-domain-reads.md
+          - 0019 Label printers are master data: development/adr/0019-label-printers-are-master-data.md
+          - 0020 Documentation publication boundary: development/adr/0020-documentation-publication-boundary.md
+      - Build and deployment:
+          - Container images: development/images.md
+          - Deployment: development/deployment.md
+          - Continuous integration: development/devtools-ci.md
+          - Coverage: development/devtools-coverage.md
+          - Frontend harness: development/devtools-frontend.md
+          - Parity suite: development/devtools-parity.md
+          - Diagram generator: development/devtools-diagrams.md
+          - Documentation site: development/devtools-docs.md
+      - Formats:
+          - grocycode: development/grocycode.md
