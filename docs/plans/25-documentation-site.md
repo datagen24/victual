@@ -87,12 +87,16 @@ status as of a date, which a rendered site with search presents as current refer
 insistently than a file in a repository does. GitHub already renders all of it with every
 relative link resolving, including the 42.
 
-**One defect found during this research is worth fixing regardless of the manual.** Four
-links in [plan 22](22-medication-tracking.md) use a `services/StockService.php:1457`
-line-suffix form. That is not a path in the tree —
-`git ls-files --error-unmatch 'services/StockService.php:204'` fails — so they render as
-links on GitHub and resolve to nothing. The manual will not surface them, because the
-corpus is not built; they need a separate one-line change.
+**One defect found during this research has been fixed.** Four citations in
+[plan 22](22-medication-tracking.md) were written as links to a
+`services/StockService.php:1457` line-suffix form, which is not a path in the tree —
+`git ls-files --error-unmatch 'services/StockService.php:204'` fails — so they rendered as
+links on GitHub and resolved to nothing. They are now plain `` `StockService.php:1472` ``
+code text, matching the roughly eighty other line citations in `docs/`, of which those four
+were the only ones anyone had wrapped in a link. Three of the four line numbers had also
+drifted and were corrected against the current file; a fix to the link syntax alone would
+have preserved wrong citations. The manual would not have surfaced any of this, because the
+corpus is not built.
 
 ## Scope
 
