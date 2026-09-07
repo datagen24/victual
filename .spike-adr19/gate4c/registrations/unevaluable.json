@@ -1,0 +1,6 @@
+{"driver_id":"brother.ql","schema_version":"1.3","discriminators":["model","media"],
+ "combinations":[
+  {"model":"QL-820NWB","media":"62","resolution_x":300,"resolution_y":300,"color_mode":"mono",
+   "settings_schema":{"type":"object","additionalProperties":false,"properties":{
+     "//":"a comment, which is not a schema",
+     "cut_behaviour":{"type":"string","enum":["each","end"]}}}}]}
