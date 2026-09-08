@@ -340,7 +340,7 @@ network.
      and `ghostscript` from this flake's pinned nixpkgs close over **419,574,616 bytes across
      119 store paths and carry `bash` and `bash-interactive`**, against the Rust label worker's
      62,644,200 bytes, 7 paths and no shell at all. It fails
-     [ADR-0013](0013-nix-images.md)'s assertion by the very name that check's negative control
+     [ADR-0013](0013-nix-built-container-images.md)'s assertion by the very name that check's negative control
      was built to catch.
 
    Two findings belong to [plan 27](../plans/27-label-templates-and-rendering.md) rather than
