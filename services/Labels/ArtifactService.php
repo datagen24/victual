@@ -181,7 +181,14 @@ class ArtifactService extends LabelService
 
         $store = new LabelByteStore($this->db);
         foreach ($rows as $row) {
-            $store->Delete($row['file_group'], $row['file_name']);
+            // Reference-aware over the bytes as well as over the row: another manifest may
+            // point at the same picture, and collecting this one must not take that one's
+            // bytes with it.
+            $shared = (int)$this->Query('SELECT COUNT(*) FROM label_artifacts WHERE file_group=? AND file_name=? AND collected_at IS NULL AND id<>?',
+                [$row['file_group'], $row['file_name'], $row['id']])->fetchColumn();
+            if ($shared === 0) {
+                $store->Delete($row['file_group'], $row['file_name']);
+            }
             // The manifest row stays. Removing an image leaves the record that an image
             // existed and was retained until a stated date, which is what makes an
             // unexplained print explainable afterwards.

@@ -70,13 +70,16 @@ class LabelOperationsService extends LabelService
             $this->Refuse('job_id', 'no_artifact', 'That job never had an artifact to replay');
         }
 
+        // Retirement first, then the bytes. A retired label is a refusal about the *thing*,
+        // and answering "the bytes are gone" to somebody reprinting a label for a shelf that
+        // no longer exists would send them looking for the wrong problem.
+        $this->AssertLabelLive((string)$source['label_uid']);
+
         $artifacts = new ArtifactService($this->db);
         // Reads the bytes rather than the row, so a collected artifact refuses here - where
         // a person asked for it - instead of at claim time.
         $artifacts->Bytes((int)$source['artifact_id']);
         $artifact = $artifacts->Get((int)$source['artifact_id']);
-
-        $this->AssertLabelLive((string)$source['label_uid']);
 
         $resolved = $this->ResolvePrinter($printerId ?? (int)$source['printer_id']);
         $this->AssertArtifactFitsProfile($artifact, $resolved['profile']);
@@ -310,9 +313,17 @@ class LabelOperationsService extends LabelService
         return $job;
     }
 
+    /**
+     * The fields a capture reads: whatever the document draws, plus the entity's name.
+     *
+     * The name is captured whether or not the template prints it, because the job payload's
+     * provenance carries it and because issue 79's scan surface shows a human-readable line
+     * that has to say what the label was for. A template that draws only a QR still produces
+     * a job somebody can read.
+     */
     private static function FieldsOf(array $document): array
     {
-        $fields = [];
+        $fields = [$document['entity_kind'] . '.name'];
         foreach ($document['elements'] as $element) {
             if ($element['type'] === 'text' && ($element['field'] ?? null) !== null) {
                 $fields[] = $element['field'];

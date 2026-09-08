@@ -104,10 +104,17 @@ CREATE TABLE label_artifacts (
 	file_name TEXT NOT NULL,
 	retention_class TEXT NOT NULL DEFAULT 'preview' CHECK (retention_class IN ('preview', 'retained')),
 	collected_at TIMESTAMPTZ,
-	row_created_timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (file_group, file_name)
+	row_created_timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Deliberately no UNIQUE (file_group, file_name). Two artifacts are two *manifests*, and two
+-- manifests legitimately name the same bytes: a revised print of a template that draws only
+-- a QR produces pixel-identical output from a different capture, and plan 27 piece 5 says
+-- multiple historical artifacts may share one uid while a reprint reuses stored bytes rather
+-- than duplicating them. Uniqueness over the bytes belongs to `files`, which has it; making
+-- it a property of the manifest would refuse the second manifest for being honest about
+-- pointing at the same picture.
+CREATE INDEX label_artifacts_bytes ON label_artifacts (file_group, file_name);
 CREATE INDEX label_artifacts_request ON label_artifacts (render_request_id);
 CREATE INDEX label_artifacts_collectable ON label_artifacts (retention_class, row_created_timestamp)
 	WHERE collected_at IS NULL;
