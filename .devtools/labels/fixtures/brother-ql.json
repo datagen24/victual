@@ -1,0 +1,109 @@
+{
+  "driver_id": "brother.ql",
+  "schema_version": "1.0",
+  "contract_version": 1,
+  "discriminator_properties": [
+    "model",
+    "media"
+  ],
+  "combination_binding": {
+    "model": "model",
+    "media": "media",
+    "resolution_x": "resolution_x",
+    "resolution_y": "resolution_y",
+    "color_mode": "color_mode"
+  },
+  "settings_schemas": [
+    {
+      "when": {
+        "model": "QL-820NWBc",
+        "media": "62red"
+      },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "media": {
+            "type": "string",
+            "enum": [
+              "62red"
+            ]
+          },
+          "resolution_x": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "resolution_y": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "color_mode": {
+            "type": "string",
+            "enum": [
+              "black_red"
+            ]
+          }
+        },
+        "required": [
+          "media",
+          "resolution_x",
+          "resolution_y",
+          "color_mode"
+        ]
+      }
+    }
+  ],
+  "capability_document": {
+    "connection_types": [
+      "tcp"
+    ],
+    "models": [
+      "QL-820NWBc"
+    ],
+    "combinations": [
+      {
+        "connection_type": "tcp",
+        "model": "QL-820NWBc",
+        "media": "62red",
+        "resolution_x": 300,
+        "resolution_y": 300,
+        "color_mode": "black_red",
+        "printable_width_um": 62000,
+        "printable_length_um": {
+          "min": 1000,
+          "max": 100000
+        },
+        "feed_direction": "y",
+        "provenance": "demonstrated"
+      }
+    ],
+    "artifact_forms": [
+      {
+        "form": "raster/png-indexed;v=1",
+        "applies_to": [
+          {
+            "connection_type": "tcp"
+          }
+        ],
+        "geometry": "fixed_grid",
+        "provenance": "demonstrated"
+      }
+    ],
+    "completion_evidence": [
+      {
+        "evidence": "device_reported",
+        "applies_to": [
+          {
+            "connection_type": "tcp"
+          }
+        ],
+        "provenance": "demonstrated"
+      }
+    ]
+  },
+  "profile_contract_versions": [
+    1
+  ]
+}

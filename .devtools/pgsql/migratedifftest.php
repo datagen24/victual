@@ -46,7 +46,7 @@ use Victual\Services\Database\ValueComparison;
  */
 // Migration 0269 is also above the freeze. Label identity and its durable import epoch
 // are checked against PostgreSQL by .devtools/labels/identity-tests.php.
-const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles', 'stock_entry_origins', 'labels', 'label_import_state'];
+const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles', 'stock_entry_origins', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
