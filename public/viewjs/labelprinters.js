@@ -5,7 +5,8 @@
  function Message(value) { $('#label-admin-message').text(value); }
  function Failed(xhr)
  {
-  var detail = xhr.responseJSON || {};
+  var detail = {};
+  try { detail = JSON.parse(xhr.responseText || '{}'); } catch (error) { /* Use the fallback for non-JSON failures. */ }
   Message((detail.field ? detail.field + ': ' : '') + (detail.error_message || __t('Could not save label configuration.')));
  }
  function Options(selector, rows, label, empty)
