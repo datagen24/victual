@@ -179,6 +179,12 @@ jobs:
           SUITE_COVERAGE_CLOVER: clover.xml
         run: .devtools/pgsql/run-tests.sh
 
+      # Node is on the runner, and the differential half of this needs it: the ECMAScript
+      # oracle is correct by construction and a PHP reimplementation of it would only be a
+      # second thing to be wrong.
+      - name: RFC 8785 canonicalization
+        run: php .devtools/labels/canonical-json-tests.php
+
       - name: Label identity and import concurrency
         env:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
@@ -186,12 +192,46 @@ jobs:
           PGPASSWORD: victual
         run: php .devtools/labels/identity-tests.php
 
+      - name: Label templates, renders and artifacts
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/artifact-tests.php
+
       - name: Label print jobs and fences
         env:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
         run: php .devtools/labels/print-job-tests.php
+
+      # The check neither repository can make alone: the real renderer's output, fed to the
+      # verifier that will accept or refuse it in production. Both would pass on their own if
+      # each were wrong about the same axis in the same direction, which is the defect the
+      # 2026-09-07 renderer comparison actually found in two candidates.
+      #
+      # The revision is the one flake.lock pins, so this checks the binary the images are
+      # built from rather than whatever is on the renderer's main branch today.
+      - name: Check out the pinned renderer
+        uses: actions/checkout@v4
+        with:
+          repository: datagen24/victual-label-renderer
+          ref: f05c432f7857f976e0223296f968d641fa401254
+          path: .agreement
+
+      - name: Build the pinned renderer
+        working-directory: .agreement
+        run: cargo build --release
+
+      - name: The renderer and the verifier agree about geometry
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+          VICTUAL_RENDERER_BIN: .agreement/target/release/victual-label-renderer
+          VICTUAL_RENDERER_FONT: .agreement/tests/fixtures/NotoSans-Regular.ttf
+        run: php .devtools/labels/renderer-agreement-tests.php
 
       - name: Label worker API and credentials
         env:
