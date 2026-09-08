@@ -9,6 +9,7 @@ use Victual\Controllers\Api\OpenApiController;
 use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\RolesApiController;
+use Victual\Controllers\Api\LabelsApiController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Controllers\Api\SystemApiController;
 use Victual\Controllers\Api\TasksApiController;
@@ -194,6 +195,8 @@ $app->group('/api', function (RouteCollectorProxy $group)
 
 	// Role bundles
 	$group->get('/roles', [RolesApiController::class, 'ListRoles']);
+	$group->get('/labels/resolve/{code}', [LabelsApiController::class, 'Resolve']);
+	$group->get('/labels/locations/{locationId}/context', [LabelsApiController::class, 'LocationContext']);
 	$group->post('/roles', [RolesApiController::class, 'CreateRole']);
 	$group->put('/roles/{roleId}', [RolesApiController::class, 'EditRole']);
 	$group->delete('/roles/{roleId}', [RolesApiController::class, 'DeleteRole']);

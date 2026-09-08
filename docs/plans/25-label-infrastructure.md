@@ -710,3 +710,42 @@ is small once its gate clears. Piece 4 is the bulk and the risk: a new repositor
 package for a library that is not in nixpkgs, a K3S deployment, and a physical printer that
 has to actually produce a correct label. The prototype's imaging code is the reason that is
 weeks rather than months.
+
+
+## Executed
+
+### Group A — identity (2026-09-08, implementation branch)
+
+Migration 0269 adds the opaque mapping, one-live-label-per-target index, retirement
+snapshot, and import epoch. Only location identities are issued. The identity service
+requires an enclosing transaction so group B can insert its job atomically with the uid;
+there is no standalone issuance HTTP endpoint that could bypass that future job.
+
+`GET /api/labels/resolve/{code}` returns resolved, retired with a historical name, or
+unknown. `STOCK_VIEW` gates location resolution; denied callers return unknown without
+querying labels. `GET /api/labels/locations/{locationId}/context` supplies the name and
+import epoch for composing a request. Existing location and product-detail responses omit
+the new column, and generic writes cannot set it.
+
+The durable singleton `label_import_state` survives imports, including imports with no
+locations. New location rows inherit its epoch through their database default. The importer
+increments it within the same transaction as replacement, under the advisory lock shared
+with issuance; the generation cannot come from a source file. Live labels refuse imports,
+including `--force`. Issuance checks the request epoch before looking up a target and locks
+the location row. A delete trigger retires its live label with the last name atomically;
+deactivation does not retire it. Label history has no foreign key into the imported tables.
+
+Verification on 2026-09-08, branch `codex/gpt-6_label-identity-79`, against PostgreSQL 16
+in the existing Podman test container and PHP 8.4.25: the new
+[identity regressions](../../.devtools/labels/identity-tests.php) reproduce the precheck
+aliasing defect first, then cover both import/issuance lock orderings using the actual
+importer, both deletion/issuance orderings, collision recovery, rollback, authorization,
+and retained historical identity. The existing
+[import CLI regressions](../../.devtools/pgsql/import-tests.php) exercise both frozen
+SQLite fixtures and the live-label refusal through the command, with and without `--force`.
+All 10,045 identity/API assertions and the import CLI checks passed. Migration numbering,
+runtime SQL, route parameter coverage, and the strict documentation build also passed.
+The identity check is included in the `suite` CI job.
+
+Groups B and C, plan 27, and plan 06 remain unimplemented. This group does not close issue
+79: no print job, artifact, worker, print action, or scan UI has shipped with it.

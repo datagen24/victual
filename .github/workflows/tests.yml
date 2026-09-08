@@ -179,6 +179,13 @@ jobs:
           SUITE_COVERAGE_CLOVER: clover.xml
         run: .devtools/pgsql/run-tests.sh
 
+      - name: Label identity and import concurrency
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/identity-tests.php
+
       # Uploaded even when the suite fails: which code a failing run did and did not
       # reach is part of reading the failure.
       - name: Upload the coverage report

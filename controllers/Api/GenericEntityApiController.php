@@ -277,6 +277,10 @@ class GenericEntityApiController extends BaseApiController
 		}
 
 		$object = $this->DB->{$args['entity']}($args['objectId']);
+		if ($args['entity'] === 'locations')
+		{
+			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active')->where('id', $args['objectId'])->fetch();
+		}
 		if ($object == null)
 		{
 			return $this->GenericErrorResponse($response, 'Object not found', 404);
@@ -313,7 +317,13 @@ class GenericEntityApiController extends BaseApiController
 		}
 
 		$queryParams = $request->getQueryParams();
-		$objects = $this->MaterialiseFiltered($request, $this->QueryData($request, $this->DB->{$args['entity']}(), $queryParams), $queryParams);
+		$source = $this->DB->{$args['entity']}();
+		if ($args['entity'] === 'locations')
+		{
+			// The generation is exposed only by the additive label context route.
+			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active');
+		}
+		$objects = $this->MaterialiseFiltered($request, $this->QueryData($request, $source, $queryParams), $queryParams);
 
 		$userfields = UserfieldsService::GetInstance()->GetFields($args['entity']);
 		if (count($userfields) > 0)
@@ -429,7 +439,7 @@ class GenericEntityApiController extends BaseApiController
 	 * Columns of an exposed entity that no client may write through the generic CRUD
 	 * endpoints, whatever permission it holds. See WithoutServerOwnedColumns().
 	 */
-	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp'];
+	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp', 'import_epoch'];
 
 	private function IsEntityWithEditRequiresAdmin($entity)
 	{

@@ -3,6 +3,7 @@
 namespace Victual\Services\Database;
 
 use Victual\Services\DatabaseMigrationService;
+use Victual\Services\Labels\LabelIdentityService;
 
 /**
  * Copies the contents of an existing SQLite database into another engine, so that an
@@ -33,7 +34,7 @@ class DatabaseImporter
 	 * carrying the source's numbers would then skip a future migration of its own with
 	 * the same number, believing it already ran.
 	 */
-	const NOT_COPIED_TABLES = ['migrations'];
+	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state'];
 
 	/**
 	 * The oldest source schema this importer accepts, as a migration number.
@@ -100,7 +101,6 @@ class DatabaseImporter
 		$tables = $this->GetCommonTables();
 
 		$this->AssertSchemaVersionsMatch();
-		$this->AssertTargetIsEmpty($tables, $force);
 
 		$report = [];
 
@@ -119,6 +119,19 @@ class DatabaseImporter
 
 		try
 		{
+			LabelIdentityService::LockImport($this->Target);
+			$hasLabels = $this->Target->query("SELECT to_regclass('labels')")->fetchColumn() !== null;
+			if ($hasLabels)
+			{
+				$count = (int)$this->Target->query('SELECT COUNT(*) FROM labels WHERE retired_at IS NULL')->fetchColumn();
+				if ($count > 0)
+				{
+					throw new \RuntimeException("Import refused: $count live label(s) name rows this import replaces; retire them deliberately first (--force does not bypass this guard)");
+				}
+				$this->Target->exec('UPDATE label_import_state SET epoch = epoch + 1 WHERE id = 1');
+			}
+			$this->AssertTargetIsEmpty($tables, $force);
+
 			// Triggers exist to maintain data as the application changes it. Replaying
 			// rows that were already shaped by the source's triggers has to leave them
 			// alone, otherwise cascades fire and derived values get computed a second
@@ -135,6 +148,7 @@ class DatabaseImporter
 			}
 
 			$this->SetTriggersEnabled($tables, true);
+			$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
 		}
 		catch (\Throwable $ex)
 		{
@@ -148,9 +162,7 @@ class DatabaseImporter
 
 		$this->Target->commit();
 
-		// The source's ids came across verbatim, so the target's generated id counters are
-		// still sitting at the bottom of the range
-		$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
+		// Generated id counters were resynchronized before releasing the import lock.
 
 		$this->AssertRowCountsMatch($report);
 		$this->AssertValuesMatch($tables);
@@ -287,7 +299,7 @@ class DatabaseImporter
 		$missing = array_diff($targetTables, $sourceTables, self::TARGET_ONLY_TABLES);
 		foreach ($missing as $table)
 		{
-			($this->Progress)('  note: target table "' . $table . '" does not exist in the source and stays empty');
+			($this->Progress)('  note: target table "' . $table . '" does not exist in the source and is not copied');
 		}
 
 		$extra = array_diff($sourceTables, $targetTables);
@@ -316,6 +328,11 @@ class DatabaseImporter
 		);
 
 		$common = array_values(array_intersect($sourceColumns, $targetColumns));
+		if ($table === 'locations')
+		{
+			// This target-owned generation must never be restored from foreign input.
+			$common = array_values(array_diff($common, ['import_epoch']));
+		}
 
 		foreach (array_diff($sourceColumns, $targetColumns) as $column)
 		{

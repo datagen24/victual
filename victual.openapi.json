@@ -58,6 +58,183 @@
 		}
 	],
 	"paths": {
+		"/labels/resolve/{code}": {
+			"get": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Resolve an opaque label",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. STOCK_VIEW authorizes location labels. Unauthorized and unknown labels both return 200 with status unknown; a denied caller performs no label lookup. No other entity kind is resolved in this release.",
+				"parameters": [
+					{
+						"name": "code",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"oneOf": [
+										{
+											"type": "object",
+											"required": [
+												"status"
+											],
+											"properties": {
+												"status": {
+													"const": "unknown"
+												}
+											},
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"required": [
+												"status",
+												"uid",
+												"kind",
+												"target"
+											],
+											"properties": {
+												"status": {
+													"const": "resolved"
+												},
+												"uid": {
+													"type": "string",
+													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
+												},
+												"kind": {
+													"const": "location"
+												},
+												"target": {
+													"type": "object",
+													"required": [
+														"id",
+														"name"
+													],
+													"properties": {
+														"id": {
+															"type": "integer"
+														},
+														"name": {
+															"type": "string"
+														}
+													}
+												}
+											},
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"required": [
+												"status",
+												"uid",
+												"kind",
+												"snapshot",
+												"retired_at"
+											],
+											"properties": {
+												"status": {
+													"const": "retired"
+												},
+												"uid": {
+													"type": "string",
+													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
+												},
+												"kind": {
+													"const": "location"
+												},
+												"snapshot": {
+													"type": "object",
+													"required": [
+														"id",
+														"name"
+													],
+													"properties": {
+														"id": {
+															"type": "integer"
+														},
+														"name": {
+															"type": "string"
+														}
+													}
+												},
+												"retired_at": {
+													"type": "string"
+												}
+											},
+											"additionalProperties": false
+										}
+									]
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/locations/{locationId}/context": {
+			"get": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Read the location and import epoch for a label request",
+				"description": "Requires STOCK_VIEW. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the location set. This endpoint does not issue or print a label.",
+				"parameters": [
+					{
+						"name": "locationId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"id",
+										"name",
+										"import_epoch"
+									],
+									"properties": {
+										"id": {
+											"type": "integer"
+										},
+										"name": {
+											"type": "string"
+										},
+										"import_epoch": {
+											"type": "integer",
+											"minimum": 0
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Missing STOCK_VIEW"
+					},
+					"404": {
+						"description": "Location not found"
+					}
+				}
+			}
+		},
 		"/system/info": {
 			"get": {
 				"summary": "Returns information about the installed Victual version, PHP runtime and OS",
