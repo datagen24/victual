@@ -18,9 +18,18 @@ runLabelTests(function(PDO $db,string $schema){
  refused(fn()=>tx($db,fn()=>$jobs->Enqueue(1,0,$printer)),'unsupported_combination');
  check((int)$db->query('SELECT COUNT(*) FROM labels')->fetchColumn()===0,'Rejected enqueue rolls back minted label');
  $q->execute([json_encode(printer($worker)['settings']),$printer]);
- $first=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
- check(tx($db,fn()=>(new PrintAttemptService($db))->Claim($worker))===[],'Production claims blocked without artifacts');
+ // The artifact dependency itself is exercised in artifact-tests.php, against the real
+ // readiness condition plan 27 replaced group B's closed seam with. Here it is a
+ // precondition rather than the subject: a job is enqueued, rendered and attached, and what
+ // this suite is about is what happens to it afterwards.
+ $unrendered=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
+ check(tx($db,fn()=>(new PrintAttemptService($db))->Claim($worker))===[],'A job with no artifact is not claimable');
  check($jobs->Monitor()[0]['state']==='awaiting_artifact','Artifact dependency visible');
+ renderAndAttach($db,$unrendered);
+ $first=issued($db,$jobs,$printer);
+ $drainFirst=tx($db,fn()=>$attempts->Claim($worker));
+ check((int)$drainFirst[0]['attempt']['job_id']===$unrendered,'The rendered job dispatches in queue order');
+ tx($db,fn()=>$attempts->Result($worker,(int)$drainFirst[0]['attempt']['id'],'printed',[]));
  $a=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
  check($jobs->Monitor()[0]['state']==='claimed','Claim state');
  refused(fn()=>tx($db,fn()=>$jobs->AuthorizeAnotherAttempt($first,(int)$a['id'])),'attempt_running');
@@ -28,7 +37,7 @@ runLabelTests(function(PDO $db,string $schema){
  tx($db,fn()=>$attempts->Result($worker,(int)$a['id'],'failed',['error'=>'Offline']));
  check($jobs->Monitor()[0]['state']==='failed','Failed state retains error');
  check($jobs->Monitor()[0]['authorization_state']==='awaiting_authorization','Exhausted failure awaits human authorization');
- $second=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
+ $second=issued($db,$jobs,$printer);
  // Negative control: selecting an exhausted head before filtering starves the eligible row.
  $naive=$db->query('SELECT id FROM print_jobs WHERE outcome IS NULL ORDER BY outbox_id LIMIT 1')->fetchColumn();
  check((int)$naive===$first,'Negative control selects exhausted head');
@@ -43,20 +52,20 @@ runLabelTests(function(PDO $db,string $schema){
  check(in_array('uncertain',array_column($jobs->Monitor(),'state'),true),'Expired delivery is visibly uncertain');
  tx($db,fn()=>$attempts->Result($worker,(int)$replacement['id'],'printed',['device'=>'complete']));
  check($jobs->Monitor()[0]['state']==='uncertain_but_reported','Late report preserves uncertainty and sorts first');
- $third=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));$fourth=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
+ $third=issued($db,$jobs,$printer);$fourth=issued($db,$jobs,$printer);
  $db->exec("UPDATE outbox SET payload='{\"payload_version\":999}' WHERE id=(SELECT outbox_id FROM print_jobs WHERE id=$third)");
  $next=tx($db,fn()=>$attempts->Claim($worker));check((int)$next[0]['attempt']['job_id']===$fourth,'Unreadable payload does not starve valid successor');
  check($db->query('SELECT outcome FROM print_jobs WHERE id='.$third)->fetchColumn()==='dead_lettered','Unreadable payload dead-lettered');
  tx($db,fn()=>$attempts->Result($worker,(int)$next[0]['attempt']['id'],'printed',['device'=>'complete']));
  check($db->query('SELECT outcome FROM print_jobs WHERE id='.$fourth)->fetchColumn()==='printed','Current result completes job');
- $fifth=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));$db->exec('DELETE FROM label_worker_capabilities');
+ $fifth=issued($db,$jobs,$printer);$db->exec('DELETE FROM label_worker_capabilities');
  check(tx($db,fn()=>$attempts->Claim($worker))===[],'Missing advertisement returns no dispatch');
  check($db->query('SELECT outcome FROM print_attempts WHERE job_id='.$fifth)->fetchColumn()==='blocked','Missing advertisement creates visible blocked attempt');
  tx($db,fn()=>(new Victual\Services\Labels\DriverRegistryService($db))->Register($worker,[driver()]));
  // Two claims with and without SKIP LOCKED: unique attempt number is the independent fence.
  foreach(['locked','unlocked'] as $mode)
  {
-  $job=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));$db->beginTransaction();
+  $job=issued($db,$jobs,$printer);$db->beginTransaction();
   $held=(new ReadyAttempts($db))->Claim($worker);check(count($held)===1,'Parent claims fixture');
   $process=proc_open([PHP_BINARY,__FILE__,'child',$schema,$mode,(string)$worker],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
   fclose($pipes[0]);
@@ -78,7 +87,7 @@ runLabelTests(function(PDO $db,string $schema){
 
  $cap=driver()['capability_document'];$cap['completion_evidence'][0]['evidence']='transport';
  $q=$db->prepare('UPDATE label_drivers SET capability_document=?::jsonb');$q->execute([json_encode($cap)]);
- $sendJob=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));$sendAttempt=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
+ $sendJob=issued($db,$jobs,$printer);$sendAttempt=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
  tx($db,fn()=>$attempts->Sent($worker,(int)$sendAttempt['id']));
  check($db->query('SELECT outcome FROM print_jobs WHERE id='.$sendJob)->fetchColumn()==='sent','Transport-only configuration acknowledges on send');
  tx($db,fn()=>$attempts->Result($worker,(int)$sendAttempt['id'],'printed',['device'=>'late']));

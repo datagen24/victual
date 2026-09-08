@@ -255,6 +255,15 @@ Setting('FEATURE_FLAG_EQUIPMENT', true);
 Setting('FEATURE_FLAG_CALENDAR', true);
 Setting('FEATURE_FLAG_LABEL_PRINTER', false);
 
+// The opaque label subsystem: templates, printers, jobs and the delivery worker (plans 25
+// and 27). Deliberately a different flag from FEATURE_FLAG_LABEL_PRINTER, which gates the
+// webhook path ADR-0019 item 7 leaves alone through wave 3b - binding the two together would
+// make turning on the existing product and stock-entry printing demand database storage,
+// which is a behaviour change to a path this wave does not touch.
+//
+// Enabling it requires FILE_STORAGE 'database'. See ConfigurationValidator::checkLabelSubsystem().
+Setting('FEATURE_FLAG_LABELS', false);
+
 // Sub feature flags
 Setting('FEATURE_FLAG_STOCK_PRICE_TRACKING', true);
 Setting('FEATURE_FLAG_STOCK_LOCATION_TRACKING', true);

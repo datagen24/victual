@@ -92,6 +92,31 @@
 				class="btn btn-success">{{ $__t('Save') }}</button>
 
 		</form>
+
+		@if($mode == 'edit' && VICTUAL_FEATURE_FLAG_LABELS && isset($labelPrinters) && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+		{{-- Outside the form on purpose: printing a label is not saving this record, and a
+		button inside the form would submit it. --}}
+		<hr>
+		<div class="form-group">
+			<label for="location-form-label-printer">{{ $__t('Label printer') }}</label>
+			<select class="form-control"
+				id="location-form-label-printer">
+				@foreach($labelPrinters as $printer)
+				<option value="{{ $printer->id }}" @if($printer->is_default == 1) selected @endif>{{ $printer->name }}</option>
+				@endforeach
+			</select>
+		</div>
+		<button id="location-form-print-button"
+			class="btn btn-primary"
+			data-location-id="{{ $location->id }}"
+			data-location-name="{{ $location->name }}">
+			<i class="fa-solid fa-print"></i>&nbsp;{{ $__t('Print a label for this location') }}
+		</button>
+		<div id="location-form-print-status"
+			class="mt-3"
+			role="status"
+			aria-live="polite"></div>
+		@endif
 	</div>
 </div>
 @stop

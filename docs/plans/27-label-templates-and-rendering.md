@@ -622,3 +622,59 @@ contract rather than a preference, and a dispatch mechanism that must survive ha
 running. Pieces 5 and 6 are small once the artifact contract is fixed. The designer is
 front-loaded on the document format and cheap afterwards, which is the argument for specifying
 the format before writing the editor rather than discovering it from what Fabric.js emits.
+
+## Executed
+
+### Application half, renderer and worker (2026-09-08, branch `claude/opus5_label-templates-27`)
+
+**Migrations 0271 and 0272.** Group A is `label_templates`, `label_template_drafts`,
+`label_template_versions`, `label_assets` and `label_media_profiles`; group B is
+`label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys` and the
+alteration this plan's inventory named on plan 25's `print_jobs` — operation, artifact, render
+request, capture, source job, idempotency key and cancellation. `migrations/RESERVATIONS.md`
+was reconciled against `master`: plan 27 is scheduled work and took the lowest free slots, and
+plans 23 and 22 moved to 0273–0275 for the seventh time.
+
+**Two decisions the plan left open are now made, with their reasoning.**
+
+*Question 8 / ADR-0021 question 1 — the renderer's credential.* Both, at two granularities, and
+neither is new machinery. `ApiKeyService::API_KEY_TYPE_LABEL_RENDERER` scopes which routes the
+credential is accepted on at all, exactly as the worker and calendar types are scoped, so a
+renderer key presented on `labels-claim` is refused by the authenticator before any subsystem
+code runs — which makes "may not claim a print attempt" a property of the credential rather
+than a rule the renderer is trusted to follow. The **generation token** the claim hands back is
+the per-resource grant: it names one request and one generation and expires with the lease.
+
+*The QR is encoded by Victual, not by the renderer.* Piece 4 requires the receiving service to
+check that the QR decodes to the pinned payload. Re-encoding and comparing modules is a
+stronger statement than decoding — it pins the geometry as well as the content — but only if
+both sides chose the same mask, and they do because only one side chooses. It also keeps a
+symbology library out of the renderer's closure.
+
+**Verification against the plan's own list.** 1, 2, 3, 5, 6, 7, 8, 9, 10, 11 and 12 are met.
+Check 11 is demonstrated rather than asserted: a copy of the renderer's CronJob manifest with
+its memory limit removed fails `.devtools/ci/check_deploy_manifest.py`, so the kind is examined
+rather than skipped. **Check 4 is open**: it needs the physical QL-820NWBc, which was powered
+off on 2026-09-08.
+
+Check 3's text-width half is met by construction rather than by a fixture. The renderer
+measures the text node it paints, so the failure that check exists for — measuring in one space
+and painting in another — cannot arise; what is asserted instead is the cross-implementation
+agreement below, which is the property a per-axis error would break.
+
+**The check neither repository could make alone.**
+[`.devtools/labels/renderer-agreement-tests.php`](../../.devtools/labels/renderer-agreement-tests.php)
+runs the real binary over a request Victual composed and feeds the bytes back to the verifier
+that will accept or refuse them in production. Ten assertions, including the QR verified
+against the pinned payload. It fails rather than skipping when the binary is absent: a
+cross-implementation check that becomes a no-op when the other implementation is missing is a
+check that will be missing on the day it was needed.
+
+**Runs on 2026-09-08**, PHP 8.5.10 and PostgreSQL 16 in disposable podman databases:
+canonicalization 34 vectors plus 2,067 documents byte-identical against the ECMAScript oracle;
+identity 10,046; artifacts 50; print jobs 36; worker protocol 25; registry 23; renderer
+agreement 10. The renderer's own suite is four tests and the worker's is five.
+
+**What is not done.** No physical label has been printed and no image has been deployed. The
+designer is not built: the document format, its validation and the preview API are here, and
+the Fabric.js editing surface is the remaining piece of this plan.

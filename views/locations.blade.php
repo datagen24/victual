@@ -31,6 +31,29 @@
 
 <hr class="my-2">
 
+@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0)
+<div class="row">
+	<div class="col-12 col-md-6 col-xl-4">
+		<div class="form-group">
+			<label for="location-label-printer">{{ $__t('Label printer') }}</label>
+			<select class="form-control" id="location-label-printer">
+				@foreach($labelPrinters as $printer)
+				<option value="{{ $printer->id }}" @if($printer->is_default == 1) selected @endif>{{ $printer->name }}</option>
+				@endforeach
+			</select>
+		</div>
+	</div>
+	<div class="col-12">
+		{{-- A live region rather than a toast: the outcome of a print is something a person
+		comes back to, and a job that is waiting for its render has a state worth reading. --}}
+		<div id="location-print-status"
+			class="mb-3"
+			role="status"
+			aria-live="polite"></div>
+	</div>
+</div>
+@endif
+
 @include('components.list_filter_row')
 
 <div class="row">
@@ -72,6 +95,20 @@
 							title="{{ $__t('Delete this item') }}">
 							<i class="fa-solid fa-trash"></i>
 						</a>
+						{{-- The print action, gated on FEATURE_FLAG_LABELS and on a printer
+						existing. It is deliberately not the webhook the five other entity
+						types still use: ADR-0019 item 7 leaves those alone through this wave,
+						and new location printing extends neither the webhook nor Grocycode. --}}
+						@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && VICTUAL_AUTHENTICATED && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+						<a class="btn btn-primary btn-sm location-print-button"
+							href="#"
+							data-location-id="{{ $location->id }}"
+							data-location-name="{{ $location->name }}"
+							data-toggle="tooltip"
+							title="{{ $__t('Print a label for this location') }}">
+							<i class="fa-solid fa-print"></i>
+						</a>
+						@endif
 					</td>
 					<td>
 						{{ $location->name }}

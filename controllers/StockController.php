@@ -150,9 +150,17 @@ class StockController extends BaseController
 		}
 		else
 		{
+			// Only the edit form offers a print action: a location that has not been saved
+			// has no id to mint a label against, and issuing one for a row that may never
+			// exist would leave a uid naming nothing.
+			$printers = VICTUAL_FEATURE_FLAG_LABELS
+				? $this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name')
+				: [];
+
 			return $this->RenderPage($response, 'locationform', [
 				'location' => $this->DB->locations($args['locationId']),
 				'mode' => 'edit',
+				'labelPrinters' => $printers,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
 		}
@@ -182,8 +190,17 @@ class StockController extends BaseController
 			$locations = $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE');
 		}
 
+		// The configured printers, so the print action can offer a choice rather than
+		// guessing. Read here rather than fetched by the page because a page that has no
+		// printer should not render a print button at all - a button that can only ever
+		// answer "no printer is configured" is the button plan 25 exists to replace.
+		$printers = VICTUAL_FEATURE_FLAG_LABELS
+			? $this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name')
+			: [];
+
 		return $this->RenderPage($response, 'locations', [
 			'locations' => $locations,
+			'labelPrinters' => $printers,
 			'userfields' => UserfieldsService::GetInstance()->GetFields('locations'),
 			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('locations')
 		]);

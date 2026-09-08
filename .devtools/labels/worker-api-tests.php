@@ -24,7 +24,7 @@ runLabelTests(function(PDO $db){
  $next=tx($db,fn()=>$credentials->Rotate($first['credential'],bin2hex(random_bytes(32)),bin2hex(random_bytes(32))));
  check($credentials->Authenticate($next['credential'])!==null,'Short-expired key can rotate within session');
  usleep(1100000);check($credentials->Authenticate($next['credential'],true)===null,'Rotation does not extend absolute session');
- $job=tx($db,fn()=>(new LabelPrintJobService($db))->Enqueue(1,0,$printer));
+ $job=issued($db,new LabelPrintJobService($db),$printer);
  $attempt=tx($db,fn()=>(new ReadyAttempts($db))->Claim($worker))[0]['attempt'];
  refused(fn()=>(new LabelWorkerAuthorization($db))->Authorize('labels-result',$paired,(int)$attempt['id']),'forbidden');
  $evidence=['submission_id'=>'one','evidence_type'=>'device_status','observed_at'=>'2026-09-08T00:00:00Z','printer_status'=>['state'=>'idle'],'detail'=>['state'=>'idle']];
@@ -45,7 +45,7 @@ runLabelTests(function(PDO $db){
  $again=tx($db,fn()=>$attempts->Result($paired,(int)$attempt['id'],'printed',['device'=>'complete']));check($result['reported_at']===$again['reported_at'],'Result is idempotent');
  $db->exec('UPDATE label_printers SET worker_id='.$worker.' WHERE id='.$printer);
  // Expired, superseded reports remain on their own row and cannot finish the replacement.
- $jobs=new LabelPrintJobService($db);$newJob=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
+ $jobs=new LabelPrintJobService($db);$newJob=issued($db,$jobs,$printer);
  $oldAttempt=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
  $db->exec("UPDATE print_attempts SET lease_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=".$oldAttempt['id']);
  tx($db,fn()=>$jobs->AuthorizeAnotherAttempt($newJob,(int)$oldAttempt['id']));

@@ -59,11 +59,27 @@ class LabelWorkerCredentialService extends LabelService
         }
         return $this->Issue($workerId, $ownerId, null);
     }
-    private function Issue(int $workerId, int $ownerId, ?int $sessionId, ?string $key = null): array
+
+    /**
+     * A renderer credential against the same identity row, under its own key type.
+     *
+     * The row is shared because a renderer is a workload with a name, a description and an
+     * active flag exactly as a worker is, and duplicating that table would duplicate the
+     * administration screen with it. What separates them is the key type, which is what
+     * decides which routes the credential is accepted on - so a renderer key presented on
+     * `labels-claim` is refused by the authenticator before any code in this subsystem runs.
+     */
+    public function IssueRenderer(int $workerId, int $ownerId): array
+    {
+        $this->Worker($workerId);
+        return $this->Issue($workerId, $ownerId, null, null, ApiKeyService::API_KEY_TYPE_LABEL_RENDERER);
+    }
+
+    private function Issue(int $workerId, int $ownerId, ?int $sessionId, ?string $key = null, string $keyType = ApiKeyService::API_KEY_TYPE_LABEL_WORKER): array
     {
         $key ??= bin2hex(random_bytes(32));
         $expires = $sessionId === null ? '2999-12-31 23:59:59' : $this->Query('SELECT LEAST(expires_at,CURRENT_TIMESTAMP+make_interval(secs=>?)) FROM label_worker_sessions WHERE id=?', [$this->credentialSeconds,$sessionId])->fetchColumn();
-        $id = (int)$this->Query('INSERT INTO api_keys(api_key,key_hint,user_id,expires,key_type,description) VALUES (?,?,?,?,?,?) RETURNING id', [ApiKeyService::HashKey($key),ApiKeyService::HintFor($key),$ownerId,$expires,ApiKeyService::API_KEY_TYPE_LABEL_WORKER,'Label worker '.$workerId])->fetchColumn();
+        $id = (int)$this->Query('INSERT INTO api_keys(api_key,key_hint,user_id,expires,key_type,description) VALUES (?,?,?,?,?,?) RETURNING id', [ApiKeyService::HashKey($key),ApiKeyService::HintFor($key),$ownerId,$expires,$keyType,($keyType===ApiKeyService::API_KEY_TYPE_LABEL_RENDERER?'Label renderer ':'Label worker ').$workerId])->fetchColumn();
         $this->Query('INSERT INTO label_worker_credentials(api_key_id,worker_id,session_id) VALUES (?,?,?)', [$id,$workerId,$sessionId]);
         return ['credential_id' => $id,'credential' => $key,'expires_at' => (new \DateTimeImmutable($expires))->format('c'),'worker_id' => $workerId];
     }

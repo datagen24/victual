@@ -817,3 +817,49 @@ Verification 6's device half is **blocked on Group C**. Verification 9's artifac
 **blocked on plan 27**. Neither is recorded as passed, and no physical printer was contacted.
 Plan 25 verifications 11–15 remain open, as do issues 93 and 79. Plan 06's print actions and
 physical failure/reprint acceptance follow artifacts and delivery.
+
+### Group C — the worker, and the seam plan 27 closed (2026-09-08, branch `claude/opus5_label-templates-27`)
+
+**The readiness seam is gone.** Group B shipped `PrintAttemptService::ArtifactReady()` returning
+false for every job, because the artifact it named did not exist and the maintainer chose to
+keep production claims blocked rather than open them against nothing. Plan 27's 0272 gives
+`print_jobs` the column, its `ArtifactService` gives it something to point at, and the method is
+now `artifact_id IS NOT NULL AND cancelled_at IS NULL`. No runtime setting turns it off and no
+path claims a job whose bytes were not verified. Group B's suites no longer rely on a subclass
+that answered "ready": a test wanting a claimable job produces an artifact the way production
+does.
+
+**Two repositories, pinned.**
+[victual-label-renderer](https://github.com/datagen24/victual-label-renderer) at
+`f05c432f7857f976e0223296f968d641fa401254` and
+[victual-label-worker](https://github.com/datagen24/victual-label-worker) at
+`039ecfe5f899762d9ec4e77feb541f78aa8de2e4`, both as `flake = false` inputs built here by
+`rustPlatform`. The flake owns the image, the pin and the deployment; the other repositories own
+the driver matrix and the device transport.
+
+The worker is the QL encoder that physically printed on 2026-09-07, with its constants taken
+from `brother_ql-inventree` 1.3 rather than invented, plus an IPP transport — which exists for
+the reason ADR-0019 scopes `completion_evidence` to a triple: over raw 9100 the device answers
+no status request, so `transport` is all that can honestly be reported, while over IPP the same
+byte stream reaches `job-state = completed`.
+
+**Verification 6's device half is met on the worker side and not on the device.** The
+zero-bytes assertion is a unit test stated as "verify refuses and encode is never reached",
+which is the stronger shape: a count of zero on a socket that was opened would still have made
+the connection. **Verification 11 is met** — `nix flake check` gains
+`label-images-have-no-shell` over both closures, and the deploy manifests pass
+`.devtools/ci/check_deploy_manifest.py`, with the CronJob demonstrably examined rather than
+skipped.
+
+**Verifications 12 through 15 remain open**, and so does issue 93. The QL-820NWBc was powered
+off on 2026-09-08; nothing has been deployed and no physical label has been printed through
+this path. Issue 79 is unchanged by that: its definition of done is a label requested,
+physically printed, and scanned back, and only the first of those three is demonstrable today.
+
+Issue [#90](https://github.com/datagen24/victual/issues/90) is carried into the worker and is
+**not closed**. Its no-resize property is designed out rather than fixed — there is no
+resampling step, so a raster whose width is not the device's printable dot count is a refusal —
+and that is asserted at three resolutions in the renderer and once in the worker. What remains
+is its other half, the rotation sign, which the plan says is settled by a printed label rather
+than by reading.
+

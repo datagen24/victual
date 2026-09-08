@@ -56,9 +56,11 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0268 | [plan 03](../docs/plans/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
 | 0269 | [plan 25](../docs/plans/25-label-infrastructure.md) — `labels`, the uid-to-target mapping [ADR-0011](../docs/adr/0011-label-namespace.md) requires (wave 3b), plus the import epoch | in this tree |
 | 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) group B — ten tables: eight configuration/job/delivery tables plus `label_worker_sessions` and `label_worker_credentials` for durable pairing and pending rotation; templates/artifacts belong to plan 27 | in this tree |
-| 0271 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
-| 0272 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0273 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0271 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group A — `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`, `label_media_profiles` (wave 3b) | in this tree |
+| 0272 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
+| 0273 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
+| 0274 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0275 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 ## The merge order this implies — discharged
 
@@ -76,7 +78,7 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-The next migration takes **0274** and claims it here first.
+The next migration takes **0276** and claims it here first.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering
@@ -84,20 +86,28 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0271 to 0273 are claimed and no file exists for them yet.**
-The highest number on disk is 0270 and there is no hole or waiver.
+**0273 to 0275 are claimed and no file exists for them yet.**
+The highest number on disk is 0272 and there is no hole or waiver: the unwritten numbers sit
+*above* the highest file rather than as a gap below it, which is the case this table's own
+argument is about and the reason no `--allow-reserved-holes` waiver is needed.
 
-Plan 23 still merges before 22: it owns 0271 and supplies `locations.storage_class_id`;
-22 owns 0272–0273. The next unclaimed number is 0274.
+Plan 23 still merges before 22: it owns 0273 and supplies `locations.storage_class_id`;
+22 owns 0274–0275. The next unclaimed number is 0276.
 
-**Plan 22 and 23's three numbers have now moved six times without a line of SQL being written**:
+**Plan 22 and 23's three numbers have now moved seven times without a line of SQL being written**:
 claimed as 0261–0262
 while `master` was landing 0261 for [#46](https://github.com/datagen24/victual/issues/46), then
 0262–0264 until wave 2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266, then
-0268–0270 to make room for 0267, then 0269–0271 to make room for plan 03, and now 0271–0273 to
-make room for plan 25. Each time the
+0268–0270 to make room for 0267, then 0269–0271 to make room for plan 03, then 0271–0273 to
+make room for plan 25, and now 0273–0275 to make room for plan 27's two. Each time the
 correction cost one table edit,
 because nothing had been written to disk under the old numbers.
+
+The rule applied on the seventh move is the same one as on the sixth: **scheduled work takes
+the lowest free slots**. Plan 27 is scheduled into wave 3b alongside 25 and its first file is
+being written now; 22 and 23 remain drafts with no delivery slot. Plan 27's own migration
+inventory said this decision belonged to "the branch that writes the first file", and this is
+that branch.
 
 The fourth move was the first where the number was taken by a change that
 had already been written rather than by one being planned. 0267 is a defect fix — it is

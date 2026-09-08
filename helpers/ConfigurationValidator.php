@@ -30,6 +30,7 @@ class ConfigurationValidator
 		self::checkAuthClass();
 		self::checkDatabaseDriver();
 		self::checkFileStorage();
+		self::checkLabelSubsystem();
 		self::checkDefaultLocale();
 		self::checkCurrencyFormat();
 		self::checkFirstDayOfWeek();
@@ -178,6 +179,43 @@ class ConfigurationValidator
 		// first time a household member is refused a picture. Startup keeps running
 		// either way - a clamp is information, not a failure (plan 01 Q2).
 		FileSizeLimit::EffectiveMaxBytes();
+	}
+
+	/**
+	 * The label subsystem stores artifacts and assets in the database or it does not run.
+	 *
+	 * Plan 27 question 7, answered by the maintainer: require PostgreSQL-backed storage and
+	 * say so at boot. FILE_STORAGE "filesystem" would put captured household data and every
+	 * printed label on disk, reintroducing the persistent volume plan 10 exists to remove -
+	 * and there is deliberately no silent fallback, because a household that enables labels
+	 * with the wrong backend should find out while it can still change its mind rather than
+	 * when an artifact has already gone somewhere it was not meant to live. That is
+	 * checkFileStorage()'s own stated reason for refusing at startup rather than at first
+	 * upload, applied to a second thing that needs it.
+	 *
+	 * Conditional on the flag, in the shape checkMqttSettings() and checkInfluxDbSettings()
+	 * already use: a deployment that does not print labels is not asked to change its storage.
+	 */
+	private function checkLabelSubsystem()
+	{
+		if (!VICTUAL_FEATURE_FLAG_LABELS)
+		{
+			return;
+		}
+
+		if (VICTUAL_FILE_STORAGE !== 'database')
+		{
+			throw new EInvalidConfig('FEATURE_FLAG_LABELS requires FILE_STORAGE "database", but FILE_STORAGE is "' . VICTUAL_FILE_STORAGE . '" - label artifacts and assets carry captured household data and every printed label, and putting them on disk would reintroduce the persistent volume the deployment does not have');
+		}
+
+		// Said directly rather than left to be derived from two separate refusals:
+		// checkFileStorage() already refuses FILE_STORAGE "database" in these modes, so
+		// requiring it here excludes them transitively, and an operator should read that
+		// once rather than assemble it.
+		if (VICTUAL_MODE === 'demo' || VICTUAL_MODE === 'prerelease')
+		{
+			throw new EInvalidConfig('FEATURE_FLAG_LABELS cannot be enabled in "' . VICTUAL_MODE . '" mode: it requires FILE_STORAGE "database", which these modes do not support because demo instances share a storage location by file name suffix and the files table has no column for it');
+		}
 	}
 
 	private function checkDefaultLocale()

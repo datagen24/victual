@@ -10,6 +10,8 @@ use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\RolesApiController;
 use Victual\Controllers\Api\LabelsApiController;
+use Victual\Controllers\Api\LabelTemplatesApiController;
+use Victual\Controllers\Api\LabelRenderApiController;
 use Victual\Controllers\Api\LabelWorkerApiController;
 use Victual\Controllers\Api\LabelPrintersApiController;
 use Victual\Controllers\LabelPrintJobsController;
@@ -222,7 +224,37 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/labels/jobs', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-jobs');
 	$group->post('/labels/jobs/{jobId}/authorize-attempt', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-authorize');
 	$group->get('/labels/drivers/{driverId}/schemas/{schemaVersion}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-schema');
-	$group->post('/labels/locations/{locationId}/print', [LabelsApiController::class, 'PrintLocation']);
+	// Plan 27's four print operations plus cancellation. MASTER_DATA_EDIT and the domain read.
+	$group->post('/labels/locations/{locationId}/print', [LabelsApiController::class, 'Operate'])->setName('label-op-print');
+	$group->post('/labels/locations/{locationId}/revised-print', [LabelsApiController::class, 'Operate'])->setName('label-op-revised-print');
+	$group->post('/labels/jobs/{jobId}/reprint', [LabelsApiController::class, 'Operate'])->setName('label-op-reprint');
+	$group->post('/labels/jobs/{jobId}/cancel', [LabelsApiController::class, 'Operate'])->setName('label-op-cancel');
+	$group->post('/labels/artifacts/{artifactId}/promote', [LabelsApiController::class, 'Operate'])->setName('label-op-promote');
+
+	// Template and asset administration, and previews. ADMIN.
+	$group->get('/labels/templates', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-list');
+	$group->post('/labels/templates', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-create');
+	$group->get('/labels/templates/{templateId}/draft', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-draft');
+	$group->put('/labels/templates/{templateId}/draft', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-save-draft');
+	$group->post('/labels/templates/{templateId}/publish', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-publish');
+	$group->get('/labels/templates/{templateId}/versions', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-versions');
+	$group->put('/labels/templates/{templateId}/default-version', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-default');
+	$group->post('/labels/templates/{templateId}/archive', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-templates-archive');
+	$group->post('/labels/templates/{templateId}/preview', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-preview');
+	$group->get('/labels/assets', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-assets-list');
+	$group->post('/labels/assets', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-assets-create');
+	$group->get('/labels/renders/{requestId}', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-render-status');
+	$group->get('/labels/artifacts/{artifactId}/image', [LabelTemplatesApiController::class, 'PreviewImage'])->setName('label-artifact-image');
+	$group->post('/labels/workers/{workerId}/renderer-credentials', [LabelTemplatesApiController::class, 'Dispatch'])->setName('label-renderer-credential');
+
+	// The renderer's own routes, and the two byte fetches. Typed credentials only; neither
+	// group is in the OpenAPI FileGroups enum, so the generic files API refuses both.
+	$group->post('/labels/render/claim', [LabelRenderApiController::class, 'Dispatch'])->setName('labels-render-claim');
+	$group->post('/labels/render/{requestId}/result', [LabelRenderApiController::class, 'Dispatch'])->setName('labels-render-result');
+	$group->post('/labels/render/{requestId}/invalid', [LabelRenderApiController::class, 'Dispatch'])->setName('labels-render-invalid');
+	$group->post('/labels/render/{requestId}/failed', [LabelRenderApiController::class, 'Dispatch'])->setName('labels-render-failed');
+	$group->get('/labels/assets/{assetId}/bytes', [LabelRenderApiController::class, 'Bytes'])->setName('labels-asset-bytes');
+	$group->get('/labels/artifacts/{artifactId}/bytes', [LabelRenderApiController::class, 'Bytes'])->setName('labels-artifact-bytes');
 	$group->get('/labels/resolve/{code}', [LabelsApiController::class, 'Resolve']);
 	$group->get('/labels/locations/{locationId}/context', [LabelsApiController::class, 'LocationContext']);
 	$group->post('/roles', [RolesApiController::class, 'CreateRole']);
