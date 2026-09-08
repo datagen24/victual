@@ -384,7 +384,7 @@ Recorded so the findings read in proportion.
 - **`GET /api/system/config`** is an allow-list (`EXPOSED_SETTINGS`); DB and LDAP secrets are not in it.
 - **`data/`** is outside the docroot, `Deny from all` in its `.htaccess`, and contains nothing committed. Git history holds no `config.php`, `.db`, `.env` or key material.
 - **JSON-in-`<script>`** blocks (`{!! json_encode(...) !!}`) are safe: PHP's default slash escaping turns `</script>` into `<\/script>`.
-- **Dependencies** (composer.lock / yarn.lock): Slim 4.15.2, slim/psr7 1.8.0, Guzzle 7.15.2, HTMLPurifier 4.19.0, moment 2.30.1, chart.js 2.9.4, jQuery 3.7.1 — no known-vulnerable pins. Two to watch: Bootstrap 4.6.2 is EOL and carries CVE-2024-6531 (carousel `data-slide` XSS; low reachability here, no 4.x fix exists), and yarn.lock resolves jQuery to both 3.7.1 and 4.0.0 — dedupe before 12 rewrites the frontend core. Parsedown 1.8.0 renders only the repo changelog.
+- **Dependencies** (composer.lock / yarn.lock): opis/json-schema 2.6.0 (pinned exactly), opis/string 2.1.0 and opis/uri 1.1.0; Slim 4.15.2, slim/psr7 1.8.0, Guzzle 7.15.2, HTMLPurifier 4.19.0, moment 2.30.1, chart.js 2.9.4, jQuery 3.7.1 — no known-vulnerable pins. Two to watch: Bootstrap 4.6.2 is EOL and carries CVE-2024-6531 (carousel `data-slide` XSS; low reachability here, no 4.x fix exists), and yarn.lock resolves jQuery to both 3.7.1 and 4.0.0 — dedupe before 12 rewrites the frontend core. Parsedown 1.8.0 renders only the repo changelog.
 
 ## Where this lands in the roadmap
 
@@ -546,3 +546,13 @@ S1 and S2 are read from the code, and the verification above is what would confi
 them. It did not read the two external clients. It did not review the MCP interface spec
 against the protocol text (the rigor review's open item). It did not run a dependency
 scanner; the version notes above are from reading the lock files.
+
+
+### Label configuration note, 2026-09-08
+
+Plan 25 Group B stores `label_printers.connection` as an outbound destination interpreted
+by the assigned worker. Victual never dials it. Writes and generic reads require `ADMIN`;
+worker access is restricted to its assigned printers. This is an inventory note, not a
+waiver. Registered schemas cannot resolve external references. Pairing/rotation material
+and worker credentials are stored only as hashes; the calendar sharing key remains the
+explicit recoverable exception.

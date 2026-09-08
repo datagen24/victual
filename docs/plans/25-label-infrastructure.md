@@ -323,10 +323,12 @@ creates the `labels` row, so a rollback takes the job with it.
 Gated on both acceptances. The bar is exactly the wave's bar and no higher: *select a
 configured printer, request a print, inspect the outcome.*
 
-- **Eight tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
+- **Ten tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
   `label_workers`, `label_printers`, `label_drivers`,
   `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
-  `print_evidence`. `print_jobs` is the one this plan found missing — see below.
+  `print_evidence`, plus `label_worker_sessions` and `label_worker_credentials`. The latter
+  two implement durable pairing sessions and pending rotations without widening `api_keys`.
+  `print_jobs` is the one this plan found missing — see below.
   `label_templates` was the ninth and is **not here**: ADR-0021 makes it Victual's template
   identity, owned by [27](27-label-templates-and-rendering.md). That is still a large surface
   for one subsystem, and ADR-0019 says why it is the cost of keeping driver definitions
@@ -749,3 +751,69 @@ The identity check is included in the `suite` CI job.
 
 Groups B and C, plan 27, and plan 06 remain unimplemented. This group does not close issue
 79: no print job, artifact, worker, print action, or scan UI has shipped with it.
+
+
+### Group B — jobs, configuration and worker API (2026-09-08)
+
+Implementation branch: `claude/opus5_label-jobs-93`. Migration 0270 contains ten plain
+PostgreSQL tables, using `TIMESTAMPTZ` for its clocks. The eight configuration/history
+entities are read-only through generic APIs and require `ADMIN`; credential tables are
+not exposed. Configuration and worker writes use dedicated routes.
+
+A location print request requires `MASTER_DATA_EDIT` and commits the identity, outbox event
+and print job together. `PrintJobPayload::PAYLOAD_VERSION` is 1 and belongs to the label
+payload, rather than sharing the stock event's version constant. Unsupported settings and
+combinations refuse with 422 and a field/code. The registered definitions are immutable;
+changing a printer's schema version is a separate, revalidating action. Registration accepts
+at most 64 driver definitions and at most 256 resolved schemas/combinations per definition.
+The administrator pages provide scalar schema-generated settings controls, worker credential
+management and the job monitor; no additional browser schema library is introduced.
+
+The two credential tables retain pairing/session clocks, consumed credentials and the
+pending rotation binding. A pairing session also retains `created_by_user_id`: the public
+pair request must not choose the owner of the credential it receives. `StoredValueOf()` now
+hashes every key type except the recoverable calendar key; `GetOrCreateApiKey()` likewise
+returns recoverable keys only for calendar sharing. Worker authentication precedes browser
+and development-mode bypasses and is route-scoped. Rotation derives successors through
+ADR-0019's HMAC construction, binds exact replays, and commits reuse revocation as an outcome
+rather than rolling it back as an exception. Neither rotation nor revocation changes printer
+assignment. Imports exclude the new subsystem tables as input and revoke retained pairing
+sessions because their creating-user ids belong to the replaced account set.
+
+Three implementation details resolve the inputs' omissions: `connection_type` is an explicit
+printer column; `combination_binding` maps capability axes to driver settings properties;
+and credential state occupies the two separate tables described above. All services accept
+the caller's PDO and keep transaction ownership with the caller. The outbox provides an
+explicit-PDO transactional enqueue helper returning the inserted event id.
+
+**Production claims are blocked until plan 27.** The maintainer chose this boundary during
+implementation on 2026-09-08: no artifact columns or storage are added here, and the default
+readiness check always refuses dispatch. Jobs are visible as `awaiting_artifact` (shown as
+“Waiting for label rendering”). Only the regression suite overrides the protected readiness
+seam. This corrects the implementation input's artifact-free claim example; it does not
+weaken the accepted artifact prerequisite. Plan 27 must replace that seam with validated
+artifact readiness and supply the manifest/byte-access response before production claims
+can return work. The current empty-list response carries no fictitious artifact.
+
+Claims filter exhausted jobs before selecting, use `SKIP LOCKED`, and retain the unique
+`(outbox_id, attempt_number)` fence. Missing advertisements produce visible blocked attempts;
+unreadable payloads are dead-lettered without starving the next eligible job. Expired
+attempts are uncertain, never automatically retried. Late reports remain on their original
+attempt; superseded reports cannot finish a replacement. Another attempt names the current
+ended attempt and is idempotent. The monitor separates delivery state from authorization
+state, orders uncertain-but-reported first, and shows the age of the latest printer report.
+Evidence is deduplicated by authenticated source and submission id; image evidence and
+verifier provisioning remain deferred.
+
+Validation uses PHP 8.5.10 and PostgreSQL 16 in disposable Podman databases. Reproduction:
+`.devtools/pgsql/run-tests.sh`, then the four PHP programs documented in
+[the label test README](../../.devtools/labels/README.md). The authenticated HTTP walkthrough
+is `.devtools/labels/http-tests.py`; the browser form/monitor probe is
+`.devtools/frontend/label-printers.js` and runs in frontend-security CI. The isolated Nix
+app build verified the updated Composer vendor hash. The identity suite passed 10,046 assertions, registry validation 23, print jobs 35, and
+worker protocol 25. CI results belong to the implementing PR.
+
+Verification 6's device half is **blocked on Group C**. Verification 9's artifact half is
+**blocked on plan 27**. Neither is recorded as passed, and no physical printer was contacted.
+Plan 25 verifications 11–15 remain open, as do issues 93 and 79. Plan 06's print actions and
+physical failure/reprint acceptance follow artifacts and delivery.
