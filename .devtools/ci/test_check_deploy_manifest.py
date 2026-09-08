@@ -23,12 +23,47 @@ GOOD_INIT_CONTAINER = {
 }
 
 
+RUN_TO_COMPLETION_CONTAINER = {k: v for k, v in GOOD_CONTAINER.items() if k != "livenessProbe"}
+
+
 def pod(containers=None, init_containers=None):
     return {
         "kind": "Pod",
         "spec": {
             "containers": containers if containers is not None else [GOOD_CONTAINER],
             "initContainers": init_containers if init_containers is not None else [GOOD_INIT_CONTAINER],
+        },
+    }
+
+
+def job(containers=None):
+    return {
+        "kind": "Job",
+        "metadata": {"name": "render"},
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": containers if containers is not None else [RUN_TO_COMPLETION_CONTAINER],
+                }
+            }
+        },
+    }
+
+
+def cronjob(containers=None):
+    return {
+        "kind": "CronJob",
+        "metadata": {"name": "render-nightly"},
+        "spec": {
+            "jobTemplate": {
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": containers if containers is not None else [RUN_TO_COMPLETION_CONTAINER],
+                        }
+                    }
+                }
+            }
         },
     }
 
@@ -77,6 +112,53 @@ class DeployManifestTests(unittest.TestCase):
         self.assertIn("initContainer/migrate: resources.limits.memory must be set", errors)
         self.assertIn("initContainer/migrate: securityContext.readOnlyRootFilesystem must be true", errors)
         self.assertNotIn("no startupProbe, livenessProbe or readinessProbe", " ".join(errors))
+
+    # ADR-0021 prerequisite 6: a run-to-completion renderer must not escape this gate.
+
+    def test_a_job_without_a_probe_passes(self):
+        self.assertEqual(validate(job()), [])
+
+    def test_a_cronjob_without_a_probe_passes(self):
+        self.assertEqual(validate(cronjob()), [])
+
+    def test_a_job_still_needs_its_security_context_and_memory_limit(self):
+        container = {"name": "render", "securityContext": {}, "resources": {}}
+        errors = validate(job(containers=[container]))
+        self.assertIn("container/render: securityContext.readOnlyRootFilesystem must be true", errors)
+        self.assertIn("container/render: securityContext.allowPrivilegeEscalation must be false", errors)
+        self.assertIn("container/render: securityContext.capabilities.drop must include ALL", errors)
+        self.assertIn("container/render: resources.limits.memory must be set", errors)
+        self.assertNotIn("no startupProbe, livenessProbe or readinessProbe", " ".join(errors))
+
+    def test_a_cronjob_still_needs_its_security_context_and_memory_limit(self):
+        container = {"name": "render", "securityContext": {}, "resources": {}}
+        errors = validate(cronjob(containers=[container]))
+        self.assertIn("container/render: securityContext.readOnlyRootFilesystem must be true", errors)
+        self.assertIn("container/render: resources.limits.memory must be set", errors)
+
+    def test_a_job_whose_containers_were_reachable_before_this_change_would_have_passed(self):
+        """The gap itself: with Job absent from POD_SPEC_PATHS the bad container was invisible."""
+        from check_deploy_manifest import POD_SPEC_PATHS
+
+        bad = job(containers=[{"name": "render", "securityContext": {}, "resources": {}}])
+        without_job = {k: v for k, v in POD_SPEC_PATHS.items() if k != "Job"}
+        self.assertEqual(without_job.get(bad["kind"]), None)
+        self.assertNotEqual(validate(bad), [])
+
+    def test_an_unknown_kind_carrying_containers_is_reported(self):
+        doc = {
+            "kind": "Rollout",
+            "metadata": {"name": "worker"},
+            "spec": {"template": {"spec": {"containers": [GOOD_CONTAINER]}}},
+        }
+        errors = validate(doc)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Rollout/worker", errors[0])
+        self.assertIn("POD_SPEC_PATHS", errors[0])
+
+    def test_an_unknown_kind_carrying_no_containers_is_still_skipped(self):
+        self.assertEqual(validate({"kind": "ConfigMap", "data": {"containers": "text"}}), [])
+        self.assertEqual(validate({"kind": "Service", "spec": {"ports": [{"port": 80}]}}), [])
 
 
 if __name__ == "__main__":

@@ -87,14 +87,65 @@ on 2026-09-07 rather than worked around here**, which is what a Proposed record 
 names `print_jobs` and counts nine. Recorded in both places because a plan that quietly
 compensates for a gap in a record leaves the next reader of the record with the gap.
 
+## What ADR-0021 moved out, 2026-09-07
+
+[ADR-0021](../adr/0021-label-templates-are-application-data.md) — **Proposed** — supersedes
+three boundaries of accepted [ADR-0011](../adr/0011-label-namespace.md), and two of them change
+this plan's scope. Template documents become application data rather than the worker's, and a
+reprint becomes a new job over retained artifact bytes rather than "resetting a row". The
+machinery that follows from those — the designer, the headless renderer, previews, and the
+artifacts a reprint replays — is [27](27-label-templates-and-rendering.md)'s, written the same
+week and scheduled alongside this plan.
+
+**This plan keeps** identity, the print job and its attempts, printer and worker configuration,
+the nine worker routes, and delivery. Three consequences inside it:
+
+- **Piece 3's migration 0270 carries eight tables, not nine.** `label_templates` moves to 27
+  and becomes Victual's template identity; workers advertise the **artifact and profile
+  contract versions** they accept rather than the layouts they carry.
+  **ADR-0019's decision items 1 through 5 were reconciled in place on 2026-09-07** and now say
+  this — a Proposed record is edited rather than compensated around. Its claim precondition no
+  longer matches a template version, which after ADR-0021 no worker advertises and which would
+  therefore have offered no job to anyone. Two format-dependent details remain **outstanding
+  acceptance work** on 0019, listed at the end of its item 3, and neither blocks the
+  comparisons that settle them.
+- **Piece 2's job gains a readiness condition.** A job exists while its render is pending and
+  **is not claimable until a validated artifact is attached**, so claimability reads readiness
+  and authorization rather than `delivered_at` alone — which this plan already said, for the
+  different reason that an unresolved job is not delivered either.
+- **This plan owns the import refusal**, because `labels` is its table. ADR-0021 decision
+  item 3 withdraws ADR-0011's re-key obligation as unimplementable — no source
+  `bin/victual-db-import` accepts can carry a label — and replaces it with an explicit policy:
+  the import **refuses** a target holding live labels, `--force` included, enforced **inside
+  the import transaction under a lock the issuance path also takes** rather than as a
+  precheck, **plus a monotonic import epoch on the request** for the consecutive case the lock
+  cannot see. Retired labels and their historical identity survive an import, so neither a label
+  row nor its retirement snapshot may carry a foreign key into `TRUNCATE … CASCADE`'s path.
+  Verification 4 below is superseded by that policy and is restated in this plan's terms when
+  ADR-0021 is accepted.
+
+**Both records are Proposed**, so nothing here is settled until each is accepted on its own
+pull request, and ADR-0019's decision items 1 and 3 are reconciled before its acceptance.
+
 ## Gates
 
-One gate, and it is not a formality.
+**Two gates, in order, and neither is a formality.**
+
+**ADR-0021 is accepted first, and ADR-0019 cannot be accepted before it.** ADR-0019's
+ownership model — templates as application data, a renderer that is not the worker — is the
+model ADR-0021 decides, and it **contradicts still-Accepted
+[ADR-0011](../adr/0011-label-namespace.md)**, whose decision item 4 assigns templates to the
+drainer and whose Consequences say rendering and the label's appearance leave this repository.
+Accepting 0019 while 0011 still says that would put two accepted records in contradiction and
+leave the tree with no answer to "who owns a template". So the order is a dependency rather
+than a preference: 0021 supersedes those boundaries of 0011, and only then does 0019's
+reconciled text stand on an uncontradicted footing. Each still gets its own bookkeeping-only
+acceptance pull request.
 
 **ADR-0019 is Proposed, not Accepted.** Merging a record into the tree is not accepting it —
 the [lifecycle rule](../adr/README.md) is explicit that implementing a proposal, citing it in
 a plan, or receiving no objections does not accept it, and acceptance is its own pull request.
-**No schema, no route and no UI is written under this plan before that acceptance.**
+**No schema, no route and no UI is written under this plan before both acceptances.**
 
 The record carries five acceptance prerequisites, each a **disposable spike** — throwaway code
 on a scratch branch, kept only until it has answered its question. They are not this plan's
@@ -112,9 +163,14 @@ implementation and must not be grown into it:
    reading feature lists. There is **no JSON Schema validator in `composer.json`** today.
 5. The capability contract version 1 expresses two real driver families on paper.
 
-Gate 1 is the schedule risk and should run first. If ADR-0019 is rejected, pieces 1 and 2's
-identity and queue work still stand on ADR-0011 alone; pieces 3 and 4 are rewritten around
-whatever the rejection says.
+ADR-0021 carries six of its own, which [27](27-label-templates-and-rendering.md) runs; two of
+them — the renderer comparison and the artifact-format comparison — also settle the two
+details ADR-0019 still owes before *it* is accepted.
+
+Gate 1 is the schedule risk among 0019's five and should run first. If ADR-0019 is rejected,
+pieces 1 and 2's identity and queue work still stand on ADR-0011 and ADR-0021; pieces 3 and 4
+are rewritten around whatever the rejection says. If **ADR-0021** is rejected, this plan
+returns to nine tables and a worker that owns templates, and 27 does not exist.
 
 ## Proposed change
 
@@ -163,9 +219,34 @@ products, and locations" — but only `location` is minted in wave 3b.
   authorization check therefore runs **before** the lookup's outcome reaches the response, and
   the shape and timing of the two answers do not differ. `EntityReadPolicy::PERMISSIONS` is
   fail-closed already, which is the right default here for the same reason.
-- **Mapping preservation is verified, not asserted.** ADR-0011 decision item 5 puts an
-  obligation on `bin/victual-db-import` to re-key label targets with the rows it creates while
-  uids never change. That gets a fixture and a test, not a sentence.
+- **An import refuses a target holding live labels, atomically.** ADR-0011 decision item 5 put
+  an obligation on `bin/victual-db-import` to re-key label targets with the rows it creates;
+  **ADR-0021 decision item 3 withdrew that obligation as unimplementable** and this plan
+  implements what replaced it, because `labels` is this plan's table. No source the importer
+  accepts can carry a label — `DatabaseImporter::GetCommonTables()` intersects the target's
+  tables with the SQLite source's, and every accepted source predates `labels` — so there was
+  never anything to re-key, while `labels` survived a truncate that replaced `locations` and
+  left uids naming different shelves.
+
+  What is built instead: the importer **refuses** when the target holds live labels, `--force`
+  included, naming the count. The check is taken **inside the import transaction, under a lock
+  the label-issuance path also takes**, because a precheck races — it sees no live label,
+  an issuance commits one, and the import replaces its target underneath. Retired labels and
+  their historical identity **survive** an import that proceeds, which constrains the schema:
+  neither a label row nor its retirement snapshot may carry a foreign key into
+  `TRUNCATE … CASCADE`'s path.
+
+  **The lock is necessary and not sufficient, which ADR-0021's prerequisite 3 spike found by
+  running it.** The lock orders issuance against a *concurrent* import; it says nothing about a
+  *consecutive* one. A request composed before an import and executed after it mints a label
+  for whatever now holds that id — a row that is internally consistent and is not what anybody
+  asked for. So **`locations` carries a monotonic import epoch, the print request carries the
+  epoch it was composed at, and issuance refuses when the two no longer match**, naming both.
+  One integer, one comparison, and the last window closes.
+
+  None of this is asserted: the spike reproduced the precheck defect first — a uid resolving to
+  the row that replaced the one it was minted for — and then showed each of the three cases
+  behaving, which is what verification 4 now specifies.
 
 ### Piece 2 — the print job
 
@@ -182,6 +263,14 @@ creates the `labels` row, so a rollback takes the job with it.
   printer's row *now* — its typed columns, its validated `settings`, and the driver and schema
   version they were validated against. A job whose printer has been deleted or deactivated is
   dead-lettered saying so rather than handed out against a device that is gone.
+- **A claim's preconditions live in the query that selects the job, not after it.** Found by
+  the gate 2 spike on 2026-09-07, and worth stating because the wrong version passes every
+  single-job test: an implementation that picks the lowest matching job and *then* checks
+  authorization and liveness answers "no authorization" forever once one exhausted job sits at
+  the head of the queue, and nothing behind it is ever offered. One blocked job starves the
+  subsystem, which no part of [ADR-0019](../adr/0019-label-printers-are-master-data.md) says
+  should happen. `SELECT … FOR UPDATE SKIP LOCKED` makes the fix free, since the row that is
+  picked is one that already passed every precondition.
 - **Claiming is authorized, leased and fenced.** `print_attempts` holds one row per claim
   under `UNIQUE (outbox_id, attempt_number)`. A claim locks the job row
   (`SELECT … FOR UPDATE SKIP LOCKED`), checks four preconditions and inserts the next attempt
@@ -211,6 +300,12 @@ creates the `labels` row, so a rollback takes the job with it.
   Confidence never promotes uncertain to confirmed; a missing verification reprints nothing.
   Images are managed storage references, never URLs — sweep finding S14 is the tree's one
   instance of that pattern and it is a finding, not a precedent.
+- **A late report is kept beside the lease outcome, and the monitor shows the combination.**
+  ADR-0019 decision item 5, amended 2026-09-07: `print_attempts` carries `reported_outcome` and
+  `reported_at` separately from the outcome the server concluded, because a worker delayed past
+  its lease has its attempt reaped as `uncertain` while the label is finished and in the output
+  slot. The row that matters to an operator is `uncertain` **plus** a later worker report of
+  completion — that is where authorizing another attempt prints twice.
 - **Failure is visible in the application, not only in a log.** Somewhere a person looks is
   piece 3. Note that `OutboxService`'s undelivered set is *not* this consumer's work queue: an
   unresolved job is neither delivered nor claimable, so backlog for `label.print_requested`
@@ -218,16 +313,17 @@ creates the `labels` row, so a rollback takes the job with it.
 
 ### Piece 3 — configuration and monitoring, minimally
 
-Gated on ADR-0019's acceptance. The bar is exactly the wave's bar and no higher: *select a
+Gated on both acceptances. The bar is exactly the wave's bar and no higher: *select a
 configured printer, request a print, inspect the outcome.*
 
-- **Nine tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
-  `label_workers`, `label_printers`, `label_drivers`, `label_templates`,
+- **Eight tables in migration 0270**, PostgreSQL-only, plain, no views and no triggers:
+  `label_workers`, `label_printers`, `label_drivers`,
   `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts` and
   `print_evidence`. `print_jobs` is the one this plan found missing — see below.
-  That is a large surface for one subsystem and ADR-0019 says why it is the cost of keeping
-  driver and template definitions immutable while what workers advertise changes underneath
-  them.
+  `label_templates` was the ninth and is **not here**: ADR-0021 makes it Victual's template
+  identity, owned by [27](27-label-templates-and-rendering.md). That is still a large surface
+  for one subsystem, and ADR-0019 says why it is the cost of keeping driver definitions
+  immutable while what workers advertise changes underneath them.
 - **A driver registry, not a column set.** A printer's `settings` document is validated
   against the schema its driver advertised at registration. A Brother QL wants a tape identity
   and a two-colour flag; a Zebra wants ZPL darkness and a tear-off offset. Freezing the union
@@ -236,7 +332,7 @@ configured printer, request a print, inspect the outcome.*
 - **A worker is a row, not a credential.** `label_workers` holds the identity;
   `label_printers.worker_id` references it; keys are issued against the row, so rotating or
   revoking a key does not change the identity and a printer's assignment survives it.
-- **Reads are generic; writes are not.** All nine tables go into `ExposedEntity` for reading
+- **Reads are generic; writes are not.** All eight tables go into `ExposedEntity` for reading
   plus `ExposedEntityNoEdit` and `ExposedEntityNoDelete`, each with a `PERMISSION_ADMIN` row
   in `EntityReadPolicy::PERMISSIONS` — which is fail-closed and throws for an entity absent
   from it. Every write arrives through a worker route or a dedicated administration
@@ -246,26 +342,59 @@ configured printer, request a print, inspect the outcome.*
   sanitising, so a nested settings document would reach the database unexamined.
   [03](03-category-min-stock.md) already edited those enums in this wave; merge order matters.
 - **Monitoring is a view of jobs and attempts**, not a dashboard: queued, claimed, sent,
-  reported, failed with its error, uncertain, dead-lettered. Enough to answer "did my label
+  reported, failed with its error, uncertain, dead-lettered — and **uncertain-but-reported**,
+  which is its own state rather than a shade of uncertain, and the one an operator must see
+  before authorizing another attempt. Enough to answer "did my label
   print, and if not, why" without a database client — and to authorize the next attempt, which
   is an operator action rather than a timer.
-- **What is deliberately not here:** a label designer, per-print printer selection, and
-  template editing. Templates are pinned by the job and defined in the worker, which is
-  ADR-0011's "rendering leaves this repository" held rather than eroded. Configuration that is
-  not a property of a printing device stays where it is — instance behaviour in `Setting()`,
-  per-person preference in `user_settings`, appearance in templates. Admission to `settings`
-  is enforced, not argued: a driver declared the field or it cannot be stored.
+- **What is deliberately not here:** the label designer, template editing, previews and
+  artifact storage — all [27](27-label-templates-and-rendering.md)'s under ADR-0021 — and
+  per-print printer selection, which nothing owns. A job still pins a template version; what
+  changed is that the version it pins is one Victual published rather than one a worker
+  registered. Configuration that is not a property of a printing device stays where it is —
+  instance behaviour in `Setting()`, per-person preference in `user_settings`, appearance in
+  the template document. Admission to `settings` is enforced, not argued: a driver declared
+  the field or it cannot be stored.
 
 ### Piece 4 — the worker
 
-A **separate repository** holding rendering and printer drivers, built from a pinned revision
-by this repository's Nix flake, deployed to K3S, and verified against the QL-820NWBc that is
-already on the network over TCP.
+A **separate repository** holding printer drivers and device transport, built from a pinned
+revision by this repository's Nix flake, deployed to K3S, and verified against the QL-820NWBc
+that is already on the network over TCP.
+
+**It does not render.** ADR-0021 moves font shaping, layout, QR generation and rasterization
+into a headless renderer that reads Victual's template document, and
+[27](27-label-templates-and-rendering.md) owns it. What this piece's worker receives is a
+validated artifact; what it does is verify that artifact against the printer's resolved
+configuration and encode it for the device. The two may share a repository or a deployment,
+and their contracts stay separate — a render may be retried automatically because it cannot
+touch a printer, and no rendering retry becomes a second physical attempt.
+
+**Rendering and delivery are separate invocations even when they share a binary.** One Rust
+program renders a label and drives the device, which is a packaging convenience and must not
+become a coupling: a render is retried automatically precisely because it cannot touch a
+printer, and a delivery is never retried automatically at all. So the render invocation is
+given **no printer access** — no address, no socket — and an automatically retried render can
+therefore not print by construction rather than by discipline. Sharing code between them is
+fine; sharing an invocation is not.
+
+**The worker is Rust and carries no interpreter** (maintainer, 2026-09-07). The packaging gate
+found that nixpkgs' CPython references bash — through `subprocess.py`, `python3-config` and
+`ctypes/macholib/fetch_macholib` — so a Python worker ships an executable shell; removing the
+reference means rebuilding the Python package set under an interpreter that breaks the test
+suites of anything shelling out, cffi and six included. A Rust worker satisfies
+[ADR-0013](../adr/0013-nix-built-container-images.md) with nothing removed: **62,644,200 bytes
+over seven store paths, zero shell or interpreter references**, rendering and driving the device
+in one binary.
+
+`brother_ql-inventree` therefore becomes a **reference for constants rather than a dependency** —
+90 bytes per row and 400 invalidate bytes from its `models.py`, 732/696/12/35 for label `62`
+from its `labels.py`. What a QL actually needs is the raster command stream and a socket.
 
 - **Why separate.** [20](20-container-infrastructure.md) piece 5 says the print drainer is
   "an image in this flake". That stays true and is not in tension with a separate repository:
-  the flake owns the image, the pin and the deployment; the other repository owns Python,
-  Pillow, `brother-ql-inventree` and the driver matrix. The MCP sidecar took the same shape
+  the flake owns the image, the pin and the deployment; the other repository owns the driver
+  matrix and device transport. The MCP sidecar took the same shape
   by 02-Q1. Pinning by revision is what keeps "reproducible" true across the seam, and a
   revision bump is a `flake.lock` change reviewed like any other.
 - **The worker holds no database credential and makes no database connection.** It
@@ -282,21 +411,28 @@ already on the network over TCP.
   a pairing session on a long absolute clock. The session, not the rotation, is what bounds a
   stolen credential. Wave 3b needs only the declared mode; the paired mode is what the USB
   case will want and its rules are decided rather than built.
-- **Seed material.** The prototype at `grocy-label-printer-brother` is where the rendering
-  comes from: roughly 640 lines of imaging — layout, endless versus die-cut, 2-colour,
-  short-date highlighting — plus its tests. Its Flask `/print` route is the webhook ADR-0011
-  retires and does not survive the port.
+- **Seed material.** The prototype at `grocy-label-printer-brother` documents the device half —
+  the raster and transport path — and is read for its constants rather than ported. Its Flask `/print` route is the
+  webhook ADR-0011 retires and does not survive the port. Its **imaging** code — layout,
+  endless versus die-cut, 2-colour, short-date highlighting — is seed material for
+  [27](27-label-templates-and-rendering.md)'s renderer rather than for this worker, and the
+  renderer comparison run on 2026-09-07 found two defects in it that a port must not inherit:
+  `getbbox()` raises on multi-line text under a libraqm-enabled Pillow, and Pillow cannot
+  scale a glyph anisotropically at all, which a 300 × 600 device requires.
 - **[Issue #90](https://github.com/datagen24/victual/issues/90) is carried into the worker and
-  closed there.** The prototype hands `brother_ql` an image authored against `dots_total`
+  closed there**, because it is a device-geometry defect rather than a layout one. The
+  prototype hands `brother_ql` an image authored against `dots_total`
   while the library compares against `dots_printable`, so every endless print is silently
   resampled; with `dpi_600` set — its default — a 900-pixel label is resized twice and comes
   out 1711 pixels long. The fix is to author at `dots_printable[0]` (or twice it at 600 dpi),
   pass `rotate` explicitly so there is one rotation authority, and assert zero resize calls
   across `convert()` in a test. The rotation *sign* is settled by a physical print, which is
   in this piece's verification and not optional.
-- **Rendering is QR-only.** ADR-0011 keeps DataMatrix for *reading* legacy Grocycodes; nothing
-  in wave 3b emits one. That removes `treepoem` and Ghostscript from an image built from
-  `scratch`, which is a large closure difference.
+- **QR only, and not this worker's to draw.** ADR-0011 keeps DataMatrix for *reading* legacy
+  Grocycodes; nothing in wave 3b emits one. That removes `treepoem` and Ghostscript from the
+  renderer's image, which is a large closure difference — and it is the renderer's image
+  rather than this worker's, since under ADR-0021 the worker is handed an artifact and draws
+  nothing.
 - **The worker is unprivileged and has its own identity**, per
   [ADR-0010](../adr/0010-workload-standard.md) rule 3 — a typed API key granted and revoked
   independently of general API keys. This plan's first draft said that also closed
@@ -407,34 +543,70 @@ surface now lives, rather than a waiver.
    distinguishable responses. **For an unauthorized caller**, an existing uid and an unknown
    uid are indistinguishable — same status, same body, and no timing difference that separates
    a lookup that hit from one that missed.
-4. `bin/victual-db-import` over a fixture preserves every uid and re-keys every target; a uid
-   resolves to the same location before and after.
+4. `bin/victual-db-import` **refuses** a target holding live labels, `--force` included, and
+   the refusal is taken inside the import transaction under a lock the issuance path also
+   takes — issuance running concurrently with an import ends with the import refused or the
+   label intact and correctly targeted, never with a label naming a replaced target. **A print
+   request composed before an import and executed after it is refused, naming the epoch it was
+   composed at and the current one**, and mints nothing. An import that proceeds leaves retired
+   labels and their historical identity intact, the freed id can be labelled again, and the old
+   uid still reports what it was rather than following the id to its new occupant. This
+   replaces the re-key check the plan carried until 2026-09-07: ADR-0021 decision item 3
+   withdrew that obligation as unimplementable, because no source the importer accepts can
+   carry a label.
+
+   The first of these must be written as a **reproduction of the defect first**: a test that
+   only exercises the guard passes just as happily against a guard that never had the race,
+   which is how a precheck came to look sufficient in the first place.
 5. A print request and its `labels` row are one transaction: a forced rollback leaves neither.
-6. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
+6. **A job whose `(model, media, resolution, colour_mode)` is absent from the driver's
+   `combinations` is refused at enqueue**, naming what is unsupported — not built, not sent, and
+   not left to fail at the device — **and checked again against the printer's resolved
+   configuration immediately before device I/O**, because media or driver version may have
+   changed in between. The assertion is that an unsupported two-colour-at-600-dpi request
+   results in **zero bytes reaching the device**, counted rather than assumed. Demonstrated the
+   wrong way round on 2026-09-07: such a job was assembled and sent, and the QL-820NWBc refused
+   it with "Communications Command Error" although the capability document already said that
+   combination does not exist.
+7. A failed or expired attempt leaves the job **unclaimable** until a person authorizes
    another, and authorization is refused while an attempt is still running and refused again
    while an authorization it already granted is unused.
-7. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
-   job and produces **no second print**. Two concurrent claims against one authorization
+   **A regression for starvation:** with an exhausted job ordered ahead of an eligible one, a
+   claim returns the eligible job rather than a refusal. That is the defect the gate 2 spike
+   found, and a suite that only ever holds one job cannot see it.
+8. A worker killed between `bytes_sent_at` and its terminal result leaves a visible uncertain
+   job and produces **no second print**. A worker that rotates its credential mid-attempt keeps
+   that attempt: the superseded credential is refused without discarding anything, and the
+   successor's report lands on the same attempt. A report arriving **after** the lease expired is
+   recorded rather than refused, and the monitor shows the attempt as uncertain with a later
+   worker report of completion — the state in which authorizing another attempt would print
+   twice. Two concurrent claims against one authorization
    produce one attempt. A late result from a superseded attempt is recorded on its own row
    while completing nothing; a late heartbeat for it is refused.
-8. A payload a version cannot read is dead-lettered with a reason, and does not block the rows
-   queued behind it. A job pinning a template version the worker does not carry records
-   `blocked` naming the missing version, and does not fall back to the latest.
-9. A worker key is refused on a route it is not authorized for, and a revoked key is refused
+9. A payload a version cannot read is dead-lettered with a reason, and does not block the rows
+   queued behind it. A job whose validated artifact is not yet attached is **not claimable**;
+   one whose target printer's worker does not accept the job's artifact and profile contract
+   versions records `blocked` naming what is missing, and does not fall back to the latest.
+10. A worker key is refused on a route it is not authorized for, and a revoked key is refused
    everywhere while the printer's assignment to its worker row survives the revocation.
-10. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
+11. `nix flake check` passes with the worker image added, and the image runs as a non-root uid
     with no shell, per `nix/checks.nix`. The worker's deploy manifest passes
     `.devtools/ci/check_deploy_manifest.py` — health probes and resource limits — which
     [ADR-0010](../adr/0010-workload-standard.md)'s acceptance made a binding condition of a
     workload shipping rather than a proposed one.
-11. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
-12. **A physical location label is printed, and scanned back to the correct location by an
+12. The worker deploys under K3S and prints to the QL-820NWBc over TCP.
+13. **A physical location label is printed, and scanned back to the correct location by an
     authorized user.** This is the check the plan exists for and no earlier check substitutes
     for it.
-13. Issue #90's assertion — zero resize calls across `convert()` for `62` and `62red` at both
+    **The device half was demonstrated 2026-09-07**, ahead of the application half: a
+    two-colour label printed on the QL-820NWBc from the Rust encoder over raw port 9100 and
+    scanned back to its uid. What that does not yet cover is the path *through Victual* — a
+    label requested, a job enqueued, an artifact attached, a worker claiming it — which is what
+    this check is finally about.
+14. Issue #90's assertion — zero resize calls across `convert()` for `62` and `62red` at both
     DPI settings — passes in the worker repository, and the rotation sign is confirmed by a
     printed label rather than by reading.
-14. A failure is demonstrated end to end: printer unreachable, the job visible as failed with
+15. A failure is demonstrated end to end: printer unreachable, the job visible as failed with
     its error, a person authorizing a second attempt naming the first, and the label printing
     when the printer returns.
 

@@ -42,8 +42,9 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
 | 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
-| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. Migrations 0269–0270, nine tables. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
+| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. **Narrowed 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts move to [27](27-label-templates-and-rendering.md), so 0270 carries eight tables rather than nine and this plan keeps identity, jobs, printer configuration and delivery. It also owns the import refusal ADR-0021 decision item 3 requires, since `labels` is its table. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 | 26 | [Documentation site](26-documentation-site.md) | Piece 1 implemented | Wave-independent. Piece 1, the developer section, is built: staging script, MkDocs and Read the Docs configuration, the pinned phpDocumentor reference, and a strict build in the `lint` job. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed**; piece 1 is the evidence its prerequisites 2 and 4 ask for. Piece 2, the manual, waits on Q7's task documentation across 81 pages. |
+| 27 | [Label templates and rendering](27-label-templates-and-rendering.md) | Draft | Wave 3b, alongside 25. Owns the browser designer, the headless renderer, previews and print artifacts; 25 keeps identity, jobs, printer configuration and the delivery worker. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md), which is **Proposed** and supersedes three boundaries of accepted ADR-0011. Migrations inventoried, not reserved. Owns sweep finding S32. |
 
 ## Order of operations
 
@@ -57,7 +58,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 2 | API correctness and authentication | Complete, 2026-09-04, with the follow-ups listed above. |
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
 | 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
-| 3b | 03 category minimums; **25 label infrastructure, then 06 location labels**; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. **06 was rescoped 2026-09-06**: it cannot ship a print action over machinery ADR-0011 decided and nobody built, so 25 was created to own that machinery and 06 now depends on its first usable release. The wave delivers a *complete* location-label path — request, physical print, authorized scan back, demonstrated failure and reprint — not a table and a button. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums and 25 needs them too. |
+| 3b | 03 category minimums; **25 label infrastructure and 27 templates/rendering, then 06 location labels**; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. **06 was rescoped 2026-09-06**: it cannot ship a print action over machinery ADR-0011 decided and nobody built, so 25 was created to own that machinery and 06 now depends on its first usable release. The wave delivers a *complete* location-label path — request, physical print, authorized scan back, demonstrated failure and reprint — not a table and a button. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums and 25 needs them too. **Split 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts are [27](27-label-templates-and-rendering.md)'s, 25 keeps identity, jobs, printer configuration and delivery, and 06 is unchanged. Both records gating the wave — 0019 and 0021 — are Proposed, and 0019's decision items 1 and 3 need reconciling against 0021 before either is accepted. |
 | 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |
 
@@ -84,6 +85,18 @@ the retirement ADR-0011 already accepted, and the second carries an
 [ADR-0005](../adr/0005-wire-contract-is-the-invariant.md) question about what the five
 `*/printlabel` endpoints return. Observation proposals (ADR-0012) remain accepted and unbuilt;
 that acceptance still assigns no ownership and no delivery slot.
+
+**And a second owner beside it, 2026-09-07.**
+[ADR-0021](../adr/0021-label-templates-are-application-data.md) supersedes three boundaries of
+accepted ADR-0011 — template ownership, "reprint is resetting a row", and the importer's re-key
+obligation, which no source `bin/victual-db-import` accepts can discharge. Templates become
+application data, a reprint replays retained artifact bytes, and an import refuses a target
+holding live labels. [27](27-label-templates-and-rendering.md) owns the designer, the renderer,
+previews and artifacts; 25 keeps identity, jobs, printer configuration and delivery, and also
+owns the import refusal because `labels` is its table. 0021 is **Proposed** with six acceptance
+prerequisites, its forward pointer on 0011 belongs to the accepting pull request, and 27's
+migrations are inventoried rather than reserved — 0271–0273 are still plans 23 and 22's, and the
+branch that writes the first file applies the lowest-free-slot rule.
 
 **Plan 26 is independent of the wave order**, since it touches no runtime code. Its piece 1,
 the developer section of the documentation site, is implemented; its piece 2, the manual, waits
@@ -115,6 +128,7 @@ named in the last column.
 | S11 | Partial | 11: expiry and rotation remain. 02 must not restore query-string API keys. |
 | S16 | Partial | 14 piece 2 / 11 Q5: body-schema validation remains. |
 | S13 | Open | 15-C11: remove upstream release/update scripts. |
+| S32 | Open | 27: a fail-closed group-to-read-permission table for the files API. |
 | S14 | Open | 09: barcode filenames, image extensions, and fetch destination restrictions. |
 | S15 | Open | 14 piece 2: regex filter bounds. |
 | S20, S22, S24, S26 | Open | See sweep; unscheduled. |
