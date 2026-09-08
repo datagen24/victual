@@ -16,3 +16,13 @@ Victual.EntityList({
 		message: 'Are you sure you want to delete location "%s"?'
 	}
 });
+
+// The print action, wired to the list's buttons and the page's printer chooser. The logic
+// itself is Victual.LabelPrinting (public/js/victual_label_print.js), because the location
+// form offers the same action and two copies of an idempotency rule is one too many.
+Victual.LabelPrinting.Wire({
+	trigger: '.location-print-button',
+	within: '#locations-table',
+	printerSelect: '#location-label-printer',
+	status: '#location-print-status'
+});

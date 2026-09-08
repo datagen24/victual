@@ -155,6 +155,21 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 			xhr.setRequestHeader('Content-Type', opts.contentType);
 		}
 
+		// Extra request headers, for the one thing that needs them: an idempotency key is a
+		// property of the *request* rather than of the resource, so it travels in a header
+		// rather than in the body - which also keeps it out of the canonical fingerprint the
+		// server takes of the body.
+		if (opts.headers)
+		{
+			for (var name in opts.headers)
+			{
+				if (Object.prototype.hasOwnProperty.call(opts.headers, name))
+				{
+					xhr.setRequestHeader(name, opts.headers[name]);
+				}
+			}
+		}
+
 		if (body === undefined)
 		{
 			xhr.send();
@@ -184,10 +199,12 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 	 * @param {Object} jsonData Request body, sent as JSON
 	 * @param {Function} [success] Called with the parsed JSON response ({} on HTTP 204)
 	 * @param {Function} [error] Called with the XMLHttpRequest on any non 200/204 status
+	 * @param {Object} [headers] Extra request headers, e.g. an Idempotency-Key
 	 */
-	Victual.Api.Post = function (apiFunction, jsonData, success, error)
+	Victual.Api.Post = function (apiFunction, jsonData, success, error, headers)
 	{
-		request('POST', U('/api/' + apiFunction), JSON.stringify(jsonData), success, error, JSON_CONTENT_TYPE);
+		var opts = headers ? { contentType: JSON_CONTENT_TYPE.contentType, headers: headers } : JSON_CONTENT_TYPE;
+		request('POST', U('/api/' + apiFunction), JSON.stringify(jsonData), success, error, opts);
 	};
 
 	/**

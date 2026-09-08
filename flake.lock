@@ -1,5 +1,37 @@
 {
   "nodes": {
+    "label-renderer": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788910073,
+        "narHash": "sha256-QtxtnEmw29S9t0zn5iZ27XY/c7AbxGc5DSvpxule2zQ=",
+        "owner": "datagen24",
+        "repo": "victual-label-renderer",
+        "rev": "f05c432f7857f976e0223296f968d641fa401254",
+        "type": "github"
+      },
+      "original": {
+        "owner": "datagen24",
+        "repo": "victual-label-renderer",
+        "type": "github"
+      }
+    },
+    "label-worker": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788910382,
+        "narHash": "sha256-6XDcavKlsNrZj25SOb0+d+/yniywox+gO4cPWBdgsx0=",
+        "owner": "datagen24",
+        "repo": "victual-label-worker",
+        "rev": "9a60f9b597ef91d83ffb430aaf144b199af5915b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "datagen24",
+        "repo": "victual-label-worker",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1788316716,
@@ -18,6 +50,8 @@
     },
     "root": {
       "inputs": {
+        "label-renderer": "label-renderer",
+        "label-worker": "label-worker",
         "nixpkgs": "nixpkgs"
       }
     }

@@ -10,3 +10,10 @@ Victual.EntityForm({
 	endpoint: 'objects/locations',
 	list: '/locations'
 });
+
+// The same print action the locations list offers, wired to this form's own controls.
+Victual.LabelPrinting.Wire({
+	trigger: '#location-form-print-button',
+	printerSelect: '#location-form-label-printer',
+	status: '#location-form-print-status'
+});
