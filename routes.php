@@ -82,6 +82,7 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/inventory', [StockController::class, 'Inventory']);
 	$group->get('/stockentry/{entryId}', [StockController::class, 'StockEntryEditForm']);
 	$group->get('/stocksettings', [StockController::class, 'StockSettings']);
+	$group->get('/locationlabels', [StockController::class, 'LocationLabels']);
 	$group->get('/locations', [StockController::class, 'LocationsList']);
 	$group->get('/location/{locationId}', [StockController::class, 'LocationEditForm']);
 	$group->get('/stockjournal', [StockController::class, 'Journal']);
