@@ -37,7 +37,7 @@ class ApiKeyService extends BaseService
 	 */
 	public static function StoredValueOf(string $apiKey, string $keyType): string
 	{
-		return $keyType === self::API_KEY_TYPE_DEFAULT ? self::HashKey($apiKey) : $apiKey;
+		return $keyType === self::API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL ? $apiKey : self::HashKey($apiKey);
 	}
 
 	/**
@@ -97,7 +97,7 @@ class ApiKeyService extends BaseService
 
 	/**
 	 * Returns the current user's valid (unexpired) key of the given type, creating one
-	 * when they have none; not allowed for key type "default" (returns null then).
+	 * when they have none; only available for the recoverable calendar key (returns null for other types).
 	 *
 	 * Scoped to the current user, which it was not: the lookup matched on key_type alone,
 	 * so the first person to open the calendar sharing dialog created the key and every
@@ -111,7 +111,7 @@ class ApiKeyService extends BaseService
 	 */
 	public function GetOrCreateApiKey($keyType)
 	{
-		if ($keyType === self::API_KEY_TYPE_DEFAULT)
+		if ($keyType !== self::API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL)
 		{
 			return null;
 		}
