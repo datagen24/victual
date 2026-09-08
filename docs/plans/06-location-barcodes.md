@@ -7,8 +7,9 @@ typing anything.
 which a requested label physically prints — and [12](12-frontend-shared-core.md), per the
 README. Pairs naturally with [08](08-nested-locations.md) but does not need it.
 **Status:** draft for review, **narrowed 2026-09-04 by
-[ADR-0011](../adr/0011-label-namespace.md)** and **scoped 2026-09-06 against
-[25](25-label-infrastructure.md)** — see the two sections immediately below before reading
+[ADR-0011](../adr/0011-label-namespace.md)**, **scoped 2026-09-06 against
+[25](25-label-infrastructure.md)**, and **unblocked but not advanced 2026-09-08** by the
+acceptance of ADR-0019 and ADR-0021 — see the three sections immediately below before reading
 the body.
 
 ## What ADR-0011 took, and what is left
@@ -32,7 +33,12 @@ what the record took from it is marked here and in place rather than deleted.
   alone.
 - **The symbology.** QR for new labels, DataMatrix retained for reading legacy
   Grocycodes (ADR-0011 Q2). This plan's Q3 expectation of a new PHP QR dependency does
-  not follow, because rendering leaves this repository with the print drainer.
+  not follow, because rendering happens outside this repository. **Where outside changed on
+  2026-09-07**: ADR-0011 put it with the print drainer, and
+  [ADR-0021](../adr/0021-label-templates-are-application-data.md) superseded that — the
+  template document is Victual's, and a separate headless renderer, not the drainer, turns
+  it into an artifact. Nothing changes for this plan's conclusion; the sentence would
+  otherwise name a component that no longer does the job.
 - **The print path.** Label creation enqueues a row; a drainer renders, prints and
   retries. The webhook this plan proposed to reuse is retired with it.
 
@@ -54,6 +60,41 @@ response: it is the subject of [ADR-0012](../adr/0012-observations-are-proposals
 response reached for. Nothing here waits on it either way, and nothing here may route
 around it: a camera that reads one of this plan's labels and reports what it sees writes a
 proposal, not stock.
+
+## Where issue 79 stands after the two acceptances, 2026-09-08
+
+**Nothing here is built, and [issue 79](https://github.com/datagen24/victual/issues/79) is not
+closed by any of it.** What changed is that the work under it is now authorized. Recorded
+because the difference between "unblocked" and "delivered" is exactly the kind of thing a
+status table quietly loses.
+
+[ADR-0019](../adr/0019-label-printers-are-master-data.md) and
+[ADR-0021](../adr/0021-label-templates-are-application-data.md) were both **accepted
+2026-09-07**, 0021 first because 0019's ownership model is the one 0021 decides. Five gates and
+six prerequisites were met, including a physical two-colour label off the QL-820NWBc and a
+reprint printed from retained bytes with the renderer removed from the machine. Every one of
+those runs was a disposable spike: **no schema, no route and no UI exists.**
+
+The chain to this issue, and where it now breaks:
+
+| # | Gate | State |
+|---|---|---|
+| 1 | ADR-0019 and ADR-0021 accepted | **Met**, 2026-09-07 |
+| 2 | [25](25-label-infrastructure.md) group A — identity, migration 0269 | unwritten |
+| 3 | 25 group B — migration 0270, the job service, the worker routes, the admin surface | unwritten |
+| 4 | [27](27-label-templates-and-rendering.md) — the template document, the renderer, artifacts | unwritten |
+| 5 | 25 group C — the worker repository, its image, the manifest, a physical print | unwritten |
+| 6 | **This plan** — the print actions, the label's content, the `vctl:` resolve surface | unwritten |
+
+Two things about that table are worth stating rather than leaving to be inferred. **27 is now
+on the critical path**, which it was not when this plan was scoped on 2026-09-06: a job is not
+claimable until a validated artifact is attached, and 27 owns the artifact. And **27 has no
+tracking issue**, while 25 has [#93](https://github.com/datagen24/victual/issues/93) — so the
+one plan that gates this one twice over is the one nothing is tracking.
+
+What this plan owns is unchanged by the acceptances. The print actions, what the label says and
+where it goes, and the stateless resolve surface are still its, and the sections below still
+describe them.
 
 ## What plan 25 owns, and what "owned by nobody else" cost
 

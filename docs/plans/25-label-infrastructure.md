@@ -8,8 +8,9 @@ thing it names.
 **Depends on:** [12](12-frontend-shared-core.md) (landed), [18](18-mqtt-state-publication.md)'s
 `outbox` (landed), [19](19-rbac.md) piece 1 (implemented), [20](20-container-infrastructure.md)
 piece 1 (landed) and part of piece 4. Gated on
-[ADR-0019](../adr/0019-label-printers-are-master-data.md), which is **Proposed** — see
-**Gates** below.
+[ADR-0019](../adr/0019-label-printers-are-master-data.md), **accepted 2026-09-07** with all
+five gates met, and on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
+accepted the same day and before it — see **Gates** below. **Both gates are cleared.**
 **Status:** draft for review. Scheduled into wave 3b. Revised 2026-09-07 against ADR-0019,
 which is more specific than this plan's first draft on several points and contradicts it on
 one — see **What ADR-0019 settled**.
