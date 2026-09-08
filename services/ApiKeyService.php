@@ -15,6 +15,20 @@ class ApiKeyService extends BaseService
 	const API_KEY_TYPE_DEFAULT = 'default';
 	const API_KEY_TYPE_LABEL_WORKER = 'label-worker';
 	const API_KEY_TYPE_LABEL_VERIFIER = 'label-verifier';
+
+	/**
+	 * The renderer's credential, and the answer to ADR-0021 question 1 / plan 27 question 8.
+	 *
+	 * A renderer may read its assigned inputs and upload its own result and **may not claim a
+	 * print attempt**. That is two authorities at two granularities, so it is answered with
+	 * two mechanisms that already exist rather than with a new one: the **key type** scopes
+	 * which routes the credential is accepted on at all, exactly as the worker type and the
+	 * calendar type are scoped, and the **generation token** the claim hands back is the
+	 * per-resource grant - it names one render request, one generation, and expires with the
+	 * lease. Nothing a renderer holds addresses a printer, and no route it can reach opens an
+	 * attempt.
+	 */
+	const API_KEY_TYPE_LABEL_RENDERER = 'label-renderer';
 	const API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL = 'special-purpose-calendar-ical';
 
 	/**

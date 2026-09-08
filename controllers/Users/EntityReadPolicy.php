@@ -49,6 +49,16 @@ class EntityReadPolicy
 		'permission_hierarchy' => User::PERMISSION_USERS_READ,
 		'roles' => User::PERMISSION_USERS_READ,
 		'users' => User::PERMISSION_USERS_READ,
+		// Plan 27's readable tables. ADMIN, and fail-closed by this class's own rule: an
+		// entity absent from here throws rather than reading. `label_artifacts` and
+		// `label_captures` are deliberately absent from ExposedEntity altogether - an
+		// artifact manifest carries captured household data and names bytes, which is the
+		// reason migration 0258 gives for keeping `files` out of it.
+		'label_templates' => User::PERMISSION_ADMIN,
+		'label_template_versions' => User::PERMISSION_ADMIN,
+		'label_assets' => User::PERMISSION_ADMIN,
+		'label_media_profiles' => User::PERMISSION_ADMIN,
+		'label_render_requests' => User::PERMISSION_ADMIN,
 		'batteries' => null,
 		'battery_charge_cycles' => null,
 		'equipment' => null,

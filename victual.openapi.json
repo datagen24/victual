@@ -7656,6 +7656,1088 @@
 					}
 				}
 			}
+		},
+		"/labels/locations/{locationId}/revised-print": {
+			"post": {
+				"tags": [
+					"Label printing"
+				],
+				"summary": "Print a revised label",
+				"description": "Keeps the existing uid and captures the current values. The earlier artifact is untouched.",
+				"parameters": [
+					{
+						"name": "locationId",
+						"in": "path",
+						"required": true,
+						"description": "The location the label names",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "printer_id, import_epoch, and optionally template_id, template_version_id, locale, timezone"
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Print a revised label",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/jobs/{jobId}/reprint": {
+			"post": {
+				"tags": [
+					"Label printing"
+				],
+				"summary": "Reprint a job exactly",
+				"description": "Replays the stored artifact bytes. No renderer is consulted; a collected artifact is refused rather than rerendered.",
+				"parameters": [
+					{
+						"name": "jobId",
+						"in": "path",
+						"required": true,
+						"description": "The print job",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "Optionally printer_id"
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Reprint a job exactly",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/jobs/{jobId}/cancel": {
+			"post": {
+				"tags": [
+					"Label printing"
+				],
+				"summary": "Cancel an unclaimed job",
+				"description": "Refused once an attempt exists, because a job a worker may already have printed cannot truthfully be recorded as never having happened.",
+				"parameters": [
+					{
+						"name": "jobId",
+						"in": "path",
+						"required": true,
+						"description": "The print job",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "Optionally reason"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Cancel an unclaimed job",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/artifacts/{artifactId}/promote": {
+			"post": {
+				"tags": [
+					"Label printing"
+				],
+				"summary": "Print an authoritative preview",
+				"description": "Rechecks print permission, retirement and profile compatibility, then queues the same bytes. Sample and draft previews cannot be promoted.",
+				"parameters": [
+					{
+						"name": "artifactId",
+						"in": "path",
+						"required": true,
+						"description": "The artifact whose bytes are the authority for this print",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "printer_id"
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Print an authoritative preview",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "List label templates",
+				"description": "Identity, entity kind and the default version pointer.",
+				"responses": {
+					"200": {
+						"description": "List label templates",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Create a label template",
+				"description": "Creates the identity and an empty draft.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "name, entity_kind, optionally description"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Create a label template",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/draft": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Read the mutable draft",
+				"description": "Carries the revision token a save has to present.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Read the mutable draft",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Save the draft",
+				"description": "A stale revision token is a conflict rather than a silent overwrite of another editor.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "document and revision_token"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Save the draft",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/publish": {
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Publish the draft as an immutable version",
+				"description": "Validates the document and every asset it references, and records the RFC 8785 digest.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Publish the draft as an immutable version",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/versions": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "List published versions",
+				"description": "Immutable documents and their digests.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "List published versions",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/default-version": {
+			"put": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Move the default version pointer",
+				"description": "Affects new issuance and revised prints only; queued jobs, previews and existing artifacts pinned their version when they were created.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "version_id"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Move the default version pointer",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/archive": {
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Archive a template",
+				"description": "An archived template publishes nothing further.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Archive a template",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/templates/{templateId}/preview": {
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Queue a preview render",
+				"description": "kind is sample, draft or live. A live preview needs the same read permission a capture needs and is the only kind that can be promoted.",
+				"parameters": [
+					{
+						"name": "templateId",
+						"in": "path",
+						"required": true,
+						"description": "The label template",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "kind, printer_id, and for a live preview target_id"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Queue a preview render",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/assets": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "List stored assets",
+				"description": "Fonts and images, with their decoded facts and licensing metadata.",
+				"responses": {
+					"200": {
+						"description": "List stored assets",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Store an asset",
+				"description": "Validated on decode rather than on the declared type. SVG and remote retrieval are excluded.",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "name, asset_kind, mime_type, content_base64, licence"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Store an asset",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/assets/{assetId}/bytes": {
+			"get": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Fetch an asset",
+				"description": "For the renderer only, under a label-renderer credential. Not reachable through the generic files API.",
+				"parameters": [
+					{
+						"name": "assetId",
+						"in": "path",
+						"required": true,
+						"description": "The stored font or image",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Fetch an asset",
+						"content": {
+							"image/png": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/renders/{requestId}": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Render request status",
+				"description": "A pending image exposes its status rather than an empty body.",
+				"parameters": [
+					{
+						"name": "requestId",
+						"in": "path",
+						"required": true,
+						"description": "The durable render request",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Render request status",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/render/claim": {
+			"post": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Claim a render request",
+				"description": "Returns the resolved document, capture, profile and QR module matrix, with a generation token that fences competing renderers.",
+				"responses": {
+					"200": {
+						"description": "Claim a render request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/render/{requestId}/result": {
+			"post": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Submit a rendered artifact",
+				"description": "Verified before it is committed: form, geometry, palette and the QR against the pinned payload.",
+				"parameters": [
+					{
+						"name": "requestId",
+						"in": "path",
+						"required": true,
+						"description": "The durable render request",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "generation_token, artifact_base64, renderer_id, renderer_version"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Submit a rendered artifact",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/render/{requestId}/invalid": {
+			"post": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Report an input or layout error",
+				"description": "Names the element it is about. A warning never authorizes printing through a failed validation.",
+				"parameters": [
+					{
+						"name": "requestId",
+						"in": "path",
+						"required": true,
+						"description": "The durable render request",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "generation_token, code, element, detail"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Report an input or layout error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/render/{requestId}/failed": {
+			"post": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Report an infrastructure failure",
+				"description": "Retried up to a bound, because a renderer cannot touch a printer.",
+				"parameters": [
+					{
+						"name": "requestId",
+						"in": "path",
+						"required": true,
+						"description": "The durable render request",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "generation_token, detail"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Report an infrastructure failure",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/artifacts/{artifactId}/bytes": {
+			"get": {
+				"tags": [
+					"Label rendering"
+				],
+				"summary": "Fetch artifact bytes",
+				"description": "For the worker holding a live attempt on a job carrying this artifact. Authorization follows the job, never the digest.",
+				"parameters": [
+					{
+						"name": "artifactId",
+						"in": "path",
+						"required": true,
+						"description": "The artifact whose bytes are the authority for this print",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Fetch artifact bytes",
+						"content": {
+							"image/png": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/artifacts/{artifactId}/image": {
+			"get": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "The rendered preview image",
+				"description": "For the designer, under ADMIN.",
+				"parameters": [
+					{
+						"name": "artifactId",
+						"in": "path",
+						"required": true,
+						"description": "The artifact whose bytes are the authority for this print",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "The rendered preview image",
+						"content": {
+							"image/png": {
+								"schema": {
+									"type": "string",
+									"format": "binary"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/workers/{workerId}/renderer-credentials": {
+			"post": {
+				"tags": [
+					"Label templates"
+				],
+				"summary": "Issue a renderer credential",
+				"description": "A label-renderer key against the same identity row. It is refused on every worker route, which is what makes \"may not claim a print attempt\" a property of the credential.",
+				"parameters": [
+					{
+						"name": "workerId",
+						"in": "path",
+						"required": true,
+						"description": "The worker or renderer identity row",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Issue a renderer credential",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	},
 	"components": {
@@ -9225,7 +10307,12 @@
 					"label_printer_status",
 					"print_jobs",
 					"print_attempts",
-					"print_evidence"
+					"print_evidence",
+					"label_templates",
+					"label_template_versions",
+					"label_assets",
+					"label_media_profiles",
+					"label_render_requests"
 				]
 			},
 			"ExposedEntityNoListing": {
@@ -9259,7 +10346,12 @@
 					"label_printer_status",
 					"print_jobs",
 					"print_attempts",
-					"print_evidence"
+					"print_evidence",
+					"label_templates",
+					"label_template_versions",
+					"label_assets",
+					"label_media_profiles",
+					"label_render_requests"
 				]
 			},
 			"ExposedEntityNoDelete": {
@@ -9286,7 +10378,12 @@
 					"label_printer_status",
 					"print_jobs",
 					"print_attempts",
-					"print_evidence"
+					"print_evidence",
+					"label_templates",
+					"label_template_versions",
+					"label_assets",
+					"label_media_profiles",
+					"label_render_requests"
 				]
 			},
 			"ExposedEntityEditRequiresAdmin": {
