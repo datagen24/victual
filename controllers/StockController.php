@@ -158,9 +158,10 @@ class StockController extends BaseController
 		}
 	}
 
-	/** Serves a stateless scanner; the resolution API applies location read permission. */
+	/** Serves the stateless scanner under the same read grant as the locations list. */
 	public function LocationLabels(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'locationlabels');
 	}
 

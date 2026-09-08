@@ -359,7 +359,8 @@ its group A row is now complete. Its API distinguishes live, retired and unknown
 for a reader with `STOCK_VIEW`; callers without that permission receive unknown.
 
 The location list now links to `/locationlabels`, a stateless scan-and-show page over that
-API. Keyboard scanners submit with Enter; the existing camera component can supply a code.
+API. The page requires `STOCK_VIEW`, like the locations list; the API independently returns
+unknown to callers without that grant. Keyboard scanners submit with Enter; the existing camera component can supply a code.
 Live labels display the location name, retired labels display the retained former name,
 and unknown or unauthorized labels display the same unknown result. Names are rendered as
 text. Failed requests have a retryable error; an older response cannot replace a newer scan.
