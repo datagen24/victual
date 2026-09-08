@@ -13,6 +13,8 @@ class ApiKeyService extends BaseService
 	 * type for the anonymously accessible calendar iCal export URL.
 	 */
 	const API_KEY_TYPE_DEFAULT = 'default';
+	const API_KEY_TYPE_LABEL_WORKER = 'label-worker';
+	const API_KEY_TYPE_LABEL_VERIFIER = 'label-verifier';
 	const API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL = 'special-purpose-calendar-ical';
 
 	/**
