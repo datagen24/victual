@@ -5,8 +5,9 @@ will actually print, and print it — with the printed bytes kept, so an exact r
 same label rather than a similar one.
 **Depends on:** [12](12-frontend-shared-core.md) (landed), [01](01-file-storage.md) (landed),
 [19](19-rbac.md) piece 1 (implemented), and [25](25-label-infrastructure.md)'s identity and
-job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md), which is
-**Proposed** — see **Gates**.
+job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
+**accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
+cleared.**
 **Status:** draft for review. Scheduled into wave 3b alongside 25.
 **Migrations:** inventoried below; **no reservation is claimed yet**, deliberately.
 

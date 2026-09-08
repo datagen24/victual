@@ -23,7 +23,7 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 03 | [Category minimum stock](03-category-min-stock.md) | Landed | Wave 3b; PostgreSQL; migration 0268. Note-only shopping list row (Q1) remains a follow-up. |
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
-| 06 | [Location barcodes](06-location-barcodes.md) | Draft | Wave 3b, [issue 79](https://github.com/datagen24/victual/issues/79). Depends on 25's first usable release — the point at which a requested label physically prints. Owns the print actions, the label's content and placement, and the stateless surface that resolves a scanned `vctl:` code to its location. 12 landed; constrained by accepted ADR-0011. Interactive current-location scanning — the session concept — is still deferred to a separate plan after 08. |
+| 06 | [Location barcodes](06-location-barcodes.md) | Draft | Wave 3b, [issue 79](https://github.com/datagen24/victual/issues/79). Depends on 25's first usable release — the point at which a requested label physically prints. Owns the print actions, the label's content and placement, and the stateless surface that resolves a scanned `vctl:` code to its location. 12 landed; constrained by accepted ADR-0011. **Gate 1 cleared 2026-09-08**: ADR-0019 and ADR-0021 are accepted, so 25 and 27 may build — but nothing under this issue is written, and **27 is on its critical path** because a job is not claimable until a validated artifact is attached. Interactive current-location scanning — the session concept — is still deferred to a separate plan after 08. |
 | 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work. |
 | 08 | [Nested locations](08-nested-locations.md) | Draft | 12 and 14's fixture tooling. |
 | 09 | [US barcode lookup sources](09-barcode-lookup-sources.md) | Deferred | Q1's kitchen experiment; S14 before adding sources. |
@@ -42,9 +42,9 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
 | 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
-| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. **Narrowed 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts move to [27](27-label-templates-and-rendering.md), so 0270 carries eight tables rather than nine and this plan keeps identity, jobs, printer configuration and delivery. It also owns the import refusal ADR-0021 decision item 3 requires, since `labels` is its table. Gated on ADR-0019, which is **Proposed** and carries five acceptance prerequisites. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
+| 25 | [Label infrastructure](25-label-infrastructure.md) | Draft | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. **Narrowed 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts move to [27](27-label-templates-and-rendering.md), so 0270 carries eight tables rather than nine and this plan keeps identity, jobs, printer configuration and delivery. It also owns the import refusal ADR-0021 decision item 3 requires, since `labels` is its table. Gated on ADR-0019, **accepted 2026-09-07** with all five gates met, and on ADR-0021, accepted the same day and before it — **both gates cleared; nothing is built yet**. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 | 26 | [Documentation site](26-documentation-site.md) | Piece 1 implemented | Wave-independent. Piece 1, the developer section, is built: staging script, MkDocs and Read the Docs configuration, the pinned phpDocumentor reference, and a strict build in the `lint` job. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed**; piece 1 is the evidence its prerequisites 2 and 4 ask for. Piece 2, the manual, waits on Q7's task documentation across 81 pages. |
-| 27 | [Label templates and rendering](27-label-templates-and-rendering.md) | Draft | Wave 3b, alongside 25. Owns the browser designer, the headless renderer, previews and print artifacts; 25 keeps identity, jobs, printer configuration and the delivery worker. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md), which is **Proposed** and supersedes three boundaries of accepted ADR-0011. Migrations inventoried, not reserved. Owns sweep finding S32. |
+| 27 | [Label templates and rendering](27-label-templates-and-rendering.md) | Draft | Wave 3b, alongside 25. Owns the browser designer, the headless renderer, previews and print artifacts; 25 keeps identity, jobs, printer configuration and the delivery worker. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md), **accepted 2026-09-07** with all six prerequisites met — **gate cleared**. **No tracking issue yet**, unlike 25's #93, and 06 depends on this plan as well as on 25: a print job is not claimable until a validated artifact is attached. Migrations inventoried, not reserved. Owns sweep finding S32. |
 
 ## Order of operations
 
@@ -93,10 +93,19 @@ obligation, which no source `bin/victual-db-import` accepts can discharge. Templ
 application data, a reprint replays retained artifact bytes, and an import refuses a target
 holding live labels. [27](27-label-templates-and-rendering.md) owns the designer, the renderer,
 previews and artifacts; 25 keeps identity, jobs, printer configuration and delivery, and also
-owns the import refusal because `labels` is its table. 0021 is **Proposed** with six acceptance
-prerequisites, its forward pointer on 0011 belongs to the accepting pull request, and 27's
-migrations are inventoried rather than reserved — 0271–0273 are still plans 23 and 22's, and the
-branch that writes the first file applies the lowest-free-slot rule.
+owns the import refusal because `labels` is its table. 27's migrations are inventoried rather
+than reserved — 0271–0273 are still plans 23 and 22's, and the branch that writes the first file
+applies the lowest-free-slot rule.
+
+**Both records were accepted 2026-09-07**, 0021 first because 0019's ownership model is the one
+0021 decides, each on its own bookkeeping-only pull request. All five of 0019's gates and all
+six of 0021's prerequisites were met, with physical evidence on both printers this deployment
+has. **That authorizes the work; it does not do it.** No schema, no route and no UI exists
+under 25 or 27, every gate run was a disposable spike, and
+[issue 79](https://github.com/datagen24/victual/issues/79) stays open behind all of it — see
+that plan's *Where issue 79 stands* for the chain. Two gaps worth naming: **27 has no tracking
+issue** while 25 has #93, and 27 sits on 06's critical path because a print job is not claimable
+until a validated artifact is attached.
 
 **Plan 26 is independent of the wave order**, since it touches no runtime code. Its piece 1,
 the developer section of the documentation site, is implemented; its piece 2, the manual, waits
