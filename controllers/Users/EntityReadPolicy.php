@@ -8,6 +8,15 @@ use Victual\Controllers\Api\EInvalidApiQuery;
 class EntityReadPolicy
 {
 	const PERMISSIONS = [
+		'label_workers' => User::PERMISSION_ADMIN,
+		'label_drivers' => User::PERMISSION_ADMIN,
+		'label_worker_capabilities' => User::PERMISSION_ADMIN,
+		'label_printers' => User::PERMISSION_ADMIN,
+		'label_printer_status' => User::PERMISSION_ADMIN,
+		'print_jobs' => User::PERMISSION_ADMIN,
+		'print_attempts' => User::PERMISSION_ADMIN,
+		'print_evidence' => User::PERMISSION_ADMIN,
+
 		'products' => User::PERMISSION_STOCK_VIEW,
 		'product_barcodes' => User::PERMISSION_STOCK_VIEW,
 		'locations' => User::PERMISSION_STOCK_VIEW,

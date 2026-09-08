@@ -6489,6 +6489,1173 @@
 					}
 				}
 			}
+		},
+		"/labels/pair": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Pair",
+				"description": "Exchange single-use administrator-issued pairing material. Owner is taken from the session, never from this request.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"security": [],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"material": {
+										"type": "string",
+										"pattern": "^[0-9a-f]{64}$"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/credentials/rotate": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Rotate",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"material": {
+										"type": "string",
+										"pattern": "^[0-9a-f]{64}$"
+									},
+									"rotation_request_id": {
+										"type": "string",
+										"pattern": "^[0-9a-f]{64}$"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/register": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Register",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"drivers": {
+										"type": "array",
+										"maxItems": 64,
+										"items": {
+											"$ref": "#/components/schemas/LabelDriverRegistration"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/jobs/claim": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Claim",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts. Production returns an empty list until plan 27 provides validated artifacts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"limit": {
+										"type": "integer",
+										"minimum": 1,
+										"maximum": 50,
+										"default": 1
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/attempts/{attemptId}/heartbeat": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Heartbeat",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "attemptId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/attempts/{attemptId}/sent": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Sent",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "attemptId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/attempts/{attemptId}/result": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Result",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "attemptId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"outcome": {
+										"type": "string",
+										"enum": [
+											"printed",
+											"failed"
+										]
+									},
+									"detail": {
+										"type": "object"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/attempts/{attemptId}/evidence": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Evidence",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "attemptId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"submission_id": {
+										"type": "string"
+									},
+									"evidence_type": {
+										"type": "string",
+										"enum": [
+											"device_status",
+											"decoded_scan"
+										]
+									},
+									"observed_at": {
+										"type": "string",
+										"format": "date-time"
+									},
+									"detail": {
+										"type": "object"
+									},
+									"decoded_uid": {
+										"type": "string"
+									},
+									"printer_status": {
+										"type": "object"
+									},
+									"confidence": {
+										"type": "number",
+										"minimum": 0,
+										"maximum": 1
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/printers/{printerId}/status": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Status",
+				"description": "Worker credential required; authorization is scoped to this worker and its assigned printers/attempts.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "printerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"reported_media": {
+										"type": "object"
+									},
+									"device_state": {
+										"type": "string"
+									},
+									"error_state": {
+										"type": "object"
+									},
+									"warning_state": {
+										"type": "object"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/printers": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Printer create",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/LabelPrinterWrite"
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/printers/{printerId}": {
+			"put": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Printer update",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "printerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/LabelPrinterWrite"
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Printer delete",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "printerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				]
+			}
+		},
+		"/labels/printers/{printerId}/schema-version": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Printer move",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "printerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/LabelPrinterWrite"
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/workers": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Worker create",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"name",
+									"configuration_mode"
+								],
+								"properties": {
+									"name": {
+										"type": "string"
+									},
+									"description": {
+										"type": "string"
+									},
+									"configuration_mode": {
+										"type": "string",
+										"enum": [
+											"declared",
+											"paired"
+										]
+									},
+									"active": {
+										"type": "integer",
+										"enum": [
+											0,
+											1
+										]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/workers/{workerId}": {
+			"put": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Worker update",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "workerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"name",
+									"configuration_mode"
+								],
+								"properties": {
+									"name": {
+										"type": "string"
+									},
+									"description": {
+										"type": "string"
+									},
+									"configuration_mode": {
+										"type": "string",
+										"enum": [
+											"declared",
+											"paired"
+										]
+									},
+									"active": {
+										"type": "integer",
+										"enum": [
+											0,
+											1
+										]
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/workers/{workerId}/pairing-material": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Pairing",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "workerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/workers/{workerId}/credentials": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Issue",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "workerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Revoke",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "workerId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				]
+			}
+		},
+		"/labels/jobs": {
+			"get": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Jobs",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object"
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				}
+			}
+		},
+		"/labels/jobs/{jobId}/authorize-attempt": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Authorize",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "jobId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"attempt_id": {
+										"type": "integer",
+										"minimum": 1
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/drivers/{driverId}/schemas/{schemaVersion}": {
+			"get": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Schema",
+				"description": "Requires ADMIN.",
+				"responses": {
+					"200": {
+						"description": "Operation result",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid or expired credential"
+					},
+					"403": {
+						"description": "Caller does not own this resource"
+					},
+					"422": {
+						"description": "Refused request with field, code and error_message"
+					}
+				},
+				"parameters": [
+					{
+						"name": "driverId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					},
+					{
+						"name": "schemaVersion",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				]
+			}
+		},
+		"/labels/locations/{locationId}/print": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Queue a location label",
+				"description": "Requires MASTER_DATA_EDIT. Atomically issues the label and enqueues the job. Production delivery is blocked awaiting plan 27 artifacts.",
+				"parameters": [
+					{
+						"name": "locationId",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"import_epoch",
+									"printer_id"
+								],
+								"properties": {
+									"import_epoch": {
+										"type": "integer",
+										"minimum": 0
+									},
+									"printer_id": {
+										"type": "integer",
+										"minimum": 1
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Job queued, awaiting_artifact"
+					},
+					"422": {
+						"description": "Invalid printer configuration or request"
+					}
+				}
+			}
 		}
 	},
 	"components": {
@@ -8050,7 +9217,15 @@
 					"uihelper_shopping_list",
 					"mqtt_product_entities",
 					"product_groups_missing",
-					"roles"
+					"roles",
+					"label_workers",
+					"label_drivers",
+					"label_worker_capabilities",
+					"label_printers",
+					"label_printer_status",
+					"print_jobs",
+					"print_attempts",
+					"print_evidence"
 				]
 			},
 			"ExposedEntityNoListing": {
@@ -8076,7 +9251,15 @@
 					"permission_hierarchy",
 					"uihelper_shopping_list",
 					"product_groups_missing",
-					"roles"
+					"roles",
+					"label_workers",
+					"label_drivers",
+					"label_worker_capabilities",
+					"label_printers",
+					"label_printer_status",
+					"print_jobs",
+					"print_attempts",
+					"print_evidence"
 				]
 			},
 			"ExposedEntityNoDelete": {
@@ -8095,7 +9278,15 @@
 					"permission_hierarchy",
 					"uihelper_shopping_list",
 					"product_groups_missing",
-					"roles"
+					"roles",
+					"label_workers",
+					"label_drivers",
+					"label_worker_capabilities",
+					"label_printers",
+					"label_printer_status",
+					"print_jobs",
+					"print_attempts",
+					"print_evidence"
 				]
 			},
 			"ExposedEntityEditRequiresAdmin": {
@@ -8199,6 +9390,114 @@
 						"type": "string",
 						"nullable": true,
 						"description": "Sorted comma-separated immutable role codes granting this permission; null when no role grants it."
+					}
+				}
+			},
+			"LabelPrinterWrite": {
+				"type": "object",
+				"required": [
+					"name",
+					"worker_id",
+					"driver_id",
+					"driver_schema_version",
+					"connection",
+					"connection_type",
+					"model",
+					"settings"
+				],
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"description": {
+						"type": "string"
+					},
+					"driver_id": {
+						"type": "string"
+					},
+					"driver_schema_version": {
+						"type": "string"
+					},
+					"connection": {
+						"type": "string"
+					},
+					"connection_type": {
+						"type": "string"
+					},
+					"model": {
+						"type": "string"
+					},
+					"worker_id": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"settings": {
+						"type": "object"
+					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						]
+					},
+					"is_default": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						]
+					}
+				}
+			},
+			"LabelDriverRegistration": {
+				"type": "object",
+				"required": [
+					"driver_id",
+					"schema_version",
+					"contract_version",
+					"discriminator_properties",
+					"combination_binding",
+					"settings_schemas",
+					"capability_document",
+					"profile_contract_versions"
+				],
+				"properties": {
+					"driver_id": {
+						"type": "string"
+					},
+					"schema_version": {
+						"type": "string"
+					},
+					"contract_version": {
+						"type": "integer",
+						"enum": [
+							1
+						]
+					},
+					"discriminator_properties": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"combination_binding": {
+						"type": "object"
+					},
+					"settings_schemas": {
+						"type": "array",
+						"items": {
+							"type": "object"
+						}
+					},
+					"capability_document": {
+						"type": "object"
+					},
+					"profile_contract_versions": {
+						"type": "array",
+						"items": {
+							"type": "integer"
+						}
 					}
 				}
 			}
