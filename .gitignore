@@ -32,3 +32,6 @@ __pycache__/
 
 # Canonicalization corpus written by .devtools/labels/canonical-json-tests.php
 .corpus.jsonl
+
+# Linux build of the renderer, staged for the cross-implementation agreement test
+.agreement/
