@@ -833,7 +833,7 @@ does.
 [victual-label-renderer](https://github.com/datagen24/victual-label-renderer) at
 `f05c432f7857f976e0223296f968d641fa401254` and
 [victual-label-worker](https://github.com/datagen24/victual-label-worker) at
-`9a60f9b597ef91d83ffb430aaf144b199af5915b`, both as `flake = false` inputs built here by
+`039ecfe5f899762d9ec4e77feb541f78aa8de2e4`, both as `flake = false` inputs built here by
 `rustPlatform`. The flake owns the image, the pin and the deployment; the other repositories own
 the driver matrix and the device transport.
 

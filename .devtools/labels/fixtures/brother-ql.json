@@ -70,7 +70,7 @@
         "resolution_x": 300,
         "resolution_y": 300,
         "color_mode": "black_red",
-        "printable_width_um": 62000,
+        "printable_width_um": 58928,
         "printable_length_um": {
           "min": 1000,
           "max": 100000

@@ -51,3 +51,18 @@ no bytes to a printer. The synthetic Brother contract is in `fixtures/brother-ql
 
 The frontend probe is `node .devtools/frontend/label-printers.js --url <demo-app-url>`;
 it verifies the generated form's 422 refusal, successful save and visible artifact gate.
+
+## The fixture's printable width, and why it is 58928 rather than 62000
+
+`fixtures/brother-ql.json` declared `printable_width_um: 62000` — the width of the *tape* —
+where the capability contract asks for the **printable area**. The two differ by twelve dots on
+a QL-820NWBc: 62 mm of tape carries 732 device dots and 696 of them print.
+
+That is issue [#90](https://github.com/datagen24/victual/issues/90)'s defect written into a
+fixture. The prototype authored an image against `dots_total` while its library compared
+against `dots_printable`, so every endless print was silently resampled; a profile derived from
+62000 µm would fix the raster at 732 px and the worker — which checks the grid against the
+device's printable dot count and refuses rather than resizing — would refuse every artifact
+rendered from it. The number is now 58928, which is 696 dots at 300 dpi.
+
+Found on 2026-09-08 by the worker's grid check, which is the check existing for exactly this.
