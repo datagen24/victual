@@ -1,0 +1,61 @@
+<?php
+require __DIR__.'/test-support.php';
+use Victual\Services\Labels\{LabelWorkerCredentialService,LabelWorkerAuthorization,LabelPrintJobService,PrintEvidenceService};
+runLabelTests(function(PDO $db){
+ [$worker,$printer]=seed($db);$credentials=new LabelWorkerCredentialService($db,1,2,2);
+ $declared=tx($db,fn()=>$credentials->IssueDeclared($worker,1));check($credentials->Authenticate($declared['credential'])!==null,'Declared worker authenticates');
+ $db->exec("INSERT INTO label_workers(name,configuration_mode) VALUES('paired','paired')");$paired=(int)$db->lastInsertId();
+ $material=tx($db,fn()=>$credentials->PairingMaterial($paired,42));
+ $first=tx($db,fn()=>$credentials->Pair($material['material']));
+ check((int)$credentials->Authenticate($first['credential'])['user_id']===42,'Pair binds creating administrator');
+ refused(fn()=>tx($db,fn()=>$credentials->Pair($material['material'])),'unauthorized');
+ $request=bin2hex(random_bytes(32));$secret=bin2hex(random_bytes(32));
+ $next=tx($db,fn()=>$credentials->Rotate($first['credential'],$request,$secret));
+ $replay=tx($db,fn()=>$credentials->Rotate($first['credential'],$request,$secret));check($next===$replay,'Identical rotation rederives successor');
+ check($credentials->Authenticate($first['credential'])===null,'Superseded key refused on ordinary route');
+ check($credentials->Authenticate($next['credential'])!==null,'Successor remains valid after stale ordinary request');
+ refused(fn()=>tx($db,fn()=>$credentials->Rotate($first['credential'],$request,bin2hex(random_bytes(32)))),'replay_mismatch');
+ $reuse=tx($db,fn()=>$credentials->Rotate($first['credential'],bin2hex(random_bytes(32)),bin2hex(random_bytes(32))));
+ check($reuse['revoked']===true,'Consumed key under different request revokes session');
+ check($credentials->Authenticate($next['credential'])===null,'Reuse revokes successor');
+ check((int)$db->query('SELECT requires_repairing FROM label_workers WHERE id='.$paired)->fetchColumn()===1,'Reuse visible on worker');
+ $material=tx($db,fn()=>$credentials->PairingMaterial($paired,42));$first=tx($db,fn()=>$credentials->Pair($material['material']));
+ usleep(1100000);check($credentials->Authenticate($first['credential'])===null,'Short credential clock expires');
+ $next=tx($db,fn()=>$credentials->Rotate($first['credential'],bin2hex(random_bytes(32)),bin2hex(random_bytes(32))));
+ check($credentials->Authenticate($next['credential'])!==null,'Short-expired key can rotate within session');
+ usleep(1100000);check($credentials->Authenticate($next['credential'],true)===null,'Rotation does not extend absolute session');
+ $job=tx($db,fn()=>(new LabelPrintJobService($db))->Enqueue(1,0,$printer));
+ $attempt=tx($db,fn()=>(new ReadyAttempts($db))->Claim($worker))[0]['attempt'];
+ refused(fn()=>(new LabelWorkerAuthorization($db))->Authorize('labels-result',$paired,(int)$attempt['id']),'forbidden');
+ $evidence=['submission_id'=>'one','evidence_type'=>'device_status','observed_at'=>'2026-09-08T00:00:00Z','printer_status'=>['state'=>'idle'],'detail'=>['state'=>'idle']];
+ $service=new PrintEvidenceService($db);
+ $one=tx($db,fn()=>$service->Submit($worker,(int)$attempt['id'],$evidence));$two=tx($db,fn()=>$service->Submit($worker,(int)$attempt['id'],$evidence));check($one['id']===$two['id'],'Evidence deduplicates');
+
+ // Rotation does not change worker identity, so the successor can report the same attempt.
+ $db->exec('UPDATE label_printers SET worker_id='.$paired.' WHERE id='.$printer);
+ $db->exec('UPDATE print_attempts SET worker_id='.$paired.' WHERE id='.(int)$attempt['id']);
+ $long=new LabelWorkerCredentialService($db,30,60,30);
+ $material=tx($db,fn()=>$long->PairingMaterial($paired,42));$old=tx($db,fn()=>$long->Pair($material['material']));
+ $attempts=new ReadyAttempts($db);
+ $sent=tx($db,fn()=>$attempts->Sent($paired,(int)$attempt['id']));
+ $again=tx($db,fn()=>$attempts->Sent($paired,(int)$attempt['id']));check($sent['bytes_sent_at']===$again['bytes_sent_at'],'Sent is idempotent');
+ $rotated=tx($db,fn()=>$long->Rotate($old['credential'],bin2hex(random_bytes(32)),bin2hex(random_bytes(32))));
+ $auth=$long->Authenticate($rotated['credential']);check((int)$auth['worker_id']===$paired,'Rotation preserves attempt owner');
+ $result=tx($db,fn()=>$attempts->Result((int)$auth['worker_id'],(int)$attempt['id'],'printed',['device'=>'complete']));
+ $again=tx($db,fn()=>$attempts->Result($paired,(int)$attempt['id'],'printed',['device'=>'complete']));check($result['reported_at']===$again['reported_at'],'Result is idempotent');
+ $db->exec('UPDATE label_printers SET worker_id='.$worker.' WHERE id='.$printer);
+ // Expired, superseded reports remain on their own row and cannot finish the replacement.
+ $jobs=new LabelPrintJobService($db);$newJob=tx($db,fn()=>$jobs->Enqueue(1,0,$printer));
+ $oldAttempt=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
+ $db->exec("UPDATE print_attempts SET lease_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=".$oldAttempt['id']);
+ tx($db,fn()=>$jobs->AuthorizeAnotherAttempt($newJob,(int)$oldAttempt['id']));
+ $newAttempt=tx($db,fn()=>$attempts->Claim($worker))[0]['attempt'];
+ tx($db,fn()=>$attempts->Result($worker,(int)$oldAttempt['id'],'printed',['device'=>'late']));
+ check($db->query('SELECT outcome FROM print_jobs WHERE id='.$newJob)->fetchColumn()===null,'Superseded result cannot finish replacement');
+ check($db->query('SELECT reported_outcome FROM print_attempts WHERE id='.$oldAttempt['id'])->fetchColumn()==='printed','Superseded report retained');
+ refused(fn()=>tx($db,fn()=>$attempts->Heartbeat($worker,(int)$oldAttempt['id'])),'lease_ended');
+ tx($db,fn()=>$credentials->Revoke($worker));check($credentials->Authenticate($declared['credential'])===null,'Revoked worker key refused');
+ check((int)$db->query('SELECT worker_id FROM label_printers WHERE id='.$printer)->fetchColumn()===$worker,'Revocation preserves printer assignment');
+ $source=file_get_contents(dirname(__DIR__,2).'/routes.php');preg_match_all("/setName\('((?:labels-)[^']+)'\)/",$source,$matches);$actual=$matches[1];$expected=array_keys(LabelWorkerAuthorization::ROUTE_KEY_TYPES);sort($actual);sort($expected);check($actual===$expected,'Nine route names and authorization map match');
+ check(!str_contains(file_get_contents(dirname(__DIR__,2).'/controllers/Api/LabelWorkerApiController.php'),'User::CheckPermission'),'Worker routes never call user permission checks');
+});

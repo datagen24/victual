@@ -441,6 +441,9 @@
 							</a>
 						</li>
 						@endif
+						@if(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_ADMIN))
+						<li><a class="nav-link discrete-link" href="{{ $U('/labelprintjobs') }}"><span class="nav-link-text">{{ $__t('Label print jobs') }}</span></a></li>
+						@endif
 						<li class="@if($viewName == 'userfields') active-page @endif">
 							<a class="nav-link discrete-link"
 								href="{{ $U('/userfields') }}">

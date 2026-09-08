@@ -13,7 +13,7 @@
 # See nix/README.md, "Bootstrapping the hashes".
 {
   # Hash of the Composer vendor tree built from composer.json + composer.lock.
-  composerVendor = "sha256-OV31XQm1SGLsp5pEdrTQmHbF3QDw15gXlXuqrFAnpoo=";
+  composerVendor = "sha256-+jbt34VCyW44W3MhiZSV+8DldnrEb0LhDhbOZX/PyKk=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
   yarnOfflineCache = "sha256-iy37t9dgTNc61wU+97a8GMkyjFdN6Y/dhFoE2/lH1BE=";

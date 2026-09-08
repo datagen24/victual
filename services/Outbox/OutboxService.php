@@ -53,6 +53,7 @@ class OutboxService extends BaseService
 	 * would be a second copy of the ledger that could disagree with the first.
 	 */
 	const EVENT_STOCK_TRANSACTION_BOOKED = 'stock.transaction_booked';
+	const EVENT_LABEL_PRINT_REQUESTED = 'label.print_requested';
 
 	/**
 	 * The payload shape consumers in this version understand.
@@ -83,13 +84,24 @@ class OutboxService extends BaseService
 	 * @param string $eventType One of the EVENT_* constants
 	 * @param array $payload Encoded as JSON; keep it small
 	 */
-	public function Enqueue(string $eventType, array $payload): void
+	public function Enqueue(string $eventType, array $payload): int
 	{
-		$this->DB->outbox()->createRow([
+		$row = $this->DB->outbox()->createRow([
 			'event_type' => $eventType,
 			'payload' => json_encode($payload),
 			'attempts' => 0
-		])->save();
+		]);
+		$row->save();
+		return (int)$row->id;
+	}
+
+	/** Append on an explicitly supplied transaction, returning the inserted event identity. */
+	public static function EnqueueInTransaction(\PDO $db, string $eventType, array $payload): int
+	{
+		if (!$db->inTransaction()) throw new \LogicException('Outbox enqueue requires a transaction');
+		$query = $db->prepare('INSERT INTO outbox(event_type, payload, attempts) VALUES (?, ?, 0) RETURNING id');
+		$query->execute([$eventType, json_encode($payload, JSON_THROW_ON_ERROR)]);
+		return (int)$query->fetchColumn();
 	}
 
 	/**

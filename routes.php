@@ -10,6 +10,9 @@ use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\RolesApiController;
 use Victual\Controllers\Api\LabelsApiController;
+use Victual\Controllers\Api\LabelWorkerApiController;
+use Victual\Controllers\Api\LabelPrintersApiController;
+use Victual\Controllers\LabelPrintJobsController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Controllers\Api\SystemApiController;
 use Victual\Controllers\Api\TasksApiController;
@@ -82,6 +85,8 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/inventory', [StockController::class, 'Inventory']);
 	$group->get('/stockentry/{entryId}', [StockController::class, 'StockEntryEditForm']);
 	$group->get('/stocksettings', [StockController::class, 'StockSettings']);
+	$group->get('/labelprinters', [LabelPrintJobsController::class, 'Printers']);
+	$group->get('/labelprintjobs', [LabelPrintJobsController::class, 'Index']);
 	$group->get('/locationlabels', [StockController::class, 'LocationLabels']);
 	$group->get('/locations', [StockController::class, 'LocationsList']);
 	$group->get('/location/{locationId}', [StockController::class, 'LocationEditForm']);
@@ -196,6 +201,28 @@ $app->group('/api', function (RouteCollectorProxy $group)
 
 	// Role bundles
 	$group->get('/roles', [RolesApiController::class, 'ListRoles']);
+	$group->post('/labels/pair', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-pair');
+	$group->post('/labels/credentials/rotate', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-rotate');
+	$group->post('/labels/register', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-register');
+	$group->post('/labels/jobs/claim', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-claim');
+	$group->post('/labels/attempts/{attemptId}/heartbeat', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-heartbeat');
+	$group->post('/labels/attempts/{attemptId}/sent', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-sent');
+	$group->post('/labels/attempts/{attemptId}/result', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-result');
+	$group->post('/labels/attempts/{attemptId}/evidence', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-evidence');
+	$group->post('/labels/printers/{printerId}/status', [LabelWorkerApiController::class, 'Dispatch'])->setName('labels-status');
+	$group->post('/labels/printers', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-printer-create');
+	$group->put('/labels/printers/{printerId}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-printer-update');
+	$group->post('/labels/printers/{printerId}/schema-version', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-printer-move');
+	$group->delete('/labels/printers/{printerId}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-printer-delete');
+	$group->post('/labels/workers', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-worker-create');
+	$group->put('/labels/workers/{workerId}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-worker-update');
+	$group->post('/labels/workers/{workerId}/pairing-material', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-pairing');
+	$group->post('/labels/workers/{workerId}/credentials', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-issue');
+	$group->delete('/labels/workers/{workerId}/credentials', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-revoke');
+	$group->get('/labels/jobs', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-jobs');
+	$group->post('/labels/jobs/{jobId}/authorize-attempt', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-authorize');
+	$group->get('/labels/drivers/{driverId}/schemas/{schemaVersion}', [LabelPrintersApiController::class, 'Dispatch'])->setName('label-admin-schema');
+	$group->post('/labels/locations/{locationId}/print', [LabelsApiController::class, 'PrintLocation']);
 	$group->get('/labels/resolve/{code}', [LabelsApiController::class, 'Resolve']);
 	$group->get('/labels/locations/{locationId}/context', [LabelsApiController::class, 'LocationContext']);
 	$group->post('/roles', [RolesApiController::class, 'CreateRole']);

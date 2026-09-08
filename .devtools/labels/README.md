@@ -24,3 +24,30 @@ The existing `.devtools/pgsql/import-tests.php` additionally exercises both comm
 SQLite fixtures through `bin/victual-db-import`, including refusal with and without
 `--force` and survival of retired label history. Run it through the PostgreSQL suite's
 `import` phase; it requires a disposable target database.
+
+
+## Group B
+
+Against a disposable PostgreSQL database, with `LABEL_TEST_DSN`, `PGUSER` and `PGPASSWORD`
+set as above:
+
+```sh
+php .devtools/labels/registry-tests.php
+php .devtools/labels/print-job-tests.php
+php .devtools/labels/worker-api-tests.php
+```
+
+Each program creates a random schema and drops it in `finally`. Claim concurrency uses
+child processes and observes PostgreSQL lock waits. The `ReadyAttempts` test subclass
+bypasses the production artifact gate only inside tests; there is no API or environment
+switch for it. Production claims stay empty until plan 27.
+
+`LABEL_HTTP_URL` and `LABEL_HTTP_ADMIN_KEY` let
+`python3 .devtools/labels/http-tests.py` drive a **disposable authenticated** application
+through its real routes. It creates workers, printers and locations and leaves its fixtures
+for inspection. Do not use a real household database. This checks public pairing, rotation,
+revocation and worker-key scoping in addition to enqueue/configuration/monitoring. It sends
+no bytes to a printer. The synthetic Brother contract is in `fixtures/brother-ql.json`.
+
+The frontend probe is `node .devtools/frontend/label-printers.js --url <demo-app-url>`;
+it verifies the generated form's 422 refusal, successful save and visible artifact gate.

@@ -276,7 +276,9 @@ class GenericEntityApiController extends BaseApiController
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
 		}
 
-		$object = $this->DB->{$args['entity']}($args['objectId']);
+		$object = $args['entity'] === 'label_printer_status'
+			? $this->DB->label_printer_status()->where('printer_id', $args['objectId'])->fetch()
+			: $this->DB->{$args['entity']}($args['objectId']);
 		if ($args['entity'] === 'locations')
 		{
 			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active')->where('id', $args['objectId'])->fetch();

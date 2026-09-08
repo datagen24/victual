@@ -34,7 +34,7 @@ class DatabaseImporter
 	 * carrying the source's numbers would then skip a future migration of its own with
 	 * the same number, believing it already ran.
 	 */
-	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state'];
+	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials'];
 
 	/**
 	 * The oldest source schema this importer accepts, as a migration number.
@@ -131,6 +131,13 @@ class DatabaseImporter
 				$this->Target->exec('UPDATE label_import_state SET epoch = epoch + 1 WHERE id = 1');
 			}
 			$this->AssertTargetIsEmpty($tables, $force);
+			// A pairing session binds the creating user's id. Imports replace those users;
+			// retained pairing material must not mint a credential for a reused account id.
+			if ($this->Target->query("SELECT to_regclass('label_worker_sessions')")->fetchColumn() !== null)
+			{
+				$this->Target->exec("UPDATE label_worker_sessions SET revoked_at=CURRENT_TIMESTAMP, revoked_reason='admin' WHERE revoked_at IS NULL");
+			}
+
 
 			// Triggers exist to maintain data as the application changes it. Replaying
 			// rows that were already shaped by the source's triggers has to leave them

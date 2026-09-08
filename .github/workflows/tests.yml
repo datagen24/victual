@@ -186,6 +186,27 @@ jobs:
           PGPASSWORD: victual
         run: php .devtools/labels/identity-tests.php
 
+      - name: Label print jobs and fences
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/print-job-tests.php
+
+      - name: Label worker API and credentials
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/worker-api-tests.php
+
+      - name: Label registry and configuration
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/registry-tests.php
+
       # Uploaded even when the suite fails: which code a failing run did and did not
       # reach is part of reading the failure.
       - name: Upload the coverage report
@@ -315,6 +336,10 @@ jobs:
       - name: Run product group minimum stock checks
         working-directory: .devtools/frontend
         run: node group-min-stock.js http://127.0.0.1:8085
+
+      - name: Run label printer administration checks
+        working-directory: .devtools/frontend
+        run: node label-printers.js --url http://127.0.0.1:8085
 
       - name: Run location label scan checks
         working-directory: .devtools/frontend

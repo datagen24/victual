@@ -29,6 +29,24 @@ use Slim\Routing\RouteContext;
  */
 class ApiKeyAuthenticator extends Authenticator
 {
+	public const LABEL_ROUTE_KEY_TYPES = \Victual\Services\Labels\LabelWorkerAuthorization::ROUTE_KEY_TYPES;
+
+	public function AuthenticateLabelWorker(Request $request): ?array
+	{
+		$route = RouteContext::fromRequest($request)->getRoute()?->getName();
+		if ($route === null || !isset(self::LABEL_ROUTE_KEY_TYPES[$route]) || $route === 'labels-pair') return null;
+		$key = $request->getHeaderLine($this->ApiKeyHeaderName);
+		if ($key === '') return null;
+		$service = new \Victual\Services\Labels\LabelWorkerCredentialService(
+			\Victual\Services\DatabaseService::GetInstance()->GetDbConnectionRaw());
+		foreach (self::LABEL_ROUTE_KEY_TYPES[$route] as $type)
+		{
+			$identity = $service->Authenticate($key, $route === 'labels-rotate', $type);
+			if ($identity !== null) return $identity;
+		}
+		return null;
+	}
+
 	public function __construct(Container $container)
 	{
 		parent::__construct($container);
