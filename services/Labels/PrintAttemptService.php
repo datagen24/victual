@@ -13,10 +13,19 @@ class PrintAttemptService extends LabelService
             throw new \InvalidArgumentException('Invalid lease durations');
         }
     }
-    /** Fail closed until plan 27. Only a test subclass overrides readiness. No runtime setting. */
+    /**
+     * A job is claimable only once a validated artifact is attached.
+     *
+     * Group B shipped this fail-closed, returning false for every job, because the artifact
+     * it names did not exist yet and the maintainer chose to keep production claims blocked
+     * rather than open them early against nothing. Plan 27's 0272 gives `print_jobs` the
+     * column, `ArtifactService` gives it something to point at, and this is now the real
+     * condition rather than a seam: no runtime setting turns it off, and there is no path
+     * that claims a job whose bytes have not been verified.
+     */
     protected function ArtifactReady(array $job): bool
     {
-        return false;
+        return $job['artifact_id'] !== null && $job['cancelled_at'] === null;
     }
     protected function LockClause(): string
     {
@@ -35,7 +44,7 @@ class PrintAttemptService extends LabelService
         }
         $jobs = $this->Query("SELECT j.*,o.payload FROM print_jobs j JOIN outbox o ON o.id=j.outbox_id
    JOIN label_printers p ON p.id=j.printer_id
-   WHERE p.worker_id=? AND j.outcome IS NULL AND j.attempts_made<j.attempts_authorized
+   WHERE p.worker_id=? AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.attempts_made<j.attempts_authorized
    AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM print_attempts a WHERE a.id=j.current_attempt_id AND a.ended_at IS NULL AND a.lease_expires_at>CURRENT_TIMESTAMP)
    ORDER BY j.outbox_id LIMIT 200" . $this->LockClause(), [$workerId])->fetchAll(\PDO::FETCH_ASSOC);
@@ -73,7 +82,11 @@ class PrintAttemptService extends LabelService
                 $this->Query("UPDATE print_attempts SET ended_at=CURRENT_TIMESTAMP,outcome='blocked',error_text='Assigned worker no longer advertises the exact driver version' WHERE id=?", [$attempt['id']]);
                 continue;
             }
-            $claimed[] = ['attempt' => $attempt,'payload' => $payload,'printer' => $printer];
+            // The manifest travels with the claim so the worker can compare what it was
+            // handed against the device it is holding, rather than assuming the two agree.
+            // The bytes do not: it fetches those over its own authorized route.
+            $manifest = (new ArtifactService($this->db))->Get((int)$job['artifact_id'])['manifest'];
+            $claimed[] = ['attempt' => $attempt,'payload' => $payload,'printer' => $printer,'artifact' => $manifest];
             if (count($claimed) >= $limit) {
                 break;
             }
