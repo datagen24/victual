@@ -142,10 +142,16 @@ than a preference: 0021 supersedes those boundaries of 0011, and only then does 
 reconciled text stand on an uncontradicted footing. Each still gets its own bookkeeping-only
 acceptance pull request.
 
-**ADR-0019 is Proposed, not Accepted.** Merging a record into the tree is not accepting it —
-the [lifecycle rule](../adr/README.md) is explicit that implementing a proposal, citing it in
-a plan, or receiving no objections does not accept it, and acceptance is its own pull request.
-**No schema, no route and no UI is written under this plan before both acceptances.**
+**ADR-0019 and ADR-0021 were both accepted on 2026-09-07, in that order — 0021 first**, each
+on its own bookkeeping-only pull request. The gate this section carried is therefore cleared:
+schema, routes and UI may now be written under this plan. Merging a record into the tree was
+never what accepted it — the [lifecycle rule](../adr/README.md) is explicit that implementing a
+proposal, citing it in a plan, or receiving no objections does not accept it — which is why
+this plan waited for the two pull requests rather than for the two files to appear.
+
+Nothing else about this gate changes. **The scope below is what the acceptances authorize**, and
+decision item 7's step 1 is what 0019 authorizes: the five existing `/printlabel` endpoints do
+not move and no existing response shape changes.
 
 The record carries five acceptance prerequisites, each a **disposable spike** — throwaway code
 on a scratch branch, kept only until it has answered its question. They are not this plan's

@@ -34,8 +34,10 @@ label says, and the stateless `vctl:` resolve surface.
 
 ## Gates
 
-**ADR-0021 is Proposed, not Accepted**, and **no schema, no route and no UI is written under
-this plan before that acceptance.** That gate has not moved.
+**ADR-0021 was accepted 2026-09-07**, on its own bookkeeping-only pull request, and
+**ADR-0019 was accepted the same day, after it**. The gate this section carried — no schema, no
+route, no UI before that acceptance — is cleared, and the scope below is what the two records
+authorize.
 
 **Its six acceptance prerequisites are met**, as of 2026-09-07 — the renderer comparison and
 the artifact-format comparison, which were this plan's to run, and the four that were not. Each

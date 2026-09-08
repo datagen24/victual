@@ -1,6 +1,23 @@
 # ADR-0019: Label printers are master data, and a separate worker pulls print jobs over an authenticated API
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Accepted, 2026-09-07.** **Label printers are master data; a separate worker pulls
+  print jobs over an authenticated API.** All five acceptance prerequisites below are met, each
+  annotated in place with the run that met it, the revision it was run at, and how to reproduce
+  it. **Nothing in the decision was revised by this acceptance.** Every amendment the gates
+  forced — the rotation derivation mechanism, `artifact_forms`, `provenance`, the mandatory
+  combination validation at enqueue and again before device I/O, and the scoping of
+  `completion_evidence` and `artifact_forms` to the `(driver, connection_type, combination)`
+  triple — landed before it, in the pull requests that ran the gates. That is the point of
+  gates: a key the exercise showed was missing amended the contract before acceptance rather
+  than after.
+- **Accepted after [ADR-0021](0021-label-templates-are-application-data.md), 2026-09-07**, and
+  that order was not a preference. This record's ownership model is the one 0021 decides, and
+  until 0021 was accepted, still-Accepted [ADR-0011](0011-label-namespace.md) assigned templates
+  to the drainer. Accepting this record first would have left two accepted records contradicting
+  each other with no answer to who owns a template.
+- **Accepting decides the model, not the schedule.** No `label_printers` table exists, no worker
+  repository exists, and the five `/printlabel` endpoints still fire the webhook. Decision
+  item 7 sequences the replacement and this acceptance authorizes step 1 only.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-06.
@@ -14,23 +31,23 @@
   2026-09-07** and scoped against this record on the way through — see
   *Reliance on ADR-0010* below.
 - **Reconciled against [ADR-0021](0021-label-templates-are-application-data.md), 2026-09-07.**
-  That record — also Proposed — supersedes ADR-0011's assignment of templates to the drainer,
+  That record — **accepted the same day, and first** — supersedes ADR-0011's assignment of
+  templates to the drainer,
   so template documents become Victual's and a third component, the headless renderer, takes
   the rasterizer. Decision items 1 through 5 are edited accordingly.
   **Nothing else about this record changes**: the pull transport, the driver registry and
   capability contract, claiming, fencing, leases, the four delivery facts and the
-  no-automatic-redispatch rule are untouched. Both records are Proposed and each is accepted on
-  its own pull request — but **not in either order: ADR-0021 must be accepted first, and this
-  record cannot be accepted before it.** The ownership model above is the one 0021 decides, and
-  it contradicts still-Accepted [ADR-0011](0011-label-namespace.md), whose decision item 4
-  assigns templates to the drainer and whose Consequences put the label's appearance outside
-  this repository. Accepting this record while that one still stands would leave two accepted
-  records contradicting each other, with no answer to who owns a template. 0021 supersedes those
-  boundaries; only then does the text above rest on an uncontradicted footing. The two
-  format-dependent details this record once owed — what the artifact adds to the job payload,
-  and what the claim precondition compares — are written into items 4 and 5, and neither
-  depended on the format after all. Nothing substantive is outstanding; what is left is the
-  ordering, recorded at the end of decision item 3.
+  no-automatic-redispatch rule are untouched. Each record was accepted on its own pull request,
+  and **not in either order**: 0021 first, because the ownership model above is the one it
+  decides and it contradicted then-unqualified [ADR-0011](0011-label-namespace.md), whose
+  decision item 4 assigned templates to the drainer and whose Consequences put the label's
+  appearance outside this repository. Accepting this record while that stood would have left two
+  accepted records contradicting each other with no answer to who owns a template. 0021
+  superseded those boundaries first, and only then did the text above rest on an uncontradicted
+  footing. The two format-dependent details this record once owed — what the artifact adds to
+  the job payload, and what the claim precondition compares — are written into items 4 and 5,
+  and neither depended on the format after all: 0021's prerequisite 2 confirmed them rather than
+  supplying them.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
   [22](../plans/22-medication-tracking.md).
@@ -893,10 +910,10 @@ In both, ADR-0021's prerequisite 2 chooses **which forms wave 3b ships** and thi
 either paragraph, because a form that did not declare its own geometry division could not be
 registered.
 
-So what remains before this record is accepted is **ordering, not content**: ADR-0021 is
-accepted first, since items 1, 4 and 5 above now rely on its decisions about template
-ownership and reprint semantics, and an accepted record may not depend on a proposed one.
-Each acceptance is its own bookkeeping-only pull request.
+What remained before this record could be accepted was therefore **ordering, not content**:
+ADR-0021 first, since items 1, 4 and 5 above rely on its decisions about template ownership and
+reprint semantics, and an accepted record may not depend on a proposed one. Both were accepted
+on 2026-09-07, in that order, each on its own bookkeeping-only pull request.
 
 ### 4. What a job pins, and what it resolves at claim time
 
