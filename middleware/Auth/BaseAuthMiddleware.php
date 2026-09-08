@@ -61,7 +61,10 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 				return $response;
 			}
 			define('VICTUAL_AUTHENTICATED', true);
-			define('VICTUAL_USER_ID', (int)$worker['user_id']);
+			if (!defined('VICTUAL_USER_ID'))
+			{
+				define('VICTUAL_USER_ID', (int)$worker['user_id']);
+			}
 			return $handler->handle($request->withAttribute('label_worker_id', (int)$worker['worker_id']));
 		}
 

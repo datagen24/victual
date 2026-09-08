@@ -27,6 +27,7 @@
    <label for="label-printer-worker">{{ $__t('Assigned worker') }}</label><select id="label-printer-worker" class="form-control" required></select>
    <label for="label-printer-driver">{{ $__t('Driver version') }}</label><select id="label-printer-driver" class="form-control" required></select>
    <label for="label-printer-combination">{{ $__t('Model and media') }}</label><select id="label-printer-combination" class="form-control" required></select>
+   <label for="label-printer-model">{{ $__t('Model') }}</label><select id="label-printer-model" class="form-control" required></select>
    <label for="label-printer-connection-type">{{ $__t('Connection type') }}</label><select id="label-printer-connection-type" class="form-control" required></select>
    <label for="label-printer-connection">{{ $__t('Connection') }}</label><input id="label-printer-connection" class="form-control" required>
    <div id="label-printer-settings"></div>

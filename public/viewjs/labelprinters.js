@@ -45,6 +45,7 @@
   var driver = CurrentDriver();
   if (!driver) return;
   Options('#label-printer-combination', driver.settings_schemas, function (s) { return Object.values(s.when).join(' / '); });
+  Options('#label-printer-model', driver.capability_document.models, function (s) { return s; });
   Options('#label-printer-connection-type', driver.capability_document.connection_types, function (s) { return s; });
   SettingsChanged();
  }
@@ -52,6 +53,10 @@
  {
   var driver = CurrentDriver(); if (!driver) return;
   var entry = driver.settings_schemas[Number($('#label-printer-combination').val())]; if (!entry) return;
+  $('#label-printer-model').prop('disabled', entry.when.model !== undefined);
+  if (entry.when.model !== undefined) $('#label-printer-model').val(driver.capability_document.models.indexOf(entry.when.model));
+  $('#label-printer-connection-type').prop('disabled', entry.when.connection_type !== undefined);
+  if (entry.when.connection_type !== undefined) $('#label-printer-connection-type').val(driver.capability_document.connection_types.indexOf(entry.when.connection_type));
   var container = $('#label-printer-settings').empty();
   Object.keys(entry.schema.properties).forEach(function (key, index)
   {
@@ -82,6 +87,7 @@
   $('#label-printer-settings').find('input, select').each(function ()
   {
    var input = $(this), schema = input.data('schema'), value = input.val();
+   if (value === '' && schema.type !== 'boolean' && !(entry.schema.required || []).includes(input.data('setting'))) return;
    if (schema.enum) value = schema.enum[Number(value)];
    else if (schema.type === 'boolean') value = input.prop('checked');
    else if (['integer','number'].includes(schema.type)) value = Number(value);
@@ -90,7 +96,7 @@
   var selected = $('#label-printer-select').val(), printer = selected === '' ? null : printers[Number(selected)];
   var payload = { name: $('#label-printer-name').val(), worker_id: worker.id, driver_id: driver.driver_id, driver_schema_version: driver.schema_version,
    connection: $('#label-printer-connection').val(), connection_type: driver.capability_document.connection_types[Number($('#label-printer-connection-type').val())],
-   model: entry.when.model || settings[driver.combination_binding ? Decode(driver.combination_binding).model : 'model'], settings: settings,
+   model: driver.capability_document.models[Number($('#label-printer-model').val())], settings: settings,
    active: $('#label-printer-active').prop('checked') ? 1 : 0, is_default: $('#label-printer-default').prop('checked') ? 1 : 0 };
   var success = function (result) { Message(__t('Printer saved')); Load({ printerId: result.id }); };
   if (move && printer) Victual.Api.Post('labels/printers/' + printer.id + '/schema-version', payload, success, Failed);
@@ -111,6 +117,7 @@
   $('#label-printer-driver').val(drivers.findIndex(function (d) { return d.driver_id === printer.driver_id && d.schema_version === printer.driver_schema_version; }));
   DriverChanged(); var driver = CurrentDriver(), settings = Decode(printer.settings);
   $('#label-printer-combination').val(driver.settings_schemas.findIndex(function (s) { return Object.keys(s.when).every(function (key) { return s.when[key] === (key === 'model' ? printer.model : key === 'connection_type' ? printer.connection_type : settings[key]); }); }));
+  $('#label-printer-model').val(driver.capability_document.models.indexOf(printer.model));
   $('#label-printer-connection-type').val(driver.capability_document.connection_types.indexOf(printer.connection_type)); SettingsChanged(settings);
  });
  $('#label-worker-select').on('change', function ()
