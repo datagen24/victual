@@ -27,6 +27,16 @@
   neither tracked client does. Grocy-SwiftUI scans them, the Home Assistant integration does
   not model them, and decision item 3 keeps the parser — so the print-time blast radius is
   zero and the scan-time one stays zero.
+- **Three boundaries are superseded by [ADR-0021](0021-label-templates-are-application-data.md),
+  accepted 2026-09-07**, and this pointer is that acceptance's doing rather than an edit to a
+  decision. Superseded: decision item 4's assignment of **label templates to the drainer**;
+  its definition of a **reprint as resetting a row**; and decision item 5's obligation on
+  `bin/victual-db-import` to **re-key label targets**, withdrawn as unimplementable because no
+  source the importer accepts can carry a label. The *Consequences* paragraph
+  *Rendering leaves this repository* goes with the first of those. **Everything else here
+  stands unchanged** — the `vctl:<uid>` payload, the mapping table, Grocycode as a read-only
+  input symbology, and the retirement of `VICTUAL_LABEL_PRINTER_WEBHOOK`. Read 0021 before
+  acting on items 4 or 5.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-31, which is when it was written; accepted 2026-09-04, which is

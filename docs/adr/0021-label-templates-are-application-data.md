@@ -1,6 +1,19 @@
 # ADR-0021: Label templates are application data, a reprint is a new job over retained bytes, and an import refuses live labels
 
-- **Status: Proposed.** Written to be argued with.
+- **Status: Accepted, 2026-09-07.** **Victual owns the template document; a reprint is a new
+  job replaying retained bytes; an import refuses a target holding live labels.** All six
+  acceptance prerequisites below are met, each annotated in place with what was run and how to
+  reproduce it. **Nothing in the decision was revised on the way through** — no consequence
+  softened, no argument improved, no prerequisite dropped. The three edits the prerequisites
+  forced landed before this acceptance, in the pull request that ran them: the output format in
+  item 2, which item 2 had explicitly deferred to prerequisite 2; the import epoch in item 3,
+  which prerequisite 3 found by running the guard rather than reasoning about it; and the
+  measured retention figure in *Consequences*.
+- **Accepting decides ownership, not the schedule.** No template table exists, no renderer
+  exists, and label appearance is still whatever the webhook's external service does. What
+  changes today is what may be built — and, immediately, that
+  [ADR-0019](0019-label-printers-are-master-data.md) may now be accepted, which it could not be
+  while ADR-0011 still assigned templates to the drainer.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-07.
@@ -22,7 +35,9 @@
   into its items 4 and 5 on 2026-09-07, and prerequisite 2 below confirmed that neither
   depended on the format. **This record is accepted first.** Until it is, ADR-0011's assignment of
   templates to the drainer still stands, and accepting 0019's reconciled ownership model ahead
-  of this one would put two accepted records in contradiction.
+  of this one would put two accepted records in contradiction. **That ordering is discharged by
+  this acceptance**: 0011's three superseded boundaries are superseded as of today, and 0019 is
+  free to be accepted next.
 - **Would affect:** [25](../plans/25-label-infrastructure.md),
   [27](../plans/27-label-templates-and-rendering.md), [06](../plans/06-location-barcodes.md),
   [01](../plans/01-file-storage.md), [17](../plans/17-ecosystem-clients.md).
