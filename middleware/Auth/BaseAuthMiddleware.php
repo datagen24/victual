@@ -50,7 +50,22 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 		$routeName = $route === null ? null : $route->getName();
 		$this->IsApiRoute = IsApiRoutePath($request->getUri()->getPath());
 
-		if ($routeName === 'root' || $routeName === 'login')
+		// Worker routes never inherit browser/admin authentication or development bypasses.
+		if ($routeName !== null && isset(ApiKeyAuthenticator::LABEL_ROUTE_KEY_TYPES[$routeName]) && $routeName !== 'labels-pair')
+		{
+			$worker = (new ApiKeyAuthenticator($this->AppContainer))->AuthenticateLabelWorker($request);
+			if ($worker === null)
+			{
+				$response = $this->ResponseFactory->createResponse(401);
+				$response->getBody()->write(json_encode(['error_message' => 'Unauthorized']));
+				return $response;
+			}
+			define('VICTUAL_AUTHENTICATED', true);
+			define('VICTUAL_USER_ID', (int)$worker['user_id']);
+			return $handler->handle($request->withAttribute('label_worker_id', (int)$worker['worker_id']));
+		}
+
+		if ($routeName === 'root' || $routeName === 'login' || $routeName === 'labels-pair')
 		{
 			// Root and Login routes are public/unauthenticated
 
