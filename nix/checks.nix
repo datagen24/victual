@@ -24,6 +24,8 @@
   webroot,
   nginx,
   webcheckBin,
+  labelRenderer,
+  labelWorker,
   runtime,
   imageLib,
   version,
@@ -69,6 +71,43 @@ in
   #    program. Static linking is what keeps that free, and this is what says so — an
   #    accidental dynamic build would pull a libc and its shell into the one image whose
   #    argument is that it has neither.
+  # The two label workloads, checked as their own closure rather than folded into the
+  # serving one. Two reasons, and the second is the load-bearing one: they are separate
+  # images, so a shell reaching one of them says nothing about the others; and ADR-0019's
+  # packaging gate was run against exactly this assertion, so keeping it a separate check
+  # keeps the acceptance evidence and the standing check the same statement.
+  label-images-have-no-shell =
+    runCommand "victual-check-label-no-shell"
+      {
+        closure = closureInfo {
+          rootPaths = [
+            labelRenderer
+            labelWorker
+          ];
+        };
+      }
+      ''
+        found=""
+        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
+          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
+            found="$found $forbidden"
+          fi
+        done
+
+        if [ -n "$found" ]; then
+          echo "The label renderer or worker closure contains:$found" >&2
+          echo >&2
+          echo "Both images are built on no base image and carry one binary each. A shell or" >&2
+          echo "an interpreter here means a dependency pulled one in - find it with:" >&2
+          echo "  nix why-depends .#labelRenderer nixpkgs#bash" >&2
+          exit 1
+        fi
+
+        echo "The label renderer and worker closures hold no shell and no interpreter."
+        wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
+        touch $out
+      '';
+
   image-has-no-shell =
     runCommand "victual-check-no-shell"
       {

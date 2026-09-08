@@ -13,12 +13,29 @@
 {
   description = "Victual — minimal, reproducible container images built with Nix";
 
+  # The renderer and the delivery worker live in their own repositories, pinned by
+  # revision here. ADR-0019 decision item 1 puts the worker's source outside this tree and
+  # ADR-0021 does the same for the renderer, and pinning by revision is what keeps
+  # "reproducible" true across that seam: the flake owns the image, the pin and the
+  # deployment, the other repository owns the driver matrix and the device transport, and
+  # a revision bump is a flake.lock change reviewed like any other.
+  #
+  # `flake = false` because these are Cargo projects rather than flakes: what is wanted is
+  # the source tree at a fixed revision, built by nixpkgs' rustPlatform here.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    label-renderer = {
+      url = "github:datagen24/victual-label-renderer";
+      flake = false;
+    };
+    label-worker = {
+      url = "github:datagen24/victual-label-worker";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, label-renderer, label-worker }:
     let
       inherit (nixpkgs) lib;
 
@@ -41,7 +58,12 @@
         system:
         import nixpkgs {
           inherit system;
-          overlays = [ self.overlays.default ];
+          overlays = [
+            self.overlays.default
+            # The two pinned source trees reach the overlay as ordinary attributes rather
+            # than by path, so a consumer adding this overlay gets the same pins.
+            (_: _: { victualLabelSources = { renderer = label-renderer; worker = label-worker; }; })
+          ];
         };
     in
     {
@@ -65,6 +87,8 @@
             webroot
             healthcheckBin
             webcheckBin
+            labelRenderer
+            labelWorker
             ;
         }
         // lib.optionalAttrs (builtins.elem system linuxSystems) {
@@ -72,6 +96,8 @@
             image-app
             image-web
             image-migrate
+            image-label-renderer
+            image-label-worker
             ;
           # `nix build` with no attribute gives the thing most people want first.
           default = v.image-app;

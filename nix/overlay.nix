@@ -89,11 +89,19 @@ in
     # brings no libc into an image that holds no interpreter.
     webcheckBin = self.callPackage ./webcheck.nix { };
 
+    # The two workloads whose source lives outside this tree, built from the revisions
+    # flake.nix pins. See nix/label-renderer.nix for why the pin is the reproducibility
+    # boundary rather than a convenience.
+    labelRenderer = self.callPackage ./label-renderer.nix { };
+    labelWorker = self.callPackage ./label-worker.nix { };
+
     imageLib = self.callPackage ./images/lib.nix { };
 
     image-app = self.callPackage ./images/app.nix { };
     image-web = self.callPackage ./images/web.nix { };
     image-migrate = self.callPackage ./images/migrate.nix { };
+    image-label-renderer = self.callPackage ./images/label-renderer.nix { };
+    image-label-worker = self.callPackage ./images/label-worker.nix { };
 
     loadImages = self.callPackage ./images/load.nix { };
 

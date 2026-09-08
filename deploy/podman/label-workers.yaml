@@ -1,0 +1,203 @@
+# The two label workloads: the renderer that produces artifacts and the worker that prints
+# them.
+#
+#   podman kube play deploy/podman/label-workers.yaml
+#   podman kube down deploy/podman/label-workers.yaml
+#
+# Two objects rather than one, because they are two shapes. The renderer is a **CronJob**:
+# it exists only when it has work, does one job per invocation and exits, which is the
+# scale-to-zero shape plan 27 question 5 asks for and the reason
+# `.devtools/ci/check_deploy_manifest.py` learned about run-to-completion kinds. The worker
+# is a **Deployment**: it holds a lease while a printer is thinking, and a workload that can
+# be killed mid-attempt is a workload that produces uncertain outcomes for no reason.
+#
+# Neither holds a database credential. Both authenticate to Victual's API with a typed key,
+# which is ADR-0019 decision item 2 and is why a remote worker does not need the database
+# reachable from wherever it sits.
+#
+# PostgreSQL and Victual itself are not in here, for the same reason deploy/podman/victual.yaml
+# does not carry the database: the fork declares what its workloads need and the operator
+# decides where they run.
+#
+# **Status: not applied.** The images build and the manifests pass the gate; nothing has been
+# deployed and no physical label has been printed through this path. See
+# docs/plans/25-label-infrastructure.md's verification 12.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-label-credentials
+type: Opaque
+stringData:
+  # Issued by an administrator through POST /api/labels/workers/{id}/credentials and
+  # POST /api/labels/workers/{id}/renderer-credentials, and typed: a renderer key is refused
+  # on every worker route, which is what makes "a renderer may not claim a print attempt" a
+  # property of the credential rather than a rule the renderer is trusted to follow.
+  #
+  # A declared worker's credential is injected here and never rotates - that is the platform's
+  # own mechanism, the operator rotates it, and a host that can read this environment is
+  # already a cluster compromise. The paired mode with its two clocks is for the USB case and
+  # is not what this manifest deploys.
+  renderer-key: "replace-me-with-a-label-renderer-key"
+  worker-key: "replace-me-with-a-label-worker-key"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victual-label-config
+data:
+  VICTUAL_API_BASE: "http://victual:8080"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: victual-label-renderer
+  labels:
+    app.kubernetes.io/name: victual-label-renderer
+spec:
+  # Every minute. The queue is durable, so a render that is queued between runs waits rather
+  # than being lost, and a household printing a shelf label does not notice a minute. The
+  # dispatcher is deliberately this dull: plan 27 piece 4 requires that no request depend on a
+  # live Victual process remembering to launch something, and a clock is the cheapest thing
+  # that satisfies it.
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
+            - name: credentials
+              secret:
+                secretName: victual-label-credentials
+          containers:
+            - name: renderer
+              image: localhost/victual-label-renderer:4.6.0
+              args:
+                - "--api"
+                - "$(VICTUAL_API_BASE)"
+                - "--key-file"
+                - "/run/secrets/renderer-key"
+                # Drains the queue rather than rendering one label per minute. One
+                # invocation still does one job at a time; what this changes is that a
+                # backlog clears in one run instead of over the next hour.
+                - "--drain"
+              env:
+                - name: VICTUAL_API_BASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: victual-label-config
+                      key: VICTUAL_API_BASE
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: credentials
+                  mountPath: /run/secrets
+                  readOnly: true
+              resources:
+                limits:
+                  memory: 128Mi
+                  cpu: "1"
+                requests:
+                  memory: 32Mi
+                  cpu: "50m"
+              securityContext:
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victual-label-worker
+  labels:
+    app.kubernetes.io/name: victual-label-worker
+spec:
+  # One replica, deliberately. A printer has exactly one assigned worker under ADR-0019
+  # decision item 3, and automatic failover between workers is the ownership ambiguity that
+  # decision exists to remove. A spare that needs one admin edit is the cheaper price.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victual-label-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-label-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: credentials
+          secret:
+            secretName: victual-label-credentials
+      containers:
+        - name: worker
+          image: localhost/victual-label-worker:4.6.0
+          args:
+            - "--api"
+            - "$(VICTUAL_API_BASE)"
+            - "--key-file"
+            - "/run/secrets/worker-key"
+          env:
+            - name: VICTUAL_API_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: victual-label-config
+                  key: VICTUAL_API_BASE
+          # An exec probe on the binary itself, because the image has no shell to run
+          # anything else and ADR-0010 rule 4 requires a probe the deployment can actually
+          # execute. It deliberately reports on this process rather than on Victual: a worker
+          # restarted because the API is down would be restarted for somebody else's outage,
+          # and it would abandon a lease while doing it.
+          livenessProbe:
+            exec:
+              command:
+                - "/bin/victual-label-worker"
+                - "--health"
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: credentials
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            limits:
+              memory: 128Mi
+              cpu: "1"
+            requests:
+              memory: 32Mi
+              cpu: "50m"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
