@@ -1091,12 +1091,12 @@ class StockService extends BaseService
 		$quStock = $this->DB->quantity_units($product->qu_id_stock);
 		$quConsume = $this->DB->quantity_units($product->qu_id_consume);
 		$quPrice = $this->DB->quantity_units($product->qu_id_price);
-		$location = $this->DB->locations($product->location_id);
+		$location = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active')->where('id', $product->location_id)->fetch();
 
 		$defaultConsumeLocation = null;
 		if (!empty($product->default_consume_location_id))
 		{
-			$defaultConsumeLocation = $this->DB->locations($product->default_consume_location_id);
+			$defaultConsumeLocation = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active')->where('id', $product->default_consume_location_id)->fetch();
 		}
 
 		return [

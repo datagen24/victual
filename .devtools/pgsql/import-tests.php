@@ -388,6 +388,29 @@ unlink($empty);
 [$code, $output] = RunImport($dataPath, $scratch . '/does-not-exist.db');
 Check('a missing file is refused', $code !== 0, 'a non-zero exit', 'exit ' . $code);
 
+echo PHP_EOL . 'E. Live labels guard the actual command, including --force' . PHP_EOL;
+$target = Target($dbName);
+$identity = new \Victual\Services\Labels\LabelIdentityService($target);
+$locationId = (int)Scalar($target, "INSERT INTO locations (name) VALUES ('Import label test') RETURNING id");
+$context = $identity->LocationContext($locationId);
+$target->beginTransaction();
+$labelUid = $identity->IssueLocation($locationId, (int)$context['import_epoch']);
+$target->commit();
+foreach ([[], ['--force']] as $flags)
+{
+	[$code, $output] = RunImport($dataPath, $fixture, $flags);
+	Check('live labels refuse import ' . implode(' ', $flags), $code !== 0 && str_contains($output, '1 live label(s)'),
+		'refusal naming one live label', 'exit ' . $code);
+}
+Check('refusal preserves the labelled location', $identity->LocationContext($locationId) === $context,
+	'unchanged location and epoch', 'location and epoch compared');
+$target->exec('DELETE FROM locations WHERE id = ' . $locationId);
+$retired = $identity->Resolve($labelUid, true);
+[$code, $output] = RunImport($dataPath, $fixture, ['--force']);
+Check('retired labels permit import and survive it', $code === 0 && $identity->Resolve($labelUid, true) === $retired,
+	'unchanged retirement snapshot', 'exit ' . $code);
+$target = null;
+
 // The scratch directory, not the committed fixtures. Recursive because the data directory
 // gains a view cache: the command under test loads the configuration, and HTMLPurifier's
 // definition cache is written under VIEWCACHE_PATH, which defaults inside it.
