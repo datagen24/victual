@@ -34,6 +34,23 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
   const response = await page.request.get(base + '/api/objects/label_printers');
   const printer = (await response.json()).find(printer => printer.name === name);
   assert.ok(printer);
+  // Printing needs a published template, and that is the design rather than a fixture
+  // detail: a job pins a template version, and there is deliberately no fallback to "the
+  // latest" or to a built-in. A QR-only document is used here because it needs no font
+  // asset - the QR binds to the server-supplied payload, so the whole document is server
+  // data and there is nothing to upload first.
+  const template = await post('labels/templates', { name: name + ' template', entity_kind: 'location' });
+  const draft = await (await page.request.get(base + '/api/labels/templates/' + template.id + '/draft')).json();
+  const document_ = {
+   schema_version: 1, entity_kind: 'location',
+   canvas: { width_mm: 58.9, height_mm: 30.0, max_height_mm: null, margins_mm: { top: 1, right: 1, bottom: 1, left: 1 } },
+   elements: [{ type: 'qr', id: 'code', x_mm: 2, y_mm: 2, module_mm: 0.6, ec_level: 'M', quiet_zone_modules: 4, color: 'black', source: 'label.payload' }]
+  };
+  const saved = await (await page.request.put(base + '/api/labels/templates/' + template.id + '/draft',
+   { data: { document: document_, revision_token: draft.revision_token } })).json();
+  assert.ok(saved.revision_token);
+  await post('labels/templates/' + template.id + '/publish', {});
+
   const location = await post('objects/locations', { name });
   const context = await (await page.request.get(base + '/api/labels/locations/' + location.created_object_id + '/context')).json();
   const job = await post('labels/locations/' + location.created_object_id + '/print', { printer_id: printer.id, import_epoch: context.import_epoch });
