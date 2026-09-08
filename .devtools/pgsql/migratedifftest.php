@@ -46,7 +46,16 @@ use Victual\Services\Database\ValueComparison;
  */
 // Migration 0269 is also above the freeze. Label identity and its durable import epoch
 // are checked against PostgreSQL by .devtools/labels/identity-tests.php.
-const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles', 'stock_entry_origins', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials'];
+const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_roles', 'stock_entry_origins',
+ 'labels', 'label_import_state',
+ // Plan 25 group B, migration 0270.
+ 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status',
+ 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials',
+ // Plan 27, migrations 0271 and 0272. PostgreSQL-only for the same reason every number above
+ // 0265 is: the SQLite line is frozen there, so a table added after it has no SQLite half to
+ // compare against and its absence on that side is the design rather than a difference.
+ 'label_templates', 'label_template_drafts', 'label_template_versions', 'label_assets', 'label_media_profiles',
+ 'label_captures', 'label_render_requests', 'label_artifacts', 'label_idempotency_keys'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');
