@@ -55,7 +55,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0267 | the split-entry defect in `products_average_price` — `stock_entry_origins`, and `stock_edited_entries` following it | in this tree |
 | 0268 | [plan 03](../docs/plans/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
 | 0269 | [plan 25](../docs/plans/25-label-infrastructure.md) — `labels`, the uid-to-target mapping [ADR-0011](../docs/adr/0011-label-namespace.md) requires (wave 3b), plus the import epoch | in this tree |
-| 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) — the nine tables of [ADR-0019](../docs/adr/0019-label-printers-are-master-data.md): `label_workers`, `label_printers`, `label_drivers`, `label_templates`, `label_worker_capabilities`, `label_printer_status`, `print_jobs`, `print_attempts`, `print_evidence` (wave 3b) | **claimed, unwritten** |
+| 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) group B — ten tables: eight configuration/job/delivery tables plus `label_worker_sessions` and `label_worker_credentials` for durable pairing and pending rotation; templates/artifacts belong to plan 27 | in this tree |
 | 0271 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
 | 0272 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0273 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
@@ -84,8 +84,8 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0269 to 0273 are claimed and no file exists for any of them yet.**
-The highest number on disk is 0268 and there is no hole or waiver.
+**0271 to 0273 are claimed and no file exists for them yet.**
+The highest number on disk is 0270 and there is no hole or waiver.
 
 Plan 23 still merges before 22: it owns 0271 and supplies `locations.storage_class_id`;
 22 owns 0272–0273. The next unclaimed number is 0274.
