@@ -16,7 +16,8 @@
 		"slim/slim": "^4.0",
 		"webman/blade": "^1.5",
 		"ramsey/uuid": "^4.9",
-		"php-mqtt/client": "^2.3"
+		"php-mqtt/client": "^2.3",
+		"opis/json-schema": "2.6.0"
 	},
 	"repositories": [
 		{
