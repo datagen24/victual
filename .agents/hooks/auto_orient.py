@@ -95,7 +95,7 @@ def main():
 
     # Once-per-session guard, only after a successful read. Don't re-inject every prompt.
     if session_id:
-        key = hashlib.sha1(f"{session_id}:{mem}".encode()).hexdigest()[:16]
+        key = hashlib.sha256(f"{session_id}:{mem}".encode()).hexdigest()[:16]
         marker = Path(tempfile.gettempdir()) / f"auto_orient_{key}"
         try:
             if marker.exists():
