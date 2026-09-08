@@ -12,6 +12,10 @@
 			@include('components.list_collapse_toggles')
 			<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
 				id="related-links">
+				<a class="btn btn-outline-secondary m-1 mt-md-0 mb-md-0"
+					href="{{ $U('/locationlabels') }}">
+					{{ $__t('Scan location label') }}
+				</a>
 				<a class="btn btn-primary responsive-button m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
 					href="{{ $U('/location/new?embedded') }}">
 					{{ $__t('Add') }}

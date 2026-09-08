@@ -346,3 +346,45 @@ column. Q2 is unbounded until the camera side is specified, and should probably 
 scoped as part of this. Recommend shipping codes, printing and interactive scanning first,
 so the physical labels exist and are stable, and treating the ingest API as separate work
 once there is something real to ingest from.
+
+
+## Executed
+
+### Identity dependency and stateless scan surface, 2026-09-08
+
+[PR 107](https://github.com/datagen24/victual/pull/107) delivered plan 25 group A:
+migration 0269, opaque identity issuance, authorized resolution, retirement snapshots and
+atomic import protection. The earlier gate table is a snapshot from before that merge;
+its group A row is now complete. Its API distinguishes live, retired and unknown labels
+for a reader with `STOCK_VIEW`; callers without that permission receive unknown.
+
+The location list now links to `/locationlabels`, a stateless scan-and-show page over that
+API. Keyboard scanners submit with Enter; the existing camera component can supply a code.
+Live labels display the location name, retired labels display the retained former name,
+and unknown or unauthorized labels display the same unknown result. Names are rendered as
+text. Failed requests have a retryable error; an older response cannot replace a newer scan.
+Editing the input clears the result. This page neither persists a selected location nor
+changes any booking form. It does not issue labels.
+
+This implements the scan surface ahead of physical delivery, using group A's available API.
+It does not satisfy the physical scan-back acceptance check: that still requires a label
+produced by the production print path. No existing API response changes.
+
+The next implementation boundary is [issue 93](https://github.com/datagen24/victual/issues/93):
+plan 25 group B's atomic print jobs, printer configuration and worker API. Plan 27 must
+supply validated artifacts before jobs can be claimed; group C supplies delivery and the
+physical printer verification. After those dependencies, this plan adds the list/form print
+actions, the location-name label content and placement, and verifies request → physical
+print → authorized scan plus visible failure and explicitly authorized reprint. The
+encoded payload remains `vctl:<uid>`; tree paths await plan 08. No webhook fallback or
+placeholder print action is added.
+
+Browser regression coverage is `.devtools/frontend/location-labels.js`; the identity and
+permission boundary remains covered by `.devtools/labels/identity-tests.php`.
+
+Validation on 2026-09-08 against `codex/gpt-6_location-scan-79`, based on merged
+PR 107: the browser probe passed, as did real PostgreSQL live/retired scans using disposable
+fixtures with HTML in their names, PHP syntax checks and the strict documentation build.
+Run the probe with `node .devtools/frontend/location-labels.js --url <disposable-app-url>`;
+the `frontend-security` CI job runs it automatically. Camera event handling was exercised;
+physical camera decoding and production printed-label acceptance remain unverified.

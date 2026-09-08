@@ -158,6 +158,12 @@ class StockController extends BaseController
 		}
 	}
 
+	/** Serves a stateless scanner; the resolution API applies location read permission. */
+	public function LocationLabels(Request $request, Response $response, array $args)
+	{
+		return $this->RenderPage($response, 'locationlabels');
+	}
+
 	/**
 	 * Serves the location master data list view (route GET /locations).
 	 *

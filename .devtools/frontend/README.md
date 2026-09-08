@@ -137,3 +137,11 @@ creates a custom role and a user, checks the role form and escaped delete confir
 and assigns/removes Child and Guest through the user permissions page while preserving
 an overlapping direct grant. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an
 installed Chromium executable. CI runs it in `frontend-security` after the S29 probe.
+
+## Location label resolution
+
+`node .devtools/frontend/location-labels.js --url http://127.0.0.1:8200` exercises the
+locations link and scanner on a running app, with intercepted API responses for live,
+retired, unknown, failure/recovery, literal HTML names and out-of-order responses. It also
+checks the camera event and clears on edit/reload. PostgreSQL identity and authorization
+coverage is in [the label tests](../labels/README.md).
