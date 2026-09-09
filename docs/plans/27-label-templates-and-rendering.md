@@ -614,6 +614,38 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
 8. **Is the renderer credential a key type, a scope set, or a per-request grant?** ADR-0021
    question 1. It needs the authorization model piece 7 lands against, not a guess now.
 
+9. **Where does red belong, and what decides it?**
+
+   Raised by the maintainer on 2026-09-09, after the first two-colour print. Red is the wrong
+   accent for a location label — a shelf is a shelf — and the right one for a *stock entry*
+   with a due date: `expires: {date}`, highlighted when it is close.
+
+   Two things stand between that and the wave 3b format, and neither is a small edit.
+
+   **The field catalogue has no `stock_entry` kind.** Plan 25 piece 1 mints only `location`
+   identities in wave 3b, and ADR-0019 item 7 step 2 — migrating the five existing
+   `/printlabel` endpoints, stock entries among them — is deferred and needs a wire-contract
+   record of its own. So this is not a template question first; it is a question about which
+   entity kinds carry labels.
+
+   **The document format has no expressions, deliberately.** "Red when the date is close" is a
+   conditional, and version 1 rejects those — no scripts, no expressions, no editor plugins.
+   That is not an oversight to route around: a template that computed anything would make the
+   printed label depend on when it was rendered, which is exactly what pinning a capture
+   exists to prevent.
+
+   So the shape that fits is that **the capture decides and the document draws**. The field
+   catalogue would declare something like `stock_entry.due_date` alongside a derived
+   `stock_entry.is_short_dated`, both read in the authorizing transaction, and the template
+   would carry two elements — one black, one red — of which the renderer draws the one the
+   capture selected. That keeps the rule where the permission check already is, keeps the
+   document declarative, and keeps a reprint of an old capture printing what it printed the
+   first time rather than what today's date would say.
+
+   *Lean: answer it with the plan that brings stock-entry labels, not here. What wave 3b owes
+   it is that nothing in the format forecloses it — and nothing does, because colour is already
+   per element and a capture can already select between them.*
+
 ## Effort
 
 Large. Piece 1 and piece 2 are ordinary application work over a document format that has to be
