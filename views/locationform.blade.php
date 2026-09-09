@@ -54,6 +54,31 @@
 				</div>
 			</div>
 
+			{{-- The parent picker. A plain select rather than the combobox component: this is
+			master data edited once, the option text is the full path, and the edit-mode list
+			has already had this location and its whole subtree removed server-side, so there
+			is no option here the database would refuse. data-is-freezer is what lets create
+			mode default the checkbox below from the chosen parent (plan 08 question 3). --}}
+			<div class="form-group">
+				<label for="parent_location_id">{{ $__t('Parent location') }}
+					&nbsp;<i class="fa-solid fa-question-circle text-muted"
+						data-toggle="tooltip"
+						data-trigger="hover click"
+						title="{{ $__t('Leave empty to make this a top level location') }}"></i>
+				</label>
+				<select class="custom-control custom-select"
+					id="parent_location_id"
+					name="parent_location_id">
+					<option value=""></option>
+					@foreach($possibleParents as $possibleParent)
+					<option value="{{ $possibleParent->id }}"
+						data-level="{{ $possibleParent->level }}"
+						data-is-freezer="{{ $possibleParent->is_freezer }}"
+						@if($mode=='edit' && $location->parent_location_id == $possibleParent->id) selected="selected" @endif>{{ $possibleParent->path }}</option>
+					@endforeach
+				</select>
+			</div>
+
 			<div class="form-group">
 				<label for="description">{{ $__t('Description') }}</label>
 				<textarea class="form-control"

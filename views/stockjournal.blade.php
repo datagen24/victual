@@ -83,7 +83,10 @@
 				id="location-filter">
 				<option value="all">{{ $__t('All') }}</option>
 				@foreach($locations as $location)
-				<option value="{{ $location->id }}">{{ $location->name }}</option>
+				{{-- The path, matching the cell below. This filter compares the option's text
+				against the location column, so the two have to say the same thing - and with
+				names now unique only among siblings, the bare name would match two rows. --}}
+				<option value="{{ $location->id }}">{{ $location->path }}</option>
 				@endforeach
 			</select>
 		</div>
@@ -282,7 +285,8 @@
 						@endif
 					</td>
 					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING) d-none @endif">
-						{{ $stockLogEntry->location_name }}
+						@php $journalLocation = FindObjectInArrayByPropertyValue($locations, 'id', $stockLogEntry->location_id); @endphp
+						{{ $journalLocation === null ? $stockLogEntry->location_name : $journalLocation->path }}
 					</td>
 					<td>
 						{{ $stockLogEntry->user_display_name }}

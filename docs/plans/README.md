@@ -11,7 +11,7 @@ Plan numbers are permanent identifiers, not execution order.
 
 ## Status
 
-This table is the authority on delivery status, updated through 2026-09-08. “Landed” means
+This table is the authority on delivery status, updated through 2026-09-09. “Landed” means
 implemented; outstanding verification and follow-up work are listed separately. A plan's
 **Executed** section records what shipped and any differences from the proposed design.
 
@@ -24,8 +24,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
 | 06 | [Location barcodes](06-location-barcodes.md) | Scan and print actions implemented; physical acceptance open | Wave 3b, [issue 79](https://github.com/datagen24/victual/issues/79). Stateless scan-and-show uses plan 25 group A, merged in PR 107. Print actions, content/placement and physical acceptance remain gated by [#93](https://github.com/datagen24/victual/issues/93): plan 27 validated artifacts and group C delivery; group B jobs/configuration and the worker API are implemented. ADR-0019 and ADR-0021 are accepted. Interactive current-location scanning remains deferred to a separate plan after 08. |
-| 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work. |
-| 08 | [Nested locations](08-nested-locations.md) | Draft | 12 and 14's fixture tooling. |
+| 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work and has landed, so Q3's shared depth cap already exists as `hierarchy_depth_limit()`. |
+| 08 | [Nested locations](08-nested-locations.md) | Landed | Wave 4, [issue 81](https://github.com/datagen24/victual/issues/81). Migration 0273: `locations.parent_location_id`, the `locations_resolved` read entity under `STOCK_VIEW`, `hierarchy_depth_limit()` (which [07](07-nested-products.md) shares), a cycle/depth guard and a delete guard. Raises the engine minimum to PostgreSQL 15 for `NULLS NOT DISTINCT`. Verified by a `locations` suite phase and a `frontend-security` browser probe. [23](23-storage-classes.md) adds to the same table next and should be re-read against it. |
 | 09 | [US barcode lookup sources](09-barcode-lookup-sources.md) | Deferred | Q1's kitchen experiment; S14 before adding sources. |
 | 10 | [Cold start and statelessness](10-cold-start-statelessness.md) | Landed | Pairs with 01 for a runtime without a persistent volume. |
 | 11 | [API errors and authentication](11-api-error-handling.md) | Landed with follow-ups | API key expiry/rotation; Q5's schema-derived allowlist after 14 piece 2. |
@@ -39,8 +39,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 19 | [Roles and data visibility](19-rbac.md) | Piece 1 implemented | Wave 3a: roles and six domain read permissions. Piece 2, including price visibility, remains with 14 piece 2 in wave 5. |
 | 20 | [Container infrastructure](20-container-infrastructure.md) | Piece 1 and part of 3 landed | Production Docker target retired. Pieces 2, remaining 3, 4, 5; credential split and SIGTERM verification remain. |
 | 21 | [Frontend sink discipline](21-frontend-sink-discipline.md) | Landed | CI payload checks and stored-HTML cleanup on upgrade/import included. |
-| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
-| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
+| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0275–0276. |
+| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0274. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
 | 25 | [Label infrastructure](25-label-infrastructure.md) | Groups A, B and C implemented; physical acceptance open | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. **Narrowed 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts move to [27](27-label-templates-and-rendering.md), so 0270 carries eight tables rather than nine and this plan keeps identity, jobs, printer configuration and delivery. It also owns the import refusal ADR-0021 decision item 3 requires, since `labels` is its table. Gated on ADR-0019, **accepted 2026-09-07** with all five gates met, and on ADR-0021, accepted the same day and before it — **both gates cleared**. Migration 0269 identity/import safety and 0270 jobs, worker credentials/API, configuration and monitoring are implemented. Production claims remain blocked until plan 27 attaches validated artifacts; Group C delivery remains. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 | 26 | [Documentation site](26-documentation-site.md) | Piece 1 implemented | Wave-independent. Piece 1, the developer section, is built: staging script, MkDocs and Read the Docs configuration, the pinned phpDocumentor reference, and a strict build in the `lint` job. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed**; piece 1 is the evidence its prerequisites 2 and 4 ask for. Piece 2, the manual, waits on Q7's task documentation across 81 pages. |
@@ -59,7 +59,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
 | 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
 | 3b | 03 category minimums; **25 label infrastructure and 27 templates/rendering, then 06 location labels**; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. **06 was rescoped 2026-09-06**: it cannot ship a print action over machinery ADR-0011 decided and nobody built, so 25 was created to own that machinery and 06 now depends on its first usable release. The wave delivers a *complete* location-label path — request, physical print, authorized scan back, demonstrated failure and reprint — not a table and a button. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums and 25 needs them too. **Split 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts are [27](27-label-templates-and-rendering.md)'s, 25 keeps identity, jobs, printer configuration and delivery, and 06 is unchanged. Both gating records were accepted 2026-09-07, 0021 first. Plan 25 groups A and B are implemented; plan 27 artifacts and group C delivery remain ahead of 06's print actions and physical acceptance; 06's stateless scan surface is implemented over group A. |
-| 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
+| 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | **08 complete, 2026-09-09**: migration 0273, `locations_resolved`, the depth function 07 will share, and the paths, parent picker and rolled-up filters in the UI. The product half is unchanged — taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |
 
 New migrations are PostgreSQL-only: the SQLite line is frozen at 0265 and
@@ -94,8 +94,8 @@ application data, a reprint replays retained artifact bytes, and an import refus
 holding live labels. [27](27-label-templates-and-rendering.md) owns the designer, the renderer,
 previews and artifacts; 25 keeps identity, jobs, printer configuration and delivery, and also
 owns the import refusal because `labels` is its table. 27's migrations are inventoried rather
-than reserved — 0271–0273 are still plans 23 and 22's, and the branch that writes the first file
-applies the lowest-free-slot rule.
+than reserved — 0274–0276 are now plans 23 and 22's, after 27 took 0271–0272 and 08 took 0273,
+each branch applying the lowest-free-slot rule as it wrote its first file.
 
 **Both records were accepted 2026-09-07**, 0021 first because 0019's ownership model is the one
 0021 decides, each on its own bookkeeping-only pull request. All five of 0019's gates and all

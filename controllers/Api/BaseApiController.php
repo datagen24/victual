@@ -515,7 +515,16 @@ class BaseApiController extends BaseController
 		{
 			// HTMLPurifier removes boolean values (true/false) and arrays, so explicitly keep them
 			// Maybe also possible through HTMLPurifier config (http://htmlpurifier.org/live/configdoc/plain.html)
-			if (!is_bool($value) && !is_array($value))
+			//
+			// And null, which HTMLPurifier turns into the empty string. That is how a client
+			// says "clear this column", and it is an idiom this tree already uses -
+			// public/viewjs/productform.js sends picture_file_name: null to remove a picture.
+			// On a text column the empty string passed for it, because every reader treats ""
+			// and NULL alike; on a nullable *integer* column it does not pass at all, and the
+			// insert is refused by the database with a message the client is deliberately not
+			// shown. Found writing plan 08's location form, whose parent picker has to be able
+			// to say "this location has no parent" - see that plan's Executed section.
+			if (!is_bool($value) && !is_array($value) && $value !== null)
 			{
 				$value = self::$htmlPurifierInstance->purify($value);
 

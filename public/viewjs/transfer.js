@@ -8,6 +8,13 @@
 // optionally links a scanned barcode to the product (barcode-scan flow), shows a toast
 // with an inline "Undo" link, and either notifies the parent window to close (embedded
 // mode) or resets the form in place for another transfer (standalone mode)
+
+// Before anything can empty the "from" select: choosing a product rebuilds it from the
+// product's stock locations, which the API names rather than paths, and a bare name is
+// unique only among siblings now. The "to" select keeps the options the template gave it,
+// so it needs nothing. See Victual.FrontendHelpers.RememberLocationPaths.
+Victual.FrontendHelpers.RememberLocationPaths('#location_id_from');
+
 $('#save-transfer-button').on('click', function (e)
 {
 	e.preventDefault();
@@ -203,7 +210,7 @@ Victual.Components.ProductPicker.GetPicker().on('change', function (e)
 							{
 								$("#location_id_from").append($("<option>", {
 									value: stockLocation.location_id,
-									text: stockLocation.location_name + " (" + __t("Default location") + ")",
+									text: Victual.FrontendHelpers.LocationPath(stockLocation.location_id, stockLocation.location_name) + " (" + __t("Default location") + ")",
 									"data-is-freezer": stockLocation.location_is_freezer
 								}));
 								$("#location_id_from").val(productDetails.location.id);
@@ -214,7 +221,7 @@ Victual.Components.ProductPicker.GetPicker().on('change', function (e)
 							{
 								$("#location_id_from").append($("<option>", {
 									value: stockLocation.location_id,
-									text: stockLocation.location_name,
+									text: Victual.FrontendHelpers.LocationPath(stockLocation.location_id, stockLocation.location_name),
 									"data-is-freezer": stockLocation.location_is_freezer
 								}));
 							}

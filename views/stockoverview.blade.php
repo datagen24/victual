@@ -117,7 +117,9 @@
 				id="location-filter">
 				<option value="all">{{ $__t('All') }}</option>
 				@foreach($locations as $location)
-				<option value="{{ $location->name }}">{{ $location->name }}</option>
+				{{-- The id, not the name: names are only unique among siblings now, and the
+				hidden cell this filters against lists ids. --}}
+				<option value="{{ $location->id }}">{{ $location->path }}</option>
 				@endforeach
 			</select>
 		</div>
@@ -380,9 +382,16 @@
 							class="timeago timeago-contextual"
 							@if(!empty($currentStockEntry->best_before_date)) datetime="{{ $currentStockEntry->best_before_date }} 23:59:59" @endif></time>
 					</td>
+					{{-- Every location this product is stocked at, and every ancestor of each
+					of them, as ids wrapped in "xx...xx" so a substring match on one id cannot
+					match another. The ancestors are what make the filter roll up: selecting
+					"Basement" has to find a product stocked at
+					"Basement / StorageRoom / UprightFreezer / Door" (plan 08 question 4). --}}
 					<td class="d-none">
 						@foreach(FindAllObjectsInArrayByPropertyValue($currentStockLocations, 'product_id', $currentStockEntry->product_id) as $locationsForProduct)
-						xx{{ FindObjectInArrayByPropertyValue($locations, 'id', $locationsForProduct->location_id)->name }}xx
+						@foreach($locationAncestors[$locationsForProduct->location_id] ?? [$locationsForProduct->location_id] as $locationIdOrAncestor)
+						xx{{ $locationIdOrAncestor }}xx
+						@endforeach
 						@endforeach
 					</td>
 					<td class="d-none">

@@ -964,6 +964,107 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * Returns every location with its display path and its level, in tree pre-order.
+	 *
+	 * This is the one method every dropdown, list and filter that renders a location reads,
+	 * so that "Top shelf" in two different rooms is two distinguishable options rather than
+	 * two identical ones. `path` is the location's names from its root joined by " / " and
+	 * `level` is its distance from that root, 0 for a root. Both come from
+	 * `locations_resolved` (migrations/0273.pgsql.sql): the path off the row that pairs a
+	 * location with itself, the level off the largest depth it appears at as a descendant.
+	 *
+	 * Siblings are ordered by name through the `nocase` collation, which is what every other
+	 * list page here orders by (db/pgsql/README.md hazard 15), and the walk below turns that
+	 * flat order into pre-order without re-sorting anything.
+	 *
+	 * A row whose parent is not in the result - filtered out by $activeOnly, or pointing at
+	 * an id no row answers to, which `parent_location_id` permits because it carries no
+	 * foreign key - is walked as a root rather than dropped. Every row the query returned is
+	 * returned exactly once, which is what makes this safe to build a <select> from.
+	 *
+	 * @param bool $activeOnly When true, only locations with active = 1 are returned
+	 * @return array Array of row objects: the locations columns plus `path` and `level`
+	 */
+	public function GetLocationsWithPaths(bool $activeOnly = false)
+	{
+		$sql = 'SELECT l.*, self.path AS path, levels.level AS level
+			FROM locations l
+			JOIN locations_resolved self
+				ON self.descendant_location_id = l.id
+				AND self.ancestor_location_id = l.id
+			JOIN (
+				SELECT descendant_location_id, MAX(depth) AS level
+				FROM locations_resolved
+				GROUP BY descendant_location_id
+			) levels
+				ON levels.descendant_location_id = l.id';
+
+		if ($activeOnly)
+		{
+			$sql .= ' WHERE l.active = 1';
+		}
+
+		$sql .= ' ORDER BY l.name COLLATE NOCASE';
+
+		$rows = DatabaseService::GetInstance()->ExecuteDbQuery($sql)->fetchAll(\PDO::FETCH_OBJ);
+
+		$byParent = [];
+		$present = [];
+
+		foreach ($rows as $row)
+		{
+			$present[$row->id] = true;
+		}
+
+		foreach ($rows as $row)
+		{
+			$parent = $row->parent_location_id;
+			$key = ($parent === null || !isset($present[$parent])) ? 0 : $parent;
+			$byParent[$key][] = $row;
+		}
+
+		$ordered = [];
+		$walk = function ($parentKey) use (&$walk, &$ordered, $byParent)
+		{
+			foreach ($byParent[$parentKey] ?? [] as $row)
+			{
+				$ordered[] = $row;
+				$walk($row->id);
+			}
+		};
+		$walk(0);
+
+		return $ordered;
+	}
+
+	/**
+	 * Returns, per location id, that location's id followed by every ancestor's id.
+	 *
+	 * This is what makes a location filter roll up: a product stocked at
+	 * "Basement / StorageRoom / UprightFreezer / Door" has to match a filter set to
+	 * "Basement", so the page renders the ancestors alongside the location itself and the
+	 * filter matches on any of them. Plan 08 question 4 wanted the roll-up for filtering and
+	 * not for the location content sheet, which still groups by the exact location id.
+	 *
+	 * @return array Map of location id => array of location ids, the location itself first
+	 */
+	public function GetLocationAncestorIds()
+	{
+		$sql = 'SELECT descendant_location_id, ancestor_location_id, depth
+			FROM locations_resolved
+			ORDER BY descendant_location_id, depth';
+
+		$ancestors = [];
+
+		foreach (DatabaseService::GetInstance()->ExecuteDbQuery($sql)->fetchAll(\PDO::FETCH_OBJ) as $row)
+		{
+			$ancestors[$row->descendant_location_id][] = intval($row->ancestor_location_id);
+		}
+
+		return $ancestors;
+	}
+
+	/**
 	 * Returns the per-location stock content (location_id, product_id, amount, amount_opened)
 	 * for all active products, ordered by product name. Amounts are in stock quantity units.
 	 *

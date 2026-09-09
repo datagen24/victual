@@ -83,9 +83,11 @@ plan, and the one most likely to surprise someone who has been ticking that box 
 
 ### Migration
 
-One file, claiming **0271** in [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any
+One file, claiming **0274** in [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any
 file is written — moved up from 0269 on 2026-09-06 to make room for wave 3b's
-[25](25-label-infrastructure.md), which is scheduled while this plan is not. It is a table, a
+[25](25-label-infrastructure.md), again on 2026-09-08 for [27](27-label-templates-and-rendering.md),
+and again on 2026-09-09 for [08](08-nested-locations.md), each of which is scheduled while
+this plan is not. Read the table rather than this line: it has moved three times. It is a table, a
 column and a seed — no views, and **no triggers**, since Q2 put derivation in the application
 — so it is the small kind of migration, and stays that way.
 
@@ -93,7 +95,7 @@ Not a pair: this plan was written when [ADR-0004](../adr/0004-engine-specific-mi
 asked for one, and ADR-0008's retirement has since frozen the SQLite line at
 `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` = 0265. Above that number
 `check-migrations.php` refuses a `.sqlite.sql` outright, so this is a lone
-`0271.pgsql.sql` with no `@engine-exclusive` marker — that marker is asked for only below the
+`0274.pgsql.sql` with no `@engine-exclusive` marker — that marker is asked for only below the
 freeze, where a lone engine-specific file really could be a missing counterpart. The new
 table also has to be named in `migratedifftest.php`'s `ENGINE_EXCLUSIVE_TABLES`, which above
 the freeze means "SQLite is frozen" rather than "SQLite is deliberately different"; see

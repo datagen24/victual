@@ -5,6 +5,12 @@
 // Consumes stock: POST stock/products/{id}/consume. Reads the amount/exact-amount/spoiled/
 // specific-stock-entry/location/recipe fields from the form and, when embedded, notifies the
 // parent window instead of resetting the form in place.
+
+// Before anything can empty the select: choosing a product rebuilds it from the product's
+// stock locations, which the API names rather than paths, and a bare name is unique only
+// among siblings now. See Victual.FrontendHelpers.RememberLocationPaths.
+Victual.FrontendHelpers.RememberLocationPaths('#location_id');
+
 $('#save-consume-button').on('click', function(e)
 {
 	e.preventDefault();
@@ -423,7 +429,7 @@ Victual.Components.ProductPicker.GetPicker().on('change', function(e)
 								{
 									$("#location_id").append($("<option>", {
 										value: stockLocation.location_id,
-										text: stockLocation.location_name + " (" + __t("Default location") + ")"
+										text: Victual.FrontendHelpers.LocationPath(stockLocation.location_id, stockLocation.location_name) + " (" + __t("Default location") + ")"
 									}));
 									$("#location_id").val(defaultLocationId);
 									$("#location_id").trigger('change');
@@ -437,7 +443,7 @@ Victual.Components.ProductPicker.GetPicker().on('change', function(e)
 								{
 									$("#location_id").append($("<option>", {
 										value: stockLocation.location_id,
-										text: stockLocation.location_name
+										text: Victual.FrontendHelpers.LocationPath(stockLocation.location_id, stockLocation.location_name)
 									}));
 								}
 							}

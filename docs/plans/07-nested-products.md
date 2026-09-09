@@ -85,6 +85,14 @@ exactly this in `prevent_infinite_nested_recipes_*`, which is ported and can be 
 Optionally cap depth at something sane (5?) so a mis-click cannot create a pathological
 tree — see Q3.
 
+**The cap already exists.** [08](08-nested-locations.md) landed
+`hierarchy_depth_limit()` in `migrations/0273.pgsql.sql` — an `IMMUTABLE` SQL function
+returning 6, which is what question 3's shared constant asked for. This plan's guard calls
+it rather than writing a second number, and 08's `check_location_parent` trigger is the
+shape to copy: it refuses a cycle, and it compares the *parent's level plus one plus the
+height of the moved row's own subtree* against the limit, so re-parenting a deep branch
+under a deep node is caught rather than only adding a leaf.
+
 ### API
 Additive: `products_resolved` gains a `depth` column. It is not in `ExposedEntity`, so no
 public response changes. `products.parent_product_id` semantics widen but its shape does

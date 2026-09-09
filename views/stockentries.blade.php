@@ -41,7 +41,7 @@
 				id="location-filter">
 				<option value="all">{{ $__t('All') }}</option>
 				@foreach($locations as $location)
-				<option value="{{ $location->id }}">{{ $location->name }}</option>
+				<option value="{{ $location->id }}">{{ $location->path }}</option>
 				@endforeach
 			</select>
 		</div>
@@ -262,10 +262,17 @@
 							class="timeago timeago-contextual"
 							@if($stockEntry->best_before_date != "") datetime="{{ $stockEntry->best_before_date }} 23:59:59" @endif></time>
 					</td>
+					{{-- data-location-ancestors is this location's id followed by every
+					ancestor's, comma separated. The location filter matches on it rather than
+					on the cell text, so selecting "Basement" finds an entry at
+					"Basement / StorageRoom / UprightFreezer / Door" and nothing merely named
+					like it (plan 08 question 4). --}}
 					<td id="stock-{{ $stockEntry->id }}-location"
 						class="@if(!VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING) d-none @endif"
-						data-location-id="{{ $stockEntry->location_id }}">
-						{{ FindObjectInArrayByPropertyValue($locations, 'id', $stockEntry->location_id)->name }}
+						data-location-id="{{ $stockEntry->location_id }}"
+						data-location-ancestors="{{ implode(',', $locationAncestors[$stockEntry->location_id] ?? [$stockEntry->location_id]) }}">
+						@php $stockEntryLocation = FindObjectInArrayByPropertyValue($locations, 'id', $stockEntry->location_id); @endphp
+						{{ $stockEntryLocation === null ? '' : $stockEntryLocation->path }}
 					</td>
 					<td id="stock-{{ $stockEntry->id }}-shopping-location"
 						class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif"

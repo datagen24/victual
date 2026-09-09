@@ -79,7 +79,9 @@
 			width="75"
 			height="30"
 			class="d-none d-print-flex mx-auto">
-		{{ $location->name }}
+		{{-- The path, so two sections cannot both be headed "Top shelf". The sheet still
+		groups by the exact location id and does not roll stock up (plan 08 question 4). --}}
+		{{ $location->path }}
 		<a class="btn btn-outline-dark btn-sm responsive-button print-single-location-button d-print-none"
 			href="#">
 			{{ $__t('Print') . ' (' . $__t('this location') . ')' }}

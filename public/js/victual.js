@@ -521,6 +521,112 @@ Victual.FrontendHelpers.ShowGenericError = function (message, exception)
 	console.error(exception);
 }
 
+/**
+ * Reports a failed API call, preferring the server's own message to a generic one when the
+ * server meant the message to be read.
+ *
+ * ShowGenericError always says the same sentence and hides the server's words behind "Click
+ * to show technical details". That is right for a failure nobody planned - a 500, a dropped
+ * connection - where the message is a diagnostic and the sentence is the answer. It is wrong
+ * for a refusal the endpoint raised on purpose: "Location has child locations" IS the answer,
+ * and burying it makes a refusal look like a fault.
+ *
+ * The line between the two is the status. 4xx is "your request was refused, here is why" and
+ * its message is shown; everything else - 5xx, a transport failure, a response with no
+ * readable message - goes to ShowGenericError exactly as before, technical-details dialog
+ * included. That dialog is a rendering sink the S29 probe drives through this path, and this
+ * split is what keeps it reachable.
+ *
+ * @param {string} fallbackMessage Localization key used for anything that is not a 4xx refusal
+ * @param {Object} xhr The XMLHttpRequest (or failure descriptor) the error callback was given
+ */
+Victual.FrontendHelpers.ShowApiError = function (fallbackMessage, xhr)
+{
+	var response = xhr && xhr.response ? xhr.response : xhr;
+	var status = xhr && xhr.status ? xhr.status : 0;
+	var message = null;
+
+	if (status >= 400 && status < 500)
+	{
+		try
+		{
+			var parsed = typeof response === 'string' ? JSON.parse(response) : response;
+
+			if (parsed && typeof parsed.error_message === 'string' && parsed.error_message !== '')
+			{
+				message = parsed.error_message;
+			}
+		}
+		catch (parseError)
+		{
+			message = null;
+		}
+	}
+
+	if (message === null)
+	{
+		Victual.FrontendHelpers.ShowGenericError(fallbackMessage, response);
+		return;
+	}
+
+	// toastr ships escapeHtml: false and this string came off the wire, so it is escaped here
+	// rather than trusted (sweep finding S29). __t() leaves an untranslated message as it is,
+	// so a server message with no catalogue entry still reads correctly.
+	toastr.error(Victual.FrontendHelpers.EscapeHtml(__t(message)));
+
+	console.error(response);
+}
+
+/**
+ * The location paths a page's server-rendered <select> was built with, as { id: path }.
+ *
+ * Consume and transfer do not keep the options the template gave them: choosing a product
+ * empties the location select and rebuilds it from that product's actual stock locations,
+ * which the API reports by `location_name` - the bare name. Since locations became a tree
+ * that name is unique only among siblings, so the rebuild would turn two distinguishable
+ * "Shelf3" options back into two identical ones, on the two pages where the choice decides
+ * which physical stock is consumed or moved.
+ *
+ * The paths are read out of the DOM at page load, before anything can remove them, and put
+ * back by id afterwards. Doing it here rather than widening `stock_current_locations` keeps
+ * a public read entity's shape as it was - issue 81 lists that view under Unchanged.
+ *
+ * @type {Object<string, string>}
+ */
+Victual.FrontendHelpers.LocationPathsById = {};
+
+/**
+ * Remembers the paths in a location select. Call once, at page load.
+ * @param {string} selector jQuery selector of the <select>, e.g. "#location_id"
+ */
+Victual.FrontendHelpers.RememberLocationPaths = function (selector)
+{
+	$(document).find(selector).find('option').each(function ()
+	{
+		var option = $(this);
+		var locationId = option.attr('value');
+
+		if (locationId !== undefined && locationId !== '')
+		{
+			Victual.FrontendHelpers.LocationPathsById[locationId] = option.text();
+		}
+	});
+}
+
+/**
+ * The remembered path for a location, or the given name when there is none - a location
+ * created since the page loaded, or one the select never listed.
+ * @param {number|string} locationId
+ * @param {string} fallbackName Used when no path was remembered for this id
+ * @returns {string}
+ */
+Victual.FrontendHelpers.LocationPath = function (locationId, fallbackName)
+{
+	var path = Victual.FrontendHelpers.LocationPathsById[locationId];
+
+	return path === undefined ? fallbackName : path;
+}
+
 Victual.FrontendHelpers.SaveUserSetting = function (settingsKey, value, force = false)
 {
 	if (Victual.UserSettings[settingsKey] == value && !force)
