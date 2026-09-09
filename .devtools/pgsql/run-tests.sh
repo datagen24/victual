@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations]
 #
-# Fourteen kinds of check, for fourteen reasons. Views are compared by what they return, because
+# Fifteen kinds of check, for fifteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -130,6 +130,20 @@
 # StockController::Overview() and reads the rendered page, because the feature's UI names short
 # groups as things to act on and the page's default filter excludes precisely the out-of-stock
 # members that acting on them means buying.
+#
+# The fifteenth is above the freeze like the thirteenth and fourteenth - its subject is
+# migrations/0273.pgsql.sql - and it is here rather than in the view or trigger phases because
+# neither could see what it asks. The view phase seeds SQLite and copies the tables across
+# through the importer's common-column logic, so locations.parent_location_id would arrive
+# NULL for every row and every assertion about a tree would be an assertion about a flat list.
+# The trigger phase applies the same script to both engines and diffs the tables afterwards,
+# which cannot express "this write was refused, and refused for this reason" - and three
+# different rules refuse a write to locations, so a phase that only asked whether one was
+# refused would pass when the wrong one fired. It also runs past the database: the delete
+# refusal has to arrive at a client as a sentence rather than as a driver message, since
+# BaseApiController::GenericErrorResponse() replaces anything beginning `SQLSTATE[`, and that
+# is only visible through the controller. Every refusal here is paired with a control that has
+# to still be accepted, because a guard that refused everything would satisfy refusals alone.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -392,6 +406,33 @@ run_group_min_stock_tests() {
 
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/group-min-stock-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Nested locations tests --------------------------------------------------------
+#
+# PostgreSQL only: migrations/0273.pgsql.sql is above the SQLite freeze, so there is no second
+# engine holding the column, the view or the three guards. A migrated database and nothing
+# else - the phase builds its own tree, because the base fixture's four locations are flat and
+# the file it lives in is loaded by the SQLite side too.
+
+run_nested_locations_tests() {
+	local dbname="victual_nested_locations"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/nested-locations-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	# The same reason the group minimum phase makes this directory: the phase writes through
+	# the API, so HTMLPurifier runs and wants somewhere to serialise its definition cache.
+	mkdir -p "$datapath/viewcache"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/nested-locations-tests.php"; then
 		failures=$((failures + 1))
 	fi
 
@@ -1153,8 +1194,9 @@ case "$WHICH" in
 	chores) run_chores_assignment_tests ;;
 	errors) run_error_path_tests ;;
 	groupminstock) run_group_min_stock_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock or all)" ;;
+	locations) run_nested_locations_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
