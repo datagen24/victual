@@ -45,16 +45,34 @@ const payload = '<img src=x onerror=window.__xss=1>';
 			await route.fulfill({ status: 202, json: { job_id: 5, label_uid: '0ABCDEFGHJKMN', state: 'awaiting_artifact' } });
 		});
 
+		// A location whose own name carries the payload, because the status region renders the
+		// name from the row rather than from any response - seeding it in a mocked reply would
+		// have tested nothing. This is the sink sweep finding S29 is about.
+		//
+		// The stored name is not the payload as sent: the API's purifier strips the handler
+		// and leaves the tag, which is the storage half of S29 doing its job. What this probe
+		// is about is the other half - that whatever *is* stored reaches the status region as
+		// text. So the row is matched on the tag rather than on the string that was posted,
+		// and a name already present from an earlier run is reused rather than re-seeded.
+		await page.request.post(base + '/api/objects/locations', { data: { name: payload } });
 		await page.goto(base + '/locations');
 
-		const button = page.locator('.location-print-button').first();
-		if (await button.count() === 0) {
-			// The action is gated on FEATURE_FLAG_LABELS and on a configured printer. A page
-			// that offers no button is a correct page under that configuration, and saying so
-			// is better than asserting against a control that was never meant to be there.
-			console.log('SKIPPED: the print action is not enabled on this instance');
-			process.exit(0);
-		}
+		// Not a skip. The instance this runs against has FEATURE_FLAG_LABELS on and
+		// label-printers.js has already configured a printer, so the control must be here -
+		// and a probe that shrugged when it was missing is how a TypeError in exactly this
+		// branch reached a running instance with every check green.
+		const button = page.locator('.location-print-button[data-location-name^="<img"]').first();
+		assert.ok(await button.count() > 0, 'the locations list offers a print control for the seeded location');
+		const stored = await button.getAttribute('data-location-name');
+		assert.ok(stored.includes('<img'), 'the stored name still carries markup: ' + stored);
+		assert.ok(!/onerror/i.test(stored), 'the API purifier stripped the handler at storage: ' + stored);
+
+		// The form offers the same action, and it is the other page that renders the branch.
+		const formPage = await browser.newPage();
+		const formResponse = await formPage.goto(base + '/location/1');
+		assert.equal(formResponse.status(), 200, 'the location form renders with the print action');
+		assert.ok(await formPage.locator('#location-form-print-button').count() > 0, 'the form offers a print control');
+		await formPage.close();
 
 		const status = page.locator('#location-print-status');
 
@@ -78,9 +96,10 @@ const payload = '<img src=x onerror=window.__xss=1>';
 
 		assert.equal(epochRequests, 3, 'the epoch is read immediately before each request');
 
-		// S29: the name is text, and nothing executed.
+		// S29: whatever is stored reaches the region as text, and nothing executed.
 		assert.equal(await page.evaluate(() => window.__xss), undefined, 'no script ran');
-		assert.ok((await status.innerText()).includes(payload), 'the location name is rendered as text');
+		assert.equal(await page.locator('#location-print-status img').count(), 0, 'the markup did not become an element');
+		assert.ok((await status.innerText()).includes(stored), 'the stored name is rendered as text');
 
 		assert.deepEqual(errors, [], 'no page errors');
 		console.log('PASS location print action');

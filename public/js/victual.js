@@ -106,15 +106,20 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 		{
 			if (xhr.readyState === XMLHttpRequest.DONE)
 			{
-				if (xhr.status === 200 || xhr.status === 204)
+				// 202 is a success and carries a body. The label print operations answer with
+				// it because creation is asynchronous - the job exists, and it becomes
+				// printable when a renderer has produced bytes Victual verified - and a
+				// wrapper that knew only 200 and 204 reported every accepted request as a
+				// failure, with the status text where the error message belongs.
+				if (xhr.status === 200 || xhr.status === 202 || xhr.status === 204)
 				{
-					if (xhr.status === 200)
+					if (xhr.status === 204)
 					{
-						settle(success, JSON.parse(xhr.responseText));
+						settle(success, {});
 					}
 					else
 					{
-						settle(success, {});
+						settle(success, JSON.parse(xhr.responseText));
 					}
 				}
 				else if (xhr.status === 0)

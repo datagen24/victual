@@ -343,6 +343,13 @@ jobs:
           Setting('DB_NAME', 'victual');
           Setting('DB_USER', getenv('PGUSER'));
           Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          // The label subsystem is on here, and that is the point rather than a convenience:
+          // FEATURE_FLAG_LABELS defaults to false, so the print action's branch of
+          // locations.blade.php and locationform.blade.php was never rendered by any probe -
+          // and a TypeError in it reached a running instance while every check stayed green.
+          // Enabling it requires FILE_STORAGE 'database', which this instance can honour.
+          Setting('FEATURE_FLAG_LABELS', true);
+          Setting('FILE_STORAGE', 'database');
           PHPCONFIG
           VICTUAL_MODE=demo VICTUAL_DATAPATH="$VDATA" php bin/victual-migrate --quiet
           VICTUAL_MODE=demo VICTUAL_DATAPATH="$VDATA" \

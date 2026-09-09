@@ -39,14 +39,26 @@ const base = urlIndex < 0 ? 'http://127.0.0.1:8200' : process.argv[urlIndex + 1]
 		await page.locator('#add-element-button').click();
 		await page.waitForFunction(() => document.querySelector('#element-properties').textContent.includes('qr1'), null, { timeout: 10000 });
 
-		// Adding text with no font uploaded says so rather than producing a document that
-		// cannot publish. A template pins the font it prints with; there is no default and no
-		// substitution.
-		await page.locator('#element-kind').selectOption('text');
-		await page.locator('#add-element-button').click();
-		await page.waitForFunction(
-			() => /font/i.test(document.querySelector('#template-message').textContent),
-			null, { timeout: 10000 });
+		// That a text element pins a font is checked on the server rather than through the
+		// element panel, because the panel's refusal depends on the instance having no font
+		// uploaded - which an earlier probe, or a real household, may already have changed.
+		// Publishing a document that names a font nobody stored is deterministic either way.
+		const orphan = {
+			schema_version: 1, entity_kind: 'location',
+			canvas: { width_mm: 58.9, height_mm: 30.0, max_height_mm: null,
+				margins_mm: { top: 1, right: 1, bottom: 1, left: 1 } },
+			elements: [{ type: 'text', id: 'name', x_mm: 2, y_mm: 2, width_mm: 30, height_mm: 8,
+				field: 'location.name', font_asset: 'no-such-font-' + Date.now(), size_pt: 10 }],
+		};
+		const scratch = await (await page.request.post(base + '/api/labels/templates',
+			{ data: { name: 'Orphan font ' + Date.now(), entity_kind: 'location' } })).json();
+		const scratchDraft = await (await page.request.get(base + '/api/labels/templates/' + scratch.id + '/draft')).json();
+		await page.request.put(base + '/api/labels/templates/' + scratch.id + '/draft',
+			{ data: { document: orphan, revision_token: scratchDraft.revision_token } });
+		const refused = await page.request.post(base + '/api/labels/templates/' + scratch.id + '/publish', { data: {} });
+		assert.equal(refused.status(), 422, 'publishing a document naming an unstored font is refused');
+		const refusal = await refused.json();
+		assert.equal(refusal.code, 'asset_unavailable', 'and the refusal names the asset: ' + JSON.stringify(refusal));
 
 		await page.getByRole('button', { name: 'Save draft' }).click();
 		await page.getByText('Draft saved', { exact: false }).waitFor();
@@ -54,7 +66,7 @@ const base = urlIndex < 0 ? 'http://127.0.0.1:8200' : process.argv[urlIndex + 1]
 		const draft = await (await page.request.get(base + '/api/labels/templates/' + templateId + '/draft')).json();
 		const ids = draft.document.elements.map(element => element.id);
 		assert.ok(ids.includes('qr1'), 'the element the editor added reached the server: ' + JSON.stringify(ids));
-		assert.ok(!ids.some(id => id.startsWith('text')), 'no text element was added without a font');
+		assert.ok(ids.includes('code'), 'the starting draft is QR-only, so a new template can publish');
 
 		// A QR's payload is not editable, and the document format refuses one that tries.
 		const qr = draft.document.elements.find(element => element.type === 'qr');

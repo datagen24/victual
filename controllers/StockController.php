@@ -154,7 +154,7 @@ class StockController extends BaseController
 			// has no id to mint a label against, and issuing one for a row that may never
 			// exist would leave a uid naming nothing.
 			$printers = VICTUAL_FEATURE_FLAG_LABELS
-				? $this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name')
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
 				: [];
 
 			return $this->RenderPage($response, 'locationform', [
@@ -194,8 +194,13 @@ class StockController extends BaseController
 		// guessing. Read here rather than fetched by the page because a page that has no
 		// printer should not render a print button at all - a button that can only ever
 		// answer "no printer is configured" is the button plan 25 exists to replace.
+		//
+		// Materialized rather than passed as a LessQL\Result: a Result is lazy and is not
+		// Countable, so `count()` in the view is a TypeError. Every other list this
+		// controller hands a view is iterated and never counted, which is why nothing here
+		// had needed an array before.
 		$printers = VICTUAL_FEATURE_FLAG_LABELS
-			? $this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name')
+			? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
 			: [];
 
 		return $this->RenderPage($response, 'locations', [

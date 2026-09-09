@@ -16,6 +16,11 @@ const base = index < 0 ? 'http://127.0.0.1:8200' : process.argv[index + 1];
    assert.ok(response.ok(), path + ': ' + await response.text()); try { return await response.json(); } catch (error) { throw new Error(path + ': ' + await response.text()); }
   }
   const name = 'Label UI ' + Date.now();
+  // A run-unique schema version. Re-registering an existing (driver_id, schema_version) with a
+  // different document is refused by design - ADR-0019 decision item 3 - so a probe that reused
+  // one would fail against any instance a previous run or a real worker had already registered,
+  // which is a fixture collision rather than a finding.
+  driver.schema_version = '1.' + (Date.now() % 100000);
   const worker = await post('labels/workers', { name, configuration_mode: 'declared' });
   const credential = await post('labels/workers/' + worker.id + '/credentials', {});
   await post('labels/register', { drivers: [driver] }, { 'VICTUAL-API-KEY': credential.credential });
