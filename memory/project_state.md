@@ -29,12 +29,18 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   [PR #110](https://github.com/datagen24/victual/pull/110). Location-label printing stays
   gated by [issue #93](https://github.com/datagen24/victual/issues/93) on physical
   acceptance.
-- **This memory harness is untracked.** `memory/`, `.claude/hooks/` and `.agents/hooks/` sit
-  in the master working tree without being committed, and no `settings.json` registers
-  either hook, so neither fires yet. Registration is a `UserPromptSubmit` entry for
-  `auto_orient.py` and a `Stop` entry for `claim_check_hook.py` (start it in
-  `CLAIM_CHECK_ENFORCE_MODE=warn`, promote to `block` once it stops false-firing) — merged
-  into any existing arrays, never overwriting them.
+- **This memory harness landed** in `4e4dd50e` (the andon commit, merged through
+  [PR #111](https://github.com/datagen24/victual/pull/111)): all seven `memory/` files plus
+  both copies of the three hooks, in `.claude/hooks/` and `.agents/hooks/`, are tracked.
+  Registration is a tracked **`.claude/settings.json`** as of 2026-09-08, so the wiring
+  travels with the repository rather than living in the gitignored
+  `.claude/settings.local.json` (which now carries only the operator's own BLUF echo, a
+  personal preference that has no business in a clone). Both commands are shell form with
+  `"${CLAUDE_PROJECT_DIR}"` quoted and guarded by `[ -f … ]`, because a branch predating
+  `4e4dd50e` has no `.claude/hooks/` and an unguarded command fails on every prompt there.
+  `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote it to `block` once
+  it stops false-firing. Project hooks need the workspace-trust dialog accepted before they
+  run at all — so a fresh clone gets the harness inert until the operator trusts the folder.
 
 **How to apply:** update this file when an entry here becomes wrong, and delete an entry once
 the corpus states it. A line here that the plans README also states should be the line here

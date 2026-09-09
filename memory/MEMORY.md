@@ -60,7 +60,9 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
 - **2026-09-08 — Memory and claim-check harness** built this index and its topic files;
-  hooks are present but not yet registered in settings. [→](project_session_20260908.md)
+  merged as part of the andon commit, then fixed a nesting bug that stopped the orient hook
+  from being registered at all and moved the wiring into a tracked `.claude/settings.json`.
+  [→](project_session_20260908.md)
 
 ## DOCTRINE (operator-locked decisions)
 
