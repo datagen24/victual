@@ -143,17 +143,26 @@ class LabelTemplateService extends LabelService
         return $row;
     }
 
+    /**
+     * The starting draft: a QR and nothing else.
+     *
+     * Deliberately not a text element. Text pins a font asset, there is no default font and
+     * no substitution, and a household that has uploaded nothing yet would find its first
+     * template refusing to publish because it references a font that does not exist - a true
+     * refusal about a document nobody wrote. A QR needs no asset at all, because its payload
+     * is the server's, so a new template publishes and prints a scannable label immediately
+     * and text is added once there is a font to pin.
+     */
     private static function EmptyDocument(string $entityKind): array
     {
         return [
             'schema_version' => TemplateDocument::SCHEMA_VERSION,
             'entity_kind' => $entityKind,
-            'canvas' => ['width_mm' => 62.0, 'height_mm' => null, 'max_height_mm' => 100.0, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
+            'canvas' => ['width_mm' => 58.9, 'height_mm' => null, 'max_height_mm' => 100.0, 'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
             'elements' => [[
-                'type' => 'text', 'id' => 'name', 'x_mm' => 2.0, 'y_mm' => 2.0, 'width_mm' => 58.0, 'height_mm' => 10.0,
-                'field' => $entityKind . '.name', 'literal' => null, 'font_asset' => 'default', 'size_pt' => 11.0,
-                'align' => 'left', 'valign' => 'top', 'wrap' => true, 'line_spacing' => 1.2, 'overflow' => 'error',
-                'min_size_pt' => null, 'color' => 'black',
+                'type' => 'qr', 'id' => 'code', 'x_mm' => 2.0, 'y_mm' => 2.0,
+                'module_mm' => 0.6, 'ec_level' => 'M', 'quiet_zone_modules' => 4,
+                'source' => 'label.payload', 'color' => 'black',
             ]],
         ];
     }

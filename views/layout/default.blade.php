@@ -442,6 +442,9 @@
 						</li>
 						@endif
 						@if(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_ADMIN))
+						<li class="@if($viewName == 'labeltemplates' || $viewName == 'labeltemplateeditor') active-page @endif">
+							<a class="nav-link discrete-link" href="{{ $U('/labeltemplates') }}"><span class="nav-link-text">{{ $__t('Label templates') }}</span></a>
+						</li>
 						<li><a class="nav-link discrete-link" href="{{ $U('/labelprintjobs') }}"><span class="nav-link-text">{{ $__t('Label print jobs') }}</span></a></li>
 						@endif
 						<li class="@if($viewName == 'userfields') active-page @endif">
@@ -718,6 +721,13 @@
 
 	@if(in_array('bootstrap-combobox', $VICTUAL_REQUIRED_FRONTEND_PACKAGES))
 	<script src="{{ $U('/packages/@danielfarrell/bootstrap-combobox/js/bootstrap-combobox.js?v=', true) }}{{ $version }}"></script>
+	@endif
+	{{-- Fabric.js is the browser editor and nothing else. ADR-0021 prerequisite 1 is explicit
+	that sharing the editor's engine is not a qualification for the headless renderer, and it
+	is not shared: the authoritative preview is the render, so this canvas is a design aid
+	rather than a fidelity claim. --}}
+	@if(in_array('fabric', $VICTUAL_REQUIRED_FRONTEND_PACKAGES))
+	<script src="{{ $U('/packages/fabric/dist/fabric.min.js?v=', true) }}{{ $version }}"></script>
 	@endif
 	@if(in_array('datatables', $VICTUAL_REQUIRED_FRONTEND_PACKAGES))
 	<script src="{{ $U('/packages/datatables.net/js/jquery.dataTables.min.js?v=', true) }}{{ $version }}"></script>

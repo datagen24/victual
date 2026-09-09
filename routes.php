@@ -9,6 +9,7 @@ use Victual\Controllers\Api\OpenApiController;
 use Victual\Controllers\Api\PrintApiController;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\RolesApiController;
+use Victual\Controllers\LabelTemplatesController;
 use Victual\Controllers\Api\LabelsApiController;
 use Victual\Controllers\Api\LabelTemplatesApiController;
 use Victual\Controllers\Api\LabelRenderApiController;
@@ -90,6 +91,8 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/labelprinters', [LabelPrintJobsController::class, 'Printers']);
 	$group->get('/labelprintjobs', [LabelPrintJobsController::class, 'Index']);
 	$group->get('/locationlabels', [StockController::class, 'LocationLabels']);
+	$group->get('/labeltemplates', [LabelTemplatesController::class, 'TemplatesList']);
+	$group->get('/labeltemplate/{templateId}', [LabelTemplatesController::class, 'TemplateEditor']);
 	$group->get('/locations', [StockController::class, 'LocationsList']);
 	$group->get('/location/{locationId}', [StockController::class, 'LocationEditForm']);
 	$group->get('/stockjournal', [StockController::class, 'Journal']);

@@ -2503,3 +2503,141 @@ msgid "Pack"
 msgid_plural "Packs"
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "Label templates"
+msgstr ""
+
+msgid "A template is a design. Printing pins a published version of it, so a change here affects new labels and never one that has already been queued or printed."
+msgstr ""
+
+msgid "Create a location label template"
+msgstr ""
+
+msgid "Entity kind"
+msgstr ""
+
+msgid "Published versions"
+msgstr ""
+
+msgid "Default version"
+msgstr ""
+
+msgid "Design"
+msgstr ""
+
+msgid "None published yet"
+msgstr ""
+
+msgid "Label print jobs"
+msgstr ""
+
+msgid "Design a label"
+msgstr ""
+
+msgid "Add an element"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "QR code"
+msgstr ""
+
+msgid "Rectangle"
+msgstr ""
+
+msgid "Line"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Label width (mm)"
+msgstr ""
+
+msgid "Label length (mm), empty for automatic"
+msgstr ""
+
+msgid "Maximum length (mm)"
+msgstr ""
+
+msgid "Automatic length is bounded: continuous tape is not an unbounded canvas, so a design that grows past this is refused rather than cropped."
+msgstr ""
+
+msgid "Save draft"
+msgstr ""
+
+msgid "Publish a version"
+msgstr ""
+
+msgid "Preview against"
+msgstr ""
+
+msgid "A preview is rendered by the same renderer that produces a printed label, against that printer's media profile. The canvas beside it is a design aid and not a fidelity claim."
+msgstr ""
+
+msgid "Render a preview"
+msgstr ""
+
+msgid "Authoritative preview"
+msgstr ""
+
+msgid "Not rendered yet"
+msgstr ""
+
+msgid "Select an element to edit it"
+msgstr ""
+
+msgid "Draft saved"
+msgstr ""
+
+msgid "Black"
+msgstr ""
+
+msgid "Error correction"
+msgstr ""
+
+msgid "Module size (mm)"
+msgstr ""
+
+msgid "Colour"
+msgstr ""
+
+msgid "A QR always encodes this label's own identifier. It cannot be pointed anywhere else."
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "White"
+msgstr ""
+
+msgid "Remove this element"
+msgstr ""
+
+msgid "The server did not answer"
+msgstr ""
+
+msgid "Fonts and images"
+msgstr ""
+
+msgid "Upload a font (TTF or OTF) or a PNG image"
+msgstr ""
+
+msgid "Licence it is used under"
+msgstr ""
+
+msgid "for example, SIL Open Font License 1.1"
+msgstr ""
+
+msgid "Recorded beside the bytes: a household printing labels with a font is redistributing its output, and what it was allowed to do belongs next to it."
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
+msgstr ""
+
+msgid "Published version %s"
+msgstr ""

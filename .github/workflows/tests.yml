@@ -389,6 +389,10 @@ jobs:
         working-directory: .devtools/frontend
         run: node location-print.js --url http://127.0.0.1:8085
 
+      - name: Run label designer checks
+        working-directory: .devtools/frontend
+        run: node label-designer.js --url http://127.0.0.1:8085
+
       # Uploaded on failure: the per-probe reasons are in the log, but the JSON carries
       # what was stored and read back, which is what tells a reader whether a failing probe
       # found a real sink or a broken seed.
