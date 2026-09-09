@@ -173,11 +173,36 @@ JOIN tree t
 -- three-deep branch under a node that is already three deep has to be refused even though the
 -- row itself only moves one level. `subtree_height` is 0 for a leaf and for a row that does
 -- not exist yet, which is why an INSERT needs no separate branch.
+--
+-- WHY IT TAKES A LOCK BEFORE IT LOOKS. A guard that reads the tree and then writes to it is
+-- only correct if no other transaction is doing the same thing at the same time, and two
+-- concurrent re-parentings touch different rows, so nothing in the engine makes them wait for
+-- each other. Measured on PostgreSQL 16.13 before this lock existed: two connections, one
+-- setting A's parent to B and the other setting B's parent to A, each read the tree as it was
+-- before the other wrote, each found no cycle, and both committed. The result is a two-node
+-- cycle -- and because the view descends from roots, neither row is reachable from one any
+-- more, so A and B vanish from locations_resolved entirely. They disappear from every picker,
+-- from the locations list, and from the parent select that would let someone undo it.
+--
+-- The lock is advisory rather than a row lock because what has to be serialised is the *shape
+-- of the tree*, which is not any one row: the rows a check reads are not the rows it writes.
+-- It is held to the end of the transaction and taken on every parent write, so the checks
+-- below run one at a time. Locations are a few dozen rows edited by hand, so serialising every
+-- hierarchy write costs nothing worth measuring. The two-argument form is keyed on this
+-- migration's number, leaving the rest of the keyspace to whatever needs it next.
+--
+-- This function must stay VOLATILE (which is the default, and why no volatility is declared).
+-- That is what makes each statement inside it take a fresh snapshot under READ COMMITTED, so
+-- the reads below see the transaction this one just waited for. Marked STABLE it would take
+-- the calling statement's snapshot instead -- a snapshot from before the wait -- and the lock
+-- would serialise the checks while telling each of them the same stale answer.
 CREATE FUNCTION trg_locations_check_parent() RETURNS TRIGGER AS $$
 DECLARE
 	parent_level INTEGER;
 	subtree_height INTEGER;
 BEGIN
+	PERFORM pg_advisory_xact_lock(273, 1);
+
 	IF NEW.parent_location_id IS NULL THEN
 		RETURN NEW;
 	END IF;
@@ -217,8 +242,14 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER check_location_parent BEFORE INSERT OR UPDATE OF parent_location_id ON locations
 FOR EACH ROW EXECUTE FUNCTION trg_locations_check_parent();
 
+-- The same lock, for the same reason one turn further round: this guard reads the rows that
+-- the other trigger writes. Without it a delete and a concurrent insert of a child under the
+-- row being deleted both see a tree the other has not changed yet, the delete finds no
+-- children and the insert finds a parent, and the child outlives its parent.
 CREATE FUNCTION trg_locations_guard_children() RETURNS TRIGGER AS $$
 BEGIN
+	PERFORM pg_advisory_xact_lock(273, 1);
+
 	IF EXISTS (SELECT 1 FROM locations WHERE parent_location_id = OLD.id) THEN
 		RAISE EXCEPTION 'Location has child locations';
 	END IF;

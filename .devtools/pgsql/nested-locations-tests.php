@@ -41,6 +41,10 @@
 //      control whose Door has the flag cleared while its parent still has it.
 //   6. Roll-up leaking into the content sheet. Question 4 wanted the roll-up for filtering
 //      only; stock at a leaf must not be reported under its ancestors. Case 9.
+//   7. A cycle built by two transactions neither of which could build one alone. The guard
+//      reads the tree and then writes to it, and two re-parentings touch different rows, so
+//      nothing makes them wait for each other unless something is made to. Case 10, which is
+//      the only case here that needs a second connection.
 //
 // The fixture tree is the one plan 08 question 5 was confirmed against, with is_freezer on
 // both UprightFreezer and Door:
@@ -463,6 +467,81 @@ foreach ($content as $row)
 
 check($atDoor > 0, 'stock at Door is reported at Door');
 check($atBasement === 0, 'stock at Door is not reported under Basement (plan 08 question 4)');
+
+// --- 10. Two connections re-parenting at once --------------------------------------------
+
+echo "\n10. concurrent re-parenting cannot build a cycle\n";
+
+// The one case in this file that needs a second connection, because what it is about is two
+// transactions and nothing about one transaction can show it. The guard reads the tree and
+// then writes to it, and two re-parentings touch different rows - so without the advisory
+// lock migrations/0273.pgsql.sql takes, nothing makes them wait for each other: each reads
+// the tree as it was before the other wrote, each finds no cycle, and both commit. The
+// result is a cycle whose rows are unreachable from any root, so they vanish from
+// locations_resolved and therefore from every picker and list that renders a location.
+//
+// Driven in one process on purpose, so the interleaving is fixed rather than raced for: the
+// second connection is given a short lock_timeout and has to *block*, which is the assertion
+// that the two are serialised at all. Retried after the first commits, it has to be refused
+// on the merits, which is the assertion that the wait bought a fresh view of the tree - the
+// half that would still fail if the trigger function were ever marked STABLE.
+$second = new PDO(
+	'pgsql:host=' . VICTUAL_DB_HOST . ';port=' . intval(VICTUAL_DB_PORT) . ';dbname=' . VICTUAL_DB_NAME,
+	VICTUAL_DB_USER,
+	VICTUAL_DB_PASSWORD,
+	[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+);
+
+$cycleLeft = MakeLocation('ConcurrentLeft');
+$cycleRight = MakeLocation('ConcurrentRight');
+
+$second->exec("SET lock_timeout = '2s'");
+
+$pdo->beginTransaction();
+$pdo->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleRight, $cycleLeft]);
+
+$second->beginTransaction();
+$blocked = null;
+
+try
+{
+	$second->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleLeft, $cycleRight]);
+}
+catch (PDOException $exception)
+{
+	$blocked = $exception->getMessage();
+}
+
+$second->rollBack();
+
+check($blocked !== null && str_contains($blocked, 'lock timeout'),
+	'the second re-parenting waits for the first rather than reading round it');
+
+$pdo->commit();
+
+$second->exec("SET lock_timeout = '10s'");
+$second->beginTransaction();
+$refused = null;
+
+try
+{
+	$second->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleLeft, $cycleRight]);
+	$second->commit();
+}
+catch (PDOException $exception)
+{
+	$refused = $exception->getMessage();
+	$second->rollBack();
+}
+
+check($refused !== null && str_contains($refused, 'Recursive nested location detected'),
+	'and is then refused on the merits, having seen the committed first write');
+
+$statement = $pdo->prepare('SELECT COUNT(*) FROM locations_resolved WHERE descendant_location_id IN (?, ?) AND depth = 0');
+$statement->execute([$cycleLeft, $cycleRight]);
+
+check((int)$statement->fetchColumn() === 2,
+	'both locations are still reachable from a root, so neither has vanished from the pickers');
 
 echo "\n";
 

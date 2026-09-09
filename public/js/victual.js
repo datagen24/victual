@@ -577,6 +577,56 @@ Victual.FrontendHelpers.ShowApiError = function (fallbackMessage, xhr)
 	console.error(response);
 }
 
+/**
+ * The location paths a page's server-rendered <select> was built with, as { id: path }.
+ *
+ * Consume and transfer do not keep the options the template gave them: choosing a product
+ * empties the location select and rebuilds it from that product's actual stock locations,
+ * which the API reports by `location_name` - the bare name. Since locations became a tree
+ * that name is unique only among siblings, so the rebuild would turn two distinguishable
+ * "Shelf3" options back into two identical ones, on the two pages where the choice decides
+ * which physical stock is consumed or moved.
+ *
+ * The paths are read out of the DOM at page load, before anything can remove them, and put
+ * back by id afterwards. Doing it here rather than widening `stock_current_locations` keeps
+ * a public read entity's shape as it was - issue 81 lists that view under Unchanged.
+ *
+ * @type {Object<string, string>}
+ */
+Victual.FrontendHelpers.LocationPathsById = {};
+
+/**
+ * Remembers the paths in a location select. Call once, at page load.
+ * @param {string} selector jQuery selector of the <select>, e.g. "#location_id"
+ */
+Victual.FrontendHelpers.RememberLocationPaths = function (selector)
+{
+	$(document).find(selector).find('option').each(function ()
+	{
+		var option = $(this);
+		var locationId = option.attr('value');
+
+		if (locationId !== undefined && locationId !== '')
+		{
+			Victual.FrontendHelpers.LocationPathsById[locationId] = option.text();
+		}
+	});
+}
+
+/**
+ * The remembered path for a location, or the given name when there is none - a location
+ * created since the page loaded, or one the select never listed.
+ * @param {number|string} locationId
+ * @param {string} fallbackName Used when no path was remembered for this id
+ * @returns {string}
+ */
+Victual.FrontendHelpers.LocationPath = function (locationId, fallbackName)
+{
+	var path = Victual.FrontendHelpers.LocationPathsById[locationId];
+
+	return path === undefined ? fallbackName : path;
+}
+
 Victual.FrontendHelpers.SaveUserSetting = function (settingsKey, value, force = false)
 {
 	if (Victual.UserSettings[settingsKey] == value && !force)

@@ -27,6 +27,14 @@
 //      option text and the delete confirmation, so the S29 rule (AGENTS.md, plan 21) has to
 //      hold on each. The seeded name is a live <img onerror>; if any of those built markup by
 //      concatenation it would execute here.
+//   7. The pickers that throw the template's options away. Consume and transfer rebuild their
+//      location select from the product's stock locations, which the API reports by name, so
+//      the paths rendered server-side survive only if the rebuild puts them back. Asserted
+//      after the rebuild, because before it the template's own options would pass.
+//   8. The row that moved. A stock entry edited into another location is refreshed in place,
+//      and the location filter matches on the row's ancestor chain - so a refresh that updates
+//      the id and the text but not the chain leaves the row matching where it used to be, with
+//      nothing about it looking wrong until a reload.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
@@ -239,6 +247,94 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		assert.match(await toast.innerText(), /Location has child locations/, 'the refusal says what is wrong');
 
 		assert.ok(await locationNamed(name('StorageRoom')), 'and the location is still there');
+
+		// 7. THE PICKERS THAT REBUILD THEMSELVES. Consume and transfer do not keep the options
+		//    the template gave them: choosing a product empties the location select and
+		//    rebuilds it from that product's stock locations, which the API reports by
+		//    location_name. Before this was fixed the paths rendered server-side were replaced
+		//    by bare names on exactly the two pages where the choice decides which physical
+		//    stock is consumed or moved. Asserted after the rebuild, not before it - the
+		//    template's own options would pass either way.
+		// Waiting for the rebuild rather than for Door is the whole point: the template's own
+		// options already name Door by its path, so a wait that Door satisfies is satisfied
+		// before the rebuild has replaced anything and the assertion below would pass against
+		// markup the rebuild was about to throw away. What only the rebuild can produce is a
+		// *short* list - this product has stock in one location - so that is what is waited
+		// for, and asserted, before the text is read.
+		async function pickProductAndReadLocations(path, selectSelector)
+		{
+			await page.goto(base + path, { waitUntil: 'networkidle' });
+
+			const optionsBefore = await page.locator(selectSelector + ' option').count();
+			assert.ok(optionsBefore > 2, path + ' starts with the whole location list (' + optionsBefore + ' options)');
+
+			await page.evaluate(id =>
+			{
+				Victual.Components.ProductPicker.SetId(id);
+				Victual.Components.ProductPicker.GetPicker().trigger('change');
+			}, product.created_object_id);
+
+			await page.waitForFunction(
+				selector => document.querySelectorAll(selector + ' option').length === 2,
+				selectSelector,
+				{ timeout: 15000 });
+
+			const texts = await page.locator(selectSelector + ' option').allInnerTexts();
+			const doorOption = texts.find(text => text.includes(name('Door')));
+			assert.ok(doorOption !== undefined, path + ' still offers Door after the rebuild: ' + JSON.stringify(texts));
+
+			return doorOption;
+		}
+
+		const consumeOption = await pickProductAndReadLocations('/consume', '#location_id');
+		assert.ok(consumeOption.includes(doorPath), 'the consume picker still names Door by its path after the rebuild: ' + consumeOption);
+
+		const transferOption = await pickProductAndReadLocations('/transfer', '#location_id_from');
+		assert.ok(transferOption.includes(doorPath), 'and so does the transfer picker: ' + transferOption);
+
+		// 8. THE ROW THAT MOVED. A stock entry edited into another location has its row
+		//    refreshed in place, and the location filter matches on the row's ancestor chain -
+		//    so refreshing the id and the text without the chain leaves the row matching the
+		//    location it came from and missing the one it went to, with nothing about it
+		//    looking wrong until a reload. This drives the same sequence the page runs when
+		//    the edit dialog reports success: PUT the entry, then refresh its row.
+		await page.goto(base + '/stockentries', { waitUntil: 'networkidle' });
+
+		const entryId = entries[0].id;
+		const entryRowCell = page.locator('#stock-' + entryId + '-location');
+		await entryRowCell.waitFor();
+
+		const ancestorsBefore = (await entryRowCell.getAttribute('data-location-ancestors')).split(',');
+		assert.ok(ancestorsBefore.includes(String(basement.id)), 'the row starts out under Basement');
+		assert.ok(!ancestorsBefore.includes(String(main.id)), 'and not under Main');
+
+		const kitchen = await locationNamed(name('Kitchen'));
+		// The same body the edit form sends. `open` and `purchased_date` are read unguarded by
+		// EditStockEntry, so a body without them is a 500 rather than a 400 - a pre-existing
+		// gap of plan 11's, not this work's, and not widened here.
+		await api('stock/entry/' + entryId, 'PUT', {
+			amount: 2,
+			location_id: kitchen.id,
+			best_before_date: '2027-12-31',
+			purchased_date: entries[0].purchased_date,
+			open: false
+		});
+		await page.evaluate(id => RefreshStockEntryRow(id), entryId);
+		await page.waitForFunction(
+			([id, wanted]) => (document.querySelector('#stock-' + id + '-location')?.getAttribute('data-location-ancestors') || '').split(',').includes(String(wanted)),
+			[entryId, main.id],
+			{ timeout: 15000 });
+
+		const ancestorsAfter = (await entryRowCell.getAttribute('data-location-ancestors')).split(',');
+		assert.ok(ancestorsAfter.includes(String(main.id)), 'after the move the row is under Main');
+		assert.ok(!ancestorsAfter.includes(String(basement.id)), 'and no longer under Basement');
+		assert.match(await entryRowCell.innerText(), new RegExp(name('Main') + ' / ' + name('Kitchen')), 'and the cell shows the new path, not the bare name');
+
+		// The filter, which is what the chain is for, follows without a reload.
+		await page.locator('#location-filter').selectOption(String(main.id));
+		await page.locator('#stock-' + entryId + '-row').waitFor({ state: 'visible' });
+		await page.locator('#location-filter').selectOption(String(basement.id));
+		await page.locator('#stock-' + entryId + '-row').waitFor({ state: 'hidden' });
 
 		// 6b. Every page above rendered the payload row. If any of them had built markup by
 		//     concatenation the handler would have run by now.

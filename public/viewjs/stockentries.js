@@ -276,14 +276,27 @@ function RefreshStockEntryRow(stockRowId)
 
 				$(".stock-consume-button").attr('data-location-id', result.location_id);
 
-				var locationName = "";
-				Victual.Api.Get("objects/locations/" + result.location_id,
-					function(locationResult)
+				// The resolved view rather than the row, because the cell carries two things the
+				// row cannot answer: the path it displays, and the ancestor chain the location
+				// filter matches on. Updating the id and the text but not the ancestors would
+				// leave a moved entry matching the location it came from and missing the one it
+				// went to, until the page was reloaded - and nothing about the row would look
+				// wrong. One request answers both: `path` is the same on every row for a given
+				// descendant, and the ancestors are the rows themselves, ordered by depth so the
+				// attribute reads the way the server writes it.
+				Victual.Api.Get("objects/locations_resolved?query[]=descendant_location_id=" + result.location_id,
+					function(resolvedRows)
 					{
-						locationName = locationResult.name;
+						resolvedRows.sort(function (left, right) { return left.depth - right.depth; });
 
-						$('#stock-' + stockRowId + '-location').attr('data-location-id', result.location_id);
-						$('#stock-' + stockRowId + '-location').text(locationName);
+						var locationCell = $(document).find('#stock-' + stockRowId + '-location');
+						locationCell.attr('data-location-id', result.location_id);
+						locationCell.attr('data-location-ancestors', resolvedRows.map(function (row) { return row.ancestor_location_id; }).join(','));
+						locationCell.text(resolvedRows.length === 0 ? '' : resolvedRows[0].path);
+
+						// The filter reads that attribute at draw time, so without this the row
+						// keeps whatever visibility the old location earned it.
+						stockEntriesTable.draw();
 					}
 				);
 

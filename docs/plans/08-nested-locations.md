@@ -143,7 +143,7 @@ Medium. The schema and view are small and well understood; the UI dropdowns and 
 Landed as `migrations/0273.pgsql.sql` — one column, one function, one view, two triggers —
 plus the API surface, the UI across fourteen templates, a PostgreSQL-only suite phase and a
 browser probe. The design above shipped as written and all five answers were honoured.
-Twelve things are worth recording because they are not derivable from it.
+Thirteen things are worth recording because they are not derivable from it.
 
 **The migration number moved once more, and this was the eighth move of the same three
 numbers.** The plan was scoped against a table that had 0273 for [23](23-storage-classes.md)
@@ -226,6 +226,58 @@ the shape. One consequence is recorded in `locationpicker.js`: prefill-by-name u
 `prefillByName` today, so the code path is left as it is with a comment saying new callers
 should prefer the id.
 
+**Three defects came out of review, and one of them was a way to lose a location.** All
+three are the same shape: the guard, or the page, was written for the state it could see and
+not for the state it would be in a moment later.
+
+*Concurrent re-parenting built a cycle.* `check_location_parent` read `locations_resolved`
+and then wrote to `locations`, and two re-parentings touch different rows, so nothing made
+them wait for each other. Measured on PostgreSQL 16.13: two connections, one setting A's
+parent to B and the other setting B's parent to A, each read the tree as it was before the
+other wrote, each found no cycle, and both committed. The result is worse than a bad edit —
+the view descends from roots, so neither row is reachable from one any more and both vanish
+from `locations_resolved` entirely: gone from every picker, from the locations list, and from
+the parent select that would let someone undo it. Both triggers now take
+`pg_advisory_xact_lock(273, 1)` before they look. Advisory rather than a row lock because what
+has to be serialised is the shape of the tree, which is not any one row. `0273.pgsql.sql` was
+edited in place rather than followed by a second migration, for the reason
+`migrations/0262.pgsql.sql` was: it has never existed in `master`, and the retirement rule is
+about numbers that have. The delete guard takes the same lock, which closes the same race one
+turn round — a delete and a concurrent insert of a child under the row being deleted.
+
+One thing this rests on and no reader should undo: the trigger function must stay VOLATILE,
+which is the default and why no volatility is declared on it. That is what makes each
+statement inside it take a fresh snapshot under READ COMMITTED, so the check sees the
+transaction it just waited for. Marked STABLE it would take the calling statement's snapshot —
+from before the wait — and the lock would serialise the checks while telling each of them the
+same stale answer. The suite phase asserts both halves separately for that reason: the second
+write has to *block*, and it then has to be *refused on the merits*.
+
+*Consume and transfer threw the paths away.* Both pages empty the location select when a
+product is chosen and rebuild it from that product's stock locations, which the API reports by
+`location_name` — the bare name. So the two pages where the choice decides which physical
+stock is consumed or moved were the two that turned two distinguishable "Shelf3" options back
+into two identical ones. Fixed by remembering the server-rendered paths by id at page load and
+putting them back in the rebuild (`Victual.FrontendHelpers.RememberLocationPaths`), rather than
+by adding a path to `stock_current_locations` — issue 81 lists that view under **Unchanged**,
+and a public read entity's shape is not the place to solve a rendering problem.
+
+*A moved stock entry kept its old ancestors.* `RefreshStockEntryRow()` updated the row's
+location id and text but not `data-location-ancestors`, which is what the location filter
+matches on — so an entry edited into another location went on matching the location it came
+from and missing the one it went to, until a reload, with nothing about the row looking wrong.
+It now reads `locations_resolved` for that location instead of the row, which answers the path
+and the chain in one request, and redraws so the filter follows immediately.
+
+**A test that waits for the wrong thing passes for the wrong reason.** The browser probe's
+first attempt at the consume and transfer pickers waited for an option naming `Door` and then
+asserted its text was the path. The template's own options already satisfy both, so the
+assertion was met before the rebuild had replaced anything: with the fix reverted, the probe
+still passed. What only the rebuild can produce is a *short* list — the product has stock in
+one location — so that is what it waits for now, and the reverted-fix run fails with the
+defect in the message: `Door MTU7JJWF (Default location)`. Worth recording because the
+first version looked exactly like a test.
+
 **The `locations` projection is shadowed by a hand-built stub, and widening one means
 widening the other.** `.devtools/labels/identity-tests.php` builds its own `locations` table
 column by column — it is checking that `/objects/locations` does not leak plan 25's
@@ -255,7 +307,7 @@ Results, against `postgres:16` (16.13) on 2026-09-09:
 | Check | Result |
 |---|---|
 | `php .devtools/pgsql/check-migrations.php` | `MIGRATION NUMBERING OK`, no `--allow-reserved-holes` |
-| `run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (39 assertions)` |
+| `run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (42 assertions)` |
 | `run-tests.sh all` | every phase green except `files`, which fails the same three cases on `origin/master` in this container: they expect a mode 000 directory to be unreadable and the suite runs as root. CI's `suite` job, which is not root, reports `SUITE PASSED` including that phase |
 | `.devtools/frontend/nested-locations.js` | `NESTED LOCATION BROWSER CHECKS PASSED` |
 | `.devtools/frontend/s29-payload.js` | `27/27 probes clean` |
