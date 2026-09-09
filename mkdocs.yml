@@ -105,6 +105,7 @@ nav:
           - 0019 Label printers are master data: development/adr/0019-label-printers-are-master-data.md
           - 0020 Documentation publication boundary: development/adr/0020-documentation-publication-boundary.md
           - 0021 Label templates are application data: development/adr/0021-label-templates-are-application-data.md
+          - 0022 Open containers carry a measured remainder: development/adr/0022-open-containers-carry-a-measured-remainder.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
