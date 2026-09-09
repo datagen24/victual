@@ -62,6 +62,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
 | 0275 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0276 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0277 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
 
 ## The merge order this implies — discharged
 
