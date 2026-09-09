@@ -42,9 +42,12 @@ var stockOverviewTable = $('#stock-overview-table').DataTable({
 $('#stock-overview-table tbody').removeClass("d-none");
 stockOverviewTable.columns.adjust().draw();
 
-// Location filter, matched against the hidden locations column (index 6), which lists
-// all locations a product is stocked at wrapped in "xx...xx" markers so a substring
-// match on one location id can't accidentally match another
+// Location filter, matched against the hidden locations column (index 6). That column lists
+// the id of every location the product is stocked at *and* the id of every ancestor of each
+// of those, each wrapped in "xx...xx" so a substring match on one id cannot match another.
+// The ancestors are what make the filter roll up: selecting "Basement" finds a product
+// stocked at "Basement / StorageRoom / UprightFreezer / Door" (plan 08 question 4). The
+// option values are ids rather than names, because a name is only unique among siblings now.
 $("#location-filter").on("change", function ()
 {
 	var value = $(this).val();

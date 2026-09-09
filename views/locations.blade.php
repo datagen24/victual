@@ -69,6 +69,7 @@
 							href="#"><i class="fa-solid fa-eye"></i></a>
 					</th>
 					<th>{{ $__t('Name') }}</th>
+					<th>{{ $__t('Path') }}</th>
 					<th>{{ $__t('Description') }}</th>
 
 					@include('components.userfields_thead', array(
@@ -110,8 +111,14 @@
 						</a>
 						@endif
 					</td>
-					<td>
+					<td data-location-level="{{ $location->level }}">
 						{{ $location->name }}
+					</td>
+					{{-- Where this location sits, spelled out. The name column stays the bare
+					name because that is what the label actions key off and what a label says
+					is plan 06's question, not this one's. --}}
+					<td>
+						{{ $location->path }}
 					</td>
 					<td>
 						{{ $location->description }}

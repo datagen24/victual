@@ -32,7 +32,13 @@
 		@endif>
 		<option value=""></option>
 		@foreach($locations as $location)
-		<option value="{{ $location->id }}">{{ $location->name }}</option>
+		{{-- The path, not the bare name: "Kitchen / Pantry / Top shelf" is typeable in the
+		combobox and tells two "Top shelf" rows apart, which an indent cannot. data-level and
+		data-is-freezer are here for callers that need the tree shape or the freezer flag
+		without a second request. --}}
+		<option value="{{ $location->id }}"
+			data-level="{{ $location->level }}"
+			data-is-freezer="{{ $location->is_freezer }}">{{ $location->path }}</option>
 		@endforeach
 	</select>
 	<div class="invalid-feedback">{{ $__t('You have to select a location') }}</div>

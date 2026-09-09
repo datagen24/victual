@@ -55,7 +55,7 @@ class StockController extends BaseController
 			'products' => $this->DB->products()->where('active = 1')->where('id IN (SELECT product_id from stock_current WHERE amount_aggregated > 0)')->orderBy('name'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
 			'recipes' => $this->DB->recipes()->where('type', RecipesService::RECIPE_TYPE_NORMAL)->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(),
 			'quantityUnits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved()
 		]);
@@ -71,7 +71,7 @@ class StockController extends BaseController
 			'products' => $this->DB->products()->where('active = 1 AND no_own_stock = 0')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
 			'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'quantityUnits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('stock')
@@ -109,7 +109,7 @@ class StockController extends BaseController
 		return $this->RenderPage($response, 'stockjournal', [
 			'stockLog' => $stockLog->orderBy('row_created_timestamp', 'DESC'),
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(),
 			'users' => $usersService->GetUsersAsDto(),
 			'transactionTypes' => GetClassConstants('\Victual\Services\StockService', 'TRANSACTION_TYPE_'),
 			'userfieldsStock' => UserfieldsService::GetInstance()->GetFields('stock'),
@@ -128,7 +128,7 @@ class StockController extends BaseController
 		return $this->RenderPage($response, 'locationcontentsheet', [
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(),
 			'currentStockLocationContent' => StockService::GetInstance()->GetCurrentStockLocationContent(isset($request->getQueryParams()['include_out_of_stock']))
 		]);
 	}
@@ -141,15 +141,31 @@ class StockController extends BaseController
 	public function LocationEditForm(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		// Every location, inactive ones included, so that an existing parent is never
+		// silently dropped from the select it is the current value of.
+		$possibleParents = StockService::GetInstance()->GetLocationsWithPaths();
+
 		if ($args['locationId'] == 'new')
 		{
 			return $this->RenderPage($response, 'locationform', [
 				'mode' => 'create',
+				'possibleParents' => $possibleParents,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
 		}
 		else
 		{
+			// A location cannot be its own parent and cannot sit inside its own subtree, so
+			// the option list omits itself and everything below it. The database refuses both
+			// (migrations/0273.pgsql.sql), but offering an option that is certain to be
+			// rejected is not a form, it is a trap. The self row of locations_resolved is why
+			// this one filter removes the location itself as well as its descendants.
+			$ancestors = StockService::GetInstance()->GetLocationAncestorIds();
+			$possibleParents = array_values(array_filter($possibleParents, function ($location) use ($ancestors, $args)
+			{
+				return !in_array(intval($args['locationId']), $ancestors[$location->id] ?? [], true);
+			}));
+
 			// Only the edit form offers a print action: a location that has not been saved
 			// has no id to mint a label against, and issuing one for a row that may never
 			// exist would leave a uid naming nothing.
@@ -160,6 +176,7 @@ class StockController extends BaseController
 			return $this->RenderPage($response, 'locationform', [
 				'location' => $this->DB->locations($args['locationId']),
 				'mode' => 'edit',
+				'possibleParents' => $possibleParents,
 				'labelPrinters' => $printers,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
@@ -183,11 +200,11 @@ class StockController extends BaseController
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
-			$locations = $this->DB->locations()->orderBy('name', 'COLLATE NOCASE');
+			$locations = StockService::GetInstance()->GetLocationsWithPaths();
 		}
 		else
 		{
-			$locations = $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE');
+			$locations = StockService::GetInstance()->GetLocationsWithPaths(true);
 		}
 
 		// The configured printers, so the print action can offer a choice rather than
@@ -248,8 +265,13 @@ class StockController extends BaseController
 
 		return $this->RenderPage($response, 'stockoverview', [
 			'currentStock' => $this->DB->uihelper_stock_current_overview()->where($where),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'currentStockLocations' => StockService::GetInstance()->GetCurrentStockLocations(),
+			// So that the hidden location cell can name every ancestor of each stocked
+			// location as well as the location itself: selecting "Basement" in the filter has
+			// to match a product stocked at "Basement / StorageRoom / UprightFreezer / Door"
+			// (plan 08 question 4).
+			'locationAncestors' => StockService::GetInstance()->GetLocationAncestorIds(),
 			'nextXDays' => $nextXDays,
 			'productGroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('products'),
@@ -315,7 +337,7 @@ class StockController extends BaseController
 			$quantityunits = $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE');
 
 			return $this->RenderPage($response, 'productform', [
-				'locations' => $this->DB->locations()->where('active = 1')->orderBy('name'),
+				'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 				'barcodes' => $this->DB->product_barcodes()->orderBy('barcode'),
 				'quantityunitsAll' => $quantityunits,
 				'quantityunitsReferenced' => $quantityunits,
@@ -333,7 +355,7 @@ class StockController extends BaseController
 
 			return $this->RenderPage($response, 'productform', [
 				'product' => $product,
-				'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+				'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 				'barcodes' => $this->DB->product_barcodes()->orderBy('barcode'),
 				'quantityunitsAll' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 				'quantityunitsReferenced' => $this->DB->quantity_units()->where('id IN (SELECT to_qu_id FROM cache__quantity_unit_conversions_resolved WHERE product_id = :1) OR NOT EXISTS(SELECT 1 FROM stock_log WHERE product_id = :1)', $product->id)->orderBy('name', 'COLLATE NOCASE'),
@@ -441,7 +463,7 @@ class StockController extends BaseController
 
 		return $this->RenderPage($response, 'products', [
 			'products' => $products,
-			'locations' => $this->DB->locations()->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(),
 			'quantityunits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
 			'productGroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'shoppingLocations' => $this->DB->shopping_locations()->orderBy('name', 'COLLATE NOCASE'),
@@ -460,7 +482,7 @@ class StockController extends BaseController
 			'products' => $this->DB->products()->where('active = 1 AND no_own_stock = 0')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
 			'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'quantityUnits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('stock')
@@ -749,7 +771,7 @@ class StockController extends BaseController
 			'stockEntry' => $this->DB->stock()->where('id', $args['entryId'])->fetch(),
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('stock')
 		]);
 	}
@@ -787,7 +809,7 @@ class StockController extends BaseController
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->RenderPage($response, 'stocksettings', [
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'quantityunits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'productGroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE')
 		]);
@@ -805,10 +827,12 @@ class StockController extends BaseController
 		return $this->RenderPage($response, 'stockentries', [
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'stockEntries' => $this->DB->uihelper_stock_entries()->orderBy('product_id'),
 			'currentStockLocations' => StockService::GetInstance()->GetCurrentStockLocations(),
+			// The same roll-up the overview does, through data-location-ancestors here.
+			'locationAncestors' => StockService::GetInstance()->GetLocationAncestorIds(),
 			'nextXDays' => $nextXDays,
 			'userfieldsProducts' => UserfieldsService::GetInstance()->GetFields('products'),
 			'userfieldValuesProducts' => UserfieldsService::GetInstance()->GetAllValues('products'),
@@ -827,7 +851,7 @@ class StockController extends BaseController
 		return $this->RenderPage($response, 'transfer', [
 			'products' => $this->DB->products()->where('active = 1')->where('no_own_stock = 0 AND id IN (SELECT product_id from stock_current WHERE amount_aggregated > 0)')->orderBy('name', 'COLLATE NOCASE'),
 			'barcodes' => $this->DB->product_barcodes_comma_separated(),
-			'locations' => $this->DB->locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'quantityUnits' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved()
 		]);

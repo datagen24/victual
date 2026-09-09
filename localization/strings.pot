@@ -1536,6 +1536,20 @@ msgstr ""
 msgid "Is freezer"
 msgstr ""
 
+msgid "Path"
+msgstr ""
+
+msgid "Parent location"
+msgstr ""
+
+msgid "Leave empty to make this a top level location"
+msgstr ""
+
+# The API's refusal when a location that still has children is deleted; the message
+# reaches the browser as the endpoint's error_message and is rendered as a toast.
+msgid "Location has child locations"
+msgstr ""
+
 msgid "Thawed"
 msgstr ""
 

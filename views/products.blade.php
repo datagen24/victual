@@ -188,7 +188,7 @@
 						$location = FindObjectInArrayByPropertyValue($locations, 'id', $product->location_id);
 						@endphp
 						@if($location != null)
-						{{ $location->name }}
+						{{ $location->path }}
 						@endif
 					</td>
 					<td>

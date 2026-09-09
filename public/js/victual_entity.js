@@ -212,8 +212,12 @@ Victual.FrontendHelpers.EscapeHtml = function (value)
 						return;
 					}
 
-					// No error callback: a user initiated delete that fails must say so, and
-					// Victual.Api.DefaultErrorHandler is what says it. Plan 12, Q2.
+					// A user initiated delete that fails must say so - plan 12, Q2 - and it now
+					// says what the server said when the server had something to say. An
+					// endpoint that refuses on purpose sends the reason as error_message
+					// ("Location has child locations"), which is the whole answer; anything
+					// else still lands on the generic wording ShowGenericError has always
+					// used. The message is escaped where it is rendered, not here.
 					Victual.Api.Delete(options.endpoint + '/' + objectId, {},
 						function ()
 						{
@@ -225,6 +229,10 @@ Victual.FrontendHelpers.EscapeHtml = function (value)
 							{
 								window.location.href = U(options.list);
 							}
+						},
+						function (xhr)
+						{
+							Victual.FrontendHelpers.ShowApiError('A server error occured while processing your request', xhr);
 						}
 					);
 				}

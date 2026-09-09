@@ -32,6 +32,35 @@ $.fn.dataTable.ext.search.push(function(settings, data, dataIndex)
 	return false;
 });
 
+// Custom DataTables search plugin: restricts rows to the location selected in the location
+// filter and to everything stored beneath it. The row carries its location's id followed by
+// every ancestor's in data-location-ancestors, so "is this row at or below the selected
+// location" is one membership test. The commas around both sides are what stop id 3 from
+// matching id 13.
+$.fn.dataTable.ext.search.push(function(settings, data, dataIndex)
+{
+	if (settings.nTable !== $("#stockentries-table").get(0))
+	{
+		return true;
+	}
+
+	var value = $("#location-filter").val();
+
+	if (!value || value === "all")
+	{
+		return true;
+	}
+
+	var cell = $(stockEntriesTable.row(dataIndex).node()).find("td[data-location-ancestors]").first();
+
+	if (cell.length === 0)
+	{
+		return false;
+	}
+
+	return ("," + cell.attr("data-location-ancestors") + ",").indexOf("," + value + ",") !== -1;
+});
+
 // Resets the location filter and (unless embedded, e.g. opened from a product's stock
 // entries link) the product picker
 $("#clear-filter-button").on("click", function()
@@ -47,17 +76,15 @@ $("#clear-filter-button").on("click", function()
 	stockEntriesTable.draw();
 });
 
-// Location filter dropdown, matched against the location name column (index 5)
+// Location filter dropdown. Matched against the row's data-location-ancestors attribute
+// rather than against the location column's text, so that selecting a location finds the
+// entries stored anywhere beneath it as well - plan 08 question 4 wanted the roll-up for
+// filtering. Matching on text cannot do this: it would need the option's own path to be a
+// prefix of the cell's, which is true of "Basement" and "Basement / StorageRoom" but also
+// true of any location whose name merely starts the same way.
 $("#location-filter").on("change", function()
 {
-	var value = $(this).val();
-	var text = $("#location-filter option:selected").text();
-	if (value === "all")
-	{
-		text = "";
-	}
-
-	stockEntriesTable.column(stockEntriesTable.colReorder.transpose(5)).search(text).draw();
+	stockEntriesTable.draw();
 });
 
 // Re-run the custom search filter whenever the product picker's value or its text input changes
