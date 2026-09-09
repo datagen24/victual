@@ -45,3 +45,4 @@ __pycache__/
 # Streamed image tars for the local physical run
 .imgs/
 .physdata/
+.labelsdata/
