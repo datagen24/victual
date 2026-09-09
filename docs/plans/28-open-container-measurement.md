@@ -75,10 +75,26 @@ Additive columns on `stock`:
 | `opened_tare DOUBLE PRECISION` | container weight, where the measurement was gross |
 | `opened_measured_at TIMESTAMP` | when, so a stale figure is visible as stale |
 
-A check constraint keeps the group coherent: a measurement exists only where `open = 1`,
-and `opened_amount` and `opened_qu_id` are present or absent together. `opened_tare` is
-independently nullable — a net measurement is a legitimate input, per ADR-0022 open
-question 3.
+A check constraint keeps the group coherent: a measurement exists only where `open = 1`
+**and `amount = 1`**, and `opened_amount` and `opened_qu_id` are present or absent together.
+`opened_tare` is independently nullable — a net measurement is a legitimate input, per
+ADR-0022 open question 4.
+
+**`amount = 1` is the load-bearing half.** A `stock` row is not inherently one container.
+`OpenProduct` marks a whole entry open in place when the requested amount covers it, leaving
+`amount` alone (`services/StockService.php:1628-1632`), so three jugs bought without per-unit
+labelling are one row that becomes `open = 1, amount = 3`. One remainder on that row names no
+particular jug. Measuring an entry holding more than one unit therefore splits it first —
+the operation `OpenProduct`'s else branch already performs when opening part of an entry
+(`:1636`).
+
+**Rows already in that state are a migration case, not a hypothesis.** Any entry that is
+`open = 1` with `amount > 1` when 0277 runs either gets split by the migration or stays
+unmeasurable until someone splits it. The migration has to choose, and say so in its own
+comment.
+
+**The columns above are not the whole schema.** They are what `stock` carries; the ledger
+needs the measurement too, for the reason in *Undo, edit and split* below.
 
 No column is added to `products`. The net contents of a unit is already stated by the
 per-product row in `quantity_unit_conversions`, which the pooled-parent roll-up needs
@@ -91,13 +107,20 @@ through `quantity_unit_conversions_resolved`, which already closes conversions t
 and lets a per-product factor override a global one
 (`db/pgsql/baseline/03_views_group2.sql:70`).
 
-This inherits a failure mode that is worth naming once and fixing once. `stock_current`'s
-roll-up falls back to `COALESCE(qucr.factor, 1.0)` where no conversion exists
-(`db/pgsql/baseline/04_views_l1a.sql:50`) — so a missing conversion does not error, it
-produces a wrong number. Under the container decision above, a missing "1 can = 12 fl oz"
-already makes a pooled parent add cans to bottles as though they were the same size. The
-same gap now also makes a measured fraction wrong. Open question 2 asks what enforces the
-conversion's presence.
+**A missing conversion refuses; it does not approximate.** Per ADR-0022 decision 3, a
+measurement in a unit that does not convert to the stock unit is refused when it is recorded,
+and a fraction that cannot be derived is reported as unavailable rather than computed from an
+assumed factor. Deleting a conversion that recorded measurements depend on is refused, or
+renders those fractions unavailable — never a silent reinterpretation. A warning is not an
+alternative to this: a warning does not make kilograms convertible to bags.
+
+**This is deliberately not the same rule as the parent roll-up's.** `stock_current` resolves
+a missing child-to-parent factor as `COALESCE(qucr.factor, 1.0)`
+(`db/pgsql/baseline/04_views_l1a.sql:50`), so a missing "1 can = 12 fl oz" already makes a
+pooled parent add cans to bottles as though they were the same size. That is pre-existing
+behaviour, it is not this plan's to change, and the measured fraction does not inherit it.
+Whether the roll-up should also become strict is a separate question against a shipped
+contract, noted in open question 2.
 
 ### Views
 
@@ -123,6 +146,30 @@ own conversions, and a tare field shown only where the product is configured for
 weights. The stock entry row shows what is left and how long ago it was measured. Re-measuring
 is the same control used again, which is the common case — a bag of flour is measured many
 times over its life.
+
+### Undo, edit and split
+
+`UndoBooking` does not restore a `stock` row, it **rebuilds** one from `stock_log`: the
+consume branch calls `$this->DB->stock()->createRow([...])` populated entirely from the log
+row (`services/StockService.php:2200-2213`). Its own comment states the pattern —
+*"The open flag itself is not logged, so it is derived from the logged opened date."* So a
+measurement held only on `stock` is lost the moment an entry is fully consumed and the
+consumption is undone, and it is lost silently.
+
+The measurement is therefore durable in the ledger as well, recorded where the undo path can
+read it back alongside `opened_date`. Three paths need working through, not just the first:
+
+- **Undoing a consumption** restores the remainder, its unit, its tare and its timestamp.
+- **Undoing an opening** clears `open` and `opened_date`
+  (`services/StockService.php:2280-2290`), which would strand a measurement on a closed
+  entry. ADR-0022 decision 9 requires that undo to clear the measurement: an unopened
+  container has no remainder.
+- **Editing and splitting an entry** must carry or drop the measurement deliberately rather
+  than duplicating it across both halves, which would double the derived contents.
+
+This is required however ADR-0022 open question 2 is settled. Whether re-measuring books a
+consumption or updates state silently, undoing a consumption still has to restore what was
+measured.
 
 ### Service paths
 
@@ -164,11 +211,21 @@ and every new column would arrive NULL. The cases that matter:
 
 - three sealed units and one measured open unit of one product, total correct
 - the same case against the present tare path, wrong, as the negative control
+- **two opened containers of one product, one measured and one not**, with the measurement
+  attached to exactly one of them and both totals correct
+- **an entry with `open = 1, amount = 3`** — the state `OpenProduct` produces today — shown
+  to be refused or split rather than accepted with one remainder, and the migration's chosen
+  handling of pre-existing such rows exercised
+- **an undo round trip**: measure, consume the entry fully, undo the consumption, and find
+  the remainder, unit, tare and timestamp restored
+- **undoing an opening on a measured entry**, leaving a state the constraint permits
+- **a split of a measured entry**, with the measurement carried or dropped once, never twice
+- **a measurement in an unconvertible unit**, refused at entry rather than stored
+- **a conversion deleted after measurements exist**, leaving fractions unavailable rather
+  than reinterpreted
 - a volume container measured by weight, resolved through a per-product conversion
 - a measured entry left alone by `CompactStockEntries()`, with an unmeasured split entry
   merged in the same run as the control
-- a missing conversion, showing what the `COALESCE(..., 1.0)` fallback produces, so the
-  behaviour is written down in a test rather than discovered later
 
 A browser probe for the open dialog, in the shape of `.devtools/frontend/nested-locations.js`
 and invoked by the `frontend-security` job rather than merely placed beside it — plan 08's
@@ -181,17 +238,18 @@ Executed section records that distinction being missed.
    row, or a silent state update. Every other amount change here is booked, which argues
    for the first; putting a jar on a scale does not feel like a correction, which argues
    for the second.
-2. **What makes a required conversion present?** A pooled parent and a measured fraction
-   both read `quantity_unit_conversions` and both degrade to a wrong number rather than an
-   error when a factor is missing. Candidates: a guard on the write path, a warning surface
-   listing products whose children lack a conversion, or a check constraint that cannot
-   express it. This question is larger than this plan and may deserve its own.
+2. **Should the parent roll-up become strict too?** Settled for this plan: a measurement
+   that cannot be converted is refused, and an underivable fraction is unavailable. What is
+   open is the *pooled parent's* `COALESCE(qucr.factor, 1.0)`, which is shipped behaviour on
+   a live contract — making it strict is a change to what `/stock` returns for a
+   misconfigured catalogue, so it needs its own argument and probably its own record. This
+   plan neither changes it nor copies it.
 3. **Does the pooled parent's total consume the measurement, or sit beside it?** Folding it
    in gives one honest number and changes what an existing column means. Keeping it beside
    preserves the present column and asks every consumer to choose. This is the line where
    this plan and 07 edit the same code.
 4. **Is the product-level tare pair retired?** ADR-0022 open question 1 and its acceptance
-   prerequisite 5. Two mechanisms for one job is a cost; removing fields from
+   prerequisite 8. Two mechanisms for one job is a cost; removing fields from
    `/objects/products` is a contract change.
 5. **Which products are measured?** Configuration, not schema — but it decides whether the
    UI cost falls on a handful of staples or on most of the catalogue.
@@ -199,7 +257,8 @@ Executed section records that distinction being missed.
 ## Effort
 
 Medium, and dominated by the service paths rather than the schema. The migration is an
-afternoon; the tare-aware arithmetic in three methods, the compaction exclusion, the view
-change and the fixtures for a product holding sealed and measured units at once are the
-rest. Sharing wave 4's `stock_current` rewrite with 07 is what keeps it from being counted
+afternoon; the tare-aware arithmetic in three methods, the undo, edit and split paths, the
+compaction exclusion, the view change and the fixtures for a product holding sealed and
+measured units at once are the rest. The ledger work in *Undo, edit and split* is the part
+most likely to be underestimated — it reaches into booking history rather than one table. Sharing wave 4's `stock_current` rewrite with 07 is what keeps it from being counted
 twice.

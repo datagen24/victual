@@ -86,8 +86,20 @@ the data that is there for other reasons.
 volume container by weight is expressible as an ordinary per-product conversion — "1 gallon
 jug = 8.6 lb" is that jug's density, written in the units the person actually has. The
 constraint this imposes is stated rather than hidden: the measurement unit must be
-convertible to the product's stock unit, and the system will not invent a mass-to-volume
-factor it was not given.
+convertible to the product's stock unit.
+
+**Where it is not, the derived figure is refused, not guessed.** A missing conversion makes
+the fraction *unavailable* — an absent value that says so — and never a number produced by
+assuming a factor. A warning does not make kilograms convertible to bags; the only correct
+answer to "how much of this bag is left" without a bag-to-kilogram factor is "unknown". This
+binds the write path too: recording a measurement in a unit that does not convert is refused
+at the point of entry, and deleting a conversion that recorded measurements depend on either
+is refused or renders those fractions unavailable, never silently reinterprets them.
+
+**This is separate from the parent roll-up's existing fallback.** `stock_current` resolves a
+missing child-to-parent factor as `COALESCE(qucr.factor, 1.0)`
+(`db/pgsql/baseline/04_views_l1a.sql:50`), which is pre-existing behaviour this record does
+not change and does not adopt. The measured fraction is new, so it starts strict.
 
 ### 4. Tare belongs to the measurement, not to the product
 
@@ -101,6 +113,10 @@ measurement. Decision 1 makes this possible; limit 1 above makes it necessary.
 stock-id prefix, and entries carrying userfields (`db/pgsql/baseline/03_views_group3.sql:78-79`).
 A measured remainder is per-container state of exactly that kind and joins the exclusion.
 
+Compaction is only half the problem: excluding a measured entry from *merging* does nothing
+about an entry that already holds several units. Decision 8 is what makes an entry one
+container.
+
 ### 6. Counting and measuring are per-product, not a mode
 
 Whether a product's opened units are measured is product configuration. Soda is counted and
@@ -113,6 +129,47 @@ barely counted. Nothing here makes measurement mandatory or global.
 Removing them is a wire change with its own argument to make, so this record does not make
 it: new work uses the per-entry measurement, and whether the product-level pair is retired
 is open question 1 below rather than a consequence of accepting this.
+
+### 8. A measurement describes exactly one container, and an entry carrying one holds one unit
+
+A `stock` row is not inherently one physical container. `OpenProduct` marks a whole entry
+open in place when the requested amount covers it — one `update(['open' => 1, ...])` at
+`services/StockService.php:1628-1632`, leaving `amount` untouched. Three jugs bought without
+per-unit labelling are one row with `amount = 3`, and opening all three yields `open = 1`
+with `amount = 3`. A single measured remainder on that row answers no question: 1.2 kg of
+*which* jug?
+
+So the coherence rule is not "a measurement requires `open = 1`" but **"a measurement
+requires `open = 1` and `amount = 1`"**. Measuring an entry that holds more than one unit
+splits it first, which is the operation `OpenProduct`'s own else branch already performs
+when opening fewer units than an entry holds (`:1636`). Entries already open with
+`amount > 1` when the migration runs are a live case and not a hypothetical — the migration
+either splits them, or leaves them unmeasurable until they are split, and it must say which.
+
+Upstream corroborates the premise: `OpenProduct` refuses tare-weight products outright —
+"Opening tare weight handling enabled products is not supported" (`:1534-1537`). Opening and
+measuring do not compose today, and forbidding the combination is how that is currently
+resolved.
+
+### 9. A measurement survives undo, so it is not stored only on `stock`
+
+`UndoBooking` does not restore a `stock` row; it **rebuilds** one from `stock_log`. The
+consume branch calls `$this->DB->stock()->createRow([...])` populated entirely from the log
+row (`services/StockService.php:2200-2213`), and its own comment records the pattern this
+decision has to follow: *"The open flag itself is not logged, so it is derived from the
+logged opened date."* Anything living only on `stock` is gone when an entry is fully consumed
+and the consumption is undone.
+
+A measured remainder therefore has to be durable in the ledger — recorded where the undo path
+can read it back, alongside `opened_date` — rather than as columns on `stock` alone. The same
+applies to the entry-editing and splitting paths, which is where a measurement can otherwise
+be silently dropped or duplicated across a split.
+
+Undoing an *opening* is the mirror case and constrains decision 8's rule: the
+`TRANSACTION_TYPE_PRODUCT_OPENED` branch sets `open => 0, opened_date => null`
+(`:2280-2290`), which would leave a measurement attached to a closed entry. Either that undo
+clears the measurement, or the coherence rule is expressed so the state is legal; this record
+requires the first, because an unopened container has no remainder to describe.
 
 ## Consequences
 
@@ -145,8 +202,15 @@ child without a conversion to its parent is summed as though one can equalled on
 The derived fraction in decision 3 reads the same table and inherits the same failure mode.
 This is one data-discipline problem, not two, and plan 28 owns naming what enforces it.
 
-**Costs.** One migration, the three tare-aware service paths, the open dialog, at least one
-view, and the fixtures for a product holding sealed and measured units at once. This is not
+**The ledger, not just the table.** Decision 9 moves this out of "add four columns" and into
+the booking history, which is a larger and more contract-sensitive change than the schema
+sketch alone suggests. It is not optional and does not depend on how open question 2 is
+settled: whether or not re-measuring books a consumption, undoing a consumption must restore
+what was measured.
+
+**Costs.** One migration, the three tare-aware service paths, the undo, edit and split paths,
+the open dialog, at least one view, and the fixtures for a product holding sealed and
+measured units at once. This is not
 a schema-only change: the arithmetic in `AddProduct`, `ConsumeProduct` and
 `InventoryProduct` is where the single-container assumption actually lives.
 
@@ -184,7 +248,18 @@ buy.
    unmeasured split entry is still merged.
 4. **The wire additions confirmed additive** against the response snapshot, and the result
    reconciled with 14 piece 2's freeze date.
-5. **A decision recorded on open question 1** — whether `products.tare_weight` and
+5. **Two containers, one measured.** A product holding two opened containers where one is
+   measured and the other is not, showing the measurement attached to exactly one of them and
+   the totals correct — and the multi-unit case above shown to be refused or split rather than
+   accepted with a single remainder.
+6. **An undo round trip.** An entry measured, fully consumed, and the consumption undone,
+   with the remainder, unit, tare and timestamp all restored. Plus undoing an *opening* on a
+   measured entry, showing the state left legal.
+7. **A refused conversion.** Recording a measurement in a unit that does not convert to the
+   stock unit is refused at entry; deleting a conversion that recorded measurements depend on
+   leaves those fractions unavailable rather than reinterpreted. Neither may fall through to a
+   fabricated number.
+8. **A decision recorded on open question 1** — whether `products.tare_weight` and
    `enable_tare_weight_handling` are retired — including its wire consequence, since
    accepting this record without settling it leaves two mechanisms for one job.
 
@@ -197,13 +272,17 @@ buy.
    1.6 kg remained is either an inventory correction with a `stock_log` booking, or a
    silent state update. The first is consistent with how every other amount change is
    recorded here; the second is what people will expect from putting a jar on a scale.
-3. **Per-entry tare, or net measurements only?** Decision 4 records a container weight with
+3. **How is refusal surfaced?** Decision 3 settles *that* an unconvertible measurement is
+   refused and an underivable fraction is unavailable; it does not settle whether the API
+   omits the field, returns an explicit null with a reason, or both, nor what the UI shows in
+   place of a number. This is presentation, not policy — the policy is no longer open.
+4. **Per-entry tare, or net measurements only?** Decision 4 records a container weight with
    the measurement. Asking for a net figure instead is simpler and pushes the subtraction
    onto the person holding the scale.
-4. **Does an opened, measured unit still satisfy a minimum stock amount?**
+5. **Does an opened, measured unit still satisfy a minimum stock amount?**
    `products.treat_opened_as_out_of_stock` defaults to 1, which answers this today by
    ignoring what is left. A measured remainder makes a better answer possible and does not
    by itself choose one.
-5. **Which products are measured in practice?** Configuration rather than schema, but the
+6. **Which products are measured in practice?** Configuration rather than schema, but the
    answer decides whether this feature is used by a handful of staples or by most of the
    catalogue, and therefore how much the UI cost matters.
