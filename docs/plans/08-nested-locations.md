@@ -143,7 +143,7 @@ Medium. The schema and view are small and well understood; the UI dropdowns and 
 Landed as `migrations/0273.pgsql.sql` — one column, one function, one view, two triggers —
 plus the API surface, the UI across fourteen templates, a PostgreSQL-only suite phase and a
 browser probe. The design above shipped as written and all five answers were honoured.
-Eleven things are worth recording because they are not derivable from it.
+Twelve things are worth recording because they are not derivable from it.
 
 **The migration number moved once more, and this was the eighth move of the same three
 numbers.** The plan was scoped against a table that had 0273 for [23](23-storage-classes.md)
@@ -226,6 +226,19 @@ the shape. One consequence is recorded in `locationpicker.js`: prefill-by-name u
 `prefillByName` today, so the code path is left as it is with a comment saying new callers
 should prefer the id.
 
+**The `locations` projection is shadowed by a hand-built stub, and widening one means
+widening the other.** `.devtools/labels/identity-tests.php` builds its own `locations` table
+column by column — it is checking that `/objects/locations` does not leak plan 25's
+`import_epoch`, and it adds exactly the columns that endpoint's explicit `select()` list
+names. Adding `parent_location_id` to that list therefore broke it, with `column
+"parent_location_id" does not exist`, and the stub gained the column in the same shape.
+Whoever next widens that projection has the same edit to make.
+
+It was caught by CI rather than here, and that is a gap in this work's local verification
+worth naming: `run-tests.sh` is *not* the whole `suite` job. The job runs it and then seven
+more steps against the same PostgreSQL service — the canonicalization check and six label
+phases — none of which `run-tests.sh` knows about. Running the suite is not running the job.
+
 **Verification.** `run-tests.sh locations` is the fifteenth suite phase, PostgreSQL-only for
 the same structural reason [03](03-category-min-stock.md)'s is: the view phase seeds SQLite
 and copies across through the importer's common-column logic, so `parent_location_id` would
@@ -243,10 +256,11 @@ Results, against `postgres:16` (16.13) on 2026-09-09:
 |---|---|
 | `php .devtools/pgsql/check-migrations.php` | `MIGRATION NUMBERING OK`, no `--allow-reserved-holes` |
 | `run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (39 assertions)` |
-| `run-tests.sh all` | every phase green except `files`, which fails the same three cases on `origin/master` in this container: they expect a mode 000 directory to be unreadable and the suite runs as root |
+| `run-tests.sh all` | every phase green except `files`, which fails the same three cases on `origin/master` in this container: they expect a mode 000 directory to be unreadable and the suite runs as root. CI's `suite` job, which is not root, reports `SUITE PASSED` including that phase |
 | `.devtools/frontend/nested-locations.js` | `NESTED LOCATION BROWSER CHECKS PASSED` |
 | `.devtools/frontend/s29-payload.js` | `27/27 probes clean` |
 | `.devtools/frontend/group-min-stock.js`, `roles.js`, `forced-failure.js`, `two-pickers.js`, `location-labels.js` | pass, demo instance |
 | `.devtools/frontend/location-print.js`, `label-printers.js`, `label-designer.js` | pass, labels instance |
 | `.devtools/frontend/routes-smoke.js` | 79 routes, 0 non-200 |
+| the six `.devtools/labels/` phases the `suite` job runs after it | `identity` 10046 assertions, `artifact` 50, `print-job` 36, `worker-api` 25, `registry` 23, `canonical-json` OK. `renderer-agreement` needs the pinned Rust renderer and was left to CI |
 | `php .devtools/check-cited-jobs.php` | every cited job exists |
