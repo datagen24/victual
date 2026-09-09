@@ -48,11 +48,42 @@ live (files written at 19:32 were indexed by 19:33). But **worktrees are exclude
 master's tree and not the branch under edit. That makes it a discovery tool and disqualifies
 it as a verification one, which is now stated in both files.
 
-**Left open, deliberately.** Nothing was committed, no `settings.json` was created or edited,
-and `AGENTS.md` was not touched — so as of this session neither hook fires. The files were
-written into the master working tree next to the operator's own untracked copies rather than
-onto the `claude/memory-harness-setup-04be24` worktree branch, which means committing them
-still needs a branch: `master` is not pushed to directly.
+**Then it was committed and merged**, by the operator, in `4e4dd50e` — the andon commit,
+through [PR #111](https://github.com/datagen24/victual/pull/111). `AGENTS.md` was not touched,
+which was the intent: the `log_claim.py` protocol lives in the auto-loaded index instead.
+
+**The registration was malformed and the harness was not firing.** `.claude/settings.local.json`
+had the `auto_orient.py` entry nested one level too deep — a `{matcher, hooks}` group placed
+*inside* the inner `hooks` array as a sibling of the BLUF `echo` handler, where only
+`{type, command}` handlers are valid. The
+[hooks reference](https://code.claude.com/docs/en/hooks) is explicit that handler objects
+carry neither `matcher` nor a nested `hooks` key. Fixed by flattening it to a second handler
+in the same group; the `Stop` entry was already correct. A backup of the pre-fix file is at
+`.claude/settings.local.json.bak-preharnessfix`, and the `permissions` block was compared
+before and after to confirm it was untouched.
+
+**Then the wiring moved into a tracked `.claude/settings.json`**, so that a clone gets a
+working harness rather than three inert scripts — `.gitignore:15` excludes
+`**/.claude/settings.local.json`, which is where the registration had been. Only the two
+harness hooks moved; the BLUF `echo` stayed local, because it cites the operator's *global*
+`CLAUDE.md` and `AGENTS.md` already states the tone rules for anyone else.
+
+Three details in that file are deliberate:
+
+- **`"${CLAUDE_PROJECT_DIR}"`, not an absolute path**, so each worktree runs its own copy.
+- **Shell form rather than the exec form the docs prefer for path placeholders.** The Stop
+  hook needs a `CLAIM_CHECK_ENFORCE_MODE=warn` prefix, which exec form cannot express, and
+  both need the guard below — so both are shell form with the placeholder double-quoted, as
+  the docs require in that form.
+- **A `[ -f … ] &&` guard.** Measured on a worktree whose branch predates `4e4dd50e`:
+  unguarded, `python3: can't open file … [Errno 2]` on every single prompt; guarded, empty
+  output and rc=0. Around twenty worktrees are on such branches.
+
+**How this class of bug hides:** a hook that is not registered and a hook that no-ops look
+identical from inside a session — nothing is injected either way. Do not infer that the orient
+hook works from the absence of an error; check the settings shape, and check that
+`memory/MEMORY.md` exists relative to the session's `cwd`. On a branch that predates
+`4e4dd50e` it does not, and the hook correctly injects nothing.
 
 Two flaws in the template were corrected rather than carried forward: the prefix table said
 `docs/plan` where every section body says `project_*`, and the "under 200 lines" guidance
