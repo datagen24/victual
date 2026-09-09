@@ -47,11 +47,29 @@ Victual.LabelPrinting.Wire = function (options)
 		statusRegion.appendChild(box);
 	}
 
+	/**
+	 * The server's own words, parsed out of `responseText`.
+	 *
+	 * The API wrapper hands an error callback the raw XMLHttpRequest, so the body is a string
+	 * rather than an object. Reading it as an object finds nothing and turns every refusal -
+	 * a stale epoch, an unsupported combination, a printer whose worker is inactive - into
+	 * the same generic failure, which is the opposite of what those messages are for.
+	 */
 	function messageOf(xhr)
 	{
-		if (xhr && xhr.response && xhr.response.error_message)
+		var body = {};
+		try
 		{
-			return xhr.response.error_message;
+			body = JSON.parse((xhr && xhr.responseText) || '{}');
+		}
+		catch (error)
+		{
+			// Not JSON: a transport failure or a crash, which the fallback describes.
+		}
+
+		if (body.error_message)
+		{
+			return body.error_message;
 		}
 
 		return (xhr && xhr.statusText) || __t('the server did not answer');

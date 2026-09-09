@@ -361,6 +361,47 @@ jobs:
           done
           curl -sS -o /dev/null -w 'stockoverview -> %{http_code}\n' http://127.0.0.1:8085/stockoverview
 
+      # A second instance, and it has to be a second one. The demo instance above cannot
+      # carry the label subsystem: enabling it requires FILE_STORAGE "database", and
+      # ConfigurationValidator refuses that in demo mode because demo instances share a
+      # storage location by file name suffix and the files table has no column for it
+      # (plan 01 Q4). checkLabelSubsystem() refuses the combination for the same reason and
+      # says so directly.
+      #
+      # It exists because FEATURE_FLAG_LABELS defaults to false, so the print action's branch
+      # of locations.blade.php and locationform.blade.php was rendered by nothing - and a
+      # TypeError in exactly that branch reached a running instance while every check here
+      # stayed green.
+      - name: Boot a labels instance
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          PGPASSWORD=$PGPASSWORD createdb -h $PGHOST -p $PGPORT -U $PGUSER victual_labels
+          LDATA=$(mktemp -d)
+          cat > "$LDATA/config.php" <<'PHPCONFIG'
+          <?php
+          Setting('DB_DRIVER', 'pgsql');
+          Setting('DB_HOST', getenv('PGHOST'));
+          Setting('DB_PORT', intval(getenv('PGPORT')));
+          Setting('DB_NAME', 'victual_labels');
+          Setting('DB_USER', getenv('PGUSER'));
+          Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          Setting('FEATURE_FLAG_LABELS', true);
+          Setting('FILE_STORAGE', 'database');
+          PHPCONFIG
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$LDATA" php bin/victual-migrate --quiet
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$LDATA" \
+            php -S 127.0.0.1:8087 -t public > /tmp/php-labels.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/locations || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 1
+          done
+          curl -sS -o /dev/null -w 'labels instance /locations -> %{http_code}\n' http://127.0.0.1:8087/locations
+
       - name: Run the S29 payload probe
         working-directory: .devtools/frontend
         run: node s29-payload.js --url http://127.0.0.1:8085 --out s29-payload-ci.json
@@ -379,7 +420,7 @@ jobs:
 
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
-        run: node label-printers.js --url http://127.0.0.1:8085
+        run: node label-printers.js --url http://127.0.0.1:8087
 
       - name: Run location label scan checks
         working-directory: .devtools/frontend
@@ -387,7 +428,11 @@ jobs:
 
       - name: Run location print action checks
         working-directory: .devtools/frontend
-        run: node location-print.js --url http://127.0.0.1:8085
+        run: node location-print.js --url http://127.0.0.1:8087
+
+      - name: Run label designer checks
+        working-directory: .devtools/frontend
+        run: node label-designer.js --url http://127.0.0.1:8087
 
       # Uploaded on failure: the per-probe reasons are in the log, but the JSON carries
       # what was stored and read back, which is what tells a reader whether a failing probe

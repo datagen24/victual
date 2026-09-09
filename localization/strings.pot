@@ -2503,3 +2503,354 @@ msgid "Pack"
 msgid_plural "Packs"
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "Label templates"
+msgstr ""
+
+msgid "A template is a design. Printing pins a published version of it, so a change here affects new labels and never one that has already been queued or printed."
+msgstr ""
+
+msgid "Create a location label template"
+msgstr ""
+
+msgid "Entity kind"
+msgstr ""
+
+msgid "Published versions"
+msgstr ""
+
+msgid "Default version"
+msgstr ""
+
+msgid "Design"
+msgstr ""
+
+msgid "None published yet"
+msgstr ""
+
+msgid "Label print jobs"
+msgstr ""
+
+msgid "Design a label"
+msgstr ""
+
+msgid "Add an element"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "QR code"
+msgstr ""
+
+msgid "Rectangle"
+msgstr ""
+
+msgid "Line"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Label width (mm)"
+msgstr ""
+
+msgid "Label length (mm), empty for automatic"
+msgstr ""
+
+msgid "Maximum length (mm)"
+msgstr ""
+
+msgid "Automatic length is bounded: continuous tape is not an unbounded canvas, so a design that grows past this is refused rather than cropped."
+msgstr ""
+
+msgid "Save draft"
+msgstr ""
+
+msgid "Publish a version"
+msgstr ""
+
+msgid "Preview against"
+msgstr ""
+
+msgid "A preview is rendered by the same renderer that produces a printed label, against that printer's media profile. The canvas beside it is a design aid and not a fidelity claim."
+msgstr ""
+
+msgid "Render a preview"
+msgstr ""
+
+msgid "Authoritative preview"
+msgstr ""
+
+msgid "Not rendered yet"
+msgstr ""
+
+msgid "Select an element to edit it"
+msgstr ""
+
+msgid "Draft saved"
+msgstr ""
+
+msgid "Black"
+msgstr ""
+
+msgid "Error correction"
+msgstr ""
+
+msgid "Module size (mm)"
+msgstr ""
+
+msgid "Colour"
+msgstr ""
+
+msgid "A QR always encodes this label's own identifier. It cannot be pointed anywhere else."
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "White"
+msgstr ""
+
+msgid "Remove this element"
+msgstr ""
+
+msgid "The server did not answer"
+msgstr ""
+
+msgid "Fonts and images"
+msgstr ""
+
+msgid "Upload a font (TTF or OTF) or a PNG image"
+msgstr ""
+
+msgid "Licence it is used under"
+msgstr ""
+
+msgid "for example, SIL Open Font License 1.1"
+msgstr ""
+
+msgid "Recorded beside the bytes: a household printing labels with a font is redistributing its output, and what it was allowed to do belongs next to it."
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Upload a font before adding text: a template pins the font it prints with, and there is no default and no substitution."
+msgstr ""
+
+msgid "Published version %s"
+msgstr ""
+
+msgid "Scan location label"
+msgstr ""
+
+msgid "Configure label printers"
+msgstr ""
+
+msgid "Jobs waiting for label rendering cannot be printed yet. A failed or uncertain attempt needs explicit review before another attempt is authorized."
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Job"
+msgstr ""
+
+msgid "Printer"
+msgstr ""
+
+msgid "State"
+msgstr ""
+
+msgid "Error"
+msgstr ""
+
+msgid "Last status age (seconds)"
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Waiting for label rendering"
+msgstr ""
+
+msgid "Awaiting authorization"
+msgstr ""
+
+msgid "Sent"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Claimed"
+msgstr ""
+
+msgid "Printed"
+msgstr ""
+
+msgid "Blocked"
+msgstr ""
+
+msgid "Delivery uncertain"
+msgstr ""
+
+msgid "Delivery uncertain; a late report arrived"
+msgstr ""
+
+msgid "Cannot deliver"
+msgstr ""
+
+msgid "Authorize another attempt"
+msgstr ""
+
+msgid "Location label code"
+msgstr ""
+
+msgid "Scan or enter the vctl: code on a location label."
+msgstr ""
+
+msgid "Look up label"
+msgstr ""
+
+msgid "Label printers"
+msgstr ""
+
+msgid "Workers"
+msgstr ""
+
+msgid "Worker"
+msgstr ""
+
+msgid "New worker"
+msgstr ""
+
+msgid "Configuration mode"
+msgstr ""
+
+msgid "Declared"
+msgstr ""
+
+msgid "Paired"
+msgstr ""
+
+msgid "Save worker"
+msgstr ""
+
+msgid "Issue credential or pairing material"
+msgstr ""
+
+msgid "Revoke worker credentials"
+msgstr ""
+
+msgid "New credentials and pairing material are shown once. Store them before leaving this page."
+msgstr ""
+
+msgid "Printers"
+msgstr ""
+
+msgid "New printer"
+msgstr ""
+
+msgid "Assigned worker"
+msgstr ""
+
+msgid "Driver version"
+msgstr ""
+
+msgid "Model and media"
+msgstr ""
+
+msgid "Model"
+msgstr ""
+
+msgid "Connection type"
+msgstr ""
+
+msgid "Connection"
+msgstr ""
+
+msgid "Default printer"
+msgstr ""
+
+msgid "Save printer"
+msgstr ""
+
+msgid "Move to selected driver version"
+msgstr ""
+
+msgid "Label printer"
+msgstr ""
+
+msgid "Print a label for this location"
+msgstr ""
+
+msgid "Requesting a label for %s..."
+msgstr ""
+
+msgid "The label was not requested: %s"
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid "a fixed string"
+msgstr ""
+
+msgid "Font"
+msgstr ""
+
+msgid "Size (pt)"
+msgstr ""
+
+msgid "Alignment"
+msgstr ""
+
+msgid "Fixed text"
+msgstr ""
+
+msgid "Left"
+msgstr ""
+
+msgid "Centre"
+msgstr ""
+
+msgid "Right"
+msgstr ""
+
+msgid "When it does not fit"
+msgstr ""
+
+msgid "Refuse the label"
+msgstr ""
+
+msgid "Shorten with an ellipsis"
+msgstr ""
+
+msgid "Shrink, to a floor"
+msgstr ""
+
+msgid "Smallest size (pt)"
+msgstr ""
+
+msgid "Label requested for %s. It prints once its image has been produced and checked."
+msgstr ""
+
+msgid "Looking up label…"
+msgstr ""
+
+msgid "Location found"
+msgstr ""
+
+msgid "Retired label — this location was deleted."
+msgstr ""
+
+msgid "Unknown location label"
+msgstr ""
+
+msgid "Could not look up the label. Try again."
+msgstr ""
+
+msgid "Printer saved"
+msgstr ""

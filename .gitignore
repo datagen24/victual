@@ -35,3 +35,14 @@ __pycache__/
 
 # Linux build of the renderer, staged for the cross-implementation agreement test
 .agreement/
+
+# Scratch copy for regenerating yarn.lock outside the worktree
+.yarnwork/
+
+# Scratch data path for the local UI probe
+.uidata/
+
+# Streamed image tars for the local physical run
+.imgs/
+.physdata/
+.labelsdata/

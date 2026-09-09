@@ -16,5 +16,5 @@
   composerVendor = "sha256-+jbt34VCyW44W3MhiZSV+8DldnrEb0LhDhbOZX/PyKk=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
-  yarnOfflineCache = "sha256-iy37t9dgTNc61wU+97a8GMkyjFdN6Y/dhFoE2/lH1BE=";
+  yarnOfflineCache = "sha256-rEr7NQDZLsRgKdDGfRN91T8dQM+DisDLHE133b9rt9E=";
 }

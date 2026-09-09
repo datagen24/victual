@@ -833,7 +833,7 @@ does.
 [victual-label-renderer](https://github.com/datagen24/victual-label-renderer) at
 `f05c432f7857f976e0223296f968d641fa401254` and
 [victual-label-worker](https://github.com/datagen24/victual-label-worker) at
-`039ecfe5f899762d9ec4e77feb541f78aa8de2e4`, both as `flake = false` inputs built here by
+`da9258989f42988662c1f9ee7ca60ebcf376be4b`, both as `flake = false` inputs built here by
 `rustPlatform`. The flake owns the image, the pin and the deployment; the other repositories own
 the driver matrix and the device transport.
 
@@ -862,4 +862,68 @@ resampling step, so a raster whose width is not the device's printable dot count
 and that is asserted at three resolutions in the renderer and once in the worker. What remains
 is its other half, the rotation sign, which the plan says is settled by a printed label rather
 than by reading.
+
+### Physical acceptance (2026-09-09, QL-820NWBc at 10.130.30.94)
+
+**Verification 13 is met, and it is the check the plan exists for.** A location label was
+requested in Victual, rendered by the pinned renderer, verified by `ArtifactService`, claimed
+by the worker, printed on the QL-820NWBc, and **scanned back to the location it names**.
+Delivery went over **IPP**, where the device answered `job-state = 9` with
+`job-impressions-completed = 1` - `device_reported` evidence rather than `transport`.
+
+**Verification 15 is met.** With the printer's address pointed at a closed port on the same
+device, the attempt failed with `Connection refused`, the job was visible as `failed` carrying
+that error, and the worker was offered nothing on the next claim. A person authorized another
+attempt naming the ended one, the address was restored, and the label printed.
+
+**Verification 8's crash-after-send half is met.** A worker that claimed, recorded
+`bytes_sent_at` and stopped without posting a result left the job `uncertain` once its lease
+passed, and the next claim was offered nothing - no second print.
+
+**Verification 5's reprint half is met on hardware.** An exact reprint of a printed job
+created no render request and delivered from the retained bytes with no renderer running; the
+same reprint with the bytes collected was refused as `artifact_collected` and rendered nothing
+in their place.
+
+**Verification 14's geometry half is met.** The 696 x 354 px artifact measured right way round
+at the size the profile fixes, which settles issue
+[#90](https://github.com/datagen24/victual/issues/90)'s rotation sign by a printed label
+rather than by reading.
+
+**What the day cost, and what it bought.** The first attempt declared plain `62` while `62red`
+was loaded - the device's own status page reports "62mm" without distinguishing two-colour
+tape, which is the limitation ADR-0019 already records. The device latched into an error state,
+and the two attempts after it could not have succeeded whatever they carried. Over raw 9100 the
+worker reported *sent* for all three, because *sent* is the most that path can honestly report;
+the IPP path is what turned a guess into a report. That is the argument for scoping
+`completion_evidence` to the `(driver, connection_type, combination)` triple, made by a device
+rather than on paper.
+
+Two defects in the worker were found before anything printed, both fixed and both in its own
+repository: two-colour was being read from the artifact's ink rather than from the loaded roll,
+and `--dry-run` consumed an authorization while reporting nothing.
+
+**Two-colour printed too, and through the whole path.** The first label was black-only on
+`62red` tape: the stream carried two planes with the red one empty, so nothing red was laid
+down and only the 2026-09-07 spike had ever put red on tape. A second template with a filled
+red band and white text knocked out of it produced an artifact carrying 27,306 red pixels, and
+it printed red. Red on a QL is a property of the **roll** rather than of an ink well - DK-22251
+has a layer that develops red at a different temperature - which is why the resolved
+combination and not the artifact's ink decides whether the two-plane stream is sent, and is a
+defect this found in the worker before anything printed.
+
+**The immutability rule caught a real change, and the recovery is the one the record
+prescribes.** Correcting the capability document's provenance altered a definition that had
+already been registered, and Victual refused the re-registration with `A registered driver
+version is immutable`. The worker published `1.1`; the printer was moved to it by the explicit
+revalidating action; and the job queued against `1.0` in between recorded a visible `blocked`
+attempt naming what was missing, with provably zero bytes sent. That is ADR-0019 decision item
+3's "a visible blocked outcome, not a silent pass-over", observed rather than asserted.
+
+**Verification 12 is half met and stays open.** The worker printed to the QL-820NWBc over TCP,
+which is the second half. The first half - deploying under K3S - did not happen: the maintainer
+chose podman locally, and this machine's podman VM cannot open TCP to the printer at all (it
+answers ICMP and refuses 9100 and 631), so the delivery that printed was the native build of
+the pinned revision rather than the image. The images build, run, answer their health probe and
+carry no shell; what has not been shown is one of them reaching a printer.
 
