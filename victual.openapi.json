@@ -8999,6 +8999,11 @@
 						"type": "string",
 						"format": "date-time"
 					},
+					"parent_location_id": {
+						"type": "integer",
+						"nullable": true,
+						"description": "The location this one sits inside, or null for a root location. Locations form a tree at most 6 levels deep; see LocationResolved for the resolved form."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -9009,7 +9014,39 @@
 					"name": "0",
 					"description": null,
 					"row_created_timestamp": "2019-05-02 20:12:25",
+					"parent_location_id": null,
 					"userfields": null
+				}
+			},
+			"LocationResolved": {
+				"type": "object",
+				"description": "One row per (ancestor, descendant) pair of the location tree, including every location paired with itself at depth 0. A location's level is the largest depth its id appears at as a descendant.",
+				"properties": {
+					"id": {
+						"type": "integer",
+						"description": "Always 1. A dummy column, as on every other resolved view."
+					},
+					"ancestor_location_id": {
+						"type": "integer"
+					},
+					"descendant_location_id": {
+						"type": "integer"
+					},
+					"depth": {
+						"type": "integer",
+						"description": "Distance from the ancestor to the descendant; 0 on the row that pairs a location with itself."
+					},
+					"path": {
+						"type": "string",
+						"description": "The descendant's display path from its own root, names joined by \" / \" - the same string on every row for a given descendant."
+					}
+				},
+				"example": {
+					"id": 1,
+					"ancestor_location_id": "3",
+					"descendant_location_id": "11",
+					"depth": "3",
+					"path": "Basement / StorageRoom / UprightFreezer / Door"
 				}
 			},
 			"ShoppingLocation": {
@@ -10292,6 +10329,7 @@
 					"products_last_purchased",
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
+					"locations_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",
@@ -10332,6 +10370,7 @@
 					"products_last_purchased",
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
+					"locations_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",
@@ -10364,6 +10403,7 @@
 					"products_last_purchased",
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
+					"locations_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",

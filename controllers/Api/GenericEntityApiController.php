@@ -127,7 +127,8 @@ class GenericEntityApiController extends BaseApiController
 	 * when missing; api_keys need no such permission, but non-admins can only delete
 	 * their own keys.
 	 * Returns 204 on success, 404 when the object does not exist, or a 400 error
-	 * response for an invalid/undeletable entity.
+	 * response for an invalid/undeletable entity or a location that still has child
+	 * locations.
 	 */
 	public function DeleteObject(Request $request, Response $response, array $args)
 	{
@@ -179,6 +180,18 @@ class GenericEntityApiController extends BaseApiController
 				{
 					return $this->GenericErrorResponse($response, 'Object not found', 404);
 				}
+			}
+
+			// A location that has children is refused, per plan 08 question 2: reparenting
+			// silently rewrites where things were and cascading deletes the location stock
+			// rows point at. The database refuses it too - migrations/0273.pgsql.sql's
+			// `guard_location_children` covers every other write path - but a trigger's text
+			// can never reach a client, because GenericErrorResponse() replaces any message
+			// beginning `SQLSTATE[` before rendering it. So the message a person reads has to
+			// be raised here, and the two are worded identically on purpose.
+			if ($args['entity'] == 'locations' && $this->DB->locations()->where('parent_location_id', $row->id)->fetch() != null)
+			{
+				return $this->GenericErrorResponse($response, 'Location has child locations', 400);
 			}
 
 			$row->delete();
@@ -281,7 +294,7 @@ class GenericEntityApiController extends BaseApiController
 			: $this->DB->{$args['entity']}($args['objectId']);
 		if ($args['entity'] === 'locations')
 		{
-			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active')->where('id', $args['objectId'])->fetch();
+			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id')->where('id', $args['objectId'])->fetch();
 		}
 		if ($object == null)
 		{
@@ -323,7 +336,7 @@ class GenericEntityApiController extends BaseApiController
 		if ($args['entity'] === 'locations')
 		{
 			// The generation is exposed only by the additive label context route.
-			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active');
+			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id');
 		}
 		$objects = $this->MaterialiseFiltered($request, $this->QueryData($request, $source, $queryParams), $queryParams);
 
