@@ -1,9 +1,18 @@
 # Data model
 
-Victual stores everything in one PostgreSQL database: 46 tables defined in DDL, 44 views
-layered on top of them, and 55 triggers that stand in for the constraints the schema does
-not declare. This document names what is where; the six diagrams listed below show how
-the pieces connect.
+Victual stores everything in one PostgreSQL database: tables defined in DDL, views layered
+on top of them, and triggers that stand in for the constraints the schema does not declare.
+
+**The counts and the inventory below are stale and were already stale before plan 08.** A
+database migrated from this tree on 2026-09-09 holds 69 base tables and 47 views, against
+the 46 and 44 this line used to claim; plans 25 and 27 added the difference and did not
+reconcile this document, and doing so is more than a plan about locations should take on.
+Reproduce with `psql -d <db> -Atc "SELECT count(*) FROM information_schema.tables WHERE
+table_schema='public' AND table_type='BASE TABLE'"` and the matching query over
+`information_schema.views`.
+
+This document names what is where; the six diagrams listed below show how the pieces
+connect.
 
 Two facts shape every diagram below and are worth stating before the pictures:
 
@@ -73,7 +82,7 @@ queries: `StoredHtmlPurifier` (re-purifies rich text already in the database),
 `ColumnTypeManifest` (semantic types for columns the catalogue cannot classify, used by
 the API's generic filter validation), and `DatabaseImporter`.
 
-## The 46 tables
+## The tables
 
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
@@ -86,6 +95,15 @@ the baseline loads, because it is what records that the baseline was applied.
 disappears from `stock` while its bookings stay in the ledger the views read.
 `stock_entry_origins` (migration 0267) links an entry split off by a partial open back to
 the purchase it came from, because the split entry has no `stock_log` row of its own.
+
+`locations` is a tree since migration 0273 ([plan 08](plans/08-nested-locations.md)):
+`parent_location_id` is a reference by convention like every other, and `locations_resolved`
+is the recursive view over it, one row per (ancestor, descendant) pair plus each location
+paired with itself at depth 0, carrying the descendant's display path. Its name is unique
+only among siblings — `UNIQUE NULLS NOT DISTINCT (parent_location_id, name)`, which is why
+the engine minimum is PostgreSQL 15. Three guards stand in for the constraints the shape
+would need: `check_location_parent` refuses a cycle and a chain past
+`hierarchy_depth_limit()`, and `guard_location_children` refuses deleting a parent.
 
 **Identity & access (11)** — `users`, `user_settings`, `user_settings_defaults`,
 `sessions`, `api_keys`, `user_permissions`, `permission_hierarchy`, `roles`,

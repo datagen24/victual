@@ -11,7 +11,7 @@ Plan numbers are permanent identifiers, not execution order.
 
 ## Status
 
-This table is the authority on delivery status, updated through 2026-09-08. “Landed” means
+This table is the authority on delivery status, updated through 2026-09-09. “Landed” means
 implemented; outstanding verification and follow-up work are listed separately. A plan's
 **Executed** section records what shipped and any differences from the proposed design.
 
@@ -24,8 +24,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 04 | [Seed datasets](04-seed-datasets.md) | Draft, unscheduled | Importer when needed; dataset curation is ongoing. |
 | 05 | [Store shopping lists](05-store-shopping-lists.md) | Draft | 12 landed. Parts A/C in wave 5; B depends on usage. |
 | 06 | [Location barcodes](06-location-barcodes.md) | Scan and print actions implemented; physical acceptance open | Wave 3b, [issue 79](https://github.com/datagen24/victual/issues/79). Stateless scan-and-show uses plan 25 group A, merged in PR 107. Print actions, content/placement and physical acceptance remain gated by [#93](https://github.com/datagen24/victual/issues/93): plan 27 validated artifacts and group C delivery; group B jobs/configuration and the worker API are implemented. ADR-0019 and ADR-0021 are accepted. Interactive current-location scanning remains deferred to a separate plan after 08. |
-| 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work. |
-| 08 | [Nested locations](08-nested-locations.md) | Draft | 12 and 14's fixture tooling. |
+| 07 | [Nested products](07-nested-products.md) | Blocked on Q6 | Decide taxonomy versus packaging from the real catalogue; 08 precedes packaging hierarchy work and has landed, so Q3's shared depth cap already exists as `hierarchy_depth_limit()`. |
+| 08 | [Nested locations](08-nested-locations.md) | Landed | Wave 4, [issue 81](https://github.com/datagen24/victual/issues/81). Migration 0273: `locations.parent_location_id`, the `locations_resolved` read entity under `STOCK_VIEW`, `hierarchy_depth_limit()` (which [07](07-nested-products.md) shares), a cycle/depth guard and a delete guard. Raises the engine minimum to PostgreSQL 15 for `NULLS NOT DISTINCT`. Verified by a `locations` suite phase and a `frontend-security` browser probe. [23](23-storage-classes.md) adds to the same table next and should be re-read against it. |
 | 09 | [US barcode lookup sources](09-barcode-lookup-sources.md) | Deferred | Q1's kitchen experiment; S14 before adding sources. |
 | 10 | [Cold start and statelessness](10-cold-start-statelessness.md) | Landed | Pairs with 01 for a runtime without a persistent volume. |
 | 11 | [API errors and authentication](11-api-error-handling.md) | Landed with follow-ups | API key expiry/rotation; Q5's schema-derived allowlist after 14 piece 2. |
@@ -59,7 +59,7 @@ meet its plan's verification criteria. Claim migration numbers in
 | 2.5 | [24](24-sqlite-runtime-retirement.md): SQLite runtime retirement under ADR-0008 | Complete, 2026-09-05. `DB_DRIVER` accepts `pgsql` alone, the SQLite migration line is frozen at 0265, and fixture-tested imports run from 0255 through it. The separately planned production Docker retirement was already complete. |
 | 3a | 19 piece 1: roles and read gating | Implemented, 2026-09-05. Six view permissions, existing-user backfill, four seed roles, role APIs/UI and the resolved permissions endpoint. Price visibility remains in wave 5. |
 | 3b | 03 category minimums; **25 label infrastructure and 27 templates/rendering, then 06 location labels**; optionally 09 | 03 complete, 2026-09-06: migration 0268, the `product_groups_missing` read entity under `STOCK_VIEW`, and a `groupminstock` suite phase. **06 was rescoped 2026-09-06**: it cannot ship a print action over machinery ADR-0011 decided and nobody built, so 25 was created to own that machinery and 06 now depends on its first usable release. The wave delivers a *complete* location-label path — request, physical print, authorized scan back, demonstrated failure and reprint — not a table and a button. 09 joins only after its experiment and S14 work. Shared route/spec edits need coordination — 03 took the `ExposedEntity` enums and 25 needs them too. **Split 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts are [27](27-label-templates-and-rendering.md)'s, 25 keeps identity, jobs, printer configuration and delivery, and 06 is unchanged. Both gating records were accepted 2026-09-07, 0021 first. Plan 25 groups A and B are implemented; plan 27 artifacts and group C delivery remain ahead of 06's print actions and physical acceptance; 06's stateless scan surface is implemented over group A. |
-| 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | Taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
+| 4 | 08 nested locations, then the hierarchy selected by 07-Q6 | **08 complete, 2026-09-09**: migration 0273, `locations_resolved`, the depth function 07 will share, and the paths, parent picker and rolled-up filters in the UI. The product half is unchanged — taxonomy means an additive parent-group change after 03; packaging means 07 after 08 has been used. Resolve Q6 before scheduling the product work. |
 | 5 | 14 piece 2 and 19 piece 2; then 02 read-only MCP and 05 A/C | Complete missing API reads and price-visibility checks before freezing the contract. MCP uses the calling user's permissions. |
 
 New migrations are PostgreSQL-only: the SQLite line is frozen at 0265 and
