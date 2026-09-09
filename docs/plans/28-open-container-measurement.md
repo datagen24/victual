@@ -5,7 +5,8 @@ can hold. An opened unit's remaining contents are measured — by weight or by v
 whichever the person can actually take — without giving up counting the units themselves.
 **Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
 **Proposed**. Nothing else blocks it.
-**Interacts with:** [07](07-nested-products.md), which rewrites the same aggregation in
+**Interacts with:** [29](29-working-container-replenishment.md), which shares ADR-0022
+decision 4's entry-scoped tare and nothing else; [07](07-nested-products.md), which rewrites the same aggregation in
 `stock_current`, and with the container decision recorded below that came out of the same
 review. Scheduled into wave 4 beside 07 for that reason.
 **Consumed by:** nothing yet. [22](22-medication-tracking.md) is the obvious later
@@ -142,6 +143,14 @@ in wave 5; afterwards the same change is an amendment to a frozen contract rathe
 addition to an open one.
 
 ### UI
+
+**The common actions are one tap.** A measurement is taken with a scale in one hand, often by
+someone who will not navigate a form to record it. `products.quick_consume_amount` and
+`products.default_consume_location_id` already establish the shape — a preset on the product
+turning an action into a button — and measurement follows it rather than inventing one.
+[29](29-working-container-replenishment.md) states this requirement in full; it applies here
+unchanged.
+
 
 The open action grows an optional measurement: an amount, a unit drawn from the product's
 own conversions, and a tare field shown only where the product is configured for gross

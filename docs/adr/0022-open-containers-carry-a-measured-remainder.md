@@ -4,7 +4,9 @@
 - **Decider:** datagen24 (maintainer). Acceptance follows the [ADR lifecycle](README.md).
 - **Recorded:** 2026-09-09.
 - **Referenced by:** [28 — Open container measurement](../plans/28-open-container-measurement.md),
-  which owns implementation. Interacts with [07 — Nested products](../plans/07-nested-products.md)
+  which owns implementation, and
+  [29 — Working container replenishment](../plans/29-working-container-replenishment.md),
+  which consumes decision 4's entry-scoped tare for the vessel pattern. Interacts with [07 — Nested products](../plans/07-nested-products.md)
   but does not depend on or settle its [question 6](https://github.com/datagen24/victual/issues/82).
 
 ## Context
@@ -34,6 +36,16 @@ This supports a single refillable container, with three limits:
 2. Weighing one container subtracts the stock amount of every entry of that product,
    including sealed containers beside it.
 3. Tare is expressed in the stock unit, so weight measurements require a weight stock unit.
+4. A tare-enabled product can be neither opened nor transferred. Both are explicit refusals,
+   not gaps: `OpenProduct()` throws "Opening tare weight handling enabled products is not
+   supported", and `TransferProduct()` throws "Transferring tare weight enabled products is
+   not yet possible" ahead of unreachable tare arithmetic.
+
+Limit 4 decides the shape of the mechanism rather than merely constraining it. Tare handling
+models one product as one vessel and nothing else, so it cannot express backstock feeding a
+working container: the bags cannot be transferred into the bin, and the bin cannot be opened.
+Any design where a vessel is replenished from stock held elsewhere needs tare somewhere other
+than on the product.
 
 These are source-derived limits, not measured results. Acceptance prerequisite 1 requires
 an executable demonstration with a negative control.
@@ -75,6 +87,20 @@ This does not change the existing child-to-parent fallback in
 
 For a gross-weight measurement, record the container weight with the measurement so each
 container can have its own tare.
+
+Per-entry tare serves two verbs, and both are in scope for this decision:
+
+- **A remainder beside `amount`**, for an opened purchased container that is partly used.
+  This is decisions 1 and 8.
+- **An entry-scoped tared correction**, for a vessel whose `amount` *is* its contents — a
+  decanted bin of flour. No remainder column applies; what is needed is to set one entry's
+  amount from a gross weight.
+  [`EditStockEntry()`](../../services/StockService.php) already takes a stock row id and an
+  amount and performs no tare arithmetic, which is where that belongs.
+
+The two patterns differ in what they store and agree on what they need. Recording tare on the
+entry is the single primitive that unblocks both, and it is what limit 4 makes unavoidable:
+product-scoped tare cannot participate in a transfer at all.
 
 ### 5. A measured entry is never compacted
 
@@ -180,6 +206,15 @@ completed acceptance prerequisites.
 1. **Are the product-level tare fields retired?** Their removal changes `/objects/products`;
    retaining two mechanisms also requires a coexistence policy. Acceptance prerequisite 8
    requires this answer.
+
+   > **Note, 2026-09-09.** Context limit 4 narrows this. The two mechanisms are already
+   > mutually exclusive per product in code — a tare-enabled product cannot be opened, so it
+   > can never carry a per-entry measurement — so no coexistence policy has to be invented;
+   > one exists by refusal. Limit 4 also shows that product-scoped tare cannot participate in
+   > a transfer, which per-entry tare can. That makes this a question about superseding a
+   > narrower mechanism with a wider one, not about two peers sharing a domain. Removing the
+   > fields remains a wire change under
+   > [ADR-0005](0005-wire-contract-is-the-invariant.md) and is still unanswered.
 
 2. **Does a measurement book a consumption?** A new measurement may differ from the previous
    remainder. Should that difference be a consumption, an inventory correction or a separate

@@ -63,6 +63,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0275 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0276 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 | 0277 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
+| 0278 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view (wave 4) | **claimed, unwritten** |
 
 ## The merge order this implies — discharged
 
@@ -80,7 +81,7 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-The next migration takes **0278** and claims it here first.
+The next migration takes **0279** and claims it here first.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering
@@ -88,13 +89,13 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0274 to 0277 are claimed and no file exists for them yet.**
+**0274 to 0278 are claimed and no file exists for them yet.**
 The highest number on disk is 0273 and there is no hole or waiver: the unwritten numbers sit
 *above* the highest file rather than as a gap below it, which is the case this table's own
 argument is about and the reason no `--allow-reserved-holes` waiver is needed.
 
 Plan 23 still merges before 22: it owns 0274 and supplies `locations.storage_class_id`;
-22 owns 0275–0276, and 28 owns 0277. The next unclaimed number is 0278.
+22 owns 0275–0276, 28 owns 0277 and 29 owns 0278. The next unclaimed number is 0279.
 
 **Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written**:
 claimed as 0261–0262
