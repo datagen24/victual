@@ -39,8 +39,8 @@ implemented; outstanding verification and follow-up work are listed separately. 
 | 19 | [Roles and data visibility](19-rbac.md) | Piece 1 implemented | Wave 3a: roles and six domain read permissions. Piece 2, including price visibility, remains with 14 piece 2 in wave 5. |
 | 20 | [Container infrastructure](20-container-infrastructure.md) | Piece 1 and part of 3 landed | Production Docker target retired. Pieces 2, remaining 3, 4, 5; credential split and SIGTERM verification remain. |
 | 21 | [Frontend sink discipline](21-frontend-sink-discipline.md) | Landed | CI payload checks and stored-HTML cleanup on upgrade/import included. |
-| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0272–0273. |
-| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0271. |
+| 22 | [Medication tracking](22-medication-tracking.md) | Draft, unscheduled | 23 and 14 piece 2; ADR-0015/0016 remain Proposed. Q6's unresolved ownership of label infrastructure is now 25's. Reservations 0275–0276. |
+| 23 | [Storage classes](23-storage-classes.md) | Draft, unscheduled | Before 22; interacts with 08. Q1/Q2 answered: derive `is_freezer` in the application. Reservation 0274. |
 | 24 | [SQLite runtime retirement](24-sqlite-runtime-retirement.md) | Landed | ADR-0008's retirement work. The differential harness and migrations 0001–0255 stay until 14 piece 2. |
 | 25 | [Label infrastructure](25-label-infrastructure.md) | Groups A, B and C implemented; physical acceptance open | Wave 3b, [issue 93](https://github.com/datagen24/victual/issues/93); gates 06. Owns ADR-0011's unbuilt machinery and answers ADR-0019's question 1. **Narrowed 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**: templates, rendering, previews and artifacts move to [27](27-label-templates-and-rendering.md), so 0270 carries eight tables rather than nine and this plan keeps identity, jobs, printer configuration and delivery. It also owns the import refusal ADR-0021 decision item 3 requires, since `labels` is its table. Gated on ADR-0019, **accepted 2026-09-07** with all five gates met, and on ADR-0021, accepted the same day and before it — **both gates cleared**. Migration 0269 identity/import safety and 0270 jobs, worker credentials/API, configuration and monitoring are implemented. Production claims remain blocked until plan 27 attaches validated artifacts; Group C delivery remains. Existing entity printing and webhook deletion are ADR-0019 item 7's steps 2–3, deferred; step 2 needs a wire-contract record of its own. |
 | 26 | [Documentation site](26-documentation-site.md) | Piece 1 implemented | Wave-independent. Piece 1, the developer section, is built: staging script, MkDocs and Read the Docs configuration, the pinned phpDocumentor reference, and a strict build in the `lint` job. Implements [ADR-0020](../adr/0020-documentation-publication-boundary.md), which is **Proposed**; piece 1 is the evidence its prerequisites 2 and 4 ask for. Piece 2, the manual, waits on Q7's task documentation across 81 pages. |
@@ -94,8 +94,8 @@ application data, a reprint replays retained artifact bytes, and an import refus
 holding live labels. [27](27-label-templates-and-rendering.md) owns the designer, the renderer,
 previews and artifacts; 25 keeps identity, jobs, printer configuration and delivery, and also
 owns the import refusal because `labels` is its table. 27's migrations are inventoried rather
-than reserved — 0271–0273 are still plans 23 and 22's, and the branch that writes the first file
-applies the lowest-free-slot rule.
+than reserved — 0274–0276 are now plans 23 and 22's, after 27 took 0271–0272 and 08 took 0273,
+each branch applying the lowest-free-slot rule as it wrote its first file.
 
 **Both records were accepted 2026-09-07**, 0021 first because 0019's ownership model is the one
 0021 decides, each on its own bookkeeping-only pull request. All five of 0019's gates and all

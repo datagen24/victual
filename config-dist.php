@@ -23,7 +23,8 @@ Setting('MODE', 'production');
 // PostgreSQL the sole runtime engine and turned SQLite into an import format, so a
 // config.php still saying "sqlite" is refused at startup with the command that moves the
 // database across ("php bin/victual-db-import /path/to/victual.db").
-// PostgreSQL 13 or newer, configured with the settings below.
+// PostgreSQL 15 or newer, configured with the settings below. 15 is the floor because
+// migrations/0273.pgsql.sql needs UNIQUE NULLS NOT DISTINCT; see db/pgsql/README.md.
 Setting('DB_DRIVER', 'pgsql');
 
 // Connection settings

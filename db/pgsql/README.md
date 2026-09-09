@@ -226,7 +226,13 @@ Authoritative reference for porting Victual's schema. Every rule below exists be
 breaking it changes what the REST API returns, which would break the iOS app and the
 Home Assistant integration. **API compatibility is the hard constraint.**
 
-Target: PostgreSQL 13+ (tested on 17).
+Target: PostgreSQL 15+ (CI runs 16; tested on 17).
+
+The minimum was 13 until `migrations/0273.pgsql.sql` (plan 08), which spells the locations
+tree's uniqueness rule as `UNIQUE NULLS NOT DISTINCT (parent_location_id, name)` — a
+PostgreSQL 15 feature, and the only way to make the rule hold at the top of the tree as well
+as inside it. That migration's comment says why the rule needs it. Nothing else in the tree
+pinned 13: CI runs `postgres:16` and `deploy/README.md` documents 16.
 
 ## The overriding rule: the JSON on the wire must not change
 
