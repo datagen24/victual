@@ -43,15 +43,16 @@ README table and plan 08's **Executed** section, both written by piece E.
 
 Each has a recommendation; the pieces assume it.
 
-1. **Migration number: 0271, not 0274.** The reservations table's own rule, applied six
-   times so far, is that the number about to have a file behind it takes the lowest free
-   slot and unwritten drafts move up. 0269–0270 are plan 25's (scheduled, wave 3b, before
-   this work). 0271–0273 are plans 23 and 22's, both unscheduled drafts. So plan 08 takes
-   0271 and 23/22 move to 0272 and 0273–0274, keeping 23 before 22. Piece A makes that
-   edit in the table, in plans 22 and 23's bodies, and in the plans README, exactly as
-   plan 03's Executed section records doing. The branch still sits above 0269–0270 until
-   plan 25 lands, which is the wave order anyway; `--allow-reserved-holes` is for running
-   the suite locally in the meantime and CI does not set it.
+1. **Migration number: 0273, not 0276.** The reservations table's own rule, applied
+   seven times so far, is that the number about to have a file behind it takes the lowest
+   free slot and unwritten drafts move up. 0269–0272 are on disk (plans 25 and 27, merged
+   2026-09-08). 0273 is plan 23's and 0274–0275 are plan 22's, both unscheduled drafts. So
+   plan 08 takes 0273 and 23/22 move to 0274 and 0275–0276, keeping 23 before 22. Piece A
+   makes that edit in the table, in plans 22 and 23's bodies, and in the plans README,
+   exactly as plan 03's Executed section records doing. Nothing claimed and unwritten
+   sits below 0273, so the branch passes `check-migrations.php` without the waiver.
+   Re-check the table at every resync: this recommendation has already moved once, from
+   0271, while the plan was being written.
 2. **PostgreSQL minimum becomes 15.** `NULLS NOT DISTINCT` is PostgreSQL 15+.
    `db/pgsql/README.md` says "Target: PostgreSQL 13+ (tested on 17)"; CI runs `postgres:16`
    and `deploy/README.md` documents 16. Issue 81 already says the fork can require 15+.
@@ -83,7 +84,9 @@ These are fixed here so pieces B, C and D can be written against them before pie
 
 **Constraint.** The baseline declares `name TEXT NOT NULL UNIQUE`, so the existing
 constraint is `locations_name_key`; piece A confirms the name against `pg_constraint`
-before dropping it. Replacement: `locations_parent_name_key UNIQUE NULLS NOT DISTINCT
+before dropping it. `locations` already carries `import_epoch` from
+`migrations/0269.pgsql.sql` (plan 25) and a `retire_location_labels` `BEFORE DELETE`
+trigger; the new column and triggers sit beside them. Replacement: `locations_parent_name_key UNIQUE NULLS NOT DISTINCT
 (parent_location_id, name)`. Also an index on `parent_location_id` for the recursive view.
 
 **View `locations_resolved`.** One row per (ancestor, descendant) pair including each
@@ -114,11 +117,17 @@ pickers filter on `active` themselves as they do today.
   caught, not just adding a leaf. Messages follow the recipe guard's style:
   `Recursive nested location detected`, `Location nesting depth limit exceeded`.
 - `BEFORE DELETE`: refuse when any row has this id as parent: `Location has child locations`.
+  It is a second `BEFORE DELETE` trigger on the table beside `retire_location_labels`;
+  PostgreSQL fires them in name order and a raise in either aborts the statement, so the
+  order does not matter, but name it to sort first anyway (`guard_location_children`).
   Deleting a childless location that holds stock is not changed by this work; today no
   trigger or foreign key stops it, and piece E records that as pre-existing behavior.
 
 **API.** `locations` gains `parent_location_id` in the `Location` schema of
-`victual.openapi.json`. `locations_resolved` joins `ExposedEntity`, `ExposedEntityNoEdit`
+`victual.openapi.json`. `GenericEntityApiController::GetObject()` and `GetObjects()`
+project an explicit column list for `locations` (added by plan 25 to keep `import_epoch`
+off the wire), so the new column has to be added to both lists or it never appears on
+`/objects/locations` at all. `locations_resolved` joins `ExposedEntity`, `ExposedEntityNoEdit`
 and `ExposedEntityNoDelete` with a `LocationResolved` schema, and gets
 `'locations_resolved' => User::PERMISSION_STOCK_VIEW` in `EntityReadPolicy::PERMISSIONS`,
 which fails closed on an unmapped entity. No other response shape changes.
@@ -157,15 +166,15 @@ branch. D2 after C. E last. One feature branch, one pull request, following plan
 
 ### A. Schema, view, triggers, reservations
 
-Files: `migrations/0271.pgsql.sql` (new), `migrations/RESERVATIONS.md`, `db/pgsql/README.md`
+Files: `migrations/0273.pgsql.sql` (new), `migrations/RESERVATIONS.md`, `db/pgsql/README.md`
 (the target line), `docs/plans/22-medication-tracking.md` and
 `docs/plans/23-storage-classes.md` (migration numbers only), `docs/plans/README.md` (the
 same numbers in the status rows for 22, 23 and 08).
 
-1. Claim 0271 for plan 08 in the reservations table, move 23 to 0272 and 22 to 0273–0274,
-   and add a paragraph in the table's running history naming this as the seventh move and
-   the rule that decided it. Run `php .devtools/pgsql/check-migrations.php` with and without
-   `--allow-reserved-holes` and quote both results in the commit message.
+1. Claim 0273 for plan 08 in the reservations table, move 23 to 0274 and 22 to 0275–0276,
+   and add a paragraph in the table's running history naming this as the eighth move and
+   the rule that decided it. Run `php .devtools/pgsql/check-migrations.php` without
+   `--allow-reserved-holes` and quote the result in the commit message.
 2. Write the migration with a comment block of the kind 0267 and 0268 carry: why the
    constraint is spelled with `NULLS NOT DISTINCT` and what that does to the minimum
    version; why the view stops at the depth function; why the delete guard is on children
@@ -186,9 +195,11 @@ or C owns.
 Files: `victual.openapi.json`, `controllers/Users/EntityReadPolicy.php`,
 `controllers/Api/GenericEntityApiController.php`.
 
-1. Add `parent_location_id` (integer, nullable) to the `Location` schema. The schema is
-   already missing `is_freezer` and `active`; leave that alone and note it for piece E,
-   because fixing it is a contract change of its own.
+1. Add `parent_location_id` (integer, nullable) to the `Location` schema, and to the two
+   explicit `select()` lists for `locations` in `GetObject()` and `GetObjects()`; leave
+   `import_epoch` out of them. The schema is already missing `is_freezer` and `active`;
+   leave that alone and note it for piece E, because fixing it is a contract change of
+   its own.
 2. Add `LocationResolved` with the five view columns, add `locations_resolved` to the three
    enums named above, and the read policy row. `GenericEntityApiController` reads the
    enums from the spec, so nothing else registers the entity.
@@ -226,7 +237,10 @@ Files: `services/StockService.php` (the new method), `controllers/StockControlle
 4. Locations list: a path column, and a parent column or the name indented by `data-level`.
    Deleting a parent shows the API's 400 message through the shared delete helper from
    plan 12; confirm that helper surfaces the message rather than a generic failure, and
-   fix it there if it does not.
+   fix it there if it does not. The list and the form now also carry plan 25's label
+   print action (`labelPrinters`, `Victual.LabelPrinting.Wire`, buttons keyed by
+   `data-location-name`); keep those as they are, with the bare name, since what a label
+   says is plan 06's question and not this one's.
 5. Stock overview: filter option value becomes the id; the hidden cell lists
    `xx{id}xx` for each stocked location and each of its ancestors, built from the resolved
    view in `StockController::Overview()`. Update the comment in `stockoverview.js` that
@@ -242,7 +256,9 @@ Files: `services/StockService.php` (the new method), `controllers/StockControlle
    which it does.
 
 Keep the `stock_current_locations` and `stock_current_location_content` views out of this
-piece; nothing here changes their meaning (issue 81, **Unchanged**).
+piece; nothing here changes their meaning (issue 81, **Unchanged**). Before handing over,
+run `.devtools/frontend/location-labels.js` and `location-print.js` locally: they drive
+the locations pages and may match on the name text that now shares a row with the path.
 
 ### D1. PostgreSQL suite phase
 
@@ -284,12 +300,14 @@ that could pass for the wrong reason has a control. Cases, each with its expecte
 
 Run the whole suite, not only the new phase, because the `migrate` phase applies every
 migration on disk and the `import` phase migrates a fresh target: both have to be green
-with 0271 present.
+with 0273 present.
 
 ### D2. Browser probe
 
 Files: `.devtools/frontend/nested-locations.js` (new), `.github/workflows/tests.yml` (a
-step in `frontend-security` after the group minimum stock step), `.devtools/frontend/README.md`.
+step in `frontend-security` after the group minimum stock step and before the label
+steps, against the demo instance on port 8085, not the labels instance on 8087),
+`.devtools/frontend/README.md`.
 
 Model on `group-min-stock.js`: a per-run token in every name, records created through the
 form and read back through the API. Assertions, each of which is invisible to D1:
@@ -333,12 +351,13 @@ because `php .devtools/check-cited-jobs.php` runs on every pull request.
 - Demo data nesting: the generator's four locations stay flat; the probes build their own
   tree. Nesting the demo data would move row counts the frontend baseline harness records.
 - Fixing `Location`'s missing `is_freezer` and `active` in the OpenAPI spec: noted in E.
+- The path on a printed location label and in `/labels/locations/{locationId}/context`:
+  plan 06 says it wants the path once 08 lands, and it is plan 06's change to make.
 
 ## Definition of done
 
 The `lint`, `suite`, `frontend-security`, `images`, `flake` and `php-security` jobs are
 green on the pull request;
 `run-tests.sh all` passes locally against `postgres:16` including the new `locations`
-phase; `check-migrations.php` passes without the waiver once plan 25's numbers are on
-disk, and with it before then; plan 08's status row reads landed and its Executed section
-is written.
+phase; `check-migrations.php` passes without the waiver; plan 08's status row reads landed and
+its Executed section is written.
