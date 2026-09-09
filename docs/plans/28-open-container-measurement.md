@@ -78,7 +78,9 @@ Additive columns on `stock`:
 A check constraint keeps the group coherent: a measurement exists only where `open = 1`
 **and `amount = 1`**, and `opened_amount` and `opened_qu_id` are present or absent together.
 `opened_tare` is independently nullable — a net measurement is a legitimate input, per
-ADR-0022 open question 4.
+ADR-0022 open question 4. Its review response recommends storing net contents in
+`opened_amount` and subtracting tare in `opened_qu_id` only when the input is explicitly
+marked gross; the API contract must settle this before implementation.
 
 **`amount = 1` is the load-bearing half.** A `stock` row is not inherently one container.
 `OpenProduct` marks a whole entry open in place when the requested amount covers it, leaving
@@ -233,11 +235,15 @@ Executed section records that distinction being missed.
 
 ## Open questions
 
-1. **Does a measurement book a consumption?** ADR-0022 open question 2. Measuring 1.2 kg
-   where the system believed 1.6 kg is either an inventory correction with a `stock_log`
-   row, or a silent state update. Every other amount change here is booked, which argues
-   for the first; putting a jar on a scale does not feel like a correction, which argues
-   for the second.
+1. **Does a measurement book a consumption?** ADR-0022 open question 2. Specify how a
+   changed remainder is recorded without changing the container count.
+
+   > **Response:** Review recommendation, 2026-09-09: record a reversible measurement with
+   > before/after state rather than infer consumption from the difference or update silently.
+   > See [ADR-0022's responses](../adr/0022-open-containers-carry-a-measured-remainder.md#open-questions).
+   > The ledger representation, permission and interaction with existing consumption bookings
+   > remain to be designed; this is not a maintainer decision.
+
 2. **Should the parent roll-up become strict too?** Settled for this plan: a measurement
    that cannot be converted is refused, and an underivable fraction is unavailable. What is
    open is the *pooled parent's* `COALESCE(qucr.factor, 1.0)`, which is shipped behaviour on

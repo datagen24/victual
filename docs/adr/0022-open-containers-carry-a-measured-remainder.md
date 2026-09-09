@@ -1,288 +1,227 @@
 # ADR-0022: An opened container's remaining contents are measured on the stock entry
 
 - **Status:** Proposed
-- **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
-  lifecycle rule in [the index](README.md).
+- **Decider:** datagen24 (maintainer). Acceptance follows the [ADR lifecycle](README.md).
 - **Recorded:** 2026-09-09.
-- **Referenced by:** [28](../plans/28-open-container-measurement.md), which owns the work.
-  Interacts with [07](../plans/07-nested-products.md) and its
-  [question 6](https://github.com/datagen24/victual/issues/82), which is unanswered at the
-  time of writing; this record does not depend on that answer and does not supply it.
+- **Referenced by:** [28 — Open container measurement](../plans/28-open-container-measurement.md),
+  which owns implementation. Interacts with [07 — Nested products](../plans/07-nested-products.md)
+  but does not depend on or settle its [question 6](https://github.com/datagen24/victual/issues/82).
 
 ## Context
 
-**The fork counts pieces.** A stock unit of "fluid ounce" makes per-unit stock labels
-mint one label per ounce, so anything that is labelled has to be held in the container it
-comes in: cans, jugs, bags. `AddProduct` writes one stock entry per unit when
-`$stockLabelType = 2` (`services/StockService.php:204`, loop at `:294`), and
-`products.default_stock_label_type` makes that a per-product default. Counting is
-therefore not a preference here; it is what the label subsystem requires of anything it
-labels.
+Per-unit stock labelling requires container units such as cans, jugs or bags.
+[`StockService::AddProduct()`](../../services/StockService.php) creates one stock entry per
+unit when `$stockLabelType = 2`, selected through `products.default_stock_label_type`.
+Using fluid ounces as the stock unit would create one label per ounce in that mode.
 
-**But a product has exactly one stock unit.** `products.qu_id_stock` is a single column,
-and `stock` has no unit column of its own — an entry is an amount and a product
-(`db/pgsql/baseline/01_tables.sql:316-333`). So the stock unit answers two different
-questions with one value: *how many are on the shelf* and *how much is inside*. While it is
-"jug", the second question has no answer at all.
+A product has one `qu_id_stock`, and each `stock` entry records its amount in that unit;
+see the [baseline tables](../../db/pgsql/baseline/01_tables.sql). Counting jugs therefore
+does not record how much remains inside an opened jug. The required state is three sealed
+bags of flour and one open bag holding 1.2 kg, while retaining the count of four bags.
 
-**Upstream's answer is tare weight handling, and it assumes one container.**
-`products.enable_tare_weight_handling` and `products.tare_weight` implement "weigh the
-container, subtract the tare, that is what is inside". Reading the three paths that use it:
+Existing tare handling uses `products.enable_tare_weight_handling` and `products.tare_weight`.
+Its three paths in [StockService](../../services/StockService.php) operate on product totals:
 
-| Path | Line | Arithmetic |
-|---|---|---|
-| `AddProduct` | `StockService.php:241` | `$amount - $productDetails->stock_amount - $product->tare_weight` |
-| `ConsumeProduct` | `StockService.php:573` | `abs($amount - $productDetails->stock_amount - $product->tare_weight)` |
-| `InventoryProduct` | `StockService.php:1450` | compares `$newAmount` against `$productDetails->stock_amount + $containerWeight` |
+| Path | Arithmetic |
+|---|---|
+| `AddProduct()` | `$amount - $productDetails->stock_amount - $product->tare_weight` |
+| `ConsumeProduct()` | `abs($amount - $productDetails->stock_amount - $product->tare_weight)` |
+| `InventoryProduct()` | Compares `$newAmount` with `$productDetails->stock_amount + $containerWeight` |
 
-Three structural limits follow, and they are limits of the design rather than defects in
-it:
+This supports a single refillable container, with three limits:
 
-1. **One tare per product.** A glass canister and a paper sack of the same sugar have
-   different tares. There is one column.
-2. **The arithmetic is scoped to the product's total, not to an entry.** Every path above
-   subtracts `$productDetails->stock_amount` — the sum across every entry of that product.
-   Weighing one open bag while two sealed bags sit beside it subtracts all three. The
-   feature is correct only where exactly one container of the product exists, which is the
-   refillable-canister case it was built for.
-3. **Tare is denominated in the stock unit**, so the mechanism works only where the stock
-   unit is already a weight.
+1. There is one tare per product, although a glass canister and a paper sack have different tares.
+2. Weighing one container subtracts the stock amount of every entry of that product,
+   including sealed containers beside it.
+3. Tare is expressed in the stock unit, so weight measurements require a weight stock unit.
 
-**So the two things cannot coexist.** A product can be counted in pieces or measured by
-weight, never both, and the choice is made once for every container of that product. "Three
-sealed bags of flour and one open bag holding 1.2 kg" is not expressible.
+These are source-derived limits, not measured results. Acceptance prerequisite 1 requires
+an executable demonstration with a negative control.
 
 ## Decision (proposed)
 
 ### 1. The remaining contents of an opened unit are recorded on the stock entry
 
-A `stock` row for an opened unit carries a measured remainder: an amount, the quantity unit
-it was measured in, and when it was measured. This is a property of *that container*, not
-of the product, because it is a fact about one physical object and changes when someone
-pours from it.
+An opened container's `stock` row carries its measured remainder, measurement unit and
+measurement timestamp. These describe one physical container rather than the product.
 
 ### 2. `stock.amount` keeps its present meaning and is not redefined
 
-An entry's `amount` continues to count units of the product's stock unit. An opened jug is
-still one jug on the shelf until it is finished. The measurement is an additional field
-beside it, never a rewriting of it.
-
-This is deliberate and it is the reason this record is compatible with
-[ADR-0005](0005-wire-contract-is-the-invariant.md). Folding a fraction into `amount` would
-change what `/stock`, `stock_current`, and [18](../plans/18-mqtt-state-publication.md)'s
-published state *mean* without changing their shape, which is the harder kind of contract
-break to detect. Additive fields are visible in a response snapshot; changed semantics are
-not.
+`amount` remains a count of the product's stock units. An opened jug remains one jug until
+it is finished; its measured contents are recorded separately. Replacing that count with a
+fraction would change existing `/stock`, `stock_current` and
+[MQTT publication](../plans/18-mqtt-state-publication.md) semantics, contrary to
+[ADR-0005](0005-wire-contract-is-the-invariant.md).
 
 ### 3. The fraction of a unit is derived through the conversions that already exist
 
-`quantity_unit_conversions` carries per-product factors (`product_id` is nullable —
-`db/pgsql/baseline/01_tables.sql:223-230`) and `quantity_unit_conversions_resolved` closes
-them transitively (`db/pgsql/baseline/03_views_group2.sql:70`). A product that records "1
-bag = 5 lb" has already stated its net contents, so 1.2 lb remaining is 0.24 of a bag by
-the data that is there for other reasons.
+Use per-product `quantity_unit_conversions` and the transitive
+[`quantity_unit_conversions_resolved`](../../db/pgsql/baseline/03_views_group2.sql) view.
+Given `1 bag = 5 lb`, a measured remainder of 1.2 lb is 0.24 bags.
 
-**No net-contents column is added, and no density concept is introduced.** Measuring a
-volume container by weight is expressible as an ordinary per-product conversion — "1 gallon
-jug = 8.6 lb" is that jug's density, written in the units the person actually has. The
-constraint this imposes is stated rather than hidden: the measurement unit must be
-convertible to the product's stock unit.
+No net-contents column or density model is added. A per-product conversion such as
+`1 gallon jug = 8.6 lb` also permits measuring a volume container by weight.
 
-**Where it is not, the derived figure is refused, not guessed.** A missing conversion makes
-the fraction *unavailable* — an absent value that says so — and never a number produced by
-assuming a factor. A warning does not make kilograms convertible to bags; the only correct
-answer to "how much of this bag is left" without a bag-to-kilogram factor is "unknown". This
-binds the write path too: recording a measurement in a unit that does not convert is refused
-at the point of entry, and deleting a conversion that recorded measurements depend on either
-is refused or renders those fractions unavailable, never silently reinterprets them.
+Reject a measurement whose unit cannot be converted to the product's stock unit. If a
+stored measurement later becomes unconvertible, report its derived fraction as unavailable;
+never assume a factor. Deleting a required conversion must either be refused or leave
+those fractions unavailable.
 
-**This is separate from the parent roll-up's existing fallback.** `stock_current` resolves a
-missing child-to-parent factor as `COALESCE(qucr.factor, 1.0)`
-(`db/pgsql/baseline/04_views_l1a.sql:50`), which is pre-existing behaviour this record does
-not change and does not adopt. The measured fraction is new, so it starts strict.
+This does not change the existing child-to-parent fallback in
+[`stock_current`](../../db/pgsql/baseline/04_views_l1a.sql),
+`COALESCE(qucr.factor, 1.0)`. The new measured fraction must not use that fallback.
 
 ### 4. Tare belongs to the measurement, not to the product
 
-Where a measurement is a gross weight, the container weight is recorded with that
-measurement. Decision 1 makes this possible; limit 1 above makes it necessary.
+For a gross-weight measurement, record the container weight with the measurement so each
+container can have its own tare.
 
 ### 5. A measured entry is never compacted
 
-`CompactStockEntries()` merges split entries (`services/StockService.php:2493`) and
-`stock_splits` already excludes two classes from merging — per-unit entries by their `x`
-stock-id prefix, and entries carrying userfields (`db/pgsql/baseline/03_views_group3.sql:78-79`).
-A measured remainder is per-container state of exactly that kind and joins the exclusion.
-
-Compaction is only half the problem: excluding a measured entry from *merging* does nothing
-about an entry that already holds several units. Decision 8 is what makes an entry one
-container.
+Exclude measured entries from `CompactStockEntries()`. The
+[`stock_splits`](../../db/pgsql/baseline/03_views_group3.sql) view already excludes per-unit
+entries with an `x` stock-id prefix and entries carrying userfields. Measurement adds a
+third exclusion; decision 8 separately handles rows that already contain several units.
 
 ### 6. Counting and measuring are per-product, not a mode
 
-Whether a product's opened units are measured is product configuration. Soda is counted and
-never measured; flour is both counted and measured; a sack of rice may be measured and
-barely counted. Nothing here makes measurement mandatory or global.
+Measurement is optional product configuration. A product may be counted without measuring
+its opened units; neither measurement nor a global measurement mode is required.
 
 ### 7. The product-level tare fields stay on the wire and stop being the mechanism
 
-`enable_tare_weight_handling` and `tare_weight` are returned by `/objects/products` today.
-Removing them is a wire change with its own argument to make, so this record does not make
-it: new work uses the per-entry measurement, and whether the product-level pair is retired
-is open question 1 below rather than a consequence of accepting this.
+New measurement work uses per-entry state. The existing `enable_tare_weight_handling` and
+`tare_weight` fields remain on `/objects/products`; their retirement and compatibility
+consequences require the answer to question 1 before acceptance.
 
 ### 8. A measurement describes exactly one container, and an entry carrying one holds one unit
 
-A `stock` row is not inherently one physical container. `OpenProduct` marks a whole entry
-open in place when the requested amount covers it — one `update(['open' => 1, ...])` at
-`services/StockService.php:1628-1632`, leaving `amount` untouched. Three jugs bought without
-per-unit labelling are one row with `amount = 3`, and opening all three yields `open = 1`
-with `amount = 3`. A single measured remainder on that row answers no question: 1.2 kg of
-*which* jug?
+A measured entry requires `open = 1` and `amount = 1`. `OpenProduct()` can mark an entire
+multi-unit row open without changing its amount, so `open = 1` alone does not identify one
+container. For example, three jugs bought without per-unit labels can remain one opened row.
 
-So the coherence rule is not "a measurement requires `open = 1`" but **"a measurement
-requires `open = 1` and `amount = 1`"**. Measuring an entry that holds more than one unit
-splits it first, which is the operation `OpenProduct`'s own else branch already performs
-when opening fewer units than an entry holds (`:1636`). Entries already open with
-`amount > 1` when the migration runs are a live case and not a hypothetical — the migration
-either splits them, or leaves them unmeasurable until they are split, and it must say which.
+Split a multi-unit entry before measuring one container. `OpenProduct()` already splits
+rows when opening fewer units than they hold. The migration must specify whether existing
+opened multi-unit rows are split during migration or remain unmeasurable until split.
 
-Upstream corroborates the premise: `OpenProduct` refuses tare-weight products outright —
-"Opening tare weight handling enabled products is not supported" (`:1534-1537`). Opening and
-measuring do not compose today, and forbidding the combination is how that is currently
-resolved.
+`OpenProduct()` currently refuses products with tare handling enabled. Supporting opened,
+measured containers therefore requires changes to that path as well as the new columns.
 
 ### 9. A measurement survives undo, so it is not stored only on `stock`
 
-`UndoBooking` does not restore a `stock` row; it **rebuilds** one from `stock_log`. The
-consume branch calls `$this->DB->stock()->createRow([...])` populated entirely from the log
-row (`services/StockService.php:2200-2213`), and its own comment records the pattern this
-decision has to follow: *"The open flag itself is not logged, so it is derived from the
-logged opened date."* Anything living only on `stock` is gone when an entry is fully consumed
-and the consumption is undone.
+`UndoBooking()` reconstructs a fully consumed entry from `stock_log`. Persist the remainder,
+unit, tare and timestamp in the ledger so undo can restore them after the `stock` row has
+been deleted. Edit and split paths must preserve the association with one container and
+must not duplicate a measurement across split rows.
 
-A measured remainder therefore has to be durable in the ledger — recorded where the undo path
-can read it back, alongside `opened_date` — rather than as columns on `stock` alone. The same
-applies to the entry-editing and splitting paths, which is where a measurement can otherwise
-be silently dropped or duplicated across a split.
-
-Undoing an *opening* is the mirror case and constrains decision 8's rule: the
-`TRANSACTION_TYPE_PRODUCT_OPENED` branch sets `open => 0, opened_date => null`
-(`:2280-2290`), which would leave a measurement attached to a closed entry. Either that undo
-clears the measurement, or the coherence rule is expressed so the state is legal; this record
-requires the first, because an unopened container has no remainder to describe.
+Undoing an opening must clear the measurement along with `open` and `opened_date`, keeping
+the state consistent with decision 8. These requirements apply regardless of whether
+remeasurement itself books a consumption (question 2).
 
 ## Consequences
 
-**The stock unit stops carrying two meanings.** Counting pieces becomes safe rather than
-lossy, which is what makes it available as the answer to the container question at all.
-Without this record, choosing pieces means permanently not knowing that a jug is half empty.
+Container counts and remaining contents can be reported separately. A pooled parent can
+also report measured contents rather than treating every child container as full; whether
+that is an additional aggregate is a question in plan 28.
 
-**A pooled parent's total can be honest.** Where a parent product aggregates container-sized
-children, `stock_current` converts each child's stock unit into the parent's through
-`cache__quantity_unit_conversions_resolved` and assumes every unit is full — a half-finished
-2 L bottle still reports its full volume. A measured remainder is what lets that total
-reflect the shelf.
+Plan 28 shares changes to `stock_current` with plan 07's proposed recursive product
+aggregation. The [plans index](../plans/README.md) schedules them in wave 4. Coordinate the
+view changes and fixtures if both proceed; measurement does not require plan 07's taxonomy
+question to be resolved.
 
-**It collides with [07](../plans/07-nested-products.md) in one view.** Making the roll-up
-read measurements rewrites `stock_current`'s aggregation, and 07's recursive
-`products_resolved` rewrites the same aggregation. Sequencing them apart means touching
-that view twice and re-reasoning the second change against the first, which is why
-[28](../plans/28-open-container-measurement.md) is scheduled into wave 4 beside the nesting
-work rather than after it.
+New stock response fields require compatibility verification under ADR-0005. Their planned
+wave 4 delivery precedes [plan 14's response snapshot](../plans/14-contract-and-regression-scaffolding.md)
+([issue 83](https://github.com/datagen24/victual/issues/83)) in wave 5. Later delivery would
+also require updating that snapshot contract.
 
-**The wire additions are additive but time-boxed.** New fields on `/stock` and
-`/stock/entry` are permitted under ADR-0005, but
-[14](../plans/14-contract-and-regression-scaffolding.md) piece 2
-([issue 83](https://github.com/datagen24/victual/issues/83)) freezes the response contract
-in wave 5. Landing after that freeze makes an additive change into a contract amendment.
-
-**A conversion that is missing fails quietly, in two places now.** `stock_current`'s roll-up
-falls back to `COALESCE(qucr.factor, 1.0)` (`db/pgsql/baseline/04_views_l1a.sql:50`), so a
-child without a conversion to its parent is summed as though one can equalled one bottle.
-The derived fraction in decision 3 reads the same table and inherits the same failure mode.
-This is one data-discipline problem, not two, and plan 28 owns naming what enforces it.
-
-**The ledger, not just the table.** Decision 9 moves this out of "add four columns" and into
-the booking history, which is a larger and more contract-sensitive change than the schema
-sketch alone suggests. It is not optional and does not depend on how open question 2 is
-settled: whether or not re-measuring books a consumption, undoing a consumption must restore
-what was measured.
-
-**Costs.** One migration, the three tare-aware service paths, the undo, edit and split paths,
-the open dialog, at least one view, and the fixtures for a product holding sealed and
-measured units at once. This is not
-a schema-only change: the arithmetic in `AddProduct`, `ConsumeProduct` and
-`InventoryProduct` is where the single-container assumption actually lives.
+Implementation includes the stock and ledger schema, tare-aware service arithmetic,
+opening, undo, edit and split paths, compaction exclusion, the measurement UI and stock
+views. Fixtures must cover sealed and measured containers together, conversion failures
+and undo. Retiring the existing tare mechanism adds migration and compatibility work.
 
 ## Options considered
 
-**Make `stock.amount` fractional on open.** Pour eight ounces from a gallon and the entry
-reads 0.9375. Rejected: it changes the meaning of every consumer of `amount` without
-changing any response shape, and it discards the measurement — the fact recorded is "1.2 kg
-remains", and a fraction is a lossy rendering of it against a factor that may later be
-corrected.
-
-**Add a net-contents column to `products`.** Rejected as redundant: the per-product
-quantity unit conversion states the same thing, is already required for the pooled roll-up,
-and cannot drift out of agreement with itself.
-
-**Fix the existing tare fields to be per-entry.** Rejected as a rename of the problem. The
-single-container assumption is in the arithmetic, not in the column, and the existing
-fields are on the wire; moving them is a contract change that buys a worse version of
-decision 1.
-
-**Model an opened unit as a separate product.** Rejected: it multiplies the catalogue by
-the thing this fork is trying to keep small, and an opened bag is not a different thing to
-buy.
+- **Make `stock.amount` fractional on open.** Rejected because it changes existing response
+  semantics and replaces the original measurement with a fraction dependent on a conversion
+  factor that may later be corrected.
+- **Add net contents to `products`.** Rejected because per-product quantity-unit conversions
+  already record the relationship; a second value could disagree with them.
+- **Move the existing tare fields to entries.** Rejected because moving columns does not
+  fix the product-total arithmetic or separate container counts from contents, and the
+  fields are already exposed on the API.
+- **Make an opened unit a separate product.** Rejected because opening changes the state
+  of a container, not the product being purchased, and would duplicate catalogue entries.
 
 ## Acceptance prerequisites
 
-1. **The coexistence case, against PostgreSQL.** One product holding three sealed units and
-   one opened unit with a measured remainder, with the product total correct — accompanied
-   by a negative control showing the present tare path computing it wrongly, so the record
-   demonstrates the limit it claims rather than asserting it. The limits in *Context* are
-   source reads, not measurements, and this prerequisite is what converts them.
-2. **A volume container measured by weight**, showing that a per-product conversion supplies
-   the factor and that no density concept was required.
-3. **Compaction demonstrated to skip a measured entry**, with a control confirming an
-   unmeasured split entry is still merged.
-4. **The wire additions confirmed additive** against the response snapshot, and the result
-   reconciled with 14 piece 2's freeze date.
-5. **Two containers, one measured.** A product holding two opened containers where one is
-   measured and the other is not, showing the measurement attached to exactly one of them and
-   the totals correct — and the multi-unit case above shown to be refused or split rather than
-   accepted with a single remainder.
-6. **An undo round trip.** An entry measured, fully consumed, and the consumption undone,
-   with the remainder, unit, tare and timestamp all restored. Plus undoing an *opening* on a
-   measured entry, showing the state left legal.
-7. **A refused conversion.** Recording a measurement in a unit that does not convert to the
-   stock unit is refused at entry; deleting a conversion that recorded measurements depend on
-   leaves those fractions unavailable rather than reinterpreted. Neither may fall through to a
-   fabricated number.
-8. **A decision recorded on open question 1** — whether `products.tare_weight` and
-   `enable_tare_weight_handling` are retired — including its wire consequence, since
-   accepting this record without settling it leaves two mechanisms for one job.
+1. **Coexistence, against PostgreSQL.** Three sealed units and one opened, measured unit of
+   one product produce the correct total. A negative control demonstrates the existing tare
+   path computing it incorrectly, testing the source-derived limits in Context.
+2. **Volume measured by weight.** A per-product conversion supplies the factor without a
+   separate density model.
+3. **Compaction.** A measured entry is skipped while an unmeasured split entry is merged.
+4. **Wire compatibility.** Confirm additive responses against the response snapshot and
+   reconcile the result with plan 14 piece 2's freeze date.
+5. **Container identity.** Two opened containers, one measured, retain separate state and
+   correct totals. A multi-unit entry is refused or split before attaching a remainder.
+6. **Undo.** Measure an entry, consume it fully, then undo: remainder, unit, tare and
+   timestamp are restored. Undoing an opening leaves a legal state.
+7. **Conversion failure.** Reject an unconvertible measurement at entry. Deleting a
+   conversion required by stored measurements leaves their fractions unavailable, never
+   reinterpreted through an assumed factor.
+8. **Legacy tare decision.** Record the answer to question 1, including the wire consequence
+   of retaining or retiring `products.tare_weight` and `enable_tare_weight_handling`.
 
 ## Open questions
 
-1. **Are the product-level tare fields retired?** Decision 7 keeps them deliberately. They
-   are on `/objects/products`, so retirement is an ADR-0005 question, and leaving two
-   mechanisms in place is its own cost.
-2. **Does a measurement book a consumption?** Measuring 1.2 kg where the system believed
-   1.6 kg remained is either an inventory correction with a `stock_log` booking, or a
-   silent state update. The first is consistent with how every other amount change is
-   recorded here; the second is what people will expect from putting a jar on a scale.
-3. **How is refusal surfaced?** Decision 3 settles *that* an unconvertible measurement is
-   refused and an underivable fraction is unavailable; it does not settle whether the API
-   omits the field, returns an explicit null with a reason, or both, nor what the UI shows in
-   place of a number. This is presentation, not policy — the policy is no longer open.
-4. **Per-entry tare, or net measurements only?** Decision 4 records a container weight with
-   the measurement. Asking for a net figure instead is simpler and pushes the subtraction
-   onto the person holding the scale.
+Responses below are review recommendations dated 2026-09-09, not maintainer decisions or
+completed acceptance prerequisites.
+
+1. **Are the product-level tare fields retired?** Their removal changes `/objects/products`;
+   retaining two mechanisms also requires a coexistence policy. Acceptance prerequisite 8
+   requires this answer.
+
+2. **Does a measurement book a consumption?** A new measurement may differ from the previous
+   remainder. Should that difference be a consumption, an inventory correction or a separate
+   recorded measurement?
+
+   > **Response:** Recommend a reversible measurement record with before/after state, rather
+   > than an inferred consumption or a silent update. A lower reading does not establish why
+   > contents changed, and decision 2 keeps the container count unchanged. Decision 9 requires
+   > durable state for undo; [ADR-0012](0012-observations-are-proposals.md) also distinguishes
+   > deterministic measurements from probabilistic proposals. Plan 28 still needs to specify
+   > the ledger representation, permission and treatment of existing consumption bookings.
+
+3. **How is refusal surfaced?** Decision 3 requires refusal of unconvertible input and an
+   unavailable derived fraction when conversion is impossible. The API and UI need a
+   representation for each.
+
+   > **Response:** Recommend HTTP 400 with the existing `error_message` envelope for an
+   > unconvertible write, leaving stored state unchanged. On reads, retain the original
+   > measurement and return an explicit null derived fraction with a machine-readable reason.
+   > The UI should show “Conversion unavailable”, not zero or an estimated full container.
+   > Plan 28 must specify the additive fields and distinguish no measurement from a missing
+   > conversion; the existing error envelope is defined by
+   > [`BaseApiController::GenericErrorResponse()`](../../controllers/Api/BaseApiController.php).
+
+4. **Per-entry tare, or net measurements only?** Decision 4 already requires per-measurement
+   tare for gross weights; net measurements need no container subtraction.
+
+   > **Response:** Support both, as decision 4 and plan 28's nullable `opened_tare` already
+   > propose. Recommend defining `opened_amount` as net contents in `opened_qu_id`; for gross
+   > input, subtract tare in that same unit before storing it. This leaves one derivation
+   > formula for both input paths. The input contract must make gross versus net explicit
+   > so a client cannot subtract tare twice.
+
 5. **Does an opened, measured unit still satisfy a minimum stock amount?**
-   `products.treat_opened_as_out_of_stock` defaults to 1, which answers this today by
-   ignoring what is left. A measured remainder makes a better answer possible and does not
-   by itself choose one.
-6. **Which products are measured in practice?** Configuration rather than schema, but the
-   answer decides whether this feature is used by a handful of staples or by most of the
-   catalogue, and therefore how much the UI cost matters.
+
+   > **Response:** Recommend retaining `treat_opened_as_out_of_stock`: when enabled, exclude
+   > opened units; otherwise count their unchanged stock amounts. The
+   > [`products_missing` view](../../db/pgsql/baseline/05_views_l2.sql) already applies this
+   > rule, and the [product schema](../../db/pgsql/baseline/01_tables.sql) defaults the flag
+   > to 1. A fractional contents-based minimum would need a separately defined threshold and
+   > consumer contract; recording a remainder should not silently change replenishment.
+
+6. **Which products are measured in practice?** This needs catalogue and usage evidence:
+   which products are weighed, whether readings are gross or net, and whether a suitable
+   stock-unit conversion exists. Product configuration and UI defaults remain open.
