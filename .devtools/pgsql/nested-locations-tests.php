@@ -472,73 +472,116 @@ check($atBasement === 0, 'stock at Door is not reported under Basement (plan 08 
 
 echo "\n10. concurrent re-parenting cannot build a cycle\n";
 
-// The one case in this file that needs a second connection, because what it is about is two
-// transactions and nothing about one transaction can show it. The guard reads the tree and
-// then writes to it, and two re-parentings touch different rows - so without the advisory
-// lock migrations/0273.pgsql.sql takes, nothing makes them wait for each other: each reads
-// the tree as it was before the other wrote, each finds no cycle, and both commit. The
-// result is a cycle whose rows are unreachable from any root, so they vanish from
-// locations_resolved and therefore from every picker and list that renders a location.
+// The one case in this file that needs a second *process*, and it needs one for a reason
+// worth stating, because the obvious cheaper version proves less than it looks like it does.
 //
-// Driven in one process on purpose, so the interleaving is fixed rather than raced for: the
-// second connection is given a short lock_timeout and has to *block*, which is the assertion
-// that the two are serialised at all. Retried after the first commits, it has to be refused
-// on the merits, which is the assertion that the wait bought a fresh view of the tree - the
-// half that would still fail if the trigger function were ever marked STABLE.
-$second = new PDO(
-	'pgsql:host=' . VICTUAL_DB_HOST . ';port=' . intval(VICTUAL_DB_PORT) . ';dbname=' . VICTUAL_DB_NAME,
-	VICTUAL_DB_USER,
-	VICTUAL_DB_PASSWORD,
-	[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
+// What the guard has to survive is this: two re-parentings touch different rows, so nothing
+// makes them wait for each other unless something is made to, and each one reads the tree
+// before deciding. Without the advisory lock migrations/0273.pgsql.sql takes, both read the
+// tree as it was before the other wrote, both find no cycle, and both commit - and because
+// the view descends from roots, the resulting cycle is unreachable from one, so both rows
+// vanish from locations_resolved and therefore from every picker and list.
+//
+// The lock alone is not the whole property. A blocked statement took its snapshot when it
+// started, which is *before* the transaction it is waiting for committed, so being let
+// through the lock is not the same as being told what happened while it waited. What makes
+// the guard see the new tree is that the trigger function is VOLATILE - the default, and why
+// no volatility is declared on it - so each query inside it takes a fresh snapshot under READ
+// COMMITTED. Marked STABLE it would use the calling statement's snapshot instead, and the
+// lock would serialise the checks while handing each of them the same stale answer.
+//
+// So the write that gets refused below has to be the *same statement* that waited, released
+// by another process committing while it was blocked. A version that rolls the blocked
+// statement back, commits the first writer and then retries would pass with the function
+// marked STABLE, because the retry starts after the commit and its snapshot is fresh however
+// the function is declared. Measured on PostgreSQL 16.13, this version tells them apart:
+// VOLATILE waits 2.49s and refuses, STABLE waits the same 2.49s and accepts, committing the
+// cycle and emptying both rows out of the view.
+// Asserted directly as well as behaviourally, because the two failures read very differently:
+// the scenario below says the guard let a cycle through, and this says why. Without it a
+// reader of a failing run has to know that a trigger function's volatility decides which
+// snapshot its queries see before the output means anything.
+check($pdo->query("SELECT provolatile FROM pg_proc WHERE proname = 'trg_locations_check_parent'")->fetchColumn() === 'v',
+	'the parent guard is VOLATILE, so its queries take a fresh snapshot after the wait');
 
-$cycleLeft = MakeLocation('ConcurrentLeft');
-$cycleRight = MakeLocation('ConcurrentRight');
+$waitingLeft = MakeLocation('WaitingLeft');
+$waitingRight = MakeLocation('WaitingRight');
 
-$second->exec("SET lock_timeout = '2s'");
+// The child holds the lock for long enough that the parent below is certainly still blocked
+// when it commits. It uses raw PDO rather than this suite's harness because all it has to be
+// is a second connection that outlives the parent's statement.
+$childCode = '$child = new PDO(getenv("NL_DSN"), getenv("NL_USER"), getenv("NL_PASSWORD"), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);'
+	. '$child->beginTransaction();'
+	. '$child->prepare("UPDATE locations SET parent_location_id = ? WHERE id = ?")->execute([(int)getenv("NL_RIGHT"), (int)getenv("NL_LEFT")]);'
+	. 'usleep(2500000);'
+	. '$child->commit();';
 
-$pdo->beginTransaction();
-$pdo->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleRight, $cycleLeft]);
+$childEnvironment = [
+	'NL_DSN' => 'pgsql:host=' . VICTUAL_DB_HOST . ';port=' . intval(VICTUAL_DB_PORT) . ';dbname=' . VICTUAL_DB_NAME,
+	'NL_USER' => VICTUAL_DB_USER,
+	'NL_PASSWORD' => VICTUAL_DB_PASSWORD,
+	'NL_LEFT' => (string)$waitingLeft,
+	'NL_RIGHT' => (string)$waitingRight,
+	'PATH' => getenv('PATH')
+];
 
-$second->beginTransaction();
-$blocked = null;
+$childPipes = [];
+$child = proc_open([PHP_BINARY, '-r', $childCode], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $childPipes, null, $childEnvironment);
+
+// Waited for rather than slept past: the parent must not start its write until the child
+// really holds the lock, or it would not block and the case would pass without proving
+// anything. pg_locks is asked directly, so this is the lock itself rather than a guess at
+// how long the child needs.
+$childHoldsTheLock = false;
+
+for ($attempt = 0; $attempt < 200; $attempt++)
+{
+	usleep(50000);
+
+	if ((int)$pdo->query("SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = 273 AND objid = 1 AND granted")->fetchColumn() > 0)
+	{
+		$childHoldsTheLock = true;
+
+		break;
+	}
+}
+
+check($childHoldsTheLock, 'the first re-parenting takes the hierarchy lock');
+
+// Bounded, so that a guard which never releases fails this phase instead of hanging CI.
+$pdo->exec("SET lock_timeout = '30s'");
+
+$startedWaiting = microtime(true);
+$outcome = null;
 
 try
 {
-	$second->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleLeft, $cycleRight]);
+	$pdo->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$waitingLeft, $waitingRight]);
 }
 catch (PDOException $exception)
 {
-	$blocked = $exception->getMessage();
+	$outcome = $exception->getMessage();
 }
 
-$second->rollBack();
+$waited = microtime(true) - $startedWaiting;
 
-check($blocked !== null && str_contains($blocked, 'lock timeout'),
-	'the second re-parenting waits for the first rather than reading round it');
+fclose($childPipes[1]);
+fclose($childPipes[2]);
+$childStatus = proc_close($child);
+$pdo->exec("SET lock_timeout = 0");
 
-$pdo->commit();
+check($childStatus === 0, 'the first re-parenting committed');
 
-$second->exec("SET lock_timeout = '10s'");
-$second->beginTransaction();
-$refused = null;
+// One-sided on purpose: the child holds the lock for 2.5s after the parent confirmed it, so
+// the only way to get back here quickly is not to have waited at all. A slow machine only
+// makes this larger.
+check($waited >= 1.0, sprintf('the second re-parenting waits for the first rather than reading round it (waited %.2fs)', $waited));
 
-try
-{
-	$second->prepare('UPDATE locations SET parent_location_id = ? WHERE id = ?')->execute([$cycleLeft, $cycleRight]);
-	$second->commit();
-}
-catch (PDOException $exception)
-{
-	$refused = $exception->getMessage();
-	$second->rollBack();
-}
-
-check($refused !== null && str_contains($refused, 'Recursive nested location detected'),
-	'and is then refused on the merits, having seen the committed first write');
+check($outcome !== null && str_contains($outcome, 'Recursive nested location detected'),
+	'and the same waiting statement is then refused, having been told what happened while it waited');
 
 $statement = $pdo->prepare('SELECT COUNT(*) FROM locations_resolved WHERE descendant_location_id IN (?, ?) AND depth = 0');
-$statement->execute([$cycleLeft, $cycleRight]);
+$statement->execute([$waitingLeft, $waitingRight]);
 
 check((int)$statement->fetchColumn() === 2,
 	'both locations are still reachable from a root, so neither has vanished from the pickers');

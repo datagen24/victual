@@ -191,11 +191,20 @@ JOIN tree t
 -- hierarchy write costs nothing worth measuring. The two-argument form is keyed on this
 -- migration's number, leaving the rest of the keyspace to whatever needs it next.
 --
--- This function must stay VOLATILE (which is the default, and why no volatility is declared).
--- That is what makes each statement inside it take a fresh snapshot under READ COMMITTED, so
--- the reads below see the transaction this one just waited for. Marked STABLE it would take
--- the calling statement's snapshot instead -- a snapshot from before the wait -- and the lock
--- would serialise the checks while telling each of them the same stale answer.
+-- This function must stay VOLATILE (which is the default, and why no volatility is declared),
+-- and the lock is only half the fix without it. A statement that blocks on the lock took its
+-- snapshot when it started, which is before the transaction it waits for committed -- so
+-- being let through is not the same as being told what happened meanwhile. What closes that
+-- gap is volatility: a VOLATILE function takes a fresh snapshot for each query it runs, so
+-- the reads below see the write this statement waited for. Marked STABLE they would use the
+-- calling statement's snapshot instead and the lock would serialise the checks while handing
+-- each of them the same stale answer. Measured on PostgreSQL 16.13 with the lock in place and
+-- this function marked STABLE: the second re-parenting waits the full 2.5 seconds and is then
+-- accepted, committing exactly the cycle the lock was added to prevent.
+--
+-- .devtools/pgsql/nested-locations-tests.php case 10 holds both halves: it blocks a second
+-- connection's UPDATE, commits the first from another process while that statement is still
+-- waiting, and requires the same waiting statement to come back refused.
 CREATE FUNCTION trg_locations_check_parent() RETURNS TRIGGER AS $$
 DECLARE
 	parent_level INTEGER;

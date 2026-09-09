@@ -143,7 +143,7 @@ Medium. The schema and view are small and well understood; the UI dropdowns and 
 Landed as `migrations/0273.pgsql.sql` — one column, one function, one view, two triggers —
 plus the API surface, the UI across fourteen templates, a PostgreSQL-only suite phase and a
 browser probe. The design above shipped as written and all five answers were honoured.
-Thirteen things are worth recording because they are not derivable from it.
+Fourteen things are worth recording because they are not derivable from it.
 
 **The migration number moved once more, and this was the eighth move of the same three
 numbers.** The plan was scoped against a table that had 0273 for [23](23-storage-classes.md)
@@ -246,12 +246,15 @@ about numbers that have. The delete guard takes the same lock, which closes the 
 turn round — a delete and a concurrent insert of a child under the row being deleted.
 
 One thing this rests on and no reader should undo: the trigger function must stay VOLATILE,
-which is the default and why no volatility is declared on it. That is what makes each
-statement inside it take a fresh snapshot under READ COMMITTED, so the check sees the
-transaction it just waited for. Marked STABLE it would take the calling statement's snapshot —
-from before the wait — and the lock would serialise the checks while telling each of them the
-same stale answer. The suite phase asserts both halves separately for that reason: the second
-write has to *block*, and it then has to be *refused on the merits*.
+which is the default and why no volatility is declared on it. The lock alone is half a fix. A
+statement that blocks on it took its snapshot when it started — before the transaction it is
+waiting for committed — so being let through the lock is not the same as being told what
+happened meanwhile. Volatility is what closes that: a VOLATILE function takes a fresh snapshot
+for each query it runs, so the check sees the write it waited for. Measured with the lock in
+place and the function marked STABLE, the second re-parenting waits the full 2.5 seconds and
+is then **accepted**, committing exactly the cycle the lock was added to prevent, and emptying
+both rows out of the view. The dependency is real, not theoretical, and it is the kind a
+plausible optimisation would remove.
 
 *Consume and transfer threw the paths away.* Both pages empty the location select when a
 product is chosen and rebuild it from that product's stock locations, which the API reports by
@@ -268,6 +271,20 @@ matches on — so an entry edited into another location went on matching the loc
 from and missing the one it went to, until a reload, with nothing about the row looking wrong.
 It now reads `locations_resolved` for that location instead of the row, which answers the path
 and the chain in one request, and redraws so the filter follows immediately.
+
+**The first version of the concurrency test proved less than it appeared to, and review
+caught it.** It blocked a second connection's write, rolled that back, committed the first,
+and then *retried* the write in a new transaction and asserted the refusal. That proves the
+lock and it proves the guard can spot a cycle, but not the property the comment beside it
+claimed: the retry begins after the commit, so its snapshot is fresh however the function is
+declared, and the case passes with the function marked STABLE. The version that discriminates
+keeps the second write *blocked* — the first is committed from another process while that
+statement is still waiting — and requires the same waiting statement to come back refused.
+That is why case 10 spawns a child process rather than juggling two handles in one, and why
+`pg_locks` is polled for the lock rather than the child being slept past. It now fails in both
+directions that matter: without the lock the write does not wait, and with the function
+marked STABLE it waits and is accepted. A volatility assertion sits beside it so that the
+second failure names its own cause rather than reading as a mystery.
 
 **A test that waits for the wrong thing passes for the wrong reason.** The browser probe's
 first attempt at the consume and transfer pickers waited for an option naming `Door` and then
@@ -307,7 +324,7 @@ Results, against `postgres:16` (16.13) on 2026-09-09:
 | Check | Result |
 |---|---|
 | `php .devtools/pgsql/check-migrations.php` | `MIGRATION NUMBERING OK`, no `--allow-reserved-holes` |
-| `run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (42 assertions)` |
+| `run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (45 assertions)` |
 | `run-tests.sh all` | every phase green except `files`, which fails the same three cases on `origin/master` in this container: they expect a mode 000 directory to be unreadable and the suite runs as root. CI's `suite` job, which is not root, reports `SUITE PASSED` including that phase |
 | `.devtools/frontend/nested-locations.js` | `NESTED LOCATION BROWSER CHECKS PASSED` |
 | `.devtools/frontend/s29-payload.js` | `27/27 probes clean` |
