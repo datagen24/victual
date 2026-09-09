@@ -833,7 +833,7 @@ does.
 [victual-label-renderer](https://github.com/datagen24/victual-label-renderer) at
 `f05c432f7857f976e0223296f968d641fa401254` and
 [victual-label-worker](https://github.com/datagen24/victual-label-worker) at
-`878acda72f4403a5bc02cd7eb0439c53b601deb4`, both as `flake = false` inputs built here by
+`da9258989f42988662c1f9ee7ca60ebcf376be4b`, both as `flake = false` inputs built here by
 `rustPlatform`. The flake owns the image, the pin and the deployment; the other repositories own
 the driver matrix and the device transport.
 
@@ -902,6 +902,23 @@ rather than on paper.
 Two defects in the worker were found before anything printed, both fixed and both in its own
 repository: two-colour was being read from the artifact's ink rather than from the loaded roll,
 and `--dry-run` consumed an authorization while reporting nothing.
+
+**Two-colour printed too, and through the whole path.** The first label was black-only on
+`62red` tape: the stream carried two planes with the red one empty, so nothing red was laid
+down and only the 2026-09-07 spike had ever put red on tape. A second template with a filled
+red band and white text knocked out of it produced an artifact carrying 27,306 red pixels, and
+it printed red. Red on a QL is a property of the **roll** rather than of an ink well - DK-22251
+has a layer that develops red at a different temperature - which is why the resolved
+combination and not the artifact's ink decides whether the two-plane stream is sent, and is a
+defect this found in the worker before anything printed.
+
+**The immutability rule caught a real change, and the recovery is the one the record
+prescribes.** Correcting the capability document's provenance altered a definition that had
+already been registered, and Victual refused the re-registration with `A registered driver
+version is immutable`. The worker published `1.1`; the printer was moved to it by the explicit
+revalidating action; and the job queued against `1.0` in between recorded a visible `blocked`
+attempt naming what was missing, with provably zero bytes sent. That is ADR-0019 decision item
+3's "a visible blocked outcome, not a silent pass-over", observed rather than asserted.
 
 **Verification 12 is half met and stays open.** The worker printed to the QL-820NWBc over TCP,
 which is the second half. The first half - deploying under K3S - did not happen: the maintainer
