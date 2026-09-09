@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/auto_orient.py\" ] && python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/auto_orient.py\" || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/claim_check_hook.py\" ] && CLAIM_CHECK_ENFORCE_MODE=warn python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/claim_check_hook.py\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
