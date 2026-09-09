@@ -418,6 +418,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node group-min-stock.js http://127.0.0.1:8085
 
+      # Plan 08. Against the demo instance on 8085 rather than the labels instance on 8087:
+      # nothing here needs the label subsystem, and the demo instance is the one the other
+      # location-shaped page checks already run against. The parent picker, the freezer
+      # default, the path in a picker and the roll-up in the overview filter are all things
+      # the PostgreSQL phase structurally cannot see - it asserts the column, the view, the
+      # guards and the API, and this asserts that a person can build a tree and act on it.
+      - name: Run nested location checks
+        working-directory: .devtools/frontend
+        run: node nested-locations.js http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087

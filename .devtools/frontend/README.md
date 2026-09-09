@@ -145,3 +145,19 @@ locations link and scanner on a running app, with intercepted API responses for 
 retired, unknown, failure/recovery, literal HTML names and out-of-order responses. It also
 checks the camera event and clears on edit/reload. PostgreSQL identity and authorization
 coverage is in [the label tests](../labels/README.md).
+
+## Nested locations
+
+`node nested-locations.js <url>` runs against a disposable demo instance. It builds plan 08's
+fixture tree through `/location/new` with the parent picker, checks that creating a child of a
+freezer pre-ticks *Is freezer* while creating a child of an ordinary location does not, that a
+location dropdown offers a location by its whole path, that a purchase made there lands at that
+location's id, that the stock overview's location filter rolls up (Basement finds stock held at
+Door three levels below, Main does not), and that deleting a location with children shows the
+API's own refusal while leaving the row in place. One location in the tree is named with the S29
+payload, so every page above renders it. Every name carries a per-run token, so a second run
+against the same instance neither collides with the first nor asserts against it.
+
+CI runs it in `frontend-security` after the product group minimum stock checks, against the
+demo instance on 8085. The database coverage — the view, the guards, the depth cap and the
+entities — is `.devtools/pgsql/nested-locations-tests.php`, run by `run-tests.sh locations`.
