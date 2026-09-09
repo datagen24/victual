@@ -41,3 +41,7 @@ __pycache__/
 
 # Scratch data path for the local UI probe
 .uidata/
+
+# Streamed image tars for the local physical run
+.imgs/
+.physdata/
