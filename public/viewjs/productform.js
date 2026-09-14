@@ -479,6 +479,9 @@ if (Victual.EditMode == "create" && GetUriParam("copy-of") != undefined)
 			$("#quick_consume_amount").val(sourceProduct.quick_consume_amount);
 			$("#quick_open_amount").val(sourceProduct.quick_open_amount);
 			$("#default_consume_location_id").val(sourceProduct.default_consume_location_id);
+			$("#quick_refill_amount").val(sourceProduct.quick_refill_amount);
+			$("#default_refill_location_id_from").val(sourceProduct.default_refill_location_id_from);
+			$("#default_refill_location_id_to").val(sourceProduct.default_refill_location_id_to);
 			if (BoolVal(sourceProduct.no_own_stock))
 			{
 				$("#no_own_stock").prop("checked", true);

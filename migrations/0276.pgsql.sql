@@ -107,6 +107,12 @@ CREATE TABLE product_location_min_stock (
 -- Read from `stock` directly rather than from `stock_current_locations`: that view already
 -- sums by (product_id, location_id), which is the right grouping, but it has no opened-stock
 -- discount and is not worth adding one to for a single caller.
+-- quick_refill_amount and default_refill_location_id_from ride along so the stock overview
+-- can render the one-tap refill button straight from this one call, rather than joining
+-- /objects/products per row it lists - the refill destination is this row's own location_id,
+-- not the product's default_refill_location_id_to, per the plan's "surfaced where the
+-- shortfall is reported" (public/viewjs/stockoverview.js renders no button when either is
+-- unset, since there is nothing to preset the action with).
 CREATE VIEW product_location_missing AS
 SELECT *
 FROM (
@@ -117,7 +123,9 @@ FROM (
 		pl.location_id,
 		l.name AS location_name,
 		pl.min_stock_amount,
-		pl.min_stock_amount - COALESCE(loc.effective_amount, 0) AS amount_missing
+		pl.min_stock_amount - COALESCE(loc.effective_amount, 0) AS amount_missing,
+		p.quick_refill_amount,
+		p.default_refill_location_id_from
 	FROM product_location_min_stock pl
 	JOIN products p
 		ON p.id = pl.product_id

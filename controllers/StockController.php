@@ -146,6 +146,7 @@ class StockController extends BaseController
 		$possibleParents = StockService::GetInstance()->GetLocationsWithPaths();
 
 		$storageClasses = $this->DB->storage_classes()->where('active = 1')->orderBy('sort_order');
+		$quantityUnits = $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE');
 
 		if ($args['locationId'] == 'new')
 		{
@@ -153,6 +154,7 @@ class StockController extends BaseController
 				'mode' => 'create',
 				'possibleParents' => $possibleParents,
 				'storageClasses' => $storageClasses,
+				'quantityUnits' => $quantityUnits,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
 		}
@@ -181,6 +183,7 @@ class StockController extends BaseController
 				'mode' => 'edit',
 				'possibleParents' => $possibleParents,
 				'storageClasses' => $storageClasses,
+				'quantityUnits' => $quantityUnits,
 				'labelPrinters' => $printers,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
@@ -265,6 +268,13 @@ class StockController extends BaseController
 			$where .= ' OR product_id IN (SELECT p.id FROM products p
 				JOIN product_groups_missing pgm ON p.product_group_id = pgm.id
 				WHERE COALESCE(p.active, 0) = 1)';
+
+			// Plan 29's location minimum widens the same clause the same way, for the same
+			// reason: a product whose total stock (backstock elsewhere included) sits above
+			// its own minimum is already is_in_stock_or_below_min_stock = 1 and needs nothing
+			// here - the row this adds is the one where no backstock exists anywhere, the
+			// product has no minimum of its own, and the only thing below minimum is the bin.
+			$where .= ' OR product_id IN (SELECT DISTINCT product_id FROM product_location_missing)';
 		}
 
 		return $this->RenderPage($response, 'stockoverview', [

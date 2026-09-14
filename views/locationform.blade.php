@@ -104,6 +104,43 @@
 				</select>
 			</div>
 
+			{{-- The vessel tare (ADR-0022 decision 4, plan 29): a bin or a spice jar is a place
+			stock passes through, not a container stock arrived in, so its tare is set once
+			here rather than on every stock entry a refill mints. Both null means "not a
+			vessel", which is what every location means today - leaving both blank changes
+			nothing on save. The unit is the location's own, since a location holds no stock
+			unit to borrow; StockService::WeighLocation() converts it into whichever product
+			ends up stocked here and refuses rather than assumes when no conversion exists. --}}
+			@php if($mode == 'edit' && $location->tare_weight !== null) { $value = $location->tare_weight; } else { $value = ''; } @endphp
+			@include('components.numberpicker', array(
+			'id' => 'tare_weight',
+			'label' => 'Tare weight',
+			'min' => '0.',
+			'decimals' => $userSettings['stock_decimal_places_amounts'] ?? 2,
+			'value' => $value,
+			'isRequired' => false,
+			'hint' => $__t('The empty weight of this location\'s own container. Leave blank unless this location is weighed as a vessel'),
+			'additionalCssClasses' => 'locale-number-input locale-number-quantity-amount'
+			))
+
+			<div class="form-group">
+				<label for="tare_qu_id">{{ $__t('Tare unit') }}
+					&nbsp;<i class="fa-solid fa-question-circle text-muted"
+						data-toggle="tooltip"
+						data-trigger="hover click"
+						title="{{ $__t('The quantity unit the tare weight and a gross weighing are given in') }}"></i>
+				</label>
+				<select class="custom-control custom-select"
+					id="tare_qu_id"
+					name="tare_qu_id">
+					<option value=""></option>
+					@foreach($quantityUnits as $quantityUnit)
+					<option value="{{ $quantityUnit->id }}"
+						@if($mode=='edit' && $location->tare_qu_id == $quantityUnit->id) selected="selected" @endif>{{ $quantityUnit->name }}</option>
+					@endforeach
+				</select>
+			</div>
+
 			<div class="form-group">
 				<label for="description">{{ $__t('Description') }}</label>
 				<textarea class="form-control"

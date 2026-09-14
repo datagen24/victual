@@ -430,6 +430,15 @@ jobs:
         working-directory: .devtools/frontend
         run: node nested-locations.js http://127.0.0.1:8085
 
+      # Plan 29. The tare fields on the location form, the one-tap refill fields on the
+      # product form, and the location shortfall list with its refill button are all things
+      # the PostgreSQL phase structurally cannot see - it asserts the column, the view and
+      # the service methods, and this asserts that a person can configure a vessel and a
+      # refill through the pages and that clicking the button actually moves stock.
+      - name: Run working container replenishment checks
+        working-directory: .devtools/frontend
+        run: node working-container.js http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087

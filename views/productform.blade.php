@@ -541,6 +541,69 @@
 			'additionalCssClasses' => 'locale-number-input locale-number-quantity-amount'
 			))
 
+			{{-- One-tap refill (plan 29): the same shape quick_consume_amount and
+			default_consume_location_id already have, and public/viewjs/stockoverview.js reads
+			it the same way. A refill is a TransferProduct() call with this preset amount, from
+			default_refill_location_id_from (backstock) to default_refill_location_id_to (the
+			vessel) - nothing new is booked. All three are optional: the button only renders
+			where a product has them configured, or - for a prompt raised by a location minimum -
+			the shortfall row's own location stands in for the destination. --}}
+			@php if($mode == 'edit') { $value = $product->quick_refill_amount; } else { $value = 1; } @endphp
+			@include('components.numberpicker', array(
+			'id' => 'quick_refill_amount',
+			'label' => 'Quick refill amount',
+			'min' => $DEFAULT_MIN_AMOUNT,
+			'decimals' => $userSettings['stock_decimal_places_amounts'],
+			'value' => $value,
+			'hint' => $__t('This amount is used for the "quick refill" one-tap action, moving stock from the default refill source to the default refill destination'),
+			'additionalCssClasses' => 'locale-number-input locale-number-quantity-amount'
+			))
+
+			@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)
+			<div class="form-group">
+				<label for="default_refill_location_id_from">{{ $__t('Default refill source location') }}
+					<i class="fa-solid fa-question-circle text-muted"
+						data-toggle="tooltip"
+						data-trigger="hover click"
+						title="{{ $__t('Where backstock for a one-tap refill normally comes from') }}"></i>
+				</label>
+				<select class="custom-control custom-select"
+					id="default_refill_location_id_from"
+					name="default_refill_location_id_from">
+					<option></option>
+					@foreach($locations as $location)
+					<option @if($mode=='edit'
+						&&
+						$location->id == $product->default_refill_location_id_from) selected="selected" @endif value="{{ $location->id }}"
+						data-level="{{ $location->level }}">{{ $location->path }}</option>
+					@endforeach
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label for="default_refill_location_id_to">{{ $__t('Default refill destination location') }}
+					<i class="fa-solid fa-question-circle text-muted"
+						data-toggle="tooltip"
+						data-trigger="hover click"
+						title="{{ $__t('Which location a one-tap refill fills by default, e.g. a kitchen bin') }}"></i>
+				</label>
+				<select class="custom-control custom-select"
+					id="default_refill_location_id_to"
+					name="default_refill_location_id_to">
+					<option></option>
+					@foreach($locations as $location)
+					<option @if($mode=='edit'
+						&&
+						$location->id == $product->default_refill_location_id_to) selected="selected" @endif value="{{ $location->id }}"
+						data-level="{{ $location->level }}">{{ $location->path }}</option>
+					@endforeach
+				</select>
+			</div>
+			@else
+			<input type="hidden" name="default_refill_location_id_from" id="default_refill_location_id_from" value="">
+			<input type="hidden" name="default_refill_location_id_to" id="default_refill_location_id_to" value="">
+			@endif
+
 			@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
 			<div class="form-group">
 				<label for="default_stock_label_type">{{ $__t('Default stock entry label') }}</label>
