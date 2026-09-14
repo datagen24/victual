@@ -59,6 +59,20 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-14 — ADR-0022's acceptance gates** (issue #129). Prerequisites 1, 2, 3, 5, 6 and 7
+  run as a disposable spike against real PostgreSQL 16.13, not asserted —
+  `claude/sonnet5_adr0022-prerequisites` at `64ec8f1`, results in `.spike-adr22/RESULTS.md` on
+  that branch. Coexistence's negative control reproduces the existing tare mechanism's bug for
+  real (18.8 lb "consumed" against an actual 3.8 lb, because it reads the whole-product total).
+  Undo found a sharper defect than the ADR's own wording: undoing an opening on a measured
+  entry doesn't merely strand the measurement, it violates the coherence constraint outright
+  and would abort the transaction — clearing all four measurement columns together is required
+  to complete the undo, not just to satisfy decision 9's intent. One finding not already in the
+  ADR text: convertibility (decision 3) and coherence (decision 8) are different properties —
+  only the second can be a database `CHECK`; the first has to be the write path's own job.
+  Prerequisite 4 reworded on `claude/vibrant-volta-6osz2n` at `4cf7bd0` (the snapshot it named
+  doesn't exist yet); prerequisite 8 was already decided the same day (`cb99bf3`). The
+  bookkeeping-only accepting pull request is still open work. [→](project_state.md)
 - **2026-09-14 — ADR-0023's acceptance gates** (issue #128). Prerequisites 2 and 3 (the mixed
   node; the `NULLS NOT DISTINCT` name-uniqueness change) run as a disposable spike against real
   PostgreSQL 16.15, not asserted — `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`.

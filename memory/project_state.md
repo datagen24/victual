@@ -30,13 +30,19 @@ Recorded because it is younger than the last corpus update, not as a substitute 
 - **Label infrastructure is delivered** (plans 25, 27, 06): issue #79 closed 2026-09-09 on a
   physical print and scan-back. Only #93's K3S deployment half is open, and it is the same work
   as plan 20 piece 4 (#133).
-- **ADR-0023's acceptance PR is open, not yet merged**: [PR #149](https://github.com/datagen24/victual/pull/149)
-  meets all four prerequisites (2 and 3 via a disposable spike on
+- **ADR-0023 is Accepted**: [PR #149](https://github.com/datagen24/victual/pull/149) merged
+  2026-09-14, all four prerequisites met (2 and 3 via a disposable spike on
   `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`; 4 via inspecting the maintainer's
   pre-fork Grocy backup, which also surfaced [issue #148](https://github.com/datagen24/victual/issues/148) —
   `enfore_product_nesting_level` enforces one-level nesting on `UPDATE` only, never `INSERT`,
-  in both engines). It does not retire plan 07 or touch `docs/plans/README.md` — that stays
-  #82's later PR. 28 and 29's weighing half still waits on ADR-0022 (#129).
+  in both engines). It did not retire plan 07 or touch `docs/plans/README.md`'s wave order —
+  that stays #82's later PR.
+- **ADR-0022 is not yet accepted, but every non-decision prerequisite is now discharged**
+  (issue #129): 1, 2, 3, 5, 6, 7 via a disposable spike on
+  `claude/sonnet5_adr0022-prerequisites` at `64ec8f1`; 4 reworded on
+  `claude/vibrant-volta-6osz2n` at `4cf7bd0` (named a snapshot — plan 14 piece 2 — that
+  doesn't exist yet); 8 decided 2026-09-14 (`cb99bf3`). What's left is the bookkeeping-only
+  accepting pull request itself, then plan 28 and plan 29's weighing half can start.
 - **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
   it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
   accepted before they run at all.
