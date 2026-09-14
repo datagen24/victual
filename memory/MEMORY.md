@@ -65,8 +65,9 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   (demonstrated, exit 0). stage.py now resolves every rewritten link against `git ls-files`
   and fails naming it. Prerequisite 4 inspected over 46 pages: no page fails, but "wave N"
   was undefined anywhere on the site, so the Development overview gained a label table.
-  Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
-  and stays bookkeeping-only. [→](project_state.md)
+  The record was then accepted in its own bookkeeping pull request — 144 carried the gate
+  work, 146 the acceptance — closing issue 135, so **every ADR written from here on is a
+  published document**. [→](project_state.md)
 - **2026-09-14 — Wave recommit and issue sweep** audited every plan row against its body,
   corrected the stale 06/25/27 rows (label path delivered 2026-09-09), rewrote the wave
   table so each item is ready or names its gate, and opened issues #127–#139. No open issue

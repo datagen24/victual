@@ -375,9 +375,11 @@ whole site behind the slowest part of it.
 
 ## Dependencies
 
-- **[ADR-0020](../adr/0020-documentation-publication-boundary.md)** is Proposed and carries
-  four acceptance prerequisites. This plan implements it and should not be scheduled ahead of
-  it.
+- **[ADR-0020](../adr/0020-documentation-publication-boundary.md)** was accepted 2026-09-14
+  with all four acceptance prerequisites met. This plan implements it, and piece 1 supplied
+  the evidence prerequisites 2 and 4 asked for: the record's annotations cite the Executed
+  section below for the counts and for the check that makes a broken rewritten link fail the
+  build.
 - **[Pull request 92](https://github.com/datagen24/victual/pull/92)** adds
   `docs/data-model.md` and the six diagrams the Development section's data model pages are.
 - **[Plan 20](20-container-infrastructure.md)** — the Manual's installation chapter documents
