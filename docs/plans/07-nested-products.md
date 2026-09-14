@@ -13,8 +13,12 @@ would turn it into a constraint — putting the tree of kinds in nested `product
 keeping `parent_product_id` at its existing one level — and it is **Proposed**, with four
 acceptance prerequisites outstanding. A Proposed record constrains nothing, so **this plan is
 not retired and [30](30-nested-product-groups.md) and [31](31-directed-substitution.md) are
-not its replacements**, until that record is accepted through its own bookkeeping-only pull
-request.
+not its replacements**.
+
+Two further pull requests stand between here and that, and they are separate on purpose: one
+accepts the record, carrying bookkeeping only — status line, index row, supersession
+pointers — and a later one retires this plan and schedules those two. Acceptance ratifies the
+decision; it does not execute it.
 
 Nothing below is scheduled. The body stays in its original present tense, as this
 repository's convention requires: it is the research that made the question answerable, and
@@ -234,10 +238,11 @@ compared against a deliberate expectation rather than against whatever falls out
    > reason 08 goes first.
 
    > **Answered 2026-09-13: taxonomy.** Proposed as
-   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md), which
-   > **on acceptance** would retire this plan. That record is Proposed and its four
-   > prerequisites are outstanding, so what follows is the recorded result of the sampling
-   > and the reasoning it supports — not a decision in force.
+   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md). That record
+   > is Proposed and its four prerequisites are outstanding, so what follows is the recorded
+   > result of the sampling and the reasoning it supports — not a decision in force. This
+   > plan is retired **after** that record is accepted, by a separate pull request; the
+   > acceptance itself carries bookkeeping only and touches no plan.
    >
    > **How it was decided.** Thirteen candidate pairs from this household's kitchen were
    > each classified as sharing a stock pool, being separate products, or being a quantity
@@ -257,10 +262,12 @@ compared against a deliberate expectation rather than against whatever falls out
    > whose defining property is that stock rolls up to the parent has nothing to roll up.
    >
    > **So this plan's cost was real and its benefit was not.** The audit above is accurate;
-   > what the sampling changes is that nothing needs it. On acceptance the one-level trigger
-   > stays, `products_resolved` stays flat, and no depth cap is introduced for products.
+   > what the sampling changes is that nothing needs it. Once the decision is in force the
+   > one-level trigger stays, `products_resolved` stays flat, and no depth cap is introduced
+   > for products.
    >
-   > **Three of the answers above are superseded on acceptance**, as the question predicted.
+   > **Three of the answers above are superseded once the decision is in force**, as the
+   > question predicted.
    > Q1's whole-subtree roll-up and Q4's nearest-first substitution were both written
    > against a tree that does not exist; Q2's mixed middle node turns out to be a *group*
    > holding a product and a subgroup at once, which costs nothing because a group holds no

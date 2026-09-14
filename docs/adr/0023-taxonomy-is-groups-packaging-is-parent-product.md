@@ -7,8 +7,9 @@
   blocked wave 4's product half.
 - **Referenced by:** [30 — Nested product groups](../plans/30-nested-product-groups.md) and
   [31 — Directed substitution](../plans/31-directed-substitution.md), which own the work;
-  [07 — Deeply nested products](../plans/07-nested-products.md), which this retires **on
-  acceptance** and not before — that plan stays blocked while this record is Proposed;
+  [07 — Deeply nested products](../plans/07-nested-products.md), which is retired **after**
+  this record is accepted, by a separate pull request and never by the acceptance itself —
+  that plan stays blocked meanwhile;
   [03 — Category minimum stock](../plans/03-category-min-stock.md), whose table gains the
   parent column.
 
@@ -120,7 +121,7 @@ reasoned about.
 
 ## Consequences
 
-**Plan 07 is retired rather than shrunk, on acceptance.** The recursive `products_resolved`, the audit of
+**Plan 07 is retired rather than shrunk — after acceptance, in its own pull request.** The recursive `products_resolved`, the audit of
 the eight sites built on the one-level assumption, the whole-subtree roll-up, the depth cap
 and the mixed-node fixture were all conditional on the packaging reading. None of them is
 required. Its questions 1 and 4 were written against the taxonomy reading and are answered by
@@ -143,9 +144,24 @@ Split-heavy catalogue loses relationships it can express today.
 
 **Nothing here is built, and nothing here is yet in force.** No column, no view, no
 substitution table. This record constrains work rather than describing code, the two plans it
-names are drafts, and while its status is Proposed it authorises none of them: plan 07 stays
-blocked, and plans 30 and 31 are not its replacements until this is accepted through its own
-bookkeeping-only pull request with the prerequisites below met.
+names are drafts, and while its status is Proposed it authorises none of them.
+
+**The lifecycle is three steps, not two, and the middle one changes nothing but status.**
+Under this repository's [ADR lifecycle](README.md) an acceptance pull request carries
+bookkeeping only — a status line, an index row, supersession pointers. It does not retire a
+plan, schedule a plan, or edit one. Applying what this record decides is separate work in a
+separate pull request:
+
+| Step | Pull request | What it changes |
+|---|---|---|
+| 1 | this one | the record exists, Proposed; plan statuses untouched |
+| 2 | acceptance | `Proposed` → `Accepted`, the index row, supersession pointers. Nothing else. |
+| 3 | application | plan 07 retired; plans 30 and 31 become its replacements |
+
+So retirement happens **after** acceptance rather than as part of it. Anything in this record
+phrased as a consequence — plan 07 retired, 30 and 31 owning the work — describes step 3, and
+a reader who finds it written as though acceptance performed it should read it as this table
+says instead.
 
 ## Options considered
 
