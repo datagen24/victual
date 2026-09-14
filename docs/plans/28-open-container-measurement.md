@@ -93,7 +93,7 @@ the operation `OpenProduct`'s else branch already performs when opening part of 
 (`:1636`).
 
 **Rows already in that state are a migration case, not a hypothesis.** Any entry that is
-`open = 1` with `amount > 1` when 0277 runs either gets split by the migration or stays
+`open = 1` with `amount > 1` when 0275 runs either gets split by the migration or stays
 unmeasurable until someone splits it. The migration has to choose, and say so in its own
 comment.
 

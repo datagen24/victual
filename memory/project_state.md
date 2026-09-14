@@ -35,8 +35,8 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`; 4 via inspecting the maintainer's
   pre-fork Grocy backup, which also surfaced [issue #148](https://github.com/datagen24/victual/issues/148) —
   `enfore_product_nesting_level` enforces one-level nesting on `UPDATE` only, never `INSERT`,
-  in both engines). It did not retire plan 07 or touch `docs/plans/README.md`'s wave order —
-  that stays #82's later PR.
+  in both engines). Plan 07 was retired and 30/31 scheduled by the separate PR on 2026-09-14, which also
+  renumbered the wave 4 reservations (28→0275, 29→0276, 30→0277, 31→0278, 22→0279–0280).
 - **ADR-0022 is Accepted 2026-09-14**, all eight prerequisites met: [PR #153](https://github.com/datagen24/victual/pull/153)
   merged, closing [issue #129](https://github.com/datagen24/victual/issues/129). 1, 2, 3, 5,
   6, 7 via a disposable spike, merged into master (not left unmerged like ADR-0023's spike
