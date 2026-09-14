@@ -3757,6 +3757,182 @@
 				"description": "Requires STOCK_VIEW. "
 			}
 		},
+		"/stock/locations/{locationId}/weigh": {
+			"post": {
+				"summary": "Weighs a vessel (a bin, a spice jar) and corrects its one stock entry to match, subtracting the location's own tare",
+				"tags": [
+					"Stock"
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "locationId",
+						"required": true,
+						"description": "A valid location id with tare_weight and tare_qu_id configured",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"gross_amount": {
+										"type": "number",
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+									},
+									"gross_qu_id": {
+										"type": "integer",
+										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									}
+								},
+								"example": {
+									"gross_amount": 3.4
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "The operation was successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/StockLogEntry"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Error400"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "The authenticated user lacks a permission this operation requires",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				},
+				"description": "Requires STOCK_EDIT. "
+			}
+		},
+		"/stock/locations/by-label/{code}/weigh": {
+			"post": {
+				"summary": "Resolves a scanned location label to a location id and delegates to POST /stock/locations/{locationId}/weigh",
+				"tags": [
+					"Stock"
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "code",
+						"required": true,
+						"description": "A vctl: label payload or bare uid",
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"gross_amount": {
+										"type": "number",
+										"description": "The gross reading, in the location's own tare_qu_id; the server subtracts the location's tare_weight"
+									},
+									"gross_qu_id": {
+										"type": "integer",
+										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									}
+								},
+								"example": {
+									"gross_amount": 3.4
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "The operation was successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/StockLogEntry"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "The operation was not successful (possible errors are: label does not resolve to an active location, plus every refusal POST /stock/locations/{locationId}/weigh can raise)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Error400"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "The authenticated user lacks a permission this operation requires",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				},
+				"description": "Requires STOCK_EDIT. "
+			}
+		},
 		"/stock/shoppinglist/add-missing-products": {
 			"post": {
 				"summary": "Adds currently missing products (below defined min. stock amount) to the given shopping list",
