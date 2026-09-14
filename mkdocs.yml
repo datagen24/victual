@@ -106,6 +106,7 @@ nav:
           - 0020 Documentation publication boundary: development/adr/0020-documentation-publication-boundary.md
           - 0021 Label templates are application data: development/adr/0021-label-templates-are-application-data.md
           - 0022 Open containers carry a measured remainder: development/adr/0022-open-containers-carry-a-measured-remainder.md
+          - 0023 Taxonomy is groups, packaging is parent product: development/adr/0023-taxonomy-is-groups-packaging-is-parent-product.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
