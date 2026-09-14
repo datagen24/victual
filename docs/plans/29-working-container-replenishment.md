@@ -86,11 +86,30 @@ the shape of [03](03-category-min-stock.md)'s `product_groups_missing` reports t
 
 ### Weighing the bin
 
-An entry-scoped tared correction, per ADR-0022 decision 4.
-[`EditStockEntry()`](../../services/StockService.php) already takes a stock row id and an
-amount and does no tare arithmetic; adding it there sets the bin's entry from a gross weight
-without touching dry stores. Where the tare is recorded is ADR-0022's to say; this plan
-consumes it.
+**The tare is the location's, decided 2026-09-14** under ADR-0022 question 1 and recorded in
+its decision 4. A bin or a spice jar is a place stock passes through: every refill is a
+`TransferProduct()` that mints a new stock row at the destination, so a tare on the row would
+be lost on each refill, where a tare on the location is set once. `locations` gains a nullable
+`tare_weight` and `tare_qu_id` in this plan's migration — after [23](23-storage-classes.md)'s
+0274, which alters the same table and the same form first. The unit is the location's own,
+since a location holds no stock unit to borrow; conversion to the stocked product's unit goes
+through the global quantity unit conversions and is refused, never assumed, when the product's
+stock unit is not a weight.
+
+**The scale posts gross weight against a location and the server subtracts.** The device
+identifies the vessel by scanning its location label ([06](06-location-barcodes.md), a `vctl:`
+payload) and posts the gross reading. The server resolves the one product stocked at that
+location — refusing when there is none or more than one — subtracts the tare in the product's
+stock unit, and sets the entry's amount through
+[`EditStockEntry()`](../../services/StockService.php), which already takes a stock row id and
+an amount and does no tare arithmetic. The contract names the reading `gross`.
+
+**Spice jars are the same pattern at a smaller scale.** Each refilled jar is a location under
+[08](08-nested-locations.md)'s tree with its own label and tare; new bottles are stock at a
+storage location until they are decanted, which is a transfer. A supply-size container used
+directly — a one-pound jar of a high-volume spice — is an opened purchased container rather
+than a vessel: its tare is the entry's, under [28](28-open-container-measurement.md), and it
+may also be the source of a transfer into the jar.
 
 ### One tap, on defaults that already have a shape
 
@@ -161,11 +180,16 @@ distinction being missed.
    established durable pairing and credential rotation for the label worker. Whether a kitchen
    terminal reuses that pattern, uses an API key, or needs something else is unowned, and
    [11](11-api-error-handling.md)'s outstanding API key expiry and rotation follow-up is the
-   nearest existing work.
+   nearest existing work ([issue 130](https://github.com/datagen24/victual/issues/130)). The
+   scale unit carries a scanner for location labels, so its identity question is the same one
+   the label worker answered with pairing under ADR-0019; still open.
 5. **Does a scale post a weight or a corrected amount?** Posting the gross weight puts the
    tare arithmetic in the server, where ADR-0022 decision 4 puts it. Posting a net amount puts
    it in the device, where a firmware bug is harder to find. The first is preferred and the
    input contract has to make which one explicit, per ADR-0022 open question 4.
+
+   > **Decided 2026-09-14 (maintainer):** gross, against a location identified by its
+   > scanned label; the server subtracts the location's tare. See *Weighing the bin*.
 
 ## Effort
 

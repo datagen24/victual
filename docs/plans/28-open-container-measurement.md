@@ -266,6 +266,11 @@ Executed section records that distinction being missed.
 4. **Is the product-level tare pair retired?** ADR-0022 open question 1 and its acceptance
    prerequisite 8. Two mechanisms for one job is a cost; removing fields from
    `/objects/products` is a contract change.
+
+   > **Decided 2026-09-14 (maintainer), in ADR-0022 decisions 4 and 7.** Retired as a
+   > mechanism, kept on the wire at zero until plan 14 piece 2's freeze. This plan's per-entry
+   > tare covers the opened purchased container; a refilled vessel's tare is its location's,
+   > under [29](29-working-container-replenishment.md). Enabling the product flag answers 400.
 5. **Which products are measured?** Configuration, not schema — but it decides whether the
    UI cost falls on a handful of staples or on most of the catalogue.
 
