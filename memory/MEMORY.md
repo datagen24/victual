@@ -59,6 +59,16 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-14 — ADR-0023's acceptance gates** (issue #128). Prerequisites 2 and 3 (the mixed
+  node; the `NULLS NOT DISTINCT` name-uniqueness change) run as a disposable spike against real
+  PostgreSQL 16.15, not asserted — `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`.
+  Prerequisite 4 needed a real catalogue and this fork has none of its own yet, so the
+  maintainer supplied a pre-fork upstream Grocy SQLite backup; inspecting it found 22/66
+  products used `parent_product_id` as pure taxonomy (confirming the ADR's own sampling on an
+  independent dataset) and one genuine two-level chain, which does contradict decision 2 —
+  traced to `enfore_product_nesting_level` checking only `UPDATE`, never `INSERT`, in both
+  engines, filed as [issue #148](https://github.com/datagen24/victual/issues/148) rather than
+  fixed inline. [PR #149](https://github.com/datagen24/victual/pull/149). [→](project_state.md)
 - **2026-09-14 — ADR-0020's acceptance gates** found prerequisite 2 unenforced: stage.py
   rewrites a link into an unpublished plan to an absolute GitHub URL, and `mkdocs build
   --strict` cannot see an absolute URL, so a mistyped plan link published as a 404 silently
