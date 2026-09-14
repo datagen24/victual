@@ -641,8 +641,13 @@ for `blob/master/` and `tree/master/` URLs and feeds them into the same check; s
 links it now covers come from there.
 
 **Measured on the delivering branch, 2026-09-14, against `master` at `18bd633` plus this
-change.** 308 links to the repository, all resolving. Reproduce with
-`python3 .devtools/docs/stage.py --no-api`, which prints the count.
+change, and re-measured unchanged after merging `master` at `b5e2421`.** 308 links to the
+repository, all resolving. Reproduce with `python3 .devtools/docs/stage.py --no-api`, which
+prints the count. The second measurement was taken because `master` accepted
+[ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md) and
+[ADR-0018](../adr/0018-role-grants-and-domain-reads.md) while this branch was open, and an
+acceptance edits the ADR corpus these counts are taken over; both were bookkeeping and
+added no citation, so every count below holds on either base.
 
 **Verification check 3, done by hand as the gate's own evidence.** The built ADR pages carry
 229 `blob/master/docs/plans/…` URLs
