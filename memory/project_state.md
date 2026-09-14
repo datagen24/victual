@@ -30,9 +30,13 @@ Recorded because it is younger than the last corpus update, not as a substitute 
 - **Label infrastructure is delivered** (plans 25, 27, 06): issue #79 closed 2026-09-09 on a
   physical print and scan-back. Only #93's K3S deployment half is open, and it is the same work
   as plan 20 piece 4 (#133).
-- **Wave 4's product half waits on ADR-0023** (#128, three prerequisites left); 28 and 29's
-  weighing half wait on ADR-0022 (#129). Plan 07 stays blocked until the acceptance PR *and*
-  a later retirement PR both land — #82 tracks that ordering by the maintainer's decision.
+- **ADR-0023's acceptance PR is open, not yet merged**: [PR #149](https://github.com/datagen24/victual/pull/149)
+  meets all four prerequisites (2 and 3 via a disposable spike on
+  `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`; 4 via inspecting the maintainer's
+  pre-fork Grocy backup, which also surfaced [issue #148](https://github.com/datagen24/victual/issues/148) —
+  `enfore_product_nesting_level` enforces one-level nesting on `UPDATE` only, never `INSERT`,
+  in both engines). It does not retire plan 07 or touch `docs/plans/README.md` — that stays
+  #82's later PR. 28 and 29's weighing half still waits on ADR-0022 (#129).
 - **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
   it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
   accepted before they run at all.
