@@ -29,6 +29,15 @@ published becomes a relative link to its new home; a link to anything else — a
 source file, a migration — becomes an absolute GitHub URL. Sources are never modified, so
 the same link text keeps working when the file is read on GitHub.
 
+`check_offsite_links()` then resolves every one of those absolute URLs against
+`git ls-files`, and fails the run naming the page and the link if the path is not tracked.
+This is not redundant with `mkdocs build --strict`: strict mode does not resolve an absolute
+URL, so without this check a mistyped plan link would publish as a 404 with nothing in the
+build to say so. The two see complementary halves — a rewrite that fires and names nothing
+is caught here, and a rewrite that does not fire leaves a relative link, which strict mode
+reports. Tracking is the test rather than existence on disk, because a gitignored path that
+exists locally is still a 404 on GitHub.
+
 ## Branding and diagrams
 
 `stage.py` also stages three things the repository does not keep in a documentation
@@ -85,10 +94,11 @@ so it resolves on both arm64 and amd64.
 
 ## What CI checks
 
-The `lint` job in `tests.yml` runs `stage.py --no-api` and `mkdocs build --strict`. Strict
-mode turns a broken link, a page missing from the nav, and an anchor that does not resolve
-into a failed pull request rather than a defect on the published site. `lint` is the job that
-runs on Markdown-only changes, which is what this check exists for.
+The `lint` job in `tests.yml` runs `stage.py --no-api` and `mkdocs build --strict`. The
+staging run fails on a link it rewrote to a repository path that is not tracked; strict mode
+turns a broken relative link, a page missing from the nav, and an anchor that does not
+resolve into a failed pull request rather than a defect on the published site. `lint` is the
+job that runs on Markdown-only changes, which is what both checks exist for.
 
 Read the Docs builds on push independently of that, using `.readthedocs.yaml` at the
 repository root.

@@ -64,6 +64,13 @@ TREES = {
 }
 
 LINK = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+REPO_URL = re.compile(
+    r"https://github\.com/datagen24/victual/(?:blob|tree)/master/([^)\"\s]+)"
+)
+
+# Every link rewritten to an absolute repository URL, as (page, link, resolved path).
+# check_offsite_links() is what makes these verifiable.
+OFFSITE: list[tuple[str, str, str]] = []
 
 
 def staged_for(repo_path: str) -> str | None:
@@ -102,6 +109,7 @@ def rewrite_link(target: str, source_repo_path: str, staged_path: str) -> str:
         # "directory" so the URL lands on a tree listing rather than a 404.
         base = TREE if path.endswith("/") else BLOB
         url = base + resolved.rstrip("/")
+        OFFSITE.append((source_repo_path, target, resolved.rstrip("/")))
         return url + ("#" + fragment if fragment else "")
 
     relative = posixpath.relpath(destination, posixpath.dirname(staged_path))
@@ -141,6 +149,65 @@ def check_pins() -> None:
             f"  expected: {PHPDOC_IMAGE}\n"
             "Both pins move together; see docs/plans/26-documentation-site.md."
         )
+
+
+def record_literal_links(text: str, staged_path: str) -> None:
+    """Repository URLs written by hand, which rewrite_link never sees."""
+    for match in REPO_URL.finditer(text):
+        target = match.group(1).partition("#")[0].rstrip("/").rstrip(".,")
+        OFFSITE.append((staged_path, match.group(0), target))
+
+
+def tracked_paths() -> tuple[frozenset[str], frozenset[str]]:
+    """What git tracks, as files and as the directories those files sit in."""
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    files = [path for path in listing.split("\0") if path]
+    directories = set()
+    for path in files:
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            directories.add("/".join(parts[:depth]))
+    return frozenset(files), frozenset(directories)
+
+
+def check_offsite_links() -> None:
+    """Every link sent to GitHub must name something the repository actually holds.
+
+    A relative link into an unpublished document becomes an absolute URL, and
+    `mkdocs build --strict` cannot see an absolute URL: a typo in any of them would
+    ship as a 404 on the published site with nothing in the build to say so. The
+    ADR-to-plan links are the large case, and ADR-0020's second acceptance
+    prerequisite is that a build fails rather than publishing one of them broken.
+
+    The other direction is already covered: a rewrite that does not fire leaves a
+    relative link, which strict mode reports as not found.
+    """
+    files, directories = tracked_paths()
+    broken = sorted(
+        {
+            (page, link, resolved)
+            for page, link, resolved in OFFSITE
+            if resolved not in files and resolved not in directories
+        }
+    )
+    if not broken:
+        print(f"  {len(OFFSITE)} links to the repository, all resolving")
+        return
+    listing = "\n".join(
+        f"    {page}: [{link}] -> {resolved}" for page, link, resolved in broken
+    )
+    raise SystemExit(
+        f"{len(broken)} link(s) rewritten to GitHub name a path the repository does "
+        f"not track:\n{listing}\n"
+        "  Correct the link in the source document. A rewritten link naming nothing is\n"
+        "  a 404 on the published site, and mkdocs --strict cannot see it."
+    )
 
 
 def container_runtime() -> str | None:
@@ -303,10 +370,13 @@ def main() -> int:
                 copy_page(repo_path, staged_for(repo_path), out)
 
     for name in ("index.md", "development/index.md"):
-        shutil.copy2(Path(__file__).parent / "pages" / name, out / name)
+        source = Path(__file__).parent / "pages" / name
+        shutil.copy2(source, out / name)
+        record_literal_links(source.read_text(), name)
 
     stage_brand_assets(out)
     stage_diagram_pages(out)
+    check_offsite_links()
 
     pages = sum(1 for _ in out.rglob("*.md"))
     try:
