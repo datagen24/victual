@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations|openmeasure]
 #
-# Fifteen kinds of check, for fifteen reasons. Views are compared by what they return, because
+# Sixteen kinds of check, for sixteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -144,6 +144,18 @@
 # BaseApiController::GenericErrorResponse() replaces anything beginning `SQLSTATE[`, and that
 # is only visible through the controller. Every refusal here is paired with a control that has
 # to still be accepted, because a guard that refused everything would satisfy refusals alone.
+#
+# The sixteenth is above the freeze for the same reason the thirteenth through fifteenth are
+# - its subject is migrations/0275.pgsql.sql - and the view phase cannot stand in for it for
+# the fifteenth's own reason: the importer's common-column copy would leave opened_amount NULL
+# on every row, so every assertion about a measured entry would be an assertion about an
+# unmeasured one. Its cases follow docs/plans/28-open-container-measurement.md's own
+# Verification list: coexistence against the negative control the old tare mechanism gets
+# wrong, two opened containers with one measured, the open=1/amount>1 refusal-or-split, an
+# undo round trip through a full consume, undoing an opening on a measured entry, a split
+# carrying the measurement once, an unconvertible unit refused at entry, a conversion deleted
+# out from under a stored measurement, a volume measured by weight, and a measured entry left
+# untouched by compaction while an unmeasured split entry beside it merges.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -433,6 +445,38 @@ run_nested_locations_tests() {
 
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/nested-locations-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Open container measurement tests ----------------------------------------------
+#
+# PostgreSQL only, for the reason the nested locations phase gives: migrations/0275.pgsql.sql
+# is above the SQLite freeze, so there is no second engine holding the four columns, the
+# coherence CHECK or the rewritten stock_current/stock_splits views. The view phase cannot
+# stand in for it either - it seeds SQLite and copies rows into PostgreSQL through the
+# importer's common-column logic, so opened_amount would arrive NULL on every row and every
+# assertion about a measured entry would be an assertion about an unmeasured one.
+
+run_open_container_measurement_tests() {
+	local dbname="victual_open_container_measurement"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/open-container-measurement-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	# The phase writes through StockService, whose booking paths run label webhook payload
+	# construction and BookingEventPublisher's outbox insert; neither needs this directory,
+	# but the phase also exercises the product write path (RefuseTareEnable), which goes
+	# through GenericEntityApiController and, like the other API-driven phases, wants
+	# somewhere to serialise HTMLPurifier's definition cache.
+	mkdir -p "$datapath/viewcache"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/open-container-measurement-tests.php"; then
 		failures=$((failures + 1))
 	fi
 
@@ -1195,8 +1239,9 @@ case "$WHICH" in
 	errors) run_error_path_tests ;;
 	groupminstock) run_group_min_stock_tests ;;
 	locations) run_nested_locations_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations or all)" ;;
+	openmeasure) run_open_container_measurement_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_open_container_measurement_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations, openmeasure or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

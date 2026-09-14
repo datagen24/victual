@@ -453,17 +453,22 @@
 				<div class="invalid-feedback">{{ $__t('A quantity unit is required') }}</div>
 			</div>
 
+			@php $tareAlreadyEnabled = $mode == 'edit' && $product->enable_tare_weight_handling == 1; @endphp
 			<div class="form-group mb-1">
 				<div class="custom-control custom-checkbox">
-					<input @if($mode=='edit'
-						&&
-						$product->enable_tare_weight_handling == 1) checked @endif class="form-check-input custom-control-input" type="checkbox" id="enable_tare_weight_handling" name="enable_tare_weight_handling" value="1">
+					{{-- ADR-0022 decisions 4 and 7 (2026-09-14): the mechanism is retired and
+					enabling it (0 -> 1) is refused by the server at 400, so the checkbox can
+					only stay checked on a product that already has it, never be newly checked.
+					Weigh an opened purchased container on the stock entry instead
+					(docs/plans/28-open-container-measurement.md), or a refillable vessel on its
+					location (docs/plans/29-working-container-replenishment.md). --}}
+					<input @if($tareAlreadyEnabled) checked @else disabled @endif class="form-check-input custom-control-input" type="checkbox" id="enable_tare_weight_handling" name="enable_tare_weight_handling" value="1">
 					<label class="form-check-label custom-control-label"
 						for="enable_tare_weight_handling">{{ $__t('Enable tare weight handling') }}
 						&nbsp;<i class="fa-solid fa-question-circle text-muted"
 							data-toggle="tooltip"
 							data-trigger="hover click"
-							title="{{ $__t('This is useful e.g. for flour in jars - on purchase/consume/inventory you always weigh the whole jar, the amount to be posted is then automatically calculated based on what is in stock and the tare weight defined below') }}"></i>
+							title="{{ $tareAlreadyEnabled ? $__t('Retired - this product keeps it until you migrate it, but the amount to be posted is no longer calculated automatically; enter the net amount directly') : $__t('Retired - weigh an opened container on the stock entry when opening it, or a refillable vessel on its location') }}"></i>
 					</label>
 				</div>
 			</div>

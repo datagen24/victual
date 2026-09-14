@@ -18,12 +18,15 @@
 
 > ⚠️ Several API failure paths now answer a different status code - `403` for a permission failure, `404` for a missing object on `PUT`/`DELETE`, `400` where a `500` or a `404` was returned for a malformed request. Every changed code is on a failure path and no successful response changed shape; see the API section below for the full list
 
+> ⚠️ The old "tare weight handling" product setting no longer does anything: `enable_tare_weight_handling` and `tare_weight` stay on `/objects/products` at their current values, but it can no longer be newly enabled (`PUT`/`POST` answers `400`), and its purchase/consume/inventory arithmetic is gone - the amount you enter for such a product is now the net amount, not a gross scale reading with the container weight subtracted automatically. Weigh an opened container by recording a measurement on the stock entry when you open it, or when you re-measure it later
+
 ### New Feature: xxxx
 
 - xxx
 
 ### Stock
 
+- Added measuring the contents of an opened container: opening a single unit can now record how much of it remains (net, or gross with a tare weight), in any quantity unit that converts to the product's stock unit; re-measure it later from the same control. The stock entry list shows what was last measured and when
 - The product picker now searches product names accent insensitive
 - Optimized the location input on the transfer page: The selected "From Location" is now automatically hidden in the "To Location" dropdown
 - Fixed that the product picker workflow dialog was not displayed when the entered value contained double quotes

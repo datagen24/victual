@@ -2114,7 +2114,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The amount to add - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The new amount"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2254,6 +2254,109 @@
 					}
 				},
 				"description": "Requires STOCK_VIEW. "
+			}
+		},
+		"/stock/entry/{entryId}/measure": {
+			"post": {
+				"summary": "Records a new measurement of an already-open, single-unit stock entry",
+				"description": "Requires STOCK_EDIT. Records a reversible measurement (ADR-0022, docs/plans/28-open-container-measurement.md) rather than a consumption - stock.amount, the container count, never changes. The entry must already be a coherent single opened container (open, amount = 1); a fresh measurement on a container being opened for the first time is taken through the measurement field of POST /stock/products/{productId}/open instead.",
+				"tags": [
+					"Stock"
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "entryId",
+						"required": true,
+						"description": "A valid stock entry id",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"amount": {
+										"type": "number",
+										"description": "The reading, in qu_id. Net contents unless gross is true"
+									},
+									"qu_id": {
+										"type": "integer",
+										"description": "The quantity unit the reading was taken in; must convert to the product's stock quantity unit"
+									},
+									"gross": {
+										"type": "boolean",
+										"description": "`true` when amount includes the container's own weight, which tare then subtracts. Default `false` (amount is already net)"
+									},
+									"tare": {
+										"type": "number",
+										"description": "Required when gross is `true`; the container weight, in the same unit as amount, subtracted before storage"
+									}
+								},
+								"required": [
+									"amount",
+									"qu_id"
+								],
+								"example": {
+									"amount": 1.2,
+									"qu_id": 2,
+									"gross": true,
+									"tare": 0.05
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "The operation was successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/StockLogEntry"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "The operation was not successful (possible errors are: Not existing stock entry, entry is not a coherent single opened container, measurement unit does not convert to the product's stock unit)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Error400"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "The authenticated user lacks a permission this operation requires",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				}
 			}
 		},
 		"/stock/volatile": {
@@ -2584,7 +2687,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The amount to add - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The amount to add"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2698,7 +2801,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The amount to remove - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The amount to remove"
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockTransactionType"
@@ -2721,7 +2824,7 @@
 									},
 									"exact_amount": {
 										"type": "boolean",
-										"description": "For tare weight handling enabled products, `true` when the given is the absolute amount to be consumed, not the amount including the container weight"
+										"description": "Retired with the product-level tare mechanism (ADR-0022); accepted for compatibility but has no effect"
 									},
 									"allow_subproduct_substitution": {
 										"type": "boolean",
@@ -2907,7 +3010,7 @@
 								"properties": {
 									"new_amount": {
 										"type": "number",
-										"description": "The new current amount for the given product - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The new current amount for the given product"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3021,6 +3124,32 @@
 									"allow_subproduct_substitution": {
 										"type": "boolean",
 										"description": "`true` when any in stock sub product should be used when the given product is a parent product and currently not in stock"
+									},
+									"measurement": {
+										"type": "object",
+										"description": "Optional. Records the container's remaining contents as it is opened (ADR-0022). Requires stock_entry_id and amount = 1 - a measurement describes exactly one container.",
+										"properties": {
+											"amount": {
+												"type": "number",
+												"description": "The reading, in qu_id. Net contents unless gross is true"
+											},
+											"qu_id": {
+												"type": "integer",
+												"description": "The quantity unit the reading was taken in; must convert to the product's stock quantity unit"
+											},
+											"gross": {
+												"type": "boolean",
+												"description": "`true` when amount includes the container's own weight, which tare then subtracts. Default `false` (amount is already net)"
+											},
+											"tare": {
+												"type": "number",
+												"description": "Required when gross is `true`; the container weight, in the same unit as amount, subtracted before storage"
+											}
+										},
+										"required": [
+											"amount",
+											"qu_id"
+										]
 									}
 								},
 								"example": {
@@ -3045,7 +3174,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount)",
+						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount, a measurement without a specific single-unit stock entry, or a measurement unit that does not convert to the product's stock unit)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3271,7 +3400,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The amount to add - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The amount to add"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3363,7 +3492,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The amount to remove - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The amount to remove"
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockTransactionType"
@@ -3386,7 +3515,7 @@
 									},
 									"exact_amount": {
 										"type": "boolean",
-										"description": "For tare weight handling enabled products, `true` when the given is the absolute amount to be consumed, not the amount including the container weight"
+										"description": "Retired with the product-level tare mechanism (ADR-0022); accepted for compatibility but has no effect"
 									},
 									"allow_subproduct_substitution": {
 										"type": "boolean",
@@ -3552,7 +3681,7 @@
 								"properties": {
 									"new_amount": {
 										"type": "number",
-										"description": "The new current amount for the given product - please note that when tare weight handling for the product is enabled, this needs to be the amount including the container weight (gross), the amount to be posted will be automatically calculated based on what is in stock and the defined tare weight"
+									"description": "The new current amount for the given product"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -8764,7 +8893,9 @@
 						"type": "integer"
 					},
 					"enable_tare_weight_handling": {
-						"type": "integer"
+						"type": "integer",
+						"deprecated": true,
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/28-open-container-measurement.md."
 					},
 					"not_check_stock_fulfillment_for_recipes": {
 						"type": "integer"
@@ -8773,7 +8904,9 @@
 						"type": "integer"
 					},
 					"tare_weight": {
-						"type": "number"
+						"type": "number",
+						"deprecated": true,
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/28-open-container-measurement.md) or the location (a vessel, docs/plans/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
 					},
 					"min_stock_amount": {
 						"type": "number",
@@ -8868,7 +9001,9 @@
 						"type": "integer"
 					},
 					"enable_tare_weight_handling": {
-						"type": "integer"
+						"type": "integer",
+						"deprecated": true,
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/28-open-container-measurement.md."
 					},
 					"not_check_stock_fulfillment_for_recipes": {
 						"type": "integer"
@@ -8877,7 +9012,9 @@
 						"type": "integer"
 					},
 					"tare_weight": {
-						"type": "number"
+						"type": "number",
+						"deprecated": true,
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/28-open-container-measurement.md) or the location (a vessel, docs/plans/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
 					},
 					"min_stock_amount": {
 						"type": "number",
@@ -9218,6 +9355,27 @@
 					"row_created_timestamp": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"opened_amount": {
+						"type": "number",
+						"nullable": true,
+						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. The measured remainder of this container, in opened_qu_id - always net contents, whatever the measurement's original input (see the gross/tare fields of the /open and /measure endpoints). Present only where open = 1 and amount = 1 (a measurement describes exactly one container); null otherwise"
+					},
+					"opened_qu_id": {
+						"type": "integer",
+						"nullable": true,
+						"description": "The quantity unit opened_amount was measured in. Present exactly where opened_amount is"
+					},
+					"opened_tare": {
+						"type": "number",
+						"nullable": true,
+						"description": "The container weight subtracted from a gross reading to produce opened_amount, in opened_qu_id. Null when the measurement was already net contents, or when there is no measurement"
+					},
+					"opened_measured_at": {
+						"type": "string",
+						"format": "date-time",
+						"nullable": true,
+						"description": "When opened_amount was recorded, so a stale figure is visible as stale. Present exactly where opened_amount is"
 					}
 				},
 				"example": {
@@ -9232,7 +9390,11 @@
 					"opened_date": null,
 					"row_created_timestamp": "2019-05-03 18:24:04",
 					"location_id": "4",
-					"shopping_location_id": null
+					"shopping_location_id": null,
+					"opened_amount": null,
+					"opened_qu_id": null,
+					"opened_tare": null,
+					"opened_measured_at": null
 				}
 			},
 			"RecipeFulfillmentResponse": {
@@ -9299,6 +9461,10 @@
 					},
 					"stock_amount_opened": {
 						"type": "number"
+					},
+					"stock_amount_measured": {
+						"type": "number",
+						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. The measured (not merely counted) contents across this product's opened, measured entries, in the stock unit - additive, kept separate from stock_amount and stock_amount_opened rather than folded into them"
 					},
 					"next_due_date": {
 						"type": "string",
@@ -9931,6 +10097,24 @@
 					"row_created_timestamp": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"opened_amount": {
+						"type": "number",
+						"nullable": true,
+						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. Mirrors the stock entry's measurement at the time of this booking, so an undo can restore it after the entry itself is gone"
+					},
+					"opened_qu_id": {
+						"type": "integer",
+						"nullable": true
+					},
+					"opened_tare": {
+						"type": "number",
+						"nullable": true
+					},
+					"opened_measured_at": {
+						"type": "string",
+						"format": "date-time",
+						"nullable": true
 					}
 				}
 			},
