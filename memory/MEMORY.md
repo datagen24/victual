@@ -59,6 +59,14 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-14 — ADR-0020's acceptance gates** found prerequisite 2 unenforced: stage.py
+  rewrites a link into an unpublished plan to an absolute GitHub URL, and `mkdocs build
+  --strict` cannot see an absolute URL, so a mistyped plan link published as a 404 silently
+  (demonstrated, exit 0). stage.py now resolves every rewritten link against `git ls-files`
+  and fails naming it. Prerequisite 4 inspected over 46 pages: no page fails, but "wave N"
+  was undefined anywhere on the site, so the Development overview gained a label table.
+  Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
+  and stays bookkeeping-only. [→](project_state.md)
 - **2026-09-14 — Wave recommit and issue sweep** audited every plan row against its body,
   corrected the stale 06/25/27 rows (label path delivered 2026-09-09), rewrote the wave
   table so each item is ready or names its gate, and opened issues #127–#139. No open issue

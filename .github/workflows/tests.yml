@@ -92,11 +92,13 @@ jobs:
       - name: Every cited CI job exists
         run: php .devtools/check-cited-jobs.php
 
-      # The documentation site. --strict turns a broken link or a page missing from the
-      # nav into a failure here rather than into a defect on the published site. No
-      # container runtime and no PHP are needed: the staging script omits the API
-      # reference when it finds neither, which is the same path a contributor without
-      # Docker takes. See docs/plans/26-documentation-site.md.
+      # The documentation site. Two checks, because they see different halves of the
+      # link graph: the staging script fails on a link it rewrote to a repository URL
+      # that names nothing (--strict cannot see an absolute URL), and --strict fails on
+      # a broken relative link or a page missing from the nav. No container runtime and
+      # no PHP are needed: the staging script omits the API reference when it finds
+      # neither, which is the same path a contributor without Docker takes. See
+      # docs/plans/26-documentation-site.md.
       - name: Build the documentation site
         run: |
           pip install --quiet --requirement .devtools/docs/requirements.txt

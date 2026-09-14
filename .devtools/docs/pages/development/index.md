@@ -36,6 +36,21 @@ Each record links to the plan it came from. Those links leave this site for the 
 because plans are not published — see
 [ADR-0020](adr/0020-documentation-publication-boundary.md).
 
+### Labels a record uses to cite work
+
+A decision record cites the working documents it came out of, and those documents number
+their contents. Reading a record does not require following the citation, but the labels
+are worth knowing, because none of them is defined on this site:
+
+| Label | What it names | Where it lives |
+|---|---|---|
+| **Wave N** | The delivery stage a plan is scheduled into. Lower numbers ship first, and the boundary between shipped and outstanding moves, so a record placing something "outside wave 3b" is describing scope rather than a date. | the [plans index](https://github.com/datagen24/victual/blob/master/docs/plans/README.md) |
+| **Piece N** | One plan's own delivery stages, in order. A plan shipping in two pieces says which is which. | that plan |
+| **Question N**, **QN** | A plan's numbered open question. An answer is written under its question, so the two read together. | that plan |
+| **Verification check N** | One numbered check a plan requires before its work counts as delivered. | that plan |
+| **CN** | A cleanup item in [plan 15](https://github.com/datagen24/victual/blob/master/docs/plans/15-deliberate-cleanup.md). | that plan |
+| **SN** | A numbered finding in the [security sweep](https://github.com/datagen24/victual/blob/master/docs/security-sweep.md), which records its severity and remediation. | the sweep |
+
 ## Build and deployment
 
 - **[Container images](images.md)** — three images built by Nix from `scratch`.
