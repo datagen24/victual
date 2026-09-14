@@ -841,8 +841,9 @@ Implementation differences and remaining scope:
   **This wave does not hide prices from Child or Guest.** Existing direct grants also
   remain effective when assigning a narrower role; administrators must remove them
   deliberately when narrowing an upgraded user's access.
-- [ADR-0018](../adr/0018-role-grants-and-domain-reads.md) records the implemented model as
-  Proposed; it does not accept or change another ADR.
+- [ADR-0018](../adr/0018-role-grants-and-domain-reads.md) records the implemented model;
+  it was accepted 2026-09-14 in its own bookkeeping pull request and does not accept or
+  change another ADR.
 
 Verification is reproducible with `.devtools/pgsql/run-tests.sh rbac`, `import`, and the
 full suite. The role phase exercises denied routed reads, allowed view leaves, seed roles,
