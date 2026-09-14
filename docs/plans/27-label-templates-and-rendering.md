@@ -550,9 +550,14 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    > | `c4_colour` | 7.9 ms | 8.5 ms | 8.5 MiB | 24,434 B |
    > | `c5_length` | 22.9 ms | 24.8 ms | 9.1 MiB | 54,202 B |
    >
-   > Reproduce: `python3 .spike-renderer/qualify/kerning.py`,
+   > Reproduce from a worktree on `claude/opus5_adr0021-prerequisites` at `4a3b0713`, after
+   > `cargo build --release` in `.spike-renderer/rsrender` — none of these paths exist in a
+   > checkout of `master`, and the build output the scripts call is not in the commit either:
+   > `python3 .spike-renderer/qualify/kerning.py`,
    > `python3 .spike-renderer/qualify/rtl.py <font with Hebrew and Arabic>`,
-   > `python3 .spike-renderer/qualify/cost.py`.
+   > `python3 .spike-renderer/qualify/cost.py`. See
+   > [ADR-0021](../adr/0021-label-templates-are-application-data.md) prerequisite 1, which owns
+   > this evidence and records what of it is not recoverable.
    >
    > **Candidate C is selected.** ADR-0021 prerequisite 1 is met.
    >
