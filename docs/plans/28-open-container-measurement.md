@@ -5,8 +5,9 @@ can hold. An opened unit's remaining contents are measured — by weight or by v
 whichever the person can actually take — without giving up counting the units themselves.
 **Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
 **Accepted** 2026-09-14. Nothing else blocks it.
-**Interacts with:** [29](29-working-container-replenishment.md), which shares ADR-0022
-decision 4's entry-scoped tare and nothing else; [07](07-nested-products.md), which rewrites the same aggregation in
+**Interacts with:** [29](29-working-container-replenishment.md), which takes the location
+half of ADR-0022 decision 4's tare where this plan takes the entry half, and shares nothing
+else; [07](07-nested-products.md), which rewrites the same aggregation in
 `stock_current`, and with the container decision recorded below that came out of the same
 review. Scheduled into wave 4 beside 07 for that reason.
 **Consumed by:** nothing yet. [22](22-medication-tracking.md) is the obvious later
