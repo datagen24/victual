@@ -4,15 +4,19 @@
 `Drinks / Soda / Coca-Cola` — lives in `product_groups`, so browsing, reporting and grouping
 work at every level without any of it touching stock.
 **Depends on:** [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
-**Proposed**, which this implements. [03](03-category-min-stock.md) shipped the table this
+**accepted 2026-09-14**, which this implements. [03](03-category-min-stock.md) shipped the table this
 adds a column to.
 **Interacts with:** [31](31-directed-substitution.md), which carries the relations between
 the products this groups; [08](08-nested-locations.md), whose pattern this copies almost
 exactly.
-**Would replace:** [07](07-nested-products.md) — retired by a pull request that comes *after*
-ADR-0023's acceptance, never by the acceptance itself.
-**Status:** draft for review, and **not scheduled** — ADR-0023 is Proposed, so nothing here
-is authorised yet. Tracked as [issue 124](https://github.com/datagen24/victual/issues/124).
+**Replaces:** [07](07-nested-products.md), retired 2026-09-14 by the pull request that
+scheduled this plan — after ADR-0023's acceptance, not as part of it.
+**Status:** draft for review, **scheduled into wave 4 2026-09-14**, first of the two product
+plans. Tracked as [issue 124](https://github.com/datagen24/victual/issues/124). Migration
+**0277**, renumbered from 0277 on scheduling (lowest free slot; see
+[RESERVATIONS.md](../../migrations/RESERVATIONS.md)). Fix
+[issue 148](https://github.com/datagen24/victual/issues/148) before writing it: the
+nesting-level trigger this plan copies fires only on `UPDATE`.
 
 ## Why this is a small plan
 

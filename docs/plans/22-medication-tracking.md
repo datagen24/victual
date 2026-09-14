@@ -308,8 +308,9 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0275** (medication master data and subjects)
-  and **0276** (regimens, administrations, excursions), with rows added to
+- **Migration numbering.** Two files, claiming **0279** (medication master data and subjects)
+  and **0280** (regimens, administrations, excursions) — 0275–0276 until 2026-09-14, when the
+  four scheduled wave 4 plans took the lower slots —, with rows added to
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0274 belongs to
   [23](23-storage-classes.md), which lands first. **These numbers have moved eight times** — claimed
   as 0261–0262 until `master` landed 0261, then 0262–0264 until wave 2 landed 0262 through

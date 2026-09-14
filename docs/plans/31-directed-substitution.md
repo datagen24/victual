@@ -4,12 +4,15 @@
 stands in for shredded; unsalted butter stands in for salted. The system can say so, for
 products that share no parent.
 **Depends on:** [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
-**Proposed**, decision 4.
+**accepted 2026-09-14**, decision 4.
 **Interacts with:** [30](30-nested-product-groups.md), which groups the products this
 relates; [14](14-contract-and-regression-scaffolding.md) piece 2, which freezes the response
 contract this adds to.
-**Status:** draft for review, and **not scheduled** — ADR-0023 is Proposed, so nothing here
-is authorised yet. Tracked as [issue 125](https://github.com/datagen24/victual/issues/125).
+**Status:** draft for review, **scheduled into wave 4 2026-09-14**, after
+[30](30-nested-product-groups.md). Tracked as
+[issue 125](https://github.com/datagen24/victual/issues/125). Migration **0278**, renumbered
+from 0278 on scheduling (lowest free slot; see
+[RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
 
 ## Why this exists
 
