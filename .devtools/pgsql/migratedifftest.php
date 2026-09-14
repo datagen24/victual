@@ -59,7 +59,11 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // Plan 23, migration 0274. Same freeze, not a deliberate engine difference: locations
  // gains a nullable storage_class_id alongside it, which is a column on a shared table and
  // therefore already invisible to CompareTableSets - only the new table needs naming here.
- 'storage_classes'];
+ 'storage_classes',
+ // Plan 29, migration 0276. Same freeze; locations also gains tare_weight and tare_qu_id
+ // alongside this table, which are columns on a shared table and therefore already invisible
+ // to CompareTableSets - only the new table needs naming here.
+ 'product_location_min_stock'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

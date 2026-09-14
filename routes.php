@@ -297,6 +297,8 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->post('/stock/products/by-barcode/{barcode}/inventory', [StockApiController::class, 'InventoryProductByBarcode']);
 	$group->post('/stock/products/by-barcode/{barcode}/open', [StockApiController::class, 'OpenProductByBarcode']);
 	$group->get('/stock/locations/{locationId}/entries', [StockApiController::class, 'LocationStockEntries']);
+	$group->post('/stock/locations/{locationId}/weigh', [StockApiController::class, 'WeighLocation']);
+	$group->post('/stock/locations/by-label/{code}/weigh', [StockApiController::class, 'WeighLocationByLabel']);
 	$group->get('/stock/bookings/{bookingId}', [StockApiController::class, 'StockBooking']);
 	$group->post('/stock/bookings/{bookingId}/undo', [StockApiController::class, 'UndoBooking']);
 	$group->get('/stock/transactions/{transactionId}', [StockApiController::class, 'StockTransactions']);

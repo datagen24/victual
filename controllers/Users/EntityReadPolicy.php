@@ -26,6 +26,8 @@ class EntityReadPolicy
 		'shopping_locations' => User::PERMISSION_STOCK_VIEW,
 		'product_groups' => User::PERMISSION_STOCK_VIEW,
 		'product_groups_missing' => User::PERMISSION_STOCK_VIEW,
+		'product_location_min_stock' => User::PERMISSION_STOCK_VIEW,
+		'product_location_missing' => User::PERMISSION_STOCK_VIEW,
 		'stock_log' => User::PERMISSION_STOCK_VIEW,
 		'stock' => User::PERMISSION_STOCK_VIEW,
 		'stock_current_locations' => User::PERMISSION_STOCK_VIEW,

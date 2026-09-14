@@ -8821,6 +8821,20 @@
 					},
 					"move_on_open": {
 						"type": "integer"
+					},
+					"quick_refill_amount": {
+						"type": "number",
+						"description": "The amount a one-tap refill moves, from default_refill_location_id_from to default_refill_location_id_to (public/viewjs/stockoverview.js) - the same pattern quick_consume_amount already follows for the quick consume button."
+					},
+					"default_refill_location_id_from": {
+						"type": "integer",
+						"nullable": true,
+						"description": "Where backstock for a one-tap refill normally comes from, e.g. dry stores for a kitchen bin."
+					},
+					"default_refill_location_id_to": {
+						"type": "integer",
+						"nullable": true,
+						"description": "Which location a one-tap refill fills by default, e.g. the kitchen bin itself. A refill prompt raised by product_location_missing uses that row's own location instead of this default."
 					}
 				},
 				"example": {
@@ -8843,7 +8857,10 @@
 					"userfields": null,
 					"should_not_be_frozen": "1",
 					"default_consume_location_id": "5",
-					"move_on_open": "1"
+					"move_on_open": "1",
+					"quick_refill_amount": "1",
+					"default_refill_location_id_from": null,
+					"default_refill_location_id_to": null
 				}
 			},
 			"ProductWithoutUserfields": {
@@ -8921,6 +8938,20 @@
 					},
 					"move_on_open": {
 						"type": "integer"
+					},
+					"quick_refill_amount": {
+						"type": "number",
+						"description": "The amount a one-tap refill moves, from default_refill_location_id_from to default_refill_location_id_to (public/viewjs/stockoverview.js) - the same pattern quick_consume_amount already follows for the quick consume button."
+					},
+					"default_refill_location_id_from": {
+						"type": "integer",
+						"nullable": true,
+						"description": "Where backstock for a one-tap refill normally comes from, e.g. dry stores for a kitchen bin."
+					},
+					"default_refill_location_id_to": {
+						"type": "integer",
+						"nullable": true,
+						"description": "Which location a one-tap refill fills by default, e.g. the kitchen bin itself. A refill prompt raised by product_location_missing uses that row's own location instead of this default."
 					}
 				},
 				"example": {
@@ -8943,7 +8974,10 @@
 					"userfields": null,
 					"should_not_be_frozen": "1",
 					"default_consume_location_id": "5",
-					"move_on_open": "1"
+					"move_on_open": "1",
+					"quick_refill_amount": "1",
+					"default_refill_location_id_from": null,
+					"default_refill_location_id_to": null
 				}
 			},
 			"QuantityUnit": {
@@ -9009,6 +9043,16 @@
 						"nullable": true,
 						"description": "How cold this location is kept, or null for unclassified - see StorageClass. When set, it is the sole writer of is_freezer: an update that sets this column also overwrites is_freezer from the class's treats_as_freezer, whatever value this same request otherwise submits for it. When null or absent, is_freezer stays independently editable."
 					},
+					"tare_weight": {
+						"type": "number",
+						"nullable": true,
+						"description": "The empty weight of this location's own container - a bin, a spice jar - in tare_qu_id, or null when this location is not weighed as a vessel. Set alongside tare_qu_id (ADR-0022 decision 4); a vessel's tare lives on the location rather than on a stock entry because every refill mints a new entry via TransferProduct()."
+					},
+					"tare_qu_id": {
+						"type": "integer",
+						"nullable": true,
+						"description": "The quantity unit tare_weight and a gross weighing are given in. A location has no stock unit of its own to borrow, so this is independent of any product's units; StockService::WeighLocation() converts through the stocked product's own quantity unit conversions and refuses when no path exists."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -9021,6 +9065,8 @@
 					"row_created_timestamp": "2019-05-02 20:12:25",
 					"parent_location_id": null,
 					"storage_class_id": null,
+					"tare_weight": null,
+					"tare_qu_id": null,
 					"userfields": null
 				}
 			},
@@ -10380,6 +10426,7 @@
 					"tasks",
 					"task_categories",
 					"product_groups",
+					"product_location_min_stock",
 					"equipment",
 					"api_keys",
 					"userfields",
@@ -10402,6 +10449,7 @@
 					"uihelper_shopping_list",
 					"mqtt_product_entities",
 					"product_groups_missing",
+					"product_location_missing",
 					"roles",
 					"label_workers",
 					"label_drivers",
@@ -10442,6 +10490,7 @@
 					"permission_hierarchy",
 					"uihelper_shopping_list",
 					"product_groups_missing",
+					"product_location_missing",
 					"roles",
 					"label_workers",
 					"label_drivers",
@@ -10475,6 +10524,7 @@
 					"permission_hierarchy",
 					"uihelper_shopping_list",
 					"product_groups_missing",
+					"product_location_missing",
 					"roles",
 					"label_workers",
 					"label_drivers",

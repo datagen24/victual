@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations|workingcontainer]
 #
-# Fifteen kinds of check, for fifteen reasons. Views are compared by what they return, because
+# Sixteen kinds of check, for sixteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -144,6 +144,17 @@
 # BaseApiController::GenericErrorResponse() replaces anything beginning `SQLSTATE[`, and that
 # is only visible through the controller. Every refusal here is paired with a control that has
 # to still be accepted, because a guard that refused everything would satisfy refusals alone.
+#
+# The sixteenth is above the freeze like the thirteenth through fifteenth - its subject is
+# migrations/0276.pgsql.sql - and it is here rather than in the view or trigger phases for the
+# locations phase's own reason: the view phase seeds SQLite and copies the tables across
+# through the importer's common-column logic, so product_location_min_stock would exist on one
+# side only and every pair would be trivially not short. It also enters the application to
+# call TransferProduct() and WeighLocation() directly, which no comparison between two SQL
+# scripts could exercise, and it holds the one negative control this plan's own verification
+# section asks for by name: the retired product-scoped tare formula misreading the exact
+# scenario the location-scoped correction gets right, reproduced as arithmetic since ADR-0022
+# decision 7 removes the mechanism itself from this codebase entirely.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -433,6 +444,35 @@ run_nested_locations_tests() {
 
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/nested-locations-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Working container replenishment tests -----------------------------------------
+#
+# PostgreSQL only: migrations/0276.pgsql.sql is above the SQLite freeze, so there is no second
+# engine holding product_location_min_stock, product_location_missing, or the two new columns
+# on locations. A migrated database and nothing else - the phase makes its own products and
+# locations, because what it asserts are exact shortfalls and exact weighed amounts, and the
+# base fixture's rows would only be noise in either sum.
+
+run_working_container_tests() {
+	local dbname="victual_working_container"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/working-container-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	# The same reason the group minimum and nested locations phases make this directory: the
+	# phase writes through the API, so HTMLPurifier runs and wants somewhere to serialise its
+	# definition cache.
+	mkdir -p "$datapath/viewcache"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/working-container-tests.php"; then
 		failures=$((failures + 1))
 	fi
 
@@ -1195,8 +1235,9 @@ case "$WHICH" in
 	errors) run_error_path_tests ;;
 	groupminstock) run_group_min_stock_tests ;;
 	locations) run_nested_locations_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations or all)" ;;
+	workingcontainer) run_working_container_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_working_container_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations, workingcontainer or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then
