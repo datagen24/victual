@@ -9,7 +9,7 @@ adopts unchanged.
 require a class. Extracted from 22 per its Q1 — this is a general locations feature that
 medication happens to need first, and it changes a column every client of `/objects/locations`
 can see, which is not a change that should arrive as a side effect of a medication plan.
-**Status:** draft for review.
+**Status:** landed in wave 4; see [Executed](#executed).
 
 ## Today
 
@@ -201,3 +201,55 @@ capability, and the comparison is between two fields a human entered. That compa
 Small. A table, a nullable column, a seed, a form control and one derivation decision. The
 only part that is not mechanical is Q2, and the only part that will surprise a user is the
 checkbox becoming a display.
+
+## Executed
+
+Landed as `migrations/0274.pgsql.php` — `storage_classes`, `locations.storage_class_id`,
+five seeded rows — plus `WithDerivedIsFreezer()` on the write path, the API surface, and the
+location form's class picker. The design above shipped as written, including every answered
+question. Three things are worth recording because they are not derivable from it.
+
+**The migration is `.pgsql.php`, not the `.pgsql.sql` the plan's own migration section
+names.** The plan was written expecting "a table, a column and a seed" to fit one SQL file,
+but the seed has to go through `LocalizationService` per ADR-0003 — "Ambient" is not the
+same string in every configured locale, and a `.sql` file cannot call a PHP service. So the
+schema (`CREATE TABLE`, `ALTER TABLE`) and the seed both live in one `.pgsql.php` file
+instead, run through `$db->exec()` and a prepared `INSERT` the way `migrations/0031.php`
+seeds the default location and quantity units. It is still the one file the plan asks for,
+and still above `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` with no SQLite
+counterpart — `storage_classes` is named in `.devtools/pgsql/migratedifftest.php`'s
+`ENGINE_EXCLUSIVE_TABLES` for that reason, per `db/pgsql/README.md`'s "above the freeze"
+rule, with no `@engine-exclusive` marker since `check-migrations.php` asks for one only
+below the freeze.
+
+**`storage_class_id` carries a `FOREIGN KEY`, which the plan does not say either way.**
+`parent_location_id` explicitly has none — `migrations/0273.pgsql.sql`'s comment gives the
+reason, a self-referential tree needs its own cycle/depth guards regardless of what a
+constraint could check. A class reference has no such argument against it, so it was given
+the same `FOREIGN KEY` every other master-data reference this fork's own migrations
+(0270-0272) added carries. The consequence: `GenericEntityApiController::EditObject()` and
+`AddObject()` derive `is_freezer` only when `storage_class_id` resolves to a real row and
+leave an unresolvable id for the constraint to refuse, rather than silently accepting one -
+verified in `.devtools/pgsql/nested-locations-tests.php` case 11, which sends id `999999`
+and checks both the 400 and that the row is untouched.
+
+**The derivation overrides `is_freezer` even when the same request also submits it.**
+Question 1/2 decided the class is the sole writer once one is set; case 11 tests that
+literally, sending `{"storage_class_id": <Freezer>, "is_freezer": 0}` in one request and
+checking the row lands at `is_freezer = 1` regardless — the class wins, not merely "agrees
+when the caller also got it right."
+
+**Verification**, against `postgres:16` (16.13) on 2026-09-14:
+
+| Check | Result |
+|---|---|
+| `php bin/victual-migrate` | `Schema is up to date at migration 274.` |
+| `php .devtools/pgsql/check-migrations.php` | `MIGRATION NUMBERING OK` (19 migrations above baseline, 25 claimed in RESERVATIONS.md) |
+| `.devtools/pgsql/run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (64 assertions)`, `SUITE PASSED`. Case 11's 19 assertions: five seeded classes in order with the right `treats_as_freezer`; setting a freezer class on Door (the 08 Q5 fixture) derives `is_freezer = 1` even against a contradicting request body; a non-freezer class derives `0` with no `is_freezer` key sent at all; clearing the class hands the flag back to direct editing; an unresolvable class id is refused and leaves the row untouched; `AddObject` derives on create the same way; `/objects/storage_classes` lists all five with the documented column set; `/objects/storage_classes/{id}` carries a `userfields` key, the list endpoint does not (no userfields configured). Cases 1-10 (plan 08's) are unaffected |
+| `GET /api/objects/locations/{id}` (session auth) | a location saved with the Freezer class through the real form carries `storage_class_id` and `is_freezer: 1`, matching `treats_as_freezer` - confirmed server-side, independent of the UI's own JS |
+| `GET /api/objects/storage_classes` | lists all five seeded classes with correct `treats_as_freezer` and `sort_order` |
+| Browser, `/location/new` and `/location/{id}` (Playwright) | the class picker lists the five seeded classes in seeded order; selecting Freezer checks and disables the "Is freezer" checkbox and shows the derived-note; clearing the class back to blank re-enables the checkbox; a location saved with a class through the form re-opens with the class preselected and the checkbox checked and disabled server-side (not only by the client JS), confirmed by fetching the edit page with plain `curl`, no JavaScript |
+
+`run-tests.sh all` and the frontend probes beyond the one above were not re-run for this
+change; the locations phase and the manual browser/API checks above are what this plan's
+own verification criteria ask for.
