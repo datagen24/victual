@@ -126,6 +126,46 @@ foreach ($views as $view)
 			foreach ($b as &$row) unset($row['via_roles']);
 			unset($row);
 		}
+
+		// migrations/0275.pgsql.sql, above SQLITE_FROZEN_MIGRATION_ID: the four opened_*
+		// columns and stock_current's amount_measured exist on PostgreSQL only, the same
+		// shape as via_roles above, and for the same reason - the seed above is applied to
+		// SQLite and copied across, so these columns would arrive NULL/0 on every row
+		// regardless of what this phase asserted, which is not a comparison of anything.
+		// .devtools/pgsql/open-container-measurement-tests.php asserts them for real, against
+		// rows this application's own write paths produced.
+		//
+		// stock_next_use and uihelper_stock_entries are stripped on BOTH sides, not only
+		// PostgreSQL's - a surprise found running this phase for real. Both SQLite views are
+		// defined as `SELECT s.*, ... FROM stock s ...` (uihelper_stock_entries only because
+		// PostgreSQL cannot express the original's duplicate-column-name behaviour any other
+		// way; see this file's own porting note in db/pgsql/baseline/04_views_l1b.sql), and
+		// unlike PostgreSQL - where CREATE VIEW freezes `s.*`'s column list at creation time,
+		// which is exactly why migrations/0275.pgsql.sql has to CREATE OR REPLACE these views
+		// at all - SQLite re-expands `*` on every query. The fixture in
+		// .devtools/pgsql/fixtures/00_base.sql adds the four columns to SQLite's `stock`
+		// table too (for the rollback phase, which drives StockService against SQLite
+		// directly), so SQLite's own copies of these two views pick the columns up for free
+		// where PostgreSQL's needed an explicit rewrite - and both sides now carry them,
+		// asymmetrically shaped (SQLite's `stock_next_use` mid-list from `s.*`, PostgreSQL's
+		// appended at the end because CREATE OR REPLACE cannot insert mid-list - but the JSON
+		// key comparison below does not care about order, only presence).
+		if ($view === 'stock_next_use' || $view === 'uihelper_stock_entries')
+		{
+			$strip = function (&$row)
+			{
+				unset($row['opened_amount'], $row['opened_qu_id'], $row['opened_tare'], $row['opened_measured_at']);
+			};
+			foreach ($a as &$row) $strip($row);
+			foreach ($b as &$row) $strip($row);
+			unset($row);
+		}
+
+		if ($view === 'stock_current')
+		{
+			foreach ($b as &$row) unset($row['amount_measured']);
+			unset($row);
+		}
 	}
 	catch (Exception $ex)
 	{

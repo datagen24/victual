@@ -46,6 +46,27 @@ CREATE TABLE stock_entry_origins (
 );
 CREATE INDEX ix_stock_entry_origins_origin ON stock_entry_origins (origin_stock_id);
 
+-- The same accommodation, for the same reason, for migrations/0275.pgsql.sql's four
+-- opened_* columns on `stock` and `stock_log`. Unlike stock_entry_origins these are columns
+-- on tables SQLite already has, not a whole new table, but the argument is identical: the
+-- rollback phase runs ConsumeProduct()/OpenProduct() against SQLite directly, and
+-- StockService writes these columns unconditionally on every booking now (ADR-0022 decision
+-- 9 - a measurement has to survive undo, so it is mirrored into stock_log on every write,
+-- whether or not this particular row is ever measured). Without them here the phase fails
+-- on "no such column" - a schema mismatch the injected failure did not cause - rather than
+-- on the rollback behaviour it exists to check. PostgreSQL gets its real definition, CHECK
+-- constraint and rewritten views from the migration; this file is SQLite only and carries no
+-- CHECK, since SQLite's fixture rows never need to be measured to exercise a rollback.
+ALTER TABLE stock ADD COLUMN opened_amount DOUBLE PRECISION;
+ALTER TABLE stock ADD COLUMN opened_qu_id INTEGER;
+ALTER TABLE stock ADD COLUMN opened_tare DOUBLE PRECISION;
+ALTER TABLE stock ADD COLUMN opened_measured_at DATETIME;
+
+ALTER TABLE stock_log ADD COLUMN opened_amount DOUBLE PRECISION;
+ALTER TABLE stock_log ADD COLUMN opened_qu_id INTEGER;
+ALTER TABLE stock_log ADD COLUMN opened_tare DOUBLE PRECISION;
+ALTER TABLE stock_log ADD COLUMN opened_measured_at DATETIME;
+
 -- Locations. id 1 is the one the trigger tests assume; id 3 is a freezer, so that
 -- anything keyed on is_freezer has both cases to look at.
 INSERT INTO locations (id, name, description, is_freezer) VALUES (1, 'Pantry', 'Base fixture location', 0);

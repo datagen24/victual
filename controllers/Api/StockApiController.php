@@ -169,7 +169,7 @@ class StockApiController extends BaseApiController
 				$note = $requestBody['note'];
 			}
 
-			$transactionId = StockService::GetInstance()->AddProduct($args['productId'], $requestBody['amount'], $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, false, $note);
+			$transactionId = StockService::GetInstance()->AddProduct($args['productId'], $requestBody['amount'], $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
 
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
@@ -479,6 +479,54 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
+	 * POST /api/stock/entry/{entryId}/measure - records a new measurement of an
+	 * already-open, single-unit stock entry (ADR-0022, docs/plans/28-open-container-measurement.md).
+	 * Requires the STOCK_EDIT permission (403 otherwise).
+	 * Body fields: amount and qu_id (both required, the reading and the unit it was taken
+	 * in), gross (bool, default false) and tare (required, same unit, when gross is true -
+	 * the contract names the reading gross explicitly so a client cannot subtract tare
+	 * twice; ADR-0022 decision 4).
+	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response
+	 * (entry not found, not a coherent single opened container, or the unit does not convert
+	 * to the product's stock unit).
+	 */
+	public function MeasureStockEntry(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+
+		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+
+		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		{
+			if ($requestBody === null)
+			{
+				throw new \Exception('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+			}
+
+			if (!array_key_exists('amount', $requestBody))
+			{
+				throw new \Exception('An amount is required');
+			}
+
+			if (!array_key_exists('qu_id', $requestBody))
+			{
+				throw new \Exception('A qu_id is required');
+			}
+
+			$measurement = [
+				'amount' => $requestBody['amount'],
+				'qu_id' => $requestBody['qu_id'],
+				'is_gross' => array_key_exists('gross', $requestBody) ? boolval($requestBody['gross']) : false,
+				'tare' => array_key_exists('tare', $requestBody) ? $requestBody['tare'] : null,
+			];
+
+			$transactionId = StockService::GetInstance()->MeasureStockEntry($args['entryId'], $measurement);
+			$args['transactionId'] = $transactionId;
+			return $this->StockTransactions($request, $response, $args);
+		});
+	}
+
+	/**
 	 * GET /api/stock/barcodes/external-lookup/{barcode} - looks up the barcode via the
 	 * configured external barcode lookup plugin; with query parameter add=true the
 	 * found product is also created. Requires the MASTER_DATA_EDIT permission (403
@@ -594,7 +642,11 @@ class StockApiController extends BaseApiController
 	 * POST /api/stock/products/{productId}/open - marks the given amount of a product
 	 * as opened. Requires the STOCK_OPEN permission (403 otherwise).
 	 * Body fields: amount (required), stock_entry_id (open a specific entry) and
-	 * allow_subproduct_substitution.
+	 * allow_subproduct_substitution. Optionally, a measurement object records the
+	 * container's contents as it is opened (ADR-0022, docs/plans/28-open-container-measurement.md):
+	 * measurement.amount and measurement.qu_id (both required within it), measurement.gross
+	 * (bool, default false) and measurement.tare (required, same unit, when gross is true).
+	 * A measurement requires stock_entry_id (a specific entry) and amount = 1.
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function OpenProduct(Request $request, Response $response, array $args)
@@ -627,8 +679,19 @@ class StockApiController extends BaseApiController
 				$allowSubproductSubstitution = $requestBody['allow_subproduct_substitution'];
 			}
 
+			$measurement = null;
+			if (array_key_exists('measurement', $requestBody) && is_array($requestBody['measurement']))
+			{
+				$measurement = [
+					'amount' => $requestBody['measurement']['amount'] ?? null,
+					'qu_id' => $requestBody['measurement']['qu_id'] ?? null,
+					'is_gross' => boolval($requestBody['measurement']['gross'] ?? false),
+					'tare' => $requestBody['measurement']['tare'] ?? null,
+				];
+			}
+
 			$transactionId = null;
-			$transactionId = StockService::GetInstance()->OpenProduct($args['productId'], $requestBody['amount'], $specificStockEntryId, $transactionId, $allowSubproductSubstitution);
+			$transactionId = StockService::GetInstance()->OpenProduct($args['productId'], $requestBody['amount'], $specificStockEntryId, $transactionId, $allowSubproductSubstitution, $measurement);
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
 		});

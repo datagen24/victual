@@ -197,6 +197,130 @@ $(document).on('click', '.product-open-button', function(e)
 	);
 });
 
+// Opens the measurement modal (ADR-0022, docs/plans/28-open-container-measurement.md) in
+// either mode a .stock-measure-button can be in: 'open' (opening a single sealed unit while
+// recording what it holds) or 'remeasure' (re-measuring a unit that is already open, the
+// common case over a container's life). The unit picker defaults to the product's own stock
+// quantity unit - the common case is weighing in the same unit the product is stocked in.
+$(document).on('click', '.stock-measure-button', function(e)
+{
+	e.preventDefault();
+
+	var button = $(e.currentTarget);
+	var mode = button.attr('data-mode');
+
+	$('#stock-measurement-mode').val(mode);
+	$('#stock-measurement-product-id').val(button.attr('data-product-id'));
+	$('#stock-measurement-stock-id').val(button.attr('data-stock-id'));
+	$('#stock-measurement-stockrow-id').val(button.attr('data-stockrow-id'));
+	$('#stock-measurement-modal-product-name').text(button.attr('data-product-name'));
+	$('#stock-measurement-amount').val('');
+	$('#stock-measurement-qu').val(button.attr('data-product-qu-id'));
+	$('#stock-measurement-gross').prop('checked', false);
+	$('#stock-measurement-tare').val('');
+	$('#stock-measurement-tare-group').addClass('d-none');
+
+	// "Open without measuring" only makes sense when opening; re-measuring an already open
+	// entry with no amount typed would just be a no-op booking.
+	$('#stock-measurement-skip-button').toggleClass('d-none', mode !== 'open');
+
+	$('#stock-measurement-modal').modal('show');
+});
+
+$('#stock-measurement-gross').on('change', function()
+{
+	$('#stock-measurement-tare-group').toggleClass('d-none', !$(this).is(':checked'));
+});
+
+// Opens the targeted entry without recording a measurement - the plain one-tap action,
+// available from the modal in 'open' mode.
+$('#stock-measurement-skip-button').on('click', function(e)
+{
+	e.preventDefault();
+
+	var productId = $('#stock-measurement-product-id').val();
+	var specificStockEntryId = $('#stock-measurement-stock-id').val();
+
+	Victual.FrontendHelpers.BeginUiBusy();
+	Victual.Api.Post('stock/products/' + productId + '/open', { 'amount': 1, 'stock_entry_id': specificStockEntryId },
+		function()
+		{
+			$('#stock-measurement-modal').modal('hide');
+			Victual.FrontendHelpers.EndUiBusy();
+			window.location.reload();
+		},
+		function(xhr)
+		{
+			Victual.FrontendHelpers.EndUiBusy();
+			Victual.Api.DefaultErrorHandler(xhr);
+		}
+	);
+});
+
+// Saves the measurement modal: opens-and-measures (mode 'open', POST .../open with a
+// measurement object) or re-measures an already-open entry (mode 'remeasure', POST
+// .../entry/{id}/measure). Either way the reading is `gross` when the checkbox is set, so
+// the server subtracts the tare itself rather than the client subtracting it twice
+// (ADR-0022 decision 4).
+$('#stock-measurement-save-button').on('click', function(e)
+{
+	e.preventDefault();
+
+	if (!Victual.FrontendHelpers.ValidateForm('stock-measurement-form', true))
+	{
+		return;
+	}
+
+	var mode = $('#stock-measurement-mode').val();
+	var isGross = $('#stock-measurement-gross').is(':checked');
+	var measurement = {
+		'amount': Number.parseFloat($('#stock-measurement-amount').val()),
+		'qu_id': Number.parseInt($('#stock-measurement-qu').val()),
+		'gross': isGross,
+		'tare': isGross ? Number.parseFloat($('#stock-measurement-tare').val()) : null
+	};
+
+	Victual.FrontendHelpers.BeginUiBusy();
+
+	if (mode === 'open')
+	{
+		var productId = $('#stock-measurement-product-id').val();
+		var specificStockEntryId = $('#stock-measurement-stock-id').val();
+
+		Victual.Api.Post('stock/products/' + productId + '/open', { 'amount': 1, 'stock_entry_id': specificStockEntryId, 'measurement': measurement },
+			function()
+			{
+				$('#stock-measurement-modal').modal('hide');
+				Victual.FrontendHelpers.EndUiBusy();
+				window.location.reload();
+			},
+			function(xhr)
+			{
+				Victual.FrontendHelpers.EndUiBusy();
+				Victual.Api.DefaultErrorHandler(xhr);
+			}
+		);
+	}
+	else
+	{
+		var stockRowId = $('#stock-measurement-stockrow-id').val();
+
+		Victual.Api.Post('stock/entry/' + stockRowId + '/measure', measurement,
+			function()
+			{
+				$('#stock-measurement-modal').modal('hide');
+				Victual.FrontendHelpers.EndUiBusy();
+				RefreshStockEntryRow(stockRowId);
+			},
+			function(xhr)
+			{
+				Victual.FrontendHelpers.EndUiBusy();
+				Victual.Api.DefaultErrorHandler(xhr);
+			}
+		);
+	}
+});
+
 // Fetches label data for a stock entry's Grocycode and forwards it to the configured
 // label printer webhook (Victual.Webhooks.labelprinter), if any is set up
 $(document).on('click', '.stockentry-grocycode-label-print', function(e)
@@ -342,7 +466,27 @@ function RefreshStockEntryRow(stockRowId)
 
 				if (result.open == 1)
 				{
-					$('#stock-' + stockRowId + '-opened-amount').text(__n(result.amount, 'Opened', 'Opened'));
+					if (result.opened_amount !== null && result.opened_amount !== undefined)
+					{
+						// ADR-0022 / docs/plans/28-open-container-measurement.md. .text() only -
+						// quResult.name/name_plural are user-editable master data, so this never
+						// goes through .html() with a concatenated value (frontend sink discipline,
+						// docs/constitution.md).
+						Victual.Api.Get("objects/quantity_units/" + result.opened_qu_id,
+							function(quResult)
+							{
+								var amountText = result.opened_amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_amounts });
+								var quName = __n(result.opened_amount, quResult.name, quResult.name_plural, true);
+								$('#stock-' + stockRowId + '-opened-amount').text(__t('Opened') + ' – ' + amountText + ' ' + quName + ' ' + __t('left'));
+								$('#stock-' + stockRowId + '-opened-measured-at-timeago').attr('datetime', result.opened_measured_at);
+								RefreshContextualTimeago("#stock-" + stockRowId + "-row");
+							}
+						);
+					}
+					else
+					{
+						$('#stock-' + stockRowId + '-opened-amount').text(__n(result.amount, 'Opened', 'Opened'));
+					}
 				}
 				else
 				{
