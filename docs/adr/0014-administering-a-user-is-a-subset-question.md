@@ -1,6 +1,10 @@
 # ADR-0014: Administering a user means holding everything they hold
 
-- **Status:** **Proposed.**
+- **Status:** **Accepted, 2026-09-14.** A may administer B when every permission B resolves
+  to is one A resolves to, and may grant a set when A resolves to everything granting it
+  would confer, over the closure. The record names no acceptance prerequisites; the rule has
+  been in the code since 2026-09-04 as `User::MayAdminister()` and `User::CheckMayGrant()`,
+  so this is bookkeeping only per the lifecycle rule.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-04, which is when the rule was written into the code. **The code
