@@ -83,24 +83,41 @@ This does not change the existing child-to-parent fallback in
 [`stock_current`](../../db/pgsql/baseline/04_views_l1a.sql),
 `COALESCE(qucr.factor, 1.0)`. The new measured fraction must not use that fallback.
 
-### 4. Tare belongs to the measurement, not to the product
+### 4. Tare belongs to the container being weighed: the entry for a purchased container, the location for a vessel
 
-For a gross-weight measurement, record the container weight with the measurement so each
-container can have its own tare.
+**Amended 2026-09-14 by the maintainer's decision under question 1.** The earlier text put
+both tares on the stock entry. They are two different things and live in two places.
 
-Per-entry tare serves two verbs, and both are in scope for this decision:
+**An opened purchased container carries its tare on the stock entry.** A jug of milk in the
+fridge has its own container weight and the fridge has none; the jug is the entry, so the
+gross-weight measurement records the container weight with the measurement, and each
+container can have its own. This is decisions 1 and 8, and plan 28 owns it.
 
-- **A remainder beside `amount`**, for an opened purchased container that is partly used.
-  This is decisions 1 and 8.
-- **An entry-scoped tared correction**, for a vessel whose `amount` *is* its contents — a
-  decanted bin of flour. No remainder column applies; what is needed is to set one entry's
-  amount from a gross weight.
-  [`EditStockEntry()`](../../services/StockService.php) already takes a stock row id and an
-  amount and performs no tare arithmetic, which is where that belongs.
+**A vessel carries its tare on the location.** A decanted flour bin or a spice jar is a place
+stock passes through, not a container stock arrived in. Every refill runs through
+[`TransferProduct()`](../../services/StockService.php), which mints a new stock row at the
+destination, and `CompactStockEntries()` merges rows; a tare on the entry would have to be
+copied on every refill and survive compaction, where a tare on the location is set once and
+outlives every row that passes through it. `locations` gains a nullable `tare_weight` and a
+`tare_qu_id`: locations are product-agnostic, so the tare cannot borrow a stock unit the way
+`products.tare_weight` did, and the conversion to the stocked product's unit goes through the
+global quantity unit conversions under decision 3's rule — a stock unit the tare cannot be
+converted to is refused, never assumed. Plan 29 owns it, and plan 23 alters the same table
+first.
 
-The two patterns differ in what they store and agree on what they need. Recording tare on the
-entry is the single primitive that unblocks both, and it is what limit 4 makes unavoidable:
-product-scoped tare cannot participate in a transfer at all.
+**The device posts gross weight and the server subtracts.** A scale identifies the vessel by
+scanning its location label (plan 06, a `vctl:` payload) and posts the gross reading against
+that location. The server resolves the one product stocked there, refuses when there is none
+or more than one, subtracts the location's tare in the product's stock unit, and sets that
+entry's amount through [`EditStockEntry()`](../../services/StockService.php), which already
+takes a stock row id and an amount and does no tare arithmetic. The input contract states
+gross explicitly so a client cannot subtract twice (question 4).
+
+**Refilled from packs that are themselves stock.** New bottles of a spice are stock at a
+storage location until they are decanted into the jar, which is a transfer. A supply-size
+container that is used from directly — a one-pound jar of a high-volume spice — is an opened
+purchased container, not a vessel: it takes the entry tare above, and it may also be the
+source of a transfer into the jar.
 
 ### 5. A measured entry is never compacted
 
@@ -114,7 +131,19 @@ third exclusion; decision 8 separately handles rows that already contain several
 Measurement is optional product configuration. A product may be counted without measuring
 its opened units; neither measurement nor a global measurement mode is required.
 
-### 7. The product-level tare fields stay on the wire and stop being the mechanism
+### 7. The product-level tare fields stay on the wire at zero, and their arithmetic goes
+
+**Decided 2026-09-14 under question 1.** `enable_tare_weight_handling` and `tare_weight`
+remain on `/objects/products` and in the views that project them, so no response shape
+changes; the three arithmetic branches, the two refusals (open and transfer) and the trigger
+that rescales the tare are removed, and a write that enables the flag answers 400 naming the
+location tare that replaced it. Booked amounts are already net, so no stored amount changes;
+a product that used the flag loses its weigh path until its vessel is a location, which is a
+manual upgrade step the migration notes. The two fields are deleted from the contract at
+[plan 14](../plans/14-contract-and-regression-scaffolding.md) piece 2's freeze, as a line in
+the first snapshot rather than an amendment after it, with the
+[ADR-0005](0005-wire-contract-is-the-invariant.md) note that removal requires. The text below
+is the record as proposed on 2026-09-09.
 
 New measurement work uses per-entry state. The existing `enable_tare_weight_handling` and
 `tare_weight` fields remain on `/objects/products`; their retirement and compatibility
@@ -195,8 +224,9 @@ and undo. Retiring the existing tare mechanism adds migration and compatibility 
 7. **Conversion failure.** Reject an unconvertible measurement at entry. Deleting a
    conversion required by stored measurements leaves their fractions unavailable, never
    reinterpreted through an assumed factor.
-8. **Legacy tare decision.** Record the answer to question 1, including the wire consequence
-   of retaining or retiring `products.tare_weight` and `enable_tare_weight_handling`.
+8. **Decided 2026-09-14** — question 1 carries the answer and decision 7 the wire
+   consequence: the fields stay at zero, the arithmetic goes, removal rides plan 14 piece 2's
+   freeze. The accepting pull request cites this item as met.
 
 ## Open questions
 
@@ -215,6 +245,13 @@ completed acceptance prerequisites.
    > narrower mechanism with a wider one, not about two peers sharing a domain. Removing the
    > fields remains a wire change under
    > [ADR-0005](0005-wire-contract-is-the-invariant.md) and is still unanswered.
+   >
+   > **Decided 2026-09-14 (maintainer).** Retired as a mechanism, retained on the wire. The
+   > product-level fields stay in every response at zero, enabling them answers 400, and
+   > their arithmetic is deleted; they leave the contract at plan 14 piece 2's freeze.
+   > Tare moves to where the container is: the stock entry for an opened purchased container
+   > and the location for a vessel — a bin, a spice jar — because a vessel's stock row is
+   > replaced on every refill and its tare must not be. Decisions 4 and 7 carry the detail.
 
 2. **Does a measurement book a consumption?** A new measurement may differ from the previous
    remainder. Should that difference be a consumption, an inventory correction or a separate
@@ -247,6 +284,11 @@ completed acceptance prerequisites.
    > input, subtract tare in that same unit before storing it. This leaves one derivation
    > formula for both input paths. The input contract must make gross versus net explicit
    > so a client cannot subtract tare twice.
+   >
+   > **Decided 2026-09-14 (maintainer).** A device posts the gross weight and the server
+   > subtracts. For a vessel the device identifies the location by scanning its label and the
+   > server subtracts the location's tare; for an opened purchased container it subtracts the
+   > entry's. The contract names the reading `gross`; a net figure is a different field.
 
 5. **Does an opened, measured unit still satisfy a minimum stock amount?**
 
