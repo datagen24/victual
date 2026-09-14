@@ -37,12 +37,18 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   `enfore_product_nesting_level` enforces one-level nesting on `UPDATE` only, never `INSERT`,
   in both engines). It did not retire plan 07 or touch `docs/plans/README.md`'s wave order —
   that stays #82's later PR.
-- **ADR-0022 is not yet accepted, but every non-decision prerequisite is now discharged**
-  (issue #129): 1, 2, 3, 5, 6, 7 via a disposable spike on
-  `claude/sonnet5_adr0022-prerequisites` at `64ec8f1`; 4 reworded on
-  `claude/vibrant-volta-6osz2n` at `4cf7bd0` (named a snapshot — plan 14 piece 2 — that
-  doesn't exist yet); 8 decided 2026-09-14 (`cb99bf3`). What's left is the bookkeeping-only
-  accepting pull request itself, then plan 28 and plan 29's weighing half can start.
+- **ADR-0022 is Accepted 2026-09-14**, all eight prerequisites met: [PR #153](https://github.com/datagen24/victual/pull/153)
+  merged, closing [issue #129](https://github.com/datagen24/victual/issues/129). 1, 2, 3, 5,
+  6, 7 via a disposable spike, merged into master (not left unmerged like ADR-0023's spike
+  branch) as [PR #152](https://github.com/datagen24/victual/pull/152) at `64ec8f1` — its
+  files live on under `.spike-adr22/`, permanent evidence rather than a citation to a branch
+  that could be deleted, closing the gap [PR #145](https://github.com/datagen24/victual/pull/145)
+  had to close for ADR-0021. 4 reworded then met by a real check against `victual.openapi.json`
+  (no collision with the four new field names; legacy tare fields still present at zero); 8
+  decided 2026-09-14 (`cb99bf3`). Plan 28 is unblocked outright; plan 29's weighing half is
+  unblocked. `docs/plans/README.md`'s status table still needs a pass for both rows (left out
+  of the acceptance PR deliberately, matching how ADR-0023's left plan 30's row) — that and
+  plan 28/29's actual implementation are what's next.
 - **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
   it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
   accepted before they run at all.
