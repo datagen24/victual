@@ -1,6 +1,11 @@
 # ADR-0018: Roles contribute grants and domain reads require view permissions
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-09-14. Roles contribute grants and six domains require view
+  permissions, as wave 3a implemented on 2026-09-05 (migration 0266, plan 19 piece 1). The
+  record names no acceptance prerequisites, so this is bookkeeping only per the lifecycle
+  rule. Two things plan 19's Executed section records stay as they are and are not changed
+  by acceptance: existing direct grants remain effective when a narrower role is assigned,
+  and prices are not hidden from Child or Guest until piece 2.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-05, alongside wave 3a implementation
 - **Referenced by:** [plan 19](../plans/19-rbac.md)
