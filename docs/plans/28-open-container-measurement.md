@@ -4,7 +4,7 @@
 can hold. An opened unit's remaining contents are measured — by weight or by volume,
 whichever the person can actually take — without giving up counting the units themselves.
 **Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
-**Proposed**. Nothing else blocks it.
+**Accepted** 2026-09-14. Nothing else blocks it.
 **Interacts with:** [29](29-working-container-replenishment.md), which shares ADR-0022
 decision 4's entry-scoped tare and nothing else; [07](07-nested-products.md), which rewrites the same aggregation in
 `stock_current`, and with the container decision recorded below that came out of the same

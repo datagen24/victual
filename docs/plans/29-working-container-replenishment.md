@@ -4,8 +4,8 @@
 refilling is one tap, and running the bin down tells you whether there is another bag behind
 it or whether flour goes on the list.
 **Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
-**Proposed** — decision 4's entry-scoped tare is what lets the bin be weighed. Nothing else
-blocks it.
+**Accepted** 2026-09-14 — decision 4's entry-scoped tare is what lets the bin be weighed.
+Nothing else blocks it.
 **Interacts with:** [28](28-open-container-measurement.md), which shares that primitive and
 nothing else; [08](08-nested-locations.md), landed, which lets the bin sit under the kitchen;
 [03](03-category-min-stock.md), whose group minimum is the third minimum axis this adds a
