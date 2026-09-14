@@ -281,6 +281,14 @@ branch carrying this record. Every run below is from 2026-09-07 on the maintaine
 silicon machine, against PostgreSQL 16.15 in podman and the two printers on the household
 network.
 
+**Every `.spike-adr21/` and `.spike-renderer/` path cited below is a path in that commit, not
+in a checkout of `master`**, where neither tree has ever existed. Read one with
+`git show 4a3b0713:<path>`, or check the branch out into a worktree to run it. The six cited
+paths were confirmed present at that SHA on 2026-09-14 (`git cat-file -e 4a3b0713:<path>`),
+and the branch was at that same SHA on `origin`. It is a disposable branch: if it is ever
+deleted, these citations resolve only for as long as the objects survive, so tag the commit
+before deleting it.
+
 1. **A headless renderer is selected by rendering the template contract**, not by feature
    list. At least two candidates produce the same label from the same document: multi-line
    wrapping, a pinned font with a missing glyph, QR at a declared module size with asymmetric
@@ -307,15 +315,26 @@ network.
    changes. And the cost figures are for one process per render with no daemon to amortise the
    start, which is what a run-to-completion render job actually is.
 
-   Reproduce: `python3 .spike-renderer/qualify/kerning.py`,
+   Reproduce from a worktree on `claude/opus5_adr0021-prerequisites` at `4a3b0713`, after
+   `cargo build --release` in `.spike-renderer/rsrender` — all three scripts shell out to
+   `.spike-renderer/rsrender/target/release/rsrender` for the renderer's side of the
+   comparison, and that build output is deliberately not in the commit:
+   `python3 .spike-renderer/qualify/kerning.py`,
    `python3 .spike-renderer/qualify/rtl.py <a font with Hebrew and Arabic>`,
-   `python3 .spike-renderer/qualify/cost.py`.
+   `python3 .spike-renderer/qualify/cost.py`. `kerning.py` pins
+   `.spike-renderer/fonts/NotoSans-Regular.ttf` and `cost.py` passes the
+   `.spike-renderer/fonts` directory, both in the commit. `rtl.py` takes its font as an
+   argument and the bundled face carries no Hebrew or Arabic at all, so the run recorded above
+   necessarily used a face supplied from outside the repository: **that one input is not
+   recoverable from the commit**, and the eight assertions would have to be re-established
+   against whatever face a re-run supplies.
 
 2. **The artifact format comparison is written**: raster against page-description, including
    whether a downstream service exists that verifiably converts *and* delivers with readable
    evidence, and what each format leaves the device adapter to decide about geometry.
 
-   **Met**, in `.spike-adr21/artifact-format-comparison.md`. **Wave 3b ships one form**: an
+   **Met**, in `.spike-adr21/artifact-format-comparison.md` at `4a3b0713`
+   (`git show 4a3b0713:.spike-adr21/artifact-format-comparison.md`). **Wave 3b ships one form**: an
    indexed raster whose pixel grid is fixed by the resolved combination
    (`raster/png-indexed;v=1`, `geometry: fixed_grid`, PNG colour type 3 at bit depth 2 over the
    profile's palette). `pdf/1.4` with `geometry: device_placed` stays registerable and unshipped.
@@ -359,9 +378,9 @@ network.
    a label naming a replaced target — and retired snapshots are shown to survive an import
    that proceeds.
 
-   **Met**, twelve of twelve assertions, `.spike-adr21/import/run.sh` against PostgreSQL
-   16.15. The spike is shaped after `services/Database/DatabaseImporter.php` as it stands:
-   `AssertTargetIsEmpty()` before `beginTransaction()`, one transaction around
+   **Met**, twelve of twelve assertions, `.spike-adr21/import/run.sh` at `4a3b0713` against
+   PostgreSQL 16.15. The spike is shaped after `services/Database/DatabaseImporter.php` as it
+   stands: `AssertTargetIsEmpty()` before `beginTransaction()`, one transaction around
    `TRUNCATE … RESTART IDENTITY CASCADE` and the copy, and `ResyncGeneratedIdCounters()` after
    the commit.
 
@@ -385,7 +404,12 @@ network.
    collected, the reprint is refused rather than rerendered.
 
    **Met**, twelve of twelve, end to end against the networked laser
-   (`.spike-adr21/reprint/run.sh`). The artifact is rendered once and retained; the renderer
+   (`.spike-adr21/reprint/run.sh` at `4a3b0713`). The script is recoverable; the environment
+   is not — it prints to `ipp://10.130.30.13/ipp/print` on the maintainer's household network,
+   overridable by `PRINTER`, so a re-run reproduces the logic against whatever device it is
+   pointed at and not the IPP job recorded below.
+
+   The artifact is rendered once and retained; the renderer
    binary is then **moved off disk** and shown to fail with exit 127; the reprint queues over
    the same artifact row and creates no second artifact; the bytes come back out of the database
    with the digest they went in with
@@ -400,7 +424,7 @@ network.
 
    **Met.** RFC 8785 it is, and the implementation is Victual's own: **no JSON Canonicalization
    Scheme library exists in `composer.json` and PHP's `json_encode` is not one.** The spike
-   (`.spike-adr21`, run on PHP 8.5.9) shows exactly where it diverges — `1.0e+30` for `1e+30`,
+   (run on PHP 8.5.9) shows exactly where it diverges — `1.0e+30` for `1e+30`,
    `1.0e-7` for `1e-7`, `a\/b` for `a/b`, `\u00e9` for `é` — so the number layout and the
    string escaping have to be written, not configured.
 
@@ -412,6 +436,16 @@ network.
    that is correct by construction, since `JSON.stringify` already produces RFC 8785's number
    layout and string escaping and `Array.prototype.sort` already compares UTF-16 code units.
    **2,206 documents, 2,000 of them doubles built from random bit patterns: byte-identical.**
+
+   **This prerequisite's evidence was not left on the disposable branch — it was promoted into
+   the repository and is the only one of the six that a reader can re-run from `master`.** The
+   implementation is [`helpers/CanonicalJson.php`](../../helpers/CanonicalJson.php); the
+   vectors and the differential run are
+   [`.devtools/labels/canonical-json-tests.php`](../../.devtools/labels/canonical-json-tests.php)
+   against [`.devtools/labels/canonical-json-oracle.js`](../../.devtools/labels/canonical-json-oracle.js),
+   which the suite workflow runs on every push. Re-run it with
+   `php .devtools/labels/canonical-json-tests.php`; on a Mac, where PHP is in the dev container
+   and node is on the host, `CANONICAL_JSON_EMIT_ONLY=1` writes the corpus and stops.
 
    Three rules the spike forces into the implementation. Object keys sort by **UTF-16 code
    unit**, which is not UTF-8 byte order — an astral character is a surrogate pair below
