@@ -1,6 +1,6 @@
 # ADR-0022: An opened container's remaining contents are measured on the stock entry
 
-- **Status:** Proposed
+- **Status:** Accepted 2026-09-14, all eight acceptance prerequisites met.
 - **Decider:** datagen24 (maintainer). Acceptance follows the [ADR lifecycle](README.md).
 - **Recorded:** 2026-09-09.
 - **Referenced by:** [28 — Open container measurement](../plans/28-open-container-measurement.md),
@@ -209,21 +209,98 @@ and undo. Retiring the existing tare mechanism adds migration and compatibility 
 
 ## Acceptance prerequisites
 
+All eight met 2026-09-14. Prerequisites 1, 2, 3, 5, 6 and 7 by a disposable spike against
+real PostgreSQL 16.13 on `claude/sonnet5_adr0022-prerequisites` at `64ec8f1` — not asserted;
+full transcript in `.spike-adr22/RESULTS.md` on that branch. Prerequisite 4 by a paper check
+against this fork's actual OpenAPI specification. Prerequisite 8 was a maintainer decision,
+recorded in decisions 4 and 7 and in question 1's response below.
+
 1. **Coexistence, against PostgreSQL.** Three sealed units and one opened, measured unit of
    one product produce the correct total. A negative control demonstrates the existing tare
    path computing it incorrectly, testing the source-derived limits in Context.
+
+   > **Met 2026-09-14.** Three sealed bags plus one measured open bag total 4 bags
+   > (decision 2 unchanged), and the open bag's own remainder resolves to 0.24 bag through
+   > the existing `quantity_unit_conversions_resolved` view (decision 3) — the ADR's own
+   > worked numbers, now run rather than read. The negative control reproduces Context's
+   > Limit 2 against real rows: three sealed 5 lb bags plus an open canister give a real
+   > `stock_amount` of 20 lb; weighing the canister at a gross 1.4 lb, the existing
+   > `ConsumeProduct()` formula (`abs($amount - $productDetails->stock_amount -
+   > $product->tare_weight)`) computes 18.8 lb "consumed" against the 3.8 lb the canister
+   > actually gave up, because it reads the whole-product total rather than the one entry.
 2. **Volume measured by weight.** A per-product conversion supplies the factor without a
    separate density model.
+
+   > **Met 2026-09-14.** A gallon jug measured on a scale at 4.3 lb resolves to 0.5 gallon
+   > through a per-product "1 gallon jug = 8.6 lb" conversion row, using the same
+   > `quantity_unit_conversions_resolved` view prerequisite 1 exercised — no density column,
+   > no second mechanism.
 3. **Compaction.** A measured entry is skipped while an unmeasured split entry is merged.
-4. **Wire compatibility.** Confirm additive responses against the response snapshot and
-   reconcile the result with plan 14 piece 2's freeze date.
+
+   > **Met 2026-09-14.** Two unmeasured stock rows sharing every `stock_splits` group-by
+   > column compact into one (`amount = 2`) through the same two-statement sequence
+   > `CompactStockEntries()` runs (`services/StockService.php:2504-2552`); a third row
+   > sharing the same columns but carrying `opened_amount` never enters `stock_splits` at
+   > all, via a third exclusion clause on that view, and is untouched by the same run.
+4. **Wire compatibility.** **Reworded 2026-09-14**, per issue
+   [#129](https://github.com/datagen24/victual/issues/129): as written this named a snapshot
+   that does not exist — [14](../plans/14-contract-and-regression-scaffolding.md) piece 2
+   ([issue 83](https://github.com/datagen24/victual/issues/83)) — while the record's own
+   Consequences want plan 28 to land *before* that freeze, so the prerequisite could not be
+   discharged either way. The new stock fields are listed and checked as additive against
+   this fork's own OpenAPI specification, per [ADR-0005](0005-wire-contract-is-the-invariant.md).
+   Confirming them against plan 14 piece 2's response snapshot follows once that snapshot
+   exists; that plan's own Executed section records the reconciliation, and this prerequisite
+   does not wait on it.
+
+   > **Met 2026-09-14.** None of `opened_amount`, `opened_qu_id`, `opened_tare` or
+   > `opened_measured_at` — plan 28's four proposed columns — appear anywhere in
+   > `victual.openapi.json` today (`grep -c` over the whole file returns 0), so there is no
+   > name collision with an existing field on `StockEntry`, `StockLogEntry` or anywhere else
+   > in the contract to reconcile before plan 28 adds them. Decision 7's own requirement —
+   > that `enable_tare_weight_handling` and `tare_weight` stay on the wire at zero — also
+   > holds today: both remain on the `Product` and `ProductWithoutUserfields` schemas.
 5. **Container identity.** Two opened containers, one measured, retain separate state and
    correct totals. A multi-unit entry is refused or split before attaching a remainder.
+
+   > **Met 2026-09-14.** Two opened containers of one product keep independent
+   > `opened_amount`/`opened_qu_id` state; measuring one never touches the other, and
+   > totals stay correct for both. The `open = 1, amount = 3` state `OpenProduct()` produces
+   > today when opening covers a whole multi-unit entry (`services/StockService.php:1609-1636`)
+   > refuses a measurement outright via the coherence constraint below; splitting first —
+   > that method's own else-branch, `:1637-1654` — leaves a 1-unit entry a measurement
+   > attaches to and a 2-unit unmeasured rest.
 6. **Undo.** Measure an entry, consume it fully, then undo: remainder, unit, tare and
    timestamp are restored. Undoing an opening leaves a legal state.
+
+   > **Met 2026-09-14, with a sharper finding than this text.** A consume-then-undo round
+   > trip restores `opened_amount`, `opened_qu_id`, `opened_tare` and `opened_measured_at`
+   > exactly, once `stock_log` mirrors those four columns for `UndoBooking()`'s consume
+   > branch (`services/StockService.php:2200-2213`) to rebuild from. Undoing an opening as
+   > that method's `PRODUCT_OPENED` branch is written today (`:2280-2290`, clearing only
+   > `open` and `opened_date`) does not merely "strand a measurement on a closed entry" as
+   > this decision's text below says — against the coherence constraint decision 8 requires,
+   > it refuses to write at all, which would abort the undo transaction outright. Clearing
+   > all four measurement columns in the same statement is what makes the undo *completable*,
+   > not only what this decision asks for stylistically.
 7. **Conversion failure.** Reject an unconvertible measurement at entry. Deleting a
    conversion required by stored measurements leaves their fractions unavailable, never
    reinterpreted through an assumed factor.
+
+   > **Met 2026-09-14.** A unit with no conversion path to the stock unit (Fluid Ounce for
+   > a product stocked in Bags) returns zero rows from `quantity_unit_conversions_resolved`
+   > — the query a write path checks before ever issuing the write, which is where the
+   > refusal belongs. Deleting a stored measurement's required conversion leaves
+   > `opened_amount` untouched but its derived fraction `NULL`; no default conversion exists
+   > for the view to fall back to, so nothing is silently reinterpreted through an assumed
+   > factor. **One finding this spike surfaced that the ADR text does not state**:
+   > convertibility (this prerequisite) and coherence (prerequisite 5's constraint) are
+   > different properties. Coherence — one container, one unit — is a fact about the row
+   > itself and can be a database `CHECK`. Convertibility depends on the recursive
+   > conversions view, which cannot be re-derived per row inside a `CHECK`; refusing an
+   > unconvertible unit has to be the write path's own job in the service layer, checked
+   > before the row is written, not a database constraint. Plan 28 should record this
+   > division when it specifies the write path.
 8. **Decided 2026-09-14** — question 1 carries the answer and decision 7 the wire
    consequence: the fields stay at zero, the arithmetic goes, removal rides plan 14 piece 2's
    freeze. The accepting pull request cites this item as met.
