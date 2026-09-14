@@ -1,6 +1,13 @@
 # ADR-0020: The documentation site publishes the manual, the developer reference and the ADRs; plans stay in the repository
 
-- **Status:** Proposed
+- **Status: Accepted, 2026-09-14.** **The site publishes the manual, the developer reference
+  and the ADRs; the plans, the two architecture reviews, the security sweep and the MCP
+  interface specification stay in the repository.** All four acceptance prerequisites below
+  are met, each annotated in place with what met it and how to reproduce it. **Nothing in
+  the decision was revised by this acceptance.** One consequence is restated here because it
+  binds every author from here on rather than describing anything already written: **an ADR
+  is now a published document**, read by people who have not read the repository and have no
+  access to the plan a record came out of.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-07
 - **Referenced by:** [26](../plans/26-documentation-site.md)
@@ -254,13 +261,45 @@ documentation that would substitute describes a different system.
 1. **Met 2026-09-07.** [Pull request 92](https://github.com/datagen24/victual/pull/92) landed,
    so `docs/data-model.md` and the six diagrams the Development section names exist on
    `master`.
-2. [Plan 26](../plans/26-documentation-site.md) records how the 173 ADR-to-plan links are
-   rewritten, and a build demonstrates them resolving to the repository rather than 404ing.
-   A build that leaves them broken fails this gate.
-3. Open questions 2 and 4 are answered — both were, on 2026-09-07 — and
-   `phpdoc.dist.xml`'s premise comment is corrected to match what this record does. The
-   answers are recorded; the edit is outstanding.
-4. A built Development section is inspected and no page in it is incomprehensible without a
-   plan. The 173 rewritten links are citations a reader may follow, not reading the section
-   depends on. The equivalent check for the Manual is plan 26's, since the Manual ships
-   second.
+2. **Met 2026-09-14.** [Plan 26](../plans/26-documentation-site.md) records how the
+   ADR-to-plan links are rewritten, and a build demonstrates them resolving to the
+   repository rather than 404ing. A build that leaves them broken fails this gate.
+
+   The recording is the plan's Design, staging step item 3, and its Executed section. The
+   demonstration is `.devtools/docs/stage.py`: the built ADR pages carry 229
+   `blob/master/docs/plans/…` URLs against 224 source `plans/NN` links plus the 5 to
+   `plans/README.md`, the counts reconciling exactly, resolving to 27 distinct plan
+   documents, every one tracked and each returning HTTP 200 when fetched on 2026-09-14. The
+   count is 229 rather than the 173 measured at `ab9d157b` because the corpus grew while
+   this record was open; the plan's verification check 3 compares the built count against
+   the source count for exactly that reason.
+
+   **The third sentence of this gate was the one that was not met, and it is why acceptance
+   waited.** `mkdocs build --strict` cannot fail on a broken rewritten link, because
+   `stage.py` turns a link into an unpublished document into an absolute URL and strict mode
+   does not resolve absolute URLs — pointing this record's own **Referenced by** line at a
+   plan that does not exist produced a clean build, exit 0 and no warnings, with the 404 in
+   the staged page. `check_offsite_links()` now resolves every rewritten link against
+   `git ls-files` and fails the staging run naming the page, the link and the path, which the
+   `lint` job runs on every pull request. Reproduce the evidence with
+   `python3 .devtools/docs/stage.py --no-api`, which prints the number of links it checked.
+3. **Met 2026-09-07.** Open questions 2 and 4 are answered, and `phpdoc.dist.xml`'s premise
+   comment is corrected to match what this record does. Both answers were recorded on
+   2026-09-07 and the edit landed the same day: the comment now reads "Private members are
+   documented too. This reference is published (ADR-0020), and that is deliberate rather
+   than an oversight." An earlier revision of this line said the edit was outstanding, which
+   it stopped being before this record reached acceptance.
+4. **Met 2026-09-14.** A built Development section is inspected and no page in it is
+   incomprehensible without a plan. The rewritten links are citations a reader may follow,
+   not reading the section depends on. The equivalent check for the Manual is plan 26's,
+   since the Manual ships second.
+
+   All 46 staged pages were inspected against the build of that date, and no page failed.
+   What the inspection did find is that the records cite working documents by the labels
+   those documents number their contents with — wave 3b, piece 2, Q6, verification check 8,
+   C10, S14 — and no such label is defined on the site. Most are glossed where they are used,
+   which is why no page fails; **"wave N" is the exception, appearing across eight published
+   pages and never glossed**, so a reader meeting "outside wave 3b" cannot place it. The
+   Development overview page now carries a table defining the six label forms and naming the
+   unpublished document each lives in, which keeps this record's boundary rather than
+   publishing the plans index to fix the vocabulary.
