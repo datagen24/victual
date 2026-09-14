@@ -1550,6 +1550,28 @@ msgstr ""
 msgid "Location has child locations"
 msgstr ""
 
+msgid "Storage class"
+msgstr ""
+
+msgid "How cold this location is kept. Leave unclassified to set the freezer flag directly"
+msgstr ""
+
+msgid "Set by the storage class above"
+msgstr ""
+
+# Seeded storage_classes rows, migrations/0274.pgsql.php (plan 23) - coldest to warmest.
+msgid "Deep freeze"
+msgstr ""
+
+msgid "Freezer"
+msgstr ""
+
+msgid "Cooler"
+msgstr ""
+
+msgid "Ambient"
+msgstr ""
+
 msgid "Thawed"
 msgstr ""
 

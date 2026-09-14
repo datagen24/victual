@@ -59,7 +59,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0271 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group A — `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`, `label_media_profiles` (wave 3b) | in this tree |
 | 0272 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
 | 0273 | [plan 08](../docs/plans/08-nested-locations.md) — `locations.parent_location_id`, `locations_resolved`, `hierarchy_depth_limit()` and the nesting guards | in this tree |
-| 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
+| 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | in this tree |
 | 0275 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0276 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 | 0277 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
@@ -91,13 +91,15 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0274 to 0280 are claimed and no file exists for them yet.**
-The highest number on disk is 0273 and there is no hole or waiver: the unwritten numbers sit
-*above* the highest file rather than as a gap below it, which is the case this table's own
-argument is about and the reason no `--allow-reserved-holes` waiver is needed.
+**0274 landed; 0275 to 0280 are claimed and no file exists for them yet.**
+Plan 23 took the lowest free slot when its migration was written, per the same rule: the
+highest number on disk is now 0274 and there is still no hole or waiver, because 0275–0280
+sit *above* it rather than as a gap below it, which is the case this table's own argument is
+about and the reason no `--allow-reserved-holes` waiver is needed.
 
-Plan 23 still merges before 22: it owns 0274 and supplies `locations.storage_class_id`;
-22 owns 0275–0276, 28 owns 0277, 29 owns 0278, 30 owns 0279 and 31 owns 0280. The next unclaimed number is 0281.
+Plan 23 merged before 22, as the ordering required: it owns 0274 and supplies
+`locations.storage_class_id`; 22 owns 0275–0276, 28 owns 0277, 29 owns 0278, 30 owns 0279 and
+31 owns 0280. The next unclaimed number is 0281.
 
 **Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written**:
 claimed as 0261–0262

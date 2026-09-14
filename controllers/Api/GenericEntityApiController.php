@@ -71,6 +71,11 @@ class GenericEntityApiController extends BaseApiController
 
 				$requestBody = self::WithoutServerOwnedColumns($requestBody);
 
+				if ($args['entity'] === 'locations')
+				{
+					$requestBody = $this->WithDerivedIsFreezer($requestBody);
+				}
+
 				if (empty($requestBody))
 				{
 					// LessQL skips the insert for a row with no modified columns, so the
@@ -259,7 +264,14 @@ class GenericEntityApiController extends BaseApiController
 					throw new EObjectNotFound('Object not found');
 				}
 
-				$row->update(self::WithoutServerOwnedColumns($requestBody));
+				$requestBody = self::WithoutServerOwnedColumns($requestBody);
+
+				if ($args['entity'] === 'locations')
+				{
+					$requestBody = $this->WithDerivedIsFreezer($requestBody);
+				}
+
+				$row->update($requestBody);
 
 				// TODO: This should be better done somehow in StockService
 				if ($args['entity'] == 'products' && boolval(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount')))
@@ -294,7 +306,7 @@ class GenericEntityApiController extends BaseApiController
 			: $this->DB->{$args['entity']}($args['objectId']);
 		if ($args['entity'] === 'locations')
 		{
-			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id')->where('id', $args['objectId'])->fetch();
+			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id')->where('id', $args['objectId'])->fetch();
 		}
 		if ($object == null)
 		{
@@ -336,7 +348,7 @@ class GenericEntityApiController extends BaseApiController
 		if ($args['entity'] === 'locations')
 		{
 			// The generation is exposed only by the additive label context route.
-			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id');
+			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id');
 		}
 		$objects = $this->MaterialiseFiltered($request, $this->QueryData($request, $source, $queryParams), $queryParams);
 
@@ -455,6 +467,41 @@ class GenericEntityApiController extends BaseApiController
 	 * endpoints, whatever permission it holds. See WithoutServerOwnedColumns().
 	 */
 	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp', 'import_epoch'];
+
+	/**
+	 * Plan 23 questions 1 and 2: is_freezer is derived from the chosen storage class, and
+	 * the derivation lives here rather than in a trigger, because the importer - the only
+	 * other writer of this table - never sets a class at all (bin/victual-db-import reads
+	 * upstream grocy SQLite, which has no storage_classes concept), so a trigger would fire
+	 * on no rows.
+	 *
+	 * A request body that sets storage_class_id (to anything but null) has is_freezer
+	 * overwritten from that class's treats_as_freezer, regardless of what the same request
+	 * otherwise submits for is_freezer - the class becomes the sole writer from that point
+	 * on, which is what keeps the two from silently disagreeing about the same physical
+	 * fact. A body that leaves storage_class_id absent, or sets it to null, leaves
+	 * is_freezer exactly as submitted: an unclassified location keeps that flag
+	 * independently editable, per question 3's answer that a location may have no class.
+	 *
+	 * An unresolvable storage_class_id (deleted between the picker loading and the request
+	 * landing, or simply invalid) is left alone here and falls through to the write itself,
+	 * which the FOREIGN KEY on locations.storage_class_id refuses.
+	 */
+	private function WithDerivedIsFreezer(array $requestBody): array
+	{
+		if (!array_key_exists('storage_class_id', $requestBody) || $requestBody['storage_class_id'] === null)
+		{
+			return $requestBody;
+		}
+
+		$storageClass = $this->DB->storage_classes($requestBody['storage_class_id']);
+		if ($storageClass !== null)
+		{
+			$requestBody['is_freezer'] = $storageClass->treats_as_freezer;
+		}
+
+		return $requestBody;
+	}
 
 	private function IsEntityWithEditRequiresAdmin($entity)
 	{

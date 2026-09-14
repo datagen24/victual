@@ -248,6 +248,7 @@ try
 		ALTER TABLE locations ADD COLUMN row_created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 		ALTER TABLE locations ADD COLUMN is_freezer SMALLINT DEFAULT 0;
 		ALTER TABLE locations ADD COLUMN parent_location_id INTEGER;
+		ALTER TABLE locations ADD COLUMN storage_class_id INTEGER;
 		CREATE TABLE userfields (id INTEGER, entity TEXT, sort_number INTEGER, name TEXT);
 		CREATE TABLE userentities (id INTEGER, name TEXT);
 		CREATE COLLATION nocase (provider = libc, locale = 'C');

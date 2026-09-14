@@ -145,11 +145,14 @@ class StockController extends BaseController
 		// silently dropped from the select it is the current value of.
 		$possibleParents = StockService::GetInstance()->GetLocationsWithPaths();
 
+		$storageClasses = $this->DB->storage_classes()->where('active = 1')->orderBy('sort_order');
+
 		if ($args['locationId'] == 'new')
 		{
 			return $this->RenderPage($response, 'locationform', [
 				'mode' => 'create',
 				'possibleParents' => $possibleParents,
+				'storageClasses' => $storageClasses,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
 		}
@@ -177,6 +180,7 @@ class StockController extends BaseController
 				'location' => $this->DB->locations($args['locationId']),
 				'mode' => 'edit',
 				'possibleParents' => $possibleParents,
+				'storageClasses' => $storageClasses,
 				'labelPrinters' => $printers,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('locations')
 			]);
