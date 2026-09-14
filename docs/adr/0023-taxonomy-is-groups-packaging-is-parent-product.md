@@ -1,6 +1,10 @@
 # ADR-0023: Taxonomy lives in product groups; `parent_product_id` means packaging and stays one level deep
 
-- **Status:** Proposed
+- **Status: Accepted, 2026-09-14.** **The taxonomy lives in nested `product_groups`;
+  `parent_product_id` keeps its upstream packaging meaning and its existing one-level
+  depth.** All four acceptance prerequisites below are met, each annotated in place with
+  what met it and how to reproduce it. **Nothing in the decision was revised by this
+  acceptance.**
 - **Decider:** datagen24 (maintainer). Acceptance follows the [ADR lifecycle](README.md).
 - **Recorded:** 2026-09-13.
 - **Answers** [plan 07 question 6](https://github.com/datagen24/victual/issues/82), which
@@ -182,18 +186,105 @@ flour, and as answering a question about *counting* with a fact about *labelling
 
 ## Acceptance prerequisites
 
+**All four are met.**
+
 1. **The sampled classification recorded in plan 07**, with the answer and its date, so the
    evidence this record rests on is inspectable rather than asserted.
+
+   **Met 2026-09-14.** [Plan 07 question 6](../plans/07-nested-products.md)'s response block
+   carries the thirteen-pair classification, the date it was run (2026-09-13) and the method
+   (the maintainer and a second household member, together, against real kitchen items).
+
 2. **A worked example of the mixed node** — a group holding a product and a subgroup — shown
    against the proposed schema, since decision 6 claims it needs no special case.
 3. **The name-uniqueness change demonstrated**, including two same-named groups under
    different parents and the refusal of two under the same parent, against PostgreSQL 15 or
    later.
+
+   **Both met 2026-09-14**, by a disposable spike on the branch
+   `claude/sonnet5_adr0023-prerequisites` at `4da3d35df9a2add018349865a7c7994ad8667465`, run
+   against PostgreSQL 16.15 (`postgres:16`) on the maintainer's Apple silicon machine via
+   podman. **`.spike-adr23/` is a path in that commit, not in a checkout of `master`, where it
+   has never existed and never will** — this is preview work for
+   [migration 0279](../../migrations/RESERVATIONS.md), which stays unwritten until
+   [plan 30](../plans/30-nested-product-groups.md) is scheduled. Read a file with
+   `git show 4da3d35d:.spike-adr23/<path>`, or check the branch out into a worktree to run
+   it; `.spike-adr23/RESULTS.md` at that SHA has the full transcript.
+
+   The spike applies `ALTER TABLE product_groups ADD COLUMN parent_product_group_id
+   INTEGER`, replaces the plain `UNIQUE` on `name` with `UNIQUE NULLS NOT DISTINCT
+   (parent_product_group_id, name)`, and adds a `product_groups_resolved` view copied from
+   `locations_resolved`'s shape (`migrations/0273.pgsql.sql`) — no cycle, depth or delete
+   guard, since those are not what these two prerequisites test and 0279 copies them from
+   0273 directly per plan 30.
+
+   **Prerequisite 2.** The worked spice tree from plan 30 is seeded, with `Garlic` filed as
+   both the `parent_product_group_id` of subgroup `Fresh` and the `product_group_id` of
+   product `Dried (Garlic)` in the same row, no special case anywhere in the schema or the
+   query. `product_groups_resolved` reaches `Spices / Garlic / Fresh` at depth 2, and `Fresh`
+   still resolves its own products (`Whole`, `Crushed`) independently of what its parent
+   holds.
+
+   **Prerequisite 3.** Three cases against the new constraint: two groups named `Dried`
+   under different parents (`Parsley`, `Garlic`) both insert cleanly; a second `Dried` under
+   the same parent (`Parsley` again) is refused
+   (`duplicate key value violates unique constraint "product_groups_parent_name_key"`); and a
+   second root group named `Spices` (`parent_product_group_id IS NULL`) is refused the same
+   way — the case a plain `UNIQUE` would miss, since PostgreSQL treats every `NULL` as
+   distinct from every other by default and `NULLS NOT DISTINCT` is exactly the clause that
+   closes that gap. Confirms plan 30's citation of PostgreSQL 15 as this fork's floor: the
+   clause does not parse on 14 or earlier.
+
 4. **A statement of what happens to existing `parent_product_id` rows.** The column is in use
    today; this record does not change its meaning, and the accepting pull request should say
    whether any current row contradicts decision 2.
 
+   **Met 2026-09-14.** This fork has no production catalogue of its own yet, so the
+   inspection is of the maintainer's most recent pre-fork upstream Grocy backup — SQLite,
+   `grocy_backup/a0d7b954_grocy/data/grocy/grocy.db`, 257 migrations applied, 66 products —
+   which is the closest thing to "the live catalogue" that currently exists and is real
+   multi-year household usage rather than demo data.
+
+   **22 of 66 products (33%) carry `parent_product_id`.** Every one of the 22 is a taxonomy
+   label, not packaging: seven cuts (`Beef Roast`, `Beef Steak`, `Ground Beef`, `Whole Packer
+   Brisket`, `Smoked Pastrami`, `Corned Beef`, `Texas Brisket`) under `Beef`; `Cheese`,
+   `Cream`, `Milk` under `Dairy`; `Beef` itself and eight more (`Butcher Sausage`, `Chicken
+   Breast`, `Chicken Thigh`, `Ground Sausage`, `Pork Chop`, `Pork Loin`, `Pork Ribs`, `Protein
+   Supplement`) under `Protein`; two filament brands under `PETG Filament`; one part under
+   `AnkerMake M5 Parts`. None is a container-size variant of the same purchasable thing — a
+   second, independent catalogue landing on the same reading as the sampling this record's
+   Context section describes.
+
+   **One chain contradicts decision 2 directly: `Protein` → `Beef` → its seven cuts is two
+   levels, not one.** `Beef` (id 4) has `parent_product_id = 3` (`Protein`) while itself being
+   the `parent_product_id` of seven other rows — a genuine violation of "stays one level
+   deep," sitting in real data today.
+
+   **Why the one-level trigger didn't catch it.** `enfore_product_nesting_level`
+   (`migrations/0121.sql`, carried through 0155, 0207 and 0254) and its PostgreSQL port
+   `trg_enfore_product_nesting_level`
+   (`db/pgsql/baseline/06_triggers_a.sql:760-776`) are both declared `BEFORE UPDATE`, never
+   `BEFORE INSERT`, in every version either engine has shipped — this is upstream's original
+   design, faithfully preserved by the port. A two-level chain built by inserting `Beef Roast`
+   with `parent_product_id` already pointing at a product that itself has a parent is never
+   checked by either engine; only a later `UPDATE` of one of the rows involved would trigger
+   the guard. `migrations/0130.sql` once cleared exactly this class of row for existing data,
+   but nothing stops a fresh insert from recreating it, which this backup shows happened.
+
+   **This does not change what decision 2 says**, and it does not touch anything this record
+   builds — no column, no trigger edit is part of accepting it. It does mean this fork
+   inherits a live enforcement gap: `parent_product_id`'s "stays one level deep" is a rule the
+   schema does not actually enforce on the write path most likely to create violations. That
+   is a defect independent of this ADR, tracked as
+   [issue 148](https://github.com/datagen24/victual/issues/148) rather than fixed by this
+   bookkeeping pull request.
+
 ## Open questions
+
+**None of the three below is answered by this acceptance.** Questions 1-3 carry no responses
+here; accepting the record above them settles the taxonomy/packaging split, not these. Question
+1 is restated as plan 30's own Q1 and is answered there, not here — it stays open past this
+acceptance rather than being implicitly closed by it.
 
 1. **Does a group minimum roll up to descendant groups?**
    [Plan 03](../plans/03-category-min-stock.md) shipped `product_groups.min_stock_amount`

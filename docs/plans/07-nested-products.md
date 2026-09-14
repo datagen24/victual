@@ -3,18 +3,20 @@
 **Goal:** Support product hierarchies more than one level deep.
 **Depends on:** nothing, but do [08 nested locations](08-nested-locations.md) first — same
 pattern, far fewer call sites.
-**Status: still blocked on its own question 6 — which now has an answer that is not yet
-ratified.** The sampling question 6 asked for was carried out on 2026-09-13 and landed on
-**taxonomy**; the result is recorded in the response under that question below.
+**Status: still blocked — its own question 6 now has an answer, and that answer is ratified,
+but this plan is not yet retired.** The sampling question 6 asked for was carried out on
+2026-09-13 and landed on **taxonomy**; the result is recorded in the response under that
+question below.
 
-**That answer is evidence, not yet authority.**
 [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) is the record that
-would turn it into a constraint — putting the tree of kinds in nested `product_groups` and
-keeping `parent_product_id` at its existing one level — and it is **Proposed**; prerequisite 1 — this sampling, recorded below — was met 2026-09-14,
-and prerequisites 2–4 are outstanding
-([issue 128](https://github.com/datagen24/victual/issues/128)). A Proposed record constrains nothing, so **this plan is
-not retired and [30](30-nested-product-groups.md) and [31](31-directed-substitution.md) are
-not its replacements**.
+turns it into a constraint — putting the tree of kinds in nested `product_groups` and keeping
+`parent_product_id` at its existing one level — and it is **Accepted, 2026-09-14, all four
+prerequisites met** ([issue 128](https://github.com/datagen24/victual/issues/128)). **That
+acceptance still did not retire this plan**: per the ADR's own lifecycle table, retirement is
+separate, later work, done by its own pull request rather than by the acceptance. So **this
+plan is not yet retired and [30](30-nested-product-groups.md) and
+[31](31-directed-substitution.md) are not yet its replacements** — that is the pull request
+still to come.
 
 Two further pull requests stand between here and that, and they are separate on purpose: one
 accepts the record, carrying bookkeeping only — status line, index row, supersession
@@ -238,13 +240,13 @@ compared against a deliberate expectation rather than against whatever falls out
    > containment is exactly what `parent_location_id` would mean — which is one more
    > reason 08 goes first.
 
-   > **Answered 2026-09-13: taxonomy.** Proposed as
-   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md). That record
-   > is Proposed and three of its four prerequisites are outstanding (this response meets the
-   > first), so what follows is the recorded
-   > result of the sampling and the reasoning it supports — not a decision in force. This
-   > plan is retired **after** that record is accepted, by a separate pull request; the
-   > acceptance itself carries bookkeeping only and touches no plan.
+   > **Answered 2026-09-13: taxonomy.** Recorded as
+   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md), **Accepted
+   > 2026-09-14 with all four prerequisites met** (this response met the first). The
+   > acceptance is a decision in force; what follows is still the sampling result and the
+   > reasoning it supports, unchanged by acceptance. This plan is retired **after** that
+   > record is accepted, by a separate pull request; the acceptance itself carried
+   > bookkeeping only and touched no plan.
    >
    > **How it was decided.** Thirteen candidate pairs from this household's kitchen were
    > each classified as sharing a stock pool, being separate products, or being a quantity
