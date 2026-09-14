@@ -389,3 +389,34 @@ fixtures with HTML in their names, PHP syntax checks and the strict documentatio
 Run the probe with `node .devtools/frontend/location-labels.js --url <disposable-app-url>`;
 the `frontend-security` CI job runs it automatically. Camera event handling was exercised;
 physical camera decoding and production printed-label acceptance remain unverified.
+
+### Print actions, 2026-09-08
+
+The print action is on the locations list and on the location form
+([PR 113](https://github.com/datagen24/victual/pull/113), commit `d954838`), over plan 25's
+job path and plan 27's artifact path rather than a placeholder. It reads the import epoch
+immediately before each request rather than rendering it into the page, so a page left open
+across an import fails loudly. It carries one idempotency key per intended action, kept across
+a retry and spent when the action happens, so a double-click returns the first job and a second
+deliberate print gets a key of its own. It is gated on `FEATURE_FLAG_LABELS`, on
+`MASTER_DATA_EDIT` plus `STOCK_VIEW`, and on a printer being configured. It extends neither the
+webhook nor Grocycode and encodes only `vctl:<uid>`; the five entity types that already print
+keep the webhook, which is ADR-0019 item 7 step 1 and only step 1.
+
+### Physical acceptance, 2026-09-09
+
+[Issue 79](https://github.com/datagen24/victual/issues/79) closed on this evidence, against the
+QL-820NWBc at `10.130.30.94` with DK-22251 tape. All four closing conditions were met: a label
+was requested from the locations list (uid `EPRWM5YJFEX3N`, job queued `awaiting_artifact`),
+printed over IPP with the device reporting `job-state = 9` and `job-impressions-completed = 1`,
+and scanned back to `Pantry top shelf` by an authorized user. The failure-and-reprint cycle ran
+end to end: the printer's address was pointed at a closed port, the attempt failed visibly with
+its error, the next claim was offered nothing, a person authorized a second attempt naming the
+first, and the label printed when the address was restored. Plan 25's Executed section carries
+the full record, including the two worker defects the first attempt found.
+
+What this plan still owes: question 5's tree path on the human-readable line, now that
+[08](08-nested-locations.md) has landed ([issue 137](https://github.com/datagen24/victual/issues/137)),
+and the placement convention. Interactive current-location scanning remains deferred to a plan
+of its own. The worker's deployment under K3S is plan 25's verification 12 and
+[issue 93](https://github.com/datagen24/victual/issues/93)'s, not this plan's.

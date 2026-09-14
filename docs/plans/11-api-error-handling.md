@@ -7,7 +7,9 @@ gaps found alongside them.
 [14 contract and regression scaffolding](14-contract-and-regression-scaffolding.md)
 first if both are being done, so the status-code changes here show up as a diff rather
 than as an assertion.
-**Status:** draft for review. Contains the only deliberate response-shape changes in the
+**Status:** landed in wave 2, 2026-09-04, recorded inline under each section rather than in an
+Executed section; one follow-up, API key expiry and rotation
+([issue 130](https://github.com/datagen24/victual/issues/130)). Contains the only deliberate response-shape changes in the
 hardening set.
 
 ## Today

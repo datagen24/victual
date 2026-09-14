@@ -4,7 +4,8 @@
 them, so that what ships is the transitive closure of what the process needs and nothing
 else.
 **Depends on:** [ADR-0013](../adr/0013-nix-built-container-images.md) for the decision
-(Proposed). [10](10-cold-start-statelessness.md) has landed and supplies most of what this
+(accepted 2026-09-04; piece 1 was its acceptance gate). Remaining pieces are tracked in
+[issue 133](https://github.com/datagen24/victual/issues/133). [10](10-cold-start-statelessness.md) has landed and supplies most of what this
 plan used to have to work around.
 **Status:** **piece 1 complete, 2026-09-04.** The flake under [`nix/`](../../nix/README.md)
 builds and the manifest under [`deploy/`](../../deploy/README.md) serves; the two Executed

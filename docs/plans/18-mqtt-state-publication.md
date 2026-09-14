@@ -7,7 +7,8 @@ current information.
 entrypoints and established that side effects fire *after* commit. Pairs with
 [10](10-cold-start-statelessness.md): 18 is what makes 10's scale-to-zero survive contact
 with an always-on consumer.
-**Status:** draft for review. Exists because of [17](17-ecosystem-clients.md)'s Q2, which
+**Status:** landed; see Executed. Three Home Assistant verifications remain
+([issue 139](https://github.com/datagen24/victual/issues/139)). Exists because of [17](17-ecosystem-clients.md)'s Q2, which
 asked which Python HTTP client the Home Assistant integration should use and was answered
 "none of them".
 

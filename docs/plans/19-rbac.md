@@ -15,7 +15,8 @@ snapshot that proves redaction; piece 1 needs neither, and verifies its views ag
 14 **piece 1**, which landed in wave 0. Feeds [04](04-seed-datasets.md) (the four
 roles are a seed) and constrains [02](02-mcp-endpoint.md) and
 [18](18-mqtt-state-publication.md) (both are channels that carry prices — see Q4 and Q5).
-**Status:** draft for review and **on the roadmap as of 2026-08-30** — the README's
+**Status:** piece 1 implemented in wave 3a, 2026-09-05 (see Executed); piece 2 is
+[issue 84](https://github.com/datagen24/victual/issues/84) in wave 5. Originally draft for review and **on the roadmap as of 2026-08-30** — the README's
 Status table and its waves both carry it, rather than the tail bullet that promised it a
 number. **Question 8 answered 2026-09-04: (a), gate reads in piece 1**, which makes
 piece 1 a model change and gives it wave 3a to itself, and **split across two waves** —

@@ -28,7 +28,8 @@ goals.
 
 ## Current state
 
-As of 2026-09-05, the Nix-built application has been deployed and serves requests.
+As of 2026-09-14, the Nix-built application has been deployed and serves requests, and a
+location label has been printed and scanned back through the fork's own label subsystem.
 Infrastructure and feature work remain in progress; there is no regular release schedule.
 
 | Area | State |
@@ -36,9 +37,10 @@ Infrastructure and feature work remain in progress; there is no regular release 
 | PostgreSQL and database file storage | Implemented, including import tools and database comparison tests. |
 | Stateless runtime | Implemented: explicit migration command, database-backed state, and read-only application filesystem. |
 | MQTT and InfluxDB | State publication and event delivery implemented. Some Home Assistant checks remain outstanding. |
-| Production containers | Three Nix-built images and a working pod manifest. Deployment automation, credential separation, and some signal checks remain. |
+| Production containers | Five Nix-built images (application, web, migrate, label renderer, label worker) and working pod manifests. K3S manifests, credential separation, and the SIGTERM check remain. |
 | Hardening | API error handling, authentication fixes, write transactions, and frontend sink fixes implemented. Contract snapshots and cleanup remain. |
-| Household features | Category minimums, shopping-list improvements, nested locations, barcode sources, and medication tracking are planned. |
+| Household features | Category minimums and nested locations are implemented. Storage classes, open-container measurement, working-container replenishment, nested product groups, store-aware shopping lists, barcode sources, and medication tracking are planned. |
+| Labels | Opaque `vctl:` label identities, print jobs, printer configuration, a browser template designer, a headless renderer, and a delivery worker are implemented; a location label was printed and scanned back on 2026-09-09. Deployment of the worker under K3S remains. The five entity types that printed before still use the webhook. |
 | Assistants and clients | MCP and first-party client work are planned. |
 
 PostgreSQL is the only runtime engine under
@@ -48,8 +50,8 @@ installation moves across with `bin/victual-db-import`, which reads grocy and Vi
 databases within a stated migration span and refuses anything outside it. New migrations are
 PostgreSQL-only.
 
-Opaque labels and human-confirmed observation proposals have accepted ADRs but are not
-implemented. The [plan index](docs/plans/README.md) records delivery status and remaining
+Human-confirmed observation proposals have an accepted ADR but no implementation and no
+owning plan. The [plan index](docs/plans/README.md) records delivery status and remaining
 dependencies; the [ADR index](docs/adr/README.md) records decisions and proposals.
 
 ## Getting started

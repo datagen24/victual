@@ -18,29 +18,24 @@ A landed plan gains an **Executed** section recording what actually shipped, inc
 divergence from the plan body above it. When you want to know whether something exists, read
 the status row and the Executed section, in that order.
 
-## In flight as of 2026-09-08
+## In flight as of 2026-09-14
 
 Recorded because it is younger than the last corpus update, not as a substitute for it.
 
-- **Label infrastructure (plans 25, 27, 06)** is the active line of work. Plan 25 group B —
-  jobs, configuration and the worker API — merged in
-  [PR #109](https://github.com/datagen24/victual/pull/109). Plan 27, application-owned
-  templates and the rendering contract, is open in
-  [PR #110](https://github.com/datagen24/victual/pull/110). Location-label printing stays
-  gated by [issue #93](https://github.com/datagen24/victual/issues/93) on physical
-  acceptance.
-- **This memory harness landed** in `4e4dd50e` (the andon commit, merged through
-  [PR #111](https://github.com/datagen24/victual/pull/111)): all seven `memory/` files plus
-  both copies of the three hooks, in `.claude/hooks/` and `.agents/hooks/`, are tracked.
-  Registration is a tracked **`.claude/settings.json`** as of 2026-09-08, so the wiring
-  travels with the repository rather than living in the gitignored
-  `.claude/settings.local.json` (which now carries only the operator's own BLUF echo, a
-  personal preference that has no business in a clone). Both commands are shell form with
-  `"${CLAUDE_PROJECT_DIR}"` quoted and guarded by `[ -f … ]`, because a branch predating
-  `4e4dd50e` has no `.claude/hooks/` and an unguarded command fails on every prompt there.
-  `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote it to `block` once
-  it stops false-firing. Project hooks need the workspace-trust dialog accepted before they
-  run at all — so a fresh clone gets the harness inert until the operator trusts the folder.
+- **The wave table was recommitted 2026-09-14** and every open work item has a GitHub issue:
+  #127–#139 were opened that day for the ready items (plan 23, the ADR-0022/0023/0018/0020
+  acceptances, S11, plan 29, plan 15's remainder, plan 20's remainder, S32, 06-Q5, 26 piece 2,
+  18's Home Assistant checks). When a plan row and an issue disagree, the row is the authority
+  and the issue needs a comment.
+- **Label infrastructure is delivered** (plans 25, 27, 06): issue #79 closed 2026-09-09 on a
+  physical print and scan-back. Only #93's K3S deployment half is open, and it is the same work
+  as plan 20 piece 4 (#133).
+- **Wave 4's product half waits on ADR-0023** (#128, three prerequisites left); 28 and 29's
+  weighing half wait on ADR-0022 (#129). Plan 07 stays blocked until the acceptance PR *and*
+  a later retirement PR both land — #82 tracks that ordering by the maintainer's decision.
+- **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
+  it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
+  accepted before they run at all.
 
 **How to apply:** update this file when an entry here becomes wrong, and delete an entry once
 the corpus states it. A line here that the plans README also states should be the line here

@@ -59,6 +59,10 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-14 — Wave recommit and issue sweep** audited every plan row against its body,
+  corrected the stale 06/25/27 rows (label path delivered 2026-09-09), rewrote the wave
+  table so each item is ready or names its gate, and opened issues #127–#139. No open issue
+  was closable. [→](project_state.md)
 - **2026-09-08 — Memory and claim-check harness** built this index and its topic files;
   merged as part of the andon commit, then fixed a nesting bug that stopped the orient hook
   from being registered at all and moved the wiring into a tracked `.claude/settings.json`.

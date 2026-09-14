@@ -8,8 +8,10 @@ same label rather than a similar one.
 job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
 **accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
 cleared.**
-**Status:** draft for review. Scheduled into wave 3b alongside 25.
-**Migrations:** inventoried below; **no reservation is claimed yet**, deliberately.
+**Status:** implemented in wave 3b alongside 25; see Executed. Two follow-ups remain:
+[issue 126](https://github.com/datagen24/victual/issues/126) (the designer off fabric 5.x) and
+[issue 136](https://github.com/datagen24/victual/issues/136) (sweep S32).
+**Migrations:** 0271 and 0272, in `master`. The inventory below is what they were derived from.
 
 ## Why this plan exists
 
@@ -707,6 +709,26 @@ canonicalization 34 vectors plus 2,067 documents byte-identical against the ECMA
 identity 10,046; artifacts 50; print jobs 36; worker protocol 25; registry 23; renderer
 agreement 10. The renderer's own suite is four tests and the worker's is five.
 
-**What is not done.** No physical label has been printed and no image has been deployed. The
-designer is not built: the document format, its validation and the preview API are here, and
-the Fabric.js editing surface is the remaining piece of this plan.
+**What was not done on 2026-09-08.** No physical label had been printed and no image had been
+deployed; the document format, its validation and the preview API were here, and the Fabric.js
+editing surface was the remaining piece.
+
+### The designer, and the physical check (2026-09-09)
+
+The designer landed in [PR 113](https://github.com/datagen24/victual/pull/113), commit
+`a5d2afd`: Fabric.js draws the document at a screen scale and reports drags back as
+millimetres; the document, not the canvas, is what is saved and versioned. Text elements need
+an uploaded font before they can be added, so a fresh installation's first draft is QR-only
+until one is supplied. The browser probe is `.devtools/frontend/label-designer.js`.
+
+Check 4 is met: a location label rendered by the pinned renderer printed on the QL-820NWBc and
+its QR scanned back to the pinned uid, and a second template with a filled red band printed red
+through the whole path — plan 25's Executed section records both runs. Issue 90's geometry
+half was closed on the same print.
+
+The designer cannot move past fabric 5.x by a dependency bump: fabric 6 removed the global
+build the layout loads as a script tag, and PR 114's attempt broke the editor outright.
+[Issue 126](https://github.com/datagen24/victual/issues/126) owns doing it deliberately.
+Sweep S32, the fail-closed group-to-read-permission table for the files API, is this plan's and
+is [issue 136](https://github.com/datagen24/victual/issues/136); the label groups are already
+outside the `FileGroups` enum.

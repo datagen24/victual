@@ -10,8 +10,9 @@ ratified.** The sampling question 6 asked for was carried out on 2026-09-13 and 
 **That answer is evidence, not yet authority.**
 [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) is the record that
 would turn it into a constraint — putting the tree of kinds in nested `product_groups` and
-keeping `parent_product_id` at its existing one level — and it is **Proposed**, with four
-acceptance prerequisites outstanding. A Proposed record constrains nothing, so **this plan is
+keeping `parent_product_id` at its existing one level — and it is **Proposed**; prerequisite 1 — this sampling, recorded below — was met 2026-09-14,
+and prerequisites 2–4 are outstanding
+([issue 128](https://github.com/datagen24/victual/issues/128)). A Proposed record constrains nothing, so **this plan is
 not retired and [30](30-nested-product-groups.md) and [31](31-directed-substitution.md) are
 not its replacements**.
 
@@ -239,7 +240,8 @@ compared against a deliberate expectation rather than against whatever falls out
 
    > **Answered 2026-09-13: taxonomy.** Proposed as
    > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md). That record
-   > is Proposed and its four prerequisites are outstanding, so what follows is the recorded
+   > is Proposed and three of its four prerequisites are outstanding (this response meets the
+   > first), so what follows is the recorded
    > result of the sampling and the reasoning it supports — not a decision in force. This
    > plan is retired **after** that record is accepted, by a separate pull request; the
    > acceptance itself carries bookkeeping only and touches no plan.
