@@ -215,8 +215,16 @@ and undo. Retiring the existing tare mechanism adds migration and compatibility 
 2. **Volume measured by weight.** A per-product conversion supplies the factor without a
    separate density model.
 3. **Compaction.** A measured entry is skipped while an unmeasured split entry is merged.
-4. **Wire compatibility.** Confirm additive responses against the response snapshot and
-   reconcile the result with plan 14 piece 2's freeze date.
+4. **Wire compatibility.** **Reworded 2026-09-14**, per issue
+   [#129](https://github.com/datagen24/victual/issues/129): as written this named a snapshot
+   that does not exist — [14](../plans/14-contract-and-regression-scaffolding.md) piece 2
+   ([issue 83](https://github.com/datagen24/victual/issues/83)) — while the record's own
+   Consequences want plan 28 to land *before* that freeze, so the prerequisite could not be
+   discharged either way. The new stock fields are listed and checked as additive against
+   this fork's own OpenAPI specification, per [ADR-0005](0005-wire-contract-is-the-invariant.md).
+   Confirming them against plan 14 piece 2's response snapshot follows once that snapshot
+   exists; that plan's own Executed section records the reconciliation, and this prerequisite
+   does not wait on it.
 5. **Container identity.** Two opened containers, one measured, retain separate state and
    correct totals. A multi-unit entry is refused or split before attaching a remainder.
 6. **Undo.** Measure an entry, consume it fully, then undo: remainder, unit, tare and
