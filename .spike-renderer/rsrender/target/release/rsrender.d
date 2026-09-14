@@ -1,1 +1,0 @@
-/Users/speterson/src/grocy/.claude/worktrees/github-issues-wave-plans-5070b9/.spike-renderer/rsrender/target/release/rsrender: /Users/speterson/src/grocy/.claude/worktrees/github-issues-wave-plans-5070b9/.spike-renderer/rsrender/src/main.rs /Users/speterson/src/grocy/.claude/worktrees/github-issues-wave-plans-5070b9/.spike-renderer/rsrender/src/ql.rs

@@ -46,3 +46,8 @@ __pycache__/
 .imgs/
 .physdata/
 .labelsdata/
+
+# Cargo build output from a renderer spike run in-tree. The spike's own sources are
+# committable; its target/ directory is not — 95 MB of it reached the repository in
+# aaec4ab before this rule existed.
+/.spike-renderer/*/target/
