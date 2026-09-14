@@ -605,3 +605,91 @@ grew from 37 pages to 43.
 `assets/extra.css` also imports the Instrument Serif, Geist and Geist Mono families the
 diagrams were drawn in, so an inlined diagram renders in its own type rather than the
 theme's.
+
+### Piece 1 follow-up — ADR-0020's acceptance gates, 2026-09-14
+
+[ADR-0020](../adr/0020-documentation-publication-boundary.md) carries four acceptance
+prerequisites, two of which this plan's build is the evidence for. Working the gates found
+that one of those two was not actually met, for a mechanical reason nobody had tested.
+
+**Prerequisite 2 had no mechanism, and the build said nothing.** The gate requires that a
+build demonstrate the ADR-to-plan links resolving to the repository "rather than 404ing",
+and that "a build that leaves them broken fails this gate". `mkdocs build --strict` cannot
+do that: `stage.py` rewrites every link into an unpublished document to an absolute
+`https://github.com/…` URL, and strict mode does not resolve absolute URLs. Demonstrated
+rather than reasoned about — pointing ADR-0020's own **Referenced by** line at
+`../plans/99-does-not-exist.md` produced a clean strict build, exit 0 and no warnings, with
+the 404 sitting in the staged page. The link-count comparison verification check 3 asks for
+would not catch it either: the rewrite fires, so the counts match.
+
+`stage.py` now checks it. Every link it sends to a repository URL is resolved against
+`git ls-files`, and a target the repository does not track fails the staging run naming the
+page, the link as written and the path it resolved to. Tracking rather than filesystem
+existence is the right test, because a path that exists locally and is gitignored — `.phpdoc/build`,
+`.docs-build` — is a 404 on GitHub too. The same negative control now fails with that
+message and exit 1, and the `lint` job's `run:` block stops there.
+
+The two checks see complementary halves of the link graph, which is why both are needed: a
+rewrite that fires and names nothing is this check's case, and a rewrite that does not fire
+leaves a relative link, which strict mode reports as `not_found`. That is the mechanism that
+caught ADR-0013's missing `../plans/` prefix during the first delivery.
+
+**Hand-written repository URLs bypassed the rewriter.** `.devtools/docs/pages/index.md` and
+`pages/development/index.md` are copied rather than rewritten, so absolute URLs written
+directly into them never reach `rewrite_link`. `record_literal_links` scans the copied text
+for `blob/master/` and `tree/master/` URLs and feeds them into the same check; six of the
+links it now covers come from there.
+
+**Measured on the delivering branch, 2026-09-14, against `master` at `18bd633` plus this
+change, and re-measured unchanged after merging `master` at `b5e2421`.** 308 links to the
+repository, all resolving. Reproduce with `python3 .devtools/docs/stage.py --no-api`, which
+prints the count. The second measurement was taken because `master` accepted
+[ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md) and
+[ADR-0018](../adr/0018-role-grants-and-domain-reads.md) while this branch was open, and an
+acceptance edits the ADR corpus these counts are taken over; both were bookkeeping and
+added no citation, so every count below holds on either base.
+
+**Verification check 3, done by hand as the gate's own evidence.** The built ADR pages carry
+229 `blob/master/docs/plans/…` URLs
+(`grep -rhoE 'https://github\.com/datagen24/victual/blob/master/docs/plans/[^")]+' .docs-build/development/adr/ | wc -l`)
+against 224 source links matching this plan's expression
+(`grep -rhoE '\]\((\.\./)?plans/[0-9]+[^)]*\)' docs/adr/ | wc -l`) plus the 5 links to
+`plans/README.md`, which that expression excludes because it requires a digit. The counts
+reconcile exactly. The 229 resolve to 27 distinct plan documents, every one of them tracked,
+and each returned HTTP 200 from `https://github.com/datagen24/victual/blob/master/…` when
+fetched on 2026-09-14. No plan link in the corpus carries an anchor, so no anchor had to be
+checked against a rendered heading.
+
+**Prerequisite 3 is met on `master`.** `phpdoc.dist.xml`'s premise comment now reads "This
+reference is published (ADR-0020), and that is deliberate rather than an oversight", which
+is the correction ADR-0020's answered question 2 called for. The record's own prerequisite 3
+still says "the edit is outstanding"; correcting that line is bookkeeping and belongs to the
+accepting pull request, not here.
+
+**Prerequisite 4, inspected 2026-09-14 against this change's build — 46 pages.** The gate is
+that no page is incomprehensible without a plan, the rewritten links being citations a
+reader may follow rather than reading the section depends on. No page failed that. What the
+inspection did find is a class of reference the first delivery did not consider: the records
+cite working documents by the labels those documents number their contents with — wave 3b,
+piece 2, Q6, verification check 8, C10, S14 — and every one of those labels is defined only
+in a document the boundary does not publish.
+
+Most are glossed where they are used, which is why no page fails: ADR-0008's plan 10 table
+names what each question was about ("Q3, where the SQLite `flock` lock file lives", "Q7's
+`dialect` column"), and ADR-0007 says what S12 called for in the same sentence that cites
+it. **"Wave N" is the exception: it appears across eight published pages and is nowhere
+glossed**, so a reader meeting "it is outside wave 3b" cannot tell whether that is a past
+stage or a future one. A weaker instance is ADR-0012's "19 piece 2's funnel", where the
+paragraph's claim about redaction still reads but the term does not.
+
+The fix stays inside the boundary rather than publishing the plans index: the Development
+overview page gains a short table defining wave N, piece N, question N, verification check
+N, the plan 15 C-numbers and the sweep's S-numbers, each pointing at the unpublished
+document it lives in. That is one page of new writing against 224 citations, and it is what
+makes the gate's "citations a reader may follow" true on the site rather than only in the
+record.
+
+**One repository-hygiene note, fixed here because the documentation build is what surfaces
+it.** `mkdocs build` writes to `site/` by default and `site/` was not gitignored; CI never
+saw it because the `lint` job passes `--site-dir /tmp/docs-site`, but a contributor
+following this plan locally gets an untracked build tree. `/site` is now in `.gitignore`.
