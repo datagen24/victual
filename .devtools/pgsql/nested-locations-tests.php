@@ -6,14 +6,15 @@
 //   php nested-locations-tests.php
 //
 // PostgreSQL only, and for the reason the rbac, average-price and group-minimum phases are:
-// the subject is migrations/0273.pgsql.sql, above
-// DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, so a SQLite side would be asked about
-// a column, a view and three triggers it does not have. The view phase cannot stand in for it
-// either: that phase seeds SQLite and copies the tables into PostgreSQL through the importer's
-// common-column logic, so `parent_location_id` would arrive NULL for every row and every
-// assertion below about a tree would be an assertion about a flat list.
+// the subject is migrations/0273.pgsql.sql and, since plan 23, migrations/0274.pgsql.php,
+// both above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, so a SQLite side would be
+// asked about a column, a view, three triggers and a whole table it does not have. The view
+// phase cannot stand in for it either: that phase seeds SQLite and copies the tables into
+// PostgreSQL through the importer's common-column logic, so `parent_location_id` would arrive
+// NULL for every row and every assertion below about a tree would be an assertion about a
+// flat list.
 //
-// WHAT IT GUARDS. Six things, four of which produce no error at all when they are wrong:
+// WHAT IT GUARDS. Eight things, five of which produce no error at all when they are wrong:
 //
 //   1. A tree that is not a tree. There is no foreign key on parent_location_id and nothing
 //      but the triggers stops a cycle or a chain deeper than the cap. A cycle makes the
@@ -45,6 +46,13 @@
 //      reads the tree and then writes to it, and two re-parentings touch different rows, so
 //      nothing makes them wait for each other unless something is made to. Case 10, which is
 //      the only case here that needs a second connection.
+//   8. is_freezer disagreeing with the class that is supposed to be its only writer once one
+//      is chosen (plan 23 questions 1 and 2). The derivation lives in
+//      GenericEntityApiController rather than a trigger, so nothing in the schema stops a
+//      write that sets a class and a contradictory is_freezer in the same request - only the
+//      write path does. Case 11 sets a class on Door, the same fixture row plan 08 question 5
+//      put the flag on literally, and checks that a request sending is_freezer = 0 alongside
+//      a freezer class is overruled rather than honoured.
 //
 // The fixture tree is the one plan 08 question 5 was confirmed against, with is_freezer on
 // both UprightFreezer and Door:
@@ -358,8 +366,8 @@ echo "\n7. /objects/locations and /objects/locations_resolved\n";
 $response = $api->GetObject(request(), new Response(), ['entity' => 'locations', 'objectId' => $door]);
 $location = json_decode((string)$response->getBody(), true);
 
-check(array_keys($location) === ['id', 'name', 'description', 'row_created_timestamp', 'is_freezer', 'active', 'parent_location_id', 'userfields'],
-	'the key set is exactly what it was plus parent_location_id');
+check(array_keys($location) === ['id', 'name', 'description', 'row_created_timestamp', 'is_freezer', 'active', 'parent_location_id', 'storage_class_id', 'userfields'],
+	'the key set is exactly what it was plus parent_location_id and storage_class_id');
 check((int)$location['parent_location_id'] === $uprightFreezer, 'and it carries the right parent');
 check(!array_key_exists('import_epoch', $location), 'import_epoch is still off the wire');
 
@@ -585,6 +593,109 @@ $statement->execute([$waitingLeft, $waitingRight]);
 
 check((int)$statement->fetchColumn() === 2,
 	'both locations are still reachable from a root, so neither has vanished from the pickers');
+
+// --- 11. Storage classes (plan 23) --------------------------------------------------------
+
+echo "\n11. storage classes derive is_freezer on write\n";
+
+$storageClasses = $pdo->query('SELECT id, name, treats_as_freezer, sort_order FROM storage_classes ORDER BY sort_order')->fetchAll(PDO::FETCH_ASSOC);
+
+check(count($storageClasses) === 5, 'the five seeded classes are there');
+check(array_column($storageClasses, 'name') === ['Deep freeze', 'Freezer', 'Fridge', 'Cooler', 'Ambient'],
+	'in the seeded order, coldest to warmest');
+check(array_map('intval', array_column($storageClasses, 'treats_as_freezer')) === [1, 1, 0, 0, 0],
+	'only Deep freeze and Freezer treat a location as a freezer');
+
+$freezerClassId = null;
+$fridgeClassId = null;
+
+foreach ($storageClasses as $storageClass)
+{
+	if ($storageClass['name'] === 'Freezer')
+	{
+		$freezerClassId = (int)$storageClass['id'];
+	}
+	if ($storageClass['name'] === 'Fridge')
+	{
+		$fridgeClassId = (int)$storageClass['id'];
+	}
+}
+
+// Door is the fixture plan 08 question 5 put the literal flag on, and the same row this
+// plan's own "Interaction with 08" section names as the one to test the class against. The
+// request deliberately also sends is_freezer = 0, contradicting the class, to prove the class
+// is what wins rather than merely agreeing with an is_freezer the caller got right anyway.
+$response = $api->EditObject(request('PUT', ['storage_class_id' => $freezerClassId, 'is_freezer' => 0]), new Response(), ['entity' => 'locations', 'objectId' => $door]);
+
+check($response->getStatusCode() === 204, 'setting a freezer class on Door is accepted');
+check((int)$pdo->query('SELECT is_freezer FROM locations WHERE id = ' . $door)->fetchColumn() === 1,
+	'is_freezer on Door is derived as 1, overruling the is_freezer = 0 the same request sent');
+check((int)$pdo->query('SELECT storage_class_id FROM locations WHERE id = ' . $door)->fetchColumn() === $freezerClassId,
+	'and the class itself was written');
+
+// A non-freezer class derives is_freezer = 0 the same way, and with no is_freezer key in the
+// body at all - proving the derivation does not depend on the client having sent one.
+$response = $api->EditObject(request('PUT', ['storage_class_id' => $fridgeClassId]), new Response(), ['entity' => 'locations', 'objectId' => $door]);
+
+check($response->getStatusCode() === 204, 'reclassifying Door as a fridge is accepted');
+check((int)$pdo->query('SELECT is_freezer FROM locations WHERE id = ' . $door)->fetchColumn() === 0,
+	'is_freezer follows the fridge class down to 0, though the request never mentioned it');
+
+// Clearing the class back to unclassified (question 3) hands is_freezer back to the caller:
+// this request sets it to 1 directly, and nothing derives it away from that any more.
+$response = $api->EditObject(request('PUT', ['storage_class_id' => null, 'is_freezer' => 1]), new Response(), ['entity' => 'locations', 'objectId' => $door]);
+
+check($response->getStatusCode() === 204, 'clearing the class back to unclassified is accepted');
+check($pdo->query('SELECT storage_class_id FROM locations WHERE id = ' . $door)->fetchColumn() === null,
+	'storage_class_id is NULL again');
+check((int)$pdo->query('SELECT is_freezer FROM locations WHERE id = ' . $door)->fetchColumn() === 1,
+	'and is_freezer is exactly what this request submitted, independently editable once more');
+
+// An id nothing answers to falls through to the FOREIGN KEY rather than being silently
+// accepted - WithDerivedIsFreezer() only derives when it can resolve the class, and leaves an
+// unresolvable one for the database to refuse.
+$response = $api->EditObject(request('PUT', ['storage_class_id' => 999999]), new Response(), ['entity' => 'locations', 'objectId' => $door]);
+
+check($response->getStatusCode() >= 400, 'an id no storage class answers to is refused');
+check($pdo->query('SELECT storage_class_id FROM locations WHERE id = ' . $door)->fetchColumn() === null,
+	'and Door is left exactly as it was, not half-written');
+
+$pdo->prepare('UPDATE locations SET is_freezer = 1, storage_class_id = NULL WHERE id = ?')->execute([$door]);
+
+// AddObject goes through the same derivation as EditObject - a fresh location created with a
+// deep-freeze class and no is_freezer field in the body at all still comes out a freezer.
+$deepFreezeClassId = null;
+foreach ($storageClasses as $storageClass)
+{
+	if ($storageClass['name'] === 'Deep freeze')
+	{
+		$deepFreezeClassId = (int)$storageClass['id'];
+	}
+}
+
+$response = $api->AddObject(request('POST', ['name' => 'Nested Locations Chest Freezer', 'storage_class_id' => $deepFreezeClassId]), new Response(), ['entity' => 'locations']);
+$created = json_decode((string)$response->getBody(), true);
+
+check($response->getStatusCode() === 200 && isset($created['created_object_id']), 'creating a deep-freeze location is accepted');
+check((int)$pdo->query('SELECT is_freezer FROM locations WHERE id = ' . (int)$created['created_object_id'])->fetchColumn() === 1,
+	'and it is derived a freezer on the way in, with no is_freezer in the request at all');
+
+$response = $api->GetObjects(request(), new Response(), ['entity' => 'storage_classes']);
+$listed = json_decode((string)$response->getBody(), true);
+
+check($response->getStatusCode() === 200 && count($listed) === 5, '/objects/storage_classes lists all five');
+// No "userfields" key here: GetObjects() only attaches one when the entity has userfields
+// configured (none do for a fresh fixture), unlike GetObject() below, which always sets one.
+check(array_keys($listed[0]) === ['id', 'name', 'min_temp_c', 'max_temp_c', 'treats_as_freezer', 'sort_order', 'row_created_timestamp', 'active'],
+	'with the documented column set');
+
+$response = $api->GetObject(request(), new Response(), ['entity' => 'storage_classes', 'objectId' => $freezerClassId]);
+$oneClass = json_decode((string)$response->getBody(), true);
+
+check($response->getStatusCode() === 200 && $oneClass['name'] === 'Freezer' && (int)$oneClass['treats_as_freezer'] === 1,
+	'/objects/storage_classes/{id} answers about one class');
+check(array_key_exists('userfields', $oneClass) && $oneClass['userfields'] === null,
+	'GetObject always carries a userfields key, null here since none are configured');
 
 echo "\n";
 

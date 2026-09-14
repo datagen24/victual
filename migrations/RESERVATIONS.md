@@ -59,7 +59,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0271 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group A — `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`, `label_media_profiles` (wave 3b) | in this tree |
 | 0272 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
 | 0273 | [plan 08](../docs/plans/08-nested-locations.md) — `locations.parent_location_id`, `locations_resolved`, `hierarchy_depth_limit()` and the nesting guards | in this tree |
-| 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
+| 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | in this tree |
 | 0275 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
 | 0276 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view, and `locations.tare_weight`/`tare_qu_id` (wave 4) | **claimed, unwritten** |
 | 0277 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | **claimed, unwritten** |
@@ -67,7 +67,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0279 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
-Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers.
+Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
 ## The merge order this implies — discharged
 
@@ -93,13 +93,17 @@ within one. 0264 is PHP for the same reason 0260 is — it is PDO doing arithmet
 which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-migrations.md)
 asks for a pair only where the two engines genuinely need different SQL.
 
-**0274 to 0280 are claimed and no file exists for them yet.**
-The highest number on disk is 0273 and there is no hole or waiver: the unwritten numbers sit
-*above* the highest file rather than as a gap below it, which is the case this table's own
-argument is about and the reason no `--allow-reserved-holes` waiver is needed.
+**0274 landed; 0275 to 0280 are claimed and no file exists for them yet.**
+Plan 23 took the lowest free slot when its migration was written, per the same rule: the
+highest number on disk is now 0274 and there is still no hole or waiver, because 0275–0280
+sit *above* it rather than as a gap below it, which is the case this table's own argument is
+about and the reason no `--allow-reserved-holes` waiver is needed.
 
-Plan 23 still merges before 22: it owns 0274 and supplies `locations.storage_class_id`;
-22 owns 0275–0276, 28 owns 0277, 29 owns 0278, 30 owns 0279 and 31 owns 0280. The next unclaimed number is 0281.
+Plan 23's number is now fixed — it has a file on disk and does not move again, whatever else
+gets renumbered around it. What sits behind it moved once more on `master` while this branch
+was landing 0274 (see the renumbering note above the table): 28 owns 0275, 29 owns 0276, 30
+owns 0277 and 31 owns 0278, ahead of 22 at 0279–0280, because all four are scheduled into
+wave 4 while 22 remains an unscheduled draft. The next unclaimed number is 0281.
 
 **Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written**:
 claimed as 0261–0262
@@ -110,6 +114,13 @@ make room for plan 25, then 0273–0275 to make room for plan 27's two, and now 
 plan 08's one. Each time the
 correction cost one table edit,
 because nothing had been written to disk under the old numbers.
+
+**A ninth move follows, and it breaks the pair.** Until now, 22's two numbers moved in
+lock-step immediately behind 23's one, because 23 always merged first and 22 depended on it.
+This move is different: 23's own number is fixed — it has a file on disk — so only 22's two
+numbers move, from 0275–0276 to 0279–0280, to make room for 28, 29, 30 and 31 ahead of them.
+Same rule as the fifth and sixth moves, applied to four numbers scheduled into wave 4 at
+once rather than one or two, while 22 stays the unscheduled draft that keeps yielding.
 
 The eighth move is the fifth's case for the third time, and the plan it moves for is not a
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are

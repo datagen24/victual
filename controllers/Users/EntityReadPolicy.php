@@ -20,6 +20,7 @@ class EntityReadPolicy
 		'products' => User::PERMISSION_STOCK_VIEW,
 		'product_barcodes' => User::PERMISSION_STOCK_VIEW,
 		'locations' => User::PERMISSION_STOCK_VIEW,
+		'storage_classes' => User::PERMISSION_STOCK_VIEW,
 		'quantity_units' => User::PERMISSION_STOCK_VIEW,
 		'quantity_unit_conversions' => User::PERMISSION_STOCK_VIEW,
 		'shopping_locations' => User::PERMISSION_STOCK_VIEW,

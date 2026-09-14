@@ -87,9 +87,10 @@ the API's generic filter validation), and `DatabaseImporter`.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
-**Stock & products (12)** — `products`, `product_groups`, `product_barcodes`,
-`quantity_units`, `quantity_unit_conversions`, `locations`, `shopping_locations`, `stock`,
-`stock_log`, `stock_entry_origins`, `shopping_list`, `shopping_lists`.
+**Stock & products (13)** — `products`, `product_groups`, `product_barcodes`,
+`quantity_units`, `quantity_unit_conversions`, `locations`, `storage_classes`,
+`shopping_locations`, `stock`, `stock_log`, `stock_entry_origins`, `shopping_list`,
+`shopping_lists`.
 
 `stock` holds current entries and `stock_log` is the append-only ledger; a consumed entry
 disappears from `stock` while its bookings stay in the ledger the views read.
@@ -104,6 +105,16 @@ only among siblings — `UNIQUE NULLS NOT DISTINCT (parent_location_id, name)`, 
 the engine minimum is PostgreSQL 15. Three guards stand in for the constraints the shape
 would need: `check_location_parent` refuses a cycle and a chain past
 `hierarchy_depth_limit()`, and `guard_location_children` refuses deleting a parent.
+
+`storage_classes` (migration 0274, [plan 23](plans/23-storage-classes.md)) is how cold a
+location is kept — Deep freeze, Freezer, Fridge, Cooler, Ambient, seeded in PHP per
+[ADR-0003](adr/0003-seed-data-in-php.md) and user-extensible beyond those five.
+`locations.storage_class_id` references it and is nullable; NULL means unclassified, which
+is every location's meaning before this migration and stays available afterwards (question
+3). `is_freezer` keeps its exact meaning and is derived from the chosen class's
+`treats_as_freezer` in the write path (`GenericEntityApiController::WithDerivedIsFreezer()`)
+rather than a trigger, because the importer never sets a class at all and there is nothing
+for a trigger to fire on; an unclassified location keeps the flag independently editable.
 
 **Identity & access (11)** — `users`, `user_settings`, `user_settings_defaults`,
 `sessions`, `api_keys`, `user_permissions`, `permission_hierarchy`, `roles`,

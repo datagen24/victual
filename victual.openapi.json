@@ -9004,6 +9004,11 @@
 						"nullable": true,
 						"description": "The location this one sits inside, or null for a root location. Locations form a tree at most 6 levels deep; see LocationResolved for the resolved form."
 					},
+					"storage_class_id": {
+						"type": "integer",
+						"nullable": true,
+						"description": "How cold this location is kept, or null for unclassified - see StorageClass. When set, it is the sole writer of is_freezer: an update that sets this column also overwrites is_freezer from the class's treats_as_freezer, whatever value this same request otherwise submits for it. When null or absent, is_freezer stays independently editable."
+					},
 					"userfields": {
 						"type": "object",
 						"description": "Key/value pairs of userfields"
@@ -9015,6 +9020,65 @@
 					"description": null,
 					"row_created_timestamp": "2019-05-02 20:12:25",
 					"parent_location_id": null,
+					"storage_class_id": null,
+					"userfields": null
+				}
+			},
+			"StorageClass": {
+				"type": "object",
+				"description": "How cold a location is kept - deep freeze, freezer, fridge, cooler or ambient. User-extensible master data; the five seeded rows are a starting vocabulary rather than an exhaustive one. Setting a location's storage_class_id derives its is_freezer from this class's treats_as_freezer.",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"name": {
+						"type": "string"
+					},
+					"min_temp_c": {
+						"type": "number",
+						"nullable": true,
+						"description": "Lower bound of the class's temperature range in degrees Celsius. Metadata in v1 - nothing derives a class from an observed temperature."
+					},
+					"max_temp_c": {
+						"type": "number",
+						"nullable": true
+					},
+					"treats_as_freezer": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						],
+						"description": "Whether a location carrying this class derives locations.is_freezer = 1."
+					},
+					"sort_order": {
+						"type": "integer"
+					},
+					"row_created_timestamp": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"active": {
+						"type": "integer",
+						"enum": [
+							0,
+							1
+						]
+					},
+					"userfields": {
+						"type": "object",
+						"description": "Key/value pairs of userfields"
+					}
+				},
+				"example": {
+					"id": "3",
+					"name": "Freezer",
+					"min_temp_c": "-18",
+					"max_temp_c": "-12",
+					"treats_as_freezer": "1",
+					"sort_order": "1",
+					"row_created_timestamp": "2019-05-02 20:12:25",
+					"active": "1",
 					"userfields": null
 				}
 			},
@@ -10304,6 +10368,7 @@
 					"product_barcodes",
 					"batteries",
 					"locations",
+					"storage_classes",
 					"quantity_units",
 					"quantity_unit_conversions",
 					"shopping_list",
