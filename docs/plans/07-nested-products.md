@@ -3,14 +3,27 @@
 **Goal:** Support product hierarchies more than one level deep.
 **Depends on:** nothing, but do [08 nested locations](08-nested-locations.md) first — same
 pattern, far fewer call sites.
-**Status:** draft for review, and **blocked on its own question 6** — which asks whether
-the requirement is a taxonomy or a packaging relation, and whose recorded response says
-that on the taxonomy reading this plan is mostly unnecessary and the change belongs in
-[03](03-category-min-stock.md) as a nested `product_groups` column instead. Q6 decides
-whether 07 is the largest item on the roadmap or one of the smallest, so it is answered
-before any of this is scheduled, not during. Nothing below assumes that answer; Q1 and Q4
-in particular are written against the taxonomy reading and are rewritten if Q6 lands the
-other way.
+**Status: still blocked on its own question 6 — which now has an answer that is not yet
+ratified.** The sampling question 6 asked for was carried out on 2026-09-13 and landed on
+**taxonomy**; the result is recorded in the response under that question below.
+
+**That answer is evidence, not yet authority.**
+[ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) is the record that
+would turn it into a constraint — putting the tree of kinds in nested `product_groups` and
+keeping `parent_product_id` at its existing one level — and it is **Proposed**, with four
+acceptance prerequisites outstanding. A Proposed record constrains nothing, so **this plan is
+not retired and [30](30-nested-product-groups.md) and [31](31-directed-substitution.md) are
+not its replacements**.
+
+Two further pull requests stand between here and that, and they are separate on purpose: one
+accepts the record, carrying bookkeeping only — status line, index row, supersession
+pointers — and a later one retires this plan and schedules those two. Acceptance ratifies the
+decision; it does not execute it.
+
+Nothing below is scheduled. The body stays in its original present tense, as this
+repository's convention requires: it is the research that made the question answerable, and
+its audit of the eight sites built on the one-level assumption is the cost figure the answer
+turns on. Read question 6 first.
 
 ## Today
 
@@ -223,6 +236,49 @@ compared against a deliberate expectation rather than against whatever falls out
    > The locations tree in [08](08-nested-locations.md) has no equivalent problem —
    > containment is exactly what `parent_location_id` would mean — which is one more
    > reason 08 goes first.
+
+   > **Answered 2026-09-13: taxonomy.** Proposed as
+   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md). That record
+   > is Proposed and its four prerequisites are outstanding, so what follows is the recorded
+   > result of the sampling and the reasoning it supports — not a decision in force. This
+   > plan is retired **after** that record is accepted, by a separate pull request; the
+   > acceptance itself carries bookkeeping only and touches no plan.
+   >
+   > **How it was decided.** Thirteen candidate pairs from this household's kitchen were
+   > each classified as sharing a stock pool, being separate products, or being a quantity
+   > multiple of one another. The maintainer and a second member of the household answered
+   > together, and a worked spice taxonomy was supplied afterwards to settle what the
+   > classification left ambiguous. The outcome:
+   >
+   > | | |
+   > |---|---|
+   > | **Separate products** | cheddar block/shredded/sliced · coffee bean/ground · tomatoes paste/sauce/crushed/diced · butter salted/unsalted/cultured · flour AP/bread/cake · milk whole/2%/skim · bread loaf/sliced |
+   > | **Pooled under a parent** | none |
+   > | **Quantity multiple** | onions loose vs 3 lb bag — 1 bag = 3 lb, the only genuine one |
+   > | **Not a product question** | chicken fresh vs frozen, which `TransferProduct()` already models as a location move that recalculates the due date |
+   >
+   > **Seven of thirteen are separate products and none is a pool.** The interior nodes of
+   > the real tree — `Spices`, `Garlic`, `Garlic/Fresh` — are never stocked, so the relation
+   > whose defining property is that stock rolls up to the parent has nothing to roll up.
+   >
+   > **So this plan's cost was real and its benefit was not.** The audit above is accurate;
+   > what the sampling changes is that nothing needs it. Once the decision is in force the
+   > one-level trigger stays, `products_resolved` stays flat, and no depth cap is introduced
+   > for products.
+   >
+   > **Three of the answers above are superseded once the decision is in force**, as the
+   > question predicted.
+   > Q1's whole-subtree roll-up and Q4's nearest-first substitution were both written
+   > against a tree that does not exist; Q2's mixed middle node turns out to be a *group*
+   > holding a product and a subgroup at once, which costs nothing because a group holds no
+   > stock. Q3's depth cap shipped anyway, as `hierarchy_depth_limit()` in
+   > `migrations/0273.pgsql.sql`, and [30](30-nested-product-groups.md) is the second
+   > consumer it was written generic for — just not the one expected.
+   >
+   > **What survives into new work.** The forms under a leaf relate one way — beans grind,
+   > grounds do not un-grind — and that is a directed edge between separate products, which
+   > sibling substitution under a shared parent cannot express.
+   > [31](31-directed-substitution.md) owns it.
 
 ## Review notes
 
