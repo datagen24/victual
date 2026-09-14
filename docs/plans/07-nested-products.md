@@ -3,25 +3,16 @@
 **Goal:** Support product hierarchies more than one level deep.
 **Depends on:** nothing, but do [08 nested locations](08-nested-locations.md) first — same
 pattern, far fewer call sites.
-**Status: still blocked — its own question 6 now has an answer, and that answer is ratified,
-but this plan is not yet retired.** The sampling question 6 asked for was carried out on
-2026-09-13 and landed on **taxonomy**; the result is recorded in the response under that
-question below.
-
-[ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) is the record that
-turns it into a constraint — putting the tree of kinds in nested `product_groups` and keeping
-`parent_product_id` at its existing one level — and it is **Accepted, 2026-09-14, all four
-prerequisites met** ([issue 128](https://github.com/datagen24/victual/issues/128)). **That
-acceptance still did not retire this plan**: per the ADR's own lifecycle table, retirement is
-separate, later work, done by its own pull request rather than by the acceptance. So **this
-plan is not yet retired and [30](30-nested-product-groups.md) and
-[31](31-directed-substitution.md) are not yet its replacements** — that is the pull request
-still to come.
-
-Two further pull requests stand between here and that, and they are separate on purpose: one
-accepts the record, carrying bookkeeping only — status line, index row, supersession
-pointers — and a later one retires this plan and schedules those two. Acceptance ratifies the
-decision; it does not execute it.
+**Status: retired 2026-09-14.** Question 6 was answered on 2026-09-13 — **taxonomy** — and
+[ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) accepted that answer on
+2026-09-14 with all four prerequisites met
+([issue 128](https://github.com/datagen24/victual/issues/128)). This is the separate retirement
+the record's lifecycle table called for, after the acceptance and not as part of it: the tree
+of kinds lives in nested `product_groups`, owned by [30](30-nested-product-groups.md), and the
+relation between forms that are separate products is [31](31-directed-substitution.md)'s
+directed substitution. Both are scheduled into wave 4 with this retirement. The body below is
+kept in its original tense as the record of the packaging reading the sampling did not
+support; the *Retired* section at the end says what survives and where.
 
 Nothing below is scheduled. The body stays in its original present tense, as this
 repository's convention requires: it is the research that made the question answerable, and
@@ -303,3 +294,25 @@ On the taxonomy reading, most of that cost belongs to a nullable parent column o
 `product_groups` in [03](03-category-min-stock.md), and what is left here is only the
 genuine same-product-different-packaging cases — small, and possibly nothing at all. The
 roadmap's wave 4 is written around the first branch and says so.
+
+## Retired, 2026-09-14
+
+Retired by its own pull request after ADR-0023's acceptance, as that record's lifecycle table
+required, and [issue 82](https://github.com/datagen24/victual/issues/82) closes with it. The
+recursive `products_resolved`, the eight-site audit, the whole-subtree roll-up, the depth cap
+and the mixed-node fixture were all conditional on the packaging reading; the sampling under
+question 6 found none of thirteen candidate pairs pooled, so none of it is built.
+
+What survives, and where it lives now:
+
+- `hierarchy_depth_limit()`, which [08](08-nested-locations.md) wrote generic expecting this
+  plan to be its second consumer, is consumed by [30](30-nested-product-groups.md) instead.
+- The one-level `parent_product_id` for genuine packaging is unchanged and is now defined by
+  ADR-0023 decision 2. Its trigger enforces the level on `UPDATE` only, never `INSERT`, in
+  both engines — [issue 148](https://github.com/datagen24/victual/issues/148), found while
+  meeting prerequisite 4 and to be fixed before 30 copies that trigger.
+- The directed "beans become grounds, grounds never become beans" relation, which question 2's
+  mixed node and question 6's separate-products finding left with nowhere to live, is
+  [31](31-directed-substitution.md).
+- Question 2's mixed middle node turned out to be a group holding a product and a subgroup at
+  once, which costs nothing because a group holds no stock; ADR-0023 decision 6 records it.

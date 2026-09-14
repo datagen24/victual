@@ -60,12 +60,14 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0272 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
 | 0273 | [plan 08](../docs/plans/08-nested-locations.md) — `locations.parent_location_id`, `locations_resolved`, `hierarchy_depth_limit()` and the nesting guards | in this tree |
 | 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | **claimed, unwritten** |
-| 0275 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0276 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
-| 0277 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
-| 0278 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view (wave 4) | **claimed, unwritten** |
-| 0279 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | **claimed, unwritten** |
-| 0280 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | **claimed, unwritten** |
+| 0275 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | **claimed, unwritten** |
+| 0276 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view, and `locations.tare_weight`/`tare_qu_id` (wave 4) | **claimed, unwritten** |
+| 0277 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | **claimed, unwritten** |
+| 0278 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | **claimed, unwritten** |
+| 0279 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers.
 
 ## The merge order this implies — discharged
 

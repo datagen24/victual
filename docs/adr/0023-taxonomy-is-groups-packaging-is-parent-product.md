@@ -206,7 +206,7 @@ flour, and as answering a question about *counting* with a fact about *labelling
    against PostgreSQL 16.15 (`postgres:16`) on the maintainer's Apple silicon machine via
    podman. **`.spike-adr23/` is a path in that commit, not in a checkout of `master`, where it
    has never existed and never will** — this is preview work for
-   [migration 0279](../../migrations/RESERVATIONS.md), which stays unwritten until
+   [migration 0277](../../migrations/RESERVATIONS.md), which stays unwritten until
    [plan 30](../plans/30-nested-product-groups.md) is scheduled. Read a file with
    `git show 4da3d35d:.spike-adr23/<path>`, or check the branch out into a worktree to run
    it; `.spike-adr23/RESULTS.md` at that SHA has the full transcript.
@@ -215,7 +215,7 @@ flour, and as answering a question about *counting* with a fact about *labelling
    INTEGER`, replaces the plain `UNIQUE` on `name` with `UNIQUE NULLS NOT DISTINCT
    (parent_product_group_id, name)`, and adds a `product_groups_resolved` view copied from
    `locations_resolved`'s shape (`migrations/0273.pgsql.sql`) — no cycle, depth or delete
-   guard, since those are not what these two prerequisites test and 0279 copies them from
+   guard, since those are not what these two prerequisites test and 0277 copies them from
    0273 directly per plan 30.
 
    **Prerequisite 2.** The worked spice tree from plan 30 is seeded, with `Garlic` filed as
