@@ -856,8 +856,8 @@ off on 2026-09-08; nothing has been deployed and no physical label has been prin
 this path. Issue 79 is unchanged by that: its definition of done is a label requested,
 physically printed, and scanned back, and only the first of those three is demonstrable today.
 
-Issue [#90](https://github.com/datagen24/victual/issues/90) is carried into the worker and is
-**not closed**. Its no-resize property is designed out rather than fixed — there is no
+Issue [#90](https://github.com/datagen24/victual/issues/90) was carried into the worker and
+stayed open until the 2026-09-09 print below settled its rotation sign. Its no-resize property is designed out rather than fixed — there is no
 resampling step, so a raster whose width is not the device's printable dot count is a refusal —
 and that is asserted at three resolutions in the renderer and once in the worker. What remains
 is its other half, the rotation sign, which the plan says is settled by a printed label rather

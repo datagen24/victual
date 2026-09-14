@@ -3,7 +3,7 @@
 **Goal:** Barcode scanning that actually resolves products bought in the US.
 **Depends on:** nothing. Independent of [04](04-seed-datasets.md), though it largely
 removes the motivation for shipping barcode data there.
-**Status:** draft for review.
+**Status:** deferred, [issue 80](https://github.com/datagen24/victual/issues/80); see below.
 
 > **Deferred, not cancelled.** This plan is parked pending Q1's experiment: roughly twenty
 > real barcodes off the maintainer's own pantry, run against Open Food Facts and USDA
