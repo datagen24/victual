@@ -210,8 +210,9 @@ and undo. Retiring the existing tare mechanism adds migration and compatibility 
 ## Acceptance prerequisites
 
 All eight met 2026-09-14. Prerequisites 1, 2, 3, 5, 6 and 7 by a disposable spike against
-real PostgreSQL 16.13 on `claude/sonnet5_adr0022-prerequisites` at `64ec8f1` — not asserted;
-full transcript in `.spike-adr22/RESULTS.md` on that branch. Prerequisite 4 by a paper check
+real PostgreSQL 16.13 — not asserted; the spike and its full transcript are in the
+repository at [`.spike-adr22/RESULTS.md`](../../.spike-adr22/RESULTS.md), merged in
+[pull request 152](https://github.com/datagen24/victual/pull/152). Prerequisite 4 by a paper check
 against this fork's actual OpenAPI specification. Prerequisite 8 was a maintainer decision,
 recorded in decisions 4 and 7 and in question 1's response below.
 
