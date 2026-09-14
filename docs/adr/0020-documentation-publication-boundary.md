@@ -1,6 +1,10 @@
 # ADR-0020: The documentation site publishes the manual, the developer reference and the ADRs; plans stay in the repository
 
-- **Status:** Proposed
+- **Status:** Accepted, 2026-09-14. The site publishes the manual, the developer reference
+  and the ADRs; plans stay in the repository. All four acceptance prerequisites are met and
+  each is annotated below; the evidence for 2 and 4 is recorded in plan 26's Executed
+  section under "ADR-0020's acceptance gates, 2026-09-14". From this date every later
+  record is a published document.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-07
 - **Referenced by:** [26](../plans/26-documentation-site.md)
@@ -254,13 +258,19 @@ documentation that would substitute describes a different system.
 1. **Met 2026-09-07.** [Pull request 92](https://github.com/datagen24/victual/pull/92) landed,
    so `docs/data-model.md` and the six diagrams the Development section names exist on
    `master`.
-2. [Plan 26](../plans/26-documentation-site.md) records how the 173 ADR-to-plan links are
+2. **Met 2026-09-14** ([pull request 144](https://github.com/datagen24/victual/pull/144)).
+   [Plan 26](../plans/26-documentation-site.md) records how the 173 ADR-to-plan links are
    rewritten, and a build demonstrates them resolving to the repository rather than 404ing.
-   A build that leaves them broken fails this gate.
-3. Open questions 2 and 4 are answered — both were, on 2026-09-07 — and
-   `phpdoc.dist.xml`'s premise comment is corrected to match what this record does. The
-   answers are recorded; the edit is outstanding.
-4. A built Development section is inspected and no page in it is incomprehensible without a
-   plan. The 173 rewritten links are citations a reader may follow, not reading the section
+   A build that leaves them broken fails this gate: `stage.py` resolves every rewritten
+   link against `git ls-files` and exits non-zero naming the page, the link and the path,
+   which the `lint` job runs before the strict build. 308 links resolved on the delivering
+   branch; the negative control fails.
+3. **Met.** Open questions 2 and 4 are answered — both were, on 2026-09-07 — and
+   `phpdoc.dist.xml`'s premise comment is corrected to match what this record does; the
+   corrected comment is on `master`, confirmed 2026-09-14.
+4. **Met 2026-09-14**, 46 pages inspected. A built Development section is inspected and no
+   page in it is incomprehensible without a
+   plan. The inspection added a table of the labels records cite work by (wave, piece,
+   question, verification check, C-number, S-number) to the Development overview. The 173 rewritten links are citations a reader may follow, not reading the section
    depends on. The equivalent check for the Manual is plan 26's, since the Manual ships
    second.
