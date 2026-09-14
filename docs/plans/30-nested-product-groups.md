@@ -9,8 +9,10 @@ adds a column to.
 **Interacts with:** [31](31-directed-substitution.md), which carries the relations between
 the products this groups; [08](08-nested-locations.md), whose pattern this copies almost
 exactly.
-**Replaces:** [07](07-nested-products.md), retired by the same record.
-**Status:** draft for review.
+**Would replace:** [07](07-nested-products.md), which that record retires on acceptance and
+not before.
+**Status:** draft for review, and **not scheduled** — ADR-0023 is Proposed, so nothing here
+is authorised yet. Tracked as [issue 124](https://github.com/datagen24/victual/issues/124).
 
 ## Why this is a small plan
 

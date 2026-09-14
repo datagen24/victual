@@ -7,7 +7,8 @@
   blocked wave 4's product half.
 - **Referenced by:** [30 — Nested product groups](../plans/30-nested-product-groups.md) and
   [31 — Directed substitution](../plans/31-directed-substitution.md), which own the work;
-  [07 — Deeply nested products](../plans/07-nested-products.md), which this retires;
+  [07 — Deeply nested products](../plans/07-nested-products.md), which this retires **on
+  acceptance** and not before — that plan stays blocked while this record is Proposed;
   [03 — Category minimum stock](../plans/03-category-min-stock.md), whose table gains the
   parent column.
 
@@ -119,7 +120,7 @@ reasoned about.
 
 ## Consequences
 
-**Plan 07 is retired rather than shrunk.** The recursive `products_resolved`, the audit of
+**Plan 07 is retired rather than shrunk, on acceptance.** The recursive `products_resolved`, the audit of
 the eight sites built on the one-level assumption, the whole-subtree roll-up, the depth cap
 and the mixed-node fixture were all conditional on the packaging reading. None of them is
 required. Its questions 1 and 4 were written against the taxonomy reading and are answered by
@@ -140,8 +141,11 @@ products, so there are more product rows than a pooling model would produce. Pla
 directed substitution is what keeps that from being a usability cost; without it, a
 Split-heavy catalogue loses relationships it can express today.
 
-**Nothing here is built.** No column, no view, no substitution table. This record constrains
-work rather than describing code, and the two plans it names are drafts.
+**Nothing here is built, and nothing here is yet in force.** No column, no view, no
+substitution table. This record constrains work rather than describing code, the two plans it
+names are drafts, and while its status is Proposed it authorises none of them: plan 07 stays
+blocked, and plans 30 and 31 are not its replacements until this is accepted through its own
+bookkeeping-only pull request with the prerequisites below met.
 
 ## Options considered
 

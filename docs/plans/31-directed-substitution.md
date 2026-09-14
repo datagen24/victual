@@ -8,7 +8,8 @@ products that share no parent.
 **Interacts with:** [30](30-nested-product-groups.md), which groups the products this
 relates; [14](14-contract-and-regression-scaffolding.md) piece 2, which freezes the response
 contract this adds to.
-**Status:** draft for review.
+**Status:** draft for review, and **not scheduled** — ADR-0023 is Proposed, so nothing here
+is authorised yet. Tracked as [issue 125](https://github.com/datagen24/victual/issues/125).
 
 ## Why this exists
 
