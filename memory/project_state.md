@@ -53,6 +53,16 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   unblocked. `docs/plans/README.md`'s status table still needs a pass for both rows (left out
   of the acceptance PR deliberately, matching how ADR-0023's left plan 30's row) — that and
   plan 28/29's actual implementation are what's next.
+- **Wave 5 opened 2026-09-15**: 19 piece 2 landed as `0281.pgsql.sql` (#170), but
+  [issue #176](https://github.com/datagen24/victual/issues/176) lists four price channels
+  still readable by Child/Guest (importer cascade, `/stock/bookings/{id}`,
+  `product_barcodes.last_price`, four flag-only Blade pages) — close it before 14 piece 2
+  ([issue #83](https://github.com/datagen24/victual/issues/83)) freezes the per-role
+  snapshot. Also merged that day: #173 (API key expiry/rotation, 0280), #171 (the Manual),
+  #172 (fabric 7), #174 (files API S32), #175 (label tree path), #169 (undo self-production).
+  Review follow-ups: #177 (files API own-picture bypass), #178 (manual corrections), #179
+  (fabric leftovers). Plan 15's remainder ([issue #132](https://github.com/datagen24/victual/issues/132))
+  is unblocked now that #130 and #121 are closed. Next unclaimed migration number: 0284.
 - **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
   it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
   accepted before they run at all.
