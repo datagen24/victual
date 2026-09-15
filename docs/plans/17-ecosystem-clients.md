@@ -6,7 +6,9 @@ standing decision for each about whether this fork forks it, replaces it, or let
 [11](11-api-error-handling.md) and [16](16-project-rename.md) are the two plans that break
 clients hardest, and both are early. [10](10-cold-start-statelessness.md) has a conflict
 with the Home Assistant integration that is not an API-compatibility problem at all.
-**Status:** draft for review — **and already overtaken on [16](16-project-rename.md)**,
+**Status:** premise replaced 2026-09-15 by [ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md)
+(Proposed): the fork writes its own clients, so what follows is a catalogue of couplings those
+clients must handle rather than breaks to avoid. Earlier: draft for review — **and already overtaken on [16](16-project-rename.md)**,
 which landed on 2026-08-29, the day this was written, ahead of the roadmap's own
 "17 before 11, 16 and 10" rule. Two of the breaks below are therefore past tense: the API
 key header and the `/system/info` version field are renamed in the tree today. Coupling 0

@@ -69,6 +69,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
 | 0282 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0283 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0284 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -192,6 +193,10 @@ whichever branch merges second. Plan 19 piece 2 therefore moves again, off 0280 
 next free slot, 0281; plan 22 — still the unscheduled draft yielding to every scheduled or
 already-written thing that needs a number — moves up one more time, from 0281–0282 to
 **0282–0283**. The next unclaimed number is now **0284**.
+
+**2026-09-15, later the same day:** plan 32 claims **0284** on the lowest-free-slot rule; it is
+gated on ADR-0024's acceptance and yields to nothing scheduled ahead of it. The next unclaimed
+number is now **0285**.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23
