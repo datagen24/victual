@@ -1201,7 +1201,9 @@ print — it writes no stock.
 
 Full retirement of the webhook is the destination: every entity type prints through this
 path, `WebhookRunner` loses its last caller, and the four constants go. The steps have
-different prerequisites.
+different prerequisites. *(Corrected by [ADR-0024](0024-the-fork-writes-its-own-clients.md),
+accepted 2026-09-15: plan 18's InfluxDB writer also calls `WebhookRunner`, so step 3 removes
+the label call sites and the class stays.)*
 
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
@@ -1210,7 +1212,10 @@ different prerequisites.
    a print action on the locations pages. **No existing response changes.**
 2. **The five existing endpoints migrate afterwards** — products, stock entries, recipes,
    chores, batteries (`routes.php:239-240,256,265,276`). This is the step that changes the
-   wire, and the resolution below gates *this step*, not step 1.
+   wire, and the resolution below gates *this step*, not step 1. *(Gate dissolved by
+   [ADR-0024](0024-the-fork-writes-its-own-clients.md), accepted 2026-09-15: the fork writes
+   its own clients, the five endpoints are removed rather than reshaped, and
+   [plan 32](../plans/32-label-kinds.md) owns steps 2 and 3.)*
 3. **The webhook and its constants are deleted** when step 2 completes, taking
    `WebhookRunner`'s last caller and the four `SystemApiController::EXPOSED_SETTINGS`
    entries (`controllers/Api/SystemApiController.php:46-49`) with them.
