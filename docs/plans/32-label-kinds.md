@@ -13,7 +13,10 @@ precedent every piece below mirrors; [14](14-contract-and-regression-scaffolding
 which should snapshot after this lands or regenerate when it does; [17](17-ecosystem-clients.md),
 whose premise 0024 replaces.
 **Status:** draft, wave-independent, **not started**; gated on ADR-0024's acceptance.
-Migration **0284** claimed (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
+Migration **0285** claimed (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
+until [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19
+piece 2 was written as `0282.pgsql.php` hours after this plan claimed its number, taking the
+lowest free slot with a file behind it and moving plan 22 and this plan up one each.
 
 ## Why this exists
 
@@ -45,7 +48,7 @@ The new path is location-only at every layer today, not only in templates:
 
 Five pieces in three dependency groups. A alone; B and C after A; D after C; E last.
 
-### A. Schema — migration 0284
+### A. Schema — migration 0285
 
 - Widen the three `CHECK (... IN ('location','product','stock_entry'))` constraints on
   `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` to the six
@@ -93,7 +96,7 @@ Five pieces in three dependency groups. A alone; B and C after A; D after C; E l
 - One seeded default template per kind, in the same shape as the location default
   (`LabelTemplateService::EmptyDocument`): the QR and one text line bound to the kind's
   `name` field, so a fresh install prints something readable for every kind before anyone
-  opens the designer. Seeded by 0284 the way the location default is seeded today.
+  opens the designer. Seeded by 0285 the way the location default is seeded today.
 - The designer's field picker (`labeltemplateeditor.js`) reads the catalogue for the
   template's kind instead of the hard-coded location list — the same defect plan 06 Q5 hit
   with `location.path`.
@@ -163,7 +166,7 @@ a plan-level choice.
 
 ## Verification
 
-1. `.devtools/pgsql/check-migrations.php` passes with 0284 in the tree.
+1. `.devtools/pgsql/check-migrations.php` passes with 0285 in the tree.
 2. The label test suites' disposable schemas carry the six kinds; `identity-tests.php`
    issues, resolves and retires one label of each kind, and the retired branch carries each
    kind's snapshot.

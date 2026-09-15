@@ -11,7 +11,7 @@
 #
 #   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys]
 #
-# Nineteen kinds of check, for nineteen reasons. Views are compared by what they return, because
+# Twenty-two kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -179,6 +179,13 @@
 # holding a product and a subgroup at once - and the concurrent re-parenting case built the
 # same way the fifteenth's own is, because the hazard it guards against is the same hazard on
 # a different table.
+#
+# Four phases have no numbered paragraph above: rbac, pricevisibility, substitutions and
+# apikeys. Each is PostgreSQL-only for the thirteenth's reason - its subject is a migration
+# above the freeze - and each states its own why in its own script's header, which is where
+# a reader of that phase looks anyway. The count in the first line is of phases the case
+# statement at the bottom dispatches, not of paragraphs here; it was nineteen when four of
+# the twenty-two had not been written, and issue #176 is where the drift was noticed.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in

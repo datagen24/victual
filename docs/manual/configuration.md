@@ -170,7 +170,7 @@ Finer-grained than the flags above; each narrows one already-enabled feature.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `FEATURE_FLAG_STOCK_PRICE_TRACKING` | `true` | Price fields on stock bookings. |
+| `FEATURE_FLAG_STOCK_PRICE_TRACKING` | `true` | Price fields on stock bookings. Whether a given *user* sees prices is a separate question - see [Prices](operator/roles-permissions.md#prices). |
 | `FEATURE_FLAG_STOCK_LOCATION_TRACKING` | `true` | Per-location stock, rather than one pool per product. |
 | `FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING` | `true` | Due/best-before dates. |
 | `FEATURE_FLAG_STOCK_PRODUCT_OPENED_TRACKING` | `true` | "Opened" state and open-container measurement. |

@@ -397,10 +397,21 @@ function OnListItemRemoved()
 		$("#add-all-items-to-stock-button").addClass("disabled");
 	}
 
+	// Nothing to total when this user may not see prices: shoppinglist.blade.php renders no
+	// #total-value element for them, and uihelper_shopping_list comes back without a
+	// last_price_total key at all (FieldPolicy removes the field rather than nulling it), so
+	// the sum below would be NaN written into an element that is not there. The request is
+	// skipped rather than the result guarded, because the response carries nothing else this
+	// function wants. Issue #176 item 5.
+	if (!Victual.PricesVisible)
+	{
+		return;
+	}
+
 	Victual.Api.Get("objects/uihelper_shopping_list?" + "?query[]=shopping_list_id=" + $("#selected-shopping-list").val(),
 		function (items)
 		{
-			$("#total-value").text(items.reduce((x, { last_price_total }) => x + last_price_total, 0));
+			$("#total-value").text(items.reduce((x, { last_price_total }) => x + (last_price_total || 0), 0));
 			RefreshLocaleNumberDisplay();
 		}
 	);

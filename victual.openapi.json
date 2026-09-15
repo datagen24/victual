@@ -9715,6 +9715,15 @@
 					"costs": {
 						"type": "number",
 						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"costs_per_serving": {
+						"type": "number",
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
+					"prices_incomplete": {
+						"type": "boolean",
+						"description": "Whether some ingredient of this recipe has no known price, so that \"costs\" is a floor rather than a total. A derived price fact rather than a price, and redacted with the other two - a caller who may not see what a recipe costs may not be told how complete the figure they cannot see is.",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				},
 				"example": {
@@ -9722,7 +9731,9 @@
 					"need_fulfilled": "0",
 					"need_fulfilled_with_shopping_list": "0",
 					"missing_products_count": "2",
-					"costs": "17.74"
+					"costs": "17.74",
+					"costs_per_serving": "4.44",
+					"prices_incomplete": "0"
 				}
 			},
 			"ProductDetailsResponse": {
@@ -9941,7 +9952,8 @@
 						"type": "number"
 					},
 					"last_price": {
-						"type": "number"
+						"type": "number",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"note": {
 						"type": "string"

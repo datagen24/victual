@@ -17,8 +17,9 @@ roles are a seed) and constrains [02](02-mcp-endpoint.md) and
 [18](18-mqtt-state-publication.md) (both are channels that carry prices — see Q4 and Q5).
 **Status:** piece 1 implemented in wave 3a, 2026-09-05 (see Executed); piece 2 landed
 2026-09-15 as migration 0281, [issue 84](https://github.com/datagen24/victual/issues/84)
-closed, with [issue 176](https://github.com/datagen24/victual/issues/176) tracking the price
-channels it left open; its Executed section is still to be written. Originally draft for review and **on the roadmap as of 2026-08-30** — the README's
+closed, and its follow-ups ([issue 176](https://github.com/datagen24/victual/issues/176) —
+the importer cascade, `/stock/bookings/{id}`, `product_barcodes.last_price` and four
+flag-only pages) the same day as migration 0282. Both pieces have Executed sections. Originally draft for review and **on the roadmap as of 2026-08-30** — the README's
 Status table and its waves both carry it, rather than the tail bullet that promised it a
 number. **Question 8 answered 2026-09-04: (a), gate reads in piece 1**, which makes
 piece 1 a model change and gives it wave 3a to itself, and **split across two waves** —
@@ -860,3 +861,97 @@ On 2026-09-05, the wave 3a working copy based on `96b21711` passed the complete
 including 256 role-phase assertions and three default-role subprocesses. The role browser
 workflow passed with local Chrome, and all 27 S29 probes were clean. PHP syntax, runtime SQL,
 API path typing, ADR headers and the eight CI-script unit tests also passed.
+
+### Piece 2 — wave 5 (2026-09-15)
+
+Migration `0281.pgsql.sql` adds `STOCK_PRICES_VIEW` and the `permission_fields` table that
+decides which fields of which entity a caller may not see. `services/FieldPolicy.php` reads
+that table once per request and removes redacted fields from a row entirely rather than
+nulling them, so `stock_log.price` being null for a consumption stays distinguishable from
+"you may not see this". Redaction is applied at the response boundary — `FilteredApiResponse`,
+the two generic reads, and each hand-built response that knows its own entity name — and
+`BaseApiController::AssertFieldExists()` refuses a redacted field named in `query[]` or
+`order` with 400, closing the filter hole verification 5 asks about.
+`User::PricesVisible()` collapses `VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING` and the new
+leaf into the one condition Blade (`$pricesVisible`) and the front end (`Victual.PricesVisible`)
+check. `GET /stock/products/{id}/price-history` refuses outright with 403 rather than
+filtering, per verification 8.
+
+Divergences from the plan body above, which are otherwise recorded only in the migration's
+own comments:
+
+- **The leaf hangs off `STOCK_PURCHASE`, not `STOCK`.** The "New permission leaves" table
+  says `STOCK`; Q6's response decides that `STOCK_PURCHASE` must resolve down to it. The
+  hierarchy is downward-inclusive only, so nesting one level deeper is what makes Q6 a fact
+  of the tree rather than a second rule kept in sync by hand — and `STOCK_PURCHASE` is
+  already a child of `STOCK`, so ADMIN and whole-`STOCK` holders still inherit it.
+- **`products_average_price`'s column is `price`, not `average_price`.** The plan's
+  `FIELD_POLICY` table names a column that view does not have; a row for it would have been
+  dead weight pretending to be coverage.
+- **`recipe_fulfillment` is not a policy row.** `GET /recipes/{id}/fulfillment` returns one
+  `recipes_resolved` row found by id, so the entity name never appears; the
+  `recipes_resolved` rows cover both branches of that endpoint.
+- **Five rows were added that the plan's table did not enumerate** — `stock_current.value`,
+  `stock_next_use.price`, and `product_details.oldest_price` / `current_price` /
+  `stock_value` — each a real price channel found by tracing every hand-built response
+  rather than trusting the table.
+
+**Follow-ups, 2026-09-15 ([issue 176](https://github.com/datagen24/victual/issues/176)).**
+The review on the pull request that landed piece 2 found four price channels still readable
+by Child and Guest, and they were fixed the same day rather than left open across 14 piece
+2's per-role snapshot:
+
+- **The importer erased the feature.** `DatabaseImporter` truncates every table the source
+  and target share with `RESTART IDENTITY CASCADE`; `permission_hierarchy` is one of them and
+  `permission_fields.permission_name` references it, so every import emptied the policy and
+  removed the leaf — no redaction for anyone, and `PricesVisible()` false for every user
+  including ADMIN. The seed is now `db/pgsql/prices-seed.sql`, applied by migration
+  `0282.pgsql.php` and re-applied by the importer after its verbatim-copy assertions, the
+  same way `roles-seed.sql` is for piece 1.
+- **`GET /stock/bookings/{bookingId}`** returned the raw `stock_log` row; its sibling
+  `StockTransactions` had been converted and it had not.
+- **`product_barcodes.last_price`** had no policy row, so it was readable and filterable on
+  `STOCK_VIEW` alone through `/objects/product_barcodes`, `/objects/product_barcodes/{id}`
+  and `/objects/product_barcodes_view`. Rows for both entity names ship in `0282`.
+- **Four pages were gated on the feature flag alone**, which says the instance tracks prices
+  and not that this user may see them: the shopping list's per-row and header totals,
+  `mealplan.blade.php`'s embedded `recipes_resolved` (now redacted in the controller, since
+  that array leaves the server verbatim for `mealplan.js`), `/stockreports/spendings` (now
+  refused with 403 — the whole page is `SUM(amount * price)` over `products_price_history`,
+  which is the `'*'` whole-object row), and `productform.blade.php`'s barcode price. Each
+  omits the value rather than hiding it with `d-none`, which verification 6 asks for.
+
+Also closed with those: `shoppinglist.js` and `mealplan.js` no longer produce `NaN` from the
+absent keys (`mealplan.js` tested `=== null` and missed `undefined`), and the `'*'`
+whole-object marker is enforced by `BaseApiController::AssertWholeObjectReadable()` at the
+generic reads and `FilteredApiResponse` rather than being a marker no read path consulted.
+`ProductPriceHistory` keeps its own explicit check: `products_price_history` is not an
+exposed generic entity, so it never reaches that method, and the one route whose whole
+purpose is prices should refuse even on a database whose policy table was emptied.
+
+Verification is reproducible with `.devtools/pgsql/run-tests.sh pricevisibility` and
+`import`. The price phase builds a product with priced stock, a recipe, a shopping list item
+and a priced barcode, then moves one caller through ADMIN, ADULT, CHILD, GUEST and a bare
+`STOCK_VIEW` grant — the plan's own named residue — asserting per identity on `GET /stock`,
+`/stock/volatile`, `/stock/products/{id}`, `/stock/entry/{id}`, `/stock/bookings/{id}`,
+`/stock/transactions/{id}`, `/stock/products/{id}/entries`, `/stock/products/{id}/price-history`,
+`/stockreports/spendings`, `/recipes/fulfillment` and `/recipes/{id}/fulfillment`, the
+generic reads for `stock`, `stock_log`, `products_average_price`, `products_last_purchased`,
+`product_barcodes`, `product_barcodes_view`, `uihelper_shopping_list` and
+`recipes_pos_resolved`, both halves of the filter hole (`query[]=price>0` and `order=price`),
+and real Blade renders of the shopping list, stock overview and stock entries pages —
+three of the four views verification 6 names — asserting no `locale-number-currency` span
+and no price in the page source. The import phase compares `permission_fields` before and
+after an import rather than against a row count written down in the test, so a policy row
+added later is covered without that assertion being edited.
+
+On 2026-09-15, the follow-up working copy based on `82baee8` passed the complete
+`.devtools/pgsql/run-tests.sh` suite against PostgreSQL 16.13, including 279 price-visibility
+assertions and 358 role assertions, and the four label suites CI runs beside it. Each of the two defects above was reproduced before it
+was fixed: removing the `StockBooking` redaction fails three of the new assertions (CHILD,
+GUEST and the bare `STOCK_VIEW` grant), and removing the importer's re-application of the
+seed fails six of the import phase's, at both ends of the supported source span.
+
+Still open from the review, deliberately: the schema-less generic entities have no
+`x-visibility` marker because they have no OpenAPI schema at all to carry one — documenting
+them is 14 piece 2's snapshot work rather than this plan's.

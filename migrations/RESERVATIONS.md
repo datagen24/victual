@@ -67,9 +67,10 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
 | 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in `master` |
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
-| 0282 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0283 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
-| 0284 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | **claimed, unwritten** |
+| 0282 | [issue #176](https://github.com/datagen24/victual/issues/176) items 1 and 3 — the price-visibility policy re-applied from `db/pgsql/prices-seed.sql`, plus the `product_barcodes`/`product_barcodes_view` `last_price` rows 0281 missed | in this tree |
+| 0283 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0284 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0285 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -197,6 +198,22 @@ already-written thing that needs a number — moves up one more time, from 0281�
 **2026-09-15, later the same day:** plan 32 claims **0284** on the lowest-free-slot rule; it is
 gated on ADR-0024's acceptance and yields to nothing scheduled ahead of it. The next unclaimed
 number is now **0285**.
+
+**2026-09-15, later again — the tenth application of the rule, and the first where both
+displaced claims are drafts.** [Issue #176](https://github.com/datagen24/victual/issues/176)'s
+migration is written and on disk as `0282.pgsql.php`, so it takes the lowest free slot by the
+rule this table keeps restating: the numbers that get written take the lowest free slots, and
+claims without files behind them yield. Plan 22 is still the unscheduled draft it was on every
+previous move, and plan 32 is gated on ADR-0024, which is **Proposed** — neither has a file, so
+both yield and both keep their relative order: 22 moves from 0282–0283 to **0283–0284** and 32
+from 0284 to **0285**. Their own numbering lines move with this table. The next unclaimed
+number is now **0286**.
+
+That is two collisions in two days, and both have the same mechanical cause the note above
+already names: plan 32's claim and this migration were made hours apart by branches that could
+not see each other, and this table cannot serialize branches that have not talked. Neither
+claim was wrong when it was made. What the rule does is decide the tie without either branch
+having to be at fault — a claim is a placeholder, a file is a fact, and the placeholder moves.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23

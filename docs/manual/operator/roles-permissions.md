@@ -17,11 +17,28 @@ Assign roles and direct grants on a user's edit page (`/user/{id}`) or its permi
 set what a newly created user starts with — empty by default, deliberately, so creating a
 user grants nothing until someone chooses to grant it.
 
-**Known limitation, current as of this writing:** assigning a narrower role (for example
-one meant to represent a child in the household) does not hide prices from that user.
-Price visibility is a separate, still-unbuilt permission; do not rely on a role to keep
-spending information from anyone who can already see it through a direct grant or an
-earlier, broader role.
+## Prices
+
+Prices are their own permission, `STOCK_PRICES_VIEW`, which sits under `STOCK_PURCHASE` —
+so anyone who records purchases sees what things cost, and an account holding `STOCK` or
+`ADMIN` is unaffected. The seeded Child and Guest roles hold neither, so they see no prices
+anywhere: not on the stock overview, the entries list, the shopping list, the meal plan, a
+recipe, the product card or the product form's barcode table, and not in an API response —
+a field you may not see is absent from the JSON rather than `null`, and naming it in
+`query[]` or `order` is answered `400` so that it cannot be found by filtering on it
+either. `GET /stock/products/{productId}/price-history` and the Spendings report answer
+`403`, because they are entirely prices.
+
+Two things this does *not* do. It is not a deny grant: an account that still holds `STOCK`,
+`STOCK_PURCHASE` or `ADMIN` directly keeps seeing prices whatever role you also assign, so
+narrowing an upgraded user means removing the direct grant deliberately. And upgrading does
+not take a field from anyone who already held `STOCK` or `ADMIN` — what changes on upgrade
+is the account whose only stock grant is `STOCK_VIEW`, which could read every price before
+and cannot now.
+
+`FEATURE_FLAG_STOCK_PRICE_TRACKING` ([Configuration](../configuration.md#feature-flags)) is
+the other half and is independent: it says whether this installation tracks prices at all.
+Prices are shown when the flag is on *and* the user holds the permission.
 
 ## Domain reads
 
@@ -37,7 +54,7 @@ existed keeps all six for its existing users; only a newly created user starts w
 
 | Domain | Permissions |
 |---|---|
-| Stock | `STOCK_VIEW`, `STOCK`, `STOCK_PURCHASE`, `STOCK_CONSUME`, `STOCK_TRANSFER`, `STOCK_INVENTORY`, `STOCK_OPEN`, `STOCK_EDIT` |
+| Stock | `STOCK_VIEW`, `STOCK`, `STOCK_PURCHASE`, `STOCK_PRICES_VIEW`, `STOCK_CONSUME`, `STOCK_TRANSFER`, `STOCK_INVENTORY`, `STOCK_OPEN`, `STOCK_EDIT` |
 | Shopping lists | `SHOPPINGLIST_VIEW`, `SHOPPINGLIST`, `SHOPPINGLIST_ITEMS_ADD`, `SHOPPINGLIST_ITEMS_DELETE` |
 | Chores | `CHORES_VIEW`, `CHORES`, `CHORE_TRACK_EXECUTION`, `CHORE_UNDO_EXECUTION` |
 | Tasks | `TASKS_VIEW`, `TASKS`, `TASKS_MARK_COMPLETED`, `TASKS_UNDO_EXECUTION` |

@@ -800,7 +800,7 @@
 							<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif allow-grouping">{{ $__t('Store') }}</th>
 							<th class="allow-grouping">{{ $__t('Quantity unit') }}</th>
 							<th>{{ $__t('Amount') }}</th>
-							<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Last price') }}</th>
+							<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Last price') }}</th>
 							<th>{{ $__t('Note') }}</th>
 
 							@include('components.userfields_thead', array(
@@ -846,8 +846,14 @@
 								<span class="locale-number locale-number-quantity-amount">{{ $barcode->amount }}</span>
 								@endif
 							</td>
-							<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+							{{-- $pricesVisible, and the value omitted rather than hidden: this is
+							product_barcodes.last_price, a purchase price, and d-none leaves it
+							in the page source for anyone holding STOCK_VIEW. Issue #176 item 4;
+							the API side of the same column is item 3. --}}
+							<td class="@if(!$pricesVisible) d-none @endif">
+								@if($pricesVisible)
 								<span class="locale-number locale-number-currency">{{ $barcode->last_price }}</span>
+								@endif
 							</td>
 							<td>
 								{{ $barcode->note }}

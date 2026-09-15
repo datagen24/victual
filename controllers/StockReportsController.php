@@ -25,6 +25,13 @@ class StockReportsController extends BaseController
 	public function Spendings(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		// The whole page is a price: every metric it renders is SUM(amount * price) over
+		// products_price_history, which permission_fields gates with a '*' whole-object row
+		// (migration 0281, db/pgsql/prices-seed.sql) and which
+		// StockApiController::ProductPriceHistory refuses outright without this permission.
+		// Until issue #176 item 4 this route was reachable on STOCK_VIEW alone with only its
+		// menu link hidden, so a Child could read the household's spending by typing the URL.
+		User::CheckPermission($request, User::PERMISSION_STOCK_PRICES_VIEW);
 		$where = "pph.transaction_type != 'self-production'";
 
 		// Everything which would otherwise be interpolated into the SQL below is bound

@@ -29,6 +29,14 @@ narrower-scoped credential. Revoking the user's access, or deleting the user, re
 key they hold. See [Roles and permissions](roles-permissions.md) for what a permission
 actually gates.
 
+That includes field-level reads, which matters when you are writing a client: a field the
+key's owner may not see is **absent from the response object**, not `null`. The distinction
+is deliberate — `stock_log.price` is legitimately `null` for a consumption, and "there was
+no price" has to stay tellable from "you may not see it" — so read such a field with a
+presence check rather than a null check, or arithmetic over it produces `NaN`. Naming one
+in `query[]` or `order` is answered `400` rather than applied. Today the only fields this
+applies to are prices; [Prices](roles-permissions.md#prices) lists them.
+
 ## Comparing against upstream grocy
 
 The [parity suite](../../../.devtools/parity/README.md) exercises Victual against grocy

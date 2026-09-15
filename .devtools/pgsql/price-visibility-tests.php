@@ -39,6 +39,11 @@ use Victual\Controllers\Users\User;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
 
+// views/layout/default.blade.php reads $_SERVER['REQUEST_URI'] for the manifest link, which
+// a CLI process does not have. Set rather than left undefined so the Blade assertions below
+// render the real layout instead of six PHP warnings' worth of it.
+$_SERVER['REQUEST_URI'] = '/shoppinglist';
+
 $pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
 $container = new DI\Container();
 $container->set('view', new Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
@@ -124,11 +129,27 @@ $pdo->exec('INSERT INTO recipes_pos (id, recipe_id, product_id, amount, qu_id) V
 
 $pdo->exec("INSERT INTO shopping_list (id, product_id, amount) VALUES (9500, 9500, 5)");
 
+// A barcode carrying its own purchase price. product_barcodes.last_price is a price channel
+// of its own - /objects/product_barcodes, /objects/product_barcodes/{id} and the separately
+// exposed /objects/product_barcodes_view all serve it on STOCK_VIEW alone - and it had no
+// policy row until db/pgsql/prices-seed.sql. Issue #176 item 3.
+$pdo->exec("INSERT INTO product_barcodes (id, product_id, barcode, last_price) VALUES (9500, 9500, 'PRICEVIS9500', 2.75)");
+
+// The booking and the transaction the purchase above left behind, for the two stock_log
+// endpoints that return them (issue #176 items 2 and 7). Read back rather than assumed:
+// AddProduct() writes the transaction id through its by-reference parameter, but the
+// booking's own id is the ledger row's.
+$bookingId = (int)$pdo->query('SELECT id FROM stock_log WHERE product_id = 9500 ORDER BY id DESC LIMIT 1')->fetchColumn();
+check($bookingId > 0, 'Fixture stock_log booking was created');
+check(!empty($transactionId), 'Fixture transaction id was returned by AddProduct');
+
 // Sanity: as Admin, the fixture actually carries a nonzero price/cost - a false "hidden"
 // on a value that was already zero would prove nothing.
 $productDetailsApi = new Victual\Controllers\Api\StockApiController($container);
 $genericApi = new Victual\Controllers\Api\GenericEntityApiController($container);
 $recipesApi = new Victual\Controllers\Api\RecipesApiController($container);
+$stockReports = new Victual\Controllers\StockReportsController($container);
+$stockController = new Victual\Controllers\StockController($container);
 
 assumeDirectGrants(['ADMIN']);
 $adminDetails = asJson($productDetailsApi->ProductDetails(request(), new Response(), ['productId' => 9500]));
@@ -207,6 +228,27 @@ foreach ($matrix as $label => $spec)
 	$entry = asJson($productDetailsApi->StockEntry(request(), new Response(), ['entryId' => $stockEntryId]));
 	check(array_key_exists('price', $entry) === $sees, "$label: GET /stock/entry/{id} 'price' " . ($sees ? 'present' : 'absent'));
 
+	// GET /api/stock/bookings/{id} (StockApiController::StockBooking -> one stock_log row).
+	// The sibling of StockTransactions below, and the one #170 converted without converting:
+	// same rows, same entity, one at a time. Issue #176 item 2.
+	$booking = asJson($productDetailsApi->StockBooking(request(), new Response(), ['bookingId' => $bookingId]));
+	check(($booking['id'] ?? null) == $bookingId, "$label: GET /stock/bookings/{id} returns the fixture booking");
+	check(array_key_exists('price', $booking) === $sees, "$label: GET /stock/bookings/{id} 'price' " . ($sees ? 'present' : 'absent'));
+
+	// GET /api/stock/transactions/{id} (StockApiController::StockTransactions -> stock_log rows)
+	$transactionRows = asJson($productDetailsApi->StockTransactions(request(), new Response(), ['transactionId' => $transactionId]));
+	check(count($transactionRows) > 0, "$label: GET /stock/transactions/{id} returns rows");
+	check(array_key_exists('price', $transactionRows[0] ?? []) === $sees, "$label: GET /stock/transactions/{id} 'price' " . ($sees ? 'present' : 'absent'));
+
+	// GET /api/stock/products/{id}/entries (StockApiController::ProductStockEntries).
+	// stock_next_use, not stock: the view is `SELECT s.*, priority FROM stock s ...`, so it
+	// carries every stock column under a different LessQL table name, and FilteredApiResponse's
+	// redaction is keyed by that name. A missing policy row here would be invisible to every
+	// assertion above, which is why it gets its own.
+	$entries = asJson($productDetailsApi->ProductStockEntries(request(), new Response(), ['productId' => 9500]));
+	check(count($entries) > 0, "$label: GET /stock/products/{id}/entries returns rows");
+	check(array_key_exists('price', $entries[0] ?? []) === $sees, "$label: GET /stock/products/{id}/entries 'price' " . ($sees ? 'present' : 'absent'));
+
 	// GET /api/stock/products/{id}/price-history - refusal, not redaction
 	$historyResponse = null;
 	$historyStatus = null;
@@ -248,6 +290,81 @@ foreach ($matrix as $label => $spec)
 	}
 	check(($filterStatus === 200) === $sees, "$label: GET /objects/stock?query[]=price>0 " . ($sees ? '200' : '400') . " (got $filterStatus)");
 
+	// GET /api/objects/stock?order=price - the same hole through the other query parameter.
+	// AssertFieldExists() is reached from both FilterData() and QueryData()'s order branch, and
+	// a sort is as good a read as a filter: ascending then descending brackets the value just
+	// as well as "price>3&price<5" does.
+	$orderStatus = null;
+	try
+	{
+		$ordered = $genericApi->GetObjects(request('GET', ['order' => 'price']), new Response(), ['entity' => 'stock']);
+		$orderStatus = $ordered->getStatusCode();
+	}
+	catch (Slim\Exception\HttpException $e)
+	{
+		$orderStatus = $e->getCode();
+	}
+	check(($orderStatus === 200) === $sees, "$label: GET /objects/stock?order=price " . ($sees ? '200' : '400') . " (got $orderStatus)");
+
+	// GET /api/objects/product_barcodes, /{id} and the separately exposed view. Issue #176 item 3.
+	$barcodes = asJson($genericApi->GetObjects(request(), new Response(), ['entity' => 'product_barcodes']));
+	$barcodeRow = null;
+	foreach ($barcodes as $entry)
+	{
+		if (($entry['id'] ?? null) == 9500) { $barcodeRow = $entry; break; }
+	}
+	check($barcodeRow !== null, "$label: GET /objects/product_barcodes includes the fixture barcode");
+	check(array_key_exists('last_price', $barcodeRow ?? []) === $sees, "$label: GET /objects/product_barcodes 'last_price' " . ($sees ? 'present' : 'absent'));
+
+	$barcodeOne = asJson($genericApi->GetObject(request(), new Response(), ['entity' => 'product_barcodes', 'objectId' => 9500]));
+	check(array_key_exists('last_price', $barcodeOne) === $sees, "$label: GET /objects/product_barcodes/{id} 'last_price' " . ($sees ? 'present' : 'absent'));
+
+	$barcodesView = asJson($genericApi->GetObjects(request(), new Response(), ['entity' => 'product_barcodes_view']));
+	$barcodeViewRow = null;
+	foreach ($barcodesView as $entry)
+	{
+		if (($entry['barcode'] ?? null) === 'PRICEVIS9500') { $barcodeViewRow = $entry; break; }
+	}
+	check($barcodeViewRow !== null, "$label: GET /objects/product_barcodes_view includes the fixture barcode");
+	check(array_key_exists('last_price', $barcodeViewRow ?? []) === $sees, "$label: GET /objects/product_barcodes_view 'last_price' " . ($sees ? 'present' : 'absent'));
+
+	// The view is exposed under its own name, so its rows have to be filterable-on under its
+	// own name too - a policy row for the table alone would leave the view's copy of the same
+	// column open to the filter hole.
+	$barcodeFilterStatus = null;
+	try
+	{
+		$barcodeFilterStatus = $genericApi->GetObjects(request('GET', ['query' => ['last_price>0']]), new Response(), ['entity' => 'product_barcodes_view'])->getStatusCode();
+	}
+	catch (Slim\Exception\HttpException $e)
+	{
+		$barcodeFilterStatus = $e->getCode();
+	}
+	check(($barcodeFilterStatus === 200) === $sees, "$label: GET /objects/product_barcodes_view?query[]=last_price>0 " . ($sees ? '200' : '400') . " (got $barcodeFilterStatus)");
+
+	// GET /stockreports/spendings - the whole page is SUM(amount * price) over
+	// products_price_history, and until issue #176 item 4 it was reachable on STOCK_VIEW with
+	// only its menu link hidden. A refusal, like price-history above, not a redaction.
+	$spendingsStatus = null;
+	try
+	{
+		$spendingsStatus = $stockReports->Spendings(request(), new Response(), [])->getStatusCode();
+	}
+	catch (Slim\Exception\HttpException $e)
+	{
+		$spendingsStatus = $e->getCode();
+	}
+	check(($spendingsStatus === 200) === $sees, "$label: GET /stockreports/spendings " . ($sees ? '200' : '403') . " (got $spendingsStatus)");
+
+	// The whole-object marker itself, rather than one route's reading of it: FieldPolicy has
+	// to name the missing permission for products_price_history and nothing for an entity
+	// carrying only ordinary field rows. Issue #176 item 6 - it was consulted by no read path
+	// at all, and BaseApiController::AssertWholeObjectReadable is now what enforces it for the
+	// generic ones.
+	$wholeObject = Victual\Services\FieldPolicy::GetInstance()->WholeObjectPermission('products_price_history');
+	check(($wholeObject === null) === $sees, "$label: WholeObjectPermission('products_price_history') " . ($sees ? 'null' : 'STOCK_PRICES_VIEW'));
+	check(Victual\Services\FieldPolicy::GetInstance()->WholeObjectPermission('stock') === null, "$label: WholeObjectPermission('stock') is null (field rows are not a whole-object gate)");
+
 	// GET /api/objects/stock_log
 	$objectsStockLog = asJson($genericApi->GetObjects(request(), new Response(), ['entity' => 'stock_log']));
 	check(count($objectsStockLog) > 0, "$label: GET /objects/stock_log returns rows");
@@ -287,6 +404,36 @@ foreach ($matrix as $label => $spec)
 		catch (Slim\Exception\HttpException $e) { $status = $e->getCode(); }
 		check($status === 403, "$label: GET /objects/uihelper_shopping_list refused (no SHOPPINGLIST_VIEW)");
 	}
+
+	// Plan 19 piece 2's verification 6: a Blade render that emits no currency span. The
+	// shopping list page is the one that matters most - a Child holds SHOPPINGLIST_VIEW and
+	// reaches it - and the assertion is on the rendered HTML rather than on the view data,
+	// because `d-none` was the old idiom and a hidden cell still carries the price in the
+	// page source for anyone who reads it. Issue #176 item 4 and item 7's last gap.
+	if (User::HasPermissions(User::PERMISSION_SHOPPINGLIST_VIEW))
+	{
+		$page = (string)$stockController->ShoppingList(request(), new Response(), [])->getBody();
+		check(str_contains($page, 'Price Visibility Test Product'), "$label: the shopping list page rendered the fixture item");
+		check(str_contains($page, 'locale-number-currency') === $sees, "$label: the shopping list page "
+			. ($sees ? 'emits' : 'emits no') . ' currency span');
+		check(str_contains($page, '3.5') === $sees, "$label: the shopping list page " . ($sees ? 'carries' : 'does not carry') . ' the price in its source');
+	}
+
+	// The same for the two pages verification 6 names alongside it. Both need only
+	// STOCK_VIEW, which every identity in this matrix holds, so neither needs the
+	// permission branch above. The stock overview is where a price is a derived figure
+	// rather than a column - "value" is SUM(price * amount) for the product - and the
+	// entries page is where it is the raw stock.price.
+	$overview = (string)$stockController->Overview(request(), new Response(), [])->getBody();
+	check(str_contains($overview, 'Price Visibility Test Product'), "$label: the stock overview page rendered the fixture product");
+	check(str_contains($overview, 'locale-number-currency') === $sees, "$label: the stock overview page "
+		. ($sees ? 'emits' : 'emits no') . ' currency span');
+	check(str_contains($overview, '>35<') === $sees, "$label: the stock overview page " . ($sees ? 'carries' : 'does not carry') . ' the stock value in its source');
+
+	$entries = (string)$stockController->Stockentries(request(), new Response(), [])->getBody();
+	check(str_contains($entries, 'Price Visibility Test Product'), "$label: the stock entries page rendered the fixture product");
+	check(str_contains($entries, 'locale-number-currency') === $sees, "$label: the stock entries page "
+		. ($sees ? 'emits' : 'emits no') . ' currency span');
 
 	// GET /api/objects/recipes_pos_resolved
 	$recipesPos = asJson($genericApi->GetObjects(request(), new Response(), ['entity' => 'recipes_pos_resolved']));
