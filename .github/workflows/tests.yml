@@ -454,6 +454,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node working-container.js http://127.0.0.1:8085
 
+      # Issue 159, found while implementing plan 29 and unrelated to it: productform.js always
+      # sent every nullable-integer picker's field even when nothing was picked, and an
+      # untouched <select> serializes to "" - which PostgreSQL refuses for the integer column
+      # underneath, arriving at the browser as an opaque 400. A bare create is exactly the
+      # ordinary use nothing else here drives the form through, so nothing caught it until this
+      # probe did.
+      - name: Run product form nullable picker checks
+        working-directory: .devtools/frontend
+        run: node product-nullable-pickers.js http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087
