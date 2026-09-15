@@ -17,10 +17,10 @@
 
   # Hash of the yarn offline mirror built from yarn.lock.
   #
-  # Reset to the fakeHash placeholder for the fabric 5 -> 7 bump (issue #126): this
-  # sandbox has no nix, so the real value has to come from `nix build .#frontend` per
-  # nix/README.md's "Bootstrapping the hashes" - pasting a guessed value here would be
-  # worse than the documented failure mode, since a wrong-but-plausible-looking hash
-  # would not obviously say so.
-  yarnOfflineCache = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  # Updated for the fabric 5 -> 7 bump (issue #126). This sandbox has no nix, so rather
+  # than guess it the previous commit reset this to the fakeHash placeholder and let the
+  # `flake` CI job's fixed-output-derivation failure report the real value, per
+  # nix/README.md's "Bootstrapping the hashes" - the same "got:" value a local
+  # `nix build .#frontend` would have produced.
+  yarnOfflineCache = "sha256-5jQ6uSjMasoAtL5wCPjaS9jzhj3sYb5HVCA/iMCIfow=";
 }
