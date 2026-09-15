@@ -116,7 +116,10 @@
 							<i class="fa-solid fa-utensils"></i>
 						</a>
 						@if(VICTUAL_FEATURE_FLAG_STOCK_PRODUCT_OPENED_TRACKING)
-						<a class="btn btn-success btn-sm product-open-button @if($stockEntry->open == 1 || FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->enable_tare_weight_handling == 1 || FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->disable_open == 1) disabled @endif"
+						{{-- Tare-enabled products can be opened directly since ADR-0022 decision 8
+						removed OpenProduct()'s refusal - the per-entry measurement below
+						supersedes what that mechanism stood in for. --}}
+						<a class="btn btn-success btn-sm product-open-button @if($stockEntry->open == 1 || FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->disable_open == 1) disabled @endif"
 							href="#"
 							data-toggle="tooltip"
 							data-placement="left"
@@ -129,6 +132,25 @@
 							data-open-amount="{{ $stockEntry->amount }}">
 							<i class="fa-solid fa-box-open"></i>
 						</a>
+						{{-- A measurement describes exactly one container (ADR-0022 decision 8), so
+						this is only offered where the entry already is - or opening would leave -
+						a single unit: round() mirrors the coherence CHECK's own amount = 1 test. --}}
+						@if(round($stockEntry->amount, 2) == 1.0 && FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->disable_open != 1)
+						<a class="btn btn-outline-primary btn-sm stock-measure-button"
+							href="#"
+							data-toggle="tooltip"
+							data-placement="left"
+							title="{{ $stockEntry->open == 1 ? $__t('Record a measurement of what is left') : $__t('Open and record a measurement') }}"
+							data-mode="{{ $stockEntry->open == 1 ? 'remeasure' : 'open' }}"
+							data-product-id="{{ $stockEntry->product_id }}"
+							data-product-name="{{ FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->name }}"
+							data-product-qu-id="{{ FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock }}"
+							data-product-qu-name="{{ FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name }}"
+							data-stock-id="{{ $stockEntry->stock_id }}"
+							data-stockrow-id="{{ $stockEntry->id }}">
+							<i class="fa-solid fa-weight-scale"></i>
+						</a>
+						@endif
 						@endif
 						<a class="btn btn-info btn-sm show-as-dialog-link"
 							href="{{ $U('/stockentry/' . $stockEntry->id . '?embedded') }}"
@@ -253,8 +275,14 @@
 						<span class="custom-sort d-none">{{$stockEntry->amount}}</span>
 						<span id="stock-{{ $stockEntry->id }}-amount"
 							class="locale-number locale-number-quantity-amount">{{ $stockEntry->amount }}</span> <span id="product-{{ $stockEntry->product_id }}-qu-name">{{ $__n($stockEntry->amount, FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name, FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name_plural, true) }}</span>
-						<span id="stock-{{ $stockEntry->id }}-opened-amount"
-							class="small font-italic">@if($stockEntry->open == 1){{ $__n($stockEntry->amount, 'Opened', 'Opened') }}@endif</span>
+						<span class="small font-italic">
+							<span id="stock-{{ $stockEntry->id }}-opened-amount">@if($stockEntry->open == 1) @if($stockEntry->opened_amount !== null) {{ $__t('Opened') }} &ndash; {{ $stockEntry->opened_amount }} {{ $__n($stockEntry->opened_amount, FindObjectInArrayByPropertyValue($quantityunits, 'id', $stockEntry->opened_qu_id)->name, FindObjectInArrayByPropertyValue($quantityunits, 'id', $stockEntry->opened_qu_id)->name_plural, true) }} {{ $__t('left') }} @else {{ $__n($stockEntry->amount, 'Opened', 'Opened') }} @endif @endif</span>
+							@if($stockEntry->open == 1 && $stockEntry->opened_amount !== null)
+							(<time id="stock-{{ $stockEntry->id }}-opened-measured-at-timeago"
+								class="timeago timeago-contextual"
+								datetime="{{ $stockEntry->opened_measured_at }}"></time>)
+							@endif
+						</span>
 					</td>
 					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING) d-none @endif">
 						<span id="stock-{{ $stockEntry->id }}-due-date">{{ $stockEntry->best_before_date }}</span>
@@ -327,4 +355,84 @@
 @include('components.productcard', [
 'asModal' => true
 ])
+
+{{-- ADR-0022 / docs/plans/28-open-container-measurement.md. One modal serves two actions,
+switched by #stock-measurement-modal-mode: opening a single sealed unit while recording
+what it holds, or re-measuring a unit that is already open. Either way the amount typed
+here is stock.opened_amount, never stock.amount - the container count never changes. --}}
+<div class="modal fade"
+	id="stock-measurement-modal"
+	tabindex="-1">
+	<div class="modal-dialog">
+		<div class="modal-content text-center">
+			<div class="modal-header d-block">
+				<h4 class="modal-title">{{ $__t('Record a measurement') }}</h4>
+				<h5 id="stock-measurement-modal-product-name"
+					class="text-muted"></h5>
+			</div>
+			<div class="modal-body">
+				<form id="stock-measurement-form"
+					novalidate>
+					<input type="hidden"
+						id="stock-measurement-mode">
+					<input type="hidden"
+						id="stock-measurement-product-id">
+					<input type="hidden"
+						id="stock-measurement-stock-id">
+					<input type="hidden"
+						id="stock-measurement-stockrow-id">
+					<div class="form-row">
+						<div class="form-group col-8 text-left">
+							<label for="stock-measurement-amount">{{ $__t('Amount') }}</label>
+							<input type="number"
+								step="any"
+								min="0"
+								class="form-control"
+								id="stock-measurement-amount"
+								required>
+						</div>
+						<div class="form-group col-4 text-left">
+							<label for="stock-measurement-qu">{{ $__t('Quantity unit') }}</label>
+							<select class="custom-select"
+								id="stock-measurement-qu">
+								@foreach($quantityunits as $qu)
+								<option value="{{ $qu->id }}">{{ $qu->name }}</option>
+								@endforeach
+							</select>
+						</div>
+					</div>
+					<div class="form-group text-left">
+						<div class="custom-control custom-checkbox">
+							<input type="checkbox"
+								class="custom-control-input"
+								id="stock-measurement-gross">
+							<label class="custom-control-label"
+								for="stock-measurement-gross">{{ $__t('This is a gross reading (includes the container)') }}</label>
+						</div>
+					</div>
+					<div class="form-group text-left d-none"
+						id="stock-measurement-tare-group">
+						<label for="stock-measurement-tare">{{ $__t('Container (tare) weight') }}</label>
+						<input type="number"
+							step="any"
+							min="0"
+							class="form-control"
+							id="stock-measurement-tare">
+					</div>
+				</form>
+			</div>
+			<div class="modal-footer">
+				<button id="stock-measurement-skip-button"
+					type="button"
+					class="btn btn-success mr-auto">{{ $__t('Open without measuring') }}</button>
+				<button type="button"
+					class="btn btn-secondary"
+					data-dismiss="modal">{{ $__t('Cancel') }}</button>
+				<button id="stock-measurement-save-button"
+					type="button"
+					class="btn btn-primary">{{ $__t('OK') }}</button>
+			</div>
+		</div>
+	</div>
+</div>
 @stop

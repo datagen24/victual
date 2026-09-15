@@ -430,6 +430,21 @@ jobs:
         working-directory: .devtools/frontend
         run: node nested-locations.js http://127.0.0.1:8085
 
+      # Plan 28. Against the demo instance on 8085 - nothing here needs the label subsystem
+      # either. The modal actually opening in the right mode, posting the nested measurement
+      # object rather than flat fields, the tare field's visibility following the gross
+      # checkbox, and the row summary text (built via .text() alone, S29's own discipline
+      # applied to a quantity unit name) are all things the PostgreSQL phase structurally
+      # cannot see - it asserts the column, the coherence CHECK, the write path and the API,
+      # and this asserts that a person can open a container, measure it and read the result
+      # back. docs/plans/28-open-container-measurement.md's own verification asks for this
+      # probe by name, and for it to be invoked here rather than merely placed beside the
+      # others - plan 08's Executed section records that exact distinction being missed once
+      # already.
+      - name: Run open container measurement checks
+        working-directory: .devtools/frontend
+        run: node open-container-measurement.js http://127.0.0.1:8085
+
       # Plan 29. The tare fields on the location form, the one-tap refill fields on the
       # product form, and the location shortfall list with its refill button are all things
       # the PostgreSQL phase structurally cannot see - it asserts the column, the view and

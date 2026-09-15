@@ -210,7 +210,11 @@
 				<tr id="product-{{ $currentStockEntry->product_id }}-row"
 					class="@if(VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING && $currentStockEntry->best_before_date < date('Y-m-d 23:59:59', strtotime('-1 days')) && $currentStockEntry->amount > 0) @if($currentStockEntry->due_type == 1) table-secondary @else table-danger @endif @elseif(VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING && $currentStockEntry->best_before_date < date('Y-m-d 23:59:59', strtotime('+' . $nextXDays . ' days')) && $currentStockEntry->amount > 0) table-warning @elseif ($currentStockEntry->product_missing) table-info @endif">
 					<td class="fit-content border-right">
-						<a class="permission-STOCK_CONSUME btn btn-success btn-sm product-consume-button @if($currentStockEntry->amount_aggregated < $currentStockEntry->quick_consume_amount || $currentStockEntry->enable_tare_weight_handling == 1) disabled @endif"
+						{{-- The tare-enabled disable used to exist because a quick, fixed consume
+						amount could not express the old gross-reading arithmetic; ADR-0022
+						decision 7 removed that arithmetic, so quick_consume_amount now consumes
+						directly (net) whatever the flag says. --}}
+						<a class="permission-STOCK_CONSUME btn btn-success btn-sm product-consume-button @if($currentStockEntry->amount_aggregated < $currentStockEntry->quick_consume_amount) disabled @endif"
 							href="#"
 							data-toggle="tooltip"
 							data-placement="left"
@@ -230,12 +234,17 @@
 							data-product-id="{{ $currentStockEntry->product_id }}"
 							data-product-name="{{ $currentStockEntry->product_name }}"
 							data-product-qu-name="{{ $currentStockEntry->qu_stock_name }}"
-							data-consume-amount="@if($currentStockEntry->enable_tare_weight_handling == 1){{$currentStockEntry->tare_weight}}@else{{$currentStockEntry->amount}}@endif"
-							data-original-total-stock-amount="{{$currentStockEntry->amount}}">
+							{{-- Used to send tare_weight for a tare-enabled product, which the old
+							gross-reading formula resolved back to "consume everything". ADR-0022
+							decision 7 removed that arithmetic; the amount consumed is always net
+							now, so this is unconditionally the current stock amount. --}}
+							data-consume-amount="{{$currentStockEntry->amount}}">
 							<i class="fa-solid fa-utensils"></i> {{ $__t('All') }}
 						</a>
 						@if(VICTUAL_FEATURE_FLAG_STOCK_PRODUCT_OPENED_TRACKING)
-						<a class="btn btn-success btn-sm product-open-button @if($currentStockEntry->amount_aggregated < $currentStockEntry->quick_open_amount || $currentStockEntry->amount_aggregated == $currentStockEntry->amount_opened_aggregated || $currentStockEntry->enable_tare_weight_handling == 1 || $currentStockEntry->disable_open == 1) disabled @endif"
+						{{-- Tare-enabled products can be opened directly since ADR-0022 decision 8
+						removed OpenProduct()'s refusal. --}}
+						<a class="btn btn-success btn-sm product-open-button @if($currentStockEntry->amount_aggregated < $currentStockEntry->quick_open_amount || $currentStockEntry->amount_aggregated == $currentStockEntry->amount_opened_aggregated || $currentStockEntry->disable_open == 1) disabled @endif"
 							href="#"
 							data-toggle="tooltip"
 							data-placement="left"

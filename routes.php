@@ -279,6 +279,7 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/stock', [StockApiController::class, 'CurrentStock']);
 	$group->get('/stock/entry/{entryId}', [StockApiController::class, 'StockEntry']);
 	$group->put('/stock/entry/{entryId}', [StockApiController::class, 'EditStockEntry']);
+	$group->post('/stock/entry/{entryId}/measure', [StockApiController::class, 'MeasureStockEntry']);
 	$group->get('/stock/volatile', [StockApiController::class, 'CurrentVolatileStock']);
 	$group->get('/stock/products/{productId}', [StockApiController::class, 'ProductDetails']);
 	$group->get('/stock/products/{productId}/entries', [StockApiController::class, 'ProductStockEntries']);

@@ -51,6 +51,17 @@ class StockService extends BaseService
 	/** Snapshot of a stock entry *before* it was edited via EditStockEntry (used to restore it on undo) */
 	const TRANSACTION_TYPE_STOCK_EDIT_OLD = 'stock-edit-old';
 
+	/**
+	 * Snapshot of a stock entry's measurement *after* it was re-measured via
+	 * MeasureStockEntry() (correlated with the _OLD booking). A reversible, separately
+	 * recorded measurement - ADR-0022 open question 2's review recommendation - does not
+	 * change stock.amount and is not a consumption booking.
+	 */
+	const TRANSACTION_TYPE_STOCK_MEASURED_NEW = 'stock-measured-new';
+
+	/** Snapshot of a stock entry's measurement *before* it was re-measured via MeasureStockEntry() (used to restore it on undo) */
+	const TRANSACTION_TYPE_STOCK_MEASURED_OLD = 'stock-measured-old';
+
 	/** Transfer between locations: removal side at the source location (negative amount, correlated with _TO) */
 	const TRANSACTION_TYPE_TRANSFER_FROM = 'transfer_from';
 
@@ -186,12 +197,14 @@ class StockService extends BaseService
 	 * Depending on the label type and the label printer feature flags, label printing webhooks are triggered.
 	 * Afterwards CompactStockEntries() merges equal stock entries of this product.
 	 *
-	 * For tare weight handled products $amount is the new gross total (scale reading incl. container weight);
-	 * the actually booked amount is $amount - current stock amount - tare weight. With $addExactAmount = true
-	 * the given amount is booked as-is instead.
+	 * $amount is always the net amount to add. Product-level tare weight handling (a gross
+	 * reading with the container weight subtracted) was removed under ADR-0022 decisions 4
+	 * and 7 (2026-09-14); this signature dropped the $addExactAmount parameter that only ever
+	 * had an effect for tare-enabled products, since no API caller ever set it true (see
+	 * docs/plans/28-open-container-measurement.md).
 	 *
 	 * @param int $productId
-	 * @param float $amount Amount in the product's stock quantity unit (gross total for tare weight handled products, see above)
+	 * @param float $amount Amount in the product's stock quantity unit
 	 * @param string|null $bestBeforeDate Due date as Y-m-d; null derives it from the product's default due days
 	 *                                    (or the after-freezing default when added to a freezer location);
 	 *                                    -1 default days map to the "never expires" date 2999-12-31
@@ -202,13 +215,11 @@ class StockService extends BaseService
 	 * @param int|null $shoppingLocationId Store where the product was bought
 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
 	 * @param int $stockLabelType 0 = no label, 1 = one label for the whole booking, 2 = one label (and stock entry) per unit
-	 * @param bool $addExactAmount Only relevant for tare weight handled products, see above
 	 * @param string|null $note Free text note stored on the stock entry and booking
 	 * @return string The transaction id of the booking(s)
-	 * @throws \Exception When the product or location does not exist, $amount <= 0, the gross amount is
-	 *                    not above tare weight + current stock, or $transactionType is not valid here
+	 * @throws \Exception When the product or location does not exist, $amount <= 0, or $transactionType is not valid here
 	 */
-	public function AddProduct(int $productId, float $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId = null, $shoppingLocationId = null, &$transactionId = null, $stockLabelType = 0, $addExactAmount = false, $note = null)
+	public function AddProduct(int $productId, float $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId = null, $shoppingLocationId = null, &$transactionId = null, $stockLabelType = 0, $note = null)
 	{
 		if (!$this->ProductExists($productId))
 		{
@@ -223,23 +234,14 @@ class StockService extends BaseService
 
 		$productDetails = (object)$this->GetProductDetails($productId);
 
-		// Tare weight handling
-		// The given amount is the new total amount including the container weight (gross)
-		// The amount to be posted needs to be the given amount - stock amount - tare weight
-		if ($productDetails->product->enable_tare_weight_handling == 1)
-		{
-			if ($addExactAmount)
-			{
-				$amount = $productDetails->stock_amount + $productDetails->product->tare_weight + $amount;
-			}
-
-			if ($amount <= $productDetails->product->tare_weight + $productDetails->stock_amount)
-			{
-				throw new \Exception('The amount cannot be lower or equal than the defined tare weight + current stock amount');
-			}
-
-			$amount = $amount - $productDetails->stock_amount - $productDetails->product->tare_weight;
-		}
+		// Product-level tare weight arithmetic against the product's whole stock total was
+		// removed here under ADR-0022 decisions 4 and 7 (2026-09-14): weighing one container
+		// subtracted the stock amount of every entry of the product, sealed ones included.
+		// See docs/plans/28-open-container-measurement.md and the spike's negative control
+		// (.spike-adr22/RESULTS.md#prerequisite-1-coexistence-with-a-negative-control) for the
+		// demonstrated defect. The fields stay on the wire at their current values per decision
+		// 7; only the arithmetic goes. Per-entry measurement (OpenProduct(), MeasureStockEntry())
+		// is the replacement mechanism.
 
 		//Set the default due date, if none is supplied
 		if ($bestBeforeDate == null)
@@ -515,9 +517,10 @@ class StockService extends BaseService
 	 * When the user setting "shopping_list_auto_add_below_min_stock_amount" is enabled, missing
 	 * products are added to the configured shopping list afterwards.
 	 *
-	 * For tare weight handled products $amount is the new gross total (scale reading incl. container
-	 * weight); the actually booked amount is |$amount - stock amount - tare weight|. With
-	 * $consumeExactAmount = true the given amount is consumed as-is instead.
+	 * The product-level tare weight mechanism this paragraph used to describe is retired under
+	 * ADR-0022 decisions 4 and 7 (2026-09-14): $amount is always the net amount to consume now,
+	 * and $consumeExactAmount has no effect (kept on the signature for wire compatibility with
+	 * existing callers that still pass exact_amount; see docs/plans/28-open-container-measurement.md).
 	 *
 	 * With $allowSubproductSubstitution, stock of sub products (products_resolved) may be used;
 	 * amounts are then converted to the sub product's stock quantity unit via QU conversions and
@@ -532,7 +535,7 @@ class StockService extends BaseService
 	 * @param int|null $locationId When given, only stock at this location is consumed
 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution See above
-	 * @param bool $consumeExactAmount Only relevant for tare weight handled products, see above
+	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or location does not exist, $amount <= 0, the amount exceeds
 	 *                    the current (aggregated) stock amount, or $transactionType is not valid here
@@ -555,23 +558,6 @@ class StockService extends BaseService
 		}
 
 		$productDetails = (object)$this->GetProductDetails($productId);
-
-		// Tare weight handling
-		// The given amount is the new total amount including the container weight (gross)
-		// The amount to be posted needs to be the absolute value of the given amount - stock amount - tare weight
-		if ($productDetails->product->enable_tare_weight_handling == 1)
-		{
-			if ($consumeExactAmount)
-			{
-				$amount = $productDetails->stock_amount + $productDetails->product->tare_weight - $amount;
-			}
-			if ($amount < $productDetails->product->tare_weight)
-			{
-				throw new \Exception('The amount cannot be lower than the defined tare weight');
-			}
-
-			$amount = abs($amount - $productDetails->stock_amount - $productDetails->product->tare_weight);
-		}
 
 		if ($transactionType === self::TRANSACTION_TYPE_CONSUME || $transactionType === self::TRANSACTION_TYPE_INVENTORY_CORRECTION)
 		{
@@ -626,7 +612,10 @@ class StockService extends BaseService
 
 					if ($amount >= $stockEntry->amount)
 					{
-						// Take the whole stock entry
+						// Take the whole stock entry. The four opened_* columns are mirrored
+						// onto the booking (ADR-0022 decision 9) so undoing this consume can
+						// rebuild the deleted row with its measurement intact - see
+						// UndoBooking()'s TRANSACTION_TYPE_CONSUME branch.
 						$logRow = $this->DB->stock_log()->createRow([
 							'product_id' => $stockEntry->product_id,
 							'amount' => $stockEntry->amount * -1,
@@ -643,7 +632,11 @@ class StockService extends BaseService
 							'user_id' => VICTUAL_USER_ID,
 							'location_id' => $stockEntry->location_id,
 							'note' => $stockEntry->note,
-							'shopping_location_id' => $stockEntry->shopping_location_id
+							'shopping_location_id' => $stockEntry->shopping_location_id,
+							'opened_amount' => $stockEntry->opened_amount,
+							'opened_qu_id' => $stockEntry->opened_qu_id,
+							'opened_tare' => $stockEntry->opened_tare,
+							'opened_measured_at' => $stockEntry->opened_measured_at
 						]);
 						$logRow->save();
 
@@ -683,9 +676,21 @@ class StockService extends BaseService
 						]);
 						$logRow->save();
 
-						$stockEntry->update([
+						// A partial consume of a measured entry always leaves an amount other
+						// than 1 - the entry could only be measured in the first place with
+						// amount = 1 (ADR-0022 decision 8) - so the measurement is dropped
+						// rather than left to violate the coherence CHECK. Re-measuring the
+						// remaining container is MeasureStockEntry()'s job, not this one's.
+						$measurementClear = $stockEntry->opened_amount !== null ? [
+							'opened_amount' => null,
+							'opened_qu_id' => null,
+							'opened_tare' => null,
+							'opened_measured_at' => null,
+						] : [];
+
+						$stockEntry->update(array_merge([
 							'amount' => $restStockAmount
-						]);
+						], $measurementClear));
 
 						$amount = 0;
 					}
@@ -718,6 +723,15 @@ class StockService extends BaseService
 	 * a shared correlation id, so an undo restores the old state). Afterwards CompactStockEntries()
 	 * merges equal stock entries of the product.
 	 *
+	 * A measurement already on the entry (ADR-0022 decisions 1, 8, 9) is carried through
+	 * unchanged when the edit leaves it coherent (still open = 1, amount = 1), and dropped -
+	 * all four opened_* columns cleared - the moment it would not be, since the new amount or
+	 * open state would otherwise violate the coherence CHECK on `stock`. This is deliberate,
+	 * not incidental: an edit is not the place to carry a remainder across a change in what
+	 * the row describes. The OLD log row mirrors whatever the entry carried before the edit,
+	 * so an undo of TRANSACTION_TYPE_STOCK_EDIT_OLD restores it exactly - including a
+	 * measurement this edit itself dropped.
+	 *
 	 * @param int $stockRowId The `stock` table row id (not the stock_id)
 	 * @param float $amount New amount in the product's stock quantity unit
 	 * @param string|null $bestBeforeDate New due date as Y-m-d
@@ -741,6 +755,23 @@ class StockService extends BaseService
 		$correlationId = uniqid();
 		$transactionId = uniqid();
 
+		// Whether the edited state still permits the measurement (if any) this entry already
+		// carries. round() guards the float amount comparison the CHECK itself does exactly.
+		$staysCoherent = boolval($open) && round($amount, 2) == 1.0;
+
+		$measurementBefore = [
+			'opened_amount' => $stockRow->opened_amount,
+			'opened_qu_id' => $stockRow->opened_qu_id,
+			'opened_tare' => $stockRow->opened_tare,
+			'opened_measured_at' => $stockRow->opened_measured_at,
+		];
+		$measurementAfter = $staysCoherent ? $measurementBefore : [
+			'opened_amount' => null,
+			'opened_qu_id' => null,
+			'opened_tare' => null,
+			'opened_measured_at' => null,
+		];
+
 		// An eighth transactional entrypoint, added by plan 18's review rather than by
 		// plan 13, which wrapped the seven stock *booking* paths and left this one out.
 		// The reason it belongs here is the same one 13 gives for those: this method writes
@@ -750,10 +781,10 @@ class StockService extends BaseService
 		// rest or not at all.
 		DatabaseService::GetInstance()->InTransaction(function () use (
 			$stockRow, $correlationId, $transactionId, $amount, $bestBeforeDate, $locationId,
-			$shoppingLocationId, $price, $open, $purchasedDate, $note
+			$shoppingLocationId, $price, $open, $purchasedDate, $note, $measurementBefore, $measurementAfter
 		)
 		{
-			$logOldRowForStockUpdate = $this->DB->stock_log()->createRow([
+			$logOldRowForStockUpdate = $this->DB->stock_log()->createRow(array_merge([
 				'product_id' => $stockRow->product_id,
 				'amount' => $stockRow->amount,
 				'best_before_date' => $stockRow->best_before_date,
@@ -769,7 +800,7 @@ class StockService extends BaseService
 				'stock_row_id' => $stockRow->id,
 				'user_id' => VICTUAL_USER_ID,
 				'note' => $stockRow->note
-			]);
+			], $measurementBefore));
 			$logOldRowForStockUpdate->save();
 
 			$openedDate = $stockRow->opened_date;
@@ -782,7 +813,7 @@ class StockService extends BaseService
 				$openedDate = null;
 			}
 
-			$stockRow->update([
+			$stockRow->update(array_merge([
 				'amount' => $amount,
 				'price' => $price,
 				'best_before_date' => $bestBeforeDate,
@@ -792,9 +823,9 @@ class StockService extends BaseService
 				'open' => BoolToInt($open),
 				'purchased_date' => $purchasedDate,
 				'note' => $note
-			]);
+			], $measurementAfter));
 
-			$logNewRowForStockUpdate = $this->DB->stock_log()->createRow([
+			$logNewRowForStockUpdate = $this->DB->stock_log()->createRow(array_merge([
 				'product_id' => $stockRow->product_id,
 				'amount' => $amount,
 				'best_before_date' => $bestBeforeDate,
@@ -810,7 +841,7 @@ class StockService extends BaseService
 				'stock_row_id' => $stockRow->id,
 				'user_id' => VICTUAL_USER_ID,
 				'note' => $stockRow->note
-			]);
+			], $measurementAfter));
 			$logNewRowForStockUpdate->save();
 
 			$this->CompactStockEntries($stockRow->product_id);
@@ -818,6 +849,102 @@ class StockService extends BaseService
 			// Inside the transaction on purpose: the outbox row and the ledger rows commit
 			// together or not at all, so a rolled back edit leaves no event behind and a
 			// crash after the commit still delivers one.
+			BookingEventPublisher::RecordTransaction($transactionId);
+		});
+
+		return $transactionId;
+	}
+
+	/**
+	 * Records a new measurement of an already-open, single-unit stock entry (re-measuring a
+	 * container over its life - ADR-0022 decision 6, this plan's open question 1). This is
+	 * deliberately not an amount edit: stock.amount, the container count, never changes here,
+	 * and the change is recorded as a reversible before/after pair - the review recommendation
+	 * for open question 2 - rather than inferred as a consumption or updated silently.
+	 *
+	 * Requires the entry to already be a coherent single opened container (open = 1,
+	 * amount = 1); a fresh measurement on a container being opened for the first time goes
+	 * through OpenProduct()'s own $measurement parameter instead, since only that method knows
+	 * whether opening will leave the entry at amount = 1.
+	 *
+	 * @param int $stockRowId The `stock` table row id (not the stock_id)
+	 * @param array $measurement ['amount' => float, 'qu_id' => int, 'tare' => float|null, 'is_gross' => bool]
+	 * @return string The transaction id of the booking pair
+	 * @throws \Exception When the stock entry does not exist, is not a coherent single opened
+	 *                    container, or the measurement unit does not convert to the product's stock unit
+	 */
+	public function MeasureStockEntry(int $stockRowId, array $measurement)
+	{
+		$stockRow = $this->DB->stock()->where('id = :1', $stockRowId)->fetch();
+		if ($stockRow === null)
+		{
+			throw new \Exception('Stock does not exist');
+		}
+
+		if ($stockRow->open != 1 || round($stockRow->amount, 2) != 1.0)
+		{
+			throw new \Exception('Only a single opened container (open, amount = 1) can be measured');
+		}
+
+		$resolved = $this->ResolveMeasurement($stockRow->product_id, $measurement);
+
+		$correlationId = uniqid();
+		$transactionId = uniqid();
+
+		$measurementBefore = [
+			'opened_amount' => $stockRow->opened_amount,
+			'opened_qu_id' => $stockRow->opened_qu_id,
+			'opened_tare' => $stockRow->opened_tare,
+			'opened_measured_at' => $stockRow->opened_measured_at,
+		];
+
+		DatabaseService::GetInstance()->InTransaction(function () use (
+			$stockRow, $correlationId, $transactionId, $measurementBefore, $resolved
+		)
+		{
+			$logOldRow = $this->DB->stock_log()->createRow(array_merge([
+				'product_id' => $stockRow->product_id,
+				'amount' => $stockRow->amount,
+				'best_before_date' => $stockRow->best_before_date,
+				'purchased_date' => $stockRow->purchased_date,
+				'stock_id' => $stockRow->stock_id,
+				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_OLD,
+				'price' => $stockRow->price,
+				'opened_date' => $stockRow->opened_date,
+				'location_id' => $stockRow->location_id,
+				'shopping_location_id' => $stockRow->shopping_location_id,
+				'correlation_id' => $correlationId,
+				'transaction_id' => $transactionId,
+				'stock_row_id' => $stockRow->id,
+				'user_id' => VICTUAL_USER_ID,
+				'note' => $stockRow->note
+			], $measurementBefore));
+			$logOldRow->save();
+
+			$stockRow->update($resolved);
+
+			$logNewRow = $this->DB->stock_log()->createRow(array_merge([
+				'product_id' => $stockRow->product_id,
+				'amount' => $stockRow->amount,
+				'best_before_date' => $stockRow->best_before_date,
+				'purchased_date' => $stockRow->purchased_date,
+				'stock_id' => $stockRow->stock_id,
+				'transaction_type' => self::TRANSACTION_TYPE_STOCK_MEASURED_NEW,
+				'price' => $stockRow->price,
+				'opened_date' => $stockRow->opened_date,
+				'location_id' => $stockRow->location_id,
+				'shopping_location_id' => $stockRow->shopping_location_id,
+				'correlation_id' => $correlationId,
+				'transaction_id' => $transactionId,
+				'stock_row_id' => $stockRow->id,
+				'user_id' => VICTUAL_USER_ID,
+				'note' => $stockRow->note
+			], $resolved));
+			$logNewRow->save();
+
+			// Inside the transaction on purpose: the outbox row and the ledger rows commit
+			// together or not at all, so a rolled back measurement leaves no event behind and
+			// a crash after the commit still delivers one.
 			BookingEventPublisher::RecordTransaction($transactionId);
 		});
 
@@ -1183,6 +1310,7 @@ class StockService extends BaseService
 			$stockCurrentRow->amount_aggregated = 0;
 			$stockCurrentRow->amount_opened_aggregated = 0;
 			$stockCurrentRow->is_aggregated_amount = 0;
+			$stockCurrentRow->amount_measured = 0;
 		}
 
 		$detailsRow = $this->DB->uihelper_product_details()->where('id', $productId)->fetch();
@@ -1210,6 +1338,15 @@ class StockService extends BaseService
 			'stock_amount_opened' => $stockCurrentRow->amount_opened,
 			'stock_amount_aggregated' => $stockCurrentRow->amount_aggregated,
 			'stock_amount_opened_aggregated' => $stockCurrentRow->amount_opened_aggregated,
+			// The measured (not merely counted) contents across this product's opened,
+			// measured entries, in the stock unit - additive, ADR-0022 decision 2 and this
+			// plan's open question 3. Left beside stock_amount* rather than folded into them;
+			// see migrations/0275.pgsql.sql. ?? 0 rather than a bare property read: above
+			// SQLITE_FROZEN_MIGRATION_ID this column exists on PostgreSQL's stock_current
+			// only, so a real row read against SQLite (still a legitimate way to run this
+			// fork locally, and what the differential suite's rollback phase does) has no
+			// such property at all.
+			'stock_amount_measured' => $stockCurrentRow->amount_measured ?? 0,
 			'quantity_unit_stock' => $quStock,
 			'default_quantity_unit_purchase' => $quPurchase,
 			'default_quantity_unit_consume' => $quConsume,
@@ -1438,46 +1575,27 @@ class StockService extends BaseService
 			$purchasedDate = date('Y-m-d');
 		}
 
-		// Tare weight handling
-		// The given amount is the new total amount including the container weight (gross)
-		// So assume that the amount in stock is the amount also including the container weight
-		$containerWeight = 0;
-
-		if ($productDetails->product->enable_tare_weight_handling == 1)
-		{
-			$containerWeight = $productDetails->product->tare_weight;
-		}
-
-		if ($newAmount == $productDetails->stock_amount + $containerWeight)
+		// Product-level tare weight handling (the gross-reading passthrough this used to
+		// describe) is retired under ADR-0022 decisions 4 and 7 (2026-09-14); see AddProduct()
+		// and ConsumeProduct(). $newAmount is always the net counted total now.
+		if ($newAmount == $productDetails->stock_amount)
 		{
 			throw new \Exception('The new amount cannot equal the current stock amount');
 		}
-		elseif ($newAmount > $productDetails->stock_amount + $containerWeight)
+		elseif ($newAmount > $productDetails->stock_amount)
 		{
 			$bookingAmount = $newAmount - $productDetails->stock_amount;
-
-			if ($productDetails->product->enable_tare_weight_handling == 1)
-			{
-				// Pass the gross amount through unchanged - AddProduct does the tare weight math itself
-				$bookingAmount = $newAmount;
-			}
 
 			// The correction is one delegated booking today, but the boundary belongs to the
 			// entrypoint: "an inventory correction is atomic" should not depend on what it delegates to.
 			return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $bookingAmount, $bestBeforeDate, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note)
 			{
-				return $this->AddProduct($productId, $bookingAmount, $bestBeforeDate, self::TRANSACTION_TYPE_INVENTORY_CORRECTION, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, false, $note);
+				return $this->AddProduct($productId, $bookingAmount, $bestBeforeDate, self::TRANSACTION_TYPE_INVENTORY_CORRECTION, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
 			});
 		}
-		elseif ($newAmount < $productDetails->stock_amount + $containerWeight)
+		elseif ($newAmount < $productDetails->stock_amount)
 		{
 			$bookingAmount = $productDetails->stock_amount - $newAmount;
-
-			if ($productDetails->product->enable_tare_weight_handling == 1)
-			{
-				// Pass the gross amount through unchanged - ConsumeProduct does the tare weight math itself
-				$bookingAmount = $newAmount;
-			}
 
 			// See above.
 			return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $bookingAmount)
@@ -1504,16 +1622,28 @@ class StockService extends BaseService
 	 *
 	 * Sub product substitution works as in ConsumeProduct() (amounts converted via QU conversions).
 	 *
+	 * $measurement, when given, records the container's contents as it is opened (ADR-0022
+	 * decisions 1, 3, 4, 8; docs/plans/28-open-container-measurement.md). It requires
+	 * $specificStockEntryId naming one entry and $amount = 1.0 - opening exactly one container
+	 * - because a measurement describes exactly one container and the coherence constraint on
+	 * `stock` enforces open = 1 AND amount = 1 wherever one is attached. Shape:
+	 * ['amount' => float, 'qu_id' => int, 'tare' => float|null, 'is_gross' => bool]. A gross
+	 * reading has its tare subtracted before storage, so $productDetails and the ledger always
+	 * carry a net opened_amount; see ResolveMeasurement().
+	 *
 	 * @param int $productId
 	 * @param float $amount Amount to open, in the product's stock quantity unit
 	 * @param string $specificStockEntryId 'default' opens in default order; otherwise a stock_id restricting opening to that single stock entry
 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
 	 * @param bool $allowSubproductSubstitution When true, unopened stock of resolved sub products may be opened
+	 * @param array|null $measurement See above
 	 * @return string The transaction id of the booking(s)
-	 * @throws \Exception When the product does not exist, has opening disabled, is tare weight handled,
-	 *                    or the amount exceeds the current unopened (aggregated) stock amount
+	 * @throws \Exception When the product does not exist, has opening disabled, the amount exceeds the
+	 *                    current unopened (aggregated) stock amount, a measurement is given without
+	 *                    targeting a specific single-unit entry, or a measurement's unit does not
+	 *                    convert to the product's stock unit
 	 */
-	public function OpenProduct(int $productId, float $amount, $specificStockEntryId = 'default', &$transactionId = null, $allowSubproductSubstitution = false)
+	public function OpenProduct(int $productId, float $amount, $specificStockEntryId = 'default', &$transactionId = null, $allowSubproductSubstitution = false, ?array $measurement = null)
 	{
 		if (!$this->ProductExists($productId))
 		{
@@ -1531,11 +1661,6 @@ class StockService extends BaseService
 		$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
 		$potentialStockEntries = $this->GetProductStockEntries($productId, true, $allowSubproductSubstitution);
 
-		if ($product->enable_tare_weight_handling == 1)
-		{
-			throw new \Exception('Opening tare weight handling enabled products is not supported');
-		}
-
 		if ($amount > $productStockAmountUnopened)
 		{
 			throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
@@ -1544,6 +1669,33 @@ class StockService extends BaseService
 		if ($specificStockEntryId !== 'default')
 		{
 			$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
+		}
+
+		$resolvedMeasurement = null;
+		if ($measurement !== null)
+		{
+			// Coherence (ADR-0022 decision 8): a measurement describes exactly one container,
+			// so this call has to name that one entry and open exactly one unit of it. The
+			// entry also has to already hold >= 1 unit, or opening it fully would leave an
+			// amount other than 1 - see 0275.pgsql.sql's coherence CHECK, and the spike's
+			// prerequisite 5 (.spike-adr22/RESULTS.md#prerequisite-5-container-identity).
+			if ($specificStockEntryId === 'default')
+			{
+				throw new \Exception('A measurement requires opening a specific stock entry');
+			}
+
+			if (round($amount, 2) != 1.0)
+			{
+				throw new \Exception('A measurement requires opening exactly one unit');
+			}
+
+			$targetEntry = FindObjectInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
+			if ($targetEntry === null || round($targetEntry->amount, 2) < 1.0)
+			{
+				throw new \Exception('This stock entry cannot be opened as a single measured container');
+			}
+
+			$resolvedMeasurement = $this->ResolveMeasurement($productId, $measurement);
 		}
 
 		if ($transactionId === null)
@@ -1555,7 +1707,7 @@ class StockService extends BaseService
 
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
 		// land together, or the ledger records an opening that stock does not show.
-		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $product, $productDetails, $productId, $allowSubproductSubstitution, &$transactionId, &$labelWebhookPayloads)
+		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $product, $productDetails, $productId, $allowSubproductSubstitution, $specificStockEntryId, $resolvedMeasurement, &$transactionId, &$labelWebhookPayloads)
 		{
 			foreach ($potentialStockEntries as $stockEntry)
 			{
@@ -1606,10 +1758,23 @@ class StockService extends BaseService
 					}
 				}
 
+				// Attaches only to the one entry named by $specificStockEntryId - the coherence
+				// pre-checks above guarantee this entry ends the branch below at amount = 1.
+				$measurementColumns = [];
+				if ($resolvedMeasurement !== null && $stockEntry->stock_id === $specificStockEntryId)
+				{
+					$measurementColumns = [
+						'opened_amount' => $resolvedMeasurement['opened_amount'],
+						'opened_qu_id' => $resolvedMeasurement['opened_qu_id'],
+						'opened_tare' => $resolvedMeasurement['opened_tare'],
+						'opened_measured_at' => $resolvedMeasurement['opened_measured_at'],
+					];
+				}
+
 				if ($amount >= $stockEntry->amount)
 				{
 					// Mark the whole stock entry as opened
-					$logRow = $this->DB->stock_log()->createRow([
+					$logRow = $this->DB->stock_log()->createRow(array_merge([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $stockEntry->amount,
 						'best_before_date' => $stockEntry->best_before_date,
@@ -1623,14 +1788,14 @@ class StockService extends BaseService
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
 						'note' => $stockEntry->note
-					]);
+					], $measurementColumns));
 					$logRow->save();
 
-					$stockEntry->update([
+					$stockEntry->update(array_merge([
 						'open' => 1,
 						'opened_date' => date('Y-m-d'),
 						'best_before_date' => $newBestBeforeDate
-					]);
+					], $measurementColumns));
 
 					$amount -= $stockEntry->amount;
 				}
@@ -1661,7 +1826,7 @@ class StockService extends BaseService
 					// never split does. See migrations/0267.pgsql.sql.
 					$this->RecordSplitOrigin($stockEntry->stock_id, $restStockId);
 
-					$logRow = $this->DB->stock_log()->createRow([
+					$logRow = $this->DB->stock_log()->createRow(array_merge([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $amount,
 						'best_before_date' => $stockEntry->best_before_date,
@@ -1675,15 +1840,15 @@ class StockService extends BaseService
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
 						'note' => $stockEntry->note
-					]);
+					], $measurementColumns));
 					$logRow->save();
 
-					$stockEntry->update([
+					$stockEntry->update(array_merge([
 						'amount' => $amount,
 						'open' => 1,
 						'opened_date' => date('Y-m-d'),
 						'best_before_date' => $newBestBeforeDate
-					]);
+					], $measurementColumns));
 
 					$amount = 0;
 				}
@@ -2283,7 +2448,11 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_CONSUME || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount < 0))
 			{
-				// Add corresponding amount back to stock
+				// Add corresponding amount back to stock. The four opened_* columns are
+				// mirrored from $logRow (ADR-0022 decision 9) so a fully-consumed measured
+				// entry - deleted from `stock` entirely - comes back with its remainder,
+				// unit, tare and timestamp intact rather than reconstructed bare; see
+				// .spike-adr22/RESULTS.md#prerequisite-6-undo.
 				$stockRow = $this->DB->stock()->createRow([
 					'product_id' => $logRow->product_id,
 					'amount' => $logRow->amount * -1,
@@ -2295,7 +2464,11 @@ class StockService extends BaseService
 					'open' => $logRow->opened_date !== null, // The open flag itself is not logged, so it is derived from the logged opened date
 					'location_id' => $logRow->location_id,
 					'note' => $logRow->note,
-					'shopping_location_id' => $logRow->shopping_location_id
+					'shopping_location_id' => $logRow->shopping_location_id,
+					'opened_amount' => $logRow->opened_amount,
+					'opened_qu_id' => $logRow->opened_qu_id,
+					'opened_tare' => $logRow->opened_tare,
+					'opened_measured_at' => $logRow->opened_measured_at
 				]);
 				$stockRow->save();
 
@@ -2366,12 +2539,21 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_PRODUCT_OPENED)
 			{
-				// Remove opened flag from corresponding stock entry
+				// Remove opened flag from corresponding stock entry. Clearing all four
+				// opened_* columns here is required, not merely stylistic (ADR-0022 decision
+				// 9, sharpened by the spike): an unopened container has no remainder, and
+				// leaving a measurement in place while clearing `open` would violate the
+				// coherence CHECK outright and abort this very undo -
+				// see .spike-adr22/RESULTS.md#prerequisite-6-undo.
 				$stockRows = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date = :3', $logRow->stock_id, $logRow->amount, $logRow->purchased_date)->limit(1);
 				$stockRows->update([
 					'open' => 0,
 					'opened_date' => null,
-					'best_before_date' => $logRow->best_before_date // Is only relevant when the product has "Default due days after opened", but also doesn't hurt for other products
+					'best_before_date' => $logRow->best_before_date, // Is only relevant when the product has "Default due days after opened", but also doesn't hurt for other products
+					'opened_amount' => null,
+					'opened_qu_id' => null,
+					'opened_tare' => null,
+					'opened_measured_at' => null
 				]);
 
 				// Update log entry
@@ -2413,7 +2595,49 @@ class StockService extends BaseService
 					'location_id' => $logRow->location_id,
 					'open' => $open,
 					'opened_date' => $openedDate,
-					'note' => $logRow->note
+					'note' => $logRow->note,
+					// Restores whatever measurement (if any) EditStockEntry() found on the
+					// entry before this edit - including one the edit itself dropped for
+					// coherence. See EditStockEntry()'s own comment.
+					'opened_amount' => $logRow->opened_amount,
+					'opened_qu_id' => $logRow->opened_qu_id,
+					'opened_tare' => $logRow->opened_tare,
+					'opened_measured_at' => $logRow->opened_measured_at
+				]);
+
+				// Update log entry
+				$logRow->update([
+					'undone' => 1,
+					'undone_timestamp' => date('Y-m-d H:i:s')
+				]);
+			}
+			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_MEASURED_NEW)
+			{
+				// Update log entry, no action needed - undoing the correlated OLD booking
+				// (below) is what actually restores the prior measurement.
+				$logRow->update([
+					'undone' => 1,
+					'undone_timestamp' => date('Y-m-d H:i:s')
+				]);
+			}
+			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_MEASURED_OLD)
+			{
+				$stockRow = $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
+
+				if ($stockRow == null)
+				{
+					throw new \Exception('Booking does not exist or was already undone');
+				}
+
+				// Only the measurement columns are touched - MeasureStockEntry() never
+				// changes amount, dates, price, location or note, so there is nothing else to
+				// restore, and touching them here could clobber changes made by some other
+				// booking on this entry since.
+				$stockRow->update([
+					'opened_amount' => $logRow->opened_amount,
+					'opened_qu_id' => $logRow->opened_qu_id,
+					'opened_tare' => $logRow->opened_tare,
+					'opened_measured_at' => $logRow->opened_measured_at
 				]);
 
 				// Update log entry
@@ -2674,6 +2898,80 @@ class StockService extends BaseService
 		{
 			throw new \Exception("Plugin $pluginName was not found");
 		}
+	}
+
+	/**
+	 * Resolves a raw measurement input into the net amount/tare pair stored on `stock` and
+	 * `stock_log` (ADR-0022 decisions 3 and 4). $measurement['amount'] is the reading in
+	 * $measurement['qu_id']; when $measurement['is_gross'] is true, $measurement['tare'] (in
+	 * the same unit) is required and subtracted before storage, so opened_amount is always
+	 * net contents and opened_tare records what was subtracted (null for a net reading).
+	 *
+	 * Convertibility (decision 3) is checked here, against cache__quantity_unit_conversions_resolved,
+	 * because it cannot be a database CHECK: it depends on a value the recursive conversions
+	 * view computes, not on the row being written. This is deliberately a different property
+	 * than the coherence CHECK on `stock` (one container, one unit) - see
+	 * .spike-adr22/RESULTS.md#prerequisite-7-conversion-failure, which is where this
+	 * distinction was first demonstrated.
+	 *
+	 * @param int $productId
+	 * @param array $measurement ['amount' => float, 'qu_id' => int, 'tare' => float|null, 'is_gross' => bool]
+	 * @return array ['opened_amount' => float, 'opened_qu_id' => int, 'opened_tare' => float|null, 'opened_measured_at' => string]
+	 * @throws \Exception When required fields are missing/invalid, a gross reading has no tare,
+	 *                    or the measurement unit does not convert to the product's stock unit
+	 */
+	private function ResolveMeasurement(int $productId, array $measurement)
+	{
+		if (!array_key_exists('amount', $measurement) || !is_numeric($measurement['amount']) || $measurement['amount'] <= 0)
+		{
+			throw new \Exception('A measurement requires a positive amount');
+		}
+
+		if (!array_key_exists('qu_id', $measurement) || !is_numeric($measurement['qu_id']))
+		{
+			throw new \Exception('A measurement requires a quantity unit');
+		}
+
+		$quId = (int)$measurement['qu_id'];
+		$isGross = boolval($measurement['is_gross'] ?? false);
+		$tare = null;
+
+		$product = $this->DB->products($productId);
+
+		if ($quId != $product->qu_id_stock)
+		{
+			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productId, $quId, $product->qu_id_stock)->fetch();
+			if ($conversion === null)
+			{
+				throw new \Exception('This measurement unit cannot be converted to the product\'s stock unit');
+			}
+		}
+
+		$openedAmount = (float)$measurement['amount'];
+
+		if ($isGross)
+		{
+			if (!array_key_exists('tare', $measurement) || !is_numeric($measurement['tare']) || $measurement['tare'] < 0)
+			{
+				throw new \Exception('A gross measurement requires a tare weight');
+			}
+
+			$tare = (float)$measurement['tare'];
+
+			if ($tare >= $openedAmount)
+			{
+				throw new \Exception('The tare weight cannot be >= the gross reading');
+			}
+
+			$openedAmount -= $tare;
+		}
+
+		return [
+			'opened_amount' => $openedAmount,
+			'opened_qu_id' => $quId,
+			'opened_tare' => $tare,
+			'opened_measured_at' => date('Y-m-d H:i:s'),
+		];
 	}
 
 	/**
