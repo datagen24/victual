@@ -155,10 +155,11 @@ default template; the form gains a printer picker only if a household with two p
 asks for one.
 
 **Q4 — Recipes, chores and batteries: keep a print button at all?** Upstream prints a
-Grocycode for them so a scan can start a chore or log a battery charge. Proposed answer:
-keep them, because the scan-to-act flow is the same one locations have and the cost is one
-catalogue and one seeded template each; drop any of the three only if Q4's answer from use
-is that nobody prints them.
+Grocycode for them so a scan can start a chore or log a battery charge. **Answered by
+ADR-0024 decisions 3 and 5:** all three become label kinds with print operations, because
+the scan-to-act flow is the same one locations have and the cost is one catalogue and one
+seeded template each. Removing any of the three later requires a superseding decision, not
+a plan-level choice.
 
 ## Verification
 
