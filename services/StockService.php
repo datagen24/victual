@@ -1451,7 +1451,25 @@ class StockService extends BaseService
 			'has_childs' => boolval($detailsRow->has_childs),
 			'default_consume_location' => $defaultConsumeLocation,
 			'qu_conversion_factor_purchase_to_stock' => $detailsRow->qu_factor_purchase_to_stock,
-			'qu_conversion_factor_price_to_stock' => $detailsRow->qu_factor_price_to_stock
+			'qu_conversion_factor_price_to_stock' => $detailsRow->qu_factor_price_to_stock,
+			// What on hand will do where this product is called for (plan 31, issue 125) -
+			// direct edges and the existing parent/child mechanism, unioned by
+			// product_substitutions_resolved (migrations/0279.pgsql.sql). Ordered by whether
+			// the candidate is actually in stock, then by its own earliest best-before date -
+			// there is no cross-source priority between 'directed' and 'shared_parent', per
+			// the plan's own open question on ordering. GetProductDetails() runs on both
+			// engines (AddProduct() calls it after every product creation, SQLite included -
+			// see .devtools/pgsql/rollback-tests.php), but the view is PostgreSQL-only, above
+			// SQLITE_FROZEN_MIGRATION_ID, the same reason stock_amount_measured is guarded a
+			// few lines up - an empty list on SQLite rather than a query against a table that
+			// engine never gets.
+			'substitution_candidates' => DatabaseService::GetInstance()->GetDialect()->GetName() === 'pgsql'
+				? $this->DB->product_substitutions_resolved()
+					->where('to_product_id', $productId)
+					->orderBy('from_product_amount_in_stock', 'DESC')
+					->orderBy('from_product_best_before_date', 'ASC')
+					->fetchAll()
+				: []
 		];
 	}
 

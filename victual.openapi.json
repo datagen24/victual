@@ -9503,6 +9503,47 @@
 					"path": "Spices / Garlic / Fresh"
 				}
 			},
+			"ProductSubstitutionResolved": {
+				"type": "object",
+				"description": "Candidates that will do where to_product_id is called for: one row per directed edge (see ProductSubstitution) plus one row per existing parent/child pair from products_resolved, unioned. direction distinguishes the two sources; there is no transitive closure (a substitutes for b and b for c does not offer a for c), and no quantity factor - see docs/plans/31-directed-substitution.md's open questions 1 and 2.",
+				"properties": {
+					"id": {
+						"type": "integer",
+						"description": "Always 1. A dummy column, as on every other resolved view."
+					},
+					"to_product_id": {
+						"type": "integer",
+						"description": "The product this candidate can be used in place of."
+					},
+					"from_product_id": {
+						"type": "integer",
+						"description": "The candidate product."
+					},
+					"direction": {
+						"type": "string",
+						"enum": ["directed", "shared_parent"],
+						"description": "'directed' for a row from product_substitutions; 'shared_parent' for a row inherited from the existing parent/child mechanism (products_resolved)."
+					},
+					"from_product_amount_in_stock": {
+						"type": "number",
+						"description": "The candidate's own current stock amount (rolled up to its parent product if it has one, same as stock_current)."
+					},
+					"from_product_best_before_date": {
+						"type": "string",
+						"format": "date",
+						"nullable": true,
+						"description": "The candidate's earliest best-before date currently in stock, or null if it has none."
+					}
+				},
+				"example": {
+					"id": 1,
+					"to_product_id": "2",
+					"from_product_id": "5",
+					"direction": "directed",
+					"from_product_amount_in_stock": "3",
+					"from_product_best_before_date": "2026-10-01"
+				}
+			},
 			"ShoppingLocation": {
 				"type": "object",
 				"properties": {
@@ -9766,6 +9807,13 @@
 					"qu_conversion_factor_price_to_stock": {
 						"type": "number",
 						"description": "The conversion factor of the corresponding QU conversion from the product's qu_id_price to qu_id_stock"
+					},
+					"substitution_candidates": {
+						"type": "array",
+						"description": "What on hand will do where this product is called for - product_substitutions_resolved rows with to_product_id equal to this product, ordered by from_product_amount_in_stock descending, then from_product_best_before_date ascending.",
+						"items": {
+							"$ref": "#/components/schemas/ProductSubstitutionResolved"
+						}
 					}
 				},
 				"example": {
@@ -10818,6 +10866,8 @@
 					"task_categories",
 					"product_groups",
 					"product_location_min_stock",
+					"product_substitutions",
+					"product_substitutions_resolved",
 					"equipment",
 					"api_keys",
 					"userfields",
@@ -10877,6 +10927,7 @@
 					"quantity_unit_conversions_resolved",
 					"locations_resolved",
 					"product_groups_resolved",
+					"product_substitutions_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",
@@ -10912,6 +10963,7 @@
 					"quantity_unit_conversions_resolved",
 					"locations_resolved",
 					"product_groups_resolved",
+					"product_substitutions_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",

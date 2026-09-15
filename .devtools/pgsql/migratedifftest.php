@@ -63,7 +63,12 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // Plan 29, migration 0276. Same freeze; locations also gains tare_weight and tare_qu_id
  // alongside this table, which are columns on a shared table and therefore already invisible
  // to CompareTableSets - only the new table needs naming here.
- 'product_location_min_stock'];
+ 'product_location_min_stock',
+ // Plan 31, migration 0279. Same freeze: the directed substitution edges have no SQLite
+ // counterpart to compare against, per that migration's own Q4 reasoning (folding them into
+ // the existing dual-engine products_current_substitutions view would make that view's
+ // definition diverge between engines instead).
+ 'product_substitutions'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

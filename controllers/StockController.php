@@ -336,6 +336,47 @@ class StockController extends BaseController
 	}
 
 	/**
+	 * Serves the product substitution create/edit form (route GET /productsubstitutions/{productSubstitutionId}).
+	 *
+	 * Query parameter product (id) is the product the edge is being created for; direction
+	 * (this|other, default this) says which side of the edge that product is on.
+	 *
+	 * @param array $args Route arguments; productSubstitutionId is either an edge id or the literal 'new' for create mode
+	 */
+	public function ProductSubstitutionEditForm(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		$product = null;
+		if (isset($request->getQueryParams()['product']))
+		{
+			$product = $this->DB->products($request->getQueryParams()['product']);
+		}
+		$direction = $request->getQueryParams()['direction'] ?? 'this';
+
+		$otherProducts = $this->DB->products()->where('id != :1 AND active = 1', $product->id)->orderBy('name', 'COLLATE NOCASE');
+
+		if ($args['productSubstitutionId'] == 'new')
+		{
+			return $this->RenderPage($response, 'productsubstitutionform', [
+				'mode' => 'create',
+				'product' => $product,
+				'direction' => $direction,
+				'otherProducts' => $otherProducts
+			]);
+		}
+		else
+		{
+			return $this->RenderPage($response, 'productsubstitutionform', [
+				'mode' => 'edit',
+				'substitution' => $this->DB->product_substitutions($args['productSubstitutionId']),
+				'product' => $product,
+				'direction' => $direction,
+				'otherProducts' => $otherProducts
+			]);
+		}
+	}
+
+	/**
 	 * Serves the product create/edit form (route GET /product/{productId}).
 	 *
 	 * In edit mode the selectable quantity units are restricted to units
@@ -381,7 +422,9 @@ class StockController extends BaseController
 				'mode' => 'edit',
 				'quConversions' => $this->DB->quantity_unit_conversions()->where('product_id', $product->id),
 				'productBarcodeUserfields' => UserfieldsService::GetInstance()->GetFields('product_barcodes'),
-				'productBarcodeUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('product_barcodes')
+				'productBarcodeUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('product_barcodes'),
+				'substitutions' => $this->DB->product_substitutions()->where('from_product_id = :1 OR to_product_id = :1', $product->id),
+				'allProducts' => $this->DB->products()->where('active = 1')
 			]);
 		}
 	}

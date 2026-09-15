@@ -867,6 +867,78 @@
 		</div>
 
 		<div class="row mt-2 @if($mode == 'create') d-none @endif">
+			<div class="col">
+				<div class="title-related-links">
+					<h4>
+						{{ $__t('Substitutions') }}
+						<i class="fa-solid fa-question-circle text-muted"
+							data-toggle="tooltip"
+							data-trigger="hover click"
+							title="{{ $__t('A product this one can be used instead of, or that can be used instead of this one - see docs/plans/31-directed-substitution.md') }}"></i>
+					</h4>
+					<button class="btn btn-outline-dark d-md-none mt-2 float-right order-1 order-md-3"
+						type="button"
+						data-toggle="collapse"
+						data-target="#related-links">
+						<i class="fa-solid fa-ellipsis-v"></i>
+					</button>
+					@if($mode == "edit")
+					<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
+						id="related-links">
+						<a class="btn btn-primary btn-sm m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
+							href="{{ $U('/productsubstitutions/new?embedded&product=' . $product->id ) }}">
+							{{ $__t('Add') }}
+						</a>
+					</div>
+					@endif
+				</div>
+
+				<table id="product-substitution-table"
+					class="table table-sm table-striped nowrap w-100">
+					<thead>
+						<tr>
+							<th class="border-right"></th>
+							<th>{{ $__t('Direction') }}</th>
+							<th>{{ $__t('Product') }}</th>
+						</tr>
+					</thead>
+					<tbody class="d-none">
+						@if($mode == "edit")
+						@foreach($substitutions as $substitution)
+						@php
+						$isThisFrom = $substitution->from_product_id == $product->id;
+						$otherProductId = $isThisFrom ? $substitution->to_product_id : $substitution->from_product_id;
+						$otherProduct = FindObjectInArrayByPropertyValue($allProducts, 'id', $otherProductId);
+						@endphp
+						<tr>
+							<td class="fit-content border-right">
+								<a class="btn btn-sm btn-danger product-substitution-delete-button"
+									href="#"
+									data-product-substitution-id="{{ $substitution->id }}">
+									<i class="fa-solid fa-trash"></i>
+								</a>
+							</td>
+							<td>
+								@if($isThisFrom)
+								{{ $__t('This can be used instead of the other one') }}
+								@else
+								{{ $__t('The other one can be used instead of this') }}
+								@endif
+							</td>
+							<td>
+								@if($otherProduct !== null)
+								<a href="{{ $U('/product/' . $otherProduct->id) }}">{{ $otherProduct->name }}</a>
+								@endif
+							</td>
+						</tr>
+						@endforeach
+						@endif
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<div class="row mt-2 @if($mode == 'create') d-none @endif">
 			<div class="col clearfix">
 				<div class="title-related-links">
 					<h4>

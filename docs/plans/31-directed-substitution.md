@@ -8,8 +8,7 @@ products that share no parent.
 **Interacts with:** [30](30-nested-product-groups.md), which groups the products this
 relates; [14](14-contract-and-regression-scaffolding.md) piece 2, which freezes the response
 contract this adds to.
-**Status:** draft for review, **scheduled into wave 4 2026-09-14**, after
-[30](30-nested-product-groups.md). Tracked as
+**Status:** **Landed 2026-09-15**, after [30](30-nested-product-groups.md). Tracked as
 [issue 125](https://github.com/datagen24/victual/issues/125). Migration **0279**, renumbered
 from 0278 to make room for [issue 148](https://github.com/datagen24/victual/issues/148)'s
 migration ahead of 30's (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
@@ -125,3 +124,141 @@ A suite phase, PostgreSQL-only for the reason 08's and 30's are. Cases:
 Small to medium. The table and the edges are straightforward; the work is in the view's
 ordering rule and in the surfaces that offer a suggestion. Open question 2 decides whether a
 recursive closure joins the three this repository already maintains.
+
+## Executed
+
+Landed as `migrations/0279.pgsql.sql`, at the number RESERVATIONS.md already reserved. One
+table (`product_substitutions`: `from_product_id`, `to_product_id`, a `CHECK` refusing a
+self-edge and a `UNIQUE` refusing a duplicate ordered pair — no `FOREIGN KEY`, matching every
+other product-referencing table in the baseline), one view
+(`product_substitutions_resolved`), a cascade-delete addition, the API surface, a product-form
+UI section, a PostgreSQL-only suite phase and a browser probe. None of the four open questions
+gated the start, per the issue's own scheduling comment, so each is answered and recorded here
+rather than left for a later PR to discover the schema already assumed one way.
+
+**Q1 (quantity factor): no.** The plan named its own precedent for this
+(ADR-0022 decision 3: refuse rather than approximate a conversion that is right sometimes,
+never a factor that is right sometimes) — a factor that holds for coffee (1:1 by weight) and
+not for herbs (a tablespoon of fresh is a teaspoon of dried) is worse than no factor at all. An
+edge is the bare ordered pair.
+
+**Q2 (transitivity): no, not in this migration.** A recursive closure is cheap here in the
+sense the plan means — the pattern is already load-bearing three times over
+(`quantity_unit_conversions_resolved`, `locations_resolved`, `product_groups_resolved`) — but
+those three are trees, and this is an arbitrary directed graph: `A → B` and `B → A` can both be
+true here without contradiction, which a tree's parent pointers cannot express, so a
+transitive closure over it needs cycle protection none of the three precedents had to build.
+Nothing in the verification list requires the closure itself, only that the chain case is
+*asserted* whichever way it lands — `product-substitutions-tests.php` case 6 does that: whole
+spice substitutes for cracked, cracked for ground, and ground spice's candidates carry cracked
+but not whole.
+
+**Q3 (counts toward minimum stock): no, unchanged from today.** `stock_missing_products`
+(`db/pgsql/baseline/05_views_l2.sql`) never joins `products_current_substitutions`, so a sub
+product in stock already does not satisfy its parent's `min_stock_amount` — a directed edge
+that did so would be a new, inconsistent exception rather than a preserved behaviour. Left for
+a follow-on together with plan 30's own questions 1–3, which would need the same view touched.
+
+**Q4 (recipe fulfilment): no, and not by editing `products_current_substitutions`.** This
+turned out to be the load-bearing finding of the whole plan, and it was not visible from the
+plan document alone: `products_current_substitutions` is SQLite-line and differential-tested —
+`.devtools/pgsql/run-tests.sh views` seeds both engines from the same fixture and compares
+`products_current_substitutions`'s output row for row (`.devtools/pgsql/view-tests/02_products_and_pricing.sql`'s
+own `@views` header names it). `product_substitutions` is PostgreSQL-only, so folding it into
+that view — which the plan's own wording invited ("extend or supersede
+`products_current_substitutions`") — would have made the two engines' definitions diverge for
+a feature only one of them can run: exactly what AGENTS.md's "do not delete SQLite behaviour
+the suite compares against" is guarding against, even though nothing here deletes anything.
+`product_substitutions_resolved` is therefore a wholly new, additive view rather than a change
+to the existing one, confirmed by running `run-tests.sh views` unchanged (still
+"`products_current_substitutions (1 rows identical)`") and `run-tests.sh triggers` unchanged
+after the cascade-delete addition. `recipes_pos_resolved` keeps using only the parent/child
+mechanism; a later plan decides whether the response contract should carry the distinction
+into recipe fulfilment.
+
+**`GetProductDetails()` runs on both engines, and the view does not — this was the one real
+defect the local suite caught rather than predicted.** `AddProduct()` calls
+`GetProductDetails()` after every product creation, SQLite included
+(`.devtools/pgsql/rollback-tests.php` drives it against SQLite as part of `run-tests.sh
+rollback`), and an unconditional read of `product_substitutions_resolved` fataled there with
+`SQLSTATE[HY000]: General error: 1 no such table`. Fixed the same way
+`stock_amount_measured` a few lines above it already is: `substitution_candidates` is `[]` on
+SQLite, gated on `DatabaseService::GetInstance()->GetDialect()->GetName() === 'pgsql'`, and
+`run-tests.sh all` is clean with this fix in place.
+
+**The candidates view unions two sources without disturbing either.** `product_substitutions`
+(`direction = 'directed'`) and `products_resolved` filtered to `sub_product_id !=
+parent_product_id` (`direction = 'shared_parent'`) are combined with `UNION` (not `UNION ALL`
+— the two sources cannot produce the same `(from, to)` pair, since one requires a shared parent
+and the other forbids a self-edge, but `UNION`'s dedup is free insurance and costs nothing a
+plain edge table pays for). Stock is read through `products_resolved`/`stock_current` rather
+than `stock_next_use`, deliberately: `stock_next_use` carries one row per physical stock entry,
+so joining it straight to `from_product_id` would have multiplied a candidate row per stock
+entry the way `products_current_substitutions` avoids only by ending in a single-row `LIMIT
+1`. `stock_current` is already the per-product rollup keyed by the normalized top-level id, so
+a candidate that is itself a sub product is normalized to its own rollup the same way the
+existing mechanism already treats it, and the view stays one row per edge.
+
+**API.** `product_substitutions` (writable) and `product_substitutions_resolved` (read-only)
+in the three `ExposedEntity*` enums and `EntityReadPolicy::PERMISSIONS`
+(`PERMISSION_STOCK_VIEW`, matching `product_groups`/`product_groups_resolved`). Neither needed
+an entry in `GenericEntityApiController`'s per-entity branches: the self-edge/duplicate-pair
+guards are plain `CHECK`/`UNIQUE` constraints, not a `BEFORE` trigger with a custom `RAISE`, so
+the existing generic `PDOException` → 400 path (the same one every other constraint violation
+in this schema already goes through) applies with no bespoke message, and there is no delete
+guard to translate because deleting an edge cascades nothing and blocks nothing. No `oneOf`
+entry in `victual.openapi.json`'s `/objects/{entity}` paths, matching `product_groups` and
+`quantity_unit_conversions` precedent — the generic path does not require one.
+`ProductSubstitutionResolved` is documented purely for readability, the same as
+`ProductGroupResolved`. `GetProductDetails()` gains `substitution_candidates`, ordered by
+`from_product_amount_in_stock` descending then `from_product_best_before_date` ascending — in
+stock first, soonest to expire among those — with no cross-source priority between the two
+`direction` values, since the plan's own ordering question was about nearness against the
+default consume rule and never named one substitution source as preferred over the other.
+
+**UI.** A "Substitutions" section on the product edit form (`views/productform.blade.php`),
+built on the barcodes section's exact pattern: a `DataTable` listing edges naming this product
+on either side, worded per direction, linked to the other product by name, and an "Add" button
+opening `views/productsubstitutionform.blade.php` as an embedded dialog
+(`views/components/productpicker` for the other product, a direction radio, translated to
+`from_product_id`/`to_product_id` in `public/viewjs/productsubstitutionform.js` before the
+`POST`/`PUT`, the same way the barcode form remaps `display_amount` to `amount`). The
+consume-screen and shopping-list suggestion surfaces the plan also asks for are **not built**:
+they are a materially different piece of work (surfacing a candidate at the moment a wanted
+product is absent, one-tap per plan 29's own requirement) from managing the edges themselves,
+and nothing in the verification list depends on them existing yet — left for a follow-on the
+way plan 30 left its own questions 1–3.
+
+**Verification**, against real PostgreSQL 16.13 (`postgres:16` at the OS package level, on
+2026-09-15): `php .devtools/pgsql/check-migrations.php` reports `MIGRATION NUMBERING OK` with
+no waiver. The new `.devtools/pgsql/product-substitutions-tests.php`
+(`run-tests.sh substitutions`) passes all 26 assertions on its first run: direction both ways
+on two independent pairs, the self-edge and duplicate-pair guards by exact constraint name, a
+product with no edges, the parent/child control unchanged, the chain case (Q2), cascade
+delete from either side, the API create/read/delete round trip and the resolved view's refusal
+of every write verb, the read-policy gate, and `GetProductDetails()`'s ordering. `run-tests.sh
+migrate` required `product_substitutions` added to `.devtools/pgsql/migratedifftest.php`'s
+`ENGINE_EXCLUSIVE_TABLES` (the same mechanism `product_location_min_stock` and
+`storage_classes` already use) before it passed; `run-tests.sh views` and `run-tests.sh
+triggers` needed no changes and pass unchanged, which is itself the proof that
+`products_current_substitutions` and the differential harness are untouched. `run-tests.sh
+all` is clean end to end, the `GetProductDetails()` SQLite fix included. PHP lint (`php -l`) is
+clean on every changed file, `victual.openapi.json` parses as valid JSON, the workflow YAML
+parses, and `php .devtools/check-cited-jobs.php` reports every cited job exists.
+
+**The browser probe (`.devtools/frontend/product-substitutions.js`) could not be run end to
+end in this session**, for the same reason plan 30's could not: this sandbox's PHP is 8.4.19
+and the app refuses to boot below 8.5.0 on every route — confirmed by reproduction (booting the
+demo instance under PHP 8.4 returns HTTP 200 with the literal refusal text), not assumed. Wired
+into the `frontend-security` job (`.github/workflows/tests.yml`) after plan 30's own probe,
+where it will run for real the way plan 30's did. Learning from that session's own retrospective
+— a speculative check written without a way to see a widget's actual behaviour was added blind
+and had to be removed after CI found it wrong — this probe deliberately does not drive the
+"Add" dialog's product picker (a bootstrap-combobox typeahead nothing in this tree yet
+scripts), which no probe here has exercised and which this sandbox cannot be used to learn
+first. The edge itself is created through the API as fixture data instead, and the probe
+asserts only what it can be confident about without seeing the app run: the table renders the
+right direction sentence and a link to the other product from each endpoint's own page, and
+the delete-confirm-then-reload flow (proven to work in real CI by plan 30's own case 6) removes
+it. The create path is already fully exercised at the API layer by the PostgreSQL suite's case
+8.
