@@ -117,6 +117,19 @@ writeText "victual-nginx.conf" ''
         ${frontController}
       }
 
+      # nginx's own bundled mime.types is not the mime-db this box's /etc/mime.types
+      # draws from, and has historically lagged it - `.mjs` is exactly the kind of entry
+      # that goes missing, and an ES module served as application/octet-stream is a module
+      # a browser refuses to run. Named ahead of the general packages/css/js/... location
+      # below: nginx tries regex locations in the order they appear and takes the first
+      # match, so this one is checked first regardless of the other's reach.
+      location ~* \.mjs$ {
+        default_type application/javascript;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+      }
+
       # Frontend libraries and application assets are content-addressed by the ?v=
       # query the Blade layout appends, so they can be cached hard.
       location ~* ^/(packages|css|js|viewjs|img|uisounds)/ {

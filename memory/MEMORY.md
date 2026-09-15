@@ -77,6 +77,41 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   index row; `docs/plans/README.md` still called it Proposed and is now corrected — that is
   a stale cross-reference fix, not [issue 135](https://github.com/datagen24/victual/issues/135)'s
   acceptance bookkeeping, which this session did not touch. [→](project_state.md)
+- **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
+  dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
+  (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —
+  fabric 6 dropped the UMD build entirely, and this tree has no bundler; a module script
+  always finishes before `DOMContentLoaded`, and every `window.fabric` use in
+  `labeltemplateeditor.js` is inside `$(document).ready`, so load order between the two
+  script tags cannot race. `nix/runtime/nginx-conf.nix` gained a `\.mjs$` location forcing
+  `application/javascript`, since the pinned nginx's own bundled `mime.types` is not
+  guaranteed to know the extension and this sandbox has no nix to check it against directly.
+  **The real find**: fabric 7's default `originX`/`originY` changed from `left`/`top` to
+  `center` — every shape this editor draws only ever set `left`/`top`, so under the new
+  default every one rendered shifted up-and-left by half its own size, and `absorb()`'s drag
+  math read a corrupted position back. The shipped CI probe (add, save, publish) passed with
+  this defect in place, because nothing in it ever checked *where* anything rendered — found
+  instead by driving a real browser interactively (drag, read the saved x_mm/y_mm back,
+  reload, resize, read again), watching it silently do nothing, and comparing
+  `getActiveObject().oCoords` against hand-computed geometry until the mismatch pointed at
+  the origin default rather than the drag math. Fixed by pinning `originX:'left',
+  originY:'top'` on every shape `shapeFor()` builds. `label-designer.js` now carries the
+  drag/reload/resize check permanently, plus an explicit Playwright viewport — the default
+  one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
+  identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
+  instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
+  `label-printers.js` both pass, repeatably (3+ runs). The container image build was not
+  verifiable in this sandbox (no nix) but is verified now: [PR #172](https://github.com/datagen24/victual/pull/172)'s
+  `flake` CI job reported the real `yarnOfflineCache` hash from its own fixed-output-derivation
+  failure, and the job then built and booted all three images clean. A same-day maintainer
+  review on the PR found a real second regression the origin-default fix didn't cover — fabric
+  7's `Line` still derives `left`/`top` from its two points, but the box-to-origin translation
+  now folds in `strokeWidth`, so an untouched line's `left`/`top` sat `strokeWidth/2` short and
+  every drag carried that constant into the saved document, drifting a line further on each
+  touch. Fixed the same way (`absorb()`'s line branch adds `strokeWidth/2` back) and confirmed
+  both analytically (constructing the same `Line` against real 7.4.0) and with a diagonal-line
+  drag before/after. See plan 27's Executed section for the full account, including the two
+  documentation-lag and one test-race findings the same review caught. [→](project_state.md)
 - **2026-09-15 — Issue #137 landed** (plan 06 Q5, the location label's tree path). Dispatched
   claiming locations still print through `VICTUAL_LABEL_PRINTER_WEBHOOK` and that the `vctl:`
   labels machinery was unbuilt — both stale: PR 113 (2026-09-08) already moved location
@@ -153,25 +188,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   install --ignore-platform-reqs` (host PHP is 8.4, composer.json wants 8.5.*). Not run: the
   full `trigdifftest.php`/demo-data harness, which needs `/scratch/demodata` and config
   bootstrap beyond this session's scope. [→](project_state.md)
-- **2026-09-14 — ADR-0022 is Accepted** (issue #129, closed). Prerequisites 1, 2, 3, 5, 6 and 7
-  discharged by a disposable spike against real PostgreSQL 16.13, results in
-  `.spike-adr22/RESULTS.md` — merged into master as [PR #152](https://github.com/datagen24/victual/pull/152)
-  at `64ec8f1` rather than left on an unmerged branch, so the evidence outlives the branch
-  (closing the citation gap [PR #145](https://github.com/datagen24/victual/pull/145) named for
-  ADR-0021). Coexistence's negative control reproduces the existing tare mechanism's bug for
-  real (18.8 lb "consumed" against an actual 3.8 lb, because it reads the whole-product total).
-  Undo found a sharper defect than the ADR's own wording: undoing an opening on a measured
-  entry doesn't merely strand the measurement, it violates the coherence constraint outright
-  and would abort the transaction — clearing all four measurement columns together is required
-  to complete the undo, not just to satisfy decision 9's intent. One finding not already in the
-  ADR text: convertibility (decision 3) and coherence (decision 8) are different properties —
-  only the second can be a database `CHECK`; the first has to be the write path's own job.
-  Prerequisite 4 reworded, then met by a real check against `victual.openapi.json` (no
-  collision with the four new field names); prerequisite 8 was decided the same day
-  (`cb99bf3`). Accepted by [PR #153](https://github.com/datagen24/victual/pull/153), all eight
-  prerequisites annotated in place with what met them. Plan 28 and plan 29's weighing half are
-  now unblocked; `docs/plans/README.md`'s status table still needs its own pass.
-  [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 
