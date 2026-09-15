@@ -1,8 +1,17 @@
 # ADR-0024: The fork writes its own clients; the five `/printlabel` endpoints move to the label subsystem
 
-- **Status: Proposed.** Records a decision the maintainer took on 2026-09-15 and the
-  consequence it has for one accepted record: it dissolves the gate
-  [ADR-0019](0019-label-printers-are-master-data.md) decision item 7 placed on its step 2.
+- **Status: Accepted, 2026-09-15.** **The fork writes its own clients; the five
+  `/printlabel` endpoints are removed and their kinds join the label subsystem.** The single
+  acceptance prerequisite is met: the decider confirmed decisions 1, 3, 4 and 5 as written
+  on 2026-09-15, after the review corrections of [PR #184](https://github.com/datagen24/victual/pull/184)
+  (decision 1 narrowed to the upstream obligation, plan 32 Q4 answered, decision 5 named in
+  the prerequisite, the plan 25 reference corrected). No spike was required because the
+  record removes a compatibility obligation; plan 32's verification owns the replacement
+  mechanism. **Nothing in the decision was revised by this acceptance.** Records a decision
+  the maintainer took on 2026-09-15 and the consequence it has for one accepted record: it
+  dissolves the gate [ADR-0019](0019-label-printers-are-master-data.md) decision item 7
+  placed on its step 2, and corrects that record's statement that step 3 takes
+  `WebhookRunner`'s last caller.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-15.
