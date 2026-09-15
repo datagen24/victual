@@ -1451,7 +1451,25 @@ class StockService extends BaseService
 			'has_childs' => boolval($detailsRow->has_childs),
 			'default_consume_location' => $defaultConsumeLocation,
 			'qu_conversion_factor_purchase_to_stock' => $detailsRow->qu_factor_purchase_to_stock,
-			'qu_conversion_factor_price_to_stock' => $detailsRow->qu_factor_price_to_stock
+			'qu_conversion_factor_price_to_stock' => $detailsRow->qu_factor_price_to_stock,
+			// What on hand will do where this product is called for (plan 31, issue 125) -
+			// direct edges and the existing parent/child mechanism, unioned by
+			// product_substitutions_resolved (migrations/0279.pgsql.sql). Ordered by whether
+			// the candidate is actually in stock, then by its own earliest best-before date -
+			// there is no cross-source priority between 'directed' and 'shared_parent', per
+			// the plan's own open question on ordering. GetProductDetails() runs on both
+			// engines (AddProduct() calls it after every product creation, SQLite included -
+			// see .devtools/pgsql/rollback-tests.php), but the view is PostgreSQL-only, above
+			// SQLITE_FROZEN_MIGRATION_ID, the same reason stock_amount_measured is guarded a
+			// few lines up - an empty list on SQLite rather than a query against a table that
+			// engine never gets.
+			'substitution_candidates' => DatabaseService::GetInstance()->GetDialect()->GetName() === 'pgsql'
+				? $this->DB->product_substitutions_resolved()
+					->where('to_product_id', $productId)
+					->orderBy('from_product_amount_in_stock', 'DESC')
+					->orderBy('from_product_best_before_date', 'ASC')
+					->fetchAll()
+				: []
 		];
 	}
 
@@ -2837,6 +2855,25 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// product_substitutions is not in trg_cascade_product_removal's list of tables
+			// this method itself re-points before deleting - it is that trigger's own list,
+			// fired by the DELETE below, and left unguarded it would silently drop every edge
+			// naming the removed product rather than carrying it over to the kept one. Two
+			// passes before repointing, both required because trg_cascade_product_removal's
+			// own delete happens after this method's UPDATE statements, not instead of them:
+			// first, an edge between the two products being merged would become a self-edge
+			// once repointed (refused by product_substitutions_no_self_edge), so it is dropped
+			// outright rather than carried over in either direction; second, an edge from or
+			// to the removed product that would duplicate one the kept product already has
+			// (refused by product_substitutions_pair_key) is dropped rather than repointed,
+			// so the kept product's real edge - not a copy of it - is what survives.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions WHERE (from_product_id = ' . $productIdToRemove . ' AND to_product_id = ' . $productIdToKeep . ') OR (from_product_id = ' . $productIdToKeep . ' AND to_product_id = ' . $productIdToRemove . ')');
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.from_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.from_product_id = ' . $productIdToKeep . ' AND ps_keep.to_product_id = ps_remove.to_product_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.to_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.to_product_id = ' . $productIdToKeep . ' AND ps_keep.from_product_id = ps_remove.from_product_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET from_product_id = ' . $productIdToKeep . ' WHERE from_product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET to_product_id = ' . $productIdToKeep . ' WHERE to_product_id = ' . $productIdToRemove);
+
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM products WHERE id = ' . $productIdToRemove);
 		});
 	}

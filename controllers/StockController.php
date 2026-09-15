@@ -12,6 +12,7 @@ use Victual\Services\UsersService;
 use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Exception\HttpNotFoundException;
 
 /**
  * Slim route controller for all stock related views: stock overview and
@@ -336,6 +337,37 @@ class StockController extends BaseController
 	}
 
 	/**
+	 * Serves the product substitution create form (route GET /productsubstitutions/new).
+	 *
+	 * Create only: an edge has nothing to edit beyond which two products and which direction,
+	 * both of which are only ever picked once - the product-form table offers delete, not
+	 * edit. Query parameter product (id, required) is the product the edge is being created
+	 * for; direction (this|other, default this) says which side of the edge that product is on.
+	 *
+	 * @throws HttpNotFoundException when the required product query parameter is absent or
+	 *         names a product that does not exist.
+	 */
+	public function ProductSubstitutionEditForm(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+
+		$product = isset($request->getQueryParams()['product']) ? $this->DB->products($request->getQueryParams()['product']) : null;
+		if ($product === null)
+		{
+			throw new HttpNotFoundException($request);
+		}
+
+		$direction = $request->getQueryParams()['direction'] ?? 'this';
+		$otherProducts = $this->DB->products()->where('id != :1 AND active = 1', $product->id)->orderBy('name', 'COLLATE NOCASE');
+
+		return $this->RenderPage($response, 'productsubstitutionform', [
+			'product' => $product,
+			'direction' => $direction,
+			'otherProducts' => $otherProducts
+		]);
+	}
+
+	/**
 	 * Serves the product create/edit form (route GET /product/{productId}).
 	 *
 	 * In edit mode the selectable quantity units are restricted to units
@@ -381,7 +413,14 @@ class StockController extends BaseController
 				'mode' => 'edit',
 				'quConversions' => $this->DB->quantity_unit_conversions()->where('product_id', $product->id),
 				'productBarcodeUserfields' => UserfieldsService::GetInstance()->GetFields('product_barcodes'),
-				'productBarcodeUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('product_barcodes')
+				'productBarcodeUserfieldValues' => UserfieldsService::GetInstance()->GetAllValues('product_barcodes'),
+				'substitutions' => $this->DB->product_substitutions()->where('from_product_id = :1 OR to_product_id = :1', $product->id),
+				// Unfiltered by active, unlike the picker's own product list a few lines up
+				// (that one is for choosing a new edge's other product, this one is for
+				// naming an existing edge's other product in the table below - one that
+				// points at a since-deactivated product still has to render its name, not
+				// silently come up empty while its delete button stays live).
+				'allProducts' => $this->DB->products()
 			]);
 		}
 	}

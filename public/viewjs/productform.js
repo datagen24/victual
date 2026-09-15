@@ -302,6 +302,16 @@ var barcodeTable = $('#barcode-table').DataTable({
 $('#barcode-table tbody').removeClass("d-none");
 barcodeTable.columns.adjust().draw();
 
+// Substitutions table (edit mode only): row actions column not orderable/searchable
+var productSubstitutionTable = $('#product-substitution-table').DataTable({
+	'columnDefs': [
+		{ 'orderable': false, 'targets': 0 },
+		{ 'searchable': false, "targets": 0 }
+	].concat($.fn.dataTable.defaults.columnDefs)
+});
+$('#product-substitution-table tbody').removeClass("d-none");
+productSubstitutionTable.columns.adjust().draw();
+
 // Initial page setup: load the products userfields, prime the QU info texts/validation state and focus the name field
 Victual.Components.UserfieldsForm.Load();
 $("#name").trigger("keyup");
@@ -395,6 +405,40 @@ $(document).on('click', '.barcode-delete-button', function (e)
 	});
 });
 
+// Delete a substitution row (after confirmation), then reload the page by re-submitting the product form with a "reload" redirect
+$(document).on('click', '.product-substitution-delete-button', function (e)
+{
+	var objectId = $(e.currentTarget).attr('data-product-substitution-id');
+
+	bootbox.confirm({
+		message: __t('Are you sure you want to remove this substitution?'),
+		closeButton: false,
+		buttons: {
+			confirm: {
+				label: __t('Yes'),
+				className: 'btn-success'
+			},
+			cancel: {
+				label: __t('No'),
+				className: 'btn-danger'
+			}
+		},
+		callback: function (result)
+		{
+			if (result === true)
+			{
+				Victual.Api.Delete('objects/product_substitutions/' + objectId, {},
+					function (result)
+					{
+						Victual.ProductEditFormRedirectUri = "reload";
+						$('#save-product-button').click();
+					}
+				);
+			}
+		}
+	});
+});
+
 // Remembers the previously selected stock QU so the handler below can tell "still following stock QU" apart from "user picked their own value"
 var quIdStockBefore = $("#qu_id_stock").val();
 $('#qu_id_stock').change(function (e)
@@ -435,7 +479,7 @@ $(window).on("message", function (e)
 {
 	var data = e.originalEvent.data;
 
-	if (data.Message === "ProductBarcodesChanged" || data.Message === "ProductQUConversionChanged")
+	if (data.Message === "ProductBarcodesChanged" || data.Message === "ProductQUConversionChanged" || data.Message === "ProductSubstitutionsChanged")
 	{
 		window.location.reload();
 	}

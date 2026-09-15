@@ -439,6 +439,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node nested-product-groups.js http://127.0.0.1:8085
 
+      # Plan 31. Against the demo instance on 8085 for the same reason the nested product
+      # group checks are: the product form's Substitutions table rendering the right direction
+      # sentence and a link to the other product, and the delete confirm/reload flow reaching
+      # the page, are things the PostgreSQL phase structurally cannot see. The edge itself is
+      # created through the API as fixture data rather than through the "Add" dialog's product
+      # picker (a bootstrap-combobox typeahead) - see this probe's own header comment for why.
+      - name: Run product substitution checks
+        working-directory: .devtools/frontend
+        run: node product-substitutions.js http://127.0.0.1:8085
+
       # Plan 28. Against the demo instance on 8085 - nothing here needs the label subsystem
       # either. The modal actually opening in the right mode, posting the nested measurement
       # object rather than flat fields, the tare field's visibility following the gross
