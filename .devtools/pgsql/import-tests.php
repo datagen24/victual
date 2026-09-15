@@ -208,6 +208,18 @@ echo 'SQLite import (span ' . $min . '-' . $max . ")\n";
 
 $dataPath = DataPath($scratch, $dbName);
 
+// Read before anything is imported: this is the policy the target's own migration run left,
+// and it is what every assertion below compares an imported target against. Taken once
+// rather than per fixture, because an import that dropped a row would otherwise be compared
+// against its own damage on the second pass.
+$policyBeforeImport = Target($dbName)->query('SELECT permission_name, entity, field FROM permission_fields
+	ORDER BY permission_name, entity, field')->fetchAll(\PDO::FETCH_ASSOC);
+
+if (empty($policyBeforeImport))
+{
+	Fail('the target has a price-visibility policy to keep', 'permission_fields is empty before any import - the target was not migrated past 0281');
+}
+
 // --- The two ends of the span import at all ----------------------------------------
 //
 // --force because the runner migrated the target with bin/victual-migrate, which seeds a
@@ -290,6 +302,34 @@ foreach ([$min, $max] as $version)
 	Check('imported users keep all previous reads', (int)$backfilled === $expectedGrants, (string)$expectedGrants, (string)$backfilled);
 	$roleGrants = Scalar($target, 'SELECT COUNT(*) FROM role_permissions');
 	Check('built-in role grants restored', (int)$roleGrants === 28, '28', (string)$roleGrants);
+
+	// Plan 19 piece 2's half of the tree. permission_fields references
+	// permission_hierarchy(name), so the importer's TRUNCATE ... CASCADE empties it even
+	// though it is never copied - and the source cannot restore it, the SQLite line being
+	// frozen below the migration that created it. Compared against what the target held
+	// before the import rather than against a row count written down here, so a policy row
+	// added to db/pgsql/prices-seed.sql later is covered without this assertion being
+	// edited. Issue #176 item 1.
+	$policy = $target->query('SELECT permission_name, entity, field FROM permission_fields
+		ORDER BY permission_name, entity, field')->fetchAll(\PDO::FETCH_ASSOC);
+	Check('the price-visibility policy survived the import', $policy === $policyBeforeImport,
+		count($policyBeforeImport) . ' rows, unchanged', count($policy) . ' rows'
+			. ($policy === $policyBeforeImport ? '' : ' - the policy differs'));
+
+	$pricesLeaf = Scalar($target, "SELECT COUNT(*) FROM permission_hierarchy WHERE name = 'STOCK_PRICES_VIEW'");
+	Check('STOCK_PRICES_VIEW restored after copy', (int)$pricesLeaf === 1, '1', (string)$pricesLeaf);
+
+	// It has to be a *descendant of STOCK_PURCHASE* and not merely present: the whole of
+	// migration 0281's argument is that nesting is what makes "a Child holds neither STOCK
+	// nor STOCK_PURCHASE, so prices stay hidden" a fact of the hierarchy rather than a rule
+	// kept in sync by hand. A restored row whose parent is NULL, or is STOCK, would leave
+	// every check in price-visibility-tests.php passing on a fresh database and failing on
+	// an imported one.
+	$parent = Scalar($target, "SELECT parent.name FROM permission_hierarchy child
+		JOIN permission_hierarchy parent ON parent.id = child.parent
+		WHERE child.name = 'STOCK_PRICES_VIEW'");
+	Check('STOCK_PRICES_VIEW hangs off STOCK_PURCHASE', $parent === 'STOCK_PURCHASE',
+		'STOCK_PURCHASE', $parent === false ? 'no parent row' : (string)$parent);
 
 	// The two row transformations the target's own migration run could not see, because it
 	// ran against an empty database and the rows arrived afterwards.

@@ -20,7 +20,11 @@
 			<h2 class="title mr-2 order-0">
 				@yield('title')
 			</h2>
-			@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			{{-- $pricesVisible, not the feature flag: a Child holds SHOPPINGLIST_VIEW and
+			reaches this page, and #total-value is filled by shoppinglist.js from
+			uihelper_shopping_list.last_price_total, which FieldPolicy redacts for a caller
+			without STOCK_PRICES_VIEW. Issue #176 item 4. --}}
+			@if($pricesVisible)
 			<h2 class="mb-0 mr-auto order-3 order-md-1 width-xs-sm-100">
 				<span class="text-muted small">{!! $__t('%s total value', '<span id="total-value"
 						class="locale-number locale-number-currency"></span>') !!}</span>
@@ -199,8 +203,8 @@
 					<th>{{ $__t('Amount') }}</th>
 					<th class="allow-grouping">{{ $__t('Product group') }}</th>
 					<th class="d-none">Hidden status</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Last price (Unit)') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Last price (Total)') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Last price (Unit)') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Last price (Total)') }}</th>
 					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif allow-grouping">{{ $__t('Default store') }}</th>
 					<th>{{ $__t('Barcodes') }}</th>
 
@@ -283,11 +287,18 @@
 						@if(FindObjectInArrayByPropertyValue($missingProducts, 'id', $listItem->product_id) !== null) belowminstockamount @endif
 						@if($listItem->done == 1) xxDONExx @else xxUNDONExx @endif
 					</td>
-					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+					{{-- The value is not emitted at all rather than merely hidden with d-none:
+					a class a reader cannot see is still a price in the page source. Plan 19
+					piece 2's verification 6. --}}
+					<td class="@if(!$pricesVisible) d-none @endif">
+						@if($pricesVisible)
 						<span class="locale-number locale-number-currency">{{ $listItem->last_price_unit }}</span>
+						@endif
 					</td>
-					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+					<td class="@if(!$pricesVisible) d-none @endif">
+						@if($pricesVisible)
 						<span class="locale-number locale-number-currency">{{ $listItem->last_price_total }}</span>
+						@endif
 					</td>
 					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
 						{{ $listItem->default_shopping_location_name }}

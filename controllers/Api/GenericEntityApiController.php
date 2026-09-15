@@ -316,6 +316,7 @@ class GenericEntityApiController extends BaseApiController
 	public function GetObject(Request $request, Response $response, array $args)
 	{
 		EntityReadPolicy::Check($request, $args['entity']);
+		$this->AssertWholeObjectReadable($request, $args['entity']);
 		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
@@ -360,6 +361,7 @@ class GenericEntityApiController extends BaseApiController
 	public function GetObjects(Request $request, Response $response, array $args)
 	{
 		EntityReadPolicy::Check($request, $args['entity']);
+		$this->AssertWholeObjectReadable($request, $args['entity']);
 		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');

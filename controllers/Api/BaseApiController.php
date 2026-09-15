@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers\Api;
 
+use Victual\Controllers\Users\User;
 use Victual\Controllers\BaseController;
 use Victual\Services\DatabaseService;
 use Victual\Services\Database\DatabaseDialect;
@@ -172,10 +173,39 @@ class BaseApiController extends BaseController
 	public function FilteredApiResponse(Request $request, Response $response, Result $data, array $query)
 	{
 		$entity = $data->getTable();
+		$this->AssertWholeObjectReadable($request, $entity);
 		$data = $this->QueryData($request, $data, $query);
 		$rows = $this->MaterialiseFiltered($request, $data, $query);
 		$rows = FieldPolicy::GetInstance()->RedactRows($entity, $rows);
 		return $this->ApiResponse($response, $rows);
+	}
+
+	/**
+	 * Refuses the whole read with 403 when permission_fields carries a '*' row for $entity
+	 * whose permission the current user does not hold (FieldPolicy::WholeObjectPermission).
+	 *
+	 * The marker means "the whole endpoint is the field" - an entity that carries nothing
+	 * but the thing being gated, where filtering the response down to empty objects would
+	 * answer 200 to a question the caller may not ask. Enforced here rather than only in
+	 * the one controller that has such an entity today, because the policy is a table a
+	 * household can add rows to (plan 19 piece 2, Q2's response) and a marker only some of
+	 * the read paths consult is a marker that means different things per route. Issue #176
+	 * item 6, which found it consulted by none of them.
+	 *
+	 * StockApiController::ProductPriceHistory keeps its own explicit
+	 * CheckPermission(STOCK_PRICES_VIEW) rather than deferring to this: products_price_history
+	 * is not an exposed generic entity, so it never reaches this method, and that route's
+	 * whole purpose is to serve prices - it should refuse even on a database whose policy
+	 * table was emptied.
+	 */
+	protected function AssertWholeObjectReadable(Request $request, string $entity): void
+	{
+		$permission = FieldPolicy::GetInstance()->WholeObjectPermission($entity);
+
+		if ($permission !== null)
+		{
+			User::CheckPermission($request, $permission);
+		}
 	}
 
 	/**
