@@ -59,6 +59,16 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Wave 5 bookkeeping after six reviewed merges** (#169–#175). Reviewed each PR
+  with one adversarial agent per PR, verified the top findings by reading the branch, posted one
+  comment per PR. #173 and #175 fixed their blockers before merge (rotated key owner; designer
+  field and OpenAPI `path`); #170 (19 piece 2, now `0281.pgsql.sql` after losing the 0280 race
+  to #173) merged with only its CI fix, so four price channels are still open on master —
+  [issue #176](https://github.com/datagen24/victual/issues/176), which should land before 14
+  piece 2 snapshots per role. #174's own-picture bypass is #177, #171's manual errors #178,
+  #172's stale plan-27 wording #179. Closed #84, #130, #138, #137, #126, #121 with landing
+  notes. Lesson: a review comment is not a gate — the dispatching session merges on green CI,
+  so blocking findings need a follow-up issue the moment the PR merges without them.
 - **2026-09-15 — Plan 26 piece 2 landed** (the Manual, issue #138), wave-independent.
   `docs/manual/` (getting started; an 85-setting configuration reference generated-checked
   against `config-dist.php`; nine household-task pages plus a tips page; seven operator
@@ -166,28 +176,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   confirmed by reproduction (curled `/stockoverview` under 8.4, got the refusal text at HTTP
   200), not assumed. Plan 31 (directed substitution, issue #125) is next in wave 4, now
   unblocked. [→](project_state.md)
-- **2026-09-15 — Issue #148 fixed** (`enfore_product_nesting_level` UPDATE-only trigger),
-  unblocking plan 30. Reproduced the bug for real first, against baseline DDL loaded into a
-  local PostgreSQL 16.13: three plain `INSERT`s (Protein, then Beef parented to Protein, then
-  Beef Roast parented to Beef) built the two-level chain with no rejection. The original
-  predicate turned out to be one-directional, not just INSERT-blind — it only rejects a row
-  being given a parent while something already points at *it* as a parent, so a leaf inserted
-  straight under an already-nested product was never caught even by an UPDATE touching the
-  leaf; verified that a naive "just add BEFORE INSERT to the unchanged body" would have left
-  the exact reported scenario possible. Migration `0277.pgsql.sql` adds the missing direction
-  (a product's own named parent must not itself have a parent) alongside the original check,
-  folds both events into one `BEFORE INSERT OR UPDATE` trigger, and nulls out any existing
-  violation the way `migrations/0130.sql` once did. Took the lowest free migration slot rather
-  than the next unclaimed number, since 0277 was already plan 30's claim — renumbered 30→0278,
-  31→0279, 22→0280–0281 in `migrations/RESERVATIONS.md`, with the plan docs and
-  `docs/plans/README.md` updated to match (ninth application of the lowest-free-slot rule).
-  Verified against real PostgreSQL 16.13 (fix rejects both the INSERT and UPDATE forms of the
-  attack, ordinary single-level reparenting still works, the existing
-  `trigger-tests/03_parent_child_products.sql` scenario still rejects with the same message)
-  and `php .devtools/pgsql/check-migrations.php` (`MIGRATION NUMBERING OK`) after `composer
-  install --ignore-platform-reqs` (host PHP is 8.4, composer.json wants 8.5.*). Not run: the
-  full `trigdifftest.php`/demo-data harness, which needs `/scratch/demodata` and config
-  bootstrap beyond this session's scope. [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 
