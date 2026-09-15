@@ -526,6 +526,28 @@ is "open to any authenticated user", so that answer is written down rather than 
 absent branch — and refusing a group that is not in it. Owner: [27](plans/27-label-templates-and-rendering.md),
 which is the first plan to add a group and the first that must not get this wrong.
 
+**Fixed 2026-09-15** ([issue 136](https://github.com/datagen24/victual/issues/136)).
+`FilesApiController::GROUP_READ_PERMISSIONS` is that table: every `FileGroups` enum member
+has a row, `CheckGroupIsKnown()` refuses a group absent from it (consulted by all three
+routes, replacing the direct enum check they used to run separately), and
+`CheckGroupReadPermission()` enforces the mapped permission before `ServeFile` ever reads a
+byte. The count in the remediation paragraph above did not hold up once each group was
+actually decided: only two land on `null` — `equipmentmanuals` and `userfiles`, in step with
+`EntityReadPolicy::PERMISSIONS['equipment']` and `['userfields']`, both already `null` there,
+since a caller who may read the underlying entity without a permission needs none for the
+file hanging off it either. `productpictures` and `recipepictures` keep the two gates S2
+already had; `userpictures` gains one it did not have before, `USERS_READ`, in step with
+`EntityReadPolicy::PERMISSIONS['users']` — a real posture change from "reads are deliberately
+open" for that one group, carrying its own exception for a caller's own picture (mirroring
+`CheckUserPictureDeletion`'s existing one) so that the nav bar avatar every authenticated
+user renders for themselves, `Child` and `Guest` roles included, keeps working without
+`USERS_READ`. The pgsql RBAC suite phase (`.devtools/pgsql/rbac-tests.php`) asserts every
+enum member has a row, exercises each mapped group both denied and allowed, and constructs
+the unmapped-group case directly against `ServeFile`/`DeleteFile`/`UploadFile` rather than
+relying on the enum staying in sync with the table — verified by temporarily reverting
+`CheckGroupIsKnown()` to a no-op and confirming the suite catches it (404 where 400 was
+required) before restoring the fix and re-running the full `run-tests.sh all` suite clean.
+
 Two plans should absorb items rather than a hotfix: **14 piece 2** takes the
 `/system/config` contract test (R1), the body-schema validation that closes S16, and a
 filter-contract line for S15; **02** must not inherit the query-string key path (S11)

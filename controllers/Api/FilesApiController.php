@@ -20,6 +20,9 @@ use Slim\Psr7\Stream;
  * and both the extension and, for images, the content are checked before a file is
  * kept. Serving answers with a type from a fixed list or hands the file over as a
  * download, never with a sniffed type inline. Sweep finding S2.
+ *
+ * Reading is gated fail-closed by GROUP_READ_PERMISSIONS: a group absent from that
+ * table is refused rather than served to whoever asks. Sweep finding S32.
  */
 class FilesApiController extends BaseApiController
 {
@@ -45,6 +48,38 @@ class FilesApiController extends BaseApiController
 		// "may edit this user". Binding a picture to its owner needs the id in the
 		// request and belongs with the user permission work in plan 15 / sweep S6.
 		'userpictures' => [User::PERMISSION_USERS_EDIT, User::PERMISSION_USERS_EDIT_SELF]
+	];
+
+	/**
+	 * Which permission lets a caller read a file from a group. Fail-closed: a group
+	 * missing from this table is refused rather than falling through to authentication
+	 * alone. Sweep finding S32 - before this table existed, ServeFile gated
+	 * productpictures and recipepictures with a hardcoded pair of checks and let every
+	 * other group, including one nobody had decided about yet, through to any
+	 * authenticated caller.
+	 *
+	 * null is a decided "no further permission needed", not an omission, and is kept in
+	 * step with EntityReadPolicy's read policy for the same underlying entity:
+	 * 'equipment' => null and 'userfields' => null there are why equipmentmanuals and
+	 * userfiles are null here - a caller who may already read the equipment record or
+	 * the userfield entry without a permission needs none for the file hanging off it
+	 * either. userpictures maps to USERS_READ for the same reason 'users' => USERS_READ
+	 * there; CheckGroupReadPermission carries its own exception for a caller's own
+	 * picture, the read equivalent of CheckUserPictureDeletion's exception below, since
+	 * every authenticated user's own avatar renders in the nav bar regardless of
+	 * USERS_READ.
+	 *
+	 * This is also the canonical list of valid file groups: all three routes below
+	 * consult it (via CheckGroupIsKnown) in place of checking the OpenAPI FileGroups
+	 * enum directly, so a group that reaches the enum without a row here is refused
+	 * everywhere, not only on read. The pgsql RBAC suite asserts the two lists agree.
+	 */
+	const GROUP_READ_PERMISSIONS = [
+		'productpictures' => User::PERMISSION_STOCK_VIEW,
+		'recipepictures' => User::PERMISSION_RECIPES_VIEW,
+		'equipmentmanuals' => null,
+		'userfiles' => null,
+		'userpictures' => User::PERMISSION_USERS_READ
 	];
 
 	/**
@@ -120,6 +155,48 @@ class FilesApiController extends BaseApiController
 	}
 
 	/**
+	 * Throws unless $group has a row in GROUP_READ_PERMISSIONS - the fail-closed check
+	 * for "is this a real file group" that all three routes below consult in place of
+	 * checking the OpenAPI FileGroups enum directly.
+	 */
+	protected function CheckGroupIsKnown(string $group): void
+	{
+		if (!array_key_exists($group, self::GROUP_READ_PERMISSIONS))
+		{
+			throw new EInvalidApiQuery('Invalid file group');
+		}
+	}
+
+	/**
+	 * Throws unless the caller may read a file from the given group. Fail-closed via
+	 * CheckGroupIsKnown; a mapped null permission is a decided "open to any
+	 * authenticated caller".
+	 *
+	 * $fileName carries the same own-picture exception CheckUserPictureDeletion
+	 * enforces on delete: every authenticated user's own avatar renders in the nav bar
+	 * regardless of whether they hold USERS_READ, so reading it needs no permission
+	 * beyond being logged in.
+	 *
+	 * @throws PermissionMissingException
+	 */
+	protected function CheckGroupReadPermission(Request $request, string $group, ?string $fileName = null): void
+	{
+		$this->CheckGroupIsKnown($group);
+
+		if ($group === 'userpictures' && $fileName !== null
+			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
+		{
+			return;
+		}
+
+		$permission = self::GROUP_READ_PERMISSIONS[$group];
+		if ($permission !== null)
+		{
+			User::CheckPermission($request, $permission);
+		}
+	}
+
+	/**
 	 * Throws unless the given file name carries an extension the group accepts.
 	 */
 	protected function CheckFileExtension(string $group, string $fileName): void
@@ -140,10 +217,7 @@ class FilesApiController extends BaseApiController
 	{
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			if (!in_array($args['group'], $this->GetOpenApispec()->components->schemas->FileGroups->enum))
-			{
-				throw new EInvalidApiQuery('Invalid file group');
-			}
+			$this->CheckGroupIsKnown($args['group']);
 
 			$this->CheckGroupWritePermission($request, $args['group']);
 
@@ -180,28 +254,25 @@ class FilesApiController extends BaseApiController
 	 */
 	public function ServeFile(Request $request, Response $response, array $args)
 	{
-		if ($args['group'] === 'productpictures') User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		if ($args['group'] === 'recipepictures') User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			if (!in_array($args['group'], $this->GetOpenApispec()->components->schemas->FileGroups->enum))
-			{
-				throw new EInvalidApiQuery('Invalid file group');
-			}
+			$this->CheckGroupIsKnown($args['group']);
 
 			if (str_contains($args['fileName'], '_'))
 			{
 				$fileInfo = explode('_', $args['fileName']);
 				$fileName = $this->CheckFileName($fileInfo[0]);
 				$fileNameOutput = $this->CheckFileName($fileInfo[1]);
-				$storedName = $this->GetStoredName($args['group'], $fileName, $request->getQueryParams());
 			}
 			else
 			{
 				$fileName = $this->CheckFileName($args['fileName']);
 				$fileNameOutput = $fileName;
-				$storedName = $this->GetStoredName($args['group'], $fileName, $request->getQueryParams());
 			}
+
+			$this->CheckGroupReadPermission($request, $args['group'], $fileName);
+
+			$storedName = $this->GetStoredName($args['group'], $fileName, $request->getQueryParams());
 
 			$storage = FileStorage::GetInstance();
 			$stream = $storage->Read($args['group'], $storedName);
@@ -251,10 +322,7 @@ class FilesApiController extends BaseApiController
 	{
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			if (!in_array($args['group'], $this->GetOpenApispec()->components->schemas->FileGroups->enum))
-			{
-				throw new EInvalidApiQuery('Invalid file group');
-			}
+			$this->CheckGroupIsKnown($args['group']);
 
 			$this->CheckGroupWritePermission($request, $args['group']);
 
