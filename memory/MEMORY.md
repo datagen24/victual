@@ -59,6 +59,24 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Plan 26 piece 2 landed** (the Manual, issue #138), wave-independent.
+  `docs/manual/` (getting started; an 85-setting configuration reference generated-checked
+  against `config-dist.php`; nine household-task pages plus a tips page; seven operator
+  pages, including a label-printing chapter rewritten for plans 25/27's actual subsystem
+  rather than only the legacy webhook) replaces `docs/usage.md` and `docs/label-printing.md`,
+  wired into `mkdocs.yml`'s nav and a new `TREES` entry in `.devtools/docs/stage.py`. Both
+  counts issue 138 cites (81 pages, 84 settings) were stale from corpus growth; measured
+  today: 85 settings, 89 page routes — the issue's own route-counting grep only excludes the
+  literal `/api` route, not the whole `/api` group, so it had to be redone by line range.
+  Verified: `python3 .devtools/docs/stage.py --no-api && mkdocs build --strict --site-dir
+  /tmp/docs-site` (the exact `lint` job commands) exit 0; 321/321 offsite links resolving;
+  the new `check_settings_reference()` reports 85/85 settings covered. Not run: booting a
+  live instance to click through Getting started end to end (writing-only session scope) —
+  said plainly in the plan's Executed section rather than assumed. Found and fixed in the
+  same change, not re-litigated: ADR-0020 is **Accepted** 2026-09-14 in its own file and
+  index row; `docs/plans/README.md` still called it Proposed and is now corrected — that is
+  a stale cross-reference fix, not [issue 135](https://github.com/datagen24/victual/issues/135)'s
+  acceptance bookkeeping, which this session did not touch. [→](project_state.md)
 - **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
   dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
   (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —
@@ -170,25 +188,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   install --ignore-platform-reqs` (host PHP is 8.4, composer.json wants 8.5.*). Not run: the
   full `trigdifftest.php`/demo-data harness, which needs `/scratch/demodata` and config
   bootstrap beyond this session's scope. [→](project_state.md)
-- **2026-09-14 — ADR-0022 is Accepted** (issue #129, closed). Prerequisites 1, 2, 3, 5, 6 and 7
-  discharged by a disposable spike against real PostgreSQL 16.13, results in
-  `.spike-adr22/RESULTS.md` — merged into master as [PR #152](https://github.com/datagen24/victual/pull/152)
-  at `64ec8f1` rather than left on an unmerged branch, so the evidence outlives the branch
-  (closing the citation gap [PR #145](https://github.com/datagen24/victual/pull/145) named for
-  ADR-0021). Coexistence's negative control reproduces the existing tare mechanism's bug for
-  real (18.8 lb "consumed" against an actual 3.8 lb, because it reads the whole-product total).
-  Undo found a sharper defect than the ADR's own wording: undoing an opening on a measured
-  entry doesn't merely strand the measurement, it violates the coherence constraint outright
-  and would abort the transaction — clearing all four measurement columns together is required
-  to complete the undo, not just to satisfy decision 9's intent. One finding not already in the
-  ADR text: convertibility (decision 3) and coherence (decision 8) are different properties —
-  only the second can be a database `CHECK`; the first has to be the write path's own job.
-  Prerequisite 4 reworded, then met by a real check against `victual.openapi.json` (no
-  collision with the four new field names); prerequisite 8 was decided the same day
-  (`cb99bf3`). Accepted by [PR #153](https://github.com/datagen24/victual/pull/153), all eight
-  prerequisites annotated in place with what met them. Plan 28 and plan 29's weighing half are
-  now unblocked; `docs/plans/README.md`'s status table still needs its own pass.
-  [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 

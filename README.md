@@ -56,8 +56,8 @@ dependencies; the [ADR index](docs/adr/README.md) records decisions and proposal
 
 ## Getting started
 
-- [Installation and usage](docs/usage.md): checkout setup, configuration, imports, MQTT,
-  and user-facing features.
+- [Manual](docs/manual/index.md): installation, configuration, day-to-day use, and operator
+  topics (the REST API, backup and restore, updating).
 - [Deployment](deploy/README.md): pod bootstrap and configuration.
 - [Nix builds](nix/README.md): production image builds and local loading.
 - [PostgreSQL](db/pgsql/README.md): database setup, import, and engine-specific details.

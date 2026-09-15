@@ -49,7 +49,8 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   and plan [06](docs/plans/06-location-barcodes.md) — narrowed to placement, the locations UI
   and the current-location notion — depends on 25's first usable release. Until 25 lands, the
   tree still prints Grocycodes through the webhook, as [docs/grocycode.md](docs/grocycode.md)
-  and [docs/label-printing.md](docs/label-printing.md) describe. Note what 25 does *not* do:
+  and [the Manual's label printing chapter](docs/manual/operator/label-printing.md)
+  describe. Note what 25 does *not* do:
   the five entity types that already print keep the webhook through wave 3b, which is a
   delivery stage toward the retirement ADR-0011 accepted rather than a change to it. New
   printing extends neither the webhook nor Grocycode.
