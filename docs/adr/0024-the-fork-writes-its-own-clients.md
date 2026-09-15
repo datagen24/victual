@@ -32,9 +32,10 @@ to write its own clients rather than carry upstream's. Two facts follow that the
 not yet say:
 
 - **No external client has a recognised compatibility commitment.** This is a support
-  policy, not a claim about non-use: no third-party client is one this repository promises
-  to keep working, and none is planned that this repository does not also own. Upstream's
-  clients (the mobile apps, the Home Assistant integration) target upstream.
+  policy, not a claim about non-use: no third-party client is one this project promises to
+  keep working, and every planned Victual client will be maintained as part of the Victual
+  project. Upstream's clients (the mobile apps, the Home Assistant integration) target
+  upstream.
 - **No response-contract freeze has been declared.** [Plan 14](../plans/14-contract-and-regression-scaffolding.md)
   piece 2 is scheduled, not done; when it lands, its snapshot is an internal regression
   tripwire between a migration and the fork's own clients, not a promise to anyone outside.
