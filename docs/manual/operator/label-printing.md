@@ -45,9 +45,10 @@ workloads sit.
 
 **What still uses the older webhook.** Five entity types — products, stock entries,
 recipes, chores and batteries — still print through the path below rather than through this
-subsystem; migrating them needs a wire-contract record of its own and is deliberately
-unscheduled (see [ADR-0011](../../adr/0011-label-namespace.md)). Enabling
-`FEATURE_FLAG_LABELS` does not change how those five print.
+subsystem. Moving them is scheduled as [plan 32](https://github.com/datagen24/victual/blob/master/docs/plans/32-label-kinds.md) under
+[ADR-0024](../../adr/0024-the-fork-writes-its-own-clients.md); until it lands, enabling
+`FEATURE_FLAG_LABELS` does not change how those five print, and the section below still
+applies to them.
 
 ## The webhook (legacy)
 
