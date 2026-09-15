@@ -725,9 +725,21 @@
 	{{-- Fabric.js is the browser editor and nothing else. ADR-0021 prerequisite 1 is explicit
 	that sharing the editor's engine is not a qualification for the headless renderer, and it
 	is not shared: the authoritative preview is the render, so this canvas is a design aid
-	rather than a fidelity claim. --}}
+	rather than a fidelity claim.
+
+	Fabric 6 dropped the UMD global build (issue #126): `dist/fabric.min.js` no longer
+	exists, only ES module and CommonJS output. This tree has no bundler, so the module is
+	loaded with a small `type="module"` shim that assigns the namespace onto `window.fabric`
+	- `labeltemplateeditor.js` keeps using the `fabric.Canvas` etc. shape unchanged. A module
+	script (unlike a plain classic one) always runs before `DOMContentLoaded`, and every use
+	of `window.fabric` in that file happens inside a jQuery `$(document).ready` handler,
+	which fires on `DOMContentLoaded` - so this ordering holds regardless of where the two
+	script tags fall relative to each other in the document. --}}
 	@if(in_array('fabric', $VICTUAL_REQUIRED_FRONTEND_PACKAGES))
-	<script src="{{ $U('/packages/fabric/dist/fabric.min.js?v=', true) }}{{ $version }}"></script>
+	<script type="module">
+		import * as fabric from {!! json_encode($U('/packages/fabric/dist/index.min.mjs?v=', true) . $version) !!};
+		window.fabric = fabric;
+	</script>
 	@endif
 	@if(in_array('datatables', $VICTUAL_REQUIRED_FRONTEND_PACKAGES))
 	<script src="{{ $U('/packages/datatables.net/js/jquery.dataTables.min.js?v=', true) }}{{ $version }}"></script>

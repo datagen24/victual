@@ -8,9 +8,10 @@ same label rather than a similar one.
 job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
 **accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
 cleared.**
-**Status:** implemented in wave 3b alongside 25; see Executed. One follow-up remains:
-[issue 126](https://github.com/datagen24/victual/issues/126) (the designer off fabric 5.x).
-[Issue 136](https://github.com/datagen24/victual/issues/136) (sweep S32) is fixed.
+**Status:** implemented in wave 3b alongside 25; see Executed. Both follow-ups landed
+2026-09-15: the designer's fabric 5.x migration ([issue 126](https://github.com/datagen24/victual/issues/126))
+and sweep S32, the fail-closed group-to-read-permission table for the files API
+([issue 136](https://github.com/datagen24/victual/issues/136)).
 **Migrations:** 0271 and 0272, in `master`. The inventory below is what they were derived from.
 
 ## Why this plan exists
@@ -731,12 +732,120 @@ its QR scanned back to the pinned uid, and a second template with a filled red b
 through the whole path — plan 25's Executed section records both runs. Issue 90's geometry
 half was closed on the same print.
 
-The designer cannot move past fabric 5.x by a dependency bump: fabric 6 removed the global
+The designer could not move past fabric 5.x by a dependency bump: fabric 6 removed the global
 build the layout loads as a script tag, and PR 114's attempt broke the editor outright.
-[Issue 126](https://github.com/datagen24/victual/issues/126) owns doing it deliberately.
+[Issue 126](https://github.com/datagen24/victual/issues/126) did it deliberately instead — see
+below.
+
 Sweep S32, the fail-closed group-to-read-permission table for the files API, is this plan's and
 is [issue 136](https://github.com/datagen24/victual/issues/136); the label groups are already
 outside the `FileGroups` enum.
+
+### The designer off fabric 5.x (2026-09-15, issue 126)
+
+Fabric 7.4.0, not 6.x: nothing in the document format or the pieces above depends on a
+version between them, and 7 is where the runtime-closure comparison this plan already ran
+(question 3) was current. `package.json` and `yarn.lock`; `nix/hashes.nix`'s
+`yarnOfflineCache` went through the bootstrap placeholder rather than a guessed value,
+because the session that wrote this change had no nix to compute the real one -
+[PR #172](https://github.com/datagen24/victual/pull/172) let the `flake` CI job's
+fixed-output-derivation failure report it instead (commit `888e38c`), the same `got:` value a
+local `nix build .#frontend` would have produced per `nix/README.md`. A wrong-but-plausible
+guess would have been worse than that documented failure mode, since it would not obviously
+say so.
+
+**The loader.** Fabric 6 dropped the UMD build issue 126 found missing; there is still no
+bundler in this tree. `views/layout/default.blade.php` loads `dist/index.min.mjs` (the
+self-contained bundled build, not the unbundled `dist/fabric.min.mjs` the package also ships,
+which pulls in the rest of `dist/src` as separate requests for no benefit here) through a
+`type="module"` shim that assigns the namespace onto `window.fabric`. That ordering is not
+incidental: a module script always finishes before `DOMContentLoaded`, and every use of
+`window.fabric` in `labeltemplateeditor.js` is inside a jQuery `$(document).ready` handler -
+so the shim and the editor script can load in either order in the document and the editor
+still never sees `fabric` undefined. `nix/runtime/nginx-conf.nix` gained a location matching
+`\.mjs$` ahead of the general packages location, serving it as `application/javascript`
+regardless of what the pinned nginx's own bundled `mime.types` knows about the extension - a
+module a browser refuses to run as `application/octet-stream` is exactly the kind of failure
+that would only show up in the image build this sandbox could not run (below).
+
+**The API surface.** Three real breaks, not the one the issue's own analysis had found yet:
+
+- `Canvas.setWidth()`/`setHeight()` are gone; `setDimensions({width, height})` replaces both.
+- `hasRotatingPoint` is gone; hiding the rotate handle is now `shape.setControlVisible('mtr',
+  false)`, called once per shape after `.set()`.
+- **fabric 7's default `originX`/`originY` changed from `left`/`top` to `center`**
+  (`FabricObject`'s own default values, not a document or theme setting). Every shape this
+  editor draws was constructed with `left`/`top` alone, meaning the document's x_mm/y_mm
+  corner - under the new default, `left`/`top` name the shape's own *centre*, so every shape
+  rendered shifted up and left by half its own size, and `absorb()`'s delta math (`shape.left
+  - documented minimum`) read a corrupted position back on the next drag. This is the
+  "object properties the editor sets" break the issue's own text warned could be there
+  without being named yet, and it is the one that would have shipped invisibly: the
+  pre-existing CI probe only ever added an element and published, never checked where
+  anything actually rendered. Fixed by pinning `originX: 'left', originY: 'top'` on every
+  shape `shapeFor()` builds, `fabric.Line` included - a `Line` always derives its own
+  `left`/`top` from its two points' bounding box, but which corner that box's `left`/`top`
+  names is still governed by the object's origin the same way it is for every other shape.
+
+**How this was found, because it is the point of the exercise.** The shipped probe
+(`label-designer.js`) adds a QR, saves, and publishes - it passed against the fabric 7 bump
+with the origin defect still in place, because nothing in it ever asked *where* the element
+landed. A real browser session, driven interactively (drag a shape, read the saved
+`x_mm`/`y_mm` back, reload, drag a resize handle, read `width_mm`/`height_mm` back) is what
+surfaced it: after dragging, the *y-coordinate math* moved by the right amount but every
+shape sat visibly off-canvas, clipped at the top-left. Reading `getActiveObject().oCoords`
+against a hand-computed expectation is what pinned the cause to the origin default rather
+than to the drag math itself. `label-designer.js` now carries that check permanently: it adds
+a rectangle, drags it, asserts the saved position changed, reloads the page and asserts the
+position survived a fresh `draw()`, then drags a resize handle and asserts the saved size
+changed. The probe's own `newPage()` also gained an explicit viewport - the default one is
+short enough that, after enough on-page interaction scrolls it, a click at a screen position
+`boundingBox()` reports as the canvas can land on the fixed top navbar instead, which looks
+identical to a drag that silently did nothing and cost real time here to tell apart from one.
+
+**Verified**, 2026-09-15, against a real PostgreSQL 16.13 demo instance booted per
+`.agents/skills/run-app/SKILL.md` (PHP 8.4.19, `REQUIRED_PHP_VERSION` lowered locally per that
+skill and restored before committing) and driven with the pinned Playwright/Chromium: the
+updated `label-designer.js` (add, drag, save, reload, resize, publish, all through the
+*document* the server stores) and `label-printers.js` both pass, repeatably. **The container
+image build is verified too, just not in this sandbox**: PR #172's `flake` CI job reported the
+real `yarnOfflineCache` hash from its fixed-output-derivation failure, and once that was
+committed the same job built and booted all three images clean on the PR's head. The physical
+QL-820NWBc print/scan-back was not re-run here - the renderer and worker are untouched by this
+change, and plan 25's Executed section already exercised that path against the device.
+
+**A maintainer review round on PR #172** (same day) verified the runtime side independently -
+every fabric 7.4.0 call site against its actual source, the `.mjs` MIME type under both `php
+-S` and the new nginx location, the yarn hash against the CI failure it came from - and found
+one blocking defect this account had missed and three worth fixing:
+
+- The merge conflict against master's own wave-table edit (mechanical: master's wave 4/5 rows
+  plus this change's one-sentence wave 3b addition).
+- Two more places still described the hash as an unfilled placeholder after PR #172 filled it
+  in: this section (now corrected above) and `memory/MEMORY.md`.
+- `label-designer.js`'s second and third `getByText('Draft saved').waitFor()` calls were
+  no-ops: `report()` never clears `#template-message` before a save, so a *previous* save's
+  message satisfies the wait before the new one has even reached the server, and the
+  `page.request.get()` read right after can race it. Replaced with a helper that waits on the
+  PUT response itself.
+- fabric 7's `Line` still derives its own `left`/`top` from its two points' bounding box, but
+  the box-to-origin translation now runs through `_getTransformedDimensions()`, which folds in
+  `strokeWidth` - a break the origin-default fix above did not by itself cover. An untouched
+  line's `left`/`top` sits `strokeWidth/2` short of the point minimum rather than exactly at
+  it, so every drag carried that constant into the saved `x1_mm`/`y1_mm`/`x2_mm`/`y2_mm` and
+  drifted the line a little further on each touch - confirmed by constructing the same `Line`
+  the editor builds against the real 7.4.0 package (`left` reads `7.4` against an expected
+  `8`, the exact `strokeWidth/2` for the 0.3mm default) and by a diagonal-line drag before and
+  after the fix (drifted; then landed exactly on the dragged distance). `absorb()`'s line
+  branch now adds `strokeWidth/2` back.
+
+Two cosmetic findings were folded in alongside: the resize assertion in `label-designer.js`
+could not tell a resize from a move, since `absorb()`'s pre-existing `getScaledWidth()`
+read includes stroke and nudges width/height on *any* `object:modified` - now asserting most
+of the dragged distance landed rather than merely `notEqual`; and a short comment at both
+`originX`/`originY` pin sites notes that fabric's own PR #10715 deprecated the properties in
+the same 7.0.0 release that changed their default, so a bump that removes them needs a
+replacement here, not just a version bump.
 
 ### Sweep S32, the general fail-closed table (2026-09-15)
 

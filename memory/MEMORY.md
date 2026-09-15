@@ -59,6 +59,41 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
+  dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
+  (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —
+  fabric 6 dropped the UMD build entirely, and this tree has no bundler; a module script
+  always finishes before `DOMContentLoaded`, and every `window.fabric` use in
+  `labeltemplateeditor.js` is inside `$(document).ready`, so load order between the two
+  script tags cannot race. `nix/runtime/nginx-conf.nix` gained a `\.mjs$` location forcing
+  `application/javascript`, since the pinned nginx's own bundled `mime.types` is not
+  guaranteed to know the extension and this sandbox has no nix to check it against directly.
+  **The real find**: fabric 7's default `originX`/`originY` changed from `left`/`top` to
+  `center` — every shape this editor draws only ever set `left`/`top`, so under the new
+  default every one rendered shifted up-and-left by half its own size, and `absorb()`'s drag
+  math read a corrupted position back. The shipped CI probe (add, save, publish) passed with
+  this defect in place, because nothing in it ever checked *where* anything rendered — found
+  instead by driving a real browser interactively (drag, read the saved x_mm/y_mm back,
+  reload, resize, read again), watching it silently do nothing, and comparing
+  `getActiveObject().oCoords` against hand-computed geometry until the mismatch pointed at
+  the origin default rather than the drag math. Fixed by pinning `originX:'left',
+  originY:'top'` on every shape `shapeFor()` builds. `label-designer.js` now carries the
+  drag/reload/resize check permanently, plus an explicit Playwright viewport — the default
+  one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
+  identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
+  instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
+  `label-printers.js` both pass, repeatably (3+ runs). The container image build was not
+  verifiable in this sandbox (no nix) but is verified now: [PR #172](https://github.com/datagen24/victual/pull/172)'s
+  `flake` CI job reported the real `yarnOfflineCache` hash from its own fixed-output-derivation
+  failure, and the job then built and booted all three images clean. A same-day maintainer
+  review on the PR found a real second regression the origin-default fix didn't cover — fabric
+  7's `Line` still derives `left`/`top` from its two points, but the box-to-origin translation
+  now folds in `strokeWidth`, so an untouched line's `left`/`top` sat `strokeWidth/2` short and
+  every drag carried that constant into the saved document, drifting a line further on each
+  touch. Fixed the same way (`absorb()`'s line branch adds `strokeWidth/2` back) and confirmed
+  both analytically (constructing the same `Line` against real 7.4.0) and with a diagonal-line
+  drag before/after. See plan 27's Executed section for the full account, including the two
+  documentation-lag and one test-race findings the same review caught. [→](project_state.md)
 - **2026-09-15 — Issue #137 landed** (plan 06 Q5, the location label's tree path). Dispatched
   claiming locations still print through `VICTUAL_LABEL_PRINTER_WEBHOOK` and that the `vctl:`
   labels machinery was unbuilt — both stale: PR 113 (2026-09-08) already moved location
@@ -154,16 +189,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   prerequisites annotated in place with what met them. Plan 28 and plan 29's weighing half are
   now unblocked; `docs/plans/README.md`'s status table still needs its own pass.
   [→](project_state.md)
-- **2026-09-14 — ADR-0023's acceptance gates** (issue #128). Prerequisites 2 and 3 (the mixed
-  node; the `NULLS NOT DISTINCT` name-uniqueness change) run as a disposable spike against real
-  PostgreSQL 16.15, not asserted — `claude/sonnet5_adr0023-prerequisites` at `4da3d35d`.
-  Prerequisite 4 needed a real catalogue and this fork has none of its own yet, so the
-  maintainer supplied a pre-fork upstream Grocy SQLite backup; inspecting it found 22/66
-  products used `parent_product_id` as pure taxonomy (confirming the ADR's own sampling on an
-  independent dataset) and one genuine two-level chain, which does contradict decision 2 —
-  traced to `enfore_product_nesting_level` checking only `UPDATE`, never `INSERT`, in both
-  engines, filed as [issue #148](https://github.com/datagen24/victual/issues/148) rather than
-  fixed inline. [PR #149](https://github.com/datagen24/victual/pull/149). [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 
