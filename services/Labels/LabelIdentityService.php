@@ -106,8 +106,17 @@ class LabelIdentityService
 		{
 			return $unknown;
 		}
-		$query = $this->db->prepare("SELECT l.uid, l.retired_at, l.retirement_snapshot, t.id, t.name
-			FROM labels l LEFT JOIN locations t ON l.target_id = t.id AND l.retired_at IS NULL
+		// The path is read live from locations_resolved rather than pinned anywhere, so a
+		// scan always shows where the location is *now* - unlike a label's captured_fields,
+		// nothing here was fixed at print time. A location deeper than hierarchy_depth_limit()
+		// has no self row (the app itself refuses to create one that deep, so this is only
+		// reachable from data older than migration 0273); the scan page shows the bare name
+		// rather than failing a lookup over it, which is why this is a plain LEFT JOIN and not
+		// a refusal the way FieldCatalogue's 'location.path' is for a print.
+		$query = $this->db->prepare("SELECT l.uid, l.retired_at, l.retirement_snapshot, t.id, t.name, r.path
+			FROM labels l
+			LEFT JOIN locations t ON l.target_id = t.id AND l.retired_at IS NULL
+			LEFT JOIN locations_resolved r ON r.ancestor_location_id = t.id AND r.descendant_location_id = t.id
 			WHERE l.uid = ? AND l.kind = 'location'");
 		$query->execute([$uid]);
 		$row = $query->fetch(\PDO::FETCH_ASSOC);
@@ -125,6 +134,6 @@ class LabelIdentityService
 			throw new \RuntimeException('Live label has no location');
 		}
 		return ['status' => 'resolved', 'uid' => $uid, 'kind' => 'location',
-			'target' => ['id' => (int)$row['id'], 'name' => $row['name']]];
+			'target' => ['id' => (int)$row['id'], 'name' => $row['name'], 'path' => $row['path'] ?? $row['name']]];
 	}
 }

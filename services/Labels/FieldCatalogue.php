@@ -49,6 +49,25 @@ class FieldCatalogue
                     'null' => 'error',
                     'type' => 'integer',
                 ],
+                // Plan 08's locations_resolved (migrations/0273.pgsql.sql) owns path
+                // resolution; this reads its self row rather than walking parent_location_id
+                // again. 'select' overrides what LabelCaptureService::Capture() puts in its
+                // SELECT list for this field, since the value is not a stored column. Bound
+                // by hierarchy_depth_limit() (6) times a name comfortably longer than
+                // location.name's own cap, plus " / " separators - a location with no self
+                // row in locations_resolved (data older than migration 0273, or a restore
+                // that bypassed its triggers - the app itself refuses to create one this deep)
+                // has no path to print, and 'null' => 'error' refuses the capture rather than
+                // printing a blank line, per issue 137's "the renderer refuses rather than
+                // resamples".
+                'location.path' => [
+                    'column' => 'path',
+                    'select' => '(SELECT r.path FROM locations_resolved r WHERE r.ancestor_location_id = locations.id AND r.descendant_location_id = locations.id) AS path',
+                    'permission' => User::PERMISSION_STOCK_VIEW,
+                    'max_length' => 750,
+                    'null' => 'error',
+                    'type' => 'string',
+                ],
             ],
             default => throw new LabelValidationException('entity_kind', 'unsupported_entity_kind', 'No field catalogue exists for entity kind "' . $entityKind . '"'),
         };
@@ -73,7 +92,7 @@ class FieldCatalogue
     public static function SampleFor(string $entityKind): array
     {
         return match ($entityKind) {
-            'location' => ['location.name' => 'Sample shelf', 'location.description' => 'Sample data, not a real location', 'location.id' => '0'],
+            'location' => ['location.name' => 'Sample shelf', 'location.description' => 'Sample data, not a real location', 'location.id' => '0', 'location.path' => 'Sample floor / Sample room / Sample shelf'],
             default => throw new LabelValidationException('entity_kind', 'unsupported_entity_kind', 'No field catalogue exists for entity kind "' . $entityKind . '"'),
         };
     }

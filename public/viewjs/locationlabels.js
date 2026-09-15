@@ -27,7 +27,10 @@
 			if (result.status === 'resolved' && result.kind === 'location')
 			{
 				status.text(__t('Location found'));
-				name.text(result.target.name);
+				// The tree path, not the bare name - issue 137. The server already falls
+				// back to the name when a location has no path (locations_resolved has no
+				// self row for it), so this always has something to show.
+				name.text(result.target.path);
 			}
 			else if (result.status === 'retired' && result.kind === 'location')
 			{

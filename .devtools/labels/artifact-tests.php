@@ -34,6 +34,13 @@ runLabelTests(function (PDO $db, string $schema) {
         'field' => 'location.invented', 'font_asset' => 'f', 'size_pt' => 8.0];
     refused(fn () => TemplateDocument::Validate($unknownField, 'location'), 'unknown_field');
 
+    // Issue 137: a template author may now draw location.path, the same way as any other
+    // catalogue field - existing templates that only draw location.name are untouched.
+    $withPath = $good;
+    $withPath['elements'][] = ['type' => 'text', 'id' => 'path', 'x_mm' => 1.0, 'y_mm' => 20.0, 'width_mm' => 40.0, 'height_mm' => 5.0,
+        'field' => 'location.path', 'font_asset' => 'f', 'size_pt' => 8.0];
+    check(in_array('location.path', TemplateDocument::Validate($withPath, 'location')['fields'], true), 'A template may draw the tree path');
+
     // A stale draft token is a conflict, not a silent overwrite.
     $draft = $templates->GetDraft($template);
     tx($db, fn () => $templates->SaveDraft($template, $draft['document'], $draft['revision_token'], null));
@@ -52,6 +59,17 @@ runLabelTests(function (PDO $db, string $schema) {
 
     $capture = (new LabelCaptureService($db))->Get((int)$job['capture_id']);
     check($capture['captured_fields']['location.name'] === 'Pantry', 'Capture reads the value rather than accepting one');
+
+    // --- location.path reads locations_resolved, not a stored column -----------------------
+    $db->exec("INSERT INTO locations (id, name, parent_location_id) VALUES (2, 'Basement', NULL), (3, 'Shelf', 2)");
+    $pathCapture = tx($db, fn () => (new LabelCaptureService($db))->Capture('location', 3, null, ['location.name', 'location.path'], 'en', 'UTC', null));
+    check($pathCapture['captured_fields']['location.path'] === 'Basement / Shelf', 'The path field composes the tree from locations_resolved');
+    check($pathCapture['captured_fields']['location.name'] === 'Shelf', 'The name field is unaffected by the added join');
+    // Two statements, child first: guard_location_children (migrations/0273.pgsql.sql)
+    // refuses deleting a location that still has children, and a single multi-row DELETE
+    // does not guarantee 3 is gone before 2's row trigger checks for it.
+    $db->exec('DELETE FROM locations WHERE id = 3');
+    $db->exec('DELETE FROM locations WHERE id = 2');
 
     // --- Verification refuses a renderer that got it wrong ---------------------------------
     $requests = new RenderRequestService($db);
