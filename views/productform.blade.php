@@ -368,7 +368,7 @@
 					@foreach($productgroups as $productgroup)
 					<option @if($mode=='edit'
 						&&
-						$productgroup->id == $product->product_group_id) selected="selected" @endif value="{{ $productgroup->id }}">{{ $productgroup->name }}</option>
+						$productgroup->id == $product->product_group_id) selected="selected" @endif value="{{ $productgroup->id }}">{{ $productgroup->path }}</option>
 					@endforeach
 				</select>
 			</div>

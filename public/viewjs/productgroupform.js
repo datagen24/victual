@@ -13,5 +13,17 @@ Victual.EntityForm({
 	form: 'product-group-form',
 	save: '#save-product-group-button',
 	endpoint: 'objects/product_groups',
-	list: '/productgroups'
+	list: '/productgroups',
+	body: function (jsonData)
+	{
+		// serializeJSON() hands back the empty string for an unselected <select>, and the
+		// column is a nullable integer: "" would be written as a parent id of 0, which is a
+		// product group that does not exist. A root group posts null - the same fix
+		// locationform.js applies to parent_location_id (issue #159).
+		jsonData.parent_product_group_id = jsonData.parent_product_group_id === '' || jsonData.parent_product_group_id === undefined
+			? null
+			: parseInt(jsonData.parent_product_group_id, 10);
+
+		return jsonData;
+	}
 });

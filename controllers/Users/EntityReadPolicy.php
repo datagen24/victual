@@ -35,6 +35,7 @@ class EntityReadPolicy
 		'products_average_price' => User::PERMISSION_STOCK_VIEW,
 		'quantity_unit_conversions_resolved' => User::PERMISSION_STOCK_VIEW,
 		'locations_resolved' => User::PERMISSION_STOCK_VIEW,
+		'product_groups_resolved' => User::PERMISSION_STOCK_VIEW,
 		'product_barcodes_view' => User::PERMISSION_STOCK_VIEW,
 		'mqtt_product_entities' => User::PERMISSION_STOCK_VIEW,
 		'shopping_list' => User::PERMISSION_SHOPPINGLIST_VIEW,

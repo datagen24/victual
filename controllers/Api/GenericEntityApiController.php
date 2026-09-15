@@ -205,6 +205,15 @@ class GenericEntityApiController extends BaseApiController
 				return $this->GenericErrorResponse($response, 'Location has child locations', 400);
 			}
 
+			// Same reasoning as the location check above, for the same kind of tree: plan 30
+			// blocks deleting a group with children rather than reparenting or cascading, and
+			// migrations/0278.pgsql.sql's `guard_product_group_children` is the backstop for
+			// every write path that does not come through here.
+			if ($args['entity'] == 'product_groups' && $this->DB->product_groups()->where('parent_product_group_id', $row->id)->fetch() != null)
+			{
+				return $this->GenericErrorResponse($response, 'Product group has child groups', 400);
+			}
+
 			$row->delete();
 
 			return $this->EmptyApiResponse($response);

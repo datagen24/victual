@@ -59,6 +59,34 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
+  day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
+  nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,
+  name) NULLS NOT DISTINCT`, `product_groups_resolved` (second consumer of
+  `hierarchy_depth_limit()`), and the nesting/delete guards, advisory lock and `VOLATILE`
+  included. `product_groups` carries no explicit `select()` list and no OpenAPI schema of its
+  own (unlike `Location`), so the new column reached the wire for free and only
+  `ProductGroupResolved` needed adding. New `StockService::GetProductGroupsWithPaths()`/
+  `GetProductGroupAncestorIds()`; group dropdowns show the path only where a write depends on
+  it (the group form's parent picker, the product form's group picker) — filter-only group
+  selects are untouched, since plan 30 Q2 (shopping-list grouping) is unanswered. The mixed
+  node ADR-0023 decision 6 claims needs no special case (a group holding a product and a
+  subgroup at once) is demonstrated in the new suite phase rather than merely argued.
+  Verified against real PostgreSQL 16.13 in this session's own sandbox (started the local
+  `postgresql` service and ran the suite directly, not a spike branch): `check-migrations.php`
+  clean with no waiver, the new `.devtools/pgsql/nested-product-groups-tests.php` (41/41,
+  `run-tests.sh productgroups`) including the same concurrent-re-parenting construction plan
+  08's case 10 uses (measured 2.50s lock wait, `provolatile = 'v'` asserted), and `run-tests.sh
+  all` green with no regressions. Two defects the new phase's first run caught were in the
+  test itself, not the migration (backwards `UPDATE` parameters in a depth-refusal case; a
+  mixed-node count that forgot case 2's own leftover fixture rows) — both are recorded in the
+  plan's Executed section as a caution about trusting a first green run of hand-written SQL
+  parameters. The new browser probe was written and reviewed but **not run**: this sandbox's
+  PHP is 8.4.19 and the app refuses to boot below 8.5.0 on every route, and the PHP 8.5
+  package is on a host (`ppa.launchpadcontent.net`) the outbound proxy returns 403 for —
+  confirmed by reproduction (curled `/stockoverview` under 8.4, got the refusal text at HTTP
+  200), not assumed. Plan 31 (directed substitution, issue #125) is next in wave 4, now
+  unblocked. [→](project_state.md)
 - **2026-09-15 — Issue #148 fixed** (`enfore_product_nesting_level` UPDATE-only trigger),
   unblocking plan 30. Reproduced the bug for real first, against baseline DDL loaded into a
   local PostgreSQL 16.13: three plain `INSERT`s (Protein, then Beef parented to Protein, then
@@ -118,10 +146,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   was undefined anywhere on the site, so the Development overview gained a label table.
   Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
   and stays bookkeeping-only. [→](project_state.md)
-- **2026-09-14 — Wave recommit and issue sweep** audited every plan row against its body,
-  corrected the stale 06/25/27 rows (label path delivered 2026-09-09), rewrote the wave
-  table so each item is ready or names its gate, and opened issues #127–#139. No open issue
-  was closable. [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 

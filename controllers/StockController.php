@@ -356,7 +356,7 @@ class StockController extends BaseController
 				'quantityunitsAll' => $quantityunits,
 				'quantityunitsReferenced' => $quantityunits,
 				'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-				'productgroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+				'productgroups' => StockService::GetInstance()->GetProductGroupsWithPaths(true),
 				'userfields' => UserfieldsService::GetInstance()->GetFields('products'),
 				'products' => $this->DB->products()->where('parent_product_id IS NULL and active = 1')->orderBy('name', 'COLLATE NOCASE'),
 				'isSubProductOfOthers' => false,
@@ -374,7 +374,7 @@ class StockController extends BaseController
 				'quantityunitsAll' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 				'quantityunitsReferenced' => $this->DB->quantity_units()->where('id IN (SELECT to_qu_id FROM cache__quantity_unit_conversions_resolved WHERE product_id = :1) OR NOT EXISTS(SELECT 1 FROM stock_log WHERE product_id = :1)', $product->id)->orderBy('name', 'COLLATE NOCASE'),
 				'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
-				'productgroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+				'productgroups' => StockService::GetInstance()->GetProductGroupsWithPaths(true),
 				'userfields' => UserfieldsService::GetInstance()->GetFields('products'),
 				'products' => $this->DB->products()->where('id != :1 AND parent_product_id IS NULL and active = 1', $product->id)->orderBy('name', 'COLLATE NOCASE'),
 				'isSubProductOfOthers' => $this->DB->products()->where('parent_product_id = :1', $product->id)->count() !== 0,
@@ -404,18 +404,35 @@ class StockController extends BaseController
 	public function ProductGroupEditForm(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		// Every group, inactive ones included, so that an existing parent is never silently
+		// dropped from the select it is the current value of.
+		$possibleParents = StockService::GetInstance()->GetProductGroupsWithPaths();
+
 		if ($args['productGroupId'] == 'new')
 		{
 			return $this->RenderPage($response, 'productgroupform', [
 				'mode' => 'create',
+				'possibleParents' => $possibleParents,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('product_groups')
 			]);
 		}
 		else
 		{
+			// A group cannot be its own parent and cannot sit inside its own subtree, so the
+			// option list omits itself and everything below it. The database refuses both
+			// (migrations/0278.pgsql.sql), but offering an option that is certain to be
+			// rejected is not a form, it is a trap - the same reasoning
+			// StockController::LocationEditForm() applies to locations.
+			$ancestors = StockService::GetInstance()->GetProductGroupAncestorIds();
+			$possibleParents = array_values(array_filter($possibleParents, function ($group) use ($ancestors, $args)
+			{
+				return !in_array(intval($args['productGroupId']), $ancestors[$group->id] ?? [], true);
+			}));
+
 			return $this->RenderPage($response, 'productgroupform', [
 				'group' => $this->DB->product_groups($args['productGroupId']),
 				'mode' => 'edit',
+				'possibleParents' => $possibleParents,
 				'userfields' => UserfieldsService::GetInstance()->GetFields('product_groups')
 			]);
 		}
@@ -429,14 +446,7 @@ class StockController extends BaseController
 	public function ProductGroupsList(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		if (isset($request->getQueryParams()['include_disabled']))
-		{
-			$productGroups = $this->DB->product_groups()->orderBy('name', 'COLLATE NOCASE');
-		}
-		else
-		{
-			$productGroups = $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE');
-		}
+		$productGroups = StockService::GetInstance()->GetProductGroupsWithPaths(!isset($request->getQueryParams()['include_disabled']));
 
 		return $this->RenderPage($response, 'productgroups', [
 			'productGroups' => $productGroups,

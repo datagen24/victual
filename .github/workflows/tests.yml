@@ -430,6 +430,15 @@ jobs:
         working-directory: .devtools/frontend
         run: node nested-locations.js http://127.0.0.1:8085
 
+      # Plan 30. Against the demo instance on 8085 for the same reason the nested location
+      # checks are: the parent picker, the path shown in a group dropdown, and the delete
+      # refusal reaching the page are all things the PostgreSQL phase structurally cannot see -
+      # it asserts the column, the view, the guards and the API, and this asserts that a
+      # person can build a tree through the form and act on it.
+      - name: Run nested product group checks
+        working-directory: .devtools/frontend
+        run: node nested-product-groups.js http://127.0.0.1:8085
+
       # Plan 28. Against the demo instance on 8085 - nothing here needs the label subsystem
       # either. The modal actually opening in the right mode, posting the nested measurement
       # object rather than flat fields, the tare field's visibility following the gross

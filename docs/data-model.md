@@ -116,6 +116,17 @@ is every location's meaning before this migration and stays available afterwards
 rather than a trigger, because the importer never sets a class at all and there is nothing
 for a trigger to fire on; an unclassified location keeps the flag independently editable.
 
+`product_groups` is a tree since migration 0278 ([plan 30](plans/30-nested-product-groups.md),
+[ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md)): the catalogue's
+taxonomy — Spices / Garlic / Fresh, Dairy / Cheese — lives in `parent_product_group_id`, the
+same shape and the same recursive `product_groups_resolved` view as `locations`, sharing
+`hierarchy_depth_limit()`. `products.parent_product_id` keeps its separate, unrelated meaning
+(ADR-0023 decision 2): the same product in different packagings, one level deep, enforced by
+`trg_enfore_product_nesting_level`. A group may hold products and subgroups at once with no
+special case, since `product_group_id` and `parent_product_group_id` are independent columns
+(ADR-0023 decision 6) — `Garlic` can be both a product's group and a subgroup's parent in the
+same row.
+
 **Identity & access (11)** — `users`, `user_settings`, `user_settings_defaults`,
 `sessions`, `api_keys`, `user_permissions`, `permission_hierarchy`, `roles`,
 `role_permissions`, `user_roles`, `login_attempts`.

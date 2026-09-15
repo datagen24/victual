@@ -54,6 +54,29 @@
 				</div>
 			</div>
 
+			{{-- The parent picker. A plain select rather than the combobox component, matching
+			locationform.blade.php: the option text is the full path, and the edit-mode list has
+			already had this group and its whole subtree removed server-side, so there is no
+			option here the database would refuse. --}}
+			<div class="form-group">
+				<label for="parent_product_group_id">{{ $__t('Parent product group') }}
+					&nbsp;<i class="fa-solid fa-question-circle text-muted"
+						data-toggle="tooltip"
+						data-trigger="hover click"
+						title="{{ $__t('Leave empty to make this a top level product group') }}"></i>
+				</label>
+				<select class="custom-control custom-select"
+					id="parent_product_group_id"
+					name="parent_product_group_id">
+					<option value=""></option>
+					@foreach($possibleParents as $possibleParent)
+					<option value="{{ $possibleParent->id }}"
+						data-level="{{ $possibleParent->level }}"
+						@if($mode=='edit' && $group->parent_product_group_id == $possibleParent->id) selected="selected" @endif>{{ $possibleParent->path }}</option>
+					@endforeach
+				</select>
+			</div>
+
 			<div class="form-group">
 				<label for="description">{{ $__t('Description') }}</label>
 				<textarea class="form-control"
