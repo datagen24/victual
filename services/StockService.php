@@ -1192,6 +1192,92 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * Returns every product group with a path (e.g. "Spices / Garlic / Fresh") and a level
+	 * derived from product_groups_resolved, in tree pre-order with siblings ordered
+	 * case-insensitively by name - the group tree's counterpart to GetLocationsWithPaths().
+	 *
+	 * @param bool $activeOnly When true, only active groups are returned
+	 * @return array Array of row objects
+	 */
+	public function GetProductGroupsWithPaths(bool $activeOnly = false)
+	{
+		$sql = 'SELECT pg.*, self.path AS path, levels.level AS level
+			FROM product_groups pg
+			JOIN product_groups_resolved self
+				ON self.descendant_product_group_id = pg.id
+				AND self.ancestor_product_group_id = pg.id
+			JOIN (
+				SELECT descendant_product_group_id, MAX(depth) AS level
+				FROM product_groups_resolved
+				GROUP BY descendant_product_group_id
+			) levels
+				ON levels.descendant_product_group_id = pg.id';
+
+		if ($activeOnly)
+		{
+			$sql .= ' WHERE pg.active = 1';
+		}
+
+		$sql .= ' ORDER BY pg.name COLLATE NOCASE';
+
+		$rows = DatabaseService::GetInstance()->ExecuteDbQuery($sql)->fetchAll(\PDO::FETCH_OBJ);
+
+		$byParent = [];
+		$present = [];
+
+		foreach ($rows as $row)
+		{
+			$present[$row->id] = true;
+		}
+
+		foreach ($rows as $row)
+		{
+			$parent = $row->parent_product_group_id;
+			$key = ($parent === null || !isset($present[$parent])) ? 0 : $parent;
+			$byParent[$key][] = $row;
+		}
+
+		$ordered = [];
+		$walk = function ($parentKey) use (&$walk, &$ordered, $byParent)
+		{
+			foreach ($byParent[$parentKey] ?? [] as $row)
+			{
+				$ordered[] = $row;
+				$walk($row->id);
+			}
+		};
+		$walk(0);
+
+		return $ordered;
+	}
+
+	/**
+	 * Returns, per product group id, that group's id followed by every ancestor's id -
+	 * including itself, since product_groups_resolved's self row is depth 0. This is what
+	 * lets the group form's parent picker exclude a group being edited and its whole subtree
+	 * (StockController::ProductGroupEditForm()), the same way GetLocationAncestorIds() does
+	 * for locations: the database refuses a cycle either way, but offering an option that is
+	 * certain to be refused is a trap, not a form.
+	 *
+	 * @return array Array keyed by product group id, each value an array of ancestor ids
+	 */
+	public function GetProductGroupAncestorIds()
+	{
+		$sql = 'SELECT descendant_product_group_id, ancestor_product_group_id, depth
+			FROM product_groups_resolved
+			ORDER BY descendant_product_group_id, depth';
+
+		$ancestors = [];
+
+		foreach (DatabaseService::GetInstance()->ExecuteDbQuery($sql)->fetchAll(\PDO::FETCH_OBJ) as $row)
+		{
+			$ancestors[$row->descendant_product_group_id][] = intval($row->ancestor_product_group_id);
+		}
+
+		return $ancestors;
+	}
+
+	/**
 	 * Returns the per-location stock content (location_id, product_id, amount, amount_opened)
 	 * for all active products, ordered by product name. Amounts are in stock quantity units.
 	 *

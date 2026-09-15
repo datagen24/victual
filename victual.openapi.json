@@ -9472,6 +9472,37 @@
 					"path": "Basement / StorageRoom / UprightFreezer / Door"
 				}
 			},
+			"ProductGroupResolved": {
+				"type": "object",
+				"description": "One row per (ancestor, descendant) pair of the product group tree, including every group paired with itself at depth 0. A group's level is the largest depth its id appears at as a descendant. See ADR-0023: this is the taxonomy - Spices / Garlic / Fresh - not a stock-bearing relation, so nothing here aggregates.",
+				"properties": {
+					"id": {
+						"type": "integer",
+						"description": "Always 1. A dummy column, as on every other resolved view."
+					},
+					"ancestor_product_group_id": {
+						"type": "integer"
+					},
+					"descendant_product_group_id": {
+						"type": "integer"
+					},
+					"depth": {
+						"type": "integer",
+						"description": "Distance from the ancestor to the descendant; 0 on the row that pairs a group with itself."
+					},
+					"path": {
+						"type": "string",
+						"description": "The descendant's display path from its own root, names joined by \" / \" - the same string on every row for a given descendant."
+					}
+				},
+				"example": {
+					"id": 1,
+					"ancestor_product_group_id": "1",
+					"descendant_product_group_id": "5",
+					"depth": "2",
+					"path": "Spices / Garlic / Fresh"
+				}
+			},
 			"ShoppingLocation": {
 				"type": "object",
 				"properties": {
@@ -10802,6 +10833,7 @@
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
 					"locations_resolved",
+					"product_groups_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",
@@ -10844,6 +10876,7 @@
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
 					"locations_resolved",
+					"product_groups_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",
@@ -10878,6 +10911,7 @@
 					"products_average_price",
 					"quantity_unit_conversions_resolved",
 					"locations_resolved",
+					"product_groups_resolved",
 					"recipes_pos_resolved",
 					"battery_charge_cycles",
 					"product_barcodes_view",

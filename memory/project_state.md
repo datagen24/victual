@@ -36,7 +36,11 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   pre-fork Grocy backup, which also surfaced [issue #148](https://github.com/datagen24/victual/issues/148) —
   `enfore_product_nesting_level` enforces one-level nesting on `UPDATE` only, never `INSERT`,
   in both engines). Plan 07 was retired and 30/31 scheduled by the separate PR on 2026-09-14, which also
-  renumbered the wave 4 reservations (28→0275, 29→0276, 30→0277, 31→0278, 22→0279–0280).
+  renumbered the wave 4 reservations (28→0275, 29→0276, 30→0277, 31→0278, 22→0279–0280) — moved
+  again the next day when #148's own fix took 0277 ahead of 30 (30→0278, 31→0279, 22→0280–0281).
+  **Plan 30 landed 2026-09-15** as `migrations/0278.pgsql.sql`; see its own
+  [Executed](../docs/plans/30-nested-product-groups.md#executed) section. Plan 31 is next in
+  wave 4, now unblocked.
 - **ADR-0022 is Accepted 2026-09-14**, all eight prerequisites met: [PR #153](https://github.com/datagen24/victual/pull/153)
   merged, closing [issue #129](https://github.com/datagen24/victual/issues/129). 1, 2, 3, 5,
   6, 7 via a disposable spike, merged into master (not left unmerged like ADR-0023's spike

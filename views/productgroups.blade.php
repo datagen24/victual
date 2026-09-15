@@ -44,6 +44,7 @@
 							href="#"><i class="fa-solid fa-eye"></i></a>
 					</th>
 					<th>{{ $__t('Name') }}</th>
+					<th>{{ $__t('Path') }}</th>
 					<th>{{ $__t('Description') }}</th>
 					<th>{{ $__t('Product count') }}</th>
 					<th>{{ $__t('Min. stock amount') }}</th>
@@ -72,8 +73,14 @@
 							<i class="fa-solid fa-trash"></i>
 						</a>
 					</td>
-					<td>
+					<td data-product-group-level="{{ $productGroup->level }}">
 						{{ $productGroup->name }}
+					</td>
+					{{-- Where this group sits, spelled out. The name column stays the bare name,
+					matching locations.blade.php's reasoning: it is what the delete confirmation
+					and any future label action would key off. --}}
+					<td>
+						{{ $productGroup->path }}
 					</td>
 					<td>
 						{{ $productGroup->description }}
