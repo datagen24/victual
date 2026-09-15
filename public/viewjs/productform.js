@@ -111,6 +111,20 @@ $('.save-product-button').on('click', function (e)
 	var parentProductId = jsonData.product_id;
 	delete jsonData.product_id;
 	jsonData.parent_product_id = parentProductId;
+
+	// serializeJSON() hands back the empty string for every one of this form's unselected
+	// nullable-integer pickers, and each of these columns is a nullable integer: "" would be
+	// written as an id of 0, which is a row that does not exist. Left unset, all six post
+	// null instead - the same fix locationform.js already applies to parent_location_id and
+	// storage_class_id (issue #159).
+	['parent_product_id', 'product_group_id', 'shopping_location_id', 'default_consume_location_id',
+		'default_refill_location_id_from', 'default_refill_location_id_to'].forEach(function (field)
+	{
+		jsonData[field] = jsonData[field] === '' || jsonData[field] === undefined
+			? null
+			: parseInt(jsonData[field], 10);
+	});
+
 	Victual.FrontendHelpers.BeginUiBusy("product-form");
 
 	if ($("#product-picture")[0].files.length > 0)

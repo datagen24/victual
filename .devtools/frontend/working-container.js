@@ -39,33 +39,6 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		const base = process.argv[2] || 'http://127.0.0.1:8085';
 		const token = Date.now().toString(36).toUpperCase();
 
-		// Routes around a pre-existing defect this probe found while writing it, unrelated to
-		// anything this plan touches: productform.js always sends parent_product_id (the
-		// "copy settings from" picker's field, renamed from product_id) even when nothing was
-		// picked, and an untouched <select> serializes that as "" - which a nullable *integer*
-		// column refuses, the same "" trap plan 08's Executed section records for
-		// parent_location_id. Reproduced directly against /api/objects/products with a minimal
-		// payload leaving parent_product_id, product_group_id, shopping_location_id or
-		// default_consume_location_id blank in turn: every one of them 400s the same way, on
-		// this branch and on master alike, independent of this plan's own columns. Worth its
-		// own issue; not fixed here because fixing a shared form's submit handler is a
-		// different, unrelated change. The interception only touches the one field this bug is
-		// about, so a real defect in this plan's own fields still reaches the API unmasked.
-		await page.route('**/api/objects/products', async (route) =>
-		{
-			const request = route.request();
-			if (request.method() !== 'POST' && request.method() !== 'PUT')
-			{
-				return route.continue();
-			}
-			const body = JSON.parse(request.postData());
-			if (body.parent_product_id === '')
-			{
-				body.parent_product_id = null;
-			}
-			return route.continue({ postData: JSON.stringify(body) });
-		});
-
 		page.on('pageerror', error => { throw new Error('page error: ' + error.message); });
 
 		async function api(path, method = 'GET', body)
@@ -129,15 +102,9 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		await page.locator('#qu_id_price').selectOption({ value: String(quWeight.id) });
 		await page.locator('#product_group_id').selectOption({ index: 1 });
 		await page.locator('#default_consume_location_id').selectOption({ index: 1 });
-		// Three fields unrelated to this plan, filled here only to route around a pre-existing
-		// defect this probe found while writing it: an untouched nullable-integer column posts
-		// "" (the same trap plan 08's Executed section records for parent_location_id), and
-		// the combobox below needs its own component API rather than .selectOption() because
-		// the visible widget, not the hidden <select> alone, is what the page actually submits
-		// from. Reproduced directly against /api/objects/products with a minimal payload
-		// leaving shopping_location_id, product_group_id or default_consume_location_id blank
-		// in turn, independent of any field this plan touches. Out of scope to fix here;
-		// worth its own issue.
+		// The shopping location combobox needs its own component API rather than
+		// .selectOption(): the visible widget, not the hidden <select> alone, is what the page
+		// actually submits from.
 		await page.evaluate(id => Victual.Components.ShoppingLocationPicker.SetId(id), shoppingLocationId);
 		await page.locator('#quick_refill_amount').fill('5');
 		await page.locator('#default_refill_location_id_from').selectOption({ value: String(dryStores.id) });

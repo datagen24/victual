@@ -161,3 +161,27 @@ against the same instance neither collides with the first nor asserts against it
 CI runs it in `frontend-security` after the product group minimum stock checks, against the
 demo instance on 8085. The database coverage — the view, the guards, the depth cap and the
 entities — is `.devtools/pgsql/nested-locations-tests.php`, run by `run-tests.sh locations`.
+
+## Product form nullable-integer pickers
+
+`node product-nullable-pickers.js <url>` is the regression test for
+[issue 159](https://github.com/datagen24/victual/issues/159): `public/viewjs/productform.js`'s
+save handler always sent every nullable-integer picker's field even when nothing was picked,
+and `serializeJSON()` reports an unselected `<select>` as `""` — which PostgreSQL refuses for
+the integer column underneath, arriving at the browser as an opaque 400 naming no field. The
+issue reproduced this directly against `POST /api/objects/products` for four fields
+(`parent_product_id`, `product_group_id`, `shopping_location_id`,
+`default_consume_location_id`); the same direct reproduction, done while writing this probe,
+found the identical 400 for the other two nullable-integer pickers the form grew under plan 29
+(`default_refill_location_id_from`/`_to`, migration `0276.pgsql.sql`) — the fix and this probe
+cover all six.
+
+No PHP phase can see this: a round trip through `/objects/products` posts real integers, never
+`""`. This probe drives `/product/new` exactly as a person filling in only the required fields
+would — every nullable-integer picker left at its default blank selection — asserts the create
+succeeds and every one of the six reads back as `null` rather than an id of `0`, then reopens
+the created product and does an untouched re-save to exercise the edit (PUT) branch of the same
+handler, which runs the identical `jsonData` transform.
+
+CI runs it in `frontend-security` after the working container replenishment checks, against the
+demo instance on 8085.
