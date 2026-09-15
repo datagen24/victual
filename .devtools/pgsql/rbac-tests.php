@@ -128,6 +128,39 @@ foreach ($spec['components']['schemas']['ExposedEntity']['enum'] as $entity)
 	}
 }
 
+// Sweep S32: FilesApiController's own fail-closed read-permission table, checked the
+// same way as ExposedEntity/EntityReadPolicy just above - every FileGroups enum member
+// has an explicit row, and a group without one is refused rather than served.
+$files = new Victual\Controllers\Api\FilesApiController($container);
+foreach ($spec['components']['schemas']['FileGroups']['enum'] as $group)
+{
+	check(array_key_exists($group, Victual\Controllers\Api\FilesApiController::GROUP_READ_PERMISSIONS), "$group has an explicit read policy");
+}
+grant([]);
+foreach (Victual\Controllers\Api\FilesApiController::GROUP_READ_PERMISSIONS as $group => $permission)
+{
+	$args = ['group' => $group, 'fileName' => base64_encode('nonexistent.png')];
+	if ($permission === null)
+	{
+		status(fn() => $files->ServeFile(request(), new Response(), $args), 404, "$group is deliberately open and falls through to the file lookup");
+	}
+	else
+	{
+		status(fn() => $files->ServeFile(request(), new Response(), $args), 403, "$group denied without $permission");
+		grant([$permission]);
+		status(fn() => $files->ServeFile(request(), new Response(), $args), 404, "$group allowed with $permission, falls through to the file lookup");
+		grant([]);
+	}
+}
+// The property the finding actually asks for: a group with no row at all, not merely one
+// of the enum's own mapped-but-unpermitted members, is refused rather than served. Every
+// enum member has a row (asserted above), so this constructs the unmapped case directly
+// against CheckGroupReadPermission/CheckGroupIsKnown instead of relying on the enum
+// drifting out of step with the table.
+status(fn() => $files->ServeFile(request(), new Response(), ['group' => 'unmapped-file-group', 'fileName' => base64_encode('nonexistent.png')]), 400, 'A file group with no row in GROUP_READ_PERMISSIONS is refused, not served');
+status(fn() => $files->DeleteFile(request(), new Response(), ['group' => 'unmapped-file-group', 'fileName' => base64_encode('nonexistent.png')]), 400, 'DeleteFile refuses the same unmapped group');
+status(fn() => $files->UploadFile(request(), new Response(), ['group' => 'unmapped-file-group', 'fileName' => base64_encode('nonexistent.png')]), 400, 'UploadFile refuses the same unmapped group');
+
 // Each leaf independently permits the corresponding generic read, without writes.
 $generic = new Victual\Controllers\Api\GenericEntityApiController($container);
 foreach (['STOCK_VIEW' => 'products', 'SHOPPINGLIST_VIEW' => 'shopping_list', 'CHORES_VIEW' => 'chores', 'TASKS_VIEW' => 'tasks', 'RECIPES_VIEW' => 'recipes', 'MEALPLAN_VIEW' => 'meal_plan'] as $permission => $entity)
@@ -173,7 +206,6 @@ $response = $roleApi->CreateRole(request('POST', ['code' => 'EDITOR', 'name' => 
 $editor = json_decode((string)$response->getBody(), true)['created_object_id'];
 $roles->SetPermissions(request(), $editor, [permissionId('USERS_EDIT'), permissionId('USERS_EDIT_SELF')]);
 grant([]); $pdo->exec('INSERT INTO user_roles(user_id,role_id) VALUES (9000, ' . $editor . ')');
-$files = new Victual\Controllers\Api\FilesApiController($container);
 status(fn() => $files->DeleteFile(request('DELETE'), new Response(), ['group' => 'userpictures', 'fileName' => base64_encode('protected.png')]), 403, 'Role-only editor cannot delete stronger user picture');
 
 // Failure on the second insert must restore the entire previous bundle.

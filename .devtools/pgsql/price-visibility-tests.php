@@ -5,7 +5,7 @@
 //
 //   php price-visibility-tests.php
 //
-// PostgreSQL only, like the rbac phase this extends: migrations/0280.pgsql.sql is above the
+// PostgreSQL only, like the rbac phase this extends: migrations/0281.pgsql.sql is above the
 // SQLite freeze, so there is no second engine to compare against. A freshly migrated
 // database and nothing else - the phase makes its own product, stock, recipe and shopping
 // list rows, real bookings through StockService rather than hand-inserted values, so the
@@ -257,7 +257,7 @@ foreach ($matrix as $label => $spec)
 	// column is 'price' (db/pgsql/baseline/04_views_l1a.sql, confirmed independently by
 	// ADR-0005's accepted-exceptions section quoting "products_average_price.price") -
 	// not 'average_price', which the plan's FIELD_POLICY table had wrong and this migration
-	// corrects; see migrations/0280.pgsql.sql.
+	// corrects; see migrations/0281.pgsql.sql.
 	$avgPrice = asJson($genericApi->GetObjects(request(), new Response(), ['entity' => 'products_average_price']));
 	check(count($avgPrice) > 0, "$label: GET /objects/products_average_price returns rows");
 	check(array_key_exists('price', $avgPrice[0] ?? []) === $sees, "$label: GET /objects/products_average_price 'price' " . ($sees ? 'present' : 'absent'));

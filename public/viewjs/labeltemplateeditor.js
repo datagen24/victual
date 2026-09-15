@@ -77,8 +77,9 @@
 		var width = state.document.canvas.width_mm;
 		var height = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
 
-		canvas.setWidth(width * MM_PER_PX);
-		canvas.setHeight(height * MM_PER_PX);
+		// fabric 6 dropped setWidth()/setHeight() (issue #126); setDimensions() is the
+		// replacement for both at once.
+		canvas.setDimensions({ width: width * MM_PER_PX, height: height * MM_PER_PX });
 		canvas.clear();
 		canvas.backgroundColor = '#ffffff';
 
@@ -89,7 +90,10 @@
 			{
 				return;
 			}
-			shape.set({ victualId: element.id, hasRotatingPoint: false, lockRotation: true });
+			// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
+			// is now a per-control call rather than a constructor-style flag.
+			shape.set({ victualId: element.id, lockRotation: true });
+			shape.setControlVisible('mtr', false);
 			canvas.add(shape);
 		});
 
@@ -103,9 +107,20 @@
 
 	function shapeFor(element)
 	{
+		// fabric 7.0.0 changed the default origin from top-left to centre (issue #126, fabric
+		// PR #10715): left undeclared, an object's `left`/`top` would be its own centre point
+		// rather than the document's x_mm/y_mm corner, shifting every shape half its own size
+		// up and left - and corrupting the delta absorb() computes back from a drag. Pinning
+		// the origin here keeps the fabric-5 meaning the rest of this file assumes.
+		//
+		// originX/originY are themselves deprecated by that same fabric PR, in favour of
+		// always-centre positioning plus helpers like `positionByLeftTop()` - so a future
+		// major bump that removes them needs a replacement here, not just a version bump.
 		var common = {
 			left: (element.x_mm || 0) * MM_PER_PX,
 			top: (element.y_mm || 0) * MM_PER_PX,
+			originX: 'left',
+			originY: 'top',
 			fill: paint(element.color)
 		};
 
@@ -142,9 +157,13 @@
 		}
 		if (element.type === 'line')
 		{
+			// A fabric.Line always derives its own left/top from its two points' bounding
+			// box, by construction - but which corner of that box left/top means still
+			// depends on originX/originY the same way it does for every other shape, so this
+			// needs the same explicit pin as common above.
 			return new fabric.Line(
 				[element.x1_mm * MM_PER_PX, element.y1_mm * MM_PER_PX, element.x2_mm * MM_PER_PX, element.y2_mm * MM_PER_PX],
-				{ stroke: paint(element.color), strokeWidth: Math.max(1, element.stroke_mm * MM_PER_PX) });
+				{ stroke: paint(element.color), strokeWidth: Math.max(1, element.stroke_mm * MM_PER_PX), originX: 'left', originY: 'top' });
 		}
 		if (element.type === 'image')
 		{
@@ -167,8 +186,14 @@
 
 		if (element.type === 'line')
 		{
-			var dx = shape.left - Math.min(element.x1_mm, element.x2_mm) * MM_PER_PX;
-			var dy = shape.top - Math.min(element.y1_mm, element.y2_mm) * MM_PER_PX;
+			// fabric 7's Line still derives left/top from its points' bounding box, but the
+			// box-to-origin translation now runs through _getTransformedDimensions(), which
+			// folds in strokeWidth - so even an untouched line's left/top sits strokeWidth/2
+			// short of the point minimum, not exactly at it as in fabric 5. Left uncorrected,
+			// every drag would carry that constant into x1_mm/y1_mm/x2_mm/y2_mm and drift the
+			// line a little further on each save.
+			var dx = shape.left - Math.min(element.x1_mm, element.x2_mm) * MM_PER_PX + shape.strokeWidth / 2;
+			var dy = shape.top - Math.min(element.y1_mm, element.y2_mm) * MM_PER_PX + shape.strokeWidth / 2;
 			element.x1_mm = round(element.x1_mm + dx / MM_PER_PX);
 			element.x2_mm = round(element.x2_mm + dx / MM_PER_PX);
 			element.y1_mm = round(element.y1_mm + dy / MM_PER_PX);
@@ -283,7 +308,7 @@
 		if (element.type === 'text')
 		{
 			var fields = Victual.LabelTemplate.EntityKind === 'location'
-				? ['location.name', 'location.description', 'location.id']
+				? ['location.name', 'location.description', 'location.id', 'location.path']
 				: [];
 			holder.appendChild(field(__t('Field'), element.field, function(v) { element.field = v || null; element.literal = element.field ? null : (element.literal || 'Text'); },
 				fields.map(function(f) { return { value: f, label: f }; }).concat([{ value: '', label: __t('a fixed string') }])));

@@ -27,6 +27,40 @@ Victual.EntityList.ConfirmDelete({
 	list: '/manageapikeys'
 });
 
+// Rotate a regular API key (issue #130): confirm, then submit a POST form to
+// /manageapikeys/{id}/rotate, the same way "add" and "delete" are state changes done as a
+// form/AJAX call rather than a GET (sweep finding S8). This only creates the successor -
+// the confirmation says so, and retiring the predecessor stays the existing delete button
+// on its own row.
+$(document).on("click", ".apikey-rotate-button", function (e)
+{
+	e.preventDefault();
+
+	var button = $(this);
+	var apiKeyId = button.data("apikey-id");
+	var apiKeyName = button.attr("data-apikey-name");
+
+	bootbox.confirm({
+		message: __t('Rotate API key "%s"? A new key will be created; this one keeps working until you delete it.', Victual.FrontendHelpers.EscapeHtml(apiKeyName)),
+		closeButton: false,
+		buttons: {
+			confirm: { label: __t('Yes'), className: 'btn-success' },
+			cancel: { label: __t('No'), className: 'btn-danger' }
+		},
+		callback: function (result)
+		{
+			if (result !== true)
+			{
+				return;
+			}
+
+			var form = $("<form>").attr({ method: "post", action: U("/manageapikeys/" + apiKeyId + "/rotate") });
+			$(document.body).append(form);
+			form.trigger("submit");
+		}
+	});
+});
+
 // Show the key as QR code - the reveal block encodes "<api url>|<key>" for a key that has
 // just been created, and an iCal special purpose key's row encodes the ready-to-use
 // calendar URL. There is deliberately no such button on a regular key's row: what is
@@ -79,6 +113,7 @@ $("#new-api-key-button").on("click", function (e)
 	// way into the DOM, which is the sink rule the frontend-security job checks.
 	var form = $("<form>").attr({ method: "post", action: U("/manageapikeys/new") });
 	form.append($("<input>").attr({ type: "hidden", name: "description" }).val($("#description").val()));
+	form.append($("<input>").attr({ type: "hidden", name: "expires_in_days" }).val($("#expires_in_days").val()));
 	$(document.body).append(form);
 	form.trigger("submit");
 });

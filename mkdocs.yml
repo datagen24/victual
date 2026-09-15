@@ -67,6 +67,29 @@ validation:
 
 nav:
   - Home: index.md
+  - Manual:
+      - Overview: manual/index.md
+      - Getting started: manual/getting-started.md
+      - Configuration: manual/configuration.md
+      - Using Victual:
+          - Stock: manual/using-victual/stock.md
+          - Shopping lists: manual/using-victual/shopping-lists.md
+          - Recipes and meal plan: manual/using-victual/recipes-and-meal-plan.md
+          - Chores: manual/using-victual/chores.md
+          - Batteries: manual/using-victual/batteries.md
+          - Tasks: manual/using-victual/tasks.md
+          - Equipment: manual/using-victual/equipment.md
+          - Calendar: manual/using-victual/calendar.md
+          - Administration: manual/using-victual/administration.md
+          - Tips: manual/using-victual/tips.md
+      - Operator reference:
+          - The REST API: manual/operator/rest-api.md
+          - Barcodes and scanning: manual/operator/barcodes-scanning.md
+          - Label printing: manual/operator/label-printing.md
+          - Home Assistant and MQTT: manual/operator/home-assistant-mqtt.md
+          - Roles and permissions: manual/operator/roles-permissions.md
+          - Updating and migrations: manual/operator/updating-migrations.md
+          - Backup and restore: manual/operator/backup-restore.md
   - Development:
       - Overview: development/index.md
       - Orientation:

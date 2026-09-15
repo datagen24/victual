@@ -61,6 +61,7 @@ PAGES = {
 TREES = {
     "docs/adr": "development/adr",
     "docs/diagrams": "development/diagrams",
+    "docs/manual": "manual",
 }
 
 LINK = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
@@ -208,6 +209,28 @@ def check_offsite_links() -> None:
         "  Correct the link in the source document. A rewritten link naming nothing is\n"
         "  a 404 on the published site, and mkdocs --strict cannot see it."
     )
+
+
+SETTING_NAME = re.compile(r"^Setting\('([A-Z0-9_]+)'", re.M)
+
+
+def check_settings_reference(out: Path) -> None:
+    """Every Setting() in config-dist.php has an entry in the Configuration reference.
+
+    Issue 138's own verification criterion: asserted by a script rather than by reading,
+    so a setting added to config-dist.php without a matching reference entry fails the
+    staging run instead of silently drifting out of sync with the Manual.
+    """
+    names = SETTING_NAME.findall((REPO / "config-dist.php").read_text())
+    reference = (out / "manual/configuration.md").read_text()
+    missing = [name for name in names if f"`{name}`" not in reference]
+    if missing:
+        raise SystemExit(
+            f"{len(missing)} config-dist.php setting(s) have no entry in "
+            f"docs/manual/configuration.md: {', '.join(missing)}\n"
+            "  Add a row for each (or drop the setting from config-dist.php)."
+        )
+    print(f"  {len(names)} config-dist.php settings, all referenced in the Configuration page")
 
 
 def container_runtime() -> str | None:
@@ -377,6 +400,7 @@ def main() -> int:
     stage_brand_assets(out)
     stage_diagram_pages(out)
     check_offsite_links()
+    check_settings_reference(out)
 
     pages = sum(1 for _ in out.rglob("*.md"))
     try:

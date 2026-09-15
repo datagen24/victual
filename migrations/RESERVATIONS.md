@@ -65,9 +65,10 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0277 | [issue #148](https://github.com/datagen24/victual/issues/148) — `enfore_product_nesting_level` fires on `INSERT` as well as `UPDATE`, checks the nesting relationship in both directions, and nulls out any existing multi-level chain | in this tree |
 | 0278 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | in this tree |
 | 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
-| 0280 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in this tree |
-| 0281 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0282 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in `master` |
+| 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in this tree |
+| 0282 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0283 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -166,7 +167,31 @@ unscheduled draft with no file behind either number - moves up one more time, to
 Same rule as the fifth and sixth moves, applied to four numbers scheduled into wave 4 at
 once rather than one or two, while 22 stays the unscheduled draft that keeps yielding.
 
-The eighth move is the fifth's case for the third time, and the plan it moves for is not a
+**A tenth move, 2026-09-15, the same rule again.** Issue [#130](https://github.com/datagen24/victual/issues/130)
+— plan 11's own listed follow-up, sweep S11's expiry-and-rotation half — is being written on
+this branch now, which makes it the thing with a real file behind it; plan 22 is still an
+unscheduled draft with none. So the migration this issue needs takes the lowest free slot,
+0280, and plan 22's two numbers move up by one, to 0281–0282. The next unclaimed number is
+**0283**.
+
+**An eleventh move, discovered only at merge time rather than by either branch alone.**
+Two branches each independently ran the tenth move's own rule against the same starting
+state and landed on the same number: this plan's own piece 2 corrected itself onto 0280 (the
+paragraph above this table titled "the tenth application of the same rule"), and, separately,
+issue #130 also took 0280 (the tenth move immediately above this one) — both true when each
+was written, on branches that had not yet seen each other. `git merge` surfaced it as an
+add/add conflict on `migrations/0280.pgsql.sql` rather than as a silently-overwritten file,
+which is the mechanical reason a collision this table exists to prevent still reached a merge
+instead of being caught by a claim: neither branch's claim was wrong when made, and this
+table cannot serialize two branches that have not yet talked to each other.
+
+Resolution follows the retirement rule rather than the lowest-free-slot rule, because for the
+first time one side of the collision is not a claim but a landed file: issue #130's 0280 is
+already `in master`, and "a number is retired, never reused" (above) means it cannot move,
+whichever branch merges second. Plan 19 piece 2 therefore moves again, off 0280 and onto the
+next free slot, 0281; plan 22 — still the unscheduled draft yielding to every scheduled or
+already-written thing that needs a number — moves up one more time, from 0281–0282 to
+**0282–0283**. The next unclaimed number is now **0284**.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23

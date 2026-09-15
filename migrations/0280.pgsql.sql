@@ -1,132 +1,20 @@
--- Plan 19 piece 2 (issue #84): price-visibility permissions. Closes security sweep S30/S31
--- for prices specifically (docs/security-sweep.md) and answers ADR-0018's open half -
--- "Domain reads and price visibility remain separate ... STOCK_PRICES_VIEW,
--- permission_fields and redaction belong to plan 19 piece 2". See docs/plans/19-rbac.md
--- ("Piece 2 - data-visibility permissions") for the design this migration ships.
+-- api_keys.rotated_from_id: the lineage a rotation leaves behind (issue #130, sweep S11's
+-- expiry-and-rotation half). Rotating a regular API key creates a successor rather than
+-- mutating the row in place, so that the predecessor keeps authenticating until whoever
+-- holds it is explicitly retired -- "no gap or double-validity window" the issue asks for
+-- means the client controls when the old key stops working, not that the two can never
+-- overlap. This column is what records "this row replaces that one" once the successor
+-- exists, so the one-time reveal after a rotation can say so and a later reader can tell a
+-- rotation from an unrelated key of the same type.
 --
--- STOCK_PRICES_VIEW is nested under STOCK_PURCHASE, not directly under STOCK. The plan's own
--- "New permission leaves" table says "Parent: STOCK", but its Q6 response decides
--- "STOCK_PURCHASE resolves down to STOCK_PRICES_VIEW - recording a purchase without seeing
--- what it cost is not a case this household has" and "the Child role does not hold
--- STOCK_PURCHASE, so ... prices stay hidden from it". permission_tree
--- (migrations/0110.sql:95-109) is downward-inclusive only - holding a permission resolves to
--- its descendants, never to an ancestor or a sibling - so the only way for holding
--- STOCK_PURCHASE alone to resolve to STOCK_PRICES_VIEW is for the new leaf to be a
--- descendant of STOCK_PURCHASE. STOCK_PURCHASE is already a direct child of STOCK
--- (migrations/0110.sql:63), so nesting one level deeper keeps STOCK_PRICES_VIEW "under STOCK"
--- by transitive closure (ADMIN and any holder of the whole STOCK subtree still inherit it)
--- while making Q6's rule a fact of the hierarchy rather than a second rule that has to be
--- kept in sync with it by hand.
+-- Self-referencing, nullable (most keys are never rotated), and ON DELETE SET NULL rather
+-- than CASCADE: deleting a predecessor (the explicit retirement step) must not take its
+-- successor down with it -- that would turn "retire the old key" into "break the new one",
+-- exactly the gap this feature exists to avoid. No UNIQUE constraint: nothing here needs to
+-- refuse rotating the same key twice, and a key that already has a successor is a UI
+-- decision (offer nothing further), not a data integrity rule.
 --
--- No backfill row is needed the way piece 1's six *_VIEW leaves needed one
--- (db/pgsql/roles-seed.sql backfills those into every user's user_permissions directly).
--- Those were new siblings under their domain, so a user holding one specific leaf grant
--- rather than the whole parent would not otherwise resolve to them. STOCK_PRICES_VIEW is a
--- *descendant* of an existing node: every user who already holds STOCK or STOCK_PURCHASE (or
--- ADMIN) resolves to it through permission_tree's recursive CTE the moment this row exists,
--- with nothing to insert into user_permissions. That is exactly the migration-safety property
--- the plan states, honestly narrowed: "no user who holds STOCK or ADMIN loses a field on
--- upgrade" - the residue (a user holding only STOCK_VIEW, or nothing, who read every price
--- before this migration because no read was gated at all) is the deliberate behaviour change
--- the plan is for.
---
--- The Adult role (db/pgsql/roles-seed.sql) already grants 'STOCK' whole, so it resolves to
--- the new leaf with no seed change; Child and Guest hold neither STOCK nor STOCK_PURCHASE, so
--- neither resolves to it, matching the plan's role table.
-INSERT INTO permission_hierarchy (name, parent)
-SELECT 'STOCK_PRICES_VIEW', id FROM permission_hierarchy WHERE name = 'STOCK_PURCHASE'
-AND NOT EXISTS (SELECT 1 FROM permission_hierarchy WHERE name = 'STOCK_PRICES_VIEW');
+-- PostgreSQL only, above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, per
+-- ADR-0008's retirement.
 
--- permission_fields: the field policy table, per Q2's response - a table so a household can
--- widen the policy without a release, versioned by these seeded rows rather than a live
--- database (the response snapshot 14 piece 2 builds reads this migration, never a running
--- instance's own additions). One row per (permission, entity, field) triple; FieldPolicy
--- (services/FieldPolicy.php) reads it to decide which fields the current user must not see
--- on a given entity. field = '*' marks a whole-object gate (products_price_history is the
--- one today) - StockApiController::ProductPriceHistory refuses the whole call with 403
--- rather than asking FieldPolicy to filter a single-key object down to nothing, per the
--- plan's own instruction ("the whole endpoint is the field").
-CREATE TABLE permission_fields (
-	id SMALLINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-	permission_name TEXT NOT NULL REFERENCES permission_hierarchy(name),
-	entity TEXT NOT NULL,
-	field TEXT NOT NULL,
-	UNIQUE (permission_name, entity, field)
-);
-
--- Twelve entities were named in the plan's own FIELD_POLICY table; four were called out as
--- missing from an earlier draft (recipes_resolved, uihelper_shopping_list,
--- uihelper_stock_current_overview, products_price_history) and are included below along
--- with the eight the first draft already had. Four more rows are this migration's own
--- addition, found by tracing every hand-built response StockService/StockApiController
--- return rather than trusting the plan's table was exhaustive - each is a real, currently
--- ungated price channel the plan's enumeration missed:
---
---   * stock_current.value - StockApiController::CurrentStock (GET /api/stock) reads this
---     view directly via raw SQL (services/StockService.php GetCurrentStock()), not through
---     uihelper_stock_current_overview. The plan's own earlier "Where prices leave the
---     server" table lists GET /stock as a channel; its later FIELD_POLICY constant named
---     only the *_overview view that Blade/02/18 read, not the plainer one this endpoint
---     actually uses.
---   * stock_next_use.price - StockApiController::ProductStockEntries
---     (GET /stock/products/{id}/entries) reads this view (StockService::GetProductStockEntries),
---     which is `SELECT s.*, priority FROM stock s ...` and so carries every stock column
---     including price under a different LessQL table name than 'stock'. FilteredApiResponse's
---     redaction is keyed by Result::getTable(), which returns 'stock_next_use' here, not
---     'stock' - the 'stock' row alone would not have matched this channel.
---   * product_details.oldest_price and product_details.current_price - GetProductDetails()
---     returns both 'last_price'/'avg_price' (which the plan's table names) and
---     'oldest_price'/'current_price' (deprecated alias of the same value) from the same
---     uihelper_product_details row. Redacting only the two named keys would leave the
---     current purchase price reachable under 'current_price' on the same response.
---   * product_details.stock_value - the same method's 'stock_value' key is
---     stock_current.value for this one product (COALESCE(SUM(price*amount),0)), the same
---     derived monetary figure the plan's table already redacts under
---     uihelper_stock_current_overview.value for the list view. Leaving the singular-product
---     view's copy of the same figure unredacted would be the "a policy has to enumerate
---     derived columns, not columns named price" lesson the plan states about
---     recipes_resolved.prices_incomplete, missed on its own product_details row.
---
--- One row is corrected rather than carried over verbatim: the plan's own FIELD_POLICY table
--- writes 'products_average_price' => ['average_price'], but the view's actual column
--- (db/pgsql/baseline/04_views_l1a.sql CREATE VIEW products_average_price) is named 'price',
--- not 'average_price' - confirmed independently by ADR-0005's own accepted-exceptions
--- section, which quotes "products_average_price.price can be 4.124499999999999 on SQLite
--- and 4.1245 on PostgreSQL". 'average_price' is the column of a different view entirely
--- (uihelper_stock_current_overview.average_price, already its own row below). A permission_fields
--- row naming a column this view does not have would never match anything FieldPolicy redacts
--- and would be dead weight pretending to be coverage, exactly the 'recipe_fulfillment' case
--- below - found by checking this migration's rows against the real query result columns
--- with .devtools/pgsql/price-visibility-tests.php rather than trusting the plan's table.
---
--- One row from the plan's own table is deliberately not carried over: 'recipe_fulfillment'.
--- GET /recipes/{recipeId}/fulfillment (RecipesApiController::GetRecipeFulfillment) does not
--- read a distinct entity of that name - it finds one row of RecipesService::GetRecipesResolved()
--- by id, the same recipes_resolved rows the list branch of the same endpoint returns via
--- FilteredApiResponse. A policy row keyed 'recipe_fulfillment' would never match either
--- call site's actual entity string and would be dead weight pretending to be coverage;
--- recipes_resolved's own 'costs'/'costs_per_serving'/'prices_incomplete' rows above already
--- cover both branches of this endpoint.
-INSERT INTO permission_fields (permission_name, entity, field) VALUES
-	('STOCK_PRICES_VIEW', 'stock', 'price'),
-	('STOCK_PRICES_VIEW', 'stock_log', 'price'),
-	('STOCK_PRICES_VIEW', 'stock_current', 'value'),
-	('STOCK_PRICES_VIEW', 'stock_next_use', 'price'),
-	('STOCK_PRICES_VIEW', 'products_average_price', 'price'),
-	('STOCK_PRICES_VIEW', 'products_last_purchased', 'price'),
-	('STOCK_PRICES_VIEW', 'recipes_pos_resolved', 'costs'),
-	('STOCK_PRICES_VIEW', 'recipes_resolved', 'costs'),
-	('STOCK_PRICES_VIEW', 'recipes_resolved', 'costs_per_serving'),
-	('STOCK_PRICES_VIEW', 'recipes_resolved', 'prices_incomplete'),
-	('STOCK_PRICES_VIEW', 'uihelper_stock_current_overview', 'value'),
-	('STOCK_PRICES_VIEW', 'uihelper_stock_current_overview', 'last_price'),
-	('STOCK_PRICES_VIEW', 'uihelper_stock_current_overview', 'average_price'),
-	('STOCK_PRICES_VIEW', 'products_price_history', '*'),
-	('STOCK_PRICES_VIEW', 'uihelper_shopping_list', 'last_price_unit'),
-	('STOCK_PRICES_VIEW', 'uihelper_shopping_list', 'last_price_total'),
-	('STOCK_PRICES_VIEW', 'uihelper_shopping_list', 'price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'last_price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'avg_price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'oldest_price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'current_price'),
-	('STOCK_PRICES_VIEW', 'product_details', 'stock_value');
+ALTER TABLE api_keys ADD COLUMN rotated_from_id INTEGER REFERENCES api_keys(id) ON DELETE SET NULL;

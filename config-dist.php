@@ -196,6 +196,14 @@ Setting('REVERSE_PROXY_AUTH_TRUSTED_PROXIES', '');
 Setting('LOGIN_THROTTLE_MAX_ATTEMPTS', 10);
 Setting('LOGIN_THROTTLE_WINDOW_MINUTES', 15);
 
+// The longest lifetime a regular API key may be given at creation (sweep S11's expiry
+// half, issue #130). The manage-keys screen offers a lifetime up to this many days; a
+// value beyond it is clamped rather than refused, since this is a view form rather than
+// an API request. Applies to API_KEY_TYPE_DEFAULT only - the calendar sharing key and the
+// label worker/verifier/renderer credentials each already have their own expiry and
+// rotation story (ADR-0019's paired rotation, for the label ones) and are untouched.
+Setting('API_KEY_MAX_LIFETIME_DAYS', 365);
+
 // Default permissions for new users
 // the array needs to contain the technical/constant names
 // See the file controllers/Users/User.php for possible values

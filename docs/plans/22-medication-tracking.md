@@ -308,29 +308,32 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0281** (medication master data and subjects)
-  and **0282** (regimens, administrations, excursions) — 0275–0276 until 2026-09-14, when the
+- **Migration numbering.** Two files, claiming **0282** (medication master data and subjects)
+  and **0283** (regimens, administrations, excursions) — 0275–0276 until 2026-09-14, when the
   four scheduled wave 4 plans took the lower slots, then 0279–0280 the next day when
   [issue 148](https://github.com/datagen24/victual/issues/148)'s own defect fix took 0277
-  ahead of plan 30, then 0280–0281 the same day when plan 19 piece 2's own migration wrote a
-  file at what should have been the lowest free slot instead of the number it first claimed,
-  with rows added to
+  ahead of plan 30, then 0280–0281 the day after that when
+  [issue 130](https://github.com/datagen24/victual/issues/130) — plan 11's own listed
+  follow-up — took 0280 ahead of this plan, then 0281–0282 the same day when plan 19 piece 2's
+  own migration collided with issue 130's landed 0280 at merge time and moved to the lowest
+  free slot instead, with rows added to
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0274 belongs to
-  [23](23-storage-classes.md), which lands first. **These numbers have moved ten times** — claimed
+  [23](23-storage-classes.md), which lands first. **These numbers have moved eleven times** — claimed
   as 0261–0262 until `master` landed 0261, then 0262–0264 until wave 2 landed 0262 through
   0265, then 0267–0269 until wave 3a took 0266, then 0268–0270 to make room for 0267, then
   0269–0271 to make room for wave 3b's [03](03-category-min-stock.md), then 0272–0273 to make
   room for wave 3b's [25](25-label-infrastructure.md), then 0273–0275 for
   [27](27-label-templates-and-rendering.md), then 0275–0276 for
-  [08](08-nested-locations.md), then 0279–0280 for issue 148's fix, and now 0281–0282 for
-  plan 19 piece 2 — so
+  [08](08-nested-locations.md), then 0279–0280 for issue 148's fix, then 0280–0281 for
+  issue 130, and now 0282–0283 for plan 19 piece 2's collision with it — so
   re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
   numbers, which is the argument for claiming before writing rather than before merging. The
-  last four are the ones to know about: 0267 went to a defect fix that was already written,
-  0268 to a scheduled plan, issue 148's fix again to a defect fix already being written, and
-  plan 19 piece 2 to a plan whose file was already written but had claimed the wrong number in
-  the first place, so this plan's numbers have four times moved for work that was closer to
+  last five are the ones to know about: 0267 went to a defect fix that was already written,
+  0268 to a scheduled plan, issue 148's fix again to a defect fix already being written,
+  issue 130 to plan 11's own follow-up also being written, and plan 19 piece 2 a second time
+  to the same migration merging into a `master` that had claimed 0280 out from under it while
+  it was in flight, so this plan's numbers have five times moved for work that was closer to
   having a file than this one is.
 
   Two files rather than two *pairs*: this plan was written when

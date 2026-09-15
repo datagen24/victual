@@ -16,5 +16,11 @@
   composerVendor = "sha256-+jbt34VCyW44W3MhiZSV+8DldnrEb0LhDhbOZX/PyKk=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
-  yarnOfflineCache = "sha256-rEr7NQDZLsRgKdDGfRN91T8dQM+DisDLHE133b9rt9E=";
+  #
+  # Updated for the fabric 5 -> 7 bump (issue #126). This sandbox has no nix, so rather
+  # than guess it the previous commit reset this to the fakeHash placeholder and let the
+  # `flake` CI job's fixed-output-derivation failure report the real value, per
+  # nix/README.md's "Bootstrapping the hashes" - the same "got:" value a local
+  # `nix build .#frontend` would have produced.
+  yarnOfflineCache = "sha256-5jQ6uSjMasoAtL5wCPjaS9jzhj3sYb5HVCA/iMCIfow=";
 }
