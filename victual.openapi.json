@@ -117,13 +117,17 @@
 													"type": "object",
 													"required": [
 														"id",
-														"name"
+														"name",
+														"path"
 													],
 													"properties": {
 														"id": {
 															"type": "integer"
 														},
 														"name": {
+															"type": "string"
+														},
+														"path": {
 															"type": "string"
 														}
 													}

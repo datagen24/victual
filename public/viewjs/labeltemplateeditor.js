@@ -283,7 +283,7 @@
 		if (element.type === 'text')
 		{
 			var fields = Victual.LabelTemplate.EntityKind === 'location'
-				? ['location.name', 'location.description', 'location.id']
+				? ['location.name', 'location.description', 'location.id', 'location.path']
 				: [];
 			holder.appendChild(field(__t('Field'), element.field, function(v) { element.field = v || null; element.literal = element.field ? null : (element.literal || 'Text'); },
 				fields.map(function(f) { return { value: f, label: f }; }).concat([{ value: '', label: __t('a fixed string') }])));
