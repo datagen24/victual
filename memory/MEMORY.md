@@ -59,6 +59,34 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
+  dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
+  (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —
+  fabric 6 dropped the UMD build entirely, and this tree has no bundler; a module script
+  always finishes before `DOMContentLoaded`, and every `window.fabric` use in
+  `labeltemplateeditor.js` is inside `$(document).ready`, so load order between the two
+  script tags cannot race. `nix/runtime/nginx-conf.nix` gained a `\.mjs$` location forcing
+  `application/javascript`, since the pinned nginx's own bundled `mime.types` is not
+  guaranteed to know the extension and this sandbox has no nix to check it against directly.
+  **The real find**: fabric 7's default `originX`/`originY` changed from `left`/`top` to
+  `center` — every shape this editor draws only ever set `left`/`top`, so under the new
+  default every one rendered shifted up-and-left by half its own size, and `absorb()`'s drag
+  math read a corrupted position back. The shipped CI probe (add, save, publish) passed with
+  this defect in place, because nothing in it ever checked *where* anything rendered — found
+  instead by driving a real browser interactively (drag, read the saved x_mm/y_mm back,
+  reload, resize, read again), watching it silently do nothing, and comparing
+  `getActiveObject().oCoords` against hand-computed geometry until the mismatch pointed at
+  the origin default rather than the drag math. Fixed by pinning `originX:'left',
+  originY:'top'` on every shape `shapeFor()` builds. `label-designer.js` now carries the
+  drag/reload/resize check permanently, plus an explicit Playwright viewport — the default
+  one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
+  identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
+  instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
+  `label-printers.js` both pass, repeatably (3+ runs). **Not verified**: the container image
+  build — this sandbox has no nix, so `nix/hashes.nix`'s `yarnOfflineCache` is reset to the
+  bootstrap placeholder rather than a guessed value, and needs a real `nix build .#frontend`
+  before `nix flake check` or an image build will pass. See plan 27's Executed section for
+  the full account. [→](project_state.md)
 - **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
   day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
   nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,
@@ -138,14 +166,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   traced to `enfore_product_nesting_level` checking only `UPDATE`, never `INSERT`, in both
   engines, filed as [issue #148](https://github.com/datagen24/victual/issues/148) rather than
   fixed inline. [PR #149](https://github.com/datagen24/victual/pull/149). [→](project_state.md)
-- **2026-09-14 — ADR-0020's acceptance gates** found prerequisite 2 unenforced: stage.py
-  rewrites a link into an unpublished plan to an absolute GitHub URL, and `mkdocs build
-  --strict` cannot see an absolute URL, so a mistyped plan link published as a 404 silently
-  (demonstrated, exit 0). stage.py now resolves every rewritten link against `git ls-files`
-  and fails naming it. Prerequisite 4 inspected over 46 pages: no page fails, but "wave N"
-  was undefined anywhere on the site, so the Development overview gained a label table.
-  Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
-  and stays bookkeeping-only. [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 

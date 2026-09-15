@@ -77,8 +77,9 @@
 		var width = state.document.canvas.width_mm;
 		var height = state.document.canvas.height_mm || state.document.canvas.max_height_mm || 60;
 
-		canvas.setWidth(width * MM_PER_PX);
-		canvas.setHeight(height * MM_PER_PX);
+		// fabric 6 dropped setWidth()/setHeight() (issue #126); setDimensions() is the
+		// replacement for both at once.
+		canvas.setDimensions({ width: width * MM_PER_PX, height: height * MM_PER_PX });
 		canvas.clear();
 		canvas.backgroundColor = '#ffffff';
 
@@ -89,7 +90,10 @@
 			{
 				return;
 			}
-			shape.set({ victualId: element.id, hasRotatingPoint: false, lockRotation: true });
+			// `hasRotatingPoint` is gone in fabric 6+ (issue #126); hiding the rotate handle
+			// is now a per-control call rather than a constructor-style flag.
+			shape.set({ victualId: element.id, lockRotation: true });
+			shape.setControlVisible('mtr', false);
 			canvas.add(shape);
 		});
 
@@ -103,9 +107,16 @@
 
 	function shapeFor(element)
 	{
+		// fabric 6 changed the default origin from top-left to centre (issue #126): left
+		// undeclared, an object's `left`/`top` would be its own centre point rather than the
+		// document's x_mm/y_mm corner, shifting every shape half its own size up and left -
+		// and corrupting the delta absorb() computes back from a drag. Pinning the origin
+		// here keeps the fabric-5 meaning the rest of this file assumes.
 		var common = {
 			left: (element.x_mm || 0) * MM_PER_PX,
 			top: (element.y_mm || 0) * MM_PER_PX,
+			originX: 'left',
+			originY: 'top',
 			fill: paint(element.color)
 		};
 
@@ -142,9 +153,13 @@
 		}
 		if (element.type === 'line')
 		{
+			// A fabric.Line always derives its own left/top from its two points' bounding
+			// box, by construction - but which corner of that box left/top means still
+			// depends on originX/originY the same way it does for every other shape, so this
+			// needs the same explicit pin as common above.
 			return new fabric.Line(
 				[element.x1_mm * MM_PER_PX, element.y1_mm * MM_PER_PX, element.x2_mm * MM_PER_PX, element.y2_mm * MM_PER_PX],
-				{ stroke: paint(element.color), strokeWidth: Math.max(1, element.stroke_mm * MM_PER_PX) });
+				{ stroke: paint(element.color), strokeWidth: Math.max(1, element.stroke_mm * MM_PER_PX), originX: 'left', originY: 'top' });
 		}
 		if (element.type === 'image')
 		{
