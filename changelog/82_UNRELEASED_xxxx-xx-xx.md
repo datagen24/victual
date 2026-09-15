@@ -8,6 +8,8 @@
 
 > ⚠️ API keys are now stored as a SHA-256 hash. Your existing keys keep working unchanged - only what is on disk changes - but the manage-keys page can no longer show you a key you already have. It shows the last four characters instead, and a newly created key is displayed once, with its description, on the page that creates it. Copy it then; nothing can produce it again
 
+> ⚠️ A regular API key created from the manage-keys page now expires after `API_KEY_MAX_LIFETIME_DAYS` days (default 365) instead of practically never. Your existing keys are unaffected - only newly created ones get the new default. The page also gained a "Rotate" action per key: it creates a replacement with the same description and does not touch the key being replaced, so both work until you delete the old one yourself. The calendar sharing link and the label printer worker/verifier/renderer credentials are unaffected - they keep their own expiry and rotation
+
 > ⚠️ `/logout` and `/manageapikeys/new` are `POST` routes now, not `GET`. As `GET`s they fired from any page that could get a browser to load a URL - the second one creating an API key with a description of the requester's choosing. The links in the interface were updated; a bookmark or a script calling either as a `GET` gets a `405`
 
 > ⚠️ Failed logins against one username are now rate limited (`LOGIN_THROTTLE_MAX_ATTEMPTS`, default 10, inside `LOGIN_THROTTLE_WINDOW_MINUTES`, default 15). While the limit is reached, even the correct password is refused, and the refusal looks exactly like a wrong one. There is deliberately no per-address limit: behind a reverse proxy every request arrives from the proxy, so one here would lock out the whole installation rather than one client - rate limit a misbehaving address at your proxy instead
@@ -114,6 +116,7 @@
 
 - The LDAP backend was removed - see the note at the top
 - API keys are stored hashed - see the note at the top
+- A regular API key now expires and can be rotated - see the note at the top
 - An API key's "last used" time is recorded once a day rather than on every request. A read-only call used to issue a database write every time it was made
 - The calendar iCal sharing link works again. The URL the sharing dialog produces answered `401`, because the code path that accepts its `secret` parameter could never be reached
 - Each user now gets their own calendar sharing link. There used to be one for the whole installation, created by whoever opened the dialog first and authenticating as them

@@ -469,8 +469,23 @@ should instead preserve today's behaviour.
 >   (`manageapikeys-rotate`) rather than assumed safe by neighbourhood — the S29 amendment
 >   above is the reason that assumption is never made twice.
 >
+> **A defect found in review, the same day, before merge: the successor of an admin's
+> rotation belonged to the admin, not to the key's actual owner.** `CreateApiKey()` always
+> wrote `user_id => VICTUAL_USER_ID` — the caller — and `RotateApiKey()` passed nothing to
+> override it. The controller deliberately lets an admin rotate a key that is not theirs
+> (the same rule `DeleteObject` already applies to `api_keys`), so an admin rotating a
+> household member's key minted a row that authenticated as the admin, carrying that
+> member's own description and `rotated_from_id` — installed in their client, it would have
+> handed the admin their session rather than replacing their key. `CreateApiKey()` gained
+> an explicit `$ownerId` parameter (every other caller keeps passing none, meaning "the
+> current user"), and `RotateApiKey()` passes the predecessor's own `user_id` through it.
+> The admin-rotation case in `apikey-tests.php` now asserts the successor's owner
+> (`SELECT user_id FROM api_keys WHERE rotated_from_id = …`) rather than only the response
+> shape, which is what let this pass review's own tests the first time — confirmed by
+> reverting the fix and watching that assertion fail before restoring it.
+>
 > Verified against real PostgreSQL 16.13 (2026-09-15) with a new
-> `.devtools/pgsql/apikey-tests.php` suite phase (`run-tests.sh apikeys`, 30/30
+> `.devtools/pgsql/apikey-tests.php` suite phase (`run-tests.sh apikeys`, 31/31
 > assertions), and the full `run-tests.sh all` (21 phases) green alongside it: a key with a short
 > lifetime is accepted before its stored expiry and refused after; an over-long requested
 > lifetime is clamped rather than refused; a calendar or label-worker-type key created via

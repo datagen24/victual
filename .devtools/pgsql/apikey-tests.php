@@ -287,6 +287,10 @@ check($adminResponse->getStatusCode() === 200, 'an admin rotating a key that bel
 check(str_contains($adminResponseBody, 'A key owned by another user'), "the rendered page carries the predecessor's description");
 check(!str_contains($adminResponseBody, $otherUsersKey), 'and does not repeat the predecessor\'s plaintext - only the successor\'s');
 
+$successorOwnerRow = $pdo->query("SELECT user_id FROM api_keys WHERE rotated_from_id = $otherUsersKeyId")->fetch(PDO::FETCH_ASSOC);
+check($successorOwnerRow !== false && (int)$successorOwnerRow['user_id'] === 9801,
+	"the successor belongs to the predecessor's own user (9801), not to the admin (9800) who clicked Rotate");
+
 $pdo->exec("DELETE FROM user_permissions WHERE user_id = 9800");
 
 // The plain "add" path, through the controller, with the new expires_in_days field.

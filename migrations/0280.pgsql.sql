@@ -4,8 +4,8 @@
 -- holds it is explicitly retired -- "no gap or double-validity window" the issue asks for
 -- means the client controls when the old key stops working, not that the two can never
 -- overlap. This column is what records "this row replaces that one" once the successor
--- exists, so the manage-keys screen can say so and a later reader can tell a rotation from
--- an unrelated key of the same type.
+-- exists, so the one-time reveal after a rotation can say so and a later reader can tell a
+-- rotation from an unrelated key of the same type.
 --
 -- Self-referencing, nullable (most keys are never rotated), and ON DELETE SET NULL rather
 -- than CASCADE: deleting a predecessor (the explicit retirement step) must not take its

@@ -86,16 +86,20 @@ class ApiKeyService extends BaseService
 	 *
 	 * @param int|null $lifetimeDays Regular keys only; null means the configured maximum
 	 * @param int|null $rotatedFromId The predecessor this key replaces, for RotateApiKey()
+	 * @param int|null $ownerId Row owner; null means the current user (every caller except
+	 *                          RotateApiKey(), which passes the predecessor's owner - an
+	 *                          admin rotating someone else's key must not mint a row owned
+	 *                          by the admin instead of by the key's actual owner
 	 * @return string The newly generated API key
 	 */
-	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null, ?int $lifetimeDays = null, ?int $rotatedFromId = null)
+	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null, ?int $lifetimeDays = null, ?int $rotatedFromId = null, ?int $ownerId = null)
 	{
 		$newApiKey = $this->GenerateKey();
 
 		$apiKeyRow = $this->DB->api_keys()->createRow([
 			'api_key' => self::StoredValueOf($newApiKey, $keyType),
 			'key_hint' => self::HintFor($newApiKey),
-			'user_id' => VICTUAL_USER_ID,
+			'user_id' => $ownerId ?? VICTUAL_USER_ID,
 			'expires' => $this->ExpiryFor($keyType, $lifetimeDays),
 			'key_type' => $keyType,
 			'description' => $description,
@@ -140,6 +144,13 @@ class ApiKeyService extends BaseService
 	 * credentials; the calendar key is meant to be long-lived and handed out as a URL) and
 	 * this must not regress them by offering a second, conflicting one.
 	 *
+	 * The successor is owned by the predecessor's own user, not by whoever is calling.
+	 * OpenApiController::RotateApiKey() lets an admin rotate a key that belongs to someone
+	 * else (the same rule DeleteObject already applies to api_keys), and CreateApiKey()
+	 * otherwise always writes the *current* user as owner - passing that through here
+	 * unexamined would have handed the admin a row that authenticates as the admin, not as
+	 * the household member whose key it is meant to replace.
+	 *
 	 * @return array{0:string,1:int} [the successor's plaintext key, its row id]
 	 */
 	public function RotateApiKey(int $apiKeyId, ?int $lifetimeDays = null): array
@@ -151,7 +162,7 @@ class ApiKeyService extends BaseService
 			throw new \InvalidArgumentException('Only a regular API key can be rotated');
 		}
 
-		$newApiKey = $this->CreateApiKey(self::API_KEY_TYPE_DEFAULT, $predecessor->description, $lifetimeDays, $apiKeyId);
+		$newApiKey = $this->CreateApiKey(self::API_KEY_TYPE_DEFAULT, $predecessor->description, $lifetimeDays, $apiKeyId, (int)$predecessor->user_id);
 
 		return [$newApiKey, $this->GetApiKeyId($newApiKey)];
 	}
