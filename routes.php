@@ -167,6 +167,10 @@ $app->group('', function (RouteCollectorProxy $group)
 	// creates an API key with an attacker-chosen description on any page load. Sweep
 	// finding S8.
 	$group->post('/manageapikeys/new', [OpenApiController::class, 'CreateNewApiKey']);
+	// Same reasoning as /manageapikeys/new - rotating a key is a state change (issue #130).
+	// It only creates the successor; retiring the predecessor stays the existing DELETE
+	// action on its own row, deliberately, so that never happens as a side effect of this.
+	$group->post('/manageapikeys/{id}/rotate', [OpenApiController::class, 'RotateApiKey']);
 });
 
 $app->group('/api', function (RouteCollectorProxy $group)

@@ -39,8 +39,11 @@ class OpenApiController extends BaseApiController
 	 *                               only moment it exists, since what is stored is a hash
 	 * @param string|null $newApiKeyDescription That key's description, so the one-time
 	 *                                          reveal says which key it is showing
+	 * @param int|null $rotatedFromId The predecessor this key replaces, when the request
+	 *                                that created it was a rotation rather than a plain
+	 *                                "add" (issue #130)
 	 */
-	private function RenderApiKeysPage(Response $response, int $selectedKeyId, ?string $newApiKey = null, ?string $newApiKeyDescription = null)
+	private function RenderApiKeysPage(Response $response, int $selectedKeyId, ?string $newApiKey = null, ?string $newApiKeyDescription = null, ?int $rotatedFromId = null)
 	{
 		$apiKeys = $this->DB->api_keys();
 		if (!User::HasPermissions(User::PERMISSION_ADMIN))
@@ -53,25 +56,40 @@ class OpenApiController extends BaseApiController
 			'users' => $this->DB->users(),
 			'selectedKeyId' => $selectedKeyId,
 			'newApiKey' => $newApiKey,
-			'newApiKeyDescription' => $newApiKeyDescription
+			'newApiKeyDescription' => $newApiKeyDescription,
+			'rotatedFromId' => $rotatedFromId,
+			'maxLifetimeDays' => (int)VICTUAL_API_KEY_MAX_LIFETIME_DAYS
 		]);
 	}
 
 	/**
-	 * POST /manageapikeys/new - creates a new API key (optional "description" form
-	 * parameter) and renders the manage-keys page showing it, once.
+	 * POST /manageapikeys/new - creates a new API key (optional "description" and
+	 * "expires_in_days" form parameters) and renders the manage-keys page showing it,
+	 * once. A missing or non-numeric "expires_in_days" gets the configured maximum; a
+	 * value outside [1, VICTUAL_API_KEY_MAX_LIFETIME_DAYS] is clamped rather than
+	 * refused, since this is a view form rather than an API request (ApiKeyService's own
+	 * ExpiryFor() does the clamping).
 	 */
 	public function CreateNewApiKey(Request $request, Response $response, array $args)
 	{
-		$description = null;
 		$postParams = $request->getParsedBody();
+		$description = null;
+		$lifetimeDays = null;
 
-		if (is_array($postParams) && isset($postParams['description']))
+		if (is_array($postParams))
 		{
-			$description = $postParams['description'];
+			if (isset($postParams['description']))
+			{
+				$description = $postParams['description'];
+			}
+
+			if (isset($postParams['expires_in_days']) && filter_var($postParams['expires_in_days'], FILTER_VALIDATE_INT) !== false)
+			{
+				$lifetimeDays = (int)$postParams['expires_in_days'];
+			}
 		}
 
-		$newApiKey = ApiKeyService::GetInstance()->CreateApiKey(ApiKeyService::API_KEY_TYPE_DEFAULT, $description);
+		$newApiKey = ApiKeyService::GetInstance()->CreateApiKey(ApiKeyService::API_KEY_TYPE_DEFAULT, $description, $lifetimeDays);
 		$newApiKeyId = ApiKeyService::GetInstance()->GetApiKeyId($newApiKey);
 
 		// Rendered here rather than redirected to, because this response is the only place
@@ -80,6 +98,41 @@ class OpenApiController extends BaseApiController
 		// it in the redirect URL - is the query-string key path sweep finding S11 exists to
 		// remove, in the one place it would be most durable: browser history.
 		return $this->RenderApiKeysPage($response, (int)$newApiKeyId, $newApiKey, $description);
+	}
+
+	/**
+	 * POST /manageapikeys/{id}/rotate - creates a successor for the given regular API
+	 * key and renders the manage-keys page showing its plaintext, once (issue #130).
+	 *
+	 * Ownership-checked the same way DeleteObject checks it for api_keys: a non-admin may
+	 * only rotate their own key, and any other case (missing id, someone else's key, a
+	 * special-purpose key type that has its own rotation story) answers the same 404 a
+	 * genuinely missing row would, so ids cannot be enumerated and the special-purpose
+	 * types are not offered an action that would regress them.
+	 *
+	 * This creates the successor only. Retiring the predecessor - so rotation has no
+	 * silent side effect - stays the existing, separate "Delete" action on its own row.
+	 */
+	public function RotateApiKey(Request $request, Response $response, array $args)
+	{
+		if (!isset($args['id']) || filter_var($args['id'], FILTER_VALIDATE_INT) === false)
+		{
+			throw new \Slim\Exception\HttpNotFoundException($request);
+		}
+
+		$apiKeyId = (int)$args['id'];
+		$predecessor = $this->DB->api_keys($apiKeyId);
+
+		if ($predecessor === null
+			|| $predecessor->key_type !== ApiKeyService::API_KEY_TYPE_DEFAULT
+			|| ($predecessor->user_id != VICTUAL_USER_ID && !User::HasPermissions(User::PERMISSION_ADMIN)))
+		{
+			throw new \Slim\Exception\HttpNotFoundException($request);
+		}
+
+		[$newApiKey, $newApiKeyId] = ApiKeyService::GetInstance()->RotateApiKey($apiKeyId);
+
+		return $this->RenderApiKeysPage($response, $newApiKeyId, $newApiKey, $predecessor->description, $apiKeyId);
 	}
 
 	/**

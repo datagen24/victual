@@ -65,8 +65,9 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0277 | [issue #148](https://github.com/datagen24/victual/issues/148) — `enfore_product_nesting_level` fires on `INSERT` as well as `UPDATE`, checks the nesting relationship in both directions, and nulls out any existing multi-level chain | in this tree |
 | 0278 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | in this tree |
 | 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
-| 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0281 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in this tree |
+| 0281 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0282 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -138,6 +139,13 @@ This move is different: 23's own number is fixed — it has a file on disk — s
 numbers move, from 0275–0276 to 0279–0280, to make room for 28, 29, 30 and 31 ahead of them.
 Same rule as the fifth and sixth moves, applied to four numbers scheduled into wave 4 at
 once rather than one or two, while 22 stays the unscheduled draft that keeps yielding.
+
+**A tenth move, 2026-09-15, the same rule again.** Issue [#130](https://github.com/datagen24/victual/issues/130)
+— plan 11's own listed follow-up, sweep S11's expiry-and-rotation half — is being written on
+this branch now, which makes it the thing with a real file behind it; plan 22 is still an
+unscheduled draft with none. So the migration this issue needs takes the lowest free slot,
+0280, and plan 22's two numbers move up by one, to 0281–0282. The next unclaimed number is
+**0283**.
 
 The eighth move is the fifth's case for the third time, and the plan it moves for is not a
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
