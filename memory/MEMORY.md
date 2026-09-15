@@ -59,6 +59,28 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Issue #148 fixed** (`enfore_product_nesting_level` UPDATE-only trigger),
+  unblocking plan 30. Reproduced the bug for real first, against baseline DDL loaded into a
+  local PostgreSQL 16.13: three plain `INSERT`s (Protein, then Beef parented to Protein, then
+  Beef Roast parented to Beef) built the two-level chain with no rejection. The original
+  predicate turned out to be one-directional, not just INSERT-blind — it only rejects a row
+  being given a parent while something already points at *it* as a parent, so a leaf inserted
+  straight under an already-nested product was never caught even by an UPDATE touching the
+  leaf; verified that a naive "just add BEFORE INSERT to the unchanged body" would have left
+  the exact reported scenario possible. Migration `0277.pgsql.sql` adds the missing direction
+  (a product's own named parent must not itself have a parent) alongside the original check,
+  folds both events into one `BEFORE INSERT OR UPDATE` trigger, and nulls out any existing
+  violation the way `migrations/0130.sql` once did. Took the lowest free migration slot rather
+  than the next unclaimed number, since 0277 was already plan 30's claim — renumbered 30→0278,
+  31→0279, 22→0280–0281 in `migrations/RESERVATIONS.md`, with the plan docs and
+  `docs/plans/README.md` updated to match (ninth application of the lowest-free-slot rule).
+  Verified against real PostgreSQL 16.13 (fix rejects both the INSERT and UPDATE forms of the
+  attack, ordinary single-level reparenting still works, the existing
+  `trigger-tests/03_parent_child_products.sql` scenario still rejects with the same message)
+  and `php .devtools/pgsql/check-migrations.php` (`MIGRATION NUMBERING OK`) after `composer
+  install --ignore-platform-reqs` (host PHP is 8.4, composer.json wants 8.5.*). Not run: the
+  full `trigdifftest.php`/demo-data harness, which needs `/scratch/demodata` and config
+  bootstrap beyond this session's scope. [→](project_state.md)
 - **2026-09-14 — ADR-0022 is Accepted** (issue #129, closed). Prerequisites 1, 2, 3, 5, 6 and 7
   discharged by a disposable spike against real PostgreSQL 16.13, results in
   `.spike-adr22/RESULTS.md` — merged into master as [PR #152](https://github.com/datagen24/victual/pull/152)
@@ -100,10 +122,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   corrected the stale 06/25/27 rows (label path delivered 2026-09-09), rewrote the wave
   table so each item is ready or names its gate, and opened issues #127–#139. No open issue
   was closable. [→](project_state.md)
-- **2026-09-08 — Memory and claim-check harness** built this index and its topic files;
-  merged as part of the andon commit, then fixed a nesting bug that stopped the orient hook
-  from being registered at all and moved the wiring into a tracked `.claude/settings.json`.
-  [→](project_session_20260908.md)
 
 ## DOCTRINE (operator-locked decisions)
 
