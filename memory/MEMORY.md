@@ -59,6 +59,27 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Issue #176 closed: 19 piece 2's four open price channels** (`0282.pgsql.php`,
+  branch `claude/issue-176-regression-aqz409`). The one that mattered was the importer:
+  `TRUNCATE ... CASCADE` on `permission_hierarchy` empties `permission_fields` through its FK,
+  so **every import removed price redaction entirely and left `PricesVisible()` false even for
+  ADMIN** — a security feature that silently uninstalled itself. Fixed by extracting the seed to
+  `db/pgsql/prices-seed.sql`, the way `roles-seed.sql` already was, applied by the new migration
+  and re-applied by `DatabaseImporter` after its verbatim-copy assertions. Also: `/stock/bookings/{id}`
+  redacted (its sibling `StockTransactions` had been and it had not), policy rows for
+  `product_barcodes`/`product_barcodes_view` `last_price`, four Blade pages moved off the feature
+  flag onto `$pricesVisible` and made to *omit* the value rather than `d-none` it, `/stockreports/spendings`
+  now 403, the `'*'` whole-object marker wired into `AssertWholeObjectReadable()`, and the
+  `NaN`/`undefined` half in `shoppinglist.js`/`mealplan.js`. **Both defects were reproduced before
+  being fixed** — removing the `StockBooking` redaction fails 3 of the new assertions, removing the
+  importer's seed re-application fails 6 — which is the evidence the claim-check asks for and is
+  cheap to get here because the phases already isolate one identity at a time. The audit for other
+  injected regressions found one real leftover (`stockoverview.blade.php`'s Value and Default-store
+  `<td>`s were never paired with their `d-none` headers — invisible while it only fired on the
+  flag, visible now that every Child hits it) and one stale doc #178 does not list (the Manual's
+  roles page said price visibility was "still-unbuilt" on the day it shipped). Lesson: when a
+  feature's state lives in a table the SQLite import span cannot carry, the importer is part of
+  the feature — check it in the same change, not in the follow-up issue.
 - **2026-09-15 — Wave 5 bookkeeping after six reviewed merges** (#169–#175). Reviewed each PR
   with one adversarial agent per PR, verified the top findings by reading the branch, posted one
   comment per PR. #173 and #175 fixed their blockers before merge (rotated key owner; designer
@@ -148,34 +169,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   second time later) and instead carries a copy of its function and view — the same
   shadowed-stub shape plan 08 already found in this test file's sibling. Not verified: a
   physical print through the real Rust renderer, unavailable in this sandbox. [→](project_state.md)
-- **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
-  day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
-  nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,
-  name) NULLS NOT DISTINCT`, `product_groups_resolved` (second consumer of
-  `hierarchy_depth_limit()`), and the nesting/delete guards, advisory lock and `VOLATILE`
-  included. `product_groups` carries no explicit `select()` list and no OpenAPI schema of its
-  own (unlike `Location`), so the new column reached the wire for free and only
-  `ProductGroupResolved` needed adding. New `StockService::GetProductGroupsWithPaths()`/
-  `GetProductGroupAncestorIds()`; group dropdowns show the path only where a write depends on
-  it (the group form's parent picker, the product form's group picker) — filter-only group
-  selects are untouched, since plan 30 Q2 (shopping-list grouping) is unanswered. The mixed
-  node ADR-0023 decision 6 claims needs no special case (a group holding a product and a
-  subgroup at once) is demonstrated in the new suite phase rather than merely argued.
-  Verified against real PostgreSQL 16.13 in this session's own sandbox (started the local
-  `postgresql` service and ran the suite directly, not a spike branch): `check-migrations.php`
-  clean with no waiver, the new `.devtools/pgsql/nested-product-groups-tests.php` (41/41,
-  `run-tests.sh productgroups`) including the same concurrent-re-parenting construction plan
-  08's case 10 uses (measured 2.50s lock wait, `provolatile = 'v'` asserted), and `run-tests.sh
-  all` green with no regressions. Two defects the new phase's first run caught were in the
-  test itself, not the migration (backwards `UPDATE` parameters in a depth-refusal case; a
-  mixed-node count that forgot case 2's own leftover fixture rows) — both are recorded in the
-  plan's Executed section as a caution about trusting a first green run of hand-written SQL
-  parameters. The new browser probe was written and reviewed but **not run**: this sandbox's
-  PHP is 8.4.19 and the app refuses to boot below 8.5.0 on every route, and the PHP 8.5
-  package is on a host (`ppa.launchpadcontent.net`) the outbound proxy returns 403 for —
-  confirmed by reproduction (curled `/stockoverview` under 8.4, got the refusal text at HTTP
-  200), not assumed. Plan 31 (directed substitution, issue #125) is next in wave 4, now
-  unblocked. [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 

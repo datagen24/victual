@@ -962,6 +962,12 @@ class StockApiController extends BaseApiController
 				throw new \Exception('Stock booking does not exist');
 			}
 
+			// The same redaction StockTransactions() applies to the same rows, under the
+			// same entity name: this endpoint returns one stock_log row where that one
+			// returns a transaction's worth of them, and a caller who may not see
+			// stock_log.price may not see it one row at a time either. Issue #176 item 2.
+			$stockLogRow = FieldPolicy::GetInstance()->RedactRow('stock_log', $stockLogRow);
+
 			return $this->ApiResponse($response, $stockLogRow);
 		});
 	}

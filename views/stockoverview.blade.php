@@ -43,7 +43,7 @@
 						<a class="dropdown-item"
 							href="{{ $U('/locationcontentsheet') }}">{{ $__t('Location Content Sheet') }}</a>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+						@if($pricesVisible)
 						<a class="dropdown-item"
 							href="{{ $U('/stockreports/spendings') }}">{{ $__t('Spendings') }}</a>
 						@endif
@@ -387,7 +387,13 @@
 						@endif
 						@endif
 					</td>
-					<td>
+					{{-- d-none on the cell as well as on its header (line 185): DataTables does not
+					copy a header's classes onto the column's body cells, so a th hidden alone
+					leaves an unlabelled empty column behind. The two price columns below
+					already pair them; these two were the flag-era exceptions, and what used
+					to show only when a household turned price tracking off now shows for
+					every Child and Guest. --}}
+					<td class="@if(!$pricesVisible) d-none @endif">
 						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->value}}</span>
 						<span id="product-{{ $currentStockEntry->product_id }}-value"
@@ -491,7 +497,7 @@
 						@endif
 						@endif
 					</td>
-					<td>
+					<td class="@if(!$pricesVisible) d-none @endif">
 						@if($currentStockEntry->default_store_name !== null){{ $currentStockEntry->default_store_name }}@endif
 					</td>
 

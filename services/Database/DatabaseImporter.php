@@ -20,7 +20,7 @@ class DatabaseImporter
 	/**
 	 * Tables that belong to the target engine alone and have no counterpart in the source.
 	 */
-	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles'];
+	const TARGET_ONLY_TABLES = ['user_settings_defaults', 'system_db_changed_time', 'roles', 'role_permissions', 'user_roles', 'permission_fields'];
 
 	/**
 	 * Tables that exist on both sides but are deliberately not copied.
@@ -208,6 +208,19 @@ class DatabaseImporter
 			if ($this->Target->query("SELECT to_regclass('roles')")->fetchColumn() !== null)
 			{
 				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/roles-seed.sql'));
+			}
+
+			// And the same again for plan 19 piece 2's half of the permission tree, which
+			// roles-seed.sql does not carry. permission_fields references
+			// permission_hierarchy(name), so the TRUNCATE ... CASCADE above empties it
+			// whether or not it is a table this importer copies - and it is not, the SQLite
+			// line being frozen below the migration that created it. Without this every
+			// price channel is unredacted after an import and PricesVisible() is false for
+			// every user including ADMIN, because STOCK_PRICES_VIEW is gone from the
+			// hierarchy too. Issue #176 item 1.
+			if ($this->Target->query("SELECT to_regclass('permission_fields')")->fetchColumn() !== null)
+			{
+				$this->Target->exec(file_get_contents(__DIR__ . '/../../db/pgsql/prices-seed.sql'));
 			}
 		}
 

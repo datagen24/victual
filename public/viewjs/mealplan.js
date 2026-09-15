@@ -6,7 +6,13 @@
 // - Victual.FullcalendarEventSources: event feed for all calendars (one event per meal plan entry)
 // - Victual.InternalRecipes: the hidden shadow recipes Victual keeps per meal plan entry/day/week
 //   (named "<day>#<entry id>", "<day>" and "<year>-<week>" respectively)
-// - Victual.RecipesResolved: recipes_resolved rows (costs, calories, stock fulfillment) for those
+// - Victual.RecipesResolved: recipes_resolved rows (costs, calories, stock fulfillment) for those.
+//   Redacted server-side by FieldPolicy (RecipesController::MealPlan), so "costs",
+//   "costs_per_serving" and "prices_incomplete" are ABSENT - not null - for a caller without
+//   STOCK_PRICES_VIEW. Every price this file renders is therefore behind Victual.PricesVisible
+//   rather than behind the VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING flag alone: the flag says
+//   the instance tracks prices, PricesVisible says this user may see them. Issue #176 items 4
+//   and 5 - reading the absent keys under the flag alone printed "undefined" and NaN.
 // - Victual.WeekRecipe: the shadow recipe of the currently displayed week (or null)
 // Each .calendar container carries data-section-id/-name, data-primary-section and
 // data-last-section attributes.
@@ -108,7 +114,7 @@ $(".calendar").each(function()
 			{
 				var weekRecipeResolved = FindObjectInArrayByPropertyValue(Victual.RecipesResolved, "recipe_id", Victual.WeekRecipe.id);
 
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+				if (Victual.PricesVisible)
 				{
 					weekCosts = weekRecipeResolved.costs;
 					weekCostsHtml = __t("Week costs") + ': <span class="locale-number locale-number-currency">' + weekCosts.toString() + "</span> ";
@@ -187,7 +193,7 @@ $(".calendar").each(function()
 					var fulfillmentIconHtml = '<i class="fa-solid fa-times text-danger"></i>';
 				}
 				var costsAndCaloriesPerServing = ""
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+				if (Victual.PricesVisible)
 				{
 					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-currency">' + resolvedRecipe.costs + '</span> / <span class="locale-number locale-number-generic">' + resolvedRecipe.calories / mealPlanEntry.recipe_servings + '</span> ' + Victual.EnergyUnit + ' ' + __t('per serving') + '</h5>';
 				}
@@ -242,7 +248,13 @@ $(".calendar").each(function()
 				// and products.name is a text column, so it can contain markup as typed
 				productDetails.product.name = productDetails.product.name.escapeHTML();
 
-				if (productDetails.last_price === null)
+				// Two different absences, both of which multiply to NaN below: null is
+				// "nothing was ever paid for this product", undefined is "you may not see
+				// what was" (FieldPolicy removes the key rather than nulling it, so that the
+				// first case stays distinguishable from the second on the wire). The
+				// rendering is behind Victual.PricesVisible either way; this keeps the
+				// arithmetic defined. Issue #176 item 5.
+				if (productDetails.last_price === null || productDetails.last_price === undefined)
 				{
 					productDetails.last_price = 0;
 				}
@@ -270,7 +282,7 @@ $(".calendar").each(function()
 				}
 
 				var costsAndCaloriesPerServing = ""
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+				if (Victual.PricesVisible)
 				{
 					costsAndCaloriesPerServing = '<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-currency">' + productDetails.last_price * mealPlanEntry.product_amount + '</span> / <span class="locale-number locale-number-generic">' + productDetails.product.calories + '</span> ' + Victual.EnergyUnit + ' </h5>';
 				}
@@ -330,7 +342,7 @@ $(".calendar").each(function()
 					var dayRecipeResolved = FindObjectInArrayByPropertyValue(Victual.RecipesResolved, "recipe_id", dayRecipe.id);
 
 					var costsAndCaloriesPerDay = ""
-					if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+					if (Victual.PricesVisible)
 					{
 						costsAndCaloriesPerDay = '<h5 class="small text-truncate"><span class="locale-number locale-number-currency">' + dayRecipeResolved.costs + '</span> / <span class="locale-number locale-number-generic">' + dayRecipeResolved.calories + '</span> ' + Victual.EnergyUnit + ' ' + __t('per day') + '</h5>';
 					}
