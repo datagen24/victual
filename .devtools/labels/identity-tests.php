@@ -244,6 +244,7 @@ try
 	}
 	$db->exec("CREATE TABLE user_permissions_resolved (id INTEGER, user_id INTEGER, permission_name TEXT);
 		INSERT INTO user_permissions_resolved VALUES (1, 1, 'STOCK_VIEW');
+		CREATE TABLE permission_fields (permission_name TEXT, entity TEXT, field TEXT);
 		ALTER TABLE locations ADD COLUMN description TEXT;
 		ALTER TABLE locations ADD COLUMN row_created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 		ALTER TABLE locations ADD COLUMN is_freezer SMALLINT DEFAULT 0;
