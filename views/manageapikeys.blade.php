@@ -47,6 +47,13 @@
 			@if(!empty($newApiKeyDescription))
 			<h5 class="text-muted">{{ $newApiKeyDescription }}</h5>
 			@endif
+			@if(!empty($rotatedFromId))
+			{{-- This request was a rotation (issue #130), not a plain "add" - the successor is
+			     live now, and the predecessor keeps authenticating until it is explicitly
+			     retired. Said here rather than assumed, since retiring it is a separate action
+			     on its own row and easy to forget once the new value is copied. --}}
+			<p>{{ $__t('This key replaces the one you rotated. It keeps working alongside its predecessor until you delete that key from the table below.') }}</p>
+			@endif
 			<p>{{ $__t('Copy it now - it cannot be shown again') }}</p>
 			<pre class="user-select-all mb-2"><code id="new-api-key-value">{{ $newApiKey }}</code></pre>
 			{{-- The description carried here is the one just typed, so that the QR dialog says
@@ -130,6 +137,21 @@
 							title="{{ $__t('Delete this item') }}">
 							<i class="fa-solid fa-trash"></i>
 						</a>
+						@if($apiKey->key_type === \Victual\Services\ApiKeyService::API_KEY_TYPE_DEFAULT)
+						{{-- Rotation (issue #130) is offered for the regular key type only - the
+						special-purpose types (calendar, label worker/verifier/renderer) each already
+						have their own rotation story and this must not add a second, conflicting one.
+						Creates a successor only; retiring this row stays the "Delete" button above. --}}
+						<a class="btn btn-secondary btn-sm apikey-rotate-button"
+							href="#"
+							data-apikey-id="{{ $apiKey->id }}"
+							data-apikey-description="{{ $apiKey->description }}"
+							data-apikey-name="{{ empty($apiKey->description) ? ApiKeyDisplayValue($apiKey) : $apiKey->description }}"
+							data-toggle="tooltip"
+							title="{{ $__t('Rotate this API key') }}">
+							<i class="fa-solid fa-rotate"></i>
+						</a>
+						@endif
 						@if(ApiKeyIsReadable($apiKey))
 						{{-- Only a special-purpose key can still be shown: it is stored as issued,
 						because the sharing dialog has to hand its URL back. A regular key is a hash
@@ -194,6 +216,16 @@
 						class="form-control"
 						id="description"
 						name="description">
+				</div>
+				<div class="form-group">
+					<label for="expires_in_days">{{ $__t('Expires in (days)') }}</label>
+					<input type="number"
+						class="form-control"
+						id="expires_in_days"
+						name="expires_in_days"
+						min="1"
+						max="{{ $maxLifetimeDays }}"
+						value="{{ $maxLifetimeDays }}">
 				</div>
 			</div>
 			<div class="modal-footer">

@@ -593,6 +593,11 @@ let browser = null;
 		['products', '/products', clickDelete('.product-delete-button[data-product-id="' + ids.product + '"]'), 'dialog'],
 		['shoppinglist', '/shoppinglist?list=' + ids.shoppinglist, openMenuThen('.dropdown:has(#delete-selected-shopping-list) [data-toggle="dropdown"]', '#delete-selected-shopping-list'), 'dialog'],
 		['manageapikeys', '/manageapikeys', clickDelete('.apikey-delete-button[data-apikey-id="' + ids.apikey + '"]'), 'dialog'],
+		// The rotate confirmation (issue #130) is a second bootbox sink fed the same
+		// data-apikey-name attribute the delete confirmation reads - a new action added to
+		// this page has to bring its own probe rather than rely on the neighbouring one,
+		// which is exactly the gap the S29 amendment above found in mealplan.js.
+		['manageapikeys-rotate', '/manageapikeys', clickDelete('.apikey-rotate-button[data-apikey-id="' + ids.apikey + '"]'), 'dialog'],
 		// The QR dialog moved with the hashing: a stored key is a hash, so there is nothing
 		// to encode on a regular key's row and that button is gone. The sink itself is not -
 		// the description still reaches a bootbox message rendered as HTML - it is now on the

@@ -76,11 +76,19 @@ class ApiKeyService extends BaseService
 	/**
 	 * Creates a new random API key for the current user and returns it.
 	 *
-	 * Keys are practically non-expiring (expiry is set to the year 2999).
+	 * A regular key (API_KEY_TYPE_DEFAULT) gets a real, finite expiry: $lifetimeDays when
+	 * given, clamped to VICTUAL_API_KEY_MAX_LIFETIME_DAYS, or that maximum when omitted
+	 * (issue #130, sweep S11's expiry half). Every other key type keeps the year-2999
+	 * expiry this always set - the calendar sharing key and the label worker/verifier/
+	 * renderer credentials each already have their own expiry and rotation story (the
+	 * latter through ADR-0019's paired rotation, in LabelWorkerCredentialService, which
+	 * writes api_keys directly and never calls this method) and are untouched by it.
 	 *
+	 * @param int|null $lifetimeDays Regular keys only; null means the configured maximum
+	 * @param int|null $rotatedFromId The predecessor this key replaces, for RotateApiKey()
 	 * @return string The newly generated API key
 	 */
-	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null)
+	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null, ?int $lifetimeDays = null, ?int $rotatedFromId = null)
 	{
 		$newApiKey = $this->GenerateKey();
 
@@ -88,15 +96,64 @@ class ApiKeyService extends BaseService
 			'api_key' => self::StoredValueOf($newApiKey, $keyType),
 			'key_hint' => self::HintFor($newApiKey),
 			'user_id' => VICTUAL_USER_ID,
-			'expires' => '2999-12-31 23:59:59', // Default is that API keys never expire
+			'expires' => $this->ExpiryFor($keyType, $lifetimeDays),
 			'key_type' => $keyType,
-			'description' => $description
+			'description' => $description,
+			'rotated_from_id' => $rotatedFromId
 		]);
 		$apiKeyRow->save();
 
 		// The only moment the plaintext of a regular key exists. The caller shows it once;
 		// nothing can produce it again.
 		return $newApiKey;
+	}
+
+	/**
+	 * The `expires` value a newly created key of the given type gets.
+	 */
+	private function ExpiryFor(string $keyType, ?int $lifetimeDays): string
+	{
+		if ($keyType !== self::API_KEY_TYPE_DEFAULT)
+		{
+			return '2999-12-31 23:59:59';
+		}
+
+		$maxDays = max(1, (int)VICTUAL_API_KEY_MAX_LIFETIME_DAYS);
+		$days = $lifetimeDays === null ? $maxDays : max(1, min($lifetimeDays, $maxDays));
+
+		return date('Y-m-d H:i:s', strtotime("+{$days} days"));
+	}
+
+	/**
+	 * Rotates a regular API key: creates a successor of the same type and description,
+	 * carrying a fresh random value, a fresh expiry and a link back to the key it
+	 * replaces, and returns its plaintext and row id.
+	 *
+	 * Create-a-successor-then-retire (issue #130): this does not touch the predecessor at
+	 * all. It keeps authenticating exactly as before, so a client can be switched over to
+	 * the successor with no gap; retiring the predecessor is the caller's own, separate,
+	 * explicit act (deleting it, the existing DELETE /api/objects/api_keys/{id} - every
+	 * key is retired that way), never a side effect of rotating.
+	 *
+	 * Restricted to API_KEY_TYPE_DEFAULT on purpose: the special-purpose key types each
+	 * have their own rotation story already (ADR-0019's paired rotation for label
+	 * credentials; the calendar key is meant to be long-lived and handed out as a URL) and
+	 * this must not regress them by offering a second, conflicting one.
+	 *
+	 * @return array{0:string,1:int} [the successor's plaintext key, its row id]
+	 */
+	public function RotateApiKey(int $apiKeyId, ?int $lifetimeDays = null): array
+	{
+		$predecessor = $this->DB->api_keys($apiKeyId);
+
+		if ($predecessor === null || $predecessor->key_type !== self::API_KEY_TYPE_DEFAULT)
+		{
+			throw new \InvalidArgumentException('Only a regular API key can be rotated');
+		}
+
+		$newApiKey = $this->CreateApiKey(self::API_KEY_TYPE_DEFAULT, $predecessor->description, $lifetimeDays, $apiKeyId);
+
+		return [$newApiKey, $this->GetApiKeyId($newApiKey)];
 	}
 
 	/**

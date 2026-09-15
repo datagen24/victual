@@ -8,9 +8,10 @@ gaps found alongside them.
 first if both are being done, so the status-code changes here show up as a diff rather
 than as an assertion.
 **Status:** landed in wave 2, 2026-09-04, recorded inline under each section rather than in an
-Executed section; one follow-up, API key expiry and rotation
-([issue 130](https://github.com/datagen24/victual/issues/130)). Contains the only deliberate response-shape changes in the
-hardening set.
+Executed section. Its one follow-up, API key expiry and rotation
+([issue 130](https://github.com/datagen24/victual/issues/130)), landed 2026-09-15 -
+recorded below, in the same place the rest of the API-key hygiene work is. Contains the
+only deliberate response-shape changes in the hardening set.
 
 ## Today
 
@@ -433,6 +434,59 @@ should instead preserve today's behaviour.
 > would have failed without that**, and not for the interesting reason: its seed read the new
 > key's id out of the redirect this change removed, so *both* API-key probes reported "the
 > sink was never reached". Found by running the probe locally rather than by watching CI.
+
+> **Landed, 2026-09-15 — expiry and rotation ([issue 130](https://github.com/datagen24/victual/issues/130)), closing S11's last residual.**
+>
+> - **A regular key gets a real, finite expiry.** `ApiKeyService::CreateApiKey()` takes an
+>   optional lifetime in days, clamped to the new `VICTUAL_API_KEY_MAX_LIFETIME_DAYS`
+>   (default 365) and defaulting to that maximum when the caller gives none — the manage-
+>   keys "Add" modal's new "Expires in (days)" field is that caller. The clamp, not a
+>   refusal, because this is a view form rather than an API request. Every other key type
+>   (the calendar sharing key, and the label worker/verifier/renderer credentials
+>   `LabelWorkerCredentialService` writes directly and which never call this method) keeps
+>   the year-2999 expiry unconditionally, so ADR-0019's paired rotation and the calendar
+>   key's own story are untouched — the issue's own "must not regress those" line.
+> - **Rotation is create-a-successor-then-retire**, exactly as the issue asked: rotating
+>   creates a new key of the same type and description
+>   (`ApiKeyService::RotateApiKey()`) and does nothing to the predecessor at all, so it
+>   keeps authenticating through the rotation with no gap. Retiring the predecessor is the
+>   caller's own, separate, explicit act — the existing ownership-checked
+>   `DELETE /api/objects/api_keys/{id}` — never a side effect of creating the successor.
+>   Restricted to `API_KEY_TYPE_DEFAULT`: rotating any other type is refused, both in the
+>   service and again in `OpenApiController::RotateApiKey()`, so the special-purpose
+>   rotation stories cannot be reached through the new path.
+> - **The lineage lives in a real column, per ADR-0007.** Migration `0280.pgsql.sql` adds
+>   `api_keys.rotated_from_id`, a nullable self-reference with `ON DELETE SET NULL` rather
+>   than `CASCADE` — deleting a predecessor (the retirement step) must not take its
+>   successor down with it, which would turn "retire the old key" into "break the new one".
+>   No process-memory or APCu state anywhere in this.
+> - **The manage-keys screen** gained the expiry field on creation and a "Rotate" button
+>   per regular-type row; both are `POST`, for the S8 reason `/manageapikeys/new` already
+>   is. Rotating renders the new plaintext once, exactly as creating does, with a note that
+>   the predecessor keeps working until it is deleted. The rotate confirmation is a second
+>   bootbox sink on this page, carrying the same `data-apikey-name` the delete confirmation
+>   does, so it was given its own `.devtools/frontend/s29-payload.js` case
+>   (`manageapikeys-rotate`) rather than assumed safe by neighbourhood — the S29 amendment
+>   above is the reason that assumption is never made twice.
+>
+> Verified against real PostgreSQL 16.13 (2026-09-15) with a new
+> `.devtools/pgsql/apikey-tests.php` suite phase (`run-tests.sh apikeys`, 30/30
+> assertions), and the full `run-tests.sh all` (21 phases) green alongside it: a key with a short
+> lifetime is accepted before its stored expiry and refused after; an over-long requested
+> lifetime is clamped rather than refused; a calendar or label-worker-type key created via
+> `CreateApiKey()` still gets the year-2999 expiry; a rotated predecessor authenticates
+> throughout the rotation and is refused only once explicitly deleted, while its successor
+> authenticates throughout and survives the predecessor's deletion; rotation is refused for
+> a special-purpose key both in the service and in the controller; the hint/hash behaviour
+> from 0263/0264 is unchanged for a rotated key; and, at the controller layer, a non-admin
+> rotating someone else's key gets the same 404 a missing row would (so ids cannot be
+> enumerated), a non-integer id is refused the same way, an admin may rotate a key that is
+> not theirs, and both `CreateNewApiKey` and `RotateApiKey` render the manage-keys page with
+> the new plaintext rather than redirecting to it. **Not run**: the manage-keys UI in an
+> actual browser and the `frontend-security` job. This sandbox's PHP is 8.4.19, and while
+> the standalone `.devtools/pgsql/` suite (which never loads `app.php`) is unaffected, the
+> application's `PrerequisiteChecker` refuses every HTTP route below PHP 8.5.0, which
+> `composer.json` requires and this sandbox does not have installed.
 
 - **Drop the query-parameter form** of `VICTUAL-API-KEY`. The iCal `?secret=` path is
   separate, is scoped to `API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL`, is the reason that
