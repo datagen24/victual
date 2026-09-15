@@ -335,3 +335,21 @@ generic `/objects/product_location_min_stock` API and its shortfall reporting is
 but setting a location minimum today means a direct API call rather than a page; the browser
 probe seeds it that way, matching how `group-min-stock.js` seeds product-group membership
 through the API rather than a dedicated form.
+
+**Two more real defects surfaced merging plan 28's landed PR in, both found by re-running the
+suite after the merge rather than by inspection.** Plan 28's migration 0275 (below this one in
+`migrations/RESERVATIONS.md`'s order) appended `stock_current.amount_measured`; this plan's own
+`uihelper_stock_current_overview` rebuild reads that view through a `SELECT *` branch of a
+three-way `UNION` whose other two branches spell every column out as literals, so the union's
+column counts disagreed the moment both migrations existed in one tree
+(`each UNION query must have the same number of columns`, measured against real PostgreSQL
+16.13) — `migrations/0276.pgsql.sql` now carries a matching literal for the two stand-in
+branches, with the mismatch explained at the union itself. Separately, `difftest.php`'s
+`uihelper_stock_current_overview` comparison needed the same PostgreSQL-only-column strip
+plan 28 had already added for `stock_current.amount_measured`, this time for the three new
+one-tap refill columns the view joins in from `products` — without it the `views` suite phase
+failed on every row once both plans' widened views ran in the same PostgreSQL differential
+comparison. Both were caught by re-running `check-migrations.php` and the `migrate`, `views`,
+`triggers`, `rollback`, `locations`, `groupminstock`, `openmeasure` and `workingcontainer`
+suite phases against real PostgreSQL 16.13 after merging plan 28's PR in, not by either plan's
+own suite phase alone — each was blind to the other's widened view until both existed together.
