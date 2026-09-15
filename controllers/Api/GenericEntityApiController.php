@@ -4,6 +4,7 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
 use Victual\Controllers\Users\EntityReadPolicy;
+use Victual\Services\FieldPolicy;
 use Victual\Services\StockService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -345,6 +346,8 @@ class GenericEntityApiController extends BaseApiController
 		}
 		$object['userfields'] = $userfields;
 
+		$object = FieldPolicy::GetInstance()->RedactRow($args['entity'], $object);
+
 		return $this->ApiResponse($response, $object);
 	}
 
@@ -402,6 +405,8 @@ class GenericEntityApiController extends BaseApiController
 				$object->userfields = $userfieldKeyValuePairs;
 			}
 		}
+
+		$objects = FieldPolicy::GetInstance()->RedactRows($args['entity'], $objects);
 
 		return $this->ApiResponse($response, $objects);
 	}

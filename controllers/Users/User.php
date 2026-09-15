@@ -19,6 +19,7 @@ class User
 	const PERMISSION_TASKS_VIEW = 'TASKS_VIEW';
 	const PERMISSION_RECIPES_VIEW = 'RECIPES_VIEW';
 	const PERMISSION_MEALPLAN_VIEW = 'MEALPLAN_VIEW';
+	const PERMISSION_STOCK_PRICES_VIEW = 'STOCK_PRICES_VIEW';
 
 	const PERMISSION_BATTERIES = 'BATTERIES';
 	const PERMISSION_BATTERIES_TRACK_CHARGE_CYCLE = 'BATTERIES_TRACK_CHARGE_CYCLE';
@@ -270,5 +271,27 @@ class User
 	protected function GetPermissions(): Result
 	{
 		return $this->DB->user_permissions_resolved()->where('user_id', VICTUAL_USER_ID);
+	}
+
+	/**
+	 * Whether prices should be shown to the current user at all: the instance-wide feature
+	 * flag is on AND the current user holds STOCK_PRICES_VIEW.
+	 *
+	 * Collapses two independent knobs (docs/plans/19-rbac.md, piece 2 "UI"): the flag says
+	 * "this household does not track prices", the permission says "this person may not see
+	 * them". Either being false hides prices; both being true is what shows them. Blade
+	 * views that used to gate a price cell on VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING
+	 * alone call this instead, and BaseController::Render() exposes it to every view as
+	 * $pricesVisible so a template does not have to call it itself.
+	 */
+	public static function PricesVisible(): bool
+	{
+		if (!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+		{
+			return false;
+		}
+
+		$user = new self();
+		return $user->HasPermission(self::PERMISSION_STOCK_PRICES_VIEW);
 	}
 }

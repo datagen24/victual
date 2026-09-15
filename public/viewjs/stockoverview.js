@@ -256,17 +256,24 @@ $(document).on('click', '.product-open-button', function (e)
 
 /**
  * Refreshes the top summary widgets: the total product count/value (GET stock,
- * gated by VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING for whether value is shown), and the
+ * gated by Victual.PricesVisible for whether value is shown - the instance-wide flag and
+ * STOCK_PRICES_VIEW collapsed into one signal, docs/plans/19-rbac.md piece 2), and the
  * due-soon/overdue/expired/missing-below-min-stock counts (GET stock/volatile). Products
  * with hide_on_stock_overview set are excluded from all counts. Called on load and after
  * any stock-changing action.
+ *
+ * Not Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING alone: a caller
+ * without STOCK_PRICES_VIEW gets no "value" key on these rows at all (FieldPolicy
+ * redaction, StockApiController::CurrentStock), so summing it here with only the flag
+ * checked would add undefined to valueSum and print "NaN" instead of falling back to a
+ * plain count.
  */
 function RefreshStatistics()
 {
 	Victual.Api.Get('stock',
 		function (result)
 		{
-			if (!Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			if (!Victual.PricesVisible)
 			{
 				$("#info-current-stock").text(__n(result.filter(x => !BoolVal(x.product.hide_on_stock_overview)).length, '%s Product', '%s Products'));
 			}

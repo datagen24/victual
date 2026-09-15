@@ -2613,6 +2613,7 @@
 		"/stock/products/{productId}/price-history": {
 			"get": {
 				"summary": "Returns the price history of the given product",
+				"description": "Requires STOCK_VIEW and STOCK_PRICES_VIEW - the whole response is prices, so a caller without STOCK_PRICES_VIEW is refused with 403 rather than answered with an empty array.",
 				"tags": [
 					"Stock"
 				],
@@ -9638,7 +9639,8 @@
 						"description": "A unique id which references this stock entry during its lifetime"
 					},
 					"price": {
-						"type": "number"
+						"type": "number",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"open": {
 						"type": "integer"
@@ -9711,7 +9713,8 @@
 						"type": "integer"
 					},
 					"costs": {
-						"type": "number"
+						"type": "number",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					}
 				},
 				"example": {
@@ -9764,26 +9767,35 @@
 						"type": "number",
 						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. The measured (not merely counted) contents across this product's opened, measured entries, in the stock unit - additive, kept separate from stock_amount and stock_amount_opened rather than folded into them"
 					},
+					"stock_value": {
+						"type": "number",
+						"description": "The total value of this product's stock currently held (price times amount, summed across stock entries)",
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
 					"next_due_date": {
 						"type": "string",
 						"format": "date"
 					},
 					"last_price": {
 						"type": "number",
-						"description": "The price of the last purchase of the corresponding product"
+						"description": "The price of the last purchase of the corresponding product",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"avg_price": {
 						"type": "number",
-						"description": "The average price af all stock entries currently in stock of the corresponding product"
+						"description": "The average price af all stock entries currently in stock of the corresponding product",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"current_price": {
 						"type": "number",
-						"description": "The current price of the corresponding product, based on the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\") or on the last price if the product is currently not in stock"
+						"description": "The current price of the corresponding product, based on the stock entry to use next (defined by the default consume rule \"Opened first, then first due first, then first in first out\") or on the last price if the product is currently not in stock",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"oldest_price": {
 						"type": "number",
 						"description": "This field is deprecated and will be removed in a future version (currently returns the same as `current_price`)",
-						"deprecated": true
+						"deprecated": true,
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"last_shopping_location_id": {
 						"type": "integer"
@@ -9895,6 +9907,8 @@
 			},
 			"ProductPriceHistory": {
 				"type": "object",
+				"description": "Every field here is a price. GET /stock/products/{productId}/price-history refuses the whole call with 403 for a caller without STOCK_PRICES_VIEW rather than filtering these fields out of an otherwise-200 response - see x-visibility on the operation, not on individual properties here.",
+				"x-visibility": "STOCK_PRICES_VIEW",
 				"properties": {
 					"date": {
 						"type": "string",
@@ -10396,6 +10410,12 @@
 					"transaction_type": {
 						"$ref": "#/components/schemas/StockTransactionType"
 					},
+					"price": {
+						"type": "number",
+						"nullable": true,
+						"description": "Null for a booking that carries no price, such as a consumption - a legitimate value, distinct from this field being absent for a caller without STOCK_PRICES_VIEW",
+						"x-visibility": "STOCK_PRICES_VIEW"
+					},
 					"note": {
 						"type": "string"
 					},
@@ -10591,6 +10611,11 @@
 					},
 					"amount_opened_aggregated": {
 						"type": "number"
+					},
+					"value": {
+						"type": "number",
+						"description": "The total value of this product's stock currently held (price times amount, summed across stock entries)",
+						"x-visibility": "STOCK_PRICES_VIEW"
 					},
 					"best_before_date": {
 						"type": "string",

@@ -68,7 +68,12 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // counterpart to compare against, per that migration's own Q4 reasoning (folding them into
  // the existing dual-engine products_current_substitutions view would make that view's
  // definition diverge between engines instead).
- 'product_substitutions'];
+ 'product_substitutions',
+ // Plan 19 piece 2, migration 0281. Same freeze, and the same reason 'roles' is here: the
+ // field policy that answers "which fields must this user not see" is new machinery the
+ // pre-freeze permission model never had, not a column on a table that already existed on
+ // both engines.
+ 'permission_fields'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

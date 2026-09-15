@@ -73,7 +73,7 @@
 								class="locale-number locale-number-quantity-amount"></span> <span id="productcard-product-stock-qu-name-aggregated"></span> <span id="productcard-product-stock-opened-amount-aggregated"
 								class="small font-italic"></span></span><br>
 
-						@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+						@if($pricesVisible)
 						<strong>{{ $__t('Stock value') }}:</strong> <span id="productcard-product-stock-value"
 							class="locale-number locale-number-currency"></span><br>
 						@endif
@@ -84,14 +84,14 @@
 						<strong>{{ $__t('Last used') }}:</strong> <span id="productcard-product-last-used"></span> <time id="productcard-product-last-used-timeago"
 							class="timeago timeago-contextual"></time><br>
 
-						@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)<strong>
+						@if($pricesVisible)<strong>
 							{{ $__t('Last price') }}:</strong> <span id="productcard-product-last-price"
 							data-toggle="tooltip"
 							data-trigger="hover click"></span>
 						<br>
 						@endif
 
-						@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+						@if($pricesVisible)
 						<strong>{{ $__t('Average price') }}:</strong> <span id="productcard-product-average-price"
 							data-toggle="tooltip"
 							data-trigger="hover click"></span>
@@ -108,7 +108,7 @@
 								loading="lazy">
 						</p>
 
-						@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+						@if($pricesVisible)
 						<h5 class="mt-3">{{ $__t('Price history') }}</h5>
 						<canvas id="productcard-product-price-history-chart"
 							class="w-100 d-none"></canvas>

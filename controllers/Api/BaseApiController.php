@@ -5,6 +5,7 @@ namespace Victual\Controllers\Api;
 use Victual\Controllers\BaseController;
 use Victual\Services\DatabaseService;
 use Victual\Services\Database\DatabaseDialect;
+use Victual\Services\FieldPolicy;
 use Victual\Services\Storage\FileTooLargeException;
 use LessQL\Result;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -159,12 +160,22 @@ class BaseApiController extends BaseController
 	}
 
 	/**
-	 * Applies the generic list query parameters (see QueryData) to $data and returns the result JSON-encoded.
+	 * Applies the generic list query parameters (see QueryData) to $data and returns the
+	 * result JSON-encoded, with every field the current user may not see (FieldPolicy,
+	 * docs/plans/19-rbac.md piece 2) removed from each row first.
+	 *
+	 * The entity name is read off $data before QueryData()/MaterialiseFiltered() run - a
+	 * LessQL Result still names its own table after where()/limit()/orderBy() are chained
+	 * onto it, and this is the one place in the generic list path that still has the
+	 * Result rather than the bare rows FilterData() and MaterialiseFiltered() work with.
 	 */
 	public function FilteredApiResponse(Request $request, Response $response, Result $data, array $query)
 	{
+		$entity = $data->getTable();
 		$data = $this->QueryData($request, $data, $query);
-		return $this->ApiResponse($response, $this->MaterialiseFiltered($request, $data, $query));
+		$rows = $this->MaterialiseFiltered($request, $data, $query);
+		$rows = FieldPolicy::GetInstance()->RedactRows($entity, $rows);
+		return $this->ApiResponse($response, $rows);
 	}
 
 	/**
@@ -274,13 +285,26 @@ class BaseApiController extends BaseController
 
 	/**
 	 * Rejects a field a caller named in "query[]" or "order" that the entity does not have,
-	 * with 400 rather than the 500 the engine's own complaint would otherwise become.
+	 * with 400 rather than the 500 the engine's own complaint would otherwise become - and,
+	 * per docs/plans/19-rbac.md piece 2's "filter hole", a field that exists but is redacted
+	 * for the current user (FieldPolicy). Without this a caller lacking STOCK_PRICES_VIEW
+	 * could binary-search stock.price with "?query[]=price>3&query[]=price<5" even though
+	 * the field itself never appears in a response.
+	 *
+	 * The message distinguishes the two refusals so a caller can tell "this field does not
+	 * exist" from "you may not query on this field"; the status code deliberately does not,
+	 * both are 400, since a distinct code would itself confirm the field exists.
 	 */
-	private function AssertFieldExists(Request $request, array $columnTypes, string $field): void
+	private function AssertFieldExists(Request $request, array $columnTypes, string $field, string $entity): void
 	{
 		if (!array_key_exists($field, $columnTypes))
 		{
 			throw new HttpException($request, 'Invalid query: unknown field "' . $field . '"', 400);
+		}
+
+		if (in_array($field, FieldPolicy::GetInstance()->RedactedFieldsFor($entity), true))
+		{
+			throw new HttpException($request, 'Invalid query: field "' . $field . '" may not be used in "query" or "order"', 400);
 		}
 	}
 
@@ -309,7 +333,7 @@ class BaseApiController extends BaseController
 		if (isset($query['order']))
 		{
 			$parts = explode(':', $query['order']);
-			$this->AssertFieldExists($request, $this->AssertCanValidate($request, $this->ColumnTypesOf($data)), $parts[0]);
+			$this->AssertFieldExists($request, $this->AssertCanValidate($request, $this->ColumnTypesOf($data)), $parts[0], $data->getTable());
 
 			if (count($parts) == 1)
 			{
@@ -338,6 +362,7 @@ class BaseApiController extends BaseController
 	protected function FilterData(Request $request, Result $data, array $query): Result
 	{
 		$columnTypes = $this->AssertCanValidate($request, $this->ColumnTypesOf($data));
+		$entity = $data->getTable();
 
 		foreach ($query as $q)
 		{
@@ -355,7 +380,7 @@ class BaseApiController extends BaseController
 				throw new HttpException($request, 'Invalid query', 400);
 			}
 
-			$this->AssertFieldExists($request, $columnTypes, $matches['field']);
+			$this->AssertFieldExists($request, $columnTypes, $matches['field'], $entity);
 
 			// The substring and regex operators are the ones that need a string to work on.
 			// Rejecting them here, on both engines, is what stops the two disagreeing: left

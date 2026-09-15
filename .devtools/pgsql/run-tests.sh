@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys]
 #
 # Nineteen kinds of check, for nineteen reasons. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -393,6 +393,32 @@ run_rbac_tests() {
 	if ! VICTUAL_DATAPATH="$datapath" php "$SUITE_DIR/rbac-tests.php"; then
 		failures=$((failures + 1))
 	fi
+}
+
+# --- Price visibility tests --------------------------------------------------------
+#
+# Plan 19 piece 2, issue #84. PostgreSQL only, for the same reason the rbac phase is:
+# migrations/0280.pgsql.sql (STOCK_PRICES_VIEW, permission_fields) is above the SQLite
+# freeze. A migrated database and nothing else - the phase makes its own product, stock
+# entry, recipe and shopping list row, real bookings through StockService, and moves one
+# fixture caller between the seeded Child, Guest, Adult and Admin roles (plus a bare
+# STOCK_VIEW direct grant, the plan's own named pre-upgrade residue) asserting which price
+# and cost fields each one gets back from the actual controllers.
+
+run_price_visibility_tests() {
+	local dbname="victual_price_visibility"
+	build_pgsql "$dbname"
+
+	local datapath="$SUITE_SCRATCH/price-visibility-data"
+	rm -rf "$datapath"
+	write_pgsql_config "$datapath"
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" DIFFTEST_DB_NAME="$dbname" php "$SUITE_DIR/price-visibility-tests.php"; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
 }
 
 # --- Average price tests ----------------------------------------------------------
@@ -1356,6 +1382,7 @@ build_pristine
 
 case "$WHICH" in
 	rbac) run_rbac_tests ;;
+	pricevisibility) run_price_visibility_tests ;;
 	average) run_average_price_tests ;;
 	migrate) run_migration_tests ;;
 	views) run_view_tests ;;
@@ -1376,8 +1403,8 @@ case "$WHICH" in
 	openmeasure) run_open_container_measurement_tests ;;
 	workingcontainer) run_working_container_tests ;;
 	apikeys) run_apikey_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys or all)" ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

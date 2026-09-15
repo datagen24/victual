@@ -415,7 +415,7 @@
 								<h3 class="locale-number locale-number-generic pt-0">{{ $calories }}</h3>
 							</div>
 							@endif
-							@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+							@if($pricesVisible)
 							<div class="col-4">
 								<label>{{ $__t('Costs') }}&nbsp;
 									<i class="fa-solid fa-question-circle text-muted d-print-none"
@@ -548,7 +548,7 @@
 											<i class="fa-solid fa-exchange-alt"></i> {{ FindObjectInArrayByPropertyValue($products, 'id', $selectedRecipePosition->product_id_effective)->name }}
 										</span>
 										@endif
-										@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) <span class="float-right font-italic ml-2 locale-number locale-number-currency">{{ $selectedRecipePosition->costs }}</span> @endif
+										@if($pricesVisible) <span class="float-right font-italic ml-2 locale-number locale-number-currency">{{ $selectedRecipePosition->costs }}</span> @endif
 										<span class="float-right font-italic"><span class="locale-number locale-number-generic">{{ $selectedRecipePosition->calories }}</span> {{ VICTUAL_ENERGY_UNIT }}</span>
 										@if(!empty($selectedRecipePosition->recipe_variable_amount))
 										<div class="small text-muted font-italic">{{ $__t('Variable amount') }}</div>

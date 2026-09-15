@@ -6,6 +6,7 @@ use Victual\Controllers\Users\User;
 use Victual\Helpers\Grocycode;
 use Victual\Helpers\WebhookRunner;
 use Victual\Services\DatabaseService;
+use Victual\Services\FieldPolicy;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\LocalizationService;
 use Victual\Services\StockService;
@@ -388,7 +389,12 @@ class StockApiController extends BaseApiController
 	public function CurrentStock(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		return $this->ApiResponse($response, StockService::GetInstance()->GetCurrentStock());
+		// GetCurrentStock() reads stock_current via raw SQL (PDO::FETCH_OBJ), not a LessQL
+		// Result, so it never passes through FilteredApiResponse's redaction - it is hand
+		// built and redacted here, by the same 'stock_current' entity name permission_fields
+		// carries the price-visibility row under.
+		$currentStock = FieldPolicy::GetInstance()->RedactRows('stock_current', StockService::GetInstance()->GetCurrentStock());
+		return $this->ApiResponse($response, $currentStock);
 	}
 
 	/**
@@ -406,9 +412,14 @@ class StockApiController extends BaseApiController
 			$nextXDays = $request->getQueryParams()['due_soon_days'];
 		}
 
-		$dueProducts = StockService::GetInstance()->GetDueProducts($nextXDays, true);
-		$overdueProducts = StockService::GetInstance()->GetDueProducts(-1);
-		$expiredProducts = StockService::GetInstance()->GetExpiredProducts();
+		// GetDueProducts()/GetExpiredProducts() are GetCurrentStock() with an extra WHERE -
+		// the same stock_current rows CurrentStock() (GET /api/stock) redacts, carrying the
+		// same 'value' field. GetMissingProducts() reads stock_missing_products, which has
+		// no price-bearing column, so it is returned as-is.
+		$fieldPolicy = FieldPolicy::GetInstance();
+		$dueProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts($nextXDays, true));
+		$overdueProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts(-1));
+		$expiredProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetExpiredProducts());
 		$missingProducts = StockService::GetInstance()->GetMissingProducts();
 		return $this->ApiResponse($response, [
 			'due_products' => $dueProducts,
@@ -736,7 +747,8 @@ class StockApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			return $this->ApiResponse($response, StockService::GetInstance()->GetProductDetails($args['productId']));
+			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($args['productId']));
+			return $this->ApiResponse($response, $details);
 		});
 	}
 
@@ -751,7 +763,8 @@ class StockApiController extends BaseApiController
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$productId = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
-			return $this->ApiResponse($response, StockService::GetInstance()->GetProductDetails($productId));
+			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($productId));
+			return $this->ApiResponse($response, $details);
 		});
 	}
 
@@ -763,6 +776,11 @@ class StockApiController extends BaseApiController
 	public function ProductPriceHistory(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
+		// The whole response is prices - "date"/"price"/"shopping_location" per stock_log
+		// entry - so this is refusal (403), not per-field redaction of a body that would
+		// otherwise be an empty array. See docs/plans/19-rbac.md piece 2's "the whole
+		// endpoint is the field", and the products_price_history row in permission_fields.
+		User::CheckPermission($request, User::PERMISSION_STOCK_PRICES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, StockService::GetInstance()->GetProductPriceHistory($args['productId']));
@@ -954,7 +972,8 @@ class StockApiController extends BaseApiController
 	public function StockEntry(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		return $this->ApiResponse($response, StockService::GetInstance()->GetStockEntry($args['entryId']));
+		$entry = FieldPolicy::GetInstance()->RedactRow('stock', StockService::GetInstance()->GetStockEntry($args['entryId']));
+		return $this->ApiResponse($response, $entry);
 	}
 
 	/**
@@ -974,6 +993,8 @@ class StockApiController extends BaseApiController
 			{
 				throw new \Exception('No transaction was found by the given transaction id');
 			}
+
+			$transactionRows = FieldPolicy::GetInstance()->RedactRows('stock_log', $transactionRows);
 
 			return $this->ApiResponse($response, $transactionRows);
 		});
