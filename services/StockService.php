@@ -2538,9 +2538,12 @@ class StockService extends BaseService
 		// undone flag disagrees with the stock it was supposed to restore.
 		DatabaseService::GetInstance()->InTransaction(function () use ($logRow, $skipCorrelatedBookings)
 		{
-			if ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
+			if ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || $logRow->transaction_type === self::TRANSACTION_TYPE_SELF_PRODUCTION || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
 			{
-				// Remove corresponding stock entry
+				// Remove corresponding stock entry. Self-production reaches this same
+				// entry-creating shape as a purchase in AddProduct() (issue #121) - it is
+				// never opened or measured at creation, so no ADR-0022 coherence columns
+				// need clearing here, unlike the PRODUCT_OPENED/STOCK_MEASURED_OLD branches.
 				$stockRows = $this->DB->stock()->where('stock_id', $logRow->stock_id);
 				$stockRows->delete();
 
