@@ -168,10 +168,11 @@ entities — is `.devtools/pgsql/nested-locations-tests.php`, run by `run-tests.
 small group tree (`Spices / Garlic / Fresh`) through `/productgroup/new` with the parent
 picker, checks that the product form's group dropdown offers a group by its whole path, that
 the product groups list renders a path column, and that deleting a group with children shows
-the API's own refusal (`Product group has child groups`) while leaving the row in place. One
-group in the tree is named with the S29 payload, so the list renders it as text rather than
-executing it. Every name carries a per-run token, so a second run against the same instance
-neither collides with the first nor asserts against it.
+the API's own refusal (`Product group has child groups`) while leaving the row in place. Every
+name carries a per-run token, so a second run against the same instance neither collides with
+the first nor asserts against it. No S29 payload row here: `s29-payload.js`'s own
+`productgroups` probe, run earlier in the same job, already plants one and asserts the list
+renders it as text.
 
 CI runs it in `frontend-security` after the nested location checks, against the demo instance
 on 8085. The database coverage — the view, the guards, the depth cap, the mixed node and the

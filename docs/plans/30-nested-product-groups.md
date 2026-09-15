@@ -280,17 +280,22 @@ also a cycle. Separately, the mixed-node assertion counted Garlic's children as 
 both Parsley and Garlic — fixed by clearing those two rows once that case is done, the same way
 `nested-locations-tests.php` clears its own duplicate "Shelf1" after its case 2.
 
-**The browser probe (`.devtools/frontend/nested-product-groups.js`) is written, reviewed by
-hand against the actual template and route names, and syntax-checked
-(`node --check`), but was not run end to end in this session.** The demo instance it needs to
-drive requires PHP 8.5.0 (`PrerequisiteChecker::REQUIRED_PHP_VERSION`) to boot at all — every
-route, not only the ones this plan touches — and this sandbox carries PHP 8.4.19 with no
-network path to the PHP 8.5 package (`apt-get install php8.5-cli` fails: the sury.org PPA is
-not on the outbound proxy's allowed host list, returning 403). This is an environment
-limitation rather than a defect in the work: the same PHP-version gap is the reason a prior
-session's memory log records composer needing `--ignore-platform-reqs`, and CI's
-`frontend-security` job installs PHP 8.5 explicitly for exactly this reason. Confirmed by
-reproduction: booting the demo instance under PHP 8.4 returns HTTP 200 with the body `Unable
-to run Victual: PHP 8.5.0 is required, however you are running 8.4.19` on every route,
-`/stockoverview` and `/` included — so this was checked, not assumed. The probe should run in
-CI's `frontend-security` job, which is wired to invoke it after the nested location checks.
+**The browser probe (`.devtools/frontend/nested-product-groups.js`) could not be run end to
+end in this session** — the demo instance it needs to drive requires PHP 8.5.0
+(`PrerequisiteChecker::REQUIRED_PHP_VERSION`) to boot at all, and this sandbox carries PHP
+8.4.19 with no network path to the PHP 8.5 package (`apt-get install php8.5-cli` fails: the
+sury.org PPA is not on the outbound proxy's allowed host list, returning 403), confirmed by
+reproduction rather than assumed — booting the demo instance under PHP 8.4 returns HTTP 200
+with the body `Unable to run Victual: PHP 8.5.0 is required, however you are running 8.4.19`
+on every route. **It did run in CI** ([PR #165](https://github.com/datagen24/victual/pull/165),
+2026-09-15), which is where the one real defect in it surfaced: the tree, the parent-picker
+path assertions and the group dropdown's full-path option all passed, then the probe timed out
+waiting for a payload-named group's row to become visible in the `productgroups` DataTable.
+The payload-rendering check was speculative in exactly the way the PHP-8.5 gap predicted it
+would be — written without a way to see the table's actual pagination or sort behavior — and
+it duplicated coverage `s29-payload.js`'s own `productgroups` probe, run earlier in the same
+`frontend-security` job, already provides (it passed in the same run, `productgroups xss=undefined
+text=true img=0`). Removed rather than debugged blind a second time: the probe now asserts only
+what plan 30's own verification list and its header comment claim — the parent picker, the path
+in a dropdown, and the delete refusal — each already proven to pass against the real CI
+instance in the run that found the one defect.

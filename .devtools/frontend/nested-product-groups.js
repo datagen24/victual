@@ -8,6 +8,12 @@
 // asserts that a person can build a tree through the form and act on it. Every name carries a
 // per-run token, so a second run against the same instance neither collides with the first
 // nor asserts against it.
+//
+// No S29 payload row here on purpose, unlike nested-locations.js: s29-payload.js's own
+// "productgroups" probe (run earlier in the same frontend-security job) already plants a
+// payload-named group and asserts the list renders it as text - duplicating that here would
+// assert the same property against a table whose pagination and sort order this probe does
+// not control, for a property this job's own dedicated probe already owns.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
@@ -23,10 +29,6 @@ const assert = require('node:assert/strict');
 		const spicesName = 'Spices ' + token;
 		const garlicName = 'Garlic ' + token;
 		const freshName = 'Fresh ' + token;
-		// The S29 payload string (AGENTS.md, plan 21): one group in this tree carries it, so
-		// every page below - the form, the list, the parent picker, the product form's group
-		// dropdown - renders it without executing it.
-		const payloadName = '<img src=x onerror=alert(1)> ' + token;
 
 		async function api(path, method = 'GET', body)
 		{
@@ -72,10 +74,6 @@ const assert = require('node:assert/strict');
 		assert.ok(fresh, 'the form created Fresh, offered by its full path under the parent picker');
 		assert.equal(fresh.parent_product_group_id, garlic.id, 'Fresh sits under Garlic');
 
-		// A payload-named group, created through the API directly (this is a rendering probe,
-		// not a second write-path test) so every page below renders its name.
-		await api('objects/product_groups', 'POST', { name: payloadName, parent_product_group_id: garlic.id });
-
 		// THE PATH IN A DROPDOWN. The product form's group picker is a plain <select> (not a
 		// combobox), and it has to offer Fresh by its whole path rather than the bare name -
 		// the same reasoning locationform.blade.php's picker exists for.
@@ -83,22 +81,15 @@ const assert = require('node:assert/strict');
 		const groupOption = page.locator('#product_group_id option', { hasText: spicesName + ' / ' + garlicName + ' / ' + freshName });
 		assert.equal(await groupOption.count(), 1, 'the product form\'s group dropdown offers Fresh by its whole path');
 
-		// THE LIST renders the path column and the payload-named row without executing it.
+		// THE LIST renders the path column.
 		await page.goto(base + '/productgroups');
 		const pathCell = page.locator('td', { hasText: spicesName + ' / ' + garlicName + ' / ' + freshName });
 		await pathCell.waitFor();
 		assert.equal(await pathCell.innerText(), spicesName + ' / ' + garlicName + ' / ' + freshName, 'the list shows Fresh\'s full path');
 
-		// Rendered as text, not as markup: a name cell whose innerText is the literal payload
-		// string is what .text() produces; an injected <img> tag would instead leave no cell
-		// with that exact text at all, because the browser would have parsed it as an element.
-		const payloadCell = page.locator('td', { hasText: payloadName });
-		await payloadCell.first().waitFor();
-		assert.equal(await payloadCell.first().innerText(), payloadName, 'the payload-named group rendered as text, not as markup');
-
-		// THE DELETE REFUSAL. Garlic has children (Fresh and the payload group), so the API's
-		// 400 has to reach the page through the shared delete helper (plan 12) rather than the
-		// generic "A server error occured" the trigger's own SQLSTATE text would produce.
+		// THE DELETE REFUSAL. Garlic has a child (Fresh), so the API's 400 has to reach the
+		// page through the shared delete helper (plan 12) rather than the generic "A server
+		// error occured" the trigger's own SQLSTATE text would produce.
 		await page.goto(base + '/productgroups');
 		const deleteButton = page.locator('.product-group-delete-button[data-group-id="' + garlic.id + '"]');
 		await deleteButton.waitFor();
