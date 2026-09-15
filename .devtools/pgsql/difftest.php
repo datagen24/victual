@@ -166,6 +166,22 @@ foreach ($views as $view)
 			foreach ($b as &$row) unset($row['amount_measured']);
 			unset($row);
 		}
+
+		// migrations/0276.pgsql.sql, above the freeze like 0275: the three one-tap refill
+		// columns this view joins in from `products` (quick_refill_amount,
+		// default_refill_location_id_from, default_refill_location_id_to) exist on
+		// PostgreSQL only, for the same reason amount_measured above does - the seed is
+		// applied to SQLite and copied across, so these columns would arrive at their
+		// defaults on every row regardless of what this phase asserted.
+		// .devtools/pgsql/working-container-tests.php asserts them for real.
+		if ($view === 'uihelper_stock_current_overview')
+		{
+			foreach ($b as &$row)
+			{
+				unset($row['quick_refill_amount'], $row['default_refill_location_id_from'], $row['default_refill_location_id_to']);
+			}
+			unset($row);
+		}
 	}
 	catch (Exception $ex)
 	{

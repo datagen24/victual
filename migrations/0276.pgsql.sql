@@ -227,17 +227,25 @@ SELECT
 	p3.default_refill_location_id_from,
 	p3.default_refill_location_id_to
 FROM (
+	-- Plan 28's migration 0275 (below this one in the merged tree) widened stock_current by
+	-- one column, appending amount_measured after due_type. The `SELECT *` branch below picks
+	-- that up automatically, but the two branches that stand in for a product with no stock
+	-- row spell every column out as a literal and did not, before this fix - a UNION whose
+	-- branches disagree on column count, found here while merging plan 28's landed PR into
+	-- this branch (`each UNION query must have the same number of columns`, PostgreSQL
+	-- 16.13). The extra `0` restores the count; a product with no stock has nothing measured
+	-- either.
 	SELECT *, 1 AS is_in_stock_or_below_min_stock
 	FROM stock_current
 	WHERE best_before_date IS NOT NULL
 	UNION
-	SELECT m.id, 0, 0, 0, NULL::date, 0, 0, 0, p.due_type, 1 AS is_in_stock_or_below_min_stock
+	SELECT m.id, 0, 0, 0, NULL::date, 0, 0, 0, p.due_type, 0, 1 AS is_in_stock_or_below_min_stock
 	FROM stock_missing_products m
 	JOIN products p
 		ON m.id = p.id
 	WHERE m.id NOT IN (SELECT product_id FROM stock_current)
 	UNION
-	SELECT p2.id, 0, 0, 0, NULL::date, 0, 0, 0, p2.due_type, 0 AS is_in_stock_or_below_min_stock
+	SELECT p2.id, 0, 0, 0, NULL::date, 0, 0, 0, p2.due_type, 0, 0 AS is_in_stock_or_below_min_stock
 	FROM products p2
 	WHERE active = 1
 		AND p2.id NOT IN (SELECT product_id FROM stock_current UNION SELECT id FROM stock_missing_products)
