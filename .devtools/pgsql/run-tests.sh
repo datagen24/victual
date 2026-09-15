@@ -398,7 +398,7 @@ run_rbac_tests() {
 # --- Price visibility tests --------------------------------------------------------
 #
 # Plan 19 piece 2, issue #84. PostgreSQL only, for the same reason the rbac phase is:
-# migrations/0282.pgsql.sql (STOCK_PRICES_VIEW, permission_fields) is above the SQLite
+# migrations/0280.pgsql.sql (STOCK_PRICES_VIEW, permission_fields) is above the SQLite
 # freeze. A migrated database and nothing else - the phase makes its own product, stock
 # entry, recipe and shopping list row, real bookings through StockService, and moves one
 # fixture caller between the seeded Child, Guest, Adult and Admin roles (plus a bare

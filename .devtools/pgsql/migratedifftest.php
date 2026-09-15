@@ -69,7 +69,7 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // the existing dual-engine products_current_substitutions view would make that view's
  // definition diverge between engines instead).
  'product_substitutions',
- // Plan 19 piece 2, migration 0282. Same freeze, and the same reason 'roles' is here: the
+ // Plan 19 piece 2, migration 0280. Same freeze, and the same reason 'roles' is here: the
  // field policy that answers "which fields must this user not see" is new machinery the
  // pre-freeze permission model never had, not a column on a table that already existed on
  // both engines.
