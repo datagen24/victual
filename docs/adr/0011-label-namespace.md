@@ -14,7 +14,8 @@
 - **Accepting decides the namespace, not the schedule.** No `labels` table exists, no print
   outbox exists, and the fork still emits Grocycodes through the webhook. The work is not in
   the roadmap's wave order; until it lands, what the tree actually does is what
-  [docs/grocycode.md](../grocycode.md) and [docs/label-printing.md](../label-printing.md)
+  [docs/grocycode.md](../grocycode.md) and
+  [the Manual's label printing chapter](../manual/operator/label-printing.md)
   describe. What changes today is what may be built: no new Grocycode type is added, and no
   new label payload carries a row id.
 - **Two statements in the body were checked at acceptance rather than edited.** *Consequences*

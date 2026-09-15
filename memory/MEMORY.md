@@ -59,6 +59,24 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Plan 26 piece 2 landed** (the Manual, issue #138), wave-independent.
+  `docs/manual/` (getting started; an 85-setting configuration reference generated-checked
+  against `config-dist.php`; nine household-task pages plus a tips page; seven operator
+  pages, including a label-printing chapter rewritten for plans 25/27's actual subsystem
+  rather than only the legacy webhook) replaces `docs/usage.md` and `docs/label-printing.md`,
+  wired into `mkdocs.yml`'s nav and a new `TREES` entry in `.devtools/docs/stage.py`. Both
+  counts issue 138 cites (81 pages, 84 settings) were stale from corpus growth; measured
+  today: 85 settings, 89 page routes — the issue's own route-counting grep only excludes the
+  literal `/api` route, not the whole `/api` group, so it had to be redone by line range.
+  Verified: `python3 .devtools/docs/stage.py --no-api && mkdocs build --strict --site-dir
+  /tmp/docs-site` (the exact `lint` job commands) exit 0; 321/321 offsite links resolving;
+  the new `check_settings_reference()` reports 85/85 settings covered. Not run: booting a
+  live instance to click through Getting started end to end (writing-only session scope) —
+  said plainly in the plan's Executed section rather than assumed. Found and fixed in the
+  same change, not re-litigated: ADR-0020 is **Accepted** 2026-09-14 in its own file and
+  index row; `docs/plans/README.md` still called it Proposed and is now corrected — that is
+  a stale cross-reference fix, not [issue 135](https://github.com/datagen24/victual/issues/135)'s
+  acceptance bookkeeping, which this session did not touch. [→](project_state.md)
 - **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
   day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
   nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,
@@ -138,15 +156,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   traced to `enfore_product_nesting_level` checking only `UPDATE`, never `INSERT`, in both
   engines, filed as [issue #148](https://github.com/datagen24/victual/issues/148) rather than
   fixed inline. [PR #149](https://github.com/datagen24/victual/pull/149). [→](project_state.md)
-- **2026-09-14 — ADR-0020's acceptance gates** found prerequisite 2 unenforced: stage.py
-  rewrites a link into an unpublished plan to an absolute GitHub URL, and `mkdocs build
-  --strict` cannot see an absolute URL, so a mistyped plan link published as a 404 silently
-  (demonstrated, exit 0). stage.py now resolves every rewritten link against `git ls-files`
-  and fails naming it. Prerequisite 4 inspected over 46 pages: no page fails, but "wave N"
-  was undefined anywhere on the site, so the Development overview gained a label table.
-  Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
-  and stays bookkeeping-only. [→](project_state.md)
-
 ## DOCTRINE (operator-locked decisions)
 
 - [Verification discipline](feedback_verification_discipline.md) — "it loads" is not

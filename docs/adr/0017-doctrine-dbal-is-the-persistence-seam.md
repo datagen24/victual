@@ -192,8 +192,9 @@ wire.
 - **DBAL's own major-version churn.** DBAL 4 removed APIs that DBAL 3 offered. Taking the
   dependency means tracking that.
 - **An affordance that could be misread as a promise.** A record saying "any engine" invites
-  bug reports about engines nobody tests. The Decision states the limit; the README and
-  `docs/usage.md` should not restate it more warmly.
+  bug reports about engines nobody tests. The Decision states the limit; the README and the
+  Manual's [Getting started](../manual/getting-started.md) chapter should not restate it more
+  warmly.
 
 ## Acceptance prerequisites
 
