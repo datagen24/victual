@@ -59,6 +59,32 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-15 — Issue #137 landed** (plan 06 Q5, the location label's tree path). Dispatched
+  claiming locations still print through `VICTUAL_LABEL_PRINTER_WEBHOOK` and that the `vctl:`
+  labels machinery was unbuilt — both stale: PR 113 (2026-09-08) already moved location
+  printing onto plan 25/27's job path, and the webhook survives only for the five
+  `*/printlabel` routes (products, stock entries, recipes, chores, batteries). Added
+  `FieldCatalogue`'s `location.path`, reading `locations_resolved`'s self row via a new
+  `'select'` key `LabelCaptureService::Capture()` now honours (a catalogue field's SQL can
+  differ from its stored column); refuses the capture rather than printing a blank line if a
+  location has no self row (unreachable through the app, since the depth guard blocks nesting
+  that far). `LabelIdentityService::Resolve()` reads the same view for `/locationlabels`,
+  falling back to the bare name on a miss; retired snapshots stay name-only, unchanged. No new
+  migration — reused plan 08's `locations_resolved`/`hierarchy_depth_limit()` rather than a
+  third `Get…WithPaths()` helper, since both call sites want one row, not the whole tree.
+  Verified against real PostgreSQL 16.13 in this session's own sandbox:
+  `artifact-tests.php` (53, extended with a real nested capture and a `TemplateDocument`
+  acceptance check), `identity-tests.php` (10047), `registry`/`print-job`/`worker-api`/
+  `canonical-json` tests unaffected by the widened fixture, `check-migrations.php` clean. The
+  frontend probe (extended for a nested path) passed against a real demo instance booted per
+  the `run-app` skill; a disposable script also drove capture and resolve directly against
+  that instance's real schema and triggers for a genuinely nested location, confirming the
+  composed path both ways and a name-only retirement snapshot. `test-support.php`'s fixture
+  now loads migration 0273 unmodified; `identity-tests.php`'s hand-built `locations` stub
+  could not load 0273 as-is (no `locations_name_key` to drop, `parent_location_id` added a
+  second time later) and instead carries a copy of its function and view — the same
+  shadowed-stub shape plan 08 already found in this test file's sibling. Not verified: a
+  physical print through the real Rust renderer, unavailable in this sandbox. [→](project_state.md)
 - **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
   day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
   nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,
@@ -138,14 +164,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   traced to `enfore_product_nesting_level` checking only `UPDATE`, never `INSERT`, in both
   engines, filed as [issue #148](https://github.com/datagen24/victual/issues/148) rather than
   fixed inline. [PR #149](https://github.com/datagen24/victual/pull/149). [→](project_state.md)
-- **2026-09-14 — ADR-0020's acceptance gates** found prerequisite 2 unenforced: stage.py
-  rewrites a link into an unpublished plan to an absolute GitHub URL, and `mkdocs build
-  --strict` cannot see an absolute URL, so a mistyped plan link published as a 404 silently
-  (demonstrated, exit 0). stage.py now resolves every rewritten link against `git ls-files`
-  and fails naming it. Prerequisite 4 inspected over 46 pages: no page fails, but "wave N"
-  was undefined anywhere on the site, so the Development overview gained a label table.
-  Acceptance itself is still [issue 135](https://github.com/datagen24/victual/issues/135)
-  and stays bookkeeping-only. [→](project_state.md)
 
 ## DOCTRINE (operator-locked decisions)
 
