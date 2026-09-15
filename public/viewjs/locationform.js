@@ -26,6 +26,17 @@ Victual.EntityForm({
 			? null
 			: parseInt(jsonData.storage_class_id, 10);
 
+		// Same reasoning again, for the vessel tare (plan 29): a blank numberpicker posts "",
+		// which a nullable double precision column would refuse the same way a nullable
+		// integer refuses "" for a parent id - so both null together mean "not a vessel"
+		// rather than a tare of zero.
+		jsonData.tare_weight = jsonData.tare_weight === '' || jsonData.tare_weight === undefined
+			? null
+			: parseFloat(jsonData.tare_weight);
+		jsonData.tare_qu_id = jsonData.tare_qu_id === '' || jsonData.tare_qu_id === undefined
+			? null
+			: parseInt(jsonData.tare_qu_id, 10);
+
 		return jsonData;
 	}
 });

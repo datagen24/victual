@@ -366,8 +366,11 @@ echo "\n7. /objects/locations and /objects/locations_resolved\n";
 $response = $api->GetObject(request(), new Response(), ['entity' => 'locations', 'objectId' => $door]);
 $location = json_decode((string)$response->getBody(), true);
 
-check(array_keys($location) === ['id', 'name', 'description', 'row_created_timestamp', 'is_freezer', 'active', 'parent_location_id', 'storage_class_id', 'userfields'],
-	'the key set is exactly what it was plus parent_location_id and storage_class_id');
+// Plan 29 (migrations/0276.pgsql.sql) widened the same explicit select() list with
+// tare_weight and tare_qu_id, for the same reason storage_class_id needed adding rather than
+// arriving for free through the table's own columns - see that migration's own comment.
+check(array_keys($location) === ['id', 'name', 'description', 'row_created_timestamp', 'is_freezer', 'active', 'parent_location_id', 'storage_class_id', 'tare_weight', 'tare_qu_id', 'userfields'],
+	'the key set is exactly what it was plus parent_location_id, storage_class_id, tare_weight and tare_qu_id');
 check((int)$location['parent_location_id'] === $uprightFreezer, 'and it carries the right parent');
 check(!array_key_exists('import_epoch', $location), 'import_epoch is still off the wire');
 

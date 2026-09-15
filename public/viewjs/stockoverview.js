@@ -300,6 +300,7 @@ function RefreshStatistics()
 	);
 
 	RefreshMissingProductGroups();
+	RefreshMissingProductLocations();
 }
 
 // Plan 03. The short product groups, named rather than counted: "two groups are below their
@@ -355,6 +356,95 @@ $(document).on("click", ".missing-product-group-button", function ()
 	$("#product-group-filter").val(name);
 	$("#product-group-filter").trigger("change");
 });
+
+// Plan 29. Unlike a short product group, a short (product, location) pair is not a filter -
+// clicking a row here books the refill directly, the same one-tap action a product's own
+// "Refill" button on its row would (quick_refill_amount from default_refill_location_id_from
+// to this row's own location, which stands in for the product's default destination since the
+// shortfall names the destination already). A row with no configured amount or source renders
+// as plain text: there is nothing to preset the action with, and a button that always fails
+// is worse than no button.
+//
+// Every value out of the database is placed with .text() on a node built here, never
+// concatenated into a string handed to .html() (AGENTS.md, plan 21).
+function RefreshMissingProductLocations()
+{
+	Victual.Api.Get('objects/product_location_missing',
+		function (result)
+		{
+			var container = $("#info-missing-product-locations");
+			var list = $("#missing-product-locations-list");
+			list.empty();
+
+			if (result.length === 0)
+			{
+				container.addClass("d-none");
+				return;
+			}
+
+			container.removeClass("d-none");
+			container.html('<span class="d-block d-md-none">' + result.length + ' <i class="fa-solid fa-box-open"></i></span><span class="d-none d-md-block">' + __n(result.length, '%s location is below its minimum stock amount', '%s locations are below their minimum stock amount') + '</span>');
+
+			result.forEach(function (row)
+			{
+				var item = $("<li></li>");
+				var label = $('<span></span>');
+				label.text(__t('%1$s at %2$s', row.product_name, row.location_name));
+				item.append(label);
+
+				var shortfall = $('<span class="text-muted ml-2"></span>');
+				shortfall.text(__t('%s missing', row.amount_missing));
+				item.append(shortfall);
+
+				if (row.quick_refill_amount && row.default_refill_location_id_from)
+				{
+					var button = $('<button class="btn btn-link btn-sm p-0 ml-2 product-location-refill-button" type="button"></button>');
+					button.attr('data-product-id', row.product_id);
+					button.attr('data-refill-amount', row.quick_refill_amount);
+					button.attr('data-refill-location-id-from', row.default_refill_location_id_from);
+					button.attr('data-refill-location-id-to', row.location_id);
+					button.text(__t('Refill'));
+					item.append(button);
+				}
+
+				list.append(item);
+			});
+		}
+	);
+}
+
+// The same one-tap action a product's own "Refill" row button uses (see
+// RefreshMissingProductLocations() above for why the destination is a data attribute here
+// rather than the product's own default): TransferProduct() with a preset amount and pair of
+// locations, nothing new booked.
+$(document).on('click', '.product-location-refill-button', function (e)
+{
+	e.preventDefault();
+
+	Victual.FrontendHelpers.BeginUiBusy();
+
+	var productId = $(e.currentTarget).attr('data-product-id');
+	var refillAmount = Number.parseFloat($(e.currentTarget).attr('data-refill-amount'));
+	var locationIdFrom = $(e.currentTarget).attr('data-refill-location-id-from');
+	var locationIdTo = $(e.currentTarget).attr('data-refill-location-id-to');
+
+	Victual.Api.Post('stock/products/' + productId + '/transfer',
+		{ 'amount': refillAmount, 'location_id_from': locationIdFrom, 'location_id_to': locationIdTo },
+		function (bookingResponse)
+		{
+			Victual.FrontendHelpers.EndUiBusy();
+			toastr.success(__t('Refilled') + '<br><a class="btn btn-secondary btn-sm mt-2" href="#" onclick="UndoStockTransaction(\'' + bookingResponse[0].transaction_id + '\')"><i class="fa-solid fa-undo"></i> ' + __t("Undo") + '</a>');
+			RefreshStatistics();
+			RefreshProductRow(productId);
+		},
+		function (xhr)
+		{
+			Victual.FrontendHelpers.EndUiBusy();
+			Victual.Api.DefaultErrorHandler(xhr);
+		}
+	);
+});
+
 RefreshStatistics();
 
 /**

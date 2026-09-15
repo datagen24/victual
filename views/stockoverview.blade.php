@@ -77,6 +77,13 @@
 				class="normal-message responsive-button mr-2 d-none"></div>
 			<ul id="missing-product-groups-list"
 				class="list-unstyled small mb-0 mt-1"></ul>
+			{{-- Plan 29. A location minimum is a refill prompt, never a shopping list entry -
+			     the rule this whole plan exists to enforce - so each row here is the one-tap
+			     refill action itself, not a filter: clicking it books the transfer directly. --}}
+			<div id="info-missing-product-locations"
+				class="normal-message responsive-button mr-2 d-none"></div>
+			<ul id="missing-product-locations-list"
+				class="list-unstyled small mb-0 mt-1"></ul>
 			<div class="float-right mt-1 @if($embedded) pr-5 @endif">
 				<a class="btn btn-sm btn-outline-info d-md-none"
 					data-toggle="collapse"

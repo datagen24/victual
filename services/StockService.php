@@ -2058,22 +2058,15 @@ class StockService extends BaseService
 			throw new \Exception('Destination location does not exist');
 		}
 
-		// Tare weight handling
-		// The given amount is the new total amount including the container weight (gross)
-		// The amount to be posted needs to be the absolute value of the given amount - stock amount - tare weight
+		// The product-level tare mechanism's refusal used to sit here: ADR-0022 decision 7
+		// retires enable_tare_weight_handling's arithmetic entirely, and this plan owns
+		// removing this refusal specifically (plan 28 owns OpenProduct()'s, on a concurrent
+		// branch) because backstock feeding a vessel needs the transfer to work. A tare-
+		// enabled product's amount is no longer reinterpreted as a gross weight here - the
+		// field stays on the wire at zero per decision 7, and weighing a vessel goes through
+		// the location-scoped tare in WeighLocation() below instead, which corrects one stock
+		// entry after the transfer has already moved the (untared) amount.
 		$productDetails = (object)$this->GetProductDetails($productId);
-
-		if ($productDetails->product->enable_tare_weight_handling == 1)
-		{
-			// Hard fail for now, as we not yet support transferring tare weight enabled products
-			throw new \Exception('Transferring tare weight enabled products is not yet possible');
-			if ($amount < $productDetails->product->tare_weight)
-			{
-				throw new \Exception('The amount cannot be lower than the defined tare weight');
-			}
-
-			$amount = abs($amount - $productDetails->stock_amount - $productDetails->product->tare_weight);
-		}
 
 		$productStockAmountAtFromLocation = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationIdFrom)->sum('amount');
 		$potentialStockEntriesAtFromLocation = $this->GetProductStockEntriesForLocation($productId, $locationIdFrom);
@@ -2279,6 +2272,100 @@ class StockService extends BaseService
 		}
 
 		return $transactionId;
+	}
+
+	/**
+	 * Weighs a vessel (a bin, a spice jar - a location that stock passes through rather than
+	 * arrives in) and corrects its one stock entry to match, per ADR-0022 decision 4's
+	 * location-scoped tare and docs/plans/29-working-container-replenishment.md.
+	 *
+	 * The device posts a gross reading in the location's own tare unit; this method
+	 * subtracts the location's tare weight, converts the net remainder into the stocked
+	 * product's stock unit through cache__quantity_unit_conversions_resolved - the same
+	 * per-product conversion cache every other write path in this class reads (ADR-0022
+	 * decision 3), refusing rather than assuming when no conversion path exists - and hands
+	 * the result to EditStockEntry(), which does no tare arithmetic of its own and simply
+	 * sets the entry's amount, exactly as it does for a human-entered correction.
+	 *
+	 * Refuses when the location has no tare configured, when zero or more than one distinct
+	 * product is stocked there (weighing a shared shelf makes no sense - a vessel holds one
+	 * product), or when more than one stock entry for that product remains at the location
+	 * after compaction (weighing one physical container requires one row to correct).
+	 *
+	 * @param int $locationId
+	 * @param float $grossAmount The gross reading, in the location's own tare_qu_id.
+	 * @param int|null $grossQuId When given, must equal the location's tare_qu_id - present
+	 *                            so a client's unit mismatch is refused rather than silently
+	 *                            misweighed, per ADR-0022 question 5's "gross" contract.
+	 * @return string The transaction id of the resulting stock edit.
+	 * @throws \Exception When the location, its tare, or a single correctable entry cannot be resolved.
+	 */
+	public function WeighLocation(int $locationId, float $grossAmount, ?int $grossQuId = null): string
+	{
+		$location = $this->DB->locations()->where('id = :1 AND active = 1', $locationId)->fetch();
+		if ($location === null)
+		{
+			throw new \Exception('Location does not exist or is inactive');
+		}
+
+		if ($location->tare_weight === null || $location->tare_qu_id === null)
+		{
+			throw new \Exception('This location has no tare configured, so it cannot be weighed as a vessel');
+		}
+
+		if ($grossQuId !== null && (int)$grossQuId !== (int)$location->tare_qu_id)
+		{
+			throw new \Exception('The gross reading must be given in the location\'s own tare unit');
+		}
+
+		$netInTareUnit = $grossAmount - $location->tare_weight;
+		if ($netInTareUnit < 0)
+		{
+			throw new \Exception('The gross reading is less than the location\'s tare weight');
+		}
+
+		$stockAtLocation = $this->DB->stock()->where('location_id = :1', $locationId)->fetchAll();
+		$productIds = array_unique(array_map(fn($row) => $row->product_id, $stockAtLocation));
+		if (count($productIds) === 0)
+		{
+			throw new \Exception('No product is stocked at this location');
+		}
+		if (count($productIds) > 1)
+		{
+			throw new \Exception('More than one product is stocked at this location, so it cannot be weighed as a single vessel');
+		}
+		$productId = reset($productIds);
+
+		$productDetails = (object)$this->GetProductDetails($productId);
+		$stockQuId = $productDetails->product->qu_id_stock;
+
+		$conversion = $this->DB->cache__quantity_unit_conversions_resolved()
+			->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productId, $location->tare_qu_id, $stockQuId)
+			->fetch();
+		if ($conversion === null)
+		{
+			throw new \Exception('The location\'s tare unit cannot be converted to this product\'s stock unit');
+		}
+
+		$newAmount = $netInTareUnit * $conversion->factor;
+
+		// A measured entry describes exactly one container (ADR-0022 decision 8's coherence
+		// argument, applied here to a vessel rather than to an opened purchased container):
+		// compaction first, so that ordinary backstock-fed refills - which each mint a new row
+		// via TransferProduct() - collapse into the one row this correction can set the amount
+		// of, rather than leaving the weighing refused by an accident of how many transfers
+		// happened to run before it.
+		$this->CompactStockEntries($productId);
+
+		$stockRows = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationId)->fetchAll();
+		if (count($stockRows) !== 1)
+		{
+			throw new \Exception('This location does not hold exactly one stock entry to weigh');
+		}
+		$stockRow = $stockRows[0];
+
+		return $this->EditStockEntry($stockRow->id, $newAmount, $stockRow->best_before_date, $locationId,
+			$stockRow->shopping_location_id, $stockRow->price, $stockRow->open, $stockRow->purchased_date, $stockRow->note);
 	}
 
 	/**

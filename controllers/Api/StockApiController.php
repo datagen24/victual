@@ -5,6 +5,8 @@ namespace Victual\Controllers\Api;
 use Victual\Controllers\Users\User;
 use Victual\Helpers\Grocycode;
 use Victual\Helpers\WebhookRunner;
+use Victual\Services\DatabaseService;
+use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\LocalizationService;
 use Victual\Services\StockService;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -1049,6 +1051,69 @@ class StockApiController extends BaseApiController
 			}
 
 			return $this->TransferProduct($request, $response, $args);
+		});
+	}
+
+	/**
+	 * POST /api/stock/locations/{locationId}/weigh - weighs a vessel (a bin, a spice jar)
+	 * and corrects its one stock entry to match. Requires the STOCK_EDIT permission
+	 * (403 otherwise). Body field gross_amount is required; gross_qu_id is optional and,
+	 * when given, must equal the location's own tare_qu_id - present so a client's unit
+	 * mismatch is refused rather than silently misweighed (ADR-0022 question 5's "gross"
+	 * contract; docs/plans/29-working-container-replenishment.md).
+	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
+	 */
+	public function WeighLocation(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+
+		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+
+		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
+		{
+			if ($requestBody === null)
+			{
+				throw new \Exception('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+			}
+
+			if (!array_key_exists('gross_amount', $requestBody))
+			{
+				throw new \Exception('A gross_amount is required');
+			}
+
+			$grossQuId = array_key_exists('gross_qu_id', $requestBody) && $requestBody['gross_qu_id'] !== null
+				? (int)$requestBody['gross_qu_id']
+				: null;
+
+			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId);
+			$args['transactionId'] = $transactionId;
+			return $this->StockTransactions($request, $response, $args);
+		});
+	}
+
+	/**
+	 * POST /api/stock/locations/by-label/{code}/weigh - resolves a scanned location label
+	 * (a `vctl:` payload, plan 06/25) to a location id and delegates to WeighLocation. This
+	 * is the device-facing route: a kitchen scale identifies the vessel by scanning its
+	 * location label rather than knowing a numeric id (ADR-0022 decision 4).
+	 * 400 error response when the label is unknown, retired, or resolves to no location.
+	 */
+	public function WeighLocationByLabel(Request $request, Response $response, array $args)
+	{
+		User::CheckPermission($request, User::PERMISSION_STOCK_EDIT);
+
+		return $this->HandleApiCall($response, function () use ($args, $request, $response)
+		{
+			$resolved = (new LabelIdentityService(DatabaseService::GetInstance()->GetDbConnectionRaw()))
+				->Resolve($args['code'], true);
+
+			if (($resolved['status'] ?? null) !== 'resolved' || ($resolved['kind'] ?? null) !== 'location')
+			{
+				throw new \Exception('Label does not resolve to an active location');
+			}
+
+			$args['locationId'] = $resolved['target']['id'];
+			return $this->WeighLocation($request, $response, $args);
 		});
 	}
 

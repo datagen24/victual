@@ -316,7 +316,7 @@ class GenericEntityApiController extends BaseApiController
 			: $this->DB->{$args['entity']}($args['objectId']);
 		if ($args['entity'] === 'locations')
 		{
-			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id')->where('id', $args['objectId'])->fetch();
+			$object = $this->DB->locations()->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id, tare_weight, tare_qu_id')->where('id', $args['objectId'])->fetch();
 		}
 		if ($object == null)
 		{
@@ -358,7 +358,7 @@ class GenericEntityApiController extends BaseApiController
 		if ($args['entity'] === 'locations')
 		{
 			// The generation is exposed only by the additive label context route.
-			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id');
+			$source = $source->select('id, name, description, row_created_timestamp, is_freezer, active, parent_location_id, storage_class_id, tare_weight, tare_qu_id');
 		}
 		$objects = $this->MaterialiseFiltered($request, $this->QueryData($request, $source, $queryParams), $queryParams);
 
