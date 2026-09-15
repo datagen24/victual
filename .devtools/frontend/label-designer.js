@@ -47,6 +47,27 @@ async function selectAndDrag(page, canvasLocator, from, to)
 	await page.waitForTimeout(200);
 }
 
+/**
+ * Clicks "Save draft" and waits for the PUT itself to complete, not for the text it leaves
+ * behind.
+ *
+ * `report()` only ever replaces `#template-message`'s contents from inside a request's own
+ * callback - clicking Save does not clear it first. So a second or third save in the same
+ * page still has the *previous* "Draft saved" sitting in the DOM the instant the button is
+ * clicked, and `getByText('Draft saved').waitFor()` resolves against that leftover text
+ * before the new PUT has even reached the server. The document read straight after (a
+ * `page.request.get()` on its own connection) can then race the save it was meant to follow.
+ */
+async function saveDraft(page, templateId)
+{
+	const saved = page.waitForResponse(response =>
+		response.request().method() === 'PUT' &&
+		response.url().includes('/api/labels/templates/' + templateId + '/draft'));
+	await page.getByRole('button', { name: 'Save draft' }).click();
+	const response = await saved;
+	assert.ok(response.ok(), 'saving the draft succeeded: ' + response.status());
+}
+
 (async () => {
 	const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
 	try {
@@ -91,8 +112,7 @@ async function selectAndDrag(page, canvasLocator, from, to)
 		await page.locator('#element-kind').selectOption('rect');
 		await page.locator('#add-element-button').click();
 		await page.waitForFunction(() => document.querySelector('#element-properties').textContent.includes('rect1'), null, { timeout: 10000 });
-		await page.getByRole('button', { name: 'Save draft' }).click();
-		await page.getByText('Draft saved', { exact: false }).waitFor();
+		await saveDraft(page, templateId);
 
 		const fetchRect1 = async () =>
 		{
@@ -105,8 +125,7 @@ async function selectAndDrag(page, canvasLocator, from, to)
 
 		// rect1 starts at (2mm, 2mm), 20x10mm, drawn at MM_PER_PX=4 -> canvas px (8,8)-(88,48).
 		await selectAndDrag(page, canvas, { x: 40, y: 24 }, { x: 100, y: 64 });
-		await page.getByRole('button', { name: 'Save draft' }).click();
-		await page.getByText('Draft saved', { exact: false }).waitFor();
+		await saveDraft(page, templateId);
 		const afterMove = await fetchRect1();
 		assert.notEqual(afterMove.x_mm, beforeMove.x_mm, 'dragging the shape moved it in the saved document (x_mm): ' + JSON.stringify({ beforeMove, afterMove }));
 		assert.notEqual(afterMove.y_mm, beforeMove.y_mm, 'dragging the shape moved it in the saved document (y_mm): ' + JSON.stringify({ beforeMove, afterMove }));
@@ -120,14 +139,17 @@ async function selectAndDrag(page, canvasLocator, from, to)
 		assert.equal(afterReload.x_mm, afterMove.x_mm, 'reload reads back the moved position (x_mm)');
 		assert.equal(afterReload.y_mm, afterMove.y_mm, 'reload reads back the moved position (y_mm)');
 
-		// Resize by dragging the bottom-right control outward.
+		// Resize by dragging the bottom-right control outward, by 32x16px (8x4mm).
 		const bottomRight = { x: (afterReload.x_mm + afterReload.width_mm) * 4, y: (afterReload.y_mm + afterReload.height_mm) * 4 };
 		await selectAndDrag(page, canvas, bottomRight, { x: bottomRight.x + 32, y: bottomRight.y + 16 });
-		await page.getByRole('button', { name: 'Save draft' }).click();
-		await page.getByText('Draft saved', { exact: false }).waitFor();
+		await saveDraft(page, templateId);
 		const afterResize = await fetchRect1();
-		assert.notEqual(afterResize.width_mm, afterReload.width_mm, 'resizing changed width_mm in the saved document: ' + JSON.stringify({ afterReload, afterResize }));
-		assert.notEqual(afterResize.height_mm, afterReload.height_mm, 'resizing changed height_mm in the saved document: ' + JSON.stringify({ afterReload, afterResize }));
+		// A plain notEqual would also pass on a *move*: absorb() writes back getScaledWidth(),
+		// which includes strokeWidth, so any object:modified - a move included - nudges
+		// width_mm/height_mm by a fraction of a millimetre. Asserting most of the 8x4mm drag
+		// landed is what actually tells a resize from that drift.
+		assert.ok(afterResize.width_mm - afterReload.width_mm >= 4, 'resizing grew width_mm by close to the dragged 8mm: ' + JSON.stringify({ afterReload, afterResize }));
+		assert.ok(afterResize.height_mm - afterReload.height_mm >= 2, 'resizing grew height_mm by close to the dragged 4mm: ' + JSON.stringify({ afterReload, afterResize }));
 
 		// That a text element pins a font is checked on the server rather than through the
 		// element panel, because the panel's refusal depends on the instance having no font
@@ -150,8 +172,7 @@ async function selectAndDrag(page, canvasLocator, from, to)
 		const refusal = await refused.json();
 		assert.equal(refusal.code, 'asset_unavailable', 'and the refusal names the asset: ' + JSON.stringify(refusal));
 
-		await page.getByRole('button', { name: 'Save draft' }).click();
-		await page.getByText('Draft saved', { exact: false }).waitFor();
+		await saveDraft(page, templateId);
 
 		const draft = await (await page.request.get(base + '/api/labels/templates/' + templateId + '/draft')).json();
 		const ids = draft.document.elements.map(element => element.id);

@@ -82,11 +82,18 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
   identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
   instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
-  `label-printers.js` both pass, repeatably (3+ runs). **Not verified**: the container image
-  build — this sandbox has no nix, so `nix/hashes.nix`'s `yarnOfflineCache` is reset to the
-  bootstrap placeholder rather than a guessed value, and needs a real `nix build .#frontend`
-  before `nix flake check` or an image build will pass. See plan 27's Executed section for
-  the full account. [→](project_state.md)
+  `label-printers.js` both pass, repeatably (3+ runs). The container image build was not
+  verifiable in this sandbox (no nix) but is verified now: [PR #172](https://github.com/datagen24/victual/pull/172)'s
+  `flake` CI job reported the real `yarnOfflineCache` hash from its own fixed-output-derivation
+  failure, and the job then built and booted all three images clean. A same-day maintainer
+  review on the PR found a real second regression the origin-default fix didn't cover — fabric
+  7's `Line` still derives `left`/`top` from its two points, but the box-to-origin translation
+  now folds in `strokeWidth`, so an untouched line's `left`/`top` sat `strokeWidth/2` short and
+  every drag carried that constant into the saved document, drifting a line further on each
+  touch. Fixed the same way (`absorb()`'s line branch adds `strokeWidth/2` back) and confirmed
+  both analytically (constructing the same `Line` against real 7.4.0) and with a diagonal-line
+  drag before/after. See plan 27's Executed section for the full account, including the two
+  documentation-lag and one test-race findings the same review caught. [→](project_state.md)
 - **2026-09-15 — Plan 30 landed** (nested product groups, issue #124), unblocked by the same
   day's #148 fix below. Migration `0278.pgsql.sql` is `0273.pgsql.sql` (plan 08) with the
   nouns changed: `product_groups.parent_product_group_id`, `UNIQUE(parent_product_group_id,

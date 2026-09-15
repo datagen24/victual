@@ -746,10 +746,13 @@ outside the `FileGroups` enum.
 Fabric 7.4.0, not 6.x: nothing in the document format or the pieces above depends on a
 version between them, and 7 is where the runtime-closure comparison this plan already ran
 (question 3) was current. `package.json` and `yarn.lock`; `nix/hashes.nix`'s
-`yarnOfflineCache` is reset to the bootstrap placeholder rather than a guessed value, because
-this environment had no nix to compute the real one - `nix build .#frontend` per
-`nix/README.md` fills it in, and a wrong-but-plausible hash would be worse than the
-documented failure mode it exists to produce.
+`yarnOfflineCache` went through the bootstrap placeholder rather than a guessed value,
+because the session that wrote this change had no nix to compute the real one -
+[PR #172](https://github.com/datagen24/victual/pull/172) let the `flake` CI job's
+fixed-output-derivation failure report it instead (commit `888e38c`), the same `got:` value a
+local `nix build .#frontend` would have produced per `nix/README.md`. A wrong-but-plausible
+guess would have been worse than that documented failure mode, since it would not obviously
+say so.
 
 **The loader.** Fabric 6 dropped the UMD build issue 126 found missing; there is still no
 bundler in this tree. `views/layout/default.blade.php` loads `dist/index.min.mjs` (the
@@ -804,9 +807,42 @@ identical to a drag that silently did nothing and cost real time here to tell ap
 `.agents/skills/run-app/SKILL.md` (PHP 8.4.19, `REQUIRED_PHP_VERSION` lowered locally per that
 skill and restored before committing) and driven with the pinned Playwright/Chromium: the
 updated `label-designer.js` (add, drag, save, reload, resize, publish, all through the
-*document* the server stores) and `label-printers.js` both pass, repeatably. **Not verified
-here**: the container image build - this sandbox has no nix, so `yarnOfflineCache` is the
-bootstrap placeholder and needs a real `nix build .#frontend` before `nix flake check` or an
-image build will pass; and the physical QL-820NWBc print/scan-back, which needs the device
-plan 25's Executed section already exercised it against and which this change does not touch
-(the renderer and worker are untouched - this is the browser editor only).
+*document* the server stores) and `label-printers.js` both pass, repeatably. **The container
+image build is verified too, just not in this sandbox**: PR #172's `flake` CI job reported the
+real `yarnOfflineCache` hash from its fixed-output-derivation failure, and once that was
+committed the same job built and booted all three images clean on the PR's head. The physical
+QL-820NWBc print/scan-back was not re-run here - the renderer and worker are untouched by this
+change, and plan 25's Executed section already exercised that path against the device.
+
+**A maintainer review round on PR #172** (same day) verified the runtime side independently -
+every fabric 7.4.0 call site against its actual source, the `.mjs` MIME type under both `php
+-S` and the new nginx location, the yarn hash against the CI failure it came from - and found
+one blocking defect this account had missed and three worth fixing:
+
+- The merge conflict against master's own wave-table edit (mechanical: master's wave 4/5 rows
+  plus this change's one-sentence wave 3b addition).
+- Two more places still described the hash as an unfilled placeholder after PR #172 filled it
+  in: this section (now corrected above) and `memory/MEMORY.md`.
+- `label-designer.js`'s second and third `getByText('Draft saved').waitFor()` calls were
+  no-ops: `report()` never clears `#template-message` before a save, so a *previous* save's
+  message satisfies the wait before the new one has even reached the server, and the
+  `page.request.get()` read right after can race it. Replaced with a helper that waits on the
+  PUT response itself.
+- fabric 7's `Line` still derives its own `left`/`top` from its two points' bounding box, but
+  the box-to-origin translation now runs through `_getTransformedDimensions()`, which folds in
+  `strokeWidth` - a break the origin-default fix above did not by itself cover. An untouched
+  line's `left`/`top` sits `strokeWidth/2` short of the point minimum rather than exactly at
+  it, so every drag carried that constant into the saved `x1_mm`/`y1_mm`/`x2_mm`/`y2_mm` and
+  drifted the line a little further on each touch - confirmed by constructing the same `Line`
+  the editor builds against the real 7.4.0 package (`left` reads `7.4` against an expected
+  `8`, the exact `strokeWidth/2` for the 0.3mm default) and by a diagonal-line drag before and
+  after the fix (drifted; then landed exactly on the dragged distance). `absorb()`'s line
+  branch now adds `strokeWidth/2` back.
+
+Two cosmetic findings were folded in alongside: the resize assertion in `label-designer.js`
+could not tell a resize from a move, since `absorb()`'s pre-existing `getScaledWidth()`
+read includes stroke and nudges width/height on *any* `object:modified` - now asserting most
+of the dragged distance landed rather than merely `notEqual`; and a short comment at both
+`originX`/`originY` pin sites notes that fabric's own PR #10715 deprecated the properties in
+the same 7.0.0 release that changed their default, so a bump that removes them needs a
+replacement here, not just a version bump.
