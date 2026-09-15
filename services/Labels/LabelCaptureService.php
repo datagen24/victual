@@ -36,20 +36,25 @@ class LabelCaptureService extends LabelService
         $catalogue = FieldCatalogue::For($entityKind);
         $table = FieldCatalogue::TableFor($entityKind);
 
-        $columns = ['id'];
+        // Keyed by column name rather than a plain list, so two fields that read the same
+        // column (or a repeated call to this field) still produce one SELECT item. A
+        // catalogue entry may carry a 'select' expression instead of a bare column - the
+        // path field reads a locations_resolved join rather than a stored column - and this
+        // is where that substitution happens; $row is still read back by 'column' below.
+        $select = ['id' => 'id'];
         foreach ($fieldNames as $field) {
             if (!isset($catalogue[$field])) {
                 $this->Refuse('fields', 'unknown_field', 'Field "' . $field . '" is not in the catalogue for ' . $entityKind);
             }
             $this->Authorize($catalogue[$field]['permission'], $field);
-            $columns[] = $catalogue[$field]['column'];
+            $definition = $catalogue[$field];
+            $select[$definition['column']] = $definition['select'] ?? $definition['column'];
         }
-        $columns = array_values(array_unique($columns));
 
         // Column-listed rather than SELECT *, for the reason group A already gives for the
         // locations reads: the import epoch is a server-owned generation and never leaves
         // through a path that did not mean to expose it.
-        $row = $this->Query('SELECT ' . implode(',', $columns) . " FROM $table WHERE id=?", [$targetId])->fetch(\PDO::FETCH_ASSOC);
+        $row = $this->Query('SELECT ' . implode(',', $select) . " FROM $table WHERE id=?", [$targetId])->fetch(\PDO::FETCH_ASSOC);
         if (!$row) {
             $this->Refuse('target_id', 'not_found', 'No such ' . $entityKind);
         }

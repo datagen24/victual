@@ -23,7 +23,8 @@ const base = urlIndex < 0 ? 'http://127.0.0.1:8200' : process.argv[urlIndex + 1]
 			const code = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop());
 			if (code === 'slow') { oldRequest = route; return; }
 			if (code === 'failure') { await route.fulfill({ status: 500, body: '{}' }); return; }
-			const result = code === 'live' ? { status: 'resolved', kind: 'location', target: { name: payload } }
+			const result = code === 'live' ? { status: 'resolved', kind: 'location', target: { name: 'Pantry', path: payload } }
+				: code === 'nested' ? { status: 'resolved', kind: 'location', target: { name: 'Door', path: 'Basement / StorageRoom / UprightFreezer / Door' } }
 				: code === 'retired' ? { status: 'retired', kind: 'location', snapshot: { name: 'Former ' + payload } }
 				: { status: 'unknown' };
 			await route.fulfill({ json: result });
@@ -34,8 +35,12 @@ const base = urlIndex < 0 ? 'http://127.0.0.1:8200' : process.argv[urlIndex + 1]
 			await page.waitForFunction(text => document.querySelector('#location-label-status').textContent === text, expected);
 		}
 		await scan('live', 'Location found');
+		// The path is what renders, not the bare name - issue 137 - and it is still text,
+		// never markup.
 		assert.equal(await name.textContent(), payload);
 		assert.equal(await name.locator('img').count(), 0);
+		await scan('nested', 'Location found');
+		assert.equal(await name.textContent(), 'Basement / StorageRoom / UprightFreezer / Door');
 		await scan('retired', 'Retired label — this location was deleted.');
 		assert.equal(await name.textContent(), 'Former ' + payload);
 		await scan('unknown', 'Unknown location label');
