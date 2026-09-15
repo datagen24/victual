@@ -91,23 +91,29 @@ Victual.Components.ProductCard.Refresh = function(productId)
 			$('#productcard-product-journal-button').removeClass("disabled");
 			$('#productcard-product-shoppinglist-button').removeClass("disabled");
 
-			if (productDetails.last_price !== null)
+			// productDetails carries no last_price/avg_price key at all for a caller without
+			// STOCK_PRICES_VIEW (FieldPolicy redaction, StockApiController::ProductDetails) -
+			// "!== null" alone does not catch that (undefined !== null is true), and the
+			// elements these write to do not exist in the DOM either way when
+			// $pricesVisible is false (views/components/productcard.blade.php), so guard on
+			// Victual.PricesVisible first rather than compute a price string nothing shows.
+			if (Victual.PricesVisible && productDetails.last_price !== null)
 			{
 				$('#productcard-product-last-price').text(__t("%1$s per %2$s", (productDetails.last_price * productDetails.qu_conversion_factor_price_to_stock).toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_price.name));
 				$('#productcard-product-last-price').attr("data-original-title", __t("%1$s per %2$s", productDetails.last_price.toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_stock.name));
 			}
-			else
+			else if (Victual.PricesVisible)
 			{
 				$('#productcard-product-last-price').text(__t('Unknown'));
 				$('#productcard-product-last-price').removeAttr("data-original-title");
 			}
 
-			if (productDetails.avg_price !== null)
+			if (Victual.PricesVisible && productDetails.avg_price !== null)
 			{
 				$('#productcard-product-average-price').text(__t("%1$s per %2$s", (productDetails.avg_price * productDetails.qu_conversion_factor_price_to_stock).toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_price.name));
 				$('#productcard-product-average-price').attr("data-original-title", __t("%1$s per %2$s", productDetails.avg_price.toLocaleString(undefined, { style: "currency", currency: Victual.Currency, minimumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display, maximumFractionDigits: Victual.UserSettings.stock_decimal_places_prices_display }), productDetails.quantity_unit_stock.name));
 			}
-			else
+			else if (Victual.PricesVisible)
 			{
 				$('#productcard-product-average-price').text(__t('Unknown'));
 				$().removeAttr("data-original-title");
@@ -135,8 +141,11 @@ Victual.Components.ProductCard.Refresh = function(productId)
 			RefreshLocaleNumberDisplay(".productcard");
 
 			// Price history chart: one dataset per shopping location plus a hidden aggregate
-			// "_TrendlineDataset" used only to render the overall trendline
-			if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			// "_TrendlineDataset" used only to render the overall trendline.
+			// Victual.PricesVisible, not the flag alone: GET stock/products/{id}/price-history
+			// refuses with 403 for a caller without STOCK_PRICES_VIEW even when the flag is
+			// on (StockApiController::ProductPriceHistory - the whole endpoint is the field).
+			if (Victual.PricesVisible)
 			{
 				Victual.Api.Get('stock/products/' + productId + '/price-history',
 					function(priceHistoryDataPoints)

@@ -5,6 +5,7 @@ namespace Victual\Controllers\Api;
 use Victual\Controllers\Users\User;
 use Victual\Helpers\Grocycode;
 use Victual\Helpers\WebhookRunner;
+use Victual\Services\FieldPolicy;
 use Victual\Services\RecipesService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -83,6 +84,7 @@ class RecipesApiController extends BaseApiController
 			}
 			else
 			{
+				$recipeResolved = FieldPolicy::GetInstance()->RedactRow('recipes_resolved', $recipeResolved);
 				return $this->ApiResponse($response, $recipeResolved);
 			}
 		});

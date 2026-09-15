@@ -76,8 +76,8 @@
 					<th>{{ $__t('Amount') }}</th>
 					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING) d-none @endif allow-grouping">{{ $__t('Due date') }}</th>
 					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING) d-none @endif allow-grouping">{{ $__t('Location') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif allow-grouping">{{ $__t('Store') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Price') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif allow-grouping">{{ $__t('Store') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Price') }}</th>
 					<th class="allow-grouping"
 						data-shadow-rowgroup-column="9">{{ $__t('Purchased date') }}</th>
 					<th class="d-none">Hidden purchased_date</th>
@@ -303,13 +303,14 @@
 						{{ $stockEntryLocation === null ? '' : $stockEntryLocation->path }}
 					</td>
 					<td id="stock-{{ $stockEntry->id }}-shopping-location"
-						class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif"
+						class="@if(!$pricesVisible) d-none @endif"
 						data-shopping-location-id="{{ $stockEntry->shopping_location_id }}">
 						@if (FindObjectInArrayByPropertyValue($shoppinglocations, 'id', $stockEntry->shopping_location_id) !== null)
 						{{ FindObjectInArrayByPropertyValue($shoppinglocations, 'id', $stockEntry->shopping_location_id)->name }}
 						@endif
 					</td>
-					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+					<td class="@if(!$pricesVisible) d-none @endif">
+						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$stockEntry->price}}</span>
 						<span id="stock-{{ $stockEntry->id }}-price"
 							data-toggle="tooltip"
@@ -318,6 +319,7 @@
 							title="{!! $__t('%1$s per %2$s', '<span class=\'locale-number locale-number-currency\'>' . $stockEntry->price . '</span>', FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_stock)->name) !!}">
 							{!! $__t('%1$s per %2$s', '<span class="locale-number locale-number-currency">' . $stockEntry->price * $stockEntry->qu_factor_price_to_stock . '</span>', FindObjectInArrayByPropertyValue($quantityunits, 'id', FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->qu_id_price)->name) !!}
 						</span>
+						@endif
 					</td>
 					<td>
 						<span id="stock-{{ $stockEntry->id }}-purchased-date">{{ $stockEntry->purchased_date }}</span>

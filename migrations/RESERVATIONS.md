@@ -67,6 +67,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
 | 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0281 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0282 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in this tree |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -99,8 +100,10 @@ needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migration
 
 0277 is a defect fix, not a plan — the same case 0260, 0261 and 0267 are, and per the ninth
 move above it took the lowest free slot rather than the next one after 0276, displacing plan
-30 (and, in train, 31 and 22) up by one. The next unclaimed number is **0282**, and it is
-claimed here before it is written.
+30 (and, in train, 31 and 22) up by one. 0282 is plan 19 piece 2's own number: it is scheduled
+(wave 5) and its file is being written on this branch, while 22's 0280-0281 stay claims with
+no file, so 0282 is the next free slot rather than a hole above the pair. The next unclaimed
+number is now **0283**.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering

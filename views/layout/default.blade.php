@@ -108,6 +108,12 @@
 		Victual.LocalizationStrings = {!! $LocalizationStrings !!};
 		Victual.LocalizationStringsQu = {!! $LocalizationStringsQu !!};
 		Victual.FeatureFlags = {!! json_encode($featureFlags) !!};
+		// Collapses VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING (instance-wide) and
+		// STOCK_PRICES_VIEW (per-user) into the one signal client-side code should read
+		// instead of the feature flag alone - see User::PricesVisible() and
+		// docs/plans/19-rbac.md piece 2. $pricesVisible is only set when authenticated
+		// (BaseController::Render()); unauthenticated pages render no stock data.
+		Victual.PricesVisible = {{ BoolToString(VICTUAL_AUTHENTICATED && $pricesVisible) }};
 		Victual.Webhooks = {
 		@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER && !VICTUAL_LABEL_PRINTER_RUN_SERVER)
 			"labelprinter" : {

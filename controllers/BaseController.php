@@ -116,6 +116,11 @@ class BaseController
 		{
 			$this->View->set('permissions', User::PermissionList());
 
+			// Collapses VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING and STOCK_PRICES_VIEW into
+			// the one condition every Blade view that renders a price checks - see
+			// User::PricesVisible() and docs/plans/19-rbac.md piece 2's "UI" section.
+			$this->View->set('pricesVisible', User::PricesVisible());
+
 			$decimalPlacesAmounts = UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'stock_decimal_places_amounts');
 			if ($decimalPlacesAmounts <= 0)
 			{

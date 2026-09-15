@@ -182,7 +182,7 @@
 					<th>{{ $__t('Product') }}</th>
 					<th class="allow-grouping">{{ $__t('Product group') }}</th>
 					<th>{{ $__t('Amount') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Value') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Value') }}</th>
 					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING) d-none @endif allow-grouping">{{ $__t('Next due date') }}</th>
 					<th class="d-none">Hidden location</th>
 					<th class="d-none">Hidden status</th>
@@ -190,14 +190,14 @@
 					<th>{{ VICTUAL_ENERGY_UNIT }} ({{ $__t('Per stock quantity unit') }})</th>
 					<th>{{ VICTUAL_ENERGY_UNIT }}</th>
 					<th class="allow-grouping">{{ $__t('Last purchased') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Last price') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Last price') }}</th>
 					<th class="allow-grouping">{{ $__t('Min. stock amount') }}</th>
 					<th>{{ $__t('Product description') }}</th>
 					<th class="allow-grouping">{{ $__t('Parent product') }}</th>
 					<th class="allow-grouping">{{ $__t('Default location') }}</th>
 					<th>{{ $__t('Product picture') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">{{ $__t('Average price') }}</th>
-					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif allow-grouping">{{ $__t('Default store') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Average price') }}</th>
+					<th class="@if(!$pricesVisible) d-none @endif allow-grouping">{{ $__t('Default store') }}</th>
 
 					@include('components.userfields_thead', array(
 					'userfields' => $userfields
@@ -388,9 +388,11 @@
 						@endif
 					</td>
 					<td>
+						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->value}}</span>
 						<span id="product-{{ $currentStockEntry->product_id }}-value"
 							class="locale-number locale-number-currency">{{ $currentStockEntry->value }}</span>
+						@endif
 					</td>
 					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING) d-none @endif">
 						<span id="product-{{ $currentStockEntry->product_id }}-next-due-date">{{ $currentStockEntry->best_before_date }}</span>
@@ -444,7 +446,8 @@
 						<time class="timeago timeago-contextual"
 							datetime="{{ $currentStockEntry->last_purchased }}"></time>
 					</td>
-					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+					<td class="@if(!$pricesVisible) d-none @endif">
+						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->last_price}}</span>
 						@if(!empty($currentStockEntry->last_price))
 						<span data-toggle="tooltip"
@@ -453,6 +456,7 @@
 							title="{!! $__t('%1$s per %2$s', '<span class=\'locale-number locale-number-currency\'>' . $currentStockEntry->last_price . '</span>', $currentStockEntry->qu_stock_name) !!}">
 							{!! $__t('%1$s per %2$s', '<span class="locale-number locale-number-currency">' . $currentStockEntry->last_price * $currentStockEntry->product_qu_factor_price_to_stock . '</span>', $currentStockEntry->qu_price_name) !!}
 						</span>
+						@endif
 						@endif
 					</td>
 					<td>
@@ -474,7 +478,8 @@
 							loading="lazy">
 						@endif
 					</td>
-					<td class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif">
+					<td class="@if(!$pricesVisible) d-none @endif">
+						@if($pricesVisible)
 						<span class="custom-sort d-none">{{$currentStockEntry->average_price}}</span>
 						@if(!empty($currentStockEntry->average_price))
 						<span data-toggle="tooltip"
@@ -483,6 +488,7 @@
 							title="{!! $__t('%1$s per %2$s', '<span class=\'locale-number locale-number-currency\'>' . $currentStockEntry->average_price . '</span>', $currentStockEntry->qu_stock_name) !!}">
 							{!! $__t('%1$s per %2$s', '<span class="locale-number locale-number-currency">' . $currentStockEntry->average_price * $currentStockEntry->product_qu_factor_price_to_stock . '</span>', $currentStockEntry->qu_price_name) !!}
 						</span>
+						@endif
 						@endif
 					</td>
 					<td>
