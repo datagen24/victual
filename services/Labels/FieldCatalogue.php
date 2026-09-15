@@ -20,7 +20,7 @@ use Victual\Controllers\Users\User;
 class FieldCatalogue
 {
     /**
-     * @return array<string, array{column: string, permission: string, max_length: int, null: string, type: string}>
+     * @return array<string, array{column: string, select?: string, permission: string, max_length: int, null: string, type: string}>
      */
     public static function For(string $entityKind): array
     {
@@ -62,6 +62,10 @@ class FieldCatalogue
                 // resamples".
                 'location.path' => [
                     'column' => 'path',
+                    // Bare 'locations.id', matching TableFor('location') and the unaliased
+                    // FROM clause LabelCaptureService::Capture() builds around it - the two
+                    // already have to agree on the table name, this just also agrees on it
+                    // carrying no alias.
                     'select' => '(SELECT r.path FROM locations_resolved r WHERE r.ancestor_location_id = locations.id AND r.descendant_location_id = locations.id) AS path',
                     'permission' => User::PERMISSION_STOCK_VIEW,
                     'max_length' => 750,

@@ -71,6 +71,27 @@ runLabelTests(function (PDO $db, string $schema) {
     $db->exec('DELETE FROM locations WHERE id = 3');
     $db->exec('DELETE FROM locations WHERE id = 2');
 
+    // --- location.path refuses rather than printing a blank line when there is no self row -
+    // Unreachable through the app - check_location_parent refuses nesting past
+    // hierarchy_depth_limit() before the row is ever written - so building the chain that
+    // produces the condition means disabling the guard this fixture is not testing, for
+    // exactly as long as it takes to build it.
+    $db->exec('ALTER TABLE locations DISABLE TRIGGER check_location_parent');
+    $parentId = null;
+    for ($level = 0; $level <= 6; $level++) {
+        $id = 100 + $level;
+        $db->exec('INSERT INTO locations (id, name, parent_location_id) VALUES (' . $id . ', ' . $db->quote('Deep ' . $level) . ', ' . ($parentId ?? 'NULL') . ')');
+        $parentId = $id;
+    }
+    $db->exec('ALTER TABLE locations ENABLE TRIGGER check_location_parent');
+    $deepId = 106;
+    check((int)$db->query("SELECT count(*) FROM locations_resolved WHERE descendant_location_id = $deepId")->fetchColumn() === 0, 'A location past hierarchy_depth_limit() has no self row');
+    refused(fn () => tx($db, fn () => (new LabelCaptureService($db))->Capture('location', $deepId, null, ['location.path'], 'en', 'UTC', null)), 'field_unavailable');
+    for ($level = 6; $level >= 0; $level--) {
+        // guard_location_children is still enabled throughout, so deepest first.
+        $db->exec('DELETE FROM locations WHERE id = ' . (100 + $level));
+    }
+
     // --- Verification refuses a renderer that got it wrong ---------------------------------
     $requests = new RenderRequestService($db);
     $input = tx($db, fn () => $requests->Claim());
