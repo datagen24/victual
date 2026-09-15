@@ -62,12 +62,24 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | in this tree |
 | 0275 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | in this tree |
 | 0276 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view, and `locations.tare_weight`/`tare_qu_id` (wave 4) | in this tree |
-| 0277 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | **claimed, unwritten** |
-| 0278 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | **claimed, unwritten** |
-| 0279 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0277 | [issue #148](https://github.com/datagen24/victual/issues/148) — `enfore_product_nesting_level` fires on `INSERT` as well as `UPDATE`, checks the nesting relationship in both directions, and nulls out any existing multi-level chain | in this tree |
+| 0278 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | **claimed, unwritten** |
+| 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | **claimed, unwritten** |
+| 0280 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0281 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
+
+Renumbered again 2026-09-15, the ninth application of the same rule and the first where the
+number displaced is a plan's own rather than a moving pair of drafts. Plan 30 names its own
+prerequisite in its header: "Fix issue 148 before writing it: the nesting-level trigger this
+plan copies fires only on `UPDATE`." That fix is being written now, on this branch, which
+makes it the thing with a real file behind it — the same standing plans 03, 25 and 27 had on
+the fifth, sixth and seventh moves — while 0278–0281 remain claims with no file. So the fix
+takes the lowest free slot, 0277, and plans 30, 31 and 22 each move up by one: 30 to 0278, 31
+to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/30-nested-product-groups.md) and
+[31](../docs/plans/31-directed-substitution.md)'s own migration-number lines move with this
+table; [22](../docs/plans/22-medication-tracking.md)'s numbering note does too.
 
 ## The merge order this implies — discharged
 
@@ -85,7 +97,10 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-The next migration takes **0281** and claims it here first.
+0277 is a defect fix, not a plan — the same case 0260, 0261 and 0267 are, and per the ninth
+move above it took the lowest free slot rather than the next one after 0276, displacing plan
+30 (and, in train, 31 and 22) up by one. The next unclaimed number is **0282**, and it is
+claimed here before it is written.
 
 0263 and 0264 are one change in two numbers on purpose: the column has to exist before the
 data migration that fills it runs, and a number selects a file rather than an ordering
@@ -102,8 +117,10 @@ about and the reason no `--allow-reserved-holes` waiver is needed.
 Plan 23's number is now fixed — it has a file on disk and does not move again, whatever else
 gets renumbered around it. What sits behind it moved once more on `master` while this branch
 was landing 0274 (see the renumbering note above the table): 28 owns 0275, 29 owns 0276, 30
-owns 0277 and 31 owns 0278, ahead of 22 at 0279–0280, because all four are scheduled into
-wave 4 while 22 remains an unscheduled draft. The next unclaimed number is 0281.
+owned 0277 and 31 owned 0278, ahead of 22 at 0279–0280, because all four were scheduled into
+wave 4 while 22 remained an unscheduled draft. The ninth move (see above the table) then took
+0277 for the fix issue 148 asks plan 30 to depend on, moving 30 to 0278, 31 to 0279 and 22 to
+0280–0281. The next unclaimed number is 0282.
 
 **Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written**:
 claimed as 0261–0262

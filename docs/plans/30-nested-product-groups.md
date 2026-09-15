@@ -13,10 +13,12 @@ exactly.
 scheduled this plan — after ADR-0023's acceptance, not as part of it.
 **Status:** draft for review, **scheduled into wave 4 2026-09-14**, first of the two product
 plans. Tracked as [issue 124](https://github.com/datagen24/victual/issues/124). Migration
-**0277**, renumbered from 0277 on scheduling (lowest free slot; see
-[RESERVATIONS.md](../../migrations/RESERVATIONS.md)). Fix
-[issue 148](https://github.com/datagen24/victual/issues/148) before writing it: the
-nesting-level trigger this plan copies fires only on `UPDATE`.
+**0278**, renumbered from 0277 to make room for
+[issue 148](https://github.com/datagen24/victual/issues/148)'s own migration 0277 (see
+[RESERVATIONS.md](../../migrations/RESERVATIONS.md)). That issue is now fixed: the
+nesting-level trigger this plan copies fired only on `UPDATE`, never `INSERT`, and checked
+only one of the two directions a violation can arrive from. Copy `trg_enfore_product_nesting_level`
+as migrations/0277.pgsql.sql left it, not as the baseline still shows it.
 
 ## Why this is a small plan
 

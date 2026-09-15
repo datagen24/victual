@@ -10,9 +10,9 @@ relates; [14](14-contract-and-regression-scaffolding.md) piece 2, which freezes 
 contract this adds to.
 **Status:** draft for review, **scheduled into wave 4 2026-09-14**, after
 [30](30-nested-product-groups.md). Tracked as
-[issue 125](https://github.com/datagen24/victual/issues/125). Migration **0278**, renumbered
-from 0278 on scheduling (lowest free slot; see
-[RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
+[issue 125](https://github.com/datagen24/victual/issues/125). Migration **0279**, renumbered
+from 0278 to make room for [issue 148](https://github.com/datagen24/victual/issues/148)'s
+migration ahead of 30's (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
 
 ## Why this exists
 

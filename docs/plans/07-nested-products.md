@@ -308,9 +308,10 @@ What survives, and where it lives now:
 - `hierarchy_depth_limit()`, which [08](08-nested-locations.md) wrote generic expecting this
   plan to be its second consumer, is consumed by [30](30-nested-product-groups.md) instead.
 - The one-level `parent_product_id` for genuine packaging is unchanged and is now defined by
-  ADR-0023 decision 2. Its trigger enforces the level on `UPDATE` only, never `INSERT`, in
-  both engines — [issue 148](https://github.com/datagen24/victual/issues/148), found while
-  meeting prerequisite 4 and to be fixed before 30 copies that trigger.
+  ADR-0023 decision 2. Its trigger enforced the level on `UPDATE` only, never `INSERT`, and
+  checked only one of the two directions a violation can arrive from —
+  [issue 148](https://github.com/datagen24/victual/issues/148), found while meeting
+  prerequisite 4 and fixed by migration `0277.pgsql.sql` before 30 copies that trigger.
 - The directed "beans become grounds, grounds never become beans" relation, which question 2's
   mixed node and question 6's separate-products finding left with nowhere to live, is
   [31](31-directed-substitution.md).
