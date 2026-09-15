@@ -209,11 +209,11 @@ both yield and both keep their relative order: 22 moves from 0282–0283 to **02
 from 0284 to **0285**. Their own numbering lines move with this table. The next unclaimed
 number is now **0286**.
 
-Worth saying plainly, because this is the second collision in two days and the first was read
-as bad luck: plan 32's claim and this migration were made hours apart by branches that could
-not see each other, exactly as the note above describes. The rule is what makes that
-survivable rather than a thing to apologise for — a claim is a placeholder, a file is a fact,
-and the placeholder is the one that moves.
+That is two collisions in two days, and both have the same mechanical cause the note above
+already names: plan 32's claim and this migration were made hours apart by branches that could
+not see each other, and this table cannot serialize branches that have not talked. Neither
+claim was wrong when it was made. What the rule does is decide the tie without either branch
+having to be at fault — a claim is a placeholder, a file is a fact, and the placeholder moves.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23
