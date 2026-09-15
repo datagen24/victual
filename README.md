@@ -39,7 +39,7 @@ Infrastructure and feature work remain in progress; there is no regular release 
 | MQTT and InfluxDB | State publication and event delivery implemented. Some Home Assistant checks remain outstanding. |
 | Production containers | Five Nix-built images (application, web, migrate, label renderer, label worker) and working pod manifests. K3S manifests, credential separation, and the SIGTERM check remain. |
 | Hardening | API error handling, authentication fixes, write transactions, and frontend sink fixes implemented. Contract snapshots and cleanup remain. |
-| Household features | Category minimums, nested locations and storage classes are implemented. Open-container measurement, working-container replenishment, nested product groups, directed substitution, store-aware shopping lists, barcode sources, and medication tracking are planned. |
+| Household features | Category minimums, nested locations, storage classes, open-container measurement and working-container replenishment (a weighed bin refilled from backstock) are implemented. Nested product groups, directed substitution, store-aware shopping lists, barcode sources, and medication tracking are planned. |
 | Labels | Opaque `vctl:` label identities, print jobs, printer configuration, a browser template designer, a headless renderer, and a delivery worker are implemented; a location label was printed and scanned back on 2026-09-09. Deployment of the worker under K3S remains. The five entity types that printed before still use the webhook. |
 | Assistants and clients | MCP and first-party client work are planned. |
 
