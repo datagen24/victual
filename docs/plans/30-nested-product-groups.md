@@ -11,8 +11,9 @@ the products this groups; [08](08-nested-locations.md), whose pattern this copie
 exactly.
 **Replaces:** [07](07-nested-products.md), retired 2026-09-14 by the pull request that
 scheduled this plan — after ADR-0023's acceptance, not as part of it.
-**Status:** draft for review, **scheduled into wave 4 2026-09-14**, first of the two product
-plans. Tracked as [issue 124](https://github.com/datagen24/victual/issues/124). Migration
+**Status:** landed in wave 4, 2026-09-15; see [Executed](#executed). Was scheduled 2026-09-14 as
+the first of the two product plans and tracked as
+[issue 124](https://github.com/datagen24/victual/issues/124). Migration
 **0278**, renumbered from 0277 to make room for
 [issue 148](https://github.com/datagen24/victual/issues/148)'s own migration 0277 (see
 [RESERVATIONS.md](../../migrations/RESERVATIONS.md)). That issue is now fixed: the
