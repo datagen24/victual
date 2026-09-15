@@ -29,17 +29,32 @@
 //   5. The existing parent/child substitution, with no directed edge anywhere in the fixture,
 //      still works unchanged - the control that this whole feature is additive per the plan's
 //      own verification list.
-//   6. Q2 answered and asserted either way: a chain (A substitutes for B, B for C) does not
+//   6. A sub product's own stock, not its parent's: a review round on the first version of
+//      this migration found from_product_amount_in_stock joined through the candidate's
+//      parent, which reads every shared_parent candidate's family total rather than its own
+//      contribution - invisible with a top-level candidate (its own id and its "parent" id,
+//      via products_resolved, are the same row) and wrong the moment the candidate has a
+//      parent of its own, since stock_current carries the sub product's own row too.
+//   7. A directed edge that duplicates an existing shared_parent pair is not offered twice.
+//      Nothing ties product_substitutions to parent_product_id, so a directed edge X -> P can
+//      be added where X already is P's sub product; the same review round found the UNION
+//      does not dedupe this on its own, because the two branches disagree on `direction`.
+//   8. Q2 answered and asserted either way: a chain (A substitutes for B, B for C) does not
 //      offer A for C. Migration 0279's own comment gives the reason (no transitive closure in
 //      this migration); this is the fixture-level proof of it.
-//   7. Cascade delete: deleting a product removes every edge naming it on either side, folded
+//   9. Cascade delete: deleting a product removes every edge naming it on either side, folded
 //      into trg_cascade_product_removal alongside product_barcodes and
 //      quantity_unit_conversions.
-//   8. The entities: /objects/product_substitutions (read/write) and
+//  10. MergeProducts() carries substitution edges to the kept product rather than silently
+//      losing them to the cascade delete case 9 exercises: an edge between the two products
+//      being merged is dropped (it would become a self-edge), and an edge from or to the
+//      removed product that would duplicate one the kept product already has is dropped
+//      rather than repointed into a UNIQUE violation.
+//  11. The entities: /objects/product_substitutions (read/write) and
 //      /objects/product_substitutions_resolved (read-only, refuses write) through
 //      GenericEntityApiController, plus the read policy gate nested-product-groups-tests.php
 //      exercises the same way for its own resolved view.
-//   9. GetProductDetails() carries substitution_candidates, ordered by whether the candidate
+//  12. GetProductDetails() carries substitution_candidates, ordered by whether the candidate
 //      is actually in stock (descending) and then by its own earliest best-before date.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
@@ -255,9 +270,34 @@ check((int)$statement->fetchColumn() === $seedSub,
 check(Candidates($seedParent) === [$seedSub => 'shared_parent'],
 	'and product_substitutions_resolved also carries the same pair, unioned in from products_resolved');
 
-// --- 6. Q2: no transitive closure -------------------------------------------------------------
+// --- 6. A sub product candidate's own stock, not its parent's -------------------------------
 
-echo "\n6. a chain is not offered end-to-end (open question 2, answered no in this migration)\n";
+echo "\n6. a sub product candidate reports its own stock, not its parent's family total\n";
+
+$herbParent = MakeProduct('Herb Parent (has its own stock too)');
+$herbSub = MakeProduct('Herb Sub (the actual candidate)', $herbParent);
+$herbWanted = MakeProduct('Herb Wanted');
+AddStock($herbParent, 100, '2027-03-01');
+AddStock($herbSub, 3, '2027-04-01');
+MakeEdge($herbSub, $herbWanted);
+
+$statement = $pdo->prepare('SELECT from_product_amount_in_stock FROM product_substitutions_resolved WHERE from_product_id = ? AND to_product_id = ?');
+$statement->execute([$herbSub, $herbWanted]);
+$herbSubAmount = (float)$statement->fetchColumn();
+check(abs($herbSubAmount - 3.0) < 0.000001,
+	"the candidate's own 3 units, not the parent's 100-unit family total (got $herbSubAmount)");
+
+// --- 7. A directed edge duplicating an existing shared_parent pair is not offered twice -----
+
+echo "\n7. a directed edge that duplicates an existing shared_parent pair is not offered twice\n";
+
+MakeEdge($herbSub, $herbParent);
+check(Candidates($herbParent) === [$herbSub => 'shared_parent'],
+	'Herb Sub is offered for Herb Parent exactly once, as shared_parent, even though a redundant directed edge for the same pair also exists');
+
+// --- 8. Q2: no transitive closure -------------------------------------------------------------
+
+echo "\n8. a chain is not offered end-to-end (open question 2, answered no in this migration)\n";
 
 $wholeSpice = MakeProduct('Whole Spice');
 $crackedSpice = MakeProduct('Cracked Spice');
@@ -270,9 +310,9 @@ check(Candidates($groundSpice) === [$crackedSpice => 'directed'],
 check(!array_key_exists($wholeSpice, Candidates($groundSpice)),
 	'but not whole spice - the chain is not resolved transitively');
 
-// --- 7. Cascade delete -------------------------------------------------------------------------
+// --- 9. Cascade delete -------------------------------------------------------------------------
 
-echo "\n7. deleting a product removes every edge naming it\n";
+echo "\n9. deleting a product removes every edge naming it\n";
 
 $doomedFrom = MakeProduct('Doomed (from side)');
 $doomedTo = MakeProduct('Doomed (to side)');
@@ -287,9 +327,52 @@ $statement = $pdo->prepare('SELECT COUNT(*) FROM product_substitutions WHERE fro
 $statement->execute([$doomedFrom, $doomedTo, $doomedFrom, $doomedTo]);
 check((int)$statement->fetchColumn() === 0, 'both edges are gone, from either side of the pair');
 
-// --- 8. The entities -----------------------------------------------------------------------
+// --- 10. MergeProducts() carries substitution edges, rather than losing them to the cascade -
 
-echo "\n8. /objects/product_substitutions and /objects/product_substitutions_resolved\n";
+echo "\n10. MergeProducts() carries substitution edges to the kept product\n";
+
+$mergeKeep = MakeProduct('Merge Keep');
+$mergeRemove = MakeProduct('Merge Remove');
+$mergeOther = MakeProduct('Merge Other');
+$mergeShared = MakeProduct('Merge Shared Target');
+
+// This edge is between the two products being merged, so it would become a self-edge once
+// repointed - it has to be dropped, not carried over in either direction.
+MakeEdge($mergeRemove, $mergeKeep);
+// This edge names the removed product on each side in turn, and neither collides with
+// anything Merge Keep already has - both should simply be repointed.
+$edgeFromRemove = MakeEdge($mergeRemove, $mergeOther);
+$edgeToRemove = MakeEdge($mergeOther, $mergeRemove);
+// This edge from the removed product would duplicate one the kept product already has once
+// repointed (both would read Merge Keep -> Merge Shared Target) - it has to be dropped rather
+// than repointed into a UNIQUE violation, leaving Merge Keep's own edge as the survivor.
+$keptDuplicateSurvivor = MakeEdge($mergeKeep, $mergeShared);
+MakeEdge($mergeRemove, $mergeShared);
+
+StockService::GetInstance()->MergeProducts($mergeKeep, $mergeRemove);
+
+check((int)$pdo->query('SELECT COUNT(*) FROM product_substitutions WHERE from_product_id = ' . $mergeKeep . ' AND to_product_id = ' . $mergeKeep)->fetchColumn() === 0,
+	'the edge between the merged pair became a self-edge and was dropped, not carried over');
+
+$statement = $pdo->prepare('SELECT from_product_id, to_product_id FROM product_substitutions WHERE id = ?');
+$statement->execute([$edgeFromRemove]);
+check($statement->fetch(PDO::FETCH_ASSOC) === ['from_product_id' => $mergeKeep, 'to_product_id' => $mergeOther],
+	'Merge Remove -> Merge Other repointed to Merge Keep -> Merge Other, same row');
+$statement->execute([$edgeToRemove]);
+check($statement->fetch(PDO::FETCH_ASSOC) === ['from_product_id' => $mergeOther, 'to_product_id' => $mergeKeep],
+	'Merge Other -> Merge Remove repointed to Merge Other -> Merge Keep, same row');
+
+check((int)$pdo->query('SELECT COUNT(*) FROM product_substitutions WHERE from_product_id = ' . $mergeKeep . ' AND to_product_id = ' . $mergeShared)->fetchColumn() === 1,
+	'the colliding pair (Keep -> Shared Target) exists exactly once after the merge, not twice');
+check((int)$pdo->query('SELECT COUNT(*) FROM product_substitutions WHERE id = ' . $keptDuplicateSurvivor)->fetchColumn() === 1,
+	"the kept product's own pre-existing edge is the survivor, not a repointed copy");
+
+check((int)$pdo->query('SELECT COUNT(*) FROM products WHERE id = ' . $mergeRemove)->fetchColumn() === 0,
+	'the removed product is actually gone, so this is testing MergeProducts() and not a no-op');
+
+// --- 11. The entities -----------------------------------------------------------------------
+
+echo "\n11. /objects/product_substitutions and /objects/product_substitutions_resolved\n";
 
 $api = new GenericEntityApiController($container);
 
@@ -340,9 +423,9 @@ check($readStatus() === 200, 'a user whose role grants STOCK_VIEW may read it');
 
 ActAs('ADMIN');
 
-// --- 9. GetProductDetails() carries substitution_candidates, ordered ------------------------
+// --- 12. GetProductDetails() carries substitution_candidates, ordered ------------------------
 
-echo "\n9. GetProductDetails() substitution_candidates\n";
+echo "\n12. GetProductDetails() substitution_candidates\n";
 
 $wanted = MakeProduct('Wanted Product');
 $inStockLate = MakeProduct('Candidate In Stock, Later Best-Before');

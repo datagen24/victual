@@ -1,10 +1,6 @@
 @extends('layout.default')
 
-@if($mode == 'edit')
-@section('title', $__t('Edit substitution'))
-@else
 @section('title', $__t('Create substitution'))
-@endif
 
 @section('content')
 <div class="row">
@@ -24,19 +20,8 @@
 	<div class="col-lg-6 col-12">
 
 		<script>
-			Victual.EditMode = '{{ $mode }}';
 			Victual.EditObjectProduct = {!! json_encode($product) !!};
 		</script>
-
-		@if($mode == 'edit')
-		<script>
-			Victual.EditObjectId = {{ $substitution->id }};
-			Victual.EditObject = {!! json_encode($substitution) !!};
-		</script>
-		@php $direction = $substitution->from_product_id == $product->id ? 'this' : 'other'; @endphp
-		@else
-		@php $direction = $direction ?? 'this'; @endphp
-		@endif
 
 		<form id="product-substitution-form"
 			novalidate>
@@ -69,16 +54,8 @@
 				</div>
 			</div>
 
-			@php
-			$prefillById = '';
-			if ($mode == 'edit')
-			{
-				$prefillById = $direction == 'this' ? $substitution->to_product_id : $substitution->from_product_id;
-			}
-			@endphp
 			@include('components.productpicker', array(
 			'products' => $otherProducts,
-			'prefillById' => $prefillById,
 			'disallowAllProductWorkflows' => true,
 			'isRequired' => true,
 			'label' => 'Other product'

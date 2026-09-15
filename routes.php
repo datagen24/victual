@@ -100,7 +100,7 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/quantityunitpluraltesting', [StockController::class, 'QuantityUnitPluralFormTesting']);
 	$group->get('/stockjournal/summary', [StockController::class, 'JournalSummary']);
 	$group->get('/productbarcodes/{productBarcodeId}', [StockController::class, 'ProductBarcodesEditForm']);
-	$group->get('/productsubstitutions/{productSubstitutionId}', [StockController::class, 'ProductSubstitutionEditForm']);
+	$group->get('/productsubstitutions/new', [StockController::class, 'ProductSubstitutionEditForm']);
 	$group->get('/stockentry/{entryId}/grocycode', [StockController::class, 'StockEntryGrocycodeImage']);
 	$group->get('/stockentry/{entryId}/label', [StockController::class, 'StockEntryGrocycodeLabel']);
 	$group->get('/quantityunitconversionsresolved', [StockController::class, 'QuantityUnitConversionsResolved']);

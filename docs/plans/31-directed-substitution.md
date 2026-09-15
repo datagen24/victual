@@ -186,18 +186,32 @@ rollback`), and an unconditional read of `product_substitutions_resolved` fatale
 SQLite, gated on `DatabaseService::GetInstance()->GetDialect()->GetName() === 'pgsql'`, and
 `run-tests.sh all` is clean with this fix in place.
 
-**The candidates view unions two sources without disturbing either.** `product_substitutions`
+**The candidates view unions two sources without disturbing either — and a first review round
+found both halves of that sentence wrong as originally written.** `product_substitutions`
 (`direction = 'directed'`) and `products_resolved` filtered to `sub_product_id !=
-parent_product_id` (`direction = 'shared_parent'`) are combined with `UNION` (not `UNION ALL`
-— the two sources cannot produce the same `(from, to)` pair, since one requires a shared parent
-and the other forbids a self-edge, but `UNION`'s dedup is free insurance and costs nothing a
-plain edge table pays for). Stock is read through `products_resolved`/`stock_current` rather
-than `stock_next_use`, deliberately: `stock_next_use` carries one row per physical stock entry,
-so joining it straight to `from_product_id` would have multiplied a candidate row per stock
-entry the way `products_current_substitutions` avoids only by ending in a single-row `LIMIT
-1`. `stock_current` is already the per-product rollup keyed by the normalized top-level id, so
-a candidate that is itself a sub product is normalized to its own rollup the same way the
-existing mechanism already treats it, and the view stays one row per edge.
+parent_product_id` (`direction = 'shared_parent'`) are combined with `UNION`. The first draft's
+comment claimed the two sources "cannot produce the same `(from, to)` pair" — false: nothing
+ties `product_substitutions` to `parent_product_id`, so a directed edge `X -> P` can be added
+where `X` already is `P`'s sub product under the existing mechanism, and because the two
+branches disagree on `direction` the rows differ and `UNION`'s dedup does not catch it, so `P`'s
+candidates listed `X` twice. Fixed by excluding, from the directed branch only, any pair
+`products_resolved` already carries (`WHERE NOT EXISTS (SELECT 1 FROM products_resolved pr
+WHERE pr.sub_product_id = ps.from_product_id AND pr.parent_product_id = ps.to_product_id)`).
+Stock was read through `products_resolved` to a candidate's *parent's* `stock_current` row,
+which is that parent's family total, not the candidate's own contribution — invisible with a
+top-level candidate (its own id and its "parent" id, via `products_resolved`, are the same row,
+so the bug and the fix read identically) and wrong for any candidate that is itself a sub
+product, since `stock_current` already carries that sub product's own un-rolled-up row too
+(`04_views_l1a.sql`'s second `UNION` half, keyed by `pr.sub_product_id AS product_id`). Fixed by
+joining `stock_current` on `from_product_id` directly, dropping the parent join entirely — not
+`stock_next_use`, still, for the original, separate, correct reason: it carries one row per
+physical stock entry, so joining it straight to `from_product_id` would multiply a candidate
+row per stock entry the way `products_current_substitutions` avoids only by ending in a
+single-row `LIMIT 1`. Both defects were in the migration as first pushed to the PR, caught by a
+maintainer review round (not by the suite, whose case 9 at the time only ever created top-level
+candidates — a case exercising a sub-product candidate was added alongside the fix, per the
+same lesson plan 30's own Executed section already recorded once: a suite that does not
+construct the exact shape a defect needs does not find it by accident).
 
 **API.** `product_substitutions` (writable) and `product_substitutions_resolved` (read-only)
 in the three `ExposedEntity*` enums and `EntityReadPolicy::PERMISSIONS`
@@ -218,37 +232,75 @@ default consume rule and never named one substitution source as preferred over t
 
 **UI.** A "Substitutions" section on the product edit form (`views/productform.blade.php`),
 built on the barcodes section's exact pattern: a `DataTable` listing edges naming this product
-on either side, worded per direction, linked to the other product by name, and an "Add" button
-opening `views/productsubstitutionform.blade.php` as an embedded dialog
-(`views/components/productpicker` for the other product, a direction radio, translated to
-`from_product_id`/`to_product_id` in `public/viewjs/productsubstitutionform.js` before the
-`POST`/`PUT`, the same way the barcode form remaps `display_amount` to `amount`). The
-consume-screen and shopping-list suggestion surfaces the plan also asks for are **not built**:
-they are a materially different piece of work (surfacing a candidate at the moment a wanted
-product is absent, one-tap per plan 29's own requirement) from managing the edges themselves,
-and nothing in the verification list depends on them existing yet — left for a follow-on the
-way plan 30 left its own questions 1–3.
+on either side, worded per direction, linked to the other product by name (looked up in an
+unfiltered product list — a review round caught the first version filtering that lookup to
+active products only, so an edge naming a since-deactivated product rendered an empty cell
+next to a still-live delete button; the picker for choosing a *new* edge's other product stays
+active-only, correctly), and an "Add" button opening `views/productsubstitutionform.blade.php`
+as an embedded dialog (`views/components/productpicker` for the other product, a direction
+radio, translated to `from_product_id`/`to_product_id` in
+`public/viewjs/productsubstitutionform.js` before the `POST`, the same way the barcode form
+remaps `display_amount` to `amount`). **Create only** — an edge has nothing to edit beyond
+which two products and which direction, both picked once, so the table offers delete, not
+edit; the same review round found the form's edit-mode branch, its route parameter, and the
+JS `PUT` path were all unreachable dead code (nothing in the table ever linked to them) and cut
+rather than wired up, matching plan 30's own "removed rather than debugged blind" precedent for
+speculative surface. The route (`GET /productsubstitutions/new`) also gained a guard the first
+version lacked: the required `product` query parameter is checked before use, raising
+`HttpNotFoundException` when absent, rather than dereferencing a null product straight into the
+blade. The consume-screen and shopping-list suggestion surfaces the plan also asks for are
+**not built**: they are a materially different piece of work (surfacing a candidate at the
+moment a wanted product is absent, one-tap per plan 29's own requirement) from managing the
+edges themselves, and nothing in the verification list depends on them existing yet — left for
+a follow-on the way plan 30 left its own questions 1–3.
+
+**`MergeProducts()` needed a fourth review-round fix, in code this plan does not otherwise
+touch.** It re-points `stock`, `stock_log`, `product_barcodes`, `quantity_unit_conversions`,
+`recipes_pos`, `recipes`, `meal_plan` and `shopping_list` from the removed product to the kept
+one before deleting the removed row — and `trg_cascade_product_removal`'s own
+`product_substitutions` cleanup, fired by that `DELETE`, would otherwise drop every edge naming
+the removed product rather than carrying it to the survivor, silently, with no error and no
+suite anywhere noticing (nothing before this plan referenced the table at all). Fixed with the
+same re-point-then-delete shape the method already uses for every other table, in three passes
+required by the two constraints an edge can violate once repointed: first, an edge *between*
+the two products being merged is dropped outright (it would become a self-edge, refused by
+`product_substitutions_no_self_edge`); second, an edge from or to the removed product that
+would duplicate one the kept product already has is dropped rather than repointed (it would
+violate `product_substitutions_pair_key`), leaving the kept product's own pre-existing edge as
+the survivor rather than a copy; third, whatever remains is repointed on both columns.
 
 **Verification**, against real PostgreSQL 16.13 (`postgres:16` at the OS package level, on
 2026-09-15): `php .devtools/pgsql/check-migrations.php` reports `MIGRATION NUMBERING OK` with
-no waiver. The new `.devtools/pgsql/product-substitutions-tests.php`
-(`run-tests.sh substitutions`) passes all 26 assertions on its first run: direction both ways
-on two independent pairs, the self-edge and duplicate-pair guards by exact constraint name, a
-product with no edges, the parent/child control unchanged, the chain case (Q2), cascade
-delete from either side, the API create/read/delete round trip and the resolved view's refusal
-of every write verb, the read-policy gate, and `GetProductDetails()`'s ordering. `run-tests.sh
-migrate` required `product_substitutions` added to `.devtools/pgsql/migratedifftest.php`'s
-`ENGINE_EXCLUSIVE_TABLES` (the same mechanism `product_location_min_stock` and
-`storage_classes` already use) before it passed; `run-tests.sh views` and `run-tests.sh
-triggers` needed no changes and pass unchanged, which is itself the proof that
-`products_current_substitutions` and the differential harness are untouched. `run-tests.sh
-all` is clean end to end, the `GetProductDetails()` SQLite fix included. PHP lint (`php -l`) is
-clean on every changed file, `victual.openapi.json` parses as valid JSON, the workflow YAML
-parses, and `php .devtools/check-cited-jobs.php` reports every cited job exists.
+no waiver. `.devtools/pgsql/product-substitutions-tests.php` (`run-tests.sh substitutions`)
+passed all 26 of its original assertions on first run, before the maintainer review round
+above found the two view defects and the `MergeProducts()` gap none of those 26 exercised;
+three new cases (a sub-product candidate's own stock vs. its parent's, a directed edge
+duplicating a `shared_parent` pair, `MergeProducts()`'s three-pass repoint) bring it to **34
+assertions, all passing** against the fixed migration and service method. `run-tests.sh
+migrate` required `product_substitutions` added to
+`.devtools/pgsql/migratedifftest.php`'s `ENGINE_EXCLUSIVE_TABLES` (the same mechanism
+`product_location_min_stock` and `storage_classes` already use) before it passed; `run-tests.sh
+views` and `run-tests.sh triggers` needed no changes and pass unchanged, which is itself the
+proof that `products_current_substitutions` and the differential harness are untouched.
+`run-tests.sh all` is clean end to end, both the `GetProductDetails()` SQLite fix and the
+review-round fixes included. PHP lint (`php -l`) is clean on every changed file,
+`victual.openapi.json` parses as valid JSON, the workflow YAML parses, and `php
+.devtools/check-cited-jobs.php` reports every cited job exists.
 
-**The browser probe (`.devtools/frontend/product-substitutions.js`) could not be run end to
-end in this session**, for the same reason plan 30's could not: this sandbox's PHP is 8.4.19
-and the app refuses to boot below 8.5.0 on every route — confirmed by reproduction (booting the
+**The browser probe (`.devtools/frontend/product-substitutions.js`) itself carried a race the
+same review round found**: its post-delete assertions were made immediately after clicking the
+confirm button, rather than waiting for the delete-then-`PUT`-then-`reload()` chain that click
+starts to actually finish — `page.waitForLoadState('load')` called after an already-settled
+page can resolve at once without ever having waited for the reload a moment later, and the
+follow-on API check's bare `.catch(() => false)` could not tell a genuine 404 (edge gone) apart
+from "execution context destroyed" (asked while the page was mid-navigation), so a torn-down
+context would have read as a pass either way. Fixed by arming the `load` waiter in a
+`Promise.all` around the confirm click - before the chain starts, not after - and moving the
+API check to strictly after that resolves.
+
+**The browser probe could not be run end to end in this session**, for the same reason plan
+30's could not: this sandbox's PHP is 8.4.19 and the app refuses to boot below 8.5.0 on every
+route — confirmed by reproduction (booting the
 demo instance under PHP 8.4 returns HTTP 200 with the literal refusal text), not assumed. Wired
 into the `frontend-security` job (`.github/workflows/tests.yml`) after plan 30's own probe,
 where it will run for real the way plan 30's did. Learning from that session's own retrospective

@@ -9505,7 +9505,7 @@
 			},
 			"ProductSubstitutionResolved": {
 				"type": "object",
-				"description": "Candidates that will do where to_product_id is called for: one row per directed edge (see ProductSubstitution) plus one row per existing parent/child pair from products_resolved, unioned. direction distinguishes the two sources; there is no transitive closure (a substitutes for b and b for c does not offer a for c), and no quantity factor - see docs/plans/31-directed-substitution.md's open questions 1 and 2.",
+				"description": "Candidates that will do where to_product_id is called for: one row per directed edge from product_substitutions plus one row per existing parent/child pair from products_resolved, unioned (a pair already covered by products_resolved is excluded from the directed rows, so a product is never listed twice for the same candidate). direction distinguishes the two sources; there is no transitive closure (a substitutes for b and b for c does not offer a for c), and no quantity factor - see docs/plans/31-directed-substitution.md's open questions 1 and 2.",
 				"properties": {
 					"id": {
 						"type": "integer",
@@ -9526,7 +9526,7 @@
 					},
 					"from_product_amount_in_stock": {
 						"type": "number",
-						"description": "The candidate's own current stock amount (rolled up to its parent product if it has one, same as stock_current)."
+						"description": "The candidate's own current stock amount, read from stock_current on its own account - not rolled up to a parent, even when the candidate is itself a sub product under the existing parent/child mechanism."
 					},
 					"from_product_best_before_date": {
 						"type": "string",

@@ -72,15 +72,24 @@ CREATE TABLE product_substitutions (
 -- already define it. `direction` distinguishes a directed edge from the shared-parent case for
 -- API/UI display.
 --
--- Stock is read through products_resolved/stock_current, not stock_next_use, deliberately:
--- stock_next_use carries one row per physical stock entry, so joining it straight to
--- from_product_id would multiply a candidate row per stock entry the way
--- products_current_substitutions avoids only by ending in a single-row LIMIT 1. stock_current
--- is already the per-product rollup (keyed by the normalized top-level id
--- products_resolved.parent_product_id resolves to, exactly like a sub product's own stock
--- rolls up to its parent today), so it gives one candidate row per edge with an amount and a
--- best-before date to order by, and a candidate that is itself a sub product is normalized to
--- its own rollup the same way the existing mechanism already treats it.
+-- The directed branch excludes a pair products_resolved already carries: nothing stops a
+-- directed edge X -> P from being added where X already is P's sub product (there is no
+-- relationship between product_substitutions and parent_product_id), and without this
+-- exclusion the UNION below would not dedupe it -- the two branches produce the same
+-- (from, to) pair with a different `direction`, so both rows would survive and P's candidates
+-- would list X twice, once for each reason it qualifies.
+--
+-- Stock is read through stock_current directly, joined on from_product_id, not through
+-- products_resolved to a parent: stock_current already carries one row per product on its
+-- own account, sub products included -- 04_views_l1a.sql's own second UNION half, keyed by
+-- `pr.sub_product_id AS product_id`, is exactly a sub product's un-rolled-up amount, which is
+-- what a candidate's own stock means here. Joining through the parent instead (an earlier
+-- version of this migration did) reads the *parent's* rolled-up amount for every
+-- `shared_parent` candidate, which is wrong for the same reason a sub product having its own
+-- row in stock_current at all is easy to miss reading that view for the first time. Not
+-- stock_next_use, for a separate reason: it carries one row per physical stock entry, so
+-- joining it straight to from_product_id would multiply a candidate row per stock entry the
+-- way products_current_substitutions avoids only by ending in a single-row LIMIT 1.
 CREATE VIEW product_substitutions_resolved AS
 
 WITH edges(from_product_id, to_product_id, direction) AS (
@@ -90,6 +99,12 @@ WITH edges(from_product_id, to_product_id, direction) AS (
 		ps.to_product_id,
 		'directed' AS direction
 	FROM product_substitutions ps
+	WHERE NOT EXISTS (
+		SELECT 1
+		FROM products_resolved pr
+		WHERE pr.sub_product_id = ps.from_product_id
+			AND pr.parent_product_id = ps.to_product_id
+	)
 
 	UNION
 
@@ -109,10 +124,8 @@ SELECT
 	COALESCE(sc.amount, 0) AS from_product_amount_in_stock,
 	sc.best_before_date AS from_product_best_before_date
 FROM edges e
-LEFT JOIN products_resolved pr_from
-	ON pr_from.sub_product_id = e.from_product_id
 LEFT JOIN stock_current sc
-	ON sc.product_id = pr_from.parent_product_id;
+	ON sc.product_id = e.from_product_id;
 
 -- CASCADE DELETE. product_substitutions joins trg_cascade_product_removal's existing list
 -- (db/pgsql/baseline/06_triggers_a.sql) rather than getting a trigger of its own.

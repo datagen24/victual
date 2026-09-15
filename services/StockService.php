@@ -2855,6 +2855,25 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// product_substitutions is not in trg_cascade_product_removal's list of tables
+			// this method itself re-points before deleting - it is that trigger's own list,
+			// fired by the DELETE below, and left unguarded it would silently drop every edge
+			// naming the removed product rather than carrying it over to the kept one. Two
+			// passes before repointing, both required because trg_cascade_product_removal's
+			// own delete happens after this method's UPDATE statements, not instead of them:
+			// first, an edge between the two products being merged would become a self-edge
+			// once repointed (refused by product_substitutions_no_self_edge), so it is dropped
+			// outright rather than carried over in either direction; second, an edge from or
+			// to the removed product that would duplicate one the kept product already has
+			// (refused by product_substitutions_pair_key) is dropped rather than repointed,
+			// so the kept product's real edge - not a copy of it - is what survives.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions WHERE (from_product_id = ' . $productIdToRemove . ' AND to_product_id = ' . $productIdToKeep . ') OR (from_product_id = ' . $productIdToKeep . ' AND to_product_id = ' . $productIdToRemove . ')');
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.from_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.from_product_id = ' . $productIdToKeep . ' AND ps_keep.to_product_id = ps_remove.to_product_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.to_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.to_product_id = ' . $productIdToKeep . ' AND ps_keep.from_product_id = ps_remove.from_product_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET from_product_id = ' . $productIdToKeep . ' WHERE from_product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET to_product_id = ' . $productIdToKeep . ' WHERE to_product_id = ' . $productIdToRemove);
+
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM products WHERE id = ' . $productIdToRemove);
 		});
 	}

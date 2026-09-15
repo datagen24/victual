@@ -64,15 +64,27 @@ const assert = require('node:assert/strict');
 		const coffeeLink = page.locator('#product-substitution-table a', { hasText: groundCoffeeName });
 		assert.equal(await coffeeLink.count(), 1, 'Whole Beans\' own page states the direction the other way round, linked to Ground Coffee');
 
-		// THE DELETE, from Whole Beans' page - the same confirm-then-toast-free-reload flow
-		// the barcode and QU-conversion tables already use, and nested-product-groups.js's own
-		// case 6 drives the same way for its delete refusal.
+		// THE DELETE, from Whole Beans' page - the same confirm-then-reload flow the barcode
+		// and QU-conversion tables already use: a DELETE against the edge, then a PUT against
+		// the product itself (to save any other pending field), then window.location.reload().
+		// The 'load' waiter is armed before the confirm click that starts that chain, not
+		// after - armed after, on an already-idle page, it can resolve immediately without
+		// ever having waited for the real reload the delete triggers a moment later, and any
+		// assertion made against that stale page would be worthless.
 		const deleteButton = page.locator('.product-substitution-delete-button[data-product-substitution-id="' + edge.created_object_id + '"]');
 		await deleteButton.waitFor();
 		await deleteButton.click();
-		await page.locator('.bootbox .btn-success').click();
-		await page.waitForLoadState('load');
+		await Promise.all([
+			page.waitForLoadState('load', { timeout: 15000 }),
+			page.locator('.bootbox .btn-success').click()
+		]);
 
+		// Only checked once the reload above has actually happened: page.evaluate's fetch runs
+		// in whatever execution context is current when it is called, and calling it while a
+		// navigation is still in flight throws "execution context destroyed" - which a bare
+		// .catch(() => false) cannot tell apart from a genuine 404, turning a torn-down page
+		// into a false pass rather than a real assertion. Sequenced after the reload settles,
+		// a caught error here means what it says: the GET failed, because the edge is gone.
 		const rowGone = await api('objects/product_substitutions/' + edge.created_object_id).then(() => true).catch(() => false);
 		assert.equal(rowGone, false, 'the edge is gone after the confirmed delete');
 		assert.equal(await page.locator('#product-substitution-table').isVisible(), true, 'the product form itself is still there - the delete reloaded rather than navigating away');
