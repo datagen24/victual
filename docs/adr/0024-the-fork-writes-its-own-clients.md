@@ -15,7 +15,7 @@
   is the engine-parity rule and stays the overriding rule of the porting work; this record
   narrows what "the wire" is protected *for*, not whether it is protected.
 - **Referenced by:** [32 — Label kinds](../plans/32-label-kinds.md), which owns the work;
-  [25](../plans/25-label-infrastructure.md), whose step 2 gate this discharges;
+  [25](../plans/25-label-infrastructure.md), whose mechanism plan 32 extends;
   [17 — Ecosystem clients](../plans/17-ecosystem-clients.md), whose premise this replaces;
   the manual's [label printing](../manual/operator/label-printing.md) chapter.
 
@@ -31,8 +31,9 @@ That goal has since been abandoned. As the fork dug under the covers, the mainta
 to write its own clients rather than carry upstream's. Two facts follow that the corpus did
 not yet say:
 
-- **There are no external clients to keep compatible.** No third-party client consumes this
-  fork's API today, and none is planned that this repository does not also own. Upstream's
+- **No external client has a recognised compatibility commitment.** This is a support
+  policy, not a claim about non-use: no third-party client is one this repository promises
+  to keep working, and none is planned that this repository does not also own. Upstream's
   clients (the mobile apps, the Home Assistant integration) target upstream.
 - **No response-contract freeze has been declared.** [Plan 14](../plans/14-contract-and-regression-scaffolding.md)
   piece 2 is scheduled, not done; when it lands, its snapshot is an internal regression
@@ -55,19 +56,23 @@ opaque uid is the mapping that replaces it, for every kind.
 ## Decision
 
 1. **The fork writes its own clients.** Compatibility with upstream Grocy's clients is not
-   an obligation of this repository. A change to a response, a route or a status code is
-   governed by the OpenAPI spec (which must be updated in the same change), by plan 14's
-   snapshot once it exists (which must be regenerated in the same change), and by the
-   constitution's rule that a landed plan records divergence — not by what an upstream
-   client expects. [Plan 17](../plans/17-ecosystem-clients.md)'s couplings become a
-   catalogue of what the fork's own clients must handle, not breaks to avoid.
+   an obligation of this repository, so the five `/printlabel` endpoints may be removed
+   without an upstream-compatibility shim. This is not a general licence to break the API:
+   the constitution's rule that the wire contract is what this fork promises its clients
+   stands, and a breaking change affecting a Victual-owned client requires that client to
+   be updated before or in coordination with the server change. The OpenAPI specification,
+   and plan 14's contract snapshot once it exists, must be updated in the same change —
+   they record and detect the change; they do not by themselves make it acceptable.
+   [Plan 17](../plans/17-ecosystem-clients.md)'s couplings become a catalogue of what the
+   fork's own clients must handle, not breaks to avoid.
 2. **ADR-0005 stands, for what it was written for.** The JSON on the wire remains the
    invariant between engines: where PostgreSQL and the frozen SQLite import line disagree,
    the spec decides and the wrong engine moves. That rule protects the port's correctness
    and is not touched by decision 1.
 3. **The five `GET /api/.../printlabel` endpoints are removed, not reshaped.** Each of the
    five kinds gains print operations of the same form locations have —
-   `POST /labels/{kind}/{id}/print` and `revised-print` — enqueuing a job the worker drains.
+   `POST /labels/{kind}/{id}/print` and `POST /labels/{kind}/{id}/revised-print` —
+   enqueuing a job the worker drains.
    Purchase-time labels (`stockLabelType` 1 and 2) enqueue jobs inside the same service
    call instead of firing the webhook after the commit. Nothing emits `grcy:` again.
 4. **ADR-0019 decision item 7's gate on step 2 is dissolved.** Step 2 (the five kinds) and
@@ -107,16 +112,23 @@ converge.
 - **The manual's label printing chapter** loses its "What still uses the older webhook"
   paragraph and its legacy webhook section when plan 32 lands; until then the paragraph
   says the migration is scheduled, not deliberately unscheduled.
-- **Victual makes no outbound connection for printing, at any point** — ADR-0019's own
-  consequence, finally true. `WebhookRunner` itself stays: plan 18's InfluxDB writer uses
-  it, so ADR-0019's "`WebhookRunner`'s last caller" was already overtaken.
+- **After plan 32 lands, Victual makes no outbound connection for printing** — ADR-0019's
+  own consequence, true once step 3 completes and not before. `WebhookRunner` itself
+  stays: plan 18's InfluxDB writer uses it, so ADR-0019's statement that step 3 takes
+  "`WebhookRunner`'s last caller" was already overtaken when plan 18 landed; this record
+  corrects it, and the accepting pull request places a forward pointer beside that
+  statement as well as beside the step 2 gate.
 - **The four `LABEL_PRINTER_*` settings** disappear from `config-dist.php`, the
   configuration reference and `/system/config`. `FEATURE_FLAG_LABEL_PRINTER` goes with them;
   `FEATURE_FLAG_LABELS` is the only label flag afterwards.
 
 ## Acceptance prerequisites
 
-This record changes an obligation, not a mechanism, so it carries no spike. Accepting it
-requires only that the decider confirm decisions 1, 3 and 4 as written — in particular that
-the five routes are removed rather than kept — and that the accepting pull request add the
-forward pointer to ADR-0019's index row and decision item 7.
+This record removes a compatibility obligation rather than adding a mechanism, so it
+carries no spike; plan 32's verification owns the replacement mechanism. Accepting it
+requires that the decider confirm decisions 1, 3, 4 and 5 as written — in particular that
+the five routes are removed rather than kept, and that `labels.kind` widens to six —
+and that the accepting pull request add the forward pointers to ADR-0019's index row, its
+decision item 7 and its "`WebhookRunner`'s last caller" statement. Decision 2 restates
+ADR-0005 and needs no separate confirmation. Plan 32's question 4 is answered by decision
+5 and is marked so.
