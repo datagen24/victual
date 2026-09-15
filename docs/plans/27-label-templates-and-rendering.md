@@ -8,9 +8,9 @@ same label rather than a similar one.
 job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
 **accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
 cleared.**
-**Status:** implemented in wave 3b alongside 25; see Executed. Two follow-ups remain:
-[issue 126](https://github.com/datagen24/victual/issues/126) (the designer off fabric 5.x) and
-[issue 136](https://github.com/datagen24/victual/issues/136) (sweep S32).
+**Status:** implemented in wave 3b alongside 25; see Executed. One follow-up remains:
+[issue 126](https://github.com/datagen24/victual/issues/126) (the designer off fabric 5.x).
+[Issue 136](https://github.com/datagen24/victual/issues/136) (sweep S32) is fixed.
 **Migrations:** 0271 and 0272, in `master`. The inventory below is what they were derived from.
 
 ## Why this plan exists
@@ -737,3 +737,41 @@ build the layout loads as a script tag, and PR 114's attempt broke the editor ou
 Sweep S32, the fail-closed group-to-read-permission table for the files API, is this plan's and
 is [issue 136](https://github.com/datagen24/victual/issues/136); the label groups are already
 outside the `FileGroups` enum.
+
+### Sweep S32, the general fail-closed table (2026-09-15)
+
+[Issue 136](https://github.com/datagen24/victual/issues/136) is fixed. Reading is now gated
+by `FilesApiController::GROUP_READ_PERMISSIONS`, in the same fail-closed shape as
+`EntityReadPolicy::PERMISSIONS`: every `FileGroups` enum member has a row, and
+`CheckGroupIsKnown()` — consulted by `DeleteFile`, `ServeFile` and `UploadFile` alike, in
+place of the direct enum check each ran separately before — refuses any group absent from
+it. `ServeFile` additionally runs `CheckGroupReadPermission()`, which enforces the row's
+permission and replaces the pair of hardcoded `productpictures`/`recipepictures` checks
+this plan's own security note above describes as the S32 posture.
+
+Each group's answer follows `EntityReadPolicy`'s existing read policy for the same
+underlying entity rather than a fresh judgment call: `equipmentmanuals` and `userfiles` are
+`null` (open to any authenticated caller), matching `EntityReadPolicy::PERMISSIONS['equipment']`
+and `['userfields']`; `productpictures` and `recipepictures` keep `STOCK_VIEW` and
+`RECIPES_VIEW`; `userpictures` gains `USERS_READ`, matching `['users']` — a genuine posture
+change, since reads there were open before. `CheckGroupReadPermission()` carries an
+own-picture exception for that last case, mirroring `CheckUserPictureDeletion`'s existing
+one, so every authenticated user's own avatar keeps rendering in the nav bar
+(`views/layout/default.blade.php`) regardless of `USERS_READ` — without it, the `Child` and
+`Guest` default roles, which hold `USERS_EDIT_SELF` but not `USERS_READ`
+(`db/pgsql/roles-seed.sql`), would lose their own avatar.
+
+Verification extended the existing `.devtools/pgsql/rbac-tests.php` phase (run via
+`run-tests.sh rbac`) rather than adding a new one, following the same pattern it already
+uses for `EntityReadPolicy` against `ExposedEntity`: it asserts every `FileGroups` enum
+member has a row, exercises each mapped group both denied (no grant) and allowed (the
+grant), and separately constructs the unmapped-group case directly against
+`ServeFile`/`DeleteFile`/`UploadFile` so the fail-closed default is proven independent of
+the enum and the table staying in sync. The fail-closed property was verified for real, not
+merely asserted: temporarily reducing `CheckGroupIsKnown()` to a no-op reproduced the S32
+hazard and the new assertion caught it (expected 400, got 404), before the fix was restored
+and `run-tests.sh all` (all nineteen phases) run clean against real PostgreSQL 16. Not
+covered by the automated suite: the own-picture exception itself, since
+`VICTUAL_USER_PICTURE_FILE_NAME` is a constant fixed for the whole test process and the rbac
+phase's single calling user (9000) never has a picture set — the same limitation that leaves
+`CheckUserPictureDeletion`'s own equivalent exception unexercised there today.
