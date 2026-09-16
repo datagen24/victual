@@ -181,8 +181,11 @@ class FilesApiController extends BaseApiController
 	 * PUT /api/users/{self} lets USERS_EDIT_SELF write that column verbatim with no
 	 * check that the caller uploaded the file or that somebody else owns it - so the
 	 * name alone is caller-writable and cannot be trusted to mean "my picture" (issue
-	 * #177). The same owner lookup CheckUserPictureDeletion already does settles it:
-	 * the exception only holds when no other user row claims $fileName.
+	 * #177). picture_file_name carries no uniqueness constraint, so the question this
+	 * asks is deliberately "does any *other* row claim it", not "does fetch() turn up
+	 * a row of mine" - the latter can land on the caller's own duplicate of a name
+	 * someone else also claims and grant the read anyway. Same property
+	 * CheckUserPictureDeletion's owner lookup enforces on delete.
 	 *
 	 * @throws PermissionMissingException
 	 */
@@ -193,9 +196,9 @@ class FilesApiController extends BaseApiController
 		if ($group === 'userpictures' && $fileName !== null
 			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
-			$owner = $this->DB->users()->where('picture_file_name', $fileName)->fetch();
+			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
 
-			if ($owner === null || (int)$owner->id === (int)VICTUAL_USER_ID)
+			if ($otherOwner === null)
 			{
 				return;
 			}

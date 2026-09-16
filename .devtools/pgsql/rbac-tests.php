@@ -234,15 +234,24 @@ status(fn() => $files->DeleteFile(request('DELETE'), new Response(), ['group' =>
 // picture name are fixed for a whole process, so each runs in its own subprocess
 // exactly like the CHILD/ADMIN/UNKNOWN default-role cases below already do.
 $pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9003, 'rbac-picture-caller', 'fixture', 'caller-own.png')");
+// picture_file_name carries no uniqueness constraint (migration 0040 adds it as plain
+// TEXT), so a naive "fetch one matching row and compare its id" is only as safe as
+// fetch()'s row order - undefined once two real users share a filename. This caller is
+// inserted *before* the user whose picture it does not own, the ordering a plain
+// fetch() is likeliest to return first, so a regression that goes back to trusting one
+// arbitrary row is caught however the database happens to order it.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9004, 'rbac-picture-caller-dup', 'fixture', 'shared.png')");
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9005, 'rbac-picture-other-dup', 'fixture', 'shared.png')");
 foreach ([
-	['caller-own.png', 404, 'No other user claims the caller\'s own picture name, so it still falls through to the file lookup'],
-	['protected.png', 403, 'The caller\'s row claims rbac-admin\'s real picture name, and USERS_READ was never granted - the loosening no longer applies'],
-] as [$claimedPictureFileName, $expectedStatus, $message])
+	['9003', 'caller-own.png', 404, 'No other user claims the caller\'s own picture name, so it still falls through to the file lookup'],
+	['9003', 'protected.png', 403, 'The caller\'s row claims rbac-admin\'s real picture name, and USERS_READ was never granted - the loosening no longer applies'],
+	['9004', 'shared.png', 403, 'A second real user also owns the exact same picture_file_name - the caller\'s own matching row does not excuse the other owner'],
+] as [$callerId, $claimedPictureFileName, $expectedStatus, $message])
 {
-	$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTURE', '9003', $claimedPictureFileName, (string)$expectedStatus, $message], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+	$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTURE', $callerId, $claimedPictureFileName, (string)$expectedStatus, $message], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 	$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
 	fclose($pipes[1]); fclose($pipes[2]);
-	check(proc_close($process) === 0, "Own-picture exception ($claimedPictureFileName): $output $errors");
+	check(proc_close($process) === 0, "Own-picture exception ($callerId, $claimedPictureFileName): $output $errors");
 	echo $output;
 }
 
