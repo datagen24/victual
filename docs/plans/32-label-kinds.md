@@ -407,7 +407,20 @@ shipped (25, 27, 32) rather than describe a still-pending state.
    the `suite` CI job): for each of the five new kinds, every `FieldCatalogue` field captures
    without refusing, `Issue()`/`Resolve()` round-trip live, and deleting the target retires
    the label with a snapshot naming it — migration 0283's five triggers, exercised for real
-   rather than asserted from reading the SQL.
+   rather than asserted from reading the SQL. **A real regression this item's own suite passing
+   did not catch**, found only because the unrelated `import` phase of `run-tests.sh` crashed on
+   the same pattern: `Resolve()`'s generalisation from a `bool` flag to a per-kind
+   `callable(string):bool` (piece B) was not carried into every existing caller outside
+   `.devtools/labels/`. Two call sites still passed a bare `true` — `.devtools/pgsql/import-tests.php`
+   (a test, which is what actually crashed CI's `suite` job with an uncaught `TypeError`) and,
+   more seriously, `StockApiController::WeighLocationByLabel()` — `POST
+   /api/stock/locations/by-label/{code}/weigh`, the plan 29 endpoint a kitchen scale calls by
+   scanning a location label — which shipped in this plan's original push with the same defect
+   and no test coverage of its own to catch it. Every request to that endpoint would have
+   thrown instead of weighing anything. Both fixed with `fn (string $kind): bool => true`,
+   the same pattern already used where a caller has separately established the permission it
+   needs; re-verified with a full `run-tests.sh all` (no waiver) and both label suites, all
+   clean against real PostgreSQL 16.13.
 3. **Partly.** `kinds-tests.php` captures every catalogue field of every kind (the first half
    of this item). It does not separately hit a `'null' => 'error'` refusal per kind: every
    such field in the five new catalogues sits on a `NOT NULL` database column, so — as is

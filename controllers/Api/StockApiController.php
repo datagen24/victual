@@ -1063,8 +1063,12 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
+			// Resolve() takes a per-kind callable rather than a single flag since plan 32
+			// generalised it past locations; PERMISSION_STOCK_EDIT is already required above,
+			// and the kind check just below refuses anything Resolve() returns that is not a
+			// location, so the callable simply grants what the flag used to mean here.
 			$resolved = (new LabelIdentityService(DatabaseService::GetInstance()->GetDbConnectionRaw()))
-				->Resolve($args['code'], true);
+				->Resolve($args['code'], fn (string $kind): bool => true);
 
 			if (($resolved['status'] ?? null) !== 'resolved' || ($resolved['kind'] ?? null) !== 'location')
 			{

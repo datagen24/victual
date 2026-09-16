@@ -190,7 +190,7 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   replicating its check directly), and physical printing on the QL-820NWBc for the five new
   kinds. See the plan's own [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16)
   for the full account, piece by piece.
-- **2026-09-16 — Plan 32 follow-up on PR #186.** Three defects found after landing, all fixed
+- **2026-09-16 — Plan 32 follow-up on PR #186.** Four defects found after landing, all fixed
   and pushed to the same branch. First, a real `TypeError`: `LabelOperationsService::RevisedPrint()`
   declared `$printerId` as non-nullable `int`, but `StockService::ReviseStockEntryLabelIfLive()`
   passes `null` for an automatic revised print (matching `ResolvePrinter()`'s documented
@@ -231,6 +231,26 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   session's original verification pass ran the PHP-side suites and a disposable PostgreSQL
   script, never these three browser probes, so two pre-existing tests silently going stale was
   invisible until CI ran them for real.
+  Fourth, and most severe: a real production `TypeError` in a live, device-facing endpoint,
+  not merely an internal call path. `StockApiController::WeighLocationByLabel()`
+  (`POST /api/stock/locations/by-label/{code}/weigh` — a kitchen scale scanning a location
+  label, plan 29) called `LabelIdentityService::Resolve($args['code'], true)`, passing a bare
+  `true` where `Resolve()` now requires a `callable(string):bool` (piece B generalised it from
+  a single `$mayReadLocations` flag). Every request to that endpoint would have thrown rather
+  than weighing anything or returning a proper error response — this shipped in the original
+  push and CI never exercises it (no probe drives a scale device). It surfaced only because
+  `.devtools/pgsql/run-tests.sh all`'s `import` phase crashed on the identical stale-call
+  pattern in `.devtools/pgsql/import-tests.php` (lines 448/450 — a PostgreSQL-only test outside
+  the `.devtools/labels/` suite this session's original call-site sweep covered) with an
+  uncaught `TypeError` and the same stack shape, which is what made grepping the whole tree for
+  `->Resolve(` worth doing — it found both, not just the one that happened to crash a test.
+  Fixed both call sites the same way: `fn (string $kind): bool => true`, the same pattern a
+  caller that already checked the needed permission elsewhere uses throughout this codebase
+  (`kinds-tests.php`, `identity-tests.php`). Full `run-tests.sh all` (no waiver) and
+  `kinds-tests.php`/`identity-tests.php` re-verified clean against real PostgreSQL 16.13
+  afterward. The lesson repeats the third finding's own: a signature generalised for one
+  caller's convenience has to be grepped for across the *whole* tree, not just the directory
+  this session happened to be editing in.
 
 ## DOCTRINE (operator-locked decisions)
 
