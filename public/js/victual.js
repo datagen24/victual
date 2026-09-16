@@ -672,38 +672,6 @@ Victual.FrontendHelpers.DeleteUserSetting = function (settingsKey, reloadPageOnS
 	);
 }
 
-Victual.FrontendHelpers.RunWebhook = function (webhook, data, repetitions = 1)
-{
-	Object.assign(data, webhook.extra_data);
-	var hasAlreadyFailed = false;
-
-	for (i = 0; i < repetitions; i++)
-	{
-		if (webhook.json)
-		{
-			$.ajax(webhook.hook, { "data": JSON.stringify(data), "contentType": "application/json", "type": "POST" }).fail(function (req, status, errorThrown)
-			{
-				if (!hasAlreadyFailed)
-				{
-					hasAlreadyFailed = true;
-					Victual.FrontendHelpers.ShowGenericError(__t("Error while executing WebHook", { "status": status, "errorThrown": errorThrown }));
-				}
-			});
-		}
-		else
-		{
-			$.post(webhook.hook, data).fail(function (req, status, errorThrown)
-			{
-				if (!hasAlreadyFailed)
-				{
-					hasAlreadyFailed = true;
-					Victual.FrontendHelpers.ShowGenericError(__t("Error while executing WebHook", { "status": status, "errorThrown": errorThrown }));
-				}
-			});
-		}
-	}
-}
-
 $(document).on("keyup paste change click", "input, select, textarea", function ()
 {
 	$(this).addClass("is-dirty").closest("form").addClass("is-dirty");

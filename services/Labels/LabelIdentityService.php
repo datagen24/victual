@@ -49,42 +49,60 @@ class LabelIdentityService
 		return preg_match('/^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$/D', $code) ? $code : null;
 	}
 
-	/** The new context endpoint keeps epoch out of existing location responses. */
-	public function LocationContext(int $id): ?array
+	/**
+	 * The context endpoint keeps epoch out of existing per-kind responses.
+	 *
+	 * `name` is a display convenience for the caller composing a print request, not an
+	 * authorized capture - a stock entry has no name column of its own, so it reads the
+	 * product it holds, the same value `FieldCatalogue::For('stock_entry')` names
+	 * `stock_entry.product_name`.
+	 */
+	public function Context(string $kind, int $id): ?array
 	{
-		$query = $this->db->prepare('SELECT id, name, import_epoch FROM locations WHERE id = ?');
+		$table = FieldCatalogue::TableFor($kind);
+		$nameExpression = $kind === 'stock_entry'
+			? '(SELECT p.name FROM products p WHERE p.id = stock.product_id)'
+			: 'name';
+		$query = $this->db->prepare("SELECT id, $nameExpression AS name, import_epoch FROM $table WHERE id = ?");
 		$query->execute([$id]);
 		return $query->fetch(\PDO::FETCH_ASSOC) ?: null;
 	}
 
-	/** Requires the caller's transaction; a rollback must also undo the mapping. */
-	public function IssueLocation(int $id, int $expectedEpoch): string
+	/** The location route predates the other five kinds and keeps its own name. */
+	public function LocationContext(int $id): ?array
 	{
+		return $this->Context('location', $id);
+	}
+
+	/** Requires the caller's transaction; a rollback must also undo the mapping. */
+	public function Issue(string $kind, int $id, int $expectedEpoch): string
+	{
+		$table = FieldCatalogue::TableFor($kind);
 		self::LockImport($this->db);
 		$currentEpoch = (int)$this->db->query('SELECT epoch FROM label_import_state WHERE id = 1')->fetchColumn();
 		if ($expectedEpoch !== $currentEpoch)
 		{
-			throw new \RuntimeException("The location set was replaced (epoch $expectedEpoch -> $currentEpoch)");
+			throw new \RuntimeException("The $kind set was replaced (epoch $expectedEpoch -> $currentEpoch)");
 		}
-		$query = $this->db->prepare('SELECT id FROM locations WHERE id = ? AND import_epoch = ? FOR UPDATE');
+		$query = $this->db->prepare("SELECT id FROM $table WHERE id = ? AND import_epoch = ? FOR UPDATE");
 		$query->execute([$id, $expectedEpoch]);
 		if ($query->fetchColumn() === false)
 		{
-			throw new \RuntimeException('Location not found in the requested import epoch');
+			throw new \RuntimeException(ucfirst(str_replace('_', ' ', $kind)) . ' not found in the requested import epoch');
 		}
-		$query = $this->db->prepare("SELECT uid FROM labels WHERE kind = 'location' AND target_id = ? AND retired_at IS NULL");
-		$query->execute([$id]);
+		$query = $this->db->prepare('SELECT uid FROM labels WHERE kind = ? AND target_id = ? AND retired_at IS NULL');
+		$query->execute([$kind, $id]);
 		$existing = $query->fetchColumn();
 		if ($existing !== false)
 		{
 			return $existing;
 		}
 		// ON CONFLICT keeps PostgreSQL's enclosing transaction usable after a collision.
-		$insert = $this->db->prepare("INSERT INTO labels (uid, kind, target_id) VALUES (?, 'location', ?) ON CONFLICT (uid) DO NOTHING RETURNING uid");
+		$insert = $this->db->prepare('INSERT INTO labels (uid, kind, target_id) VALUES (?, ?, ?) ON CONFLICT (uid) DO NOTHING RETURNING uid');
 		for ($attempt = 0; $attempt < 32; $attempt++)
 		{
 			$uid = $this->NewUid();
-			$insert->execute([$uid, $id]);
+			$insert->execute([$uid, $kind, $id]);
 			if ($insert->fetchColumn() !== false)
 			{
 				return $uid;
@@ -93,47 +111,105 @@ class LabelIdentityService
 		throw new \RuntimeException('Unable to allocate a unique label uid');
 	}
 
+	/** The location route predates the other five kinds and keeps its own name. */
+	public function IssueLocation(int $id, int $expectedEpoch): string
+	{
+		return $this->Issue('location', $id, $expectedEpoch);
+	}
+
 	protected function NewUid(): string
 	{
 		return self::GenerateUid();
 	}
 
-	/** Denied callers do no label lookup, for both existing and unknown codes. */
-	public function Resolve(string $code, bool $mayReadLocations): array
+	/** Every kind a label can carry, for Resolve()'s up-front denial check. */
+	private const KINDS = ['location', 'product', 'stock_entry', 'recipe', 'chore', 'battery'];
+
+	/**
+	 * Denied callers see the same 'unknown' answer as a code that does not exist, and - for a
+	 * caller denied every kind - do no label lookup at all, the property the class carried
+	 * before plan 32 widened this to six kinds each needing a different grant.
+	 *
+	 * @param callable(string):bool $mayRead Answers whether the caller may read *this kind*
+	 *        of label. A scanner holding RECIPES_VIEW but not STOCK_VIEW may resolve a recipe
+	 *        label and not a product one, so which kind gates the read is not known until the
+	 *        row names it - unless the caller is denied every kind, which is checked first and
+	 *        skips the lookup entirely, exactly as a single false flag used to.
+	 */
+	public function Resolve(string $code, callable $mayRead): array
 	{
 		$unknown = ['status' => 'unknown'];
-		if (!$mayReadLocations || ($uid = self::Canonicalize($code)) === null)
+		if (($uid = self::Canonicalize($code)) === null || !self::AnyAllowed($mayRead))
 		{
 			return $unknown;
 		}
-		// The path is read live from locations_resolved rather than pinned anywhere, so a
-		// scan always shows where the location is *now* - unlike a label's captured_fields,
-		// nothing here was fixed at print time. A location deeper than hierarchy_depth_limit()
-		// has no self row (the app itself refuses to create one that deep, so this is only
-		// reachable from data older than migration 0273); the scan page shows the bare name
-		// rather than failing a lookup over it, which is why this is a plain LEFT JOIN and not
-		// a refusal the way FieldCatalogue's 'location.path' is for a print.
-		$query = $this->db->prepare("SELECT l.uid, l.retired_at, l.retirement_snapshot, t.id, t.name, r.path
-			FROM labels l
-			LEFT JOIN locations t ON l.target_id = t.id AND l.retired_at IS NULL
-			LEFT JOIN locations_resolved r ON r.ancestor_location_id = t.id AND r.descendant_location_id = t.id
-			WHERE l.uid = ? AND l.kind = 'location'");
+		$query = $this->db->prepare('SELECT uid, kind, retired_at, retirement_snapshot, target_id FROM labels WHERE uid = ?');
 		$query->execute([$uid]);
 		$row = $query->fetch(\PDO::FETCH_ASSOC);
-		if (!$row)
+		if (!$row || !$mayRead($row['kind']))
 		{
 			return $unknown;
 		}
 		if ($row['retired_at'] !== null)
 		{
-			return ['status' => 'retired', 'uid' => $uid, 'kind' => 'location',
+			return ['status' => 'retired', 'uid' => $uid, 'kind' => $row['kind'],
 				'retired_at' => $row['retired_at'], 'snapshot' => json_decode($row['retirement_snapshot'], true, 512, JSON_THROW_ON_ERROR)];
 		}
-		if ($row['id'] === null)
+		$target = $this->ResolveTarget($row['kind'], (int)$row['target_id']);
+		if ($target === null)
 		{
-			throw new \RuntimeException('Live label has no location');
+			throw new \RuntimeException('Live label has no target');
 		}
-		return ['status' => 'resolved', 'uid' => $uid, 'kind' => 'location',
-			'target' => ['id' => (int)$row['id'], 'name' => $row['name'], 'path' => $row['path'] ?? $row['name']]];
+		return ['status' => 'resolved', 'uid' => $uid, 'kind' => $row['kind'], 'target' => $target];
+	}
+
+	private static function AnyAllowed(callable $mayRead): bool
+	{
+		foreach (self::KINDS as $kind)
+		{
+			if ($mayRead($kind))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The live target a resolved label names, or null if it has vanished without the
+	 * retirement trigger catching it (a logic error `Resolve()` refuses on rather than hides).
+	 *
+	 * The path is read live from locations_resolved rather than pinned anywhere, so a scan
+	 * always shows where the location is *now* - unlike a label's captured_fields, nothing
+	 * here was fixed at print time. A location deeper than hierarchy_depth_limit() has no self
+	 * row (the app itself refuses to create one that deep, so this is only reachable from data
+	 * older than migration 0273); the scan page shows the bare name rather than failing a
+	 * lookup over it, which is why this is a plain LEFT JOIN and not a refusal the way
+	 * FieldCatalogue's 'location.path' is for a print. The other five kinds have no tree, so
+	 * `path` mirrors `name` for them - a scan page reading `target.path` sees the same value
+	 * either way.
+	 */
+	private function ResolveTarget(string $kind, int $id): ?array
+	{
+		$query = match ($kind)
+		{
+			'location' => $this->db->prepare('SELECT l.id, l.name, r.path
+				FROM locations l
+				LEFT JOIN locations_resolved r ON r.ancestor_location_id = l.id AND r.descendant_location_id = l.id
+				WHERE l.id = ?'),
+			'product' => $this->db->prepare('SELECT id, name FROM products WHERE id = ?'),
+			'stock_entry' => $this->db->prepare('SELECT s.id, p.name FROM stock s JOIN products p ON p.id = s.product_id WHERE s.id = ?'),
+			'recipe' => $this->db->prepare('SELECT id, name FROM recipes WHERE id = ?'),
+			'chore' => $this->db->prepare('SELECT id, name FROM chores WHERE id = ?'),
+			'battery' => $this->db->prepare('SELECT id, name FROM batteries WHERE id = ?'),
+			default => throw new LabelValidationException('kind', 'unsupported_entity_kind', 'No target resolution exists for kind "' . $kind . '"'),
+		};
+		$query->execute([$id]);
+		$row = $query->fetch(\PDO::FETCH_ASSOC);
+		if (!$row)
+		{
+			return null;
+		}
+		return ['id' => (int)$row['id'], 'name' => $row['name'], 'path' => $row['path'] ?? $row['name']];
 	}
 }

@@ -114,15 +114,6 @@
 		// docs/plans/19-rbac.md piece 2. $pricesVisible is only set when authenticated
 		// (BaseController::Render()); unauthenticated pages render no stock data.
 		Victual.PricesVisible = {{ BoolToString(VICTUAL_AUTHENTICATED && $pricesVisible) }};
-		Victual.Webhooks = {
-		@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER && !VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			"labelprinter" : {
-				"hook": "{{ VICTUAL_LABEL_PRINTER_WEBHOOK }}",
-				"extra_data": {!! json_encode(VICTUAL_LABEL_PRINTER_PARAMS) !!},
-				"json": {{ BoolToString(VICTUAL_LABEL_PRINTER_HOOK_JSON) }}
-			}
-		@endif
-		};
 
 		@if (VICTUAL_AUTHENTICATED)
 		Victual.UserId = {{ VICTUAL_USER_ID }};

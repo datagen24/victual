@@ -3,8 +3,6 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
-use Victual\Helpers\Grocycode;
-use Victual\Helpers\WebhookRunner;
 use Victual\Services\BatteriesService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -77,30 +75,4 @@ class BatteriesApiController extends BaseApiController
 		});
 	}
 
-	/**
-	 * GET /api/batteries/{batteryId}/printlabel - assembles the label printer webhook payload
-	 * (battery name, Grocycode, details plus VICTUAL_LABEL_PRINTER_PARAMS), runs the webhook
-	 * server-side when VICTUAL_LABEL_PRINTER_RUN_SERVER is enabled and returns the payload (200)
-	 * or a 400 error response.
-	 */
-	public function BatteryPrintLabel(Request $request, Response $response, array $args)
-	{
-		return $this->HandleApiCall($response, function () use ($args, $response)
-		{
-			$batteryDetails = (object)BatteriesService::GetInstance()->GetBatteryDetails($args['batteryId']);
-
-			$webhookData = array_merge([
-				'battery' => $batteryDetails->battery->name,
-				'grocycode' => (string)(new Grocycode(Grocycode::BATTERY, $args['batteryId'])),
-				'details' => $batteryDetails,
-			], VICTUAL_LABEL_PRINTER_PARAMS);
-
-			if (VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			{
-				(new WebhookRunner())->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
-			return $this->ApiResponse($response, $webhookData);
-		});
-	}
 }

@@ -456,20 +456,13 @@ if (window.location.hash === "#fullscreen")
 	$("#selectedRecipeToggleFullscreenButton").click();
 }
 
-// Grocycode label printing: fetches label data from recipes/{id}/printlabel and sends it to the configured
-// label printer webhook (Victual.Webhooks.labelprinter)
-$(document).on('click', '.recipe-grocycode-label-print', function(e)
-{
-	e.preventDefault();
-
-	var recipeId = $(e.currentTarget).attr('data-recipe-id');
-	Victual.Api.Get('recipes/' + recipeId + '/printlabel', function(labelData)
-	{
-		if (Victual.Webhooks.labelprinter !== undefined)
-		{
-			Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-		}
-	});
+// The print action (views/components/label_print_list_header.blade.php), plan 32.
+Victual.LabelPrinting.Wire({
+	kind: 'recipe',
+	trigger: '.recipe-label-print',
+	within: '#recipes-table',
+	printerSelect: '#recipes-printer',
+	status: '#recipes-status'
 });
 
 // Strike through an ingredient line when its "done" checkbox is clicked (visual only, not persisted)

@@ -82,7 +82,10 @@ async function saveDraft(page, templateId)
 		const name = 'Designer probe ' + Date.now();
 		await page.goto(base + '/labeltemplates');
 		await page.locator('#new-template-name').fill(name);
-		await page.getByRole('button', { name: 'Create a location label template' }).click();
+		// The kind picker defaults to its first option, 'location' - plan 32 generalised the
+		// designer to create a template of any kind, and the create button's own label is no
+		// longer kind-specific.
+		await page.getByRole('button', { name: 'Create a label template' }).click();
 		await page.waitForURL(/\/labeltemplate\/\d+$/);
 
 		const templateId = Number(page.url().split('/').pop());

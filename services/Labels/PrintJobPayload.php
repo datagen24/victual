@@ -64,14 +64,19 @@ class PrintJobPayload
         if (!is_string($payload['label_uid'] ?? null) || !preg_match('/^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$/D', $payload['label_uid'])) {
             return 'Invalid label uid';
         }
-        if (($payload['kind'] ?? null) !== 'location' || !is_int($payload['printer_id'] ?? null) || $payload['printer_id'] < 1) {
+        $kind = $payload['kind'] ?? null;
+        if (!in_array($kind, ['location', 'product', 'stock_entry', 'recipe', 'chore', 'battery'], true)
+            || !is_int($payload['printer_id'] ?? null) || $payload['printer_id'] < 1) {
             return 'Invalid label target';
         }
         if (!in_array($payload['operation'] ?? null, ['issue', 'reprint', 'revised_print', 'promote_preview'], true)) {
             return 'Unknown print operation';
         }
-        if (!is_string($payload['captured_fields']['location.name'] ?? null)) {
-            return 'Missing captured location name';
+        // Every kind's document draws the entity's name whether or not the template asked
+        // for it (LabelOperationsService::FieldsOf()), so this always has something to check.
+        $nameField = $kind === 'stock_entry' ? 'stock_entry.product_name' : $kind . '.name';
+        if (!is_string($payload['captured_fields'][$nameField] ?? null)) {
+            return 'Missing captured label name';
         }
         if (!is_int($payload['artifact']['id'] ?? null) || !is_string($payload['artifact']['byte_digest'] ?? null)) {
             return 'Missing artifact reference';

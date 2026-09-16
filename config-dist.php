@@ -231,13 +231,6 @@ Setting('CORS_ALLOWED_ORIGINS', '');
 Setting('GROCYCODE_TYPE', '2D');
 
 
-// Label printer settings
-Setting('LABEL_PRINTER_WEBHOOK', ''); // The URI that Victual will POST to when asked to print a label
-Setting('LABEL_PRINTER_RUN_SERVER', true); // Whether the webhook will be called server- or client-side
-Setting('LABEL_PRINTER_PARAMS', ['font_family' => 'Source Sans Pro (Regular)']); // Additional parameters supplied to the webhook
-Setting('LABEL_PRINTER_HOOK_JSON', true); // TRUE to use JSON or FALSE to use normal POST request variables
-
-
 // Thermal printer options
 // Thermal printers are receipt printers, not regular printers,
 // the printer must support the ESC/POS protocol, see https://github.com/mike42/escpos-php
@@ -262,13 +255,12 @@ Setting('FEATURE_FLAG_TASKS', true);
 Setting('FEATURE_FLAG_BATTERIES', true);
 Setting('FEATURE_FLAG_EQUIPMENT', true);
 Setting('FEATURE_FLAG_CALENDAR', true);
-Setting('FEATURE_FLAG_LABEL_PRINTER', false);
 
-// The opaque label subsystem: templates, printers, jobs and the delivery worker (plans 25
-// and 27). Deliberately a different flag from FEATURE_FLAG_LABEL_PRINTER, which gates the
-// webhook path ADR-0019 item 7 leaves alone through wave 3b - binding the two together would
-// make turning on the existing product and stock-entry printing demand database storage,
-// which is a behaviour change to a path this wave does not touch.
+// The opaque label subsystem: templates, printers, jobs and the delivery worker (plans 25,
+// 27 and 32). Plan 32 moved every kind that used to print through the webhook - products,
+// stock entries, recipes, chores, batteries - onto this same subsystem and deleted the
+// webhook, so this is the only label flag now: there is no separate one to keep unbound from
+// it.
 //
 // Enabling it requires FILE_STORAGE 'database'. See ConfigurationValidator::checkLabelSubsystem().
 Setting('FEATURE_FLAG_LABELS', false);

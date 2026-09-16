@@ -33,7 +33,7 @@ use PhpMqtt\Client\MqttClient;
  *   problem must not turn a committed write into an error response. Failures are logged
  *   and swallowed.
  *
- * The broker address is a configured constant, exactly like VICTUAL_LABEL_PRINTER_WEBHOOK.
+ * The broker address is a configured constant, the same way a label printer's connection is.
  * Nothing derived from a request reaches it, so the security sweep's finding that this tree
  * has no user-configurable outbound URL still holds.
  */

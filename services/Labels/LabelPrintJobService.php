@@ -17,7 +17,7 @@ class LabelPrintJobService extends LabelService
     public function Enqueue(int $locationId, int $epoch, int $printerId, ?int $templateId = null, ?int $templateVersionId = null, string $locale = 'en', string $timezone = 'UTC', $permissionCheck = null, ?int $userId = null): int
     {
         $job = (new LabelOperationsService($this->db, $permissionCheck, $userId))
-            ->IssueLocation($locationId, $epoch, $printerId, $templateId, $templateVersionId, $locale, $timezone);
+            ->IssueLocation('location', $locationId, $epoch, $printerId, $templateId, $templateVersionId, $locale, $timezone);
         return (int)$job['id'];
     }
 

@@ -348,9 +348,11 @@ class DatabaseImporter
 		);
 
 		$common = array_values(array_intersect($sourceColumns, $targetColumns));
-		if ($table === 'locations')
+		if (in_array($table, ['locations', 'products', 'stock', 'recipes', 'chores', 'batteries'], true))
 		{
-			// This target-owned generation must never be restored from foreign input.
+			// This target-owned generation (plan 32's widening of migration 0269's rule to
+			// the five kinds that joined the label subsystem) must never be restored from
+			// foreign input.
 			$common = array_values(array_diff($common, ['import_epoch']));
 		}
 

@@ -4,7 +4,6 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
 use Victual\Helpers\Grocycode;
-use Victual\Helpers\WebhookRunner;
 use Victual\Services\DatabaseService;
 use Victual\Services\FieldPolicy;
 use Victual\Services\Labels\LabelIdentityService;
@@ -836,73 +835,6 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
-	 * GET /api/stock/products/{productId}/printlabel - builds the webhook payload
-	 * (product name, Grocycode, product details, VICTUAL_LABEL_PRINTER_PARAMS) for
-	 * printing a product label; when VICTUAL_LABEL_PRINTER_RUN_SERVER is enabled the
-	 * configured VICTUAL_LABEL_PRINTER_WEBHOOK is also triggered server-side.
-	 * Returns the payload (200) or a 400 error response.
-	 */
-	public function ProductPrintLabel(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		return $this->HandleApiCall($response, function () use ($args, $response)
-		{
-			$productDetails = (object)StockService::GetInstance()->GetProductDetails($args['productId']);
-
-			$webhookData = array_merge([
-				'product' => $productDetails->product->name,
-				'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $productDetails->product->id)),
-				'details' => $productDetails,
-			], VICTUAL_LABEL_PRINTER_PARAMS);
-
-			if (VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			{
-				(new WebhookRunner())->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
-			return $this->ApiResponse($response, $webhookData);
-		});
-	}
-
-	/**
-	 * GET /api/stock/entry/{entryId}/printlabel - builds the webhook payload (product
-	 * name, Grocycode carrying the stock entry id, product details, the stock entry
-	 * row, VICTUAL_LABEL_PRINTER_PARAMS, plus a due_date field when best-before-date
-	 * tracking is enabled) for printing a stock entry label; when
-	 * VICTUAL_LABEL_PRINTER_RUN_SERVER is enabled the configured
-	 * VICTUAL_LABEL_PRINTER_WEBHOOK is also triggered server-side.
-	 * Returns the payload (200) or a 400 error response.
-	 */
-	public function StockEntryPrintLabel(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		return $this->HandleApiCall($response, function () use ($args, $response)
-		{
-			$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
-			$productDetails = (object)StockService::GetInstance()->GetProductDetails($stockEntry->product_id);
-
-			$webhookData = array_merge([
-				'product' => $productDetails->product->name,
-				'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $stockEntry->product_id, [$stockEntry->stock_id])),
-				'details' => $productDetails,
-				'stock_entry' => $stockEntry,
-			], VICTUAL_LABEL_PRINTER_PARAMS);
-
-			if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-			{
-				$webhookData['due_date'] = LocalizationService::GetInstance()->__t('DD') . ': ' . $stockEntry->best_before_date;
-			}
-
-			if (VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			{
-				(new WebhookRunner())->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
-			return $this->ApiResponse($response, $webhookData);
-		});
-	}
-
-	/**
 	 * POST /api/stock/shoppinglist/remove-product - removes a product from a
 	 * shopping list. Body fields: product_id (required, numeric), product_amount
 	 * (default 1) and list_id (default 1).
@@ -1131,8 +1063,14 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
+			// Resolve() takes a per-kind callable rather than a single flag since plan 32
+			// generalised it past locations. This endpoint only ever wants a location - scoping
+			// the callable to that kind (rather than granting every kind and rejecting
+			// afterwards) keeps Resolve()'s per-kind denial boundary intact: a scanned
+			// recipe/chore/battery/product/stock_entry code is refused before any lookup for
+			// it runs, not merely after.
 			$resolved = (new LabelIdentityService(DatabaseService::GetInstance()->GetDbConnectionRaw()))
-				->Resolve($args['code'], true);
+				->Resolve($args['code'], fn (string $kind): bool => $kind === 'location');
 
 			if (($resolved['status'] ?? null) !== 'resolved' || ($resolved['kind'] ?? null) !== 'location')
 			{

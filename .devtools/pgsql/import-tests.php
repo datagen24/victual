@@ -445,9 +445,12 @@ foreach ([[], ['--force']] as $flags)
 Check('refusal preserves the labelled location', $identity->LocationContext($locationId) === $context,
 	'unchanged location and epoch', 'location and epoch compared');
 $target->exec('DELETE FROM locations WHERE id = ' . $locationId);
-$retired = $identity->Resolve($labelUid, true);
+// Resolve() takes a per-kind callable rather than a single flag since plan 32 generalised it
+// past locations; this probe only ever asks about one kind, so the callable just says yes.
+$allow = fn (string $kind): bool => true;
+$retired = $identity->Resolve($labelUid, $allow);
 [$code, $output] = RunImport($dataPath, $fixture, ['--force']);
-Check('retired labels permit import and survive it', $code === 0 && $identity->Resolve($labelUid, true) === $retired,
+Check('retired labels permit import and survive it', $code === 0 && $identity->Resolve($labelUid, $allow) === $retired,
 	'unchanged retirement snapshot', 'exit ' . $code);
 $target = null;
 

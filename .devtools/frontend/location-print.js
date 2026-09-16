@@ -61,9 +61,9 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		// label-printers.js has already configured a printer, so the control must be here -
 		// and a probe that shrugged when it was missing is how a TypeError in exactly this
 		// branch reached a running instance with every check green.
-		const button = page.locator('.location-print-button[data-location-name^="<img"]').first();
+		const button = page.locator('.location-print-button[data-target-name^="<img"]').first();
 		assert.ok(await button.count() > 0, 'the locations list offers a print control for the seeded location');
-		const stored = await button.getAttribute('data-location-name');
+		const stored = await button.getAttribute('data-target-name');
 		assert.ok(stored.includes('<img'), 'the stored name still carries markup: ' + stored);
 		assert.ok(!/onerror/i.test(stored), 'the API purifier stripped the handler at storage: ' + stored);
 
@@ -71,10 +71,10 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		const formPage = await browser.newPage();
 		const formResponse = await formPage.goto(base + '/location/1');
 		assert.equal(formResponse.status(), 200, 'the location form renders with the print action');
-		assert.ok(await formPage.locator('#location-form-print-button').count() > 0, 'the form offers a print control');
+		assert.ok(await formPage.locator('#location-form-button').count() > 0, 'the form offers a print control');
 		await formPage.close();
 
-		const status = page.locator('#location-print-status');
+		const status = page.locator('#location-list-status');
 
 		await button.click();
 		await status.getByText('The label was not requested', { exact: false }).waitFor();
@@ -98,7 +98,7 @@ const payload = '<img src=x onerror=window.__xss=1>';
 
 		// S29: whatever is stored reaches the region as text, and nothing executed.
 		assert.equal(await page.evaluate(() => window.__xss), undefined, 'no script ran');
-		assert.equal(await page.locator('#location-print-status img').count(), 0, 'the markup did not become an element');
+		assert.equal(await page.locator('#location-list-status img').count(), 0, 'the markup did not become an element');
 		assert.ok((await status.innerText()).includes(stored), 'the stored name is rendered as text');
 
 		assert.deepEqual(errors, [], 'no page errors');

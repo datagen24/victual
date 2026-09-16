@@ -172,12 +172,17 @@ try
 	$db->exec("INSERT INTO label_workers(name,configuration_mode) VALUES('retained worker','paired');
 		INSERT INTO label_worker_sessions(worker_id,created_by_user_id,pairing_material_hash,material_expires_at) VALUES(1,42,'fixture',CURRENT_TIMESTAMP+INTERVAL '1 hour')");
 	$identity = new Identity($db);
+	// Resolve() now takes a per-kind callable rather than a single flag (plan 32): $allow
+	// answers yes for every kind, $deny for none, matching the old true/false exactly for a
+	// location-only fixture.
+	$allow = fn(string $kind): bool => true;
+	$deny = fn(string $kind): bool => false;
 
 	// Negative control FIRST: the original precheck window, including a real issuance.
 	Check((int)$db->query('SELECT count(*) FROM labels')->fetchColumn() === 0, 'Precheck sees no labels');
 	$db->beginTransaction(); $uid = $identity->IssueLocation(1, 0); $db->commit();
 	$db->exec("TRUNCATE locations RESTART IDENTITY CASCADE; INSERT INTO locations (name) VALUES ('Replacement')");
-	Check($identity->Resolve($uid, true)['target']['name'] === 'Replacement', 'Negative control must reproduce label aliasing');
+	Check($identity->Resolve($uid, $allow)['target']['name'] === 'Replacement', 'Negative control must reproduce label aliasing');
 	$db->exec("TRUNCATE labels; UPDATE locations SET name = 'Original'");
 
 	$uids = [];
@@ -195,17 +200,17 @@ try
 	}
 	Refused(fn() => $identity->IssueLocation(1, 0), 'requires a transaction');
 	$db->beginTransaction(); $uid = $identity->IssueLocation(1, 0); $db->rollBack();
-	Check($identity->Resolve($uid, true) === ['status' => 'unknown'], 'Rollback removes identity');
+	Check($identity->Resolve($uid, $allow) === ['status' => 'unknown'], 'Rollback removes identity');
 	$db->beginTransaction(); $uid = $identity->IssueLocation(1, 0); $db->commit();
 	$db->beginTransaction(); Check($identity->IssueLocation(1, 0) === $uid, 'Repeated issuance shares live uid'); $db->commit();
-	Check($identity->Resolve('VCTL:' . strtolower($uid), true)['target']['name'] === 'Original', 'Live resolution');
-	Check($identity->Resolve($uid, true)['target']['path'] === 'Original', 'Live resolution path for a root location matches its name');
-	Check($identity->Resolve($uid, false) === $identity->Resolve('0000000000000', false), 'Denied known and unknown match');
-	// A denied lookup must not even touch the label table, regardless of existence.
+	Check($identity->Resolve('VCTL:' . strtolower($uid), $allow)['target']['name'] === 'Original', 'Live resolution');
+	Check($identity->Resolve($uid, $allow)['target']['path'] === 'Original', 'Live resolution path for a root location matches its name');
+	Check($identity->Resolve($uid, $deny) === $identity->Resolve('0000000000000', $deny), 'Denied known and unknown match');
+	// A caller denied every kind must not even touch the label table, regardless of existence.
 	$db->beginTransaction(); $db->exec('ALTER TABLE labels RENAME TO hidden_labels');
-	Check($identity->Resolve($uid, false) === ['status' => 'unknown'], 'Denied lookup performs no label query'); $db->rollBack();
+	Check($identity->Resolve($uid, $deny) === ['status' => 'unknown'], 'Denied lookup performs no label query'); $db->rollBack();
 	$db->exec("UPDATE locations SET active = 0, name = 'Renamed' WHERE id = 1");
-	Check($identity->Resolve($uid, true)['target']['name'] === 'Renamed', 'Rename and deactivation preserve identity');
+	Check($identity->Resolve($uid, $allow)['target']['name'] === 'Renamed', 'Rename and deactivation preserve identity');
 	Refused(fn() => Import($db), '1 live label(s)');
 	Refused(fn() => Import($db, null, false), '1 live label(s)');
 	Check($identity->LocationContext(1)['import_epoch'] === 0, 'Refused import preserves epoch');
@@ -215,12 +220,12 @@ try
 	$child = Child($db, $schema, 'import'); $db->commit();
 	Check(str_contains(Finish($child), '1 live label(s)'), 'Concurrent import refuses live label');
 	$db->beginTransaction(); $db->exec('DELETE FROM locations WHERE id = 1'); $db->rollBack();
-	Check($identity->Resolve($uid, true)['status'] === 'resolved', 'Delete rollback also undoes retirement');
+	Check($identity->Resolve($uid, $allow)['status'] === 'resolved', 'Delete rollback also undoes retirement');
 	$db->exec('DELETE FROM locations WHERE id = 1');
-	$retired = $identity->Resolve($uid, true);
+	$retired = $identity->Resolve($uid, $allow);
 	Check($retired['status'] === 'retired' && $retired['snapshot']['name'] === 'Renamed', 'Hard delete captures last historical name');
 	Import($db);
-	Check($identity->Resolve($uid, true) === $retired, 'Retired snapshot survives actual import');
+	Check($identity->Resolve($uid, $allow) === $retired, 'Retired snapshot survives actual import');
 	Check($identity->LocationContext(1)['import_epoch'] === 1, 'Import advances location epoch');
 	$db->beginTransaction(); Refused(fn() => $identity->IssueLocation(1, 0), 'epoch 0 -> 1'); $db->rollBack();
 
@@ -244,13 +249,13 @@ try
 		protected function NewUid(): string { return $this->calls++ === 0 ? $this->duplicate : parent::NewUid(); }
 	};
 	$db->beginTransaction(); $newUid = $collision->IssueLocation(1, 2); $db->commit();
-	Check($newUid !== $uid && $identity->Resolve($newUid, true)['target']['name'] === 'Replacement', 'Collision retries and reused target gets new uid');
+	Check($newUid !== $uid && $identity->Resolve($newUid, $allow)['target']['name'] === 'Replacement', 'Collision retries and reused target gets new uid');
 	Refused(fn() => $db->exec("INSERT INTO labels (uid, kind, target_id) VALUES ('0000000000000', 'location', 1)"), 'labels_one_live_per_target');
-	Check($identity->Resolve($uid, true) === $retired, 'Reused target never revives retired uid');
+	Check($identity->Resolve($uid, $allow) === $retired, 'Reused target never revives retired uid');
 
 	$db->beginTransaction(); $identity->IssueLocation(1, 2);
 	$child = Child($db, $schema, 'delete', 'transactionid'); $db->commit();
-	Check(Finish($child) === 'deleted' && $identity->Resolve($newUid, true)['status'] === 'retired', 'Delete waits for issuance and retires it');
+	Check(Finish($child) === 'deleted' && $identity->Resolve($newUid, $allow)['status'] === 'retired', 'Delete waits for issuance and retires it');
 	$db->exec("INSERT INTO locations (id, name) VALUES (1, 'Fourth')");
 	$db->beginTransaction(); $db->exec('DELETE FROM locations WHERE id = 1');
 	$child = Child($db, $schema, '2', 'transactionid'); $db->commit();

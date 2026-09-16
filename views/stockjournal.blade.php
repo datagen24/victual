@@ -134,6 +134,8 @@
 	</div>
 </div>
 
+@include('components.label_print_list_header', ['idPrefix' => 'stockjournal'])
+
 <div class="row mt-2">
 	<div class="col">
 		<table id="stock-journal-table"
@@ -249,12 +251,13 @@
 									href="{{ $U('/product/' . $stockLogEntry->product_id . '/grocycode?download=true') }}">
 									{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Product'))) !!}
 								</a>
-								@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-								<a class="dropdown-item product-grocycode-label-print"
-									data-product-id="{{ $stockLogEntry->product_id }}"
+								@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+								<a class="dropdown-item product-label-print"
+									data-target-id="{{ $stockLogEntry->product_id }}"
+									data-target-name="{{ $stockLogEntry->product_name }}"
 									type="button"
 									href="#">
-									{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Print %s Grocycode on label printer', $__t('Product'))) !!}
+									{{ $__t('Print a label for this product') }}
 								</a>
 								@endif
 							</div>

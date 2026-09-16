@@ -176,7 +176,10 @@ class RecipesController extends BaseController
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
 			'selectedRecipeTotalCosts' => $totalCosts,
 			'selectedRecipeTotalCalories' => $totalCalories,
-			'mealplanSections' => $this->DB->meal_plan_sections()->orderBy('sort_number')
+			'mealplanSections' => $this->DB->meal_plan_sections()->orderBy('sort_number'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		];
 
 		if ($selectedRecipe)
@@ -234,7 +237,12 @@ class RecipesController extends BaseController
 			'recipes' => $this->DB->recipes()->where('type', RecipesService::RECIPE_TYPE_NORMAL)->orderBy('name', 'COLLATE NOCASE'),
 			'recipeNestings' => $this->DB->recipes_nestings()->where('recipe_id', $recipeId),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('recipes'),
-			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved()
+			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
+			// Only the edit form offers a print action: an unsaved recipe has no id to mint
+			// a label against.
+			'labelPrinters' => ($recipeId != 'new' && VICTUAL_FEATURE_FLAG_LABELS)
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 

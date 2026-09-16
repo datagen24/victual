@@ -109,7 +109,7 @@
 			))
 			@endif
 
-			@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+			@if(VICTUAL_FEATURE_FLAG_LABELS)
 			<div class="form-group">
 				<label for="stock_label_type">
 					{{ $__t('Stock entry label') }}

@@ -64,12 +64,12 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   API own-picture bypass), #178 (manual corrections — note it does **not** list the roles
   page's "price visibility is still-unbuilt" claim, fixed with #176), #179 (fabric
   leftovers). Plan 15's remainder ([issue #132](https://github.com/datagen24/victual/issues/132))
-  is unblocked now that #130 and #121 are closed. **Next unclaimed migration number: 0286** —
-  0282 went to #176 with a file behind it, so plan 22's two claimed-unwritten numbers moved up
-  to 0283–0284 and plan 32's (claimed on `master` hours later, gated on ADR-0024) to 0285, per
-  `migrations/RESERVATIONS.md`'s own "claims without files behind them yield" rule. That is the
-  second number collision in two days; both were resolved by the same rule at merge time, so
-  re-read that table when resyncing rather than trusting a number claimed earlier.
+  is unblocked now that #130 and #121 are closed. **2026-09-16: plan 32 landed** as
+  `0283.pgsql.php` (issue #182); its migration was written at 0285 and renumbered down after CI
+  refused the hole left by plan 22's still-unwritten claims below it — `migrations/
+  RESERVATIONS.md`'s own numbering log is the authority on the current claim table; re-read it
+  when resyncing rather than trusting a number claimed earlier. **Next unclaimed migration
+  number: 0286.**
 - **Memory harness**: `claim_check_hook.py` runs in `CLAIM_CHECK_ENFORCE_MODE=warn`; promote
   it to `block` once it stops false-firing. Project hooks need the workspace-trust dialog
   accepted before they run at all.

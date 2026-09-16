@@ -148,23 +148,20 @@
 			'entity' => 'stock'
 			))
 
-			@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-			<div class="form-group">
-				<div class="custom-control custom-checkbox">
-					<input class="form-check-input custom-control-input"
-						type="checkbox"
-						id="print-label"
-						value="1">
-					<label class="form-check-label custom-control-label"
-						for="print-label">{{ $__t('Reprint stock entry label') }}</label>
-				</div>
-			</div>
-			@endif
-
 			<button id="save-stockentry-button"
 				class="btn btn-success">{{ $__t('OK') }}</button>
 
 		</form>
+
+		{{-- Outside the form, the same reason locationform.blade.php's widget is: printing a
+		label is not saving this record. Plan 32 replaced the old "reprint on save" checkbox,
+		which had no printer picker, with the standard print action every kind now shares. --}}
+		@include('components.label_print_widget', [
+			'idPrefix' => 'stockentry-form',
+			'targetId' => $stockEntry->id,
+			'targetName' => $product->name,
+			'printLabel' => $__t('Print a label for this stock entry'),
+		])
 	</div>
 </div>
 @stop

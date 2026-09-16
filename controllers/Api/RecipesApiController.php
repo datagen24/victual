@@ -3,8 +3,6 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
-use Victual\Helpers\Grocycode;
-use Victual\Helpers\WebhookRunner;
 use Victual\Services\FieldPolicy;
 use Victual\Services\RecipesService;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -104,31 +102,4 @@ class RecipesApiController extends BaseApiController
 		});
 	}
 
-	/**
-	 * GET /api/recipes/{recipeId}/printlabel - assembles the label printer webhook payload
-	 * (recipe name, Grocycode, recipe row plus VICTUAL_LABEL_PRINTER_PARAMS), runs the webhook
-	 * server-side when VICTUAL_LABEL_PRINTER_RUN_SERVER is enabled and returns the payload (200)
-	 * or a 400 error response.
-	 */
-	public function RecipePrintLabel(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
-		return $this->HandleApiCall($response, function () use ($args, $response)
-		{
-			$recipe = $this->DB->recipes()->where('id', $args['recipeId'])->fetch();
-
-			$webhookData = array_merge([
-				'recipe' => $recipe->name,
-				'grocycode' => (string)(new Grocycode(Grocycode::RECIPE, $args['recipeId'])),
-				'details' => $recipe
-			], VICTUAL_LABEL_PRINTER_PARAMS);
-
-			if (VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			{
-				(new WebhookRunner())->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
-			return $this->ApiResponse($response, $webhookData);
-		});
-	}
 }

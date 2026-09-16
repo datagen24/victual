@@ -225,20 +225,13 @@ $(document).on('click', '.track-chore-button', function(e)
 	);
 });
 
-// Fetches the Grocycode label data for a chore (GET chores/{id}/printlabel) and forwards it
-// to the configured label printer webhook, if any
-$(document).on('click', '.chore-grocycode-label-print', function(e)
-{
-	e.preventDefault();
-
-	var choreId = $(e.currentTarget).attr('data-chore-id');
-	Victual.Api.Get('chores/' + choreId + '/printlabel', function(labelData)
-	{
-		if (Victual.Webhooks.labelprinter !== undefined)
-		{
-			Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-		}
-	});
+// The print action (views/components/label_print_list_header.blade.php), plan 32.
+Victual.LabelPrinting.Wire({
+	kind: 'chore',
+	trigger: '.chore-label-print',
+	within: '#chores-overview-table',
+	printerSelect: '#choresoverview-printer',
+	status: '#choresoverview-status'
 });
 
 /**

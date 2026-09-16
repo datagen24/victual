@@ -11,17 +11,10 @@ Victual.EntityForm({
 	list: '/batteries'
 });
 
-// Print a battery grocycode label: GET /api/batteries/{id}/printlabel, then pass the label data to the configured label printer webhook
-$(document).on('click', '.battery-grocycode-label-print', function (e)
-{
-	e.preventDefault();
-
-	var batteryId = $(e.currentTarget).attr('data-battery-id');
-	Victual.Api.Get('batteries/' + batteryId + '/printlabel', function (labelData)
-	{
-		if (Victual.Webhooks.labelprinter !== undefined)
-		{
-			Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-		}
-	});
+// The print action (views/components/label_print_widget.blade.php), plan 32.
+Victual.LabelPrinting.Wire({
+	kind: 'battery',
+	trigger: '#battery-form-button',
+	printerSelect: '#battery-form-printer',
+	status: '#battery-form-status'
 });

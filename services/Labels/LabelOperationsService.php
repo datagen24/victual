@@ -25,25 +25,28 @@ class LabelOperationsService extends LabelService
     }
 
     /**
-     * Issues a label for a location and queues its render. The job exists immediately and is
-     * not claimable until the artifact is attached.
+     * Issues a label for a target of the given kind and queues its render. The job exists
+     * immediately and is not claimable until the artifact is attached.
+     *
+     * Named for locations, which is what this was before plan 32: the method kept its name
+     * and gained a leading `$kind` rather than being renamed, per that plan's piece B.
      */
-    public function IssueLocation(int $locationId, int $epoch, int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
+    public function IssueLocation(string $kind, int $targetId, int $epoch, ?int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
     {
         $this->Transaction();
 
         $identity = new LabelIdentityService($this->db);
         try {
-            $uid = $identity->IssueLocation($locationId, $epoch);
+            $uid = $identity->Issue($kind, $targetId, $epoch);
         } catch (\RuntimeException $error) {
-            $this->Refuse('import_epoch', 'stale_location_context', $error->getMessage());
+            $this->Refuse('import_epoch', 'stale_target_context', $error->getMessage());
         }
 
         $resolved = $this->ResolvePrinter($printerId);
-        $version = $this->ResolveTemplate('location', $templateId, $templateVersionId, $resolved['profile']);
+        $version = $this->ResolveTemplate($kind, $templateId, $templateVersionId, $resolved['profile']);
 
         $capture = (new LabelCaptureService($this->db, $this->permissionCheck))
-            ->Capture('location', $locationId, $uid, self::FieldsOf($version['document']), $locale, $timezone, $this->userId);
+            ->Capture($kind, $targetId, $uid, self::FieldsOf($version['document']), $locale, $timezone, $this->userId);
 
         $request = (new RenderRequestService($this->db))
             ->CreateForVersion('production', (int)$version['id'], (int)$resolved['profile']['id'], (int)$capture['id'], $this->userId);
@@ -96,22 +99,22 @@ class LabelOperationsService extends LabelService
      * A revised print: the same uid, current data, a new capture and a new render. The
      * earlier artifact is not touched.
      */
-    public function RevisedPrint(int $locationId, int $epoch, int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
+    public function RevisedPrint(string $kind, int $targetId, int $epoch, ?int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
     {
         $this->Transaction();
 
-        $uid = $this->Query("SELECT uid FROM labels WHERE kind='location' AND target_id=? AND retired_at IS NULL", [$locationId])->fetchColumn();
+        $uid = $this->Query('SELECT uid FROM labels WHERE kind=? AND target_id=? AND retired_at IS NULL', [$kind, $targetId])->fetchColumn();
         if (!$uid) {
-            $this->Refuse('location_id', 'no_live_label', 'That location has no live label; a revised print keeps an existing identity rather than minting one');
+            $this->Refuse('target_id', 'no_live_label', 'That target has no live label; a revised print keeps an existing identity rather than minting one');
         }
         // The epoch guard applies here too: a request composed before an import and executed
         // after it would otherwise capture whatever now holds that id.
-        (new LabelIdentityService($this->db))->IssueLocation($locationId, $epoch);
+        (new LabelIdentityService($this->db))->Issue($kind, $targetId, $epoch);
 
         $resolved = $this->ResolvePrinter($printerId);
-        $version = $this->ResolveTemplate('location', $templateId, $templateVersionId, $resolved['profile']);
+        $version = $this->ResolveTemplate($kind, $templateId, $templateVersionId, $resolved['profile']);
         $capture = (new LabelCaptureService($this->db, $this->permissionCheck))
-            ->Capture('location', $locationId, (string)$uid, self::FieldsOf($version['document']), $locale, $timezone, $this->userId);
+            ->Capture($kind, $targetId, (string)$uid, self::FieldsOf($version['document']), $locale, $timezone, $this->userId);
         $request = (new RenderRequestService($this->db))
             ->CreateForVersion('production', (int)$version['id'], (int)$resolved['profile']['id'], (int)$capture['id'], $this->userId);
 
@@ -225,9 +228,20 @@ class LabelOperationsService extends LabelService
         return $this->Query('UPDATE print_jobs SET cancelled_at=CURRENT_TIMESTAMP,cancelled_reason=? WHERE id=? RETURNING *', [$reason, $jobId])->fetch(\PDO::FETCH_ASSOC);
     }
 
-    /** Resolves a printer, its driver, its combination and the immutable profile for it. */
-    public function ResolvePrinter(int $printerId): array
+    /**
+     * Resolves a printer, its driver, its combination and the immutable profile for it.
+     *
+     * A null id resolves to the default printer (the first active one, `is_default` first) -
+     * plan 32 question 3's answer for a purchase-time job, whose form names no printer.
+     */
+    public function ResolvePrinter(?int $printerId): array
     {
+        if ($printerId === null) {
+            $printerId = (int)$this->Query("SELECT id FROM label_printers WHERE active=1 ORDER BY is_default DESC, name LIMIT 1")->fetchColumn();
+            if ($printerId === 0) {
+                $this->Refuse('printer_id', 'no_printer', 'No active printer is configured');
+            }
+        }
         $resolved = (new PrinterConfigurationService($this->db))->Resolve($printerId);
         $printer = $resolved['printer'];
 
@@ -320,10 +334,15 @@ class LabelOperationsService extends LabelService
      * provenance carries it and because issue 79's scan surface shows a human-readable line
      * that has to say what the label was for. A template that draws only a QR still produces
      * a job somebody can read.
+     *
+     * A stock entry has no name of its own - `FieldCatalogue::For('stock_entry')` names the
+     * product it holds `stock_entry.product_name` rather than `stock_entry.name` - so that is
+     * the field always captured for that one kind.
      */
     private static function FieldsOf(array $document): array
     {
-        $fields = [$document['entity_kind'] . '.name'];
+        $nameField = $document['entity_kind'] === 'stock_entry' ? 'stock_entry.product_name' : $document['entity_kind'] . '.name';
+        $fields = [$nameField];
         foreach ($document['elements'] as $element) {
             if ($element['type'] === 'text' && ($element['field'] ?? null) !== null) {
                 $fields[] = $element['field'];

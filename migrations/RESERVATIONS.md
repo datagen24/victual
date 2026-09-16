@@ -68,9 +68,9 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in `master` |
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
 | 0282 | [issue #176](https://github.com/datagen24/victual/issues/176) items 1 and 3 — the price-visibility policy re-applied from `db/pgsql/prices-seed.sql`, plus the `product_barcodes`/`product_barcodes_view` `last_price` rows 0281 missed | in this tree |
-| 0283 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0284 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
-| 0285 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | **claimed, unwritten** |
+| 0283 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in this tree |
+| 0284 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0285 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -214,6 +214,19 @@ already names: plan 32's claim and this migration were made hours apart by branc
 not see each other, and this table cannot serialize branches that have not talked. Neither
 claim was wrong when it was made. What the rule does is decide the tie without either branch
 having to be at fault — a claim is a placeholder, a file is a fact, and the placeholder moves.
+
+**2026-09-16 — an eleventh move, and the first this branch made against itself rather than
+against another branch.** Plan 32's migration was written on this branch under its claimed
+number, 0285, while 22's two numbers, 0283–0284, stayed unwritten claims below it — a hole
+`--allow-reserved-holes` waived locally throughout implementation, exactly as the waiver is
+for. CI does not set that waiver, and its `suite` job refused the branch on those same two
+numbers once 0285 had a file behind it: the rule this table keeps restating cuts the same way
+here as it did against issue #176 and issue #130 — a number that has a file takes the lowest
+free slot, and a claim without one yields, whoever holds each. Applying it: plan 32 moves from
+0285 to **0283**, the lowest free slot below its own written file, and plan 22's two numbers
+move up in turn, from 0283–0284 to **0284–0285**. `check-migrations.php` then passes with no
+waiver needed. [Plan 32](../docs/plans/32-label-kinds.md)'s own numbering line moves with this
+table. The next unclaimed number is still **0286**.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23

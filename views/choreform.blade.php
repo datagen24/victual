@@ -330,17 +330,23 @@
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
 							href="{{ $U('/chore/' . $chore->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-						@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-						<a class="btn btn-outline-primary btn-sm chore-grocycode-label-print"
-							data-chore-id="{{ $chore->id }}"
-							href="#">
-							{{ $__t('Print on label printer') }}
-						</a>
-						@endif
 					</p>
 				</div>
 			</div>
 		</div>
+
+		@if($mode == 'edit')
+		<div class="row">
+			<div class="col">
+				@include('components.label_print_widget', [
+					'idPrefix' => 'chore-form',
+					'targetId' => $chore->id,
+					'targetName' => $chore->name,
+					'printLabel' => $__t('Print a label for this chore'),
+				])
+			</div>
+		</div>
+		@endif
 	</div>
 </div>
 @stop

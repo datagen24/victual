@@ -195,9 +195,11 @@ class LabelTemplatesApiController extends BaseApiController
         ];
     }
 
+    /** A stock entry has no name field of its own; see LabelOperationsService::FieldsOf(). */
     private function FieldsOf(array $document): array
     {
-        $fields = [$document['entity_kind'] . '.name'];
+        $nameField = $document['entity_kind'] === 'stock_entry' ? 'stock_entry.product_name' : $document['entity_kind'] . '.name';
+        $fields = [$nameField];
         foreach ($document['elements'] as $element) {
             if ($element['type'] === 'text' && ($element['field'] ?? null) !== null) {
                 $fields[] = $element['field'];

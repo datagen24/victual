@@ -50,7 +50,12 @@ class ChoresController extends BaseController
 				'userfields' => UserfieldsService::GetInstance()->GetFields('chores'),
 				'assignmentTypes' => GetClassConstants('\Victual\Services\ChoresService', 'CHORE_ASSIGNMENT_TYPE_'),
 				'users' => $users,
-				'products' => $this->DB->products()->orderBy('name', 'COLLATE NOCASE')
+				'products' => $this->DB->products()->orderBy('name', 'COLLATE NOCASE'),
+				// Only the edit form offers a print action: an unsaved chore has no id to
+				// mint a label against.
+				'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+					? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+					: []
 			]);
 		}
 	}
@@ -161,7 +166,10 @@ class ChoresController extends BaseController
 			'nextXDays' => $nextXDays,
 			'userfields' => UserfieldsService::GetInstance()->GetFields('chores'),
 			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('chores'),
-			'users' => $usersService->GetUsersAsDto()
+			'users' => $usersService->GetUsersAsDto(),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 
