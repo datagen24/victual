@@ -41,7 +41,7 @@ php .devtools/labels/kinds-tests.php
 `kinds-tests.php` is plan 32: for each of the five kinds that joined the label subsystem
 alongside `location` - `product`, `stock_entry`, `recipe`, `chore`, `battery` - it captures
 every field `FieldCatalogue::For()` declares, issues a label, resolves it live, deletes the
-target and asserts migration 0285's per-kind retirement trigger fires and the snapshot names
+target and asserts migration 0283's per-kind retirement trigger fires and the snapshot names
 the deleted row. It also exercises `LabelOperationsService::IssueLocation()` for a
 non-location kind with `printerId = null`, the default-printer resolution question 3
 answers.

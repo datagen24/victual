@@ -14,10 +14,12 @@ which should snapshot after this lands or regenerate when it does; [17](17-ecosy
 whose premise 0024 replaces.
 **Status:** draft, wave-independent, **ready to start**: ADR-0024 accepted 2026-09-15. Tracked as
 [issue 182](https://github.com/datagen24/victual/issues/182).
-Migration **0285** claimed (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
+Migration **0283** (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
 until [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19
 piece 2 was written as `0282.pgsql.php` hours after this plan claimed its number, taking the
-lowest free slot with a file behind it and moving plan 22 and this plan up one each.
+lowest free slot with a file behind it and moving plan 22 and this plan up one each; then 0285
+until this plan's own migration was written and, by the same rule, took the lowest free slot
+below it — plan 22's two numbers, still unwritten claims, moved up to 0284-0285 in turn.
 
 ## Why this exists
 
@@ -49,7 +51,7 @@ The new path is location-only at every layer today, not only in templates:
 
 Five pieces in three dependency groups. A alone; B and C after A; D after C; E last.
 
-### A. Schema — migration 0285
+### A. Schema — migration 0283
 
 - Widen the three `CHECK (... IN ('location','product','stock_entry'))` constraints on
   `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` to the six
@@ -97,7 +99,7 @@ Five pieces in three dependency groups. A alone; B and C after A; D after C; E l
 - One seeded default template per kind, in the same shape as the location default
   (`LabelTemplateService::EmptyDocument`): the QR and one text line bound to the kind's
   `name` field, so a fresh install prints something readable for every kind before anyone
-  opens the designer. Seeded by 0285 the way the location default is seeded today.
+  opens the designer. Seeded by 0283 the way the location default is seeded today.
 - The designer's field picker (`labeltemplateeditor.js`) reads the catalogue for the
   template's kind instead of the hard-coded location list — the same defect plan 06 Q5 hit
   with `location.path`.
@@ -167,7 +169,7 @@ a plan-level choice.
 
 ## Verification
 
-1. `.devtools/pgsql/check-migrations.php` passes with 0285 in the tree.
+1. `.devtools/pgsql/check-migrations.php` passes with 0283 in the tree.
 2. The label test suites' disposable schemas carry the six kinds; `identity-tests.php`
    issues, resolves and retires one label of each kind, and the retired branch carries each
    kind's snapshot.
@@ -187,7 +189,11 @@ a plan-level choice.
 
 ## Executed (2026-09-16)
 
-All five pieces shipped as migration `0285.pgsql.php` and the application code around it,
+All five pieces shipped as migration `0283.pgsql.php` (renumbered down from `0285.pgsql.php`
+after CI's migration-numbering check refused this branch: `migrations/RESERVATIONS.md`'s own
+rule is that a written file takes the lowest free slot and an unwritten claim below it yields,
+which is what plan 22's still-unwritten 0283-0284 were doing under this plan's 0285 — see that
+file's numbering log for the renumbering itself) and the application code around it,
 [issue 182](https://github.com/datagen24/victual/issues/182). Verified against a real
 PostgreSQL 16.13 (this sandbox's own instance) and a real `bin/victual-migrate` run against a
 fresh database — not against a mocked schema.
@@ -206,7 +212,7 @@ through `LabelTemplateService::Create()`/`Publish()` means the seeded rows are v
 amount}` snapshot the plan named, the other four `{id, name}` like `retire_location_labels`.
 
 **One correction to this plan's own text, found while implementing it and not before.** The
-"seeded by 0285 the way the location default is seeded today" clause does not describe
+"seeded by 0283 the way the location default is seeded today" clause does not describe
 anything in `master`: the tree has no seeded default template for `location` and never has
 — a household creates one by hand through the designer, or prints nothing. So the five new
 defaults are the first seeded templates this codebase has shipped, not a repeat of an
@@ -385,12 +391,22 @@ shipped (25, 27, 32) rather than describe a still-pending state.
 
 ### Verification
 
-1. **Passes.** `check-migrations.php --allow-reserved-holes` (the two waived holes are plan
-   22's unwritten 0283–0284, unrelated to this change).
+1. **Passes locally, failed in CI, then was fixed by renumbering.** `check-migrations.php
+   --allow-reserved-holes` passed against this branch throughout implementation, waiving what
+   looked like two holes unrelated to this change — plan 22's unwritten claims sitting below
+   this plan's then-number, 0285. CI does not set that waiver (`migrations/RESERVATIONS.md`
+   says so by name), and its `suite` job failed on exactly those two holes once this migration
+   had a file behind it. The rule the waiver exists to describe is not "wave until the other
+   branch merges" — it is "the number about to have a file behind it takes the lowest free
+   slot, and an unwritten claim yields" — the same rule `RESERVATIONS.md` had already applied
+   ten times before this plan's own number ever collided with anything. Applying it here
+   renumbered this migration from `0285.pgsql.php` down to `0283.pgsql.php` and moved plan 22's
+   two numbers up in turn, to 0284–0285; `check-migrations.php` then passes with no waiver
+   needed, which is the state a mergeable branch is supposed to be in.
 2. **Passes**, as a new suite (`.devtools/labels/kinds-tests.php`, 44 assertions, added to
    the `suite` CI job): for each of the five new kinds, every `FieldCatalogue` field captures
    without refusing, `Issue()`/`Resolve()` round-trip live, and deleting the target retires
-   the label with a snapshot naming it — migration 0285's five triggers, exercised for real
+   the label with a snapshot naming it — migration 0283's five triggers, exercised for real
    rather than asserted from reading the SQL.
 3. **Partly.** `kinds-tests.php` captures every catalogue field of every kind (the first half
    of this item). It does not separately hit a `'null' => 'error'` refusal per kind: every

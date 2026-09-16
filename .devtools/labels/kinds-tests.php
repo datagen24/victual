@@ -36,7 +36,7 @@ runLabelTests(function (PDO $db, string $schema) {
         $table = FieldCatalogue::TableFor($kind);
         $db->exec("DELETE FROM $table WHERE id=$id");
         $retired = $identity->Resolve($uid, $allow);
-        check($retired['status'] === 'retired', "$kind: deleting the target retires its label (migration 0285's retire_${kind}_labels trigger)");
+        check($retired['status'] === 'retired', "$kind: deleting the target retires its label (migration 0283's retire_${kind}_labels trigger)");
         check(is_array($retired['snapshot']) && ($retired['snapshot']['id'] ?? null) == $id, "$kind: the retirement snapshot names the deleted row's id");
 
         // Restore the row exactly as fixture() created it (test-support.php), so a later

@@ -144,8 +144,10 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   drag before/after. See plan 27's Executed section for the full account, including the two
   documentation-lag and one test-race findings the same review caught. [→](project_state.md)
 - **2026-09-16 — Plan 32 landed** (label kinds, issue #182 closed), the largest item and the
-  one everything else in labels waited on. Migration `0285.pgsql.php` (a PHP migration, not
-  `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only) widens the three
+  one everything else in labels waited on. Migration `0283.pgsql.php` (a PHP migration, not
+  `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only; renumbered down
+  from `0285.pgsql.php` after PR #186's CI failed the un-renumbered branch — see the follow-up
+  entry below) widens the three
   `entity_kind`/`kind` `CHECK`s to six values, adds `import_epoch` to `products`/`stock`/
   `recipes`/`chores`/`batteries`, adds one retirement trigger per table, and seeds a QR-only
   default template per new kind through the real `LabelTemplateService`. `FieldCatalogue` gained
@@ -188,6 +190,26 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   replicating its check directly), and physical printing on the QL-820NWBc for the five new
   kinds. See the plan's own [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16)
   for the full account, piece by piece.
+- **2026-09-16 — Plan 32 follow-up on PR #186.** Two defects found after landing, both fixed
+  and pushed to the same branch. First, a real `TypeError`: `LabelOperationsService::RevisedPrint()`
+  declared `$printerId` as non-nullable `int`, but `StockService::ReviseStockEntryLabelIfLive()`
+  passes `null` for an automatic revised print (matching `ResolvePrinter()`'s documented
+  default-printer behaviour) — any due-date change with `auto_reprint_stock_label` enabled and
+  a live label threw and rolled back the open/transfer transaction. Fixed by widening the
+  parameter to `?int`, matching `IssueLocation()`. Second, CI's `suite` job failed "checking
+  migration numbering": `.devtools/pgsql/run-tests.sh` never sets `SUITE_ALLOW_RESERVED_HOLES`
+  (`migrations/RESERVATIONS.md` says so by name — "CI does not set it"), so the two unwritten
+  claims plan 22 held below this plan's number, 0283–0284 under the migration as originally
+  written at 0285, hard-failed rather than being waived the way it was locally throughout
+  implementation. This was not a false positive: `RESERVATIONS.md`'s own rule — a written file
+  takes the lowest free slot, an unwritten claim below it yields — applied to this plan's own
+  migration exactly as it had to the ten collisions already logged there. Renumbered
+  `0285.pgsql.php` down to `0283.pgsql.php` (content otherwise unchanged, one internal comment
+  string updated) and moved plan 22's two claims up to 0284–0285; `check-migrations.php` then
+  passes with no waiver. Re-verified against real PostgreSQL 16.13: the `migrate` suite phase
+  and `kinds-tests.php` (44 assertions) both pass clean post-renumber. See
+  [RESERVATIONS.md](../migrations/RESERVATIONS.md)'s "eleventh move" entry and the plan's own
+  [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16), verification item 1.
 
 ## DOCTRINE (operator-locked decisions)
 

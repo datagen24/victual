@@ -145,7 +145,7 @@ DatabaseService::GetInstance()->InTransaction(function ()
 		'battery' => 'Default battery label',
 	] as $kind => $name)
 	{
-		$template = $templates->Create($name, 'Seeded default label for ' . $kind . ' (migration 0285)', $kind, null);
+		$template = $templates->Create($name, 'Seeded default label for ' . $kind . ' (migration 0283)', $kind, null);
 		$templates->Publish((int)$template['id'], null);
 	}
 });
