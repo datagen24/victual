@@ -99,7 +99,7 @@ class LabelOperationsService extends LabelService
      * A revised print: the same uid, current data, a new capture and a new render. The
      * earlier artifact is not touched.
      */
-    public function RevisedPrint(string $kind, int $targetId, int $epoch, int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
+    public function RevisedPrint(string $kind, int $targetId, int $epoch, ?int $printerId, ?int $templateId, ?int $templateVersionId, string $locale, string $timezone): array
     {
         $this->Transaction();
 
