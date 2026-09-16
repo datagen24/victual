@@ -190,7 +190,7 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   replicating its check directly), and physical printing on the QL-820NWBc for the five new
   kinds. See the plan's own [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16)
   for the full account, piece by piece.
-- **2026-09-16 — Plan 32 follow-up on PR #186.** Two defects found after landing, both fixed
+- **2026-09-16 — Plan 32 follow-up on PR #186.** Three defects found after landing, all fixed
   and pushed to the same branch. First, a real `TypeError`: `LabelOperationsService::RevisedPrint()`
   declared `$printerId` as non-nullable `int`, but `StockService::ReviseStockEntryLabelIfLive()`
   passes `null` for an automatic revised print (matching `ResolvePrinter()`'s documented
@@ -210,6 +210,27 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   and `kinds-tests.php` (44 assertions) both pass clean post-renumber. See
   [RESERVATIONS.md](../migrations/RESERVATIONS.md)'s "eleventh move" entry and the plan's own
   [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16), verification item 1.
+  Third, `frontend-security`'s CI job failed too, on two stale `.devtools/frontend` probes
+  piece C's generalisation broke and this session's own verification never re-ran: locations'
+  print button kept the class `location-print-button` (no rename for its own sake) but its
+  data attributes became the shared `data-target-id`/`data-target-name`
+  (`victual_label_print.js` reads those, generically, across all six kinds), the location
+  form's print button id became `{idPrefix}-button` (`location-form-button`) from the shared
+  `label_print_widget` partial rather than the old `location-form-print-button`, and the list's
+  status region kept `location-list-status` from `label_print_list_header` rather than a
+  `location-print-status` that never existed after the partial split. `location-print.js` still
+  asserted the old names on all four counts. Separately, `label-designer.js` looked for a
+  button named "Create a location label template" — the designer's create button lost its
+  per-kind text when the entity-kind picker (`#new-template-entity-kind`) was added beside it;
+  the button now just says "Create a label template", and the picker's first option
+  ('location') still makes the probe's own intent hold. Both probes updated to match the
+  markup piece C actually ships; re-run for real against a local PHP 8.5-gated instance (the
+  `run-app` skill's `PrerequisiteChecker` workaround, reverted after) with
+  `label-printers.js`/`location-print.js`/`label-designer.js` — the exact three steps
+  `frontend-security` runs against the labels instance — all passing clean. The gap: this
+  session's original verification pass ran the PHP-side suites and a disposable PostgreSQL
+  script, never these three browser probes, so two pre-existing tests silently going stale was
+  invisible until CI ran them for real.
 
 ## DOCTRINE (operator-locked decisions)
 

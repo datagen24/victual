@@ -414,9 +414,24 @@ shipped (25, 27, 32) rather than describe a still-pending state.
    already true of `location.name` in the existing `artifact-tests.php` — there is no
    reachable case to refuse against without corrupting the fixture past what a real
    installation could produce.
-4. **Not run.** No frontend probe exists for any of the five new kinds' print action or the
-   template designer's kind-aware field picker; piece C's own account above says why
-   (PHP 8.5 unavailable in this sandbox).
+4. **Still not run for the five new kinds; the location and designer probes that do exist were
+   run in the PR #186 follow-up and both needed a fix.** No frontend probe exists for any of
+   the five new kinds' print action — that gap stands. But `.devtools/frontend/location-print.js`
+   and `label-designer.js` do exist, predate this plan, and are two of the three steps
+   `frontend-security`'s CI job runs against the labels instance; this plan's original
+   verification pass never ran them (PHP 8.5 unavailable in this sandbox, so the labels
+   instance piece C's own account above describes could not be booted at the time), and CI
+   caught what that gap hid: piece C's generic `data-target-id`/`data-target-name` attributes
+   (replacing `location-print.js`'s hard-coded `data-location-name`), the shared
+   `label_print_widget` partial's `{idPrefix}-button`/`{idPrefix}-status` ids (replacing
+   `#location-form-print-button`/`#location-print-status`, which the partial never produced),
+   and the designer's kind-neutral "Create a label template" button text (replacing
+   `label-designer.js`'s "Create a location label template") were none of them carried into
+   these two probes when piece C was written. Fixed by updating both probes to the markup
+   piece C actually ships, and re-verified for real this time: the `run-app` skill's
+   `PrerequisiteChecker` workaround (reverted after) booted a PHP 8.5-gated labels instance,
+   and `label-printers.js`/`location-print.js`/`label-designer.js` — the exact three steps
+   `frontend-security` runs — all passed against it.
 5. **Passes**, against real PostgreSQL — see piece D above for the exact counts.
 6. **Passes.** `grep -rn "printlabel\|LABEL_PRINTER" --include=*.php --include=*.js
    --include=*.blade.php` over the tree returns nothing at all (not even a Grocycode
