@@ -244,13 +244,22 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   the `.devtools/labels/` suite this session's original call-site sweep covered) with an
   uncaught `TypeError` and the same stack shape, which is what made grepping the whole tree for
   `->Resolve(` worth doing — it found both, not just the one that happened to crash a test.
-  Fixed both call sites the same way: `fn (string $kind): bool => true`, the same pattern a
-  caller that already checked the needed permission elsewhere uses throughout this codebase
-  (`kinds-tests.php`, `identity-tests.php`). Full `run-tests.sh all` (no waiver) and
+  Fixed the test with `fn (string $kind): bool => true` (it resolves a plain location fixture
+  and needs nothing narrower, matching `kinds-tests.php`/`identity-tests.php`'s own style).
+  `WeighLocationByLabel()` first got the same fix and, on review, a second one: a caller that
+  only ever wants a location should scope the callable to that kind -
+  `fn (string $kind): bool => $kind === 'location'` - rather than authorize every kind and
+  reject afterward. `Resolve()`'s per-kind gate (`AnyAllowed()`, then `!$mayRead($row['kind'])`
+  before `ResolveTarget()` runs) exists precisely so a denied kind's target is never looked up
+  at all; granting `true` unconditionally would have let a scanned recipe/chore/battery/
+  product/stock_entry code resolve fully before the endpoint's own kind check rejected it,
+  reopening the "denied caller does no label lookup" boundary `identity-tests.php` tests by
+  name for read permissions in general. Full `run-tests.sh all` (no waiver) and
   `kinds-tests.php`/`identity-tests.php` re-verified clean against real PostgreSQL 16.13
   afterward. The lesson repeats the third finding's own: a signature generalised for one
   caller's convenience has to be grepped for across the *whole* tree, not just the directory
-  this session happened to be editing in.
+  this session happened to be editing in - and the narrowest correct callable is not always the
+  first one that compiles.
 
 ## DOCTRINE (operator-locked decisions)
 

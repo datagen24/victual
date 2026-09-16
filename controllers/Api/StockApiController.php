@@ -1064,11 +1064,13 @@ class StockApiController extends BaseApiController
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
 			// Resolve() takes a per-kind callable rather than a single flag since plan 32
-			// generalised it past locations; PERMISSION_STOCK_EDIT is already required above,
-			// and the kind check just below refuses anything Resolve() returns that is not a
-			// location, so the callable simply grants what the flag used to mean here.
+			// generalised it past locations. This endpoint only ever wants a location - scoping
+			// the callable to that kind (rather than granting every kind and rejecting
+			// afterwards) keeps Resolve()'s per-kind denial boundary intact: a scanned
+			// recipe/chore/battery/product/stock_entry code is refused before any lookup for
+			// it runs, not merely after.
 			$resolved = (new LabelIdentityService(DatabaseService::GetInstance()->GetDbConnectionRaw()))
-				->Resolve($args['code'], fn (string $kind): bool => true);
+				->Resolve($args['code'], fn (string $kind): bool => $kind === 'location');
 
 			if (($resolved['status'] ?? null) !== 'resolved' || ($resolved['kind'] ?? null) !== 'location')
 			{

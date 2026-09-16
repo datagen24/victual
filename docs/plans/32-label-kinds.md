@@ -417,10 +417,15 @@ shipped (25, 27, 32) rather than describe a still-pending state.
    /api/stock/locations/by-label/{code}/weigh`, the plan 29 endpoint a kitchen scale calls by
    scanning a location label — which shipped in this plan's original push with the same defect
    and no test coverage of its own to catch it. Every request to that endpoint would have
-   thrown instead of weighing anything. Both fixed with `fn (string $kind): bool => true`,
-   the same pattern already used where a caller has separately established the permission it
-   needs; re-verified with a full `run-tests.sh all` (no waiver) and both label suites, all
-   clean against real PostgreSQL 16.13.
+   thrown instead of weighing anything. The test was fixed with `fn (string $kind): bool =>
+   true`, the pattern already used where a caller has separately established the permission it
+   needs; the endpoint got a narrower callable on review, `fn (string $kind): bool => $kind ===
+   'location'`, since it only ever wants a location and `Resolve()`'s per-kind gate exists to
+   refuse a denied kind's lookup entirely rather than merely reject it after resolving — the
+   endpoint's own kind check would have caught a mismatch either way, but only the narrower
+   callable keeps the "denied kind, no lookup at all" property `identity-tests.php` tests by
+   name for read permissions generally. Re-verified with a full `run-tests.sh all` (no waiver)
+   and both label suites, all clean against real PostgreSQL 16.13.
 3. **Partly.** `kinds-tests.php` captures every catalogue field of every kind (the first half
    of this item). It does not separately hit a `'null' => 'error'` refusal per kind: every
    such field in the five new catalogues sits on a `NOT NULL` database column, so — as is
