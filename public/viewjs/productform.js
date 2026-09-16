@@ -322,19 +322,12 @@ setTimeout(function ()
 	$('#name').focus();
 }, Victual.FormFocusDelay);
 
-// Print the product's grocycode via the configured label printer webhook
-$(document).on('click', '.product-grocycode-label-print', function (e)
-{
-	e.preventDefault();
-
-	var productId = $(e.currentTarget).attr('data-product-id');
-	Victual.Api.Get('stock/products/' + productId + '/printlabel', function (labelData)
-	{
-		if (Victual.Webhooks.labelprinter !== undefined)
-		{
-			Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-		}
-	});
+// The print action (views/components/label_print_widget.blade.php), plan 32.
+Victual.LabelPrinting.Wire({
+	kind: 'product',
+	trigger: '#product-form-button',
+	printerSelect: '#product-form-printer',
+	status: '#product-form-status'
 });
 
 // Delete a QU conversion row (after confirmation), then reload the page by re-submitting the product form with a "reload" redirect
@@ -595,7 +588,7 @@ else if (Victual.EditMode === 'create')
 		$("#treat_opened_as_out_of_stock").prop("checked", BoolVal(Victual.UserSettings.product_presets_treat_opened_as_out_of_stock));
 	}
 
-	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 	{
 		$("#default_stock_label_type").val(Victual.UserSettings.product_presets_default_stock_label_type);
 	}

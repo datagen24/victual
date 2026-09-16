@@ -115,15 +115,19 @@
 			<p>
 				<a class="btn btn-outline-primary btn-sm"
 					href="{{ $U('/battery/' . $battery->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-				@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-				<a class="btn btn-outline-primary btn-sm battery-grocycode-label-print"
-					data-battery-id="{{ $battery->id }}"
-					href="#">
-					{{ $__t('Print on label printer') }}
-				</a>
-				@endif
 			</p>
 		</div>
+	</div>
+</div>
+
+<div class="row">
+	<div class="col">
+		@include('components.label_print_widget', [
+			'idPrefix' => 'battery-form',
+			'targetId' => $battery->id,
+			'targetName' => $battery->name,
+			'printLabel' => $__t('Print a label for this battery'),
+		])
 	</div>
 </div>
 @endif

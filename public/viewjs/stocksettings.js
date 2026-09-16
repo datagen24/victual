@@ -11,7 +11,7 @@ if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRODUCT_OPENED_TRACKING && B
 	$("#product_presets_treat_opened_as_out_of_stock").prop("checked", true);
 }
 
-if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 {
 	$("#product_presets_default_stock_label_type").val(Victual.UserSettings.product_presets_default_stock_label_type);
 }

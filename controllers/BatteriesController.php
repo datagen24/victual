@@ -68,7 +68,12 @@ class BatteriesController extends BaseController
 			return $this->RenderPage($response, 'batteryform', [
 				'battery' => $this->DB->batteries($args['batteryId']),
 				'mode' => 'edit',
-				'userfields' => UserfieldsService::GetInstance()->GetFields('batteries')
+				'userfields' => UserfieldsService::GetInstance()->GetFields('batteries'),
+				// Only the edit form offers a print action: an unsaved battery has no id to
+				// mint a label against.
+				'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+					? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+					: []
 			]);
 		}
 	}
@@ -142,7 +147,10 @@ class BatteriesController extends BaseController
 			'current' => $currentBatteries,
 			'nextXDays' => $nextXDays,
 			'userfields' => UserfieldsService::GetInstance()->GetFields('batteries'),
-			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('batteries')
+			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('batteries'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 

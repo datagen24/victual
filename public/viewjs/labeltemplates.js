@@ -7,6 +7,7 @@
 $(document).find('#create-template-button').on('click', function()
 {
 	var name = $(document).find('#new-template-name').val();
+	var entityKind = $(document).find('#new-template-entity-kind').val();
 	var region = document.getElementById('label-templates-message');
 
 	function report(kind, text)
@@ -27,7 +28,7 @@ $(document).find('#create-template-button').on('click', function()
 		return;
 	}
 
-	Victual.Api.Post('labels/templates', { 'name': name, 'entity_kind': 'location' },
+	Victual.Api.Post('labels/templates', { 'name': name, 'entity_kind': entityKind },
 		function(template)
 		{
 			window.location.href = U('/labeltemplate/' + template.id);

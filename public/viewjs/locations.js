@@ -21,8 +21,9 @@ Victual.EntityList({
 // itself is Victual.LabelPrinting (public/js/victual_label_print.js), because the location
 // form offers the same action and two copies of an idempotency rule is one too many.
 Victual.LabelPrinting.Wire({
+	kind: 'location',
 	trigger: '.location-print-button',
 	within: '#locations-table',
-	printerSelect: '#location-label-printer',
-	status: '#location-print-status'
+	printerSelect: '#location-list-printer',
+	status: '#location-list-status'
 });

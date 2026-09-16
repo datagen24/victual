@@ -356,18 +356,24 @@
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
 							href="{{ $U('/recipe/' . $recipe->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-						@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-						<a class="btn btn-outline-primary btn-sm recipe-grocycode-label-print"
-							data-recipe-id="{{ $recipe->id }}"
-							href="#">
-							{{ $__t('Print on label printer') }}
-						</a>
-						@endif
 					</p>
 				</div>
 			</div>
 		</div>
 	</div>
+
+	@if($mode == 'edit')
+	<div class="row">
+		<div class="col">
+			@include('components.label_print_widget', [
+				'idPrefix' => 'recipe-form',
+				'targetId' => $recipe->id,
+				'targetName' => $recipe->name,
+				'printLabel' => $__t('Print a label for this recipe'),
+			])
+		</div>
+	</div>
+	@endif
 
 </div>
 

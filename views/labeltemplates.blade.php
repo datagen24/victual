@@ -16,9 +16,17 @@
 				class="form-control mr-2"
 				id="new-template-name"
 				placeholder="{{ $__t('Name') }}">
+			<select class="form-control mr-2" id="new-template-entity-kind">
+				<option value="location">{{ $__t('Location') }}</option>
+				<option value="product">{{ $__t('Product') }}</option>
+				<option value="stock_entry">{{ $__t('Stock entry') }}</option>
+				<option value="recipe">{{ $__t('Recipe') }}</option>
+				<option value="chore">{{ $__t('Chore') }}</option>
+				<option value="battery">{{ $__t('Battery') }}</option>
+			</select>
 			<button class="btn btn-success"
 				id="create-template-button">
-				<i class="fa-solid fa-plus"></i>&nbsp;{{ $__t('Create a location label template') }}
+				<i class="fa-solid fa-plus"></i>&nbsp;{{ $__t('Create a label template') }}
 			</button>
 		</div>
 

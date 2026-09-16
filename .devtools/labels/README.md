@@ -35,7 +35,16 @@ set as above:
 php .devtools/labels/registry-tests.php
 php .devtools/labels/print-job-tests.php
 php .devtools/labels/worker-api-tests.php
+php .devtools/labels/kinds-tests.php
 ```
+
+`kinds-tests.php` is plan 32: for each of the five kinds that joined the label subsystem
+alongside `location` - `product`, `stock_entry`, `recipe`, `chore`, `battery` - it captures
+every field `FieldCatalogue::For()` declares, issues a label, resolves it live, deletes the
+target and asserts migration 0285's per-kind retirement trigger fires and the snapshot names
+the deleted row. It also exercises `LabelOperationsService::IssueLocation()` for a
+non-location kind with `printerId = null`, the default-printer resolution question 3
+answers.
 
 Each program creates a random schema and drops it in `finally`. Claim concurrency uses
 child processes and observes PostgreSQL lock waits. The `ReadyAttempts` test subclass

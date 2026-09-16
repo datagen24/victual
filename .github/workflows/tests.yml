@@ -208,6 +208,13 @@ jobs:
           PGPASSWORD: victual
         run: php .devtools/labels/print-job-tests.php
 
+      - name: Label kinds (plan 32 - product, stock_entry, recipe, chore, battery)
+        env:
+          LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: php .devtools/labels/kinds-tests.php
+
       # The check neither repository can make alone: the real renderer's output, fed to the
       # verifier that will accept or refuse it in production. Both would pass on their own if
       # each were wrong about the same axis in the same direction, which is the defect the

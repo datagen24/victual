@@ -153,46 +153,10 @@ $('#save-purchase-button').on('click', function (e)
 					// (sweep finding S29).
 					var successMessage = __t('Added %1$s of %2$s to stock', amountMessage + " " + __n(amountMessage, Victual.FrontendHelpers.EscapeHtml(productDetails.quantity_unit_stock.name), Victual.FrontendHelpers.EscapeHtml(productDetails.quantity_unit_stock.name_plural), true), Victual.FrontendHelpers.EscapeHtml(productDetails.product.name)) + '<br><a class="btn btn-secondary btn-sm mt-2" href="#" onclick="UndoStockTransaction(\'' + result[0].transaction_id + '\')"><i class="fa-solid fa-undo"></i> ' + __t("Undo") + '</a>';
 
-					// Fire the configured label printer webhook (Victual.Webhooks.labelprinter), either once per
-					// purchase (single label) or once per individual stock entry created (label per unit)
-					if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-					{
-						if (Victual.Webhooks.labelprinter !== undefined)
-						{
-							if (jsonForm.stock_label_type == 1) // Single label
-							{
-								var webhookData = {};
-								webhookData.product = productDetails.product.name;
-								webhookData.grocycode = 'grcy:p:' + jsonForm.product_id + ":" + result[0].stock_id;
-								if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-								{
-									webhookData.due_date = __t('DD') + ': ' + result[0].best_before_date;
-								}
-
-								Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, webhookData);
-							}
-							else if (jsonForm.stock_label_type == 2) // Label per unit
-							{
-								Victual.Api.Get('stock/transactions/' + result[0].transaction_id,
-									function (stockEntries)
-									{
-										stockEntries.forEach(stockEntry =>
-										{
-											var webhookData = {};
-											webhookData.product = productDetails.product.name;
-											webhookData.grocycode = 'grcy:p:' + jsonForm.product_id + ":" + stockEntry.stock_id;
-											if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-											{
-												webhookData.due_date = __t('DD') + ': ' + result[0].best_before_date;
-											}
-
-											Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, webhookData);
-										});
-									}
-								);
-							}
-						}
-					}
+					// Label printing (plan 32): StockService::AddProduct now issues the label and
+					// enqueues its print job itself, inside the same transaction as the
+					// booking, keyed off the stock_label_type the form already posted. There is
+					// nothing left for the client to fire.
 
 					Victual.EditObjectId = result[0].transaction_id;
 					if (GetUriParam("embedded") !== undefined)
@@ -252,7 +216,7 @@ $('#save-purchase-button').on('click', function (e)
 							}
 							Victual.Components.ProductPicker.GetInputElement().focus();
 							Victual.Components.ProductCard.Refresh(jsonForm.product_id);
-							if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+							if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 							{
 								$("#stock_label_type").val(0);
 							}
@@ -387,7 +351,7 @@ if (Victual.Components.ProductPicker !== undefined)
 					// Suggest a due date based on the product's default due days (and freezer defaults, if applicable)
 					PrefillBestBeforeDate(productDetails.product, productDetails.location);
 
-					if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+					if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 					{
 						$("#stock_label_type").val(productDetails.product.default_stock_label_type);
 						$("#stock_label_type").trigger("change");
@@ -805,7 +769,7 @@ function ScanModeSubmit(singleUnit = true)
 }
 
 // "Label per unit" hint: shows how many labels will be printed (one per stock unit) based on the current stock amount
-if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 {
 	$("#stock_label_type, #amount").on("change", function (e)
 	{

@@ -131,20 +131,13 @@ $("#search").on("keyup", Delay(function ()
 	stockOverviewTable.search(value).draw();
 }, Victual.FormFocusDelay));
 
-// Fetches label data for a product's Grocycode and forwards it to the configured
-// label printer webhook (Victual.Webhooks.labelprinter), if any is set up
-$(document).on('click', '.product-grocycode-label-print', function (e)
-{
-	e.preventDefault();
-
-	var productId = $(e.currentTarget).attr('data-product-id');
-	Victual.Api.Get('stock/products/' + productId + '/printlabel', function (labelData)
-	{
-		if (Victual.Webhooks.labelprinter !== undefined)
-		{
-			Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-		}
-	});
+// The print action (views/components/label_print_list_header.blade.php), plan 32.
+Victual.LabelPrinting.Wire({
+	kind: 'product',
+	trigger: '.product-label-print',
+	within: '#stock-overview-table',
+	printerSelect: '#stockoverview-printer',
+	status: '#stockoverview-status'
 });
 
 // Consumes (or marks spoiled) the given amount of a product's aggregated stock

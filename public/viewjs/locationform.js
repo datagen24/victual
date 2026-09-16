@@ -82,9 +82,11 @@ $('#storage_class_id').on('change', function ()
 	$('#is-freezer-derived-note').removeClass('d-none');
 });
 
-// The same print action the locations list offers, wired to this form's own controls.
+// The same print action the locations list offers, wired to this form's own controls
+// (views/components/label_print_widget.blade.php).
 Victual.LabelPrinting.Wire({
-	trigger: '#location-form-print-button',
-	printerSelect: '#location-form-label-printer',
-	status: '#location-form-print-status'
+	kind: 'location',
+	trigger: '#location-form-button',
+	printerSelect: '#location-form-printer',
+	status: '#location-form-status'
 });

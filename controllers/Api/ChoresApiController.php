@@ -3,8 +3,6 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
-use Victual\Helpers\Grocycode;
-use Victual\Helpers\WebhookRunner;
 use Victual\Services\ChoresService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -140,34 +138,6 @@ class ChoresApiController extends BaseApiController
 		{
 			$this->ApiResponse($response, ChoresService::GetInstance()->UndoChoreExecution($args['executionId']));
 			return $this->EmptyApiResponse($response);
-		});
-	}
-
-	/**
-	 * GET /api/chores/{choreId}/printlabel - assembles the label printer webhook payload
-	 * (chore name, Grocycode, details plus VICTUAL_LABEL_PRINTER_PARAMS), runs the webhook
-	 * server-side when VICTUAL_LABEL_PRINTER_RUN_SERVER is enabled and returns the payload (200)
-	 * or a 400 error response.
-	 */
-	public function ChorePrintLabel(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
-		return $this->HandleApiCall($response, function () use ($args, $response)
-		{
-			$choreDetails = (object)ChoresService::GetInstance()->GetChoreDetails($args['choreId']);
-
-			$webhookData = array_merge([
-				'chore' => $choreDetails->chore->name,
-				'grocycode' => (string)(new Grocycode(Grocycode::CHORE, $args['choreId'])),
-				'details' => $choreDetails,
-			], VICTUAL_LABEL_PRINTER_PARAMS);
-
-			if (VICTUAL_LABEL_PRINTER_RUN_SERVER)
-			{
-				(new WebhookRunner())->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
-			return $this->ApiResponse($response, $webhookData);
 		});
 	}
 

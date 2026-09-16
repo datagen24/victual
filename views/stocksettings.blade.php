@@ -77,7 +77,7 @@
 			</div>
 			@endif
 
-			@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+			@if(VICTUAL_FEATURE_FLAG_LABELS)
 			<div class="form-group">
 				<label for="product_presets_default_stock_label_type">{{ $__t('Default stock entry label') }}</label>
 				<select class="custom-control custom-select user-setting-control"

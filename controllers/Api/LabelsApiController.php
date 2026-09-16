@@ -4,6 +4,7 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
 use Victual\Services\DatabaseService;
+use Victual\Services\Labels\FieldCatalogue;
 use Victual\Services\Labels\LabelIdentityService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -14,7 +15,12 @@ class LabelsApiController extends BaseApiController
 	{
 		return $this->HandleApiCall($response, function () use ($response, $args)
 		{
-			return $this->ApiResponse($response, $this->Identity()->Resolve($args['code'], User::HasPermissions(User::PERMISSION_STOCK_VIEW)));
+			// The permission a code resolves under depends on the kind its label names, which
+			// is not known until the row is read - so the check is a callback keyed by kind
+			// rather than a single flag, the same shape LabelCaptureService's own
+			// $permissionCheck already takes.
+			$mayRead = static fn (string $kind): bool => User::HasPermissions(FieldCatalogue::DomainPermission($kind));
+			return $this->ApiResponse($response, $this->Identity()->Resolve($args['code'], $mayRead));
 		});
 	}
 
@@ -29,14 +35,35 @@ class LabelsApiController extends BaseApiController
 		});
 	}
 
+	/** The generic context read for the five kinds plan 32 added; locations keep their own route and method. */
+	public function Context(Request $request, Response $response, array $args)
+	{
+		$kind = (string)$args['kind'];
+		User::CheckPermission($request, FieldCatalogue::DomainPermission($kind));
+		return $this->HandleApiCall($response, function () use ($response, $kind, $args)
+		{
+			$context = $this->Identity()->Context($kind, (int)$args['id']);
+			return $context === null ? $this->GenericErrorResponse($response, ucfirst(str_replace('_', ' ', $kind)) . ' not found', 404)
+				: $this->ApiResponse($response, $context);
+		});
+	}
+
 	/**
 	 * The four print operations, plus cancellation.
 	 *
-	 * `MASTER_DATA_EDIT` **plus the relevant domain read** - `STOCK_VIEW` for locations - per
-	 * the maintainer's answer to plan 27 question 2. Both are checked: the edit grant is what
-	 * makes printing an administrative act on master data, and the read grant is what makes
-	 * capturing the location's name something this caller is allowed to do. A caller holding
+	 * **Issue and revised print** check `MASTER_DATA_EDIT` **plus the relevant domain read** -
+	 * per the maintainer's answer to plan 27 question 2, generalised across kinds by plan 32
+	 * (`FieldCatalogue::DomainPermission()`). Both are checked: the edit grant is what makes
+	 * printing an administrative act on master data, and the read grant is what makes
+	 * capturing the target's value something this caller is allowed to do. A caller holding
 	 * only one of them gets neither the label nor the value.
+	 *
+	 * **Reprint, promotion and cancellation** check only `MASTER_DATA_EDIT`. None of the three
+	 * performs a fresh authorized capture - a reprint replays stored bytes, a promotion
+	 * promotes a capture already taken, a cancellation reads nothing - so the domain read
+	 * grant a capture needs does not apply to them, and requiring one would refuse a caller
+	 * who may administer a chore's or a recipe's labels but does not separately hold
+	 * `STOCK_VIEW`.
 	 *
 	 * Asynchronous creation answers 202 with the job and its state, because an issue or a
 	 * revised print is not finished when the response is written - it is finished when a
@@ -46,11 +73,21 @@ class LabelsApiController extends BaseApiController
 	public function Operate(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
 
-		return $this->HandleApiCall($response, function () use ($request, $response, $args)
+		$route = \Slim\Routing\RouteContext::fromRequest($request)->getRoute()->getName();
+		[$kind, $targetId] = match ($route)
 		{
-			$route = \Slim\Routing\RouteContext::fromRequest($request)->getRoute()->getName();
+			'label-op-print', 'label-op-revised-print' => ['location', (int)$args['locationId']],
+			'label-op-print-generic', 'label-op-revised-print-generic' => [(string)$args['kind'], (int)$args['id']],
+			default => [null, null],
+		};
+		if ($kind !== null)
+		{
+			User::CheckPermission($request, FieldCatalogue::DomainPermission($kind));
+		}
+
+		return $this->HandleApiCall($response, function () use ($request, $response, $args, $route, $kind, $targetId)
+		{
 			$body = $request->getParsedBody() ?? [];
 			if (!is_array($body))
 				return $this->ApiResponse($response->withStatus(422), ['field' => 'body', 'code' => 'invalid_body', 'error_message' => 'Object required']);
@@ -59,7 +96,7 @@ class LabelsApiController extends BaseApiController
 			$user = defined('VICTUAL_USER_ID') ? (int)VICTUAL_USER_ID : 0;
 			$key = $request->getHeaderLine('Idempotency-Key');
 			$key = $key === '' ? null : $key;
-			$operation = str_replace('label-op-', '', $route);
+			$operation = str_replace('label-op-', '', str_replace('-generic', '', $route));
 
 			$db->beginTransaction();
 			try
@@ -81,8 +118,8 @@ class LabelsApiController extends BaseApiController
 
 				$job = match ($route)
 				{
-					'label-op-print' => $operations->IssueLocation((int)$args['locationId'], $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
-					'label-op-revised-print' => $operations->RevisedPrint((int)$args['locationId'], $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
+					'label-op-print', 'label-op-print-generic' => $operations->IssueLocation($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
+					'label-op-revised-print', 'label-op-revised-print-generic' => $operations->RevisedPrint($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
 					'label-op-reprint' => $operations->Reprint((int)$args['jobId'], isset($body['printer_id']) ? (int)$body['printer_id'] : null),
 					'label-op-promote' => $operations->PromotePreview((int)$args['artifactId'], $this->Integer($body, 'printer_id')),
 					'label-op-cancel' => $operations->Cancel((int)$args['jobId'], (string)($body['reason'] ?? 'Cancelled by an operator')),

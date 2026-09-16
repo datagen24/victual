@@ -15,6 +15,19 @@
 {
 	var MM_PER_PX = 4;  // Screen pixels per millimetre. A drawing scale, not a device one.
 
+	// Mirrors services/Labels/FieldCatalogue.php by hand - there is no runtime fetch of the
+	// catalogue (plan 06 question 5 fixed the same defect this way, for location.path). Plan
+	// 32 widened this from a location-only ternary to all six kinds.
+	var FIELDS_BY_KIND = {
+		'location': ['location.name', 'location.description', 'location.id', 'location.path'],
+		'product': ['product.name', 'product.description', 'product.id', 'product.group'],
+		'stock_entry': ['stock_entry.product_name', 'stock_entry.best_before_date', 'stock_entry.amount',
+			'stock_entry.qu_name', 'stock_entry.purchased_date', 'stock_entry.location_name', 'stock_entry.id'],
+		'recipe': ['recipe.name', 'recipe.id'],
+		'chore': ['chore.name', 'chore.id'],
+		'battery': ['battery.name', 'battery.id']
+	};
+
 	var state = { document: null, revisionToken: null, selectedId: null };
 	var canvas = null;
 
@@ -307,9 +320,7 @@
 
 		if (element.type === 'text')
 		{
-			var fields = Victual.LabelTemplate.EntityKind === 'location'
-				? ['location.name', 'location.description', 'location.id', 'location.path']
-				: [];
+			var fields = FIELDS_BY_KIND[Victual.LabelTemplate.EntityKind] || [];
 			holder.appendChild(field(__t('Field'), element.field, function(v) { element.field = v || null; element.literal = element.field ? null : (element.literal || 'Text'); },
 				fields.map(function(f) { return { value: f, label: f }; }).concat([{ value: '', label: __t('a fixed string') }])));
 			if (!element.field)

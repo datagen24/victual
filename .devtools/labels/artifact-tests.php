@@ -52,7 +52,7 @@ runLabelTests(function (PDO $db, string $schema) {
     check(\Victual\Helpers\CanonicalJson::Digest($shuffled) === $version['document_digest'], 'Template digest is key-order independent');
 
     // --- Issuance: a job exists, and is deliberately not claimable yet ---------------------
-    $job = tx($db, fn () => $operations()->IssueLocation(1, 0, $printer, $template, null, 'en', 'UTC'));
+    $job = tx($db, fn () => $operations()->IssueLocation('location', 1, 0, $printer, $template, null, 'en', 'UTC'));
     check($job['artifact_id'] === null, 'A job exists while its render is pending');
     check(tx($db, fn () => (new PrintAttemptService($db))->Claim($worker)) === [], 'A job with no artifact is not claimable');
     check((new \Victual\Services\Labels\LabelPrintJobService($db))->Monitor()[0]['state'] === 'awaiting_artifact', 'The monitor says what it is waiting for');
@@ -163,7 +163,7 @@ runLabelTests(function (PDO $db, string $schema) {
 
     // --- A revised print keeps the uid and captures again ----------------------------------
     $db->exec("UPDATE locations SET name='Larder' WHERE id=1");
-    $revised = tx($db, fn () => $operations()->RevisedPrint(1, 0, $printer, $template, null, 'en', 'UTC'));
+    $revised = tx($db, fn () => $operations()->RevisedPrint('location', 1, 0, $printer, $template, null, 'en', 'UTC'));
     check($revised['label_uid'] === $job['label_uid'], 'A revised print keeps the identity');
     check((int)$revised['capture_id'] !== (int)$job['capture_id'], 'A revised print captures again');
     $revisedCapture = (new LabelCaptureService($db))->Get((int)$revised['capture_id']);
@@ -175,7 +175,7 @@ runLabelTests(function (PDO $db, string $schema) {
     check((int)$revisedArtifact['id'] !== (int)$artifact['id'], 'A revised print produces its own artifact');
 
     // --- A renderer crash retries without printing -----------------------------------------
-    $crashJob = tx($db, fn () => $operations()->IssueLocation(1, 0, $printer, $template, null, 'en', 'UTC'));
+    $crashJob = tx($db, fn () => $operations()->IssueLocation('location', 1, 0, $printer, $template, null, 'en', 'UTC'));
     $crashed = tx($db, fn () => $requests->Claim());
     $db->exec("UPDATE label_render_requests SET lease_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=" . (int)$crashed['render_request_id']);
     check(tx($db, fn () => $requests->ReapExpired()) === 1, 'An expired render lease returns to the queue');
@@ -190,7 +190,7 @@ runLabelTests(function (PDO $db, string $schema) {
     tx($db, fn () => $artifacts->Accept((int)$retried['render_request_id'], $retried['generation_token'], paintArtifact($retried), 'fixture-renderer', '0.0.1'));
 
     // --- Cancellation racing a claim produces one truthful outcome -------------------------
-    $cancelJob = tx($db, fn () => $operations()->IssueLocation(1, 0, $printer, $template, null, 'en', 'UTC'));
+    $cancelJob = tx($db, fn () => $operations()->IssueLocation('location', 1, 0, $printer, $template, null, 'en', 'UTC'));
     tx($db, fn () => $operations()->Cancel((int)$cancelJob['id'], 'Asked for the wrong shelf'));
     $cancelArtifact = renderPending($db);
     check(tx($db, fn () => $operations()->AttachArtifact((int)$cancelArtifact['render_request_id'], (int)$cancelArtifact['id'])) === 0, 'A cancelled job takes no artifact');
@@ -202,7 +202,7 @@ runLabelTests(function (PDO $db, string $schema) {
     }
     check($db->query('SELECT cancelled_at FROM print_jobs WHERE id=' . (int)$cancelJob['id'])->fetchColumn() !== null, 'The cancelled job stays cancelled');
 
-    $liveJob = tx($db, fn () => $operations()->IssueLocation(1, 0, $printer, $template, null, 'en', 'UTC'));
+    $liveJob = tx($db, fn () => $operations()->IssueLocation('location', 1, 0, $printer, $template, null, 'en', 'UTC'));
     renderAndAttach($db, (int)$liveJob['id']);
     $liveClaim = tx($db, fn () => (new PrintAttemptService($db))->Claim($worker));
     check(count($liveClaim) === 1, 'A live job claims');

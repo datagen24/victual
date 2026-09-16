@@ -43,17 +43,18 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   payload is `vctl:<uid>` — 13 uppercase Crockford base32 characters over a `labels`
   mapping table — and no row id leaves the database on paper. The fork parses `grcy:*`
   indefinitely and emits it never, so no new Grocycode type is added and `grcy:l:` is not
-  minted; printing becomes an outbox a drainer consumes, so nothing new extends
-  `VICTUAL_LABEL_PRINTER_WEBHOOK`. **None of it is built yet, and as of 2026-09-06 it is
-  scheduled**: plan [25](docs/plans/25-label-infrastructure.md) owns the machinery in wave 3b
-  and plan [06](docs/plans/06-location-barcodes.md) — narrowed to placement, the locations UI
-  and the current-location notion — depends on 25's first usable release. Until 25 lands, the
-  tree still prints Grocycodes through the webhook, as [docs/grocycode.md](docs/grocycode.md)
-  and [the Manual's label printing chapter](docs/manual/operator/label-printing.md)
-  describe. Note what 25 does *not* do:
-  the five entity types that already print keep the webhook through wave 3b, which is a
-  delivery stage toward the retirement ADR-0011 accepted rather than a change to it. New
-  printing extends neither the webhook nor Grocycode.
+  minted; printing is an outbox a drainer consumes. Built out by plan
+  [25](docs/plans/25-label-infrastructure.md) (the machinery: identity, jobs, printer
+  configuration, the delivery worker), plan
+  [27](docs/plans/27-label-templates-and-rendering.md) (templates and rendering) and plan
+  [32](docs/plans/32-label-kinds.md) (the five entity types — products, stock entries,
+  recipes, chores, batteries — that used to print through
+  `VICTUAL_LABEL_PRINTER_WEBHOOK`, moved onto this subsystem and the webhook deleted with its
+  four settings and `FEATURE_FLAG_LABEL_PRINTER`). Every kind Victual can print a label for
+  now goes through `POST /api/labels/{kind}/{id}/print` and its siblings; there is no webhook
+  path left. See [docs/grocycode.md](docs/grocycode.md) for what Grocycode still is (a
+  read-only input symbology) and [the Manual's label printing
+  chapter](docs/manual/operator/label-printing.md) for the current path end to end.
 - **Observations propose; they never book.**
   [ADR-0012](docs/adr/0012-observations-are-proposals.md) was **accepted 2026-09-04**: a
   client with a confidence value writes a `proposals` row, and a person confirming it is

@@ -89,47 +89,10 @@ $('#save-inventory-button').on('click', function (e)
 						);
 					}
 
-					// Label printing (only when stock was added): fires the "labelprinter" webhook
-					// (Victual.Webhooks.labelprinter) once per booking or once per created stock entry,
-					// with the product name, Grocycode and due date as payload
-					if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER && Number.parseFloat($("#amount").attr("data-estimated-booking-amount")) > 0)
-					{
-						if (Victual.Webhooks.labelprinter !== undefined)
-						{
-							if (jsonForm.stock_label_type == 1) // Single label
-							{
-								var webhookData = {};
-								webhookData.product = productDetails.product.name;
-								webhookData.grocycode = 'grcy:p:' + jsonForm.product_id + ":" + result[0].stock_id;
-								if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-								{
-									webhookData.due_date = __t('DD') + ': ' + result[0].best_before_date;
-								}
-
-								Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, webhookData);
-							}
-							else if (jsonForm.stock_label_type == 2) // Label per unit
-							{
-								Victual.Api.Get('stock/transactions/' + result[0].transaction_id,
-									function (stockEntries)
-									{
-										stockEntries.forEach(stockEntry =>
-										{
-											var webhookData = {};
-											webhookData.product = productDetails.product.name;
-											webhookData.grocycode = 'grcy:p:' + jsonForm.product_id + ":" + stockEntry.stock_id;
-											if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-											{
-												webhookData.due_date = __t('DD') + ': ' + result[0].best_before_date;
-											}
-
-											Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, webhookData);
-										});
-									}
-								);
-							}
-						}
-					}
+					// Label printing (plan 32): StockService::AddProduct now issues the label and
+					// enqueues its print job itself, inside the same transaction as the
+					// booking, keyed off the stock_label_type the form already posted. There is
+					// nothing left for the client to fire.
 
 					// Reload the product to build the success message (with undo link for the
 					// booked transaction), save userfields and reset the form for the next entry;
@@ -181,7 +144,7 @@ $('#save-inventory-button').on('click', function (e)
 									Victual.Components.ProductCard.Refresh(jsonForm.product_id);
 									Victual.Components.UserfieldsForm.Clear();
 
-									if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+									if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 									{
 										$("#stock_label_type").val(0);
 									}
@@ -285,7 +248,7 @@ Victual.Components.ProductPicker.GetPicker().on('change', function (e)
 					}
 				}
 
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 				{
 					$("#stock_label_type").val(productDetails.product.default_stock_label_type);
 					$("#stock_label_type").trigger("change");
@@ -540,7 +503,7 @@ $("#display_amount").attr("min", "0");
 
 // Label printer feature: when "label per unit" is selected, show how many labels
 // the estimated booking amount would print
-if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABELS)
 {
 	$("#stock_label_type, #amount").on("change", function (e)
 	{

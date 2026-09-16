@@ -609,7 +609,7 @@
 			<input type="hidden" name="default_refill_location_id_to" id="default_refill_location_id_to" value="">
 			@endif
 
-			@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
+			@if(VICTUAL_FEATURE_FLAG_LABELS)
 			<div class="form-group">
 				<label for="default_stock_label_type">{{ $__t('Default stock entry label') }}</label>
 				<i class="fa-solid fa-question-circle text-muted"
@@ -964,17 +964,23 @@
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
 							href="{{ $U('/product/' . $product->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-						@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-						<a class="btn btn-outline-primary btn-sm product-grocycode-label-print"
-							data-product-id="{{ $product->id }}"
-							href="#">
-							{{ $__t('Print on label printer') }}
-						</a>
-						@endif
 					</p>
 				</div>
 			</div>
 		</div>
+
+		@if($mode == 'edit')
+		<div class="row">
+			<div class="col">
+				@include('components.label_print_widget', [
+					'idPrefix' => 'product-form',
+					'targetId' => $product->id,
+					'targetName' => $product->name,
+					'printLabel' => $__t('Print a label for this product'),
+				])
+			</div>
+		</div>
+		@endif
 
 		<div class="row @if(VICTUAL_FEATURE_FLAG_STOCK) mt-5 @endif @if($mode == 'create') d-none @endif">
 			<div class="col">

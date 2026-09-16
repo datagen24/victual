@@ -61,7 +61,7 @@ runLabelTests(function (PDO $db, string $schema) use ($binary, $font) {
 	tx($db, fn () => $templates->SaveDraft((int)$template['id'], $document, $draft['revision_token'], null));
 	tx($db, fn () => $templates->Publish((int)$template['id'], null));
 
-	$job = tx($db, fn () => (new LabelOperationsService($db))->IssueLocation(1, 0, $printer, (int)$template['id'], null, 'en', 'UTC'));
+	$job = tx($db, fn () => (new LabelOperationsService($db))->IssueLocation('location', 1, 0, $printer, (int)$template['id'], null, 'en', 'UTC'));
 	$input = tx($db, fn () => (new RenderRequestService($db))->Claim());
 	check($input !== null, 'The render request is claimable');
 

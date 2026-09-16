@@ -119,18 +119,6 @@ manuals — are kept.
 |---|---|---|
 | `GROCYCODE_TYPE` | `2D` | `1D` for Code128, `2D` for DataMatrix. See [Barcodes and scanning](operator/barcodes-scanning.md). |
 
-## Label printer webhook {: #label-printer-webhook }
-
-The legacy path — see [Label printing](operator/label-printing.md) for what replaces it and
-what still uses this.
-
-| Setting | Default | Notes |
-|---|---|---|
-| `LABEL_PRINTER_WEBHOOK` | *(empty)* | The URI Victual `POST`s to when asked to print a label through the webhook path. Requires `FEATURE_FLAG_LABEL_PRINTER`. |
-| `LABEL_PRINTER_RUN_SERVER` | `true` | Whether the webhook is called server-side (from the machine hosting Victual) or client-side (an AJAX request from the browser). Client-side is necessary when the server cannot reach the printer; server-side is faster and more stable. |
-| `LABEL_PRINTER_PARAMS` | `['font_family' => 'Source Sans Pro (Regular)']` | Extra POST parameters sent with every webhook request. Distributed to every client on every request when the webhook runs client-side. |
-| `LABEL_PRINTER_HOOK_JSON` | `true` | `true` sends the webhook body as JSON; `false` as ordinary POST form fields. Field names are the same either way. |
-
 ## Thermal printer {: #thermal-printer }
 
 Receipt printers speaking the ESC/POS protocol (see
@@ -161,8 +149,7 @@ Each hides and disables the matching part of the UI when set `false`. All are re
 | `FEATURE_FLAG_BATTERIES` | `true` | Batteries. |
 | `FEATURE_FLAG_EQUIPMENT` | `true` | Equipment. |
 | `FEATURE_FLAG_CALENDAR` | `true` | The calendar overview. |
-| `FEATURE_FLAG_LABEL_PRINTER` | `false` | The legacy webhook label path — see [Label printing](operator/label-printing.md). |
-| `FEATURE_FLAG_LABELS` | `false` | The opaque label subsystem (identities, templates, printers, jobs, the delivery worker). A different flag from `FEATURE_FLAG_LABEL_PRINTER` on purpose — the two paths are independent, and enabling this one **requires `FILE_STORAGE` `database`** (checked at startup by `ConfigurationValidator::checkLabelSubsystem()`, refused in `demo`/`prerelease` mode for the same reason `FILE_STORAGE` `database` is). See [Label printing](operator/label-printing.md). |
+| `FEATURE_FLAG_LABELS` | `false` | The opaque label subsystem (identities, templates, printers, jobs, the delivery worker) every printable kind — locations, products, stock entries, recipes, chores, batteries — now prints through. Enabling it **requires `FILE_STORAGE` `database`** (checked at startup by `ConfigurationValidator::checkLabelSubsystem()`, refused in `demo`/`prerelease` mode for the same reason `FILE_STORAGE` `database` is). See [Label printing](operator/label-printing.md). |
 
 ## Sub feature flags {: #sub-feature-flags }
 

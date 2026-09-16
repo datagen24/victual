@@ -239,6 +239,77 @@
 				}
 			}
 		},
+		"/labels/{kind:product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/context": {
+			"get": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Read the target and import epoch for a label request (plan 32)",
+				"description": "The generic form of GET /labels/locations/{locationId}/context for the five kinds plan 32 added: product, stock_entry, recipe, chore, battery. Requires the kind's own domain read permission (FieldCatalogue::DomainPermission()) - STOCK_VIEW for product and stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Compose a future print request with this import_epoch; issuance refuses if an import has replaced the target set. This endpoint does not issue or print a label.",
+				"parameters": [
+					{
+						"name": "kind",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"enum": [
+								"product",
+								"stock_entry",
+								"recipe",
+								"chore",
+								"battery"
+							]
+						}
+					},
+					{
+						"name": "id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": [
+										"id",
+										"name",
+										"import_epoch"
+									],
+									"properties": {
+										"id": {
+											"type": "integer"
+										},
+										"name": {
+											"type": "string",
+											"description": "A display convenience, not a captured value - for stock_entry this is the product's name."
+										},
+										"import_epoch": {
+											"type": "integer",
+											"minimum": 0
+										}
+									}
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Missing the kind's domain read permission"
+					},
+					"404": {
+						"description": "Target not found"
+					}
+				}
+			}
+		},
 		"/system/info": {
 			"get": {
 				"summary": "Returns information about the installed Victual version, PHP runtime and OS",
@@ -2118,7 +2189,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-									"description": "The new amount"
+										"description": "The new amount"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2205,59 +2276,6 @@
 						}
 					}
 				}
-			}
-		},
-		"/stock/entry/{entryId}/printlabel": {
-			"get": {
-				"summary": "Prints the Grocycode / stock entry label of the given entry on the configured label printer",
-				"tags": [
-					"Stock"
-				],
-				"parameters": [
-					{
-						"in": "path",
-						"name": "entryId",
-						"required": true,
-						"description": "A valid stock entry id",
-						"schema": {
-							"type": "integer"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "The operation was successful",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"description": "WebHook data"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing stock entry, error on WebHook execution)",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/Error400"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "The request carried no valid API key or session",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
-					}
-				},
-				"description": "Requires STOCK_VIEW. "
 			}
 		},
 		"/stock/entry/{entryId}/measure": {
@@ -2613,7 +2631,7 @@
 		"/stock/products/{productId}/price-history": {
 			"get": {
 				"summary": "Returns the price history of the given product",
-				"description": "Requires STOCK_VIEW and STOCK_PRICES_VIEW - the whole response is prices, so a caller without STOCK_PRICES_VIEW is refused with 403 rather than answered with an empty array.",
+				"description": "Requires STOCK_VIEW. ",
 				"tags": [
 					"Stock"
 				],
@@ -2662,8 +2680,7 @@
 							}
 						}
 					}
-				},
-				"description": "Requires STOCK_VIEW. "
+				}
 			}
 		},
 		"/stock/products/{productId}/add": {
@@ -2692,7 +2709,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-									"description": "The amount to add"
+										"description": "The amount to add"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -2806,7 +2823,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-									"description": "The amount to remove"
+										"description": "The amount to remove"
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockTransactionType"
@@ -3015,7 +3032,7 @@
 								"properties": {
 									"new_amount": {
 										"type": "number",
-									"description": "The new current amount for the given product"
+										"description": "The new current amount for the given product"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3211,59 +3228,6 @@
 				}
 			}
 		},
-		"/stock/products/{productId}/printlabel": {
-			"get": {
-				"summary": "Prints the Grocycode label of the given product on the configured label printer",
-				"tags": [
-					"Stock"
-				],
-				"parameters": [
-					{
-						"in": "path",
-						"name": "productId",
-						"required": true,
-						"description": "A valid product id",
-						"schema": {
-							"type": "integer"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "The operation was successful",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"description": "WebHook data"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, error on WebHook execution)",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/Error400"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "The request carried no valid API key or session",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
-					}
-				},
-				"description": "Requires STOCK_VIEW. "
-			}
-		},
 		"/stock/products/{productIdToKeep}/merge/{productIdToRemove}": {
 			"post": {
 				"summary": "Merges two products into one",
@@ -3405,7 +3369,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-									"description": "The amount to add"
+										"description": "The amount to add"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -3497,7 +3461,7 @@
 								"properties": {
 									"amount": {
 										"type": "number",
-									"description": "The amount to remove"
+										"description": "The amount to remove"
 									},
 									"transaction_type": {
 										"$ref": "#/components/schemas/StockTransactionType"
@@ -3686,7 +3650,7 @@
 								"properties": {
 									"new_amount": {
 										"type": "number",
-									"description": "The new current amount for the given product"
+										"description": "The new current amount for the given product"
 									},
 									"best_before_date": {
 										"type": "string",
@@ -5046,59 +5010,6 @@
 				}
 			}
 		},
-		"/recipes/{recipeId}/printlabel": {
-			"get": {
-				"summary": "Prints the Grocycode label of the given recipe on the configured label printer",
-				"tags": [
-					"Recipes"
-				],
-				"parameters": [
-					{
-						"in": "path",
-						"name": "recipeId",
-						"required": true,
-						"description": "A valid recipe id",
-						"schema": {
-							"type": "integer"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "The operation was successful",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"description": "WebHook data"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing recipe, error on WebHook execution)",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/Error400"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "The request carried no valid API key or session",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
-					}
-				},
-				"description": "Requires RECIPES_VIEW. "
-			}
-		},
 		"/chores": {
 			"get": {
 				"summary": "Returns all chores incl. the next estimated execution time per chore",
@@ -5402,59 +5313,6 @@
 				}
 			}
 		},
-		"/chores/{choreId}/printlabel": {
-			"get": {
-				"summary": "Prints the Grocycode label of the given chore on the configured label printer",
-				"tags": [
-					"Chores"
-				],
-				"parameters": [
-					{
-						"in": "path",
-						"name": "choreId",
-						"required": true,
-						"description": "A valid chore id",
-						"schema": {
-							"type": "integer"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "The operation was successful",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"description": "WebHook data"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing chore, error on WebHook execution)",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/Error400"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "The request carried no valid API key or session",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
-					}
-				},
-				"description": "Requires CHORES_VIEW. "
-			}
-		},
 		"/chores/{choreIdToKeep}/merge/{choreIdToRemove}": {
 			"post": {
 				"summary": "Merges two chores into one",
@@ -5737,58 +5595,6 @@
 					},
 					"403": {
 						"description": "The authenticated user lacks a permission this operation requires",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ApiError"
-								}
-							}
-						}
-					}
-				}
-			}
-		},
-		"/batteries/{batteryId}/printlabel": {
-			"get": {
-				"summary": "Prints the Grocycode label of the given battery on the configured label printer",
-				"tags": [
-					"Batteries"
-				],
-				"parameters": [
-					{
-						"in": "path",
-						"name": "batteryId",
-						"required": true,
-						"description": "A valid battery id",
-						"schema": {
-							"type": "integer"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "The operation was successful",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"description": "WebHook data"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing battery, error on WebHook execution)",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/Error400"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "The request carried no valid API key or session",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -7921,7 +7727,7 @@
 					"Labels"
 				],
 				"summary": "Queue a location label",
-				"description": "Requires MASTER_DATA_EDIT. Atomically issues the label and enqueues the job. Production delivery is blocked awaiting plan 27 artifacts.",
+				"description": "Requires MASTER_DATA_EDIT and STOCK_VIEW. Atomically issues the label and enqueues the job. The same operation as POST /labels/{kind}/{id}/print with kind=location; this path predates plan 32's generic pair and is not renamed.",
 				"parameters": [
 					{
 						"name": "locationId",
@@ -7973,13 +7779,150 @@
 					"Label printing"
 				],
 				"summary": "Print a revised label",
-				"description": "Keeps the existing uid and captures the current values. The earlier artifact is untouched.",
+				"description": "Keeps the existing uid and captures the current values. The earlier artifact is untouched. The same operation as POST /labels/{kind}/{id}/revised-print with kind=location.",
 				"parameters": [
 					{
 						"name": "locationId",
 						"in": "path",
 						"required": true,
 						"description": "The location the label names",
+						"schema": {
+							"type": "integer"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"description": "printer_id, import_epoch, and optionally template_id, template_version_id, locale, timezone"
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Print a revised label",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "A refusal carrying a field and a code",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print": {
+			"post": {
+				"tags": [
+					"Labels"
+				],
+				"summary": "Queue a label for any of the six kinds (plan 32)",
+				"description": "Requires MASTER_DATA_EDIT plus the kind's own domain read permission (FieldCatalogue::DomainPermission()): STOCK_VIEW for location/product/stock_entry, RECIPES_VIEW, CHORES_VIEW, or BATTERIES. Atomically issues the label and enqueues the job, the same as POST /labels/locations/{locationId}/print for kind=location.",
+				"parameters": [
+					{
+						"name": "kind",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"enum": [
+								"location",
+								"product",
+								"stock_entry",
+								"recipe",
+								"chore",
+								"battery"
+							]
+						}
+					},
+					{
+						"name": "id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": [
+									"import_epoch",
+									"printer_id"
+								],
+								"properties": {
+									"import_epoch": {
+										"type": "integer",
+										"minimum": 0
+									},
+									"printer_id": {
+										"type": "integer",
+										"minimum": 1
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"202": {
+						"description": "Job queued, awaiting_artifact"
+					},
+					"422": {
+						"description": "Invalid printer configuration or request"
+					}
+				}
+			}
+		},
+		"/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/revised-print": {
+			"post": {
+				"tags": [
+					"Label printing"
+				],
+				"summary": "Print a revised label for any of the six kinds (plan 32)",
+				"description": "Keeps the existing uid and captures the current values. The earlier artifact is untouched. The same operation as POST /labels/locations/{locationId}/revised-print for kind=location.",
+				"parameters": [
+					{
+						"name": "kind",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"enum": [
+								"location",
+								"product",
+								"stock_entry",
+								"recipe",
+								"chore",
+								"battery"
+							]
+						}
+					},
+					{
+						"name": "id",
+						"in": "path",
+						"required": true,
+						"description": "The target the label names",
 						"schema": {
 							"type": "integer"
 						}
@@ -9526,7 +9469,10 @@
 					},
 					"direction": {
 						"type": "string",
-						"enum": ["directed", "shared_parent"],
+						"enum": [
+							"directed",
+							"shared_parent"
+						],
 						"description": "'directed' for a row from product_substitutions; 'shared_parent' for a row inherited from the existing parent/child mechanism (products_resolved)."
 					},
 					"from_product_amount_in_stock": {

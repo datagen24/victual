@@ -83,6 +83,8 @@
 	</div>
 </div>
 
+@include('components.label_print_list_header', ['idPrefix' => 'batteriesoverview'])
+
 <div class="row">
 	<div class="col">
 		<table id="batteries-overview-table"
@@ -151,12 +153,13 @@
 									href="{{ $U('/battery/' . $currentBatteryEntry->battery_id . '/grocycode?download=true') }}">
 									{!! str_replace('grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Battery'))) !!}
 								</a>
-								@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-								<a class="dropdown-item battery-grocycode-label-print"
-									data-battery-id="{{ $currentBatteryEntry->battery_id }}"
+								@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+								<a class="dropdown-item battery-label-print"
+									data-target-id="{{ $currentBatteryEntry->battery_id }}"
+									data-target-name="{{ FindObjectInArrayByPropertyValue($batteries, 'id', $currentBatteryEntry->battery_id)->name }}"
 									type="button"
 									href="#">
-									{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Print %s Grocycode on label printer', $__t('Battery'))) !!}
+									{{ $__t('Print a label for this battery') }}
 								</a>
 								@endif
 							</div>

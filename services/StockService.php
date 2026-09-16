@@ -3,7 +3,6 @@
 namespace Victual\Services;
 
 use Victual\Helpers\Grocycode;
-use Victual\Helpers\WebhookRunner;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Storage\FileStorage;
 use GuzzleHttp\Client;
@@ -287,11 +286,10 @@ class StockService extends BaseService
 				$transactionId = uniqid();
 			}
 
-			$labelWebhookPayloads = [];
-
-			// The booking, the stock entry it describes and the compacting that may immediately
-			// rewrite both belong to one addition and have to land as one.
-			DatabaseService::GetInstance()->InTransaction(function () use ($productId, $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note, $productDetails, &$transactionId, &$labelWebhookPayloads)
+			// The booking, the stock entry it describes, the label it may print and the
+			// compacting that may immediately rewrite both belong to one addition and have to
+			// land as one.
+			DatabaseService::GetInstance()->InTransaction(function () use ($productId, $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note, $productDetails, &$transactionId)
 			{
 				if ($stockLabelType == 2)
 				{
@@ -331,23 +329,13 @@ class StockService extends BaseService
 						]);
 						$stockRow->save();
 
-						if (VICTUAL_FEATURE_FLAG_LABEL_PRINTER && VICTUAL_LABEL_PRINTER_RUN_SERVER)
+						if (VICTUAL_FEATURE_FLAG_LABELS)
 						{
-							$webhookData = array_merge([
-								'product' => $productDetails->product->name,
-								'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $productId, [$stockId])),
-								'details' => $productDetails,
-								'stock_entry' => $stockRow,
-							], VICTUAL_LABEL_PRINTER_PARAMS);
-
-							if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-							{
-								$webhookData['due_date'] = LocalizationService::GetInstance()->__t('DD') . ': ' . $bestBeforeDate;
-							}
-
-							// Built here from the values in hand so the label describes the entry as it
-							// was booked; only the firing waits until after the commit.
-							$labelWebhookPayloads[] = $webhookData;
+							// Enqueued inside this same transaction: the label mapping, its
+							// capture and the print job commit with the entry or not at all
+							// (plan 32 piece D), unlike the webhook this replaces, which fired
+							// only after commit and could not roll back with a failed purchase.
+							$this->IssueStockEntryLabel((int)$stockRow->id);
 						}
 					}
 				}
@@ -385,23 +373,9 @@ class StockService extends BaseService
 					]);
 					$stockRow->save();
 
-					if ($stockLabelType == 1 && VICTUAL_FEATURE_FLAG_LABEL_PRINTER && VICTUAL_LABEL_PRINTER_RUN_SERVER)
+					if ($stockLabelType == 1 && VICTUAL_FEATURE_FLAG_LABELS)
 					{
-						$webhookData = array_merge([
-							'product' => $productDetails->product->name,
-							'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $productId, [$stockId])),
-							'details' => $productDetails,
-							'stock_entry' => $stockRow,
-						], VICTUAL_LABEL_PRINTER_PARAMS);
-
-						if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-						{
-							$webhookData['due_date'] = LocalizationService::GetInstance()->__t('DD') . ': ' . $bestBeforeDate;
-						}
-
-						// Built here from the values in hand so the label describes the entry as it was
-						// booked; only the firing waits until after the commit.
-						$labelWebhookPayloads[] = $webhookData;
+						$this->IssueStockEntryLabel((int)$stockRow->id);
 					}
 				}
 
@@ -413,20 +387,53 @@ class StockService extends BaseService
 				BookingEventPublisher::RecordTransaction($transactionId);
 			});
 
-			// After the commit: a printed label should mean the stock entry exists, and a printer
-			// call with a 2 s timeout has no business holding a write lock open.
-			foreach ($labelWebhookPayloads as $webhookData)
-			{
-				$runner = new WebhookRunner();
-				$runner->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-			}
-
 			return $transactionId;
 		}
 		else
 		{
 			throw new \Exception("Transaction type $transactionType is not valid (StockService.AddProduct)");
 		}
+	}
+
+	/**
+	 * Issues a stock_entry label for a just-booked entry and enqueues its print job, in the
+	 * caller's own transaction - the print job outbox is transactional by design (ADR-0011
+	 * decision 4), unlike the webhook this replaces which fired only after commit.
+	 *
+	 * Question 3's proposed answer: the purchase form names no printer, so this resolves to
+	 * the default printer (the first active one) and the kind's default template, the same
+	 * way LabelOperationsService::ResolvePrinter() and ResolveTemplate() already do when a
+	 * caller names neither.
+	 */
+	private function IssueStockEntryLabel(int $stockEntryId): void
+	{
+		$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$epoch = (int)$db->query('SELECT epoch FROM label_import_state WHERE id = 1')->fetchColumn();
+		(new \Victual\Services\Labels\LabelOperationsService($db))
+			->IssueLocation('stock_entry', $stockEntryId, $epoch, null, null, null, VICTUAL_LOCALE, date_default_timezone_get());
+	}
+
+	/**
+	 * Reprints a stock entry's label to reflect a due date auto_reprint_stock_label just
+	 * changed (opening or a freeze/thaw transfer), if - and only if - the entry already
+	 * carries a live label.
+	 *
+	 * The old webhook fired unconditionally, because it had no notion of a label's identity
+	 * or history to consult. This one does, and "reprint" is what the setting is named for: an
+	 * entry nobody has printed a label for is not brought into the label subsystem by a due
+	 * date shifting under it. Only an entry someone already labeled gets kept current.
+	 */
+	private function ReviseStockEntryLabelIfLive(int $stockEntryId): void
+	{
+		$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$query = $db->prepare("SELECT 1 FROM labels WHERE kind='stock_entry' AND target_id=? AND retired_at IS NULL");
+		$query->execute([$stockEntryId]);
+		if ($query->fetchColumn() === false) {
+			return;
+		}
+		$epoch = (int)$db->query('SELECT epoch FROM label_import_state WHERE id = 1')->fetchColumn();
+		(new \Victual\Services\Labels\LabelOperationsService($db))
+			->RevisedPrint('stock_entry', $stockEntryId, $epoch, null, null, null, VICTUAL_LOCALE, date_default_timezone_get());
 	}
 
 	/**
@@ -1807,11 +1814,9 @@ class StockService extends BaseService
 			$transactionId = uniqid();
 		}
 
-		$labelWebhookPayloads = [];
-
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
 		// land together, or the ledger records an opening that stock does not show.
-		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $product, $productDetails, $productId, $allowSubproductSubstitution, $specificStockEntryId, $resolvedMeasurement, &$transactionId, &$labelWebhookPayloads)
+		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $product, $productDetails, $productId, $allowSubproductSubstitution, $specificStockEntryId, $resolvedMeasurement, &$transactionId)
 		{
 			foreach ($potentialStockEntries as $stockEntry)
 			{
@@ -1831,23 +1836,9 @@ class StockService extends BaseService
 						$newBestBeforeDate = $stockEntry->best_before_date;
 					}
 
-					if (VICTUAL_FEATURE_FLAG_LABEL_PRINTER && VICTUAL_LABEL_PRINTER_RUN_SERVER && $productDetails->product->auto_reprint_stock_label == 1 && $newBestBeforeDate != $stockEntry->best_before_date)
+					if (VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $newBestBeforeDate != $stockEntry->best_before_date)
 					{
-						$webhookData = array_merge([
-							'product' => $productDetails->product->name,
-							'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $productId, [$stockEntry->stock_id])),
-							'details' => $productDetails,
-							'stock_entry' => $stockEntry,
-						], VICTUAL_LABEL_PRINTER_PARAMS);
-
-						if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-						{
-							$webhookData['due_date'] = LocalizationService::GetInstance()->__t('DD') . ': ' . $newBestBeforeDate;
-						}
-
-						// Built here from the values in hand so the label describes the entry as it was
-						// booked; only the firing waits until after the commit.
-						$labelWebhookPayloads[] = $webhookData;
+						$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
 					}
 				}
 
@@ -1977,14 +1968,6 @@ class StockService extends BaseService
 			// crash after the commit still delivers one.
 			BookingEventPublisher::RecordTransaction($transactionId);
 		});
-
-		// After the commit: a reprinted label should mean the new due date was actually
-		// stored, and a printer call with a 2 s timeout has no business holding a write lock.
-		foreach ($labelWebhookPayloads as $webhookData)
-		{
-			$runner = new WebhookRunner();
-			$runner->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-		}
 
 		return $transactionId;
 	}
@@ -2190,11 +2173,9 @@ class StockService extends BaseService
 			$transactionId = uniqid();
 		}
 
-		$labelWebhookPayloads = [];
-
 		// Both bookings of an entry plus the stock row itself have to land together, or the
 		// stock ends up split across the two locations.
-		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntriesAtFromLocation, $amount, $productDetails, $productId, $locationIdFrom, $locationIdTo, &$transactionId, &$labelWebhookPayloads)
+		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntriesAtFromLocation, $amount, $productDetails, $productId, $locationIdFrom, $locationIdTo, &$transactionId)
 		{
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
 			{
@@ -2228,23 +2209,9 @@ class StockService extends BaseService
 						$newBestBeforeDate = date('Y-m-d', strtotime('+' . $productDetails->product->default_best_before_days_after_thawing . ' days'));
 					}
 
-					if (VICTUAL_FEATURE_FLAG_LABEL_PRINTER && VICTUAL_LABEL_PRINTER_RUN_SERVER && $productDetails->product->auto_reprint_stock_label == 1 && $stockEntry->best_before_date != $newBestBeforeDate)
+					if (VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $stockEntry->best_before_date != $newBestBeforeDate)
 					{
-						$webhookData = array_merge([
-							'product' => $productDetails->product->name,
-							'grocycode' => (string)(new Grocycode(Grocycode::PRODUCT, $productId, [$stockEntry->stock_id])),
-							'details' => $productDetails,
-							'stock_entry' => $stockEntry,
-						], VICTUAL_LABEL_PRINTER_PARAMS);
-
-						if (VICTUAL_FEATURE_FLAG_STOCK_BEST_BEFORE_DATE_TRACKING)
-						{
-							$webhookData['due_date'] = LocalizationService::GetInstance()->__t('DD') . ': ' . $newBestBeforeDate;
-						}
-
-						// Built here from the values in hand so the label describes the entry as it was
-						// booked; only the firing waits until after the commit.
-						$labelWebhookPayloads[] = $webhookData;
+						$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
 					}
 				}
 
@@ -2366,14 +2333,6 @@ class StockService extends BaseService
 			// crash after the commit still delivers one.
 			BookingEventPublisher::RecordTransaction($transactionId);
 		});
-
-		// After the commit: a printed label should mean the transfer happened, and a printer
-		// call with a 2 s timeout has no business holding a write lock open.
-		foreach ($labelWebhookPayloads as $webhookData)
-		{
-			$runner = new WebhookRunner();
-			$runner->run(VICTUAL_LABEL_PRINTER_WEBHOOK, $webhookData, VICTUAL_LABEL_PRINTER_HOOK_JSON);
-		}
 
 		return $transactionId;
 	}

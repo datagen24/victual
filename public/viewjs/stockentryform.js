@@ -54,17 +54,6 @@ $('#save-stockentry-button').on('click', function(e)
 		{
 			Victual.EditObjectId = result[0].transaction_id;
 
-			if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER && $("#print-label").is(":checked"))
-			{
-				Victual.Api.Get('stock/entry/' + Victual.EditObjectRowId + '/printlabel', function(labelData)
-				{
-					if (Victual.Webhooks.labelprinter !== undefined)
-					{
-						Victual.FrontendHelpers.RunWebhook(Victual.Webhooks.labelprinter, labelData);
-					}
-				});
-			}
-
 			Victual.Components.UserfieldsForm.Save(function()
 			{
 				var successMessage = __t('Stock entry successfully updated') + '<br><a class="btn btn-secondary btn-sm mt-2" href="#" onclick="UndoStockBookingEntry(\'' + result.id + '\',\'' + Victual.EditObjectRowId + '\')"><i class="fa-solid fa-undo"></i> ' + __t("Undo") + '</a>';
@@ -145,16 +134,6 @@ $("#amount").on("focus", function(e)
 	$(this).select();
 });
 
-// Changing the best-before-date pre-checks "print label" (a label is typically wanted
-// whenever the due date changes), when label printing is enabled
-Victual.Components.DateTimePicker.GetInputElement().on('change', function(e)
-{
-	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-	{
-		$("#print-label").prop("checked", true);
-	}
-});
-
 // Initial setup: load userfields, focus the amount field, run initial validation
 Victual.Components.UserfieldsForm.Load();
 setTimeout(function()
@@ -162,3 +141,12 @@ setTimeout(function()
 	$('#amount').focus();
 }, Victual.FormFocusDelay);
 Victual.FrontendHelpers.ValidateForm("stockentry-form");
+
+// The print action (views/components/label_print_widget.blade.php), plan 32. Replaces the
+// old "reprint on save" checkbox with the standard standalone print action every kind shares.
+Victual.LabelPrinting.Wire({
+	kind: 'stock_entry',
+	trigger: '#stockentry-form-button',
+	printerSelect: '#stockentry-form-printer',
+	status: '#stockentry-form-status'
+});

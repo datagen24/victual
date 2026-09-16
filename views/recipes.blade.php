@@ -105,6 +105,8 @@
 			</div>
 		</div>
 
+		@include('components.label_print_list_header', ['idPrefix' => 'recipes'])
+
 		<ul class="nav nav-tabs victual-tabs">
 			<li class="nav-item">
 				<a class="nav-link active"
@@ -198,12 +200,13 @@
 											href="{{ $U('/recipe/' . $recipe->id . '/grocycode?download=true') }}">
 											<span class="dropdown-item-text">{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Recipe'))) !!}</span>
 										</a>
-										@if(VICTUAL_FEATURE_FLAG_LABEL_PRINTER)
-										<a class="dropdown-item recipe-grocycode-label-print"
-											data-recipe-id="{{ $recipe->id }}"
+										@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+										<a class="dropdown-item recipe-label-print"
+											data-target-id="{{ $recipe->id }}"
+											data-target-name="{{ $recipe->name }}"
 											type="button"
 											href="#">
-											<span class="dropdown-item-text">{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Print %s Grocycode on label printer', $__t('Recipe'))) !!}</span>
+											<span class="dropdown-item-text">{{ $__t('Print a label for this recipe') }}</span>
 										</a>
 										@endif
 									</div>

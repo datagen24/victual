@@ -143,32 +143,51 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   both analytically (constructing the same `Line` against real 7.4.0) and with a diagonal-line
   drag before/after. See plan 27's Executed section for the full account, including the two
   documentation-lag and one test-race findings the same review caught. [→](project_state.md)
-- **2026-09-15 — Issue #137 landed** (plan 06 Q5, the location label's tree path). Dispatched
-  claiming locations still print through `VICTUAL_LABEL_PRINTER_WEBHOOK` and that the `vctl:`
-  labels machinery was unbuilt — both stale: PR 113 (2026-09-08) already moved location
-  printing onto plan 25/27's job path, and the webhook survives only for the five
-  `*/printlabel` routes (products, stock entries, recipes, chores, batteries). Added
-  `FieldCatalogue`'s `location.path`, reading `locations_resolved`'s self row via a new
-  `'select'` key `LabelCaptureService::Capture()` now honours (a catalogue field's SQL can
-  differ from its stored column); refuses the capture rather than printing a blank line if a
-  location has no self row (unreachable through the app, since the depth guard blocks nesting
-  that far). `LabelIdentityService::Resolve()` reads the same view for `/locationlabels`,
-  falling back to the bare name on a miss; retired snapshots stay name-only, unchanged. No new
-  migration — reused plan 08's `locations_resolved`/`hierarchy_depth_limit()` rather than a
-  third `Get…WithPaths()` helper, since both call sites want one row, not the whole tree.
-  Verified against real PostgreSQL 16.13 in this session's own sandbox:
-  `artifact-tests.php` (53, extended with a real nested capture and a `TemplateDocument`
-  acceptance check), `identity-tests.php` (10047), `registry`/`print-job`/`worker-api`/
-  `canonical-json` tests unaffected by the widened fixture, `check-migrations.php` clean. The
-  frontend probe (extended for a nested path) passed against a real demo instance booted per
-  the `run-app` skill; a disposable script also drove capture and resolve directly against
-  that instance's real schema and triggers for a genuinely nested location, confirming the
-  composed path both ways and a name-only retirement snapshot. `test-support.php`'s fixture
-  now loads migration 0273 unmodified; `identity-tests.php`'s hand-built `locations` stub
-  could not load 0273 as-is (no `locations_name_key` to drop, `parent_location_id` added a
-  second time later) and instead carries a copy of its function and view — the same
-  shadowed-stub shape plan 08 already found in this test file's sibling. Not verified: a
-  physical print through the real Rust renderer, unavailable in this sandbox. [→](project_state.md)
+- **2026-09-16 — Plan 32 landed** (label kinds, issue #182 closed), the largest item and the
+  one everything else in labels waited on. Migration `0285.pgsql.php` (a PHP migration, not
+  `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only) widens the three
+  `entity_kind`/`kind` `CHECK`s to six values, adds `import_epoch` to `products`/`stock`/
+  `recipes`/`chores`/`batteries`, adds one retirement trigger per table, and seeds a QR-only
+  default template per new kind through the real `LabelTemplateService`. `FieldCatalogue` gained
+  five catalogues plus `DomainPermission()`; `LabelIdentityService::Resolve()` now takes a
+  `callable(string):bool` instead of one flag, since which permission gates a code is not known
+  until its row names a kind; `LabelOperationsService::IssueLocation()`/`RevisedPrint()` take a
+  leading `$kind` and `ResolvePrinter()` gained a default-printer fallback for `null`. Routes
+  `POST /labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print` etc,
+  `{kind}` constrained by the route's own regex (the tree's first inline-regex route) rather than
+  validated in the controller; OpenAPI path keys had to repeat that regex verbatim; `check-path-id-validation.php` matches on the raw Slim pattern. Thirteen `viewjs`/blade pairs
+  migrated onto a shared `Victual.LabelPrinting.Wire()` and two new partials
+  (`label_print_widget`/`label_print_list_header`) — three more than the plan's own ten-file
+  list named (`stockjournal.js`/`stockoverview.js` print a *product* from a stock row;
+  `stockentryform.js`'s reprint-on-save checkbox became the standard standalone widget).
+  `StockService::AddProduct()` now issues a `stock_entry` label and enqueues its job inside the
+  same transaction as the booking (replacing an after-commit webhook loop); `OpenProduct()`/
+  `TransferProduct()`'s `auto_reprint_stock_label` webhook sites (not named in the plan's piece D
+  prose, found by grepping for what piece E asks to delete) became a revised print gated on the
+  entry already carrying a live label. Piece E deleted `LABEL_PRINTER_*`/`FEATURE_FLAG_LABEL_PRINTER`
+  end to end — config, `EXPOSED_SETTINGS`, the manual, `AGENTS.md`, `Victual.Webhooks`,
+  `RunWebhook()` — leaving `grep -rn "printlabel\|LABEL_PRINTER"` clean. Three corrections to the
+  plan's own text found while implementing it, recorded rather than silently fixed: no seeded
+  location template exists anywhere in `master` to model the new ones on ("the way the location
+  default is seeded today" describes nothing real); `ConfigurationValidator` never had
+  `LABEL_PRINTER_*` entries to remove; `InfluxEventWriter` calls Guzzle directly, not
+  `WebhookRunner`, so `WebhookRunner` (kept per the plan) is actually dead code now, just not
+  this plan's dead code to remove. A real bug this session's own consistency check caught before
+  any test ran: `FieldsOf()` (two copies) assumed every kind's always-captured field is
+  `<kind>.name`, which does not exist for `stock_entry` (`stock_entry.product_name` does).
+  Verified against real PostgreSQL 16.13 in this sandbox: `check-migrations.php`,
+  `check-path-id-validation.php`, `identity-tests.php` (10047), `artifact-tests.php` (55),
+  `print-job-tests.php` (36), `registry-tests.php` (23), `worker-api-tests.php` (25), and a new
+  `kinds-tests.php` (44, added to CI) exercising all five new kinds' capture/issue/resolve/retire
+  for real; a disposable script drove `StockService::AddProduct()` against a `bin/victual-migrate`d
+  database confirming exact label/job counts per `stockLabelType` and a full rollback (no stock
+  entry, no booking) when the configured printer is inactive. Not verified: any live HTTP
+  rendering (PHP 8.5 unavailable in this sandbox, only 8.4 — blade templates were instead
+  compiled through the real `Jenssegers\Blade` compiler and `php -l`-checked), `mkdocs build
+  --strict` (mkdocs unavailable, pip timed out — the settings-reference half was verified by
+  replicating its check directly), and physical printing on the QL-820NWBc for the five new
+  kinds. See the plan's own [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16)
+  for the full account, piece by piece.
 
 ## DOCTRINE (operator-locked decisions)
 

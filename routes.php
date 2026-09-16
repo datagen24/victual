@@ -235,6 +235,10 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	// Plan 27's four print operations plus cancellation. MASTER_DATA_EDIT and the domain read.
 	$group->post('/labels/locations/{locationId}/print', [LabelsApiController::class, 'Operate'])->setName('label-op-print');
 	$group->post('/labels/locations/{locationId}/revised-print', [LabelsApiController::class, 'Operate'])->setName('label-op-revised-print');
+	// Plan 32: the generic pair over all six kinds, including location - the two routes above
+	// are not renamed, but the OpenAPI spec marks them as the same operation as these.
+	$group->post('/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print', [LabelsApiController::class, 'Operate'])->setName('label-op-print-generic');
+	$group->post('/labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/revised-print', [LabelsApiController::class, 'Operate'])->setName('label-op-revised-print-generic');
 	$group->post('/labels/jobs/{jobId}/reprint', [LabelsApiController::class, 'Operate'])->setName('label-op-reprint');
 	$group->post('/labels/jobs/{jobId}/cancel', [LabelsApiController::class, 'Operate'])->setName('label-op-cancel');
 	$group->post('/labels/artifacts/{artifactId}/promote', [LabelsApiController::class, 'Operate'])->setName('label-op-promote');
@@ -265,6 +269,7 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/labels/artifacts/{artifactId}/bytes', [LabelRenderApiController::class, 'Bytes'])->setName('labels-artifact-bytes');
 	$group->get('/labels/resolve/{code}', [LabelsApiController::class, 'Resolve']);
 	$group->get('/labels/locations/{locationId}/context', [LabelsApiController::class, 'LocationContext']);
+	$group->get('/labels/{kind:product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/context', [LabelsApiController::class, 'Context']);
 	$group->post('/roles', [RolesApiController::class, 'CreateRole']);
 	$group->put('/roles/{roleId}', [RolesApiController::class, 'EditRole']);
 	$group->delete('/roles/{roleId}', [RolesApiController::class, 'DeleteRole']);
@@ -310,8 +315,6 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/stock/transactions/{transactionId}', [StockApiController::class, 'StockTransactions']);
 	$group->post('/stock/transactions/{transactionId}/undo', [StockApiController::class, 'UndoTransaction']);
 	$group->get('/stock/barcodes/external-lookup/{barcode}', [StockApiController::class, 'ExternalBarcodeLookup']);
-	$group->get('/stock/products/{productId}/printlabel', [StockApiController::class, 'ProductPrintLabel']);
-	$group->get('/stock/entry/{entryId}/printlabel', [StockApiController::class, 'StockEntryPrintLabel']);
 
 	// Shopping list
 	$group->post('/stock/shoppinglist/add-missing-products', [StockApiController::class, 'AddMissingProductsToShoppingList']);
@@ -327,7 +330,6 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->post('/recipes/{recipeId}/consume', [RecipesApiController::class, 'ConsumeRecipe']);
 	$group->get('/recipes/fulfillment', [RecipesApiController::class, 'GetRecipeFulfillment']);
 	$group->Post('/recipes/{recipeId}/copy', [RecipesApiController::class, 'CopyRecipe']);
-	$group->get('/recipes/{recipeId}/printlabel', [RecipesApiController::class, 'RecipePrintLabel']);
 
 
 	// Chores
@@ -336,7 +338,6 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->post('/chores/{choreId}/execute', [ChoresApiController::class, 'TrackChoreExecution']);
 	$group->post('/chores/executions/{executionId}/undo', [ChoresApiController::class, 'UndoChoreExecution']);
 	$group->post('/chores/executions/calculate-next-assignments', [ChoresApiController::class, 'CalculateNextExecutionAssignments']);
-	$group->get('/chores/{choreId}/printlabel', [ChoresApiController::class, 'ChorePrintLabel']);
 	$group->post('/chores/{choreIdToKeep}/merge/{choreIdToRemove}', [ChoresApiController::class, 'MergeChores']);
 
 	// Printing
@@ -347,7 +348,6 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->get('/batteries/{batteryId}', [BatteriesApiController::class, 'BatteryDetails']);
 	$group->post('/batteries/{batteryId}/charge', [BatteriesApiController::class, 'TrackChargeCycle']);
 	$group->post('/batteries/charge-cycles/{chargeCycleId}/undo', [BatteriesApiController::class, 'UndoChargeCycle']);
-	$group->get('/batteries/{batteryId}/printlabel', [BatteriesApiController::class, 'BatteryPrintLabel']);
 
 	// Tasks
 	$group->get('/tasks', [TasksApiController::class, 'Current']);

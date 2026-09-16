@@ -184,3 +184,235 @@ a plan-level choice.
 8. The manual's label printing chapter describes one path.
 9. One label of each of the six kinds printed on the QL-820NWBc and scanned back — the
    physical check plan 25's verification 13 set as the bar.
+
+## Executed (2026-09-16)
+
+All five pieces shipped as migration `0285.pgsql.php` and the application code around it,
+[issue 182](https://github.com/datagen24/victual/issues/182). Verified against a real
+PostgreSQL 16.13 (this sandbox's own instance) and a real `bin/victual-migrate` run against a
+fresh database — not against a mocked schema.
+
+### Piece A — schema
+
+Written as a PHP migration, not `.pgsql.sql`: the seeded templates need
+`CanonicalJson::Digest()` over the RFC 8785 encoding, which only exists in PHP, and seeding
+through `LabelTemplateService::Create()`/`Publish()` means the seeded rows are validated by
+`TemplateDocument::Validate()` exactly as a household's own template would be. The three
+`CHECK`s widened by dropping and re-adding the named constraint (`labels_kind_check`,
+`label_templates_entity_kind_check`, `label_captures_entity_kind_check`); `import_epoch` on
+`products`, `stock`, `recipes`, `chores`, `batteries` with the same
+`DEFAULT label_current_import_epoch()` locations carries; one retirement trigger per table,
+`retire_stock_entry_labels` carrying the richer `{id, product_name, best_before_date,
+amount}` snapshot the plan named, the other four `{id, name}` like `retire_location_labels`.
+
+**One correction to this plan's own text, found while implementing it and not before.** The
+"seeded by 0285 the way the location default is seeded today" clause does not describe
+anything in `master`: the tree has no seeded default template for `location` and never has
+— a household creates one by hand through the designer, or prints nothing. So the five new
+defaults are the first seeded templates this codebase has shipped, not a repeat of an
+existing mechanism. A second correction follows from the first: `LabelTemplateService::
+EmptyDocument()`'s own comment explains why a seeded default cannot draw a text field — there
+is no default font asset to pin one to, and referencing one that does not exist refuses to
+publish. So the five seeded defaults are QR-only, the same shape a hand-created template
+starts from, rather than "the QR and one text line bound to the kind's name field" this
+plan's piece A bullet asked for. A QR is still something a fresh install can scan, which is
+the goal the bullet gave for wanting a seeded default in the first place; the text line is
+one designer edit away once a font is uploaded.
+
+### Piece B — catalogue and identity per kind
+
+`FieldCatalogue::For()` gained `product`, `stock_entry`, `recipe`, `chore`, `battery`
+alongside `location`, plus a new `DomainPermission()` method mapping each kind to the read
+grant `LabelsApiController::Operate()` checks. `LabelIdentityService::IssueLocation()`/
+`LocationContext()` became thin wrappers over new `Issue(string $kind, ...)`/`Context(string
+$kind, ...)` methods, matching the plan's instruction for that class exactly.
+`LabelOperationsService::IssueLocation()` and `RevisedPrint()` kept their names and gained a
+leading `$kind` parameter, per the plan's explicit (and different) instruction for that
+class. `DatabaseImporter::GetCommonColumns()`'s `import_epoch` exclusion widened from
+`locations` alone to all six target tables.
+
+`Resolve()` needed more than "return `kind` from the row": with six kinds each gating on a
+different domain permission, a single `bool $mayReadLocations` flag can no longer answer "may
+this caller read this label," because which permission applies depends on the label's own
+`kind` — not known until the row is read. It now takes a `callable(string $kind): bool`, the
+same shape `LabelCaptureService`'s own `$permissionCheck` already uses. The original
+"a denied caller does no label lookup at all" property (asserted by `identity-tests.php`
+renaming the `labels` table and observing the denied path never touches it) is preserved for
+a caller denied every kind — checked up front, before any query — rather than only for a
+single-flag denial; a caller holding some permissions but not the one the row turns out to
+need still gets `{"status":"unknown"}`, indistinguishable from a code that does not exist,
+just after one lookup rather than zero.
+
+**A bug this session's own consistency check caught before it shipped**, not one an external
+review found: `LabelOperationsService::FieldsOf()` and the identical private copy in
+`LabelTemplatesApiController` both built `$document['entity_kind'] . '.name'` as the
+always-captured field. For `stock_entry` that produces `stock_entry.name`, which does not
+exist in the catalogue — `FieldCatalogue::For('stock_entry')` names the product it holds
+`stock_entry.product_name`, because a stock entry has no name of its own. Every stock-entry
+issuance would have refused with `unknown_field`. Fixed in both places before the first test
+run exercised issuance, so it never reached committed test output as a failure — the
+`kinds-tests.php` suite added for verification 2 exercises this path directly and passes.
+`PrintJobPayload::DescribeUnreadable()` picked up the same special case for its own
+captured-name check, plus the six-kind allow-list `payload['kind']` is checked against.
+
+### Piece C — routes, templates, designer, frontend
+
+Routes: `POST /labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print`
+and `/revised-print`, `GET /labels/{kind:product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/context`
+— `{kind}` constrained by the route's own regex rather than validated in the controller, as
+the plan specified, which is also the first route in this tree to use an inline regex
+constraint. The two location routes are untouched. `LabelsApiController::Operate()` resolves
+`$kind` from whichever route matched and checks `FieldCatalogue::DomainPermission($kind)`
+alongside `MASTER_DATA_EDIT` for issue and revised-print; reprint, promotion and cancellation
+check only `MASTER_DATA_EDIT`, because none of the three performs a fresh authorized
+capture — a reprint replays stored bytes, a promotion promotes a capture already taken, a
+cancellation reads nothing — so the domain grant a capture needs does not apply, and
+requiring one would refuse a caller who administers a chore's or a recipe's labels without
+separately holding `STOCK_VIEW`. `victual.openapi.json` documents the generic pair (path keys
+carry the same inline regex the route does, verbatim — `.devtools/check-path-id-validation.php`
+matches on the raw Slim pattern, not a normalised `{kind}`) and notes the location pair as the
+same operation; the five old `*/printlabel` paths are deleted.
+
+The five `GET .../printlabel` controller methods and routes are deleted
+(`StockApiController::ProductPrintLabel`/`StockEntryPrintLabel`, `RecipesApiController::
+RecipePrintLabel`, `ChoresApiController::ChorePrintLabel`, `BatteriesApiController::
+BatteryPrintLabel`), along with the now-unused `Grocycode`/`WebhookRunner` imports each left
+behind.
+
+**The frontend rollout touched more files than the plan's own list.** Piece C names ten
+`viewjs` files; the actual tree has three more genuine `printlabel` call sites the list
+missed — `stockjournal.js` and `stockoverview.js` (both print a *product* label from a stock
+row, not the stock entry itself) and `stockentryform.js` (a "reprint stock entry label"
+checkbox with no printer picker, fired on save). All three are converted the same way as the
+listed ten. The stock-entry-form checkbox is replaced with the standard standalone print
+widget (same as every other form) rather than kept as a save-time side effect: it had no
+printer picker under the old webhook, which needed none, and the new path needs one, so
+folding it into "print separately, the same everywhere" was the smaller design than teaching
+one form a bespoke printer-picker-on-save flow.
+
+A shared JS module (`public/js/victual_label_print.js`, `Victual.LabelPrinting.Wire()`) and
+two Blade partials (`views/components/label_print_widget.blade.php` for a form page,
+`label_print_list_header.blade.php` for a list page's shared printer-select-and-status
+region) replace the location-only hardcoding — `locationform.blade.php`/`locations.blade.php`
+were themselves migrated onto the shared partials rather than left as a second, divergent
+copy of the pattern the other five kinds now also use, and their print buttons' attributes
+renamed `data-location-id`/`-name` → `data-target-id`/`-name` to match. The label
+template designer's field picker (`labeltemplateeditor.js`) gained a `FIELDS_BY_KIND` map
+mirroring `FieldCatalogue` by hand, the same non-dynamic mirroring issue 137 already used for
+`location.path` — there is still no runtime fetch of the catalogue. The template list page
+(`labeltemplates.blade.php`/`.js`) gained an entity-kind `<select>`; it previously hardcoded
+`'entity_kind': 'location'` on every create, which meant there was no way to create a
+template for any other kind through the browser at all.
+
+Blade rendering was checked by compiling every touched template through the real
+`Jenssegers\Blade` compiler and `php -l`-checking the output (no unbalanced `@if`/`@endif`,
+no malformed `@include` argument list) — **not** by rendering them against live data through
+a running instance. `public/index.php`'s `PrerequisiteChecker` requires PHP 8.5.0, and this
+sandbox has 8.4.19 (composer install needed `--ignore-platform-req=php` for the same reason);
+`bin/victual-migrate` and the `.devtools/labels/*.php` suites bypass that gate and did run for
+real, but the HTTP app did not boot here. Said plainly rather than assumed: the per-page
+button placement, wording and permission gating were reviewed by reading the diff against
+each page's existing markup, not by clicking through it.
+
+### Piece D — purchase-time labels
+
+`StockService::AddProduct()`'s `stockLabelType` 1 and 2 branches now call a new private
+`IssueStockEntryLabel()` inside the same `DatabaseService::InTransaction()` closure that
+writes the booking and the stock entry, instead of accumulating webhook payloads to fire
+after commit. `LabelOperationsService::ResolvePrinter()` gained a `?int $printerId = null`
+default-printer fallback (`SELECT id FROM label_printers WHERE active=1 ORDER BY is_default
+DESC, name LIMIT 1`, refusing `no_printer` if none) — question 3's answer names this exact
+rule but it did not exist anywhere in the tree before this change; `IssueLocation()`'s
+`$printerId` parameter became nullable to carry it through. `ResolveTemplate()` already
+defaulted to a kind's published default template when none is named, so question 3's second
+half needed no new code.
+
+**Two more call sites the plan's piece D prose does not mention, found by grepping for what
+piece E asks to delete** (`WebhookRunner`/`Grocycode` inside `StockService.php`, not just the
+one `AddProduct()` discusses): `OpenProduct()`'s and `TransferProduct()`'s
+`auto_reprint_stock_label` handling, which re-built and fired the same webhook payload
+whenever an entry's due date shifted because it was opened, frozen or thawed. Converted to a
+new `ReviseStockEntryLabelIfLive()` — a revised print, same identity — but **only when the
+entry already carries a live label**, which the old webhook could not distinguish because it
+had no notion of a label's history to consult. "Reprint" is what the setting is named for;
+an entry nobody printed a label for is not enrolled into the label subsystem by its due date
+moving under it. This is a considered interpretation where the plan is silent, not a literal
+instruction, and is recorded as one rather than presented as the only possible reading.
+
+`purchase.js` and `inventory.js` lost their client-side `Victual.Webhooks.labelprinter`
+branches (built inline from the booking response, never through a `printlabel` GET — the
+plan's piece C file list naming them among ten `printlabel` callers does not match what those
+two files actually did) and every remaining `VICTUAL_FEATURE_FLAG_LABEL_PRINTER` check in
+both files, plus `productform.js`, `stocksettings.js` and four Blade templates
+(`stocksettings`, `purchase`, `productform`, `inventory`) renamed to
+`VICTUAL_FEATURE_FLAG_LABELS` — the `stock_label_type` UI these gate is not itself part of
+the webhook, so it survives under the surviving flag.
+
+**Verified against real PostgreSQL** (not asserted from reading the code): a script driving
+the actual `StockService::AddProduct()` against a freshly `bin/victual-migrate`d database
+confirmed `stockLabelType=1` issues exactly one `stock_entry` label and one print job,
+`stockLabelType=2` with amount 3 issues exactly three of each, `stockLabelType=0` issues
+none, and — verification 5's negative half — deactivating the only configured printer and
+retrying `stockLabelType=2` throws rather than partially succeeding, leaving the `stock` and
+`stock_log` row counts exactly where they started. `.claude/hooks/log_claim.py` has the
+command and the exact counts.
+
+### Piece E — delete the webhook
+
+`config-dist.php` lost `LABEL_PRINTER_WEBHOOK`, `LABEL_PRINTER_RUN_SERVER`,
+`LABEL_PRINTER_PARAMS`, `LABEL_PRINTER_HOOK_JSON` and `FEATURE_FLAG_LABEL_PRINTER`;
+`SystemApiController::EXPOSED_SETTINGS` lost the four webhook entries.
+**`helpers/ConfigurationValidator.php` never had entries for these settings** — the plan
+bullet claiming it did was checked and found not to describe the tree; nothing to remove
+there. `views/layout/default.blade.php`'s `Victual.Webhooks` object (built only for the
+label-printer webhook) and `public/js/victual.js`'s `RunWebhook()` helper are deleted outright
+rather than left with a zero-caller definition, since every one of their callers was a site
+this plan's own scope removed. `helpers/WebhookRunner.php` (the PHP-side runner) is kept, per
+the plan's instruction — **but the stated reason is false**: `InfluxEventWriter` calls
+`GuzzleHttp\Client` directly, not `WebhookRunner`, so as of this landing `WebhookRunner` has
+zero callers anywhere in the tree. Recorded rather than quietly fixed by deleting the class,
+because retiring a webhook path and deleting a helper nothing calls are two different
+cleanups, and only the first was this plan's to do; `docs/security-sweep.md` now says so
+directly instead of repeating the InfluxDB claim.
+
+Documentation: the manual's "Label printer webhook" settings section and its
+`FEATURE_FLAG_LABEL_PRINTER` row are gone; `docs/manual/operator/label-printing.md`'s
+"two independent paths" framing, "What still uses the older webhook" paragraph and "The
+webhook (legacy)" section are replaced with one path covering all six kinds, including the
+purchase-time and auto-reprint behaviour piece D added. `AGENTS.md`'s "Until 25 lands, the
+tree still prints Grocycodes through the webhook" sentence is rewritten to name what actually
+shipped (25, 27, 32) rather than describe a still-pending state.
+
+### Verification
+
+1. **Passes.** `check-migrations.php --allow-reserved-holes` (the two waived holes are plan
+   22's unwritten 0283–0284, unrelated to this change).
+2. **Passes**, as a new suite (`.devtools/labels/kinds-tests.php`, 44 assertions, added to
+   the `suite` CI job): for each of the five new kinds, every `FieldCatalogue` field captures
+   without refusing, `Issue()`/`Resolve()` round-trip live, and deleting the target retires
+   the label with a snapshot naming it — migration 0285's five triggers, exercised for real
+   rather than asserted from reading the SQL.
+3. **Partly.** `kinds-tests.php` captures every catalogue field of every kind (the first half
+   of this item). It does not separately hit a `'null' => 'error'` refusal per kind: every
+   such field in the five new catalogues sits on a `NOT NULL` database column, so — as is
+   already true of `location.name` in the existing `artifact-tests.php` — there is no
+   reachable case to refuse against without corrupting the fixture past what a real
+   installation could produce.
+4. **Not run.** No frontend probe exists for any of the five new kinds' print action or the
+   template designer's kind-aware field picker; piece C's own account above says why
+   (PHP 8.5 unavailable in this sandbox).
+5. **Passes**, against real PostgreSQL — see piece D above for the exact counts.
+6. **Passes.** `grep -rn "printlabel\|LABEL_PRINTER" --include=*.php --include=*.js
+   --include=*.blade.php` over the tree returns nothing at all (not even a Grocycode
+   fixture — the pattern does not match Grocycode's own `grcy:` prefix).
+7. **Not run.** The settings-reference half is verified directly (every `Setting()` in
+   `config-dist.php` has a backtick-quoted row in `docs/manual/configuration.md` and vice
+   versa, checked by replicating `check_settings_reference()`'s own regex against both files
+   rather than by installing mkdocs — pip timed out fetching it in this sandbox). The
+   `mkdocs build --strict` half is not run.
+8. **True by inspection**, not by a script: `docs/manual/operator/label-printing.md` now has
+   one path, described above.
+9. **Not run.** No physical printer is reachable from this sandbox; plan 25's verification 13
+   physical print-and-scan for the original three kinds was met on real hardware in an
+   earlier session, but nothing here re-demonstrates it for the two new kinds nor for the
+   five kinds this plan added.

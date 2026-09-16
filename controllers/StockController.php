@@ -114,7 +114,10 @@ class StockController extends BaseController
 			'users' => $usersService->GetUsersAsDto(),
 			'transactionTypes' => GetClassConstants('\Victual\Services\StockService', 'TRANSACTION_TYPE_'),
 			'userfieldsStock' => UserfieldsService::GetInstance()->GetFields('stock'),
-			'userfieldValuesStock' => UserfieldsService::GetInstance()->GetAllValues('stock')
+			'userfieldValuesStock' => UserfieldsService::GetInstance()->GetAllValues('stock'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 
@@ -290,7 +293,10 @@ class StockController extends BaseController
 			'nextXDays' => $nextXDays,
 			'productGroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('products'),
-			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('products')
+			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('products'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 
@@ -399,8 +405,15 @@ class StockController extends BaseController
 		{
 			$product = $this->DB->products($args['productId']);
 
+			// Only the edit form offers a print action, the same rule LocationEditForm
+			// follows: a product that has not been saved has no id to mint a label against.
+			$printers = VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: [];
+
 			return $this->RenderPage($response, 'productform', [
 				'product' => $product,
+				'labelPrinters' => $printers,
 				'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 				'barcodes' => $this->DB->product_barcodes()->orderBy('barcode'),
 				'quantityunitsAll' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
@@ -835,7 +848,10 @@ class StockController extends BaseController
 			'products' => $this->DB->products()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
-			'userfields' => UserfieldsService::GetInstance()->GetFields('stock')
+			'userfields' => UserfieldsService::GetInstance()->GetFields('stock'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 
@@ -900,7 +916,10 @@ class StockController extends BaseController
 			'userfieldsProducts' => UserfieldsService::GetInstance()->GetFields('products'),
 			'userfieldValuesProducts' => UserfieldsService::GetInstance()->GetAllValues('products'),
 			'userfieldsStock' => UserfieldsService::GetInstance()->GetFields('stock'),
-			'userfieldValuesStock' => UserfieldsService::GetInstance()->GetAllValues('stock')
+			'userfieldValuesStock' => UserfieldsService::GetInstance()->GetAllValues('stock'),
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
+				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
+				: []
 		]);
 	}
 
