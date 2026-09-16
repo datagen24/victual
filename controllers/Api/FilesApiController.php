@@ -177,6 +177,13 @@ class FilesApiController extends BaseApiController
 	 * regardless of whether they hold USERS_READ, so reading it needs no permission
 	 * beyond being logged in.
 	 *
+	 * VICTUAL_USER_PICTURE_FILE_NAME is users.picture_file_name for the caller, and
+	 * PUT /api/users/{self} lets USERS_EDIT_SELF write that column verbatim with no
+	 * check that the caller uploaded the file or that somebody else owns it - so the
+	 * name alone is caller-writable and cannot be trusted to mean "my picture" (issue
+	 * #177). The same owner lookup CheckUserPictureDeletion already does settles it:
+	 * the exception only holds when no other user row claims $fileName.
+	 *
 	 * @throws PermissionMissingException
 	 */
 	protected function CheckGroupReadPermission(Request $request, string $group, ?string $fileName = null): void
@@ -186,7 +193,12 @@ class FilesApiController extends BaseApiController
 		if ($group === 'userpictures' && $fileName !== null
 			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
-			return;
+			$owner = $this->DB->users()->where('picture_file_name', $fileName)->fetch();
+
+			if ($owner === null || (int)$owner->id === (int)VICTUAL_USER_ID)
+			{
+				return;
+			}
 		}
 
 		$permission = self::GROUP_READ_PERMISSIONS[$group];
