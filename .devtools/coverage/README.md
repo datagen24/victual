@@ -18,11 +18,20 @@ drive SQL straight at each engine and barely enter PHP application code at all; 
 goes through `StockService`. So most controllers are at zero by design, and the total is
 low for a reason that is not a quality judgement.
 
-Read it as a map, not a score. `StockService` sitting around a third means the stock write
-paths are exercised; that figure falling means a phase stopped reaching something it used
-to, which is the failure this exists to make visible. Nothing is gated on the number — a
-threshold nobody chose is a threshold that gets lowered until it stops failing, and then
-deleted. `report.php` takes `--min=NN` if a future change wants one deliberately.
+Read it as a map first: `StockService` sitting around two thirds means the stock write
+paths are exercised, and that figure falling means a phase stopped reaching something it
+used to, which is the failure this exists to make visible.
+
+It is also a score, since 2026-09-17. The maintainer set a **floor of 75%** line coverage
+of application code, a **target of 85% or better** and **90% as the ideal**
+(`docs/constitution.md`, standing invariants). The tree is below the floor —
+37.81% on master at `6133e15`, with the backlog and the plan to close it in
+[issue 192](https://github.com/datagen24/victual/issues/192) — whose first step wires a CI ratchet
+(`report.php --min` at the current total, raised as it climbs) and whose last turns on the
+hard floor.
+A threshold nobody chose gets lowered until it stops failing; this one was chosen, which
+is the difference. `report.php` takes `--min=NN`, and a pull request that lowers the
+number, or leaves a file it touched below 75%, has not met the verification bar.
 
 ## How it is wired
 

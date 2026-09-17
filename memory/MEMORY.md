@@ -59,6 +59,19 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-17 — Post-merge bookkeeping for #186–#189** (plan 32 → `0283.pgsql.php`, files
+  API own-picture fix, plan 15's cleanup batch, manual corrections). Closed #132 and #177
+  with landing notes; #179's two named items were already fixed by PR 172's second round
+  (`d54dadb`); PR 190 then rewrote plan 27's Executed evidence for the image build and
+  closed it. Fixed plan 32's status line (still
+  said "ready to start"), marked 0283 in master, rewrote the root README's Labels row (six
+  kinds, webhook gone) and the wave-independent cell. Next unclaimed migration: 0286. Wave
+  5's remaining items: #83 (14 piece 2, no longer blocked), then #86 and #85. **Coverage
+  floor decided the same day**: 75% minimum, 85+ target, 90 ideal, written into the
+  constitution, AGENTS.md, CONTRIBUTING and the PR template; master is at 37.81% and
+  [issue #192](https://github.com/datagen24/victual/issues/192) holds the 42-class backlog
+  and the ratchet-then-gate plan. Nothing is wired in CI yet; that is 192's first step.
+
 - **2026-09-15 — Issue #176 closed: 19 piece 2's four open price channels** (`0282.pgsql.php`,
   branch `claude/issue-176-regression-aqz409`). The one that mattered was the importer:
   `TRUNCATE ... CASCADE` on `permission_hierarchy` empties `permission_fields` through its FK,
@@ -90,49 +103,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   #172's stale plan-27 wording #179. Closed #84, #130, #138, #137, #126, #121 with landing
   notes. Lesson: a review comment is not a gate — the dispatching session merges on green CI,
   so blocking findings need a follow-up issue the moment the PR merges without them.
-- **2026-09-15 — Plan 26 piece 2 landed** ([PR 171](https://github.com/datagen24/victual/pull/171),
-  merge `683095c5`, issue #138). The Manual replaces `docs/usage.md` and
-  `docs/label-printing.md`. Staging and the strict MkDocs build passed; the settings check
-  covered all 85 declarations. Installation walkthroughs and backup/restore were not
-  verified end to end. Delivery evidence and limitations are in
-  [plan 26's Executed section](../docs/plans/26-documentation-site.md#piece-2--the-manual-2026-09-15).
-  [Issue 178](https://github.com/datagen24/victual/issues/178) tracks factual corrections.
-- **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
-  dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
-  (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —
-  fabric 6 dropped the UMD build entirely, and this tree has no bundler; a module script
-  always finishes before `DOMContentLoaded`, and every `window.fabric` use in
-  `labeltemplateeditor.js` is inside `$(document).ready`, so load order between the two
-  script tags cannot race. `nix/runtime/nginx-conf.nix` gained a `\.mjs$` location forcing
-  `application/javascript`, since the pinned nginx's own bundled `mime.types` is not
-  guaranteed to know the extension and this sandbox has no nix to check it against directly.
-  **The real find**: fabric 7's default `originX`/`originY` changed from `left`/`top` to
-  `center` — every shape this editor draws only ever set `left`/`top`, so under the new
-  default every one rendered shifted up-and-left by half its own size, and `absorb()`'s drag
-  math read a corrupted position back. The shipped CI probe (add, save, publish) passed with
-  this defect in place, because nothing in it ever checked *where* anything rendered — found
-  instead by driving a real browser interactively (drag, read the saved x_mm/y_mm back,
-  reload, resize, read again), watching it silently do nothing, and comparing
-  `getActiveObject().oCoords` against hand-computed geometry until the mismatch pointed at
-  the origin default rather than the drag math. Fixed by pinning `originX:'left',
-  originY:'top'` on every shape `shapeFor()` builds. `label-designer.js` now carries the
-  drag/reload/resize check permanently, plus an explicit Playwright viewport — the default
-  one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
-  identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
-  instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
-  `label-printers.js` both pass, repeatably (3+ runs). The measured `yarnOfflineCache` hash came from
-  [Nix run 37](https://github.com/datagen24/victual/actions/runs/34984690263)'s
-  fixed-output failure against `ea3f8f7f` on 2026-09-15. Commit `888e38c8` recorded it;
-  [Nix run 38](https://github.com/datagen24/victual/actions/runs/34985019714) passed the
-  flake checks, built all three images, and passed migration and serving checks. A same-day maintainer
-  review on the PR found a real second regression the origin-default fix didn't cover — fabric
-  7's `Line` still derives `left`/`top` from its two points, but the box-to-origin translation
-  now folds in `strokeWidth`, so an untouched line's `left`/`top` sat `strokeWidth/2` short and
-  every drag carried that constant into the saved document, drifting a line further on each
-  touch. Fixed the same way (`absorb()`'s line branch adds `strokeWidth/2` back) and confirmed
-  both analytically (constructing the same `Line` against real 7.4.0) and with a diagonal-line
-  drag before/after. See plan 27's Executed section for the full account, including the two
-  documentation-lag and one test-race findings the same review caught. [→](project_state.md)
 - **2026-09-16 — Plan 32 landed** (label kinds, issue #182 closed), the largest item and the
   one everything else in labels waited on. Migration `0283.pgsql.php` (a PHP migration, not
   `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only; renumbered down

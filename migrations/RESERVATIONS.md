@@ -68,7 +68,7 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in `master` |
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
 | 0282 | [issue #176](https://github.com/datagen24/victual/issues/176) items 1 and 3 — the price-visibility policy re-applied from `db/pgsql/prices-seed.sql`, plus the `product_barcodes`/`product_barcodes_view` `last_price` rows 0281 missed | in this tree |
-| 0283 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in this tree |
+| 0283 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in `master` |
 | 0284 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0285 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 

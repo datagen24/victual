@@ -12,9 +12,9 @@ whose mechanism this extends kind by kind; [06](06-location-barcodes.md), the lo
 precedent every piece below mirrors; [14](14-contract-and-regression-scaffolding.md) piece 2,
 which should snapshot after this lands or regenerate when it does; [17](17-ecosystem-clients.md),
 whose premise 0024 replaces.
-**Status:** draft, wave-independent, **ready to start**: ADR-0024 accepted 2026-09-15. Tracked as
-[issue 182](https://github.com/datagen24/victual/issues/182).
-Migration **0283** (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
+**Status:** **Landed 2026-09-16** as `migrations/0283.pgsql.php`, [issue 182](https://github.com/datagen24/victual/issues/182)
+closed; see [Executed](#executed-2026-09-16). Was: draft, ready to start once ADR-0024 was
+accepted 2026-09-15. Migration **0283** (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
 until [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19
 piece 2 was written as `0282.pgsql.php` hours after this plan claimed its number, taking the
 lowest free slot with a file behind it and moving plan 22 and this plan up one each; then 0285

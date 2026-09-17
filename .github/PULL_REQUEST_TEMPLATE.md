@@ -30,6 +30,9 @@
       PostgreSQL-only view or trigger has no counterpart to be compared against, so say
       what you checked it against instead
 - [ ] Result sets compared before and after, where the change rewrites a query
+- [ ] `SUITE_COVERAGE=1 .devtools/pgsql/run-tests.sh` reported: total unchanged or higher,
+      and every touched file at 75% or above, or no lower than before (the floor is 75%,
+      target 85+; see [issue 192](https://github.com/datagen24/victual/issues/192))
 
 ## Notes for review
 
