@@ -828,7 +828,6 @@ class ContractTest extends PgsqlSchemaTestCase
 	//    rather than a hand-maintained list of what "should" be gated.
 	// ------------------------------------------------------------------------------
 
-	#[Depends('testRestrictedSweepMatchesGolden')]
 	/**
 	 * Which entity governs which part of a hand-built response's JSON tree, keyed by the
 	 * dotted path prefix JsonShape::MissingKeys()/fieldsAtPathPrefix() use (see their own
@@ -903,6 +902,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		return [];
 	}
 
+	#[Depends('testRestrictedSweepMatchesGolden')]
 	public function testRestrictedMatchesAdminMinusRedactedFields(): void
 	{
 		$childPermissions = array_column(self::$db->query('SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9000')->fetchAll(PDO::FETCH_ASSOC), 'permission_name');
