@@ -176,6 +176,18 @@ jobs:
       - name: Every API path parameter is typed
         run: php .devtools/check-path-id-validation.php
 
+      # ADR-0025 tier 2. pg_prove is a Perl script (this runner, not the postgres
+      # service), and the pgtap extension itself installs into the service's database
+      # per decision 6: the stock postgres:16 image does not ship it, and production
+      # images (built by nix, never by this workflow) get no surface for it at all.
+      - name: Install pg_prove
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libtap-parser-sourcehandler-pgtap-perl
+
+      - name: Install the pgtap extension into the postgres service
+        run: |
+          container=$(docker ps -q --filter ancestor=postgres:16)
+          docker exec "$container" bash -c 'apt-get update && apt-get install -y --no-install-recommends postgresql-16-pgtap'
+
       # The workflow calls the same entry point a contributor runs locally, rather than
       # restating the commands. A suite that drifts from the one people run by hand is
       # a suite nobody trusts.

@@ -12,6 +12,9 @@ embedded.txt
 /clover.xml
 *.cov
 
+# PHPUnit's own incremental-run cache (ADR-0025 tier 1)
+/.phpunit.result.cache
+
 # Local-only files: per-machine Claude settings (skills under .claude/ are tracked) and macOS metadata
 **/.claude/settings.local.json
 .DS_Store

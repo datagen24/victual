@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap]
 #
-# Twenty-two kinds of check. Views are compared by what they return, because
+# Twenty-three kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -186,6 +186,13 @@
 # a reader of that phase looks anyway. The count in the first line is of phases the case
 # statement at the bottom dispatches, not of paragraphs here; it was nineteen when four of
 # the twenty-two had not been written, and issue #176 is where the drift was noticed.
+#
+# The twenty-third, pgtap, is not a differential phase at all: it is ADR-0025's tier 2,
+# SQL logic tested by pgTAP and run by pg_prove rather than compared between engines. See
+# .devtools/pgtap/README.md for what "the check passes" means there - completeness, not a
+# comparison - and rbac for tier 1, PHPUnit against a real PostgreSQL, which run-tests.sh
+# reaches the same way (a phase's line here calling out to another runner) rather than by
+# reimplementing either one.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -383,23 +390,41 @@ build_pgsql() {
 failures=0
 
 # PostgreSQL-only role and read model, alongside the frozen differential contract.
+#
+# ADR-0025 spike 2: ported to PHPUnit (tests/Pgsql/RbacTest.php). Unlike every other
+# phase above, the database this creates is never itself migrated - ADR-0025 decision 2
+# gives each PHPUnit test class its own schema, migrated on demand
+# (Victual\Tests\Support\PgsqlSchemaTestCase), so several classes can eventually share
+# one throwaway database without their tables colliding. Migrating the database itself
+# here as well, the way build_pgsql() does for every differential phase, would build a
+# public schema nothing then reads. This is the one place decision 3's "nothing else
+# does [change]" needed a small addendum once a phase actually made the switch; see the
+# spike's evidence in .spike-adr25/README.md.
 run_rbac_tests() {
 	local dbname="victual_rbac"
-	build_pgsql "$dbname"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
 	local datapath="$SUITE_SCRATCH/rbac-data"
+	rm -rf "$datapath"
 	mkdir -p "$datapath"
 	cat > "$datapath/config.php" <<-'PHPCONFIG'
 		<?php
 		Setting('DB_DRIVER', 'pgsql');
 		Setting('DB_HOST', getenv('PGHOST'));
 		Setting('DB_PORT', intval(getenv('PGPORT')));
-		Setting('DB_NAME', 'victual_rbac');
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
 		Setting('DB_USER', getenv('PGUSER'));
 		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
 	PHPCONFIG
-	if ! VICTUAL_DATAPATH="$datapath" php "$SUITE_DIR/rbac-tests.php"; then
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite rbac; then
 		failures=$((failures + 1))
 	fi
+
+	rm -rf "$datapath"
 }
 
 # --- Price visibility tests --------------------------------------------------------
@@ -646,6 +671,35 @@ run_apikey_tests() {
 	fi
 
 	rm -rf "$datapath"
+}
+
+# --- pgTAP (ADR-0025 tier 2) --------------------------------------------------------
+#
+# A fully migrated database, the way build_pgsql gives every differential phase one -
+# the trigger family under test (migrations/0269.pgsql.sql, 0273.pgsql.sql) is real
+# schema, not a reduced fixture. pgtap is a PostgreSQL extension, installed into this
+# one database and nowhere else per decision 6: the production images never run tests
+# and get no surface for it, and CI installs it into the postgres:16 service before
+# this phase runs (see .github/workflows/tests.yml).
+#
+# pg_prove is a Perl script, not a PHP one - .devtools/pgtap/README.md is the measure
+# here (completeness, not coverage), and check-pgtap-coverage.php is a separate lint
+# step, not part of this phase, because it is not yet wired anywhere as a hard gate
+# (see that README's "What is not covered yet").
+
+run_pgtap_tests() {
+	local dbname="victual_pgtap"
+	build_pgsql "$dbname"
+
+	command -v pg_prove >/dev/null || fail 'pg_prove not found on PATH (postgresql extension "pgtap" and its pg_prove client)'
+
+	psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$dbname" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pgtap;' \
+		|| fail "could not install the pgtap extension into $dbname"
+
+	say ""
+	if ! pg_prove -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$dbname" "$SUITE_DIR/../pgtap/"*.sql; then
+		failures=$((failures + 1))
+	fi
 }
 
 # --- Migration tests --------------------------------------------------------------
@@ -1410,8 +1464,9 @@ case "$WHICH" in
 	openmeasure) run_open_container_measurement_tests ;;
 	workingcontainer) run_working_container_tests ;;
 	apikeys) run_apikey_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys or all)" ;;
+	pgtap) run_pgtap_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

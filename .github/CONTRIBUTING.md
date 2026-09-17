@@ -57,6 +57,13 @@ judged against here, and they are stricter than they look:
   checked it against instead. [14](../docs/plans/14-contract-and-regression-scaffolding.md)
   piece 2's response snapshot is what replaces the comparison, and the suite is retired
   when it lands.
+- **Two further tiers, per [ADR-0025](../docs/adr/0025-three-test-tiers.md).** Application
+  code (`services/`, `controllers/`, `helpers/`, `middleware/`, `plugins/`) gets a PHPUnit
+  test class against a real PostgreSQL schema, run with `run-tests.sh <phase>` the same
+  way as any other phase (`packages/bin/phpunit --testsuite <name>` underneath). A
+  function or trigger a migration adds gets a [pgTAP](../.devtools/pgtap/README.md) test,
+  run with `run-tests.sh pgtap` — that tier is measured by completeness (every name listed
+  in `.devtools/pgtap/README.md`), not a percentage, since pcov cannot see PL/pgSQL.
 - **Coverage has a floor of 75%; aim for 85 or better.** Run the suite with
   `SUITE_COVERAGE=1` and read the per-class summary it prints
   ([.devtools/coverage/README.md](../.devtools/coverage/README.md)). Code you add comes with
