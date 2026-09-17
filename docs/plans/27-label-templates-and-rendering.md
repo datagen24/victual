@@ -743,16 +743,17 @@ outside the `FileGroups` enum.
 
 ### The designer off fabric 5.x (2026-09-15, issue 126)
 
-Fabric 7.4.0, not 6.x: nothing in the document format or the pieces above depends on a
-version between them, and 7 is where the runtime-closure comparison this plan already ran
-(question 3) was current. `package.json` and `yarn.lock`; `nix/hashes.nix`'s
-`yarnOfflineCache` went through the bootstrap placeholder rather than a guessed value,
-because the session that wrote this change had no nix to compute the real one -
-[PR #172](https://github.com/datagen24/victual/pull/172) let the `flake` CI job's
-fixed-output-derivation failure report it instead (commit `888e38c`), the same `got:` value a
-local `nix build .#frontend` would have produced per `nix/README.md`. A wrong-but-plausible
-guess would have been worse than that documented failure mode, since it would not obviously
-say so.
+The designer uses Fabric 7.4.0, pinned in `package.json` and `yarn.lock`. No document-format
+change or intermediate 6.x upgrade was required.
+
+`nix/hashes.nix` contains the measured `yarnOfflineCache` hash
+`sha256-5jQ6uSjMasoAtL5wCPjaS9jzhj3sYb5HVCA/iMCIfow=`. On 2026-09-15,
+[Nix run 37](https://github.com/datagen24/victual/actions/runs/34984690263), against
+`ea3f8f7f`, reported that value in its fixed-output-derivation failure. Commit `888e38c8`
+recorded it; [Nix run 38](https://github.com/datagen24/victual/actions/runs/34985019714)
+then passed the flake checks, built all three images, and passed the migration and serving
+checks. See [Nix's hash bootstrap procedure](../../nix/README.md#bootstrapping-the-hashes)
+to reproduce the hash measurement with `nix build .#frontend`.
 
 **The loader.** Fabric 6 dropped the UMD build issue 126 found missing; there is still no
 bundler in this tree. `views/layout/default.blade.php` loads `dist/index.min.mjs` (the
@@ -765,8 +766,7 @@ so the shim and the editor script can load in either order in the document and t
 still never sees `fabric` undefined. `nix/runtime/nginx-conf.nix` gained a location matching
 `\.mjs$` ahead of the general packages location, serving it as `application/javascript`
 regardless of what the pinned nginx's own bundled `mime.types` knows about the extension - a
-module a browser refuses to run as `application/octet-stream` is exactly the kind of failure
-that would only show up in the image build this sandbox could not run (below).
+module served as `application/octet-stream` would be refused by the browser.
 
 **The API surface.** Three real breaks, not the one the issue's own analysis had found yet:
 
@@ -807,11 +807,8 @@ identical to a drag that silently did nothing and cost real time here to tell ap
 `.agents/skills/run-app/SKILL.md` (PHP 8.4.19, `REQUIRED_PHP_VERSION` lowered locally per that
 skill and restored before committing) and driven with the pinned Playwright/Chromium: the
 updated `label-designer.js` (add, drag, save, reload, resize, publish, all through the
-*document* the server stores) and `label-printers.js` both pass, repeatably. **The container
-image build is verified too, just not in this sandbox**: PR #172's `flake` CI job reported the
-real `yarnOfflineCache` hash from its fixed-output-derivation failure, and once that was
-committed the same job built and booted all three images clean on the PR's head. The physical
-QL-820NWBc print/scan-back was not re-run here - the renderer and worker are untouched by this
+*document* the server stores) and `label-printers.js` both pass, repeatably. The container image build and boot checks passed in Nix run 38, cited above.
+The physical QL-820NWBc print/scan-back was not re-run here - the renderer and worker are untouched by this
 change, and plan 25's Executed section already exercised that path against the device.
 
 **A maintainer review round on PR #172** (same day) verified the runtime side independently -
@@ -821,8 +818,8 @@ one blocking defect this account had missed and three worth fixing:
 
 - The merge conflict against master's own wave-table edit (mechanical: master's wave 4/5 rows
   plus this change's one-sentence wave 3b addition).
-- Two more places still described the hash as an unfilled placeholder after PR #172 filled it
-  in: this section (now corrected above) and `memory/MEMORY.md`.
+- The placeholder-hash and unverified-build descriptions in this section and
+  `memory/MEMORY.md` were corrected to reflect the CI results.
 - `label-designer.js`'s second and third `getByText('Draft saved').waitFor()` calls were
   no-ops: `report()` never clears `#template-message` before a save, so a *previous* save's
   message satisfies the wait before the new one has even reached the server, and the

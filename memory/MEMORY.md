@@ -120,10 +120,11 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   one is short enough that a scrolled canvas can sit under the fixed top navbar, which looks
   identical to a drag that did nothing. Verified against a real PostgreSQL 16.13 demo
   instance booted per `.agents/skills/run-app/SKILL.md`: the updated `label-designer.js` and
-  `label-printers.js` both pass, repeatably (3+ runs). The container image build was not
-  verifiable in this sandbox (no nix) but is verified now: [PR #172](https://github.com/datagen24/victual/pull/172)'s
-  `flake` CI job reported the real `yarnOfflineCache` hash from its own fixed-output-derivation
-  failure, and the job then built and booted all three images clean. A same-day maintainer
+  `label-printers.js` both pass, repeatably (3+ runs). The measured `yarnOfflineCache` hash came from
+  [Nix run 37](https://github.com/datagen24/victual/actions/runs/34984690263)'s
+  fixed-output failure against `ea3f8f7f` on 2026-09-15. Commit `888e38c8` recorded it;
+  [Nix run 38](https://github.com/datagen24/victual/actions/runs/34985019714) passed the
+  flake checks, built all three images, and passed migration and serving checks. A same-day maintainer
   review on the PR found a real second regression the origin-default fix didn't cover — fabric
   7's `Line` still derives `left`/`top` from its two points, but the box-to-origin translation
   now folds in `strokeWidth`, so an untouched line's `left`/`top` sat `strokeWidth/2` short and
