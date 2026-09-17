@@ -287,6 +287,23 @@ foreach ([
 	echo $output;
 }
 
+// The administer check must weigh the actual other owner, not an arbitrary row a second
+// unconstrained fetch() happens to return. This caller holds both USERS_EDIT and
+// USERS_EDIT_SELF - strong enough to pass CheckPermission - and genuinely shares one
+// filename with an ADMIN user it cannot administer. Inserted before that ADMIN user, the
+// ordering a plain fetch() is likeliest to return, so a regression back to refetching
+// picture_file_name with no id filter (and landing on the caller's own duplicate) is
+// caught however the database orders it.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9007, 'rbac-picture-delete-caller-strong', 'fixture', 'strongshared.png')");
+$pdo->exec('INSERT INTO user_permissions(user_id, permission_id) VALUES (9007, ' . permissionId('USERS_EDIT') . '), (9007, ' . permissionId('USERS_EDIT_SELF') . ')');
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9008, 'rbac-picture-delete-target-strong', 'fixture', 'strongshared.png')");
+$pdo->exec('INSERT INTO user_roles(user_id, role_id) VALUES (9008, ' . roleId('ADMIN') . ')');
+$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTUREDELETE', '9007', 'strongshared.png', '403', 'USERS_EDIT does not excuse administering an ADMIN who shares the filename'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+fclose($pipes[1]); fclose($pipes[2]);
+check(proc_close($process) === 0, "Own-picture deletion exception (strongshared.png, stronger duplicate owner): $output $errors");
+echo $output;
+
 // Failure on the second insert must restore the entire previous bundle.
 grant(['ADMIN']);
 $before = $roles->GetPermissionIds($editor);

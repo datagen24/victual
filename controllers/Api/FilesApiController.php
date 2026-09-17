@@ -396,26 +396,32 @@ class FilesApiController extends BaseApiController
 	 * all. Settled the same way: the exception only holds when no other user row
 	 * claims $fileName.
 	 *
+	 * $otherOwners is fetched once, by the same "someone other than the caller" query
+	 * that decides the exception, and reused for the administer check below rather than
+	 * refetched with a bare where('picture_file_name', ...) - picture_file_name has no
+	 * uniqueness constraint, so a second, caller-inclusive fetch() could turn up the
+	 * caller's own row instead of the other owner it was found to have moments earlier,
+	 * and CheckMayAdminister would then check the caller against themselves. A caller
+	 * who holds both USERS_EDIT and USERS_EDIT_SELF and shares a filename with someone
+	 * they may not administer is exactly the case that refetch let through. Every
+	 * matching non-caller owner is checked, not just one, in case duplicates are ever
+	 * more than a coincidence of two.
+	 *
 	 * @throws PermissionMissingException
 	 */
 	private function CheckUserPictureDeletion(Request $request, string $fileName): void
 	{
-		if (defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
-		{
-			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
+		$otherOwners = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetchAll();
 
-			if ($otherOwner === null)
-			{
-				// Own picture, and no other user claims the same name - the group permission was enough
-				return;
-			}
+		if (defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME && count($otherOwners) === 0)
+		{
+			// Own picture, and no other user claims the same name - the group permission was enough
+			return;
 		}
 
 		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);
 
-		$owner = $this->DB->users()->where('picture_file_name', $fileName)->fetch();
-
-		if ($owner !== null)
+		foreach ($otherOwners as $owner)
 		{
 			User::CheckMayAdminister($request, (int)$owner->id);
 		}
