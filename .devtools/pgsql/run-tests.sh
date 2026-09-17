@@ -683,9 +683,15 @@ run_apikey_tests() {
 # this phase runs (see .github/workflows/tests.yml).
 #
 # pg_prove is a Perl script, not a PHP one - .devtools/pgtap/README.md is the measure
-# here (completeness, not coverage), and check-pgtap-coverage.php is a separate lint
-# step, not part of this phase, because it is not yet wired anywhere as a hard gate
-# (see that README's "What is not covered yet").
+# here (completeness, not coverage). check-pgtap-coverage.php runs right after it, in
+# the same phase: the sixteen names that README's "What is not covered yet" once listed
+# now all have rows and test files, so there is nothing left that would fail every build
+# on functions predating pgTAP entirely - the "threshold nobody chose" the coverage
+# floor's own README warns against no longer applies once the list is complete, and it
+# is a real gate from here on, the way check-migrations.php already is for migration
+# numbering. It accumulates into the same $failures counter pg_prove does rather than
+# calling fail() outright, so a single run of `all` reports every phase's problems
+# together instead of stopping at the first one.
 
 run_pgtap_tests() {
 	local dbname="victual_pgtap"
@@ -698,6 +704,11 @@ run_pgtap_tests() {
 
 	say ""
 	if ! pg_prove -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$dbname" "$SUITE_DIR/../pgtap/"*.sql; then
+		failures=$((failures + 1))
+	fi
+
+	say ""
+	if ! php "$SUITE_DIR/../pgtap/check-pgtap-coverage.php"; then
 		failures=$((failures + 1))
 	fi
 }
