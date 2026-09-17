@@ -61,7 +61,7 @@ Recorded because it is younger than the last corpus update, not as a substitute 
   anything to freeze its per-role snapshot. Also merged that day: #173 (API key
   expiry/rotation, 0280), #171 (the Manual), #172 (fabric 7), #174 (files API S32), #175
   (label tree path), #169 (undo self-production). Review follow-ups: #177 (files API own-picture bypass) and #178 (manual corrections)
-  closed by 2026-09-17 via PRs 187 and 188; #179 (fabric leftovers) has one last PR pending. Plan 15's remainder ([issue #132](https://github.com/datagen24/victual/issues/132))
+  closed by 2026-09-17 via PRs 187 and 188; #179 (fabric leftovers) closed 2026-09-17 via PR 190. Plan 15's remainder ([issue #132](https://github.com/datagen24/victual/issues/132))
   is unblocked now that #130 and #121 are closed. **2026-09-16: plan 32 landed** as
   `0283.pgsql.php` (issue #182); its migration was written at 0285 and renumbered down after CI
   refused the hole left by plan 22's still-unwritten claims below it — `migrations/

@@ -62,7 +62,8 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 - **2026-09-17 — Post-merge bookkeeping for #186–#189** (plan 32 → `0283.pgsql.php`, files
   API own-picture fix, plan 15's cleanup batch, manual corrections). Closed #132 and #177
   with landing notes; #179's two named items were already fixed by PR 172's second round
-  (`d54dadb`) but a last PR is pending, so it stays open. Fixed plan 32's status line (still
+  (`d54dadb`); PR 190 then rewrote plan 27's Executed evidence for the image build and
+  closed it. Fixed plan 32's status line (still
   said "ready to start"), marked 0283 in master, rewrote the root README's Labels row (six
   kinds, webhook gone) and the wave-independent cell. Next unclaimed migration: 0286. Wave
   5's remaining items: #83 (14 piece 2, no longer blocked), then #86 and #85.
