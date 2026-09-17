@@ -45,7 +45,7 @@ class SqliteDialect extends DatabaseDialect
 
 		$pdo->createFunction('victual_user_setting', function ($value)
 		{
-			$usersService = new UsersService();
+			$usersService = UsersService::GetInstance();
 			return $usersService->GetUserSetting(VICTUAL_USER_ID, $value);
 		});
 

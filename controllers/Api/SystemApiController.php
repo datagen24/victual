@@ -106,7 +106,7 @@ class SystemApiController extends BaseApiController
 	 */
 	public function GetSystemInfo(Request $request, Response $response, array $args)
 	{
-		return $this->ApiResponse($response, ApplicationService::GetInstance()->GetSystemInfo());
+		return $this->ApiResponse($response, ApplicationService::GetInstance()->GetSystemInfo($request));
 	}
 
 	/**

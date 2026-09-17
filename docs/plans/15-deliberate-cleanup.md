@@ -6,8 +6,11 @@ plans one item at a time.
 **Depends on:** [11](11-api-error-handling.md) for the auth middleware ordering (do the
 ordering fix there, the refactor here);
 [14](14-contract-and-regression-scaffolding.md) for anything verified by result-set diff.
-**Status:** draft for review. Deliberately a grab bag — see "Why one plan" below.
-15-B2 (session cookie) landed early, in the wave 0.5 hotfix; see its Executed note.
+**Status:** Landed 2026-09-17, [issue 132](https://github.com/datagen24/victual/issues/132).
+Deliberately a grab bag — see "Why one plan" below. 15-B2 (session cookie) landed early,
+in the wave 0.5 hotfix; see its Executed note. B3 declined (Q5), B4 not applicable (Q4
+resolved the PHP floor downward). Two items shipped as documented partial residuals
+rather than complete — see C8 and C10's own Executed notes below.
 
 > **Read [19](19-rbac.md) before starting C1** — as a consistency check, not as a blocker.
 > It landed as a plan on 2026-08-30, and the sweep's permission findings that were parked
@@ -41,19 +44,19 @@ Grouped by whether they change behaviour anyone can observe.
 | # | Item | Where |
 |---|---|---|
 | C1 | **Done (wave 2)** — auth middlewares instantiate *other* middlewares and call `AuthenticateRequest` cross-instance; visibility drifts (protected in `DefaultAuthMiddleware`, public in three siblings); `ProcessLogin` is an abstract static that three of five subclasses stub with `throw` | `middleware/Auth/` |
-| C2 | `StockReportsController` embeds three hand-written multi-join `SELECT`s — the only controller with raw SQL, and the only place outside services where the dialect boundary could be crossed again | `controllers/StockReportsController.php:71,90,107` |
-| C3 | About dialog reports `sqlite_version` from a throwaway `sqlite::memory:` connection even on a PostgreSQL install | `services/ApplicationService.php:84,114` |
+| C2 | **Done, 2026-09-17** — `StockReportsController` embeds three hand-written multi-join `SELECT`s — the only controller with raw SQL, and the only place outside services where the dialect boundary could be crossed again | `controllers/StockReportsController.php:71,90,107` |
+| C3 | **Found already done, 2026-09-17** — About dialog reports `sqlite_version` from a throwaway `sqlite::memory:` connection even on a PostgreSQL install | `services/ApplicationService.php:84,114` |
 | C4 | **Done (wave 2)** — `ExceptionController` has an unreachable duplicate `if (!defined('VICTUAL_AUTHENTICATED'))` inside its 404 branch, and trusts `$exception->getCode()` as an HTTP status with no clamping | `controllers/ExceptionController.php` |
-| C5 | Unused `EquipmentController::$UserfieldsService` | `controllers/EquipmentController.php` |
-| C6 | `config-dist.php` documents locale precedence as browser → user setting → default; `LocaleMiddleware::GetLocale` actually does user setting → browser → default | `config-dist.php:40-43` vs `middleware/LocaleMiddleware.php:41,52` |
-| C7 | `composer.json` requires PHP `8.5.*` and `PrerequisiteChecker::REQUIRED_PHP_VERSION` is `8.5.0`, while the real language floor in the code is 8.4 | `composer.json`, `helpers/PrerequisiteChecker.php:19` |
-| C8 | Request data read three ways: PSR-7 `getQueryParams()` (most controllers), slim/http `getQueryParam()` (`GrocycodeTrait`, `ApiKeyAuthMiddleware`), raw superglobals (`BaseController:84` `$_GET['embedded']`, `ReverseProxyAuthMiddleware:47,53` `$_SERVER`, `ApplicationService:94`, `UrlManager:58-63`) | across |
-| C9 | **One of five done (wave 2, with C1)** — five `new Service()` sites against the otherwise universal `GetInstance()` convention (~320 sites): three in `DemoDataGeneratorService` (`StockService`, `ChoresService`, `BatteriesService`), one in `SqliteDialect` (`UsersService`), and `middleware/Auth/ApiKeyAuthMiddleware.php:46` (`ApiKeyService`) | services |
-| C10 | `UndoBooking`'s switch repeats the same undo-bookkeeping block seven times; `StockService` returns LessQL rows from most methods and plain `stdClass` from the raw-SQL ones, so callers must know which they got | `services/StockService.php` |
-| C11 | Delete `update.sh` — it runs `rm -rf !(data|update.sh)` and then unpacks an unsigned `releases.grocy.info/latest` zip over the result, which is upstream Grocy and would destroy this fork's schema. `.devtools/create_release_package.bat` goes with it: this fork cuts no releases. Sweep S13, rigor review H3 | `update.sh`, `.devtools/create_release_package.bat` |
-| C12 | `DatabaseService::InTransaction`'s docblock points at "`DatabaseDialect` for the per-engine locking used around migrations"; no such method exists there and none is planned before [10](10-cold-start-statelessness.md) builds one. Reword to name 10, or make the `@see` resolve. Rigor review A4 | `services/DatabaseService.php` |
-| C13 | `.gitignore`'s `/.phpdoc` is anchored to the repository root, so a phpDocumentor run in a subdirectory leaves untracked output — `branding/.phpdoc/` is the live case. Unanchor it to `.phpdoc/`. Rigor review H1 | `.gitignore` |
-| C14 | CI lints PHP with `php -l` and never runs the `node --check` sweep over `public/**/*.js` that [14](14-contract-and-regression-scaffolding.md) piece 3 specifies. Add it, or amend 14 — but not neither, which is where it has sat. Rigor review A9 | `.github/workflows/tests.yml` |
+| C5 | **Done, 2026-09-17** — Unused `EquipmentController::$UserfieldsService` | `controllers/EquipmentController.php` |
+| C6 | **Done, 2026-09-17** — `config-dist.php` documents locale precedence as browser → user setting → default; `LocaleMiddleware::GetLocale` actually does user setting → browser → default | `config-dist.php:40-43` vs `middleware/LocaleMiddleware.php:41,52` |
+| C7 | **Done, 2026-09-17** — `composer.json` requires PHP `8.5.*` and `PrerequisiteChecker::REQUIRED_PHP_VERSION` is `8.5.0`, while the real language floor in the code is 8.4 | `composer.json`, `helpers/PrerequisiteChecker.php:19` |
+| C8 | **Mostly done, 2026-09-17** — Request data read three ways: PSR-7 `getQueryParams()` (most controllers), slim/http `getQueryParam()` (`GrocycodeTrait`, `ApiKeyAuthMiddleware`), raw superglobals (`BaseController:84` `$_GET['embedded']`, `ReverseProxyAuthMiddleware:47,53` `$_SERVER`, `ApplicationService:94`, `UrlManager:58-63`) | across |
+| C9 | **Done, 2026-09-17** — five `new Service()` sites against the otherwise universal `GetInstance()` convention (~320 sites): three in `DemoDataGeneratorService` (`StockService`, `ChoresService`, `BatteriesService`), one in `SqliteDialect` (`UsersService`), and `middleware/Auth/ApiKeyAuthMiddleware.php:46` (`ApiKeyService`, done with C1) | services |
+| C10 | **Bookkeeping half done, 2026-09-17** — `UndoBooking`'s switch repeats the same undo-bookkeeping block seven times; `StockService` returns LessQL rows from most methods and plain `stdClass` from the raw-SQL ones, so callers must know which they got | `services/StockService.php` |
+| C11 | **Done, 2026-09-17** — Delete `update.sh` — it runs `rm -rf !(data|update.sh)` and then unpacks an unsigned `releases.grocy.info/latest` zip over the result, which is upstream Grocy and would destroy this fork's schema. `.devtools/create_release_package.bat` goes with it: this fork cuts no releases. Sweep S13, rigor review H3 | `update.sh`, `.devtools/create_release_package.bat` |
+| C12 | **Done, 2026-09-17** — `DatabaseService::InTransaction`'s docblock points at "`DatabaseDialect` for the per-engine locking used around migrations"; no such method exists there and none is planned before [10](10-cold-start-statelessness.md) builds one. Reword to name 10, or make the `@see` resolve. Rigor review A4 | `services/DatabaseService.php` |
+| C13 | **Done, 2026-09-17** — `.gitignore`'s `/.phpdoc` is anchored to the repository root, so a phpDocumentor run in a subdirectory leaves untracked output — `branding/.phpdoc/` is the live case. Unanchor it to `.phpdoc/`. Rigor review H1 | `.gitignore` |
+| C14 | **Done, 2026-09-17** — CI lints PHP with `php -l` and never runs the `node --check` sweep over `public/**/*.js` that [14](14-contract-and-regression-scaffolding.md) piece 3 specifies. Add it, or amend 14 — but not neither, which is where it has sat. Rigor review A9 | `.github/workflows/tests.yml` |
 
 C11 through C14 arrived from the two 2026-08-29 reviews rather than from the original
 architecture review, and C11 is here for a reason worth recording: both the roadmap and
@@ -159,6 +162,15 @@ matching `NOCASE` collation defined for exactly this. Rewriting it while relocat
 SQL would break case-insensitive ordering on both engines and would not show up in C2's
 result-set diff unless the fixture happens to contain mixed-case names.
 
+> **C2 executed, 2026-09-17.** `StockReportsService::GetSpendings()` holds all three
+> `SELECT`s verbatim, `COLLATE NOCASE` included; `StockReportsController::Spendings()`
+> now only parses query parameters and renders. Verified against a real PostgreSQL 16.13
+> instance seeded with demo data: captured all three group-by modes' full rendered output
+> (`group-by=product`, `productgroup`, `store`, with an explicit date range) from the
+> pre-move controller, then from the post-move controller against the same database —
+> byte-identical in every case (`diff` clean), which is the result-set-diff verification
+> this item names.
+
 ### C3, C4, C5, C6, C9 — one-liners
 
 C3: report the actual engine's version (`PDO::ATTR_SERVER_VERSION` on the live
@@ -166,6 +178,21 @@ connection), and drop the throwaway SQLite connection.
 [10](10-cold-start-statelessness.md) removes the same pattern from `PrerequisiteChecker`;
 this is the cosmetic twin and should say `postgresql_version` on a PostgreSQL install
 rather than a misleading `sqlite_version`.
+
+> **C3 found already done, 2026-09-17.** By the time this item was picked up,
+> `ApplicationService::GetDatabaseEngine()` already existed and already did exactly what
+> this item asks — `PDO::ATTR_SERVER_VERSION` on the live connection, named
+> `database_engine` in `GetSystemInfo()` rather than the `database_version` Q6's answer
+> proposed, and already documented in `victual.openapi.json` as the field to read instead
+> of the now-deprecated `sqlite_version`. The About page shows "Database Engine" from it
+> and no longer shows a SQLite row at all. Neither this plan nor 10's Executed section
+> records when or where that landed - a gap worth naming rather than quietly
+> re-implementing. `sqlite_version` itself is kept, deprecated, per Q7: the breaking batch
+> shrank to B1+B2, and removing a documented response field is not one of those two.
+> Verified live: booting on PHP 8.4 against real PostgreSQL 16.13,
+> `/api/system/info` answers `"database_engine":"PostgreSQL 16.13"` and a populated
+> `sqlite_version` (this box happens to still carry `pdo_sqlite`, which is the case the
+> field's own OpenAPI description already accounts for).
 
 C4: delete the dead block; clamp the status to 400–599 with a 500 fallback.
 
@@ -184,11 +211,49 @@ C9: `GetInstance()` at the five sites. Do the `ApiKeyAuthMiddleware.php:46` one 
 C1's auth refactor rather than separately — that file is already being rewritten there, so
 this avoids touching it twice.
 
+> **C5, C6, C9 executed, 2026-09-17.** C5: the property and its docblock are gone from
+> `EquipmentController`; the class still reaches `UserfieldsService::GetInstance()`
+> directly everywhere it needs it, unaffected. C6: `config-dist.php`'s precedence comment
+> now reads user setting, then browser, then default, matching `LocaleMiddleware::GetLocale()`.
+> C9: the four remaining `new Service()` sites (`DemoDataGeneratorService`'s
+> `StockService`/`ChoresService`/`BatteriesService`, `SqliteDialect`'s `UsersService`) are
+> `::GetInstance()`; the fifth, `ApiKeyAuthMiddleware.php:46`, went with C1 as planned.
+> Exercised live: booting the demo instance runs `DemoDataGeneratorService` end to end
+> (200 on `/stockoverview` after generation), which is every one of the three
+> `DemoDataGeneratorService` sites in one pass.
+
 ### C7 — pin alignment
 
 Decide the floor once and apply it in both places, plus the README. Q4 — the two settings
 currently disagree with reality in the same direction, so this is a decision, not just an
 edit.
+
+> **C7 executed, 2026-09-17.** Q4's response (8.4, against the plan's own lean) applied in
+> both declared places: `composer.json`'s `require.php` and
+> `PrerequisiteChecker::REQUIRED_PHP_VERSION` (was `8.5.*` / `'8.5.0'`). No README states
+> a PHP floor, so there was no third place to fix. The image keeps building on 8.5
+> (`Dockerfile`, `nix/`), per Q4's "keep shipping 8.5 in the image" — that is the declared
+> floor and the serving image agreeing to differ on purpose, not drift.
+>
+> **Corrected the same day, on review**: the first pass declared `8.4.0` in both places,
+> which is a floor `composer install` cannot actually stand on - two locked dependencies,
+> `symfony/clock` and `symfony/translation`, require `>=8.4.1`. Both declarations are now
+> `8.4.1` (`composer.json`'s `require.php` is `^8.4.1`), which is the real floor rather
+> than the nearest round number to it. The PHP running in this environment (8.4.19)
+> already satisfied the corrected floor, so the "actually boot on it" verification below
+> did not need to be redone.
+>
+> **Verification item 5 — actually boot on the floor version — was met directly**, not
+> simulated: the environment this landed in already runs PHP 8.4.19. `composer install`
+> now needs no `--ignore-platform-req=php`, `php bin/victual-migrate` and the full demo
+> boot (`php -S` + demo generation + every page hit in this plan's other verifications)
+> all ran on genuine 8.4. The CI `suite` job's own `--ignore-platform-req=php` and its
+> explaining comment are removed (`.github/workflows/tests.yml`), and the `frontend-security`
+> job's comment is corrected to say it deliberately stays on 8.5 to match the serving
+> image rather than the (now accurate) declared floor. The `run-app` skill's PHP-8.4
+> workaround step - patch `REQUIRED_PHP_VERSION` down, remember to revert it - is deleted
+> from both `.claude/skills/run-app/SKILL.md` and `.agents/skills/run-app/SKILL.md`, since
+> the patch it performed is now a no-op.
 
 ### C8 — request data access
 
@@ -202,13 +267,117 @@ as a side effect of reading it, which is the sort of thing that is fine until it
 `$_GET['embedded']` in `BaseController` is trivial. The `$_SERVER` sites are worth doing
 carefully.
 
-### C10 — leave it
+> **C8 executed, 2026-09-17, in part.** The `$_SERVER` sites got the careful treatment
+> this item asks for, each on its own terms rather than by one mechanical rule:
+> - `ApplicationService::GetSystemInfo()` no longer reads `$_SERVER['HTTP_USER_AGENT']`;
+>   it takes an optional `?Request $request` and reads `getHeaderLine('User-Agent')`. Its
+>   three call sites (`SystemApiController::GetSystemInfo`, `SystemController::About`,
+>   `ExceptionController`'s 500 branch) already had a request in scope and now pass it.
+> - `UrlManager::GetBaseUrl()` no longer *mutates* `$_SERVER['HTTPS']` to make its own next
+>   line see the forwarded scheme — the exact "fine until it is not" pattern this item
+>   named. A local `$isHttps` boolean replaces the read-then-write-then-reread. It still
+>   reads `$_SERVER` (no `Request` reaches this factory without adding container-level
+>   request-capture middleware — see below), but no longer leaves global state changed as
+>   a side effect of answering a question.
+> - `ReverseProxyAuthMiddleware`'s `$_SERVER` reads turned out to already be the careful,
+>   deliberate version this item was worried about missing: C1's refactor (2026-09-04)
+>   split header mode (`$request->getHeader()`, real PSR-7) from
+>   `REVERSE_PROXY_AUTH_USE_ENV` mode (`$_SERVER` directly, for a value the web server
+>   sets rather than a client-supplied header) in `ReverseProxyAuthenticator`, with its own
+>   docblock explaining exactly why each is safe. Nothing to do here.
+> - `GrocycodeTrait`'s slim/http `getQueryParam()` calls (typed against the PSR-7
+>   interface, which does not declare that method - only the concrete request class
+>   happens to have it) are now `getQueryParams()['size'] ?? null` /
+>   `['download'] ?? false`. `ApiKeyAuthMiddleware`'s `getQueryParam()` site named in this
+>   item is also already gone: C1's `ApiKeyAuthenticator::Authenticate()` reads
+>   `$request->getQueryParams()['secret']` today.
+>
+> **Left as documented debt: `$_GET['embedded']` in `BaseController::Render()`.** Not
+> because it is hard, but because doing it right costs more than the item is worth.
+> `Render()`/`RenderPage()` have no `Request` in scope at all - not the container, not the
+> constructor - and every one of the ~103 call sites across 17 controllers would need one
+> threaded through for `$embedded` to keep working identically on every page rather than
+> silently going false on whichever routes a partial migration missed. The lower-risk
+> alternative - a new container-level request-capture middleware, positioned outside
+> `BaseAuthMiddleware` since `UrlManager`'s factory is the earliest consumer - was
+> considered and set aside for this session: it is real surface added to the request
+> pipeline for a flag with no security consequence, not carefully-scoped harm reduction
+> like the four sites above. Stays exactly as trivial as this item called it.
+>
+> Verified live on a real PostgreSQL-backed boot: `/api/system/info` with a custom
+> `User-Agent` header round-trips it back in the `client` field (confirming the PSR-7 read
+> works end to end); a synthetic 500 driven straight through `ExceptionController::__invoke()`
+> renders with the request-derived system info and no error; `/product/{id}/grocycode?size=100&download=1`
+> still returns a correctly-sized PNG as an attachment.
+
+### C10 — dedupe the undo bookkeeping; leave the return types
 
 Named here so it is on the record and not rediscovered. The seven-fold repetition in
 `UndoBooking` and the mixed return conventions in `StockService` are real, but
 [13](13-write-path-transactions.md) is opening exactly those methods to add transactions,
 and a transaction change verified by "the ledger is consistent" stops being verifiable if
 a deduplication rides along. Accepted debt, revisit after 13.
+
+> **C10 executed, 2026-09-17, in part.** 13 landed (2026-08-29) and
+> [issue 121](https://github.com/datagen24/victual/issues/121) - the missing
+> `SELF_PRODUCTION` undo branch, in this same function - closed 2026-09-15 carrying its
+> own dedication-adjacent fix (the final `else { throw }` that stops an unmatched
+> transaction type from passing as a silent no-op). With both riding this function open
+> already, the bookkeeping half rode with them: the nine now-identical
+> `$logRow->update(['undone' => 1, 'undone_timestamp' => date(...)])` blocks (one more than
+> "seven-fold" - two measurement branches were added since this item was written) are one
+> `MarkBookingUndone($logRow)` private helper, called from every branch including the
+> `else`-adjacent ones that only had the bookkeeping and no other work.
+>
+> **The mixed-return-types half (LessQL rows vs. `stdClass` from raw-SQL methods) is left
+> as its own undertaking**, not folded in here: it touches roughly a dozen methods across
+> the read side of `StockService`, each a separate decision about whether to rewrite as a
+> LessQL query or keep raw SQL and change what it returns, and none of it shares the
+> narrow "one repeated block, one helper" shape that made the bookkeeping dedup safe to do
+> in the same sitting. Revisit as its own item rather than silently dropped.
+>
+> Verified against real PostgreSQL 16.13, not by inspection: a script drove
+> `StockService` through `AddProduct`/`UndoBooking` (the `PURCHASE` branch, which
+> `SELF_PRODUCTION` shares), `ConsumeProduct`/`UndoBooking` (`CONSUME`), `OpenProduct`/
+> `UndoBooking` (`PRODUCT_OPENED`) and `EditStockEntry`/`UndoBooking` (the correlated
+> `STOCK_EDIT_NEW`/`STOCK_EDIT_OLD` pair, undone via the newer booking) - four of the nine
+> branches, chosen to cover a plain delete, a re-create, a flag clear and a correlated
+> pair. Every check read the ledger and `stock` back with raw PDO queries rather than
+> through LessQL, whose per-process row cache made an early version of this same script
+> report false failures against genuinely-correct writes. 16 checks, 16 passed: booking
+> recorded, stock mutated, undo reverses the mutation, `undone`/`undone_timestamp` both
+> set. `.devtools/pgsql/rollback-tests.php`'s `UndoTransaction` case (injected-failure
+> rollback, a fifth branch by a different route) also still passes unmodified.
+
+### C11–C14 — executed, 2026-09-17
+
+These four arrived from the 2026-08-29 reviews (see the note above the breaking table)
+rather than the original architecture review, and none had its own proposed-change
+write-up; recorded together here for the same reason.
+
+**C11.** `update.sh` and `.devtools/create_release_package.bat` are deleted. Closes
+**sweep S13**. The two places that pointed at this plan for the deletion question -
+[16](16-project-rename.md)'s "kept verbatim... a deletion question, which is 15's
+business" checklist item and the architecture rigor review's H3 row - are both updated to
+say so rather than left describing a file that no longer exists.
+
+**C12.** `DatabaseService::InTransaction`'s docblock no longer says "see `DatabaseDialect`
+for the per-engine locking used around migrations" as unresolvable prose - it is now
+`@see DatabaseDialect::WithMigrationLock()`, a method that has existed since plan 10
+landed. The docblock was stale, not wrong in direction: the pointer target had shipped,
+nobody had gone back to make the pointer resolve. Closes rigor review **A4**.
+
+**C13.** `.gitignore`'s `/.phpdoc` is now `.phpdoc` (unanchored), so `branding/.phpdoc/`
+is ignored the same as a root-level run's output. Closes rigor review **H1**.
+
+**C14.** The `lint` job's syntax sweep gained a second half:
+`find public -name '*.js' -not -path 'public/packages/*' -print0 | xargs -0 -n1 -P4 node --check`,
+right after the `php -l` step it mirrors (`public/packages` is yarn-installed and
+gitignored, excluded the same way `php -l` excludes `packages/`). All 108 of this fork's
+own `.js` files under `public/` passed `node --check` locally before the gate was added,
+so the new step starts green rather than needing a fix landed alongside it. Closes rigor
+review **A9**, per its own stated choice ("add it, or amend 14 - but not neither"):
+this adds it rather than amending 14.
 
 ### B1 — LDAP removal
 

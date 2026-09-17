@@ -318,7 +318,7 @@ class DemoDataGeneratorService extends BaseService
 			$db->GetDialect()->ResyncGeneratedIdCounters($db->GetDbConnectionRaw());
 
 			$stockTransactionId = uniqid();
-			$stockService = new StockService();
+			$stockService = StockService::GetInstance();
 			$stockService->AddProduct(3, 1, date('Y-m-d', strtotime('+180 days')), StockService::TRANSACTION_TYPE_PURCHASE, date('Y-m-d', strtotime('-10 days')), $this->RandomPrice(), null, $this->NextSupermarketId(), $stockTransactionId);
 			$stockService->AddProduct(3, 1, date('Y-m-d', strtotime('+180 days')), StockService::TRANSACTION_TYPE_PURCHASE, date('Y-m-d', strtotime('-20 days')), $this->RandomPrice(), null, $this->NextSupermarketId(), $stockTransactionId);
 			$stockService->AddProduct(3, 1, date('Y-m-d', strtotime('+180 days')), StockService::TRANSACTION_TYPE_PURCHASE, date('Y-m-d', strtotime('-30 days')), $this->RandomPrice(), null, $this->NextSupermarketId(), $stockTransactionId);
@@ -410,7 +410,7 @@ class DemoDataGeneratorService extends BaseService
 			$stockService->OpenProduct(22, 1);
 			$stockService->ConsumeProduct(11, 1, true, StockService::TRANSACTION_TYPE_CONSUME);
 
-			$choresService = new ChoresService();
+			$choresService = ChoresService::GetInstance();
 			for ($i = 1; $i <= 25; $i++)
 			{
 				foreach ($this->DB->chores() as $chore)
@@ -433,7 +433,7 @@ class DemoDataGeneratorService extends BaseService
 			$choresService->TrackChore(4, date('Y-m-d'), array_rand([1, 2, 3, 4]) + 1);
 			$db->ExecuteDbStatement("UPDATE chores SET rescheduled_date = '{$inTenDays}' WHERE id = 6");
 
-			$batteriesService = new BatteriesService();
+			$batteriesService = BatteriesService::GetInstance();
 			$batteriesService->TrackChargeCycle(1, date('Y-m-d H:i:s', strtotime('-720 days')));
 			$batteriesService->TrackChargeCycle(1, date('Y-m-d H:i:s', strtotime('-540 days')));
 			$batteriesService->TrackChargeCycle(1, date('Y-m-d H:i:s', strtotime('-360 days')));

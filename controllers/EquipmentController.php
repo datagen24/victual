@@ -12,9 +12,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class EquipmentController extends BaseController
 {
-	/** @var UserfieldsService|null Declared but not used within this controller */
-	protected $UserfieldsService;
-
 	/**
 	 * Serves the equipment create/edit form (route GET /equipment/{equipmentId}).
 	 *

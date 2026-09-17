@@ -431,13 +431,12 @@ before*, so they are not oversights and there is nothing to do in code:
       exactly such an identity when MCP writes arrive and already owns the
       credential→user seam. Landing it here would have meant inventing the
       write path it describes.
-- [ ] **`update.sh`.** Kept verbatim, now with a header saying it is
-      upstream's release-based updater and not this fork's update path.
-      Whether a fork that tracks no release schedule should ship an updater
-      that overwrites the installation with *upstream's* release at all is a
-      deletion question, which is [15](15-deliberate-cleanup.md)'s business,
-      not a rename's. Same for `.devtools/create_release_package.bat`, which
-      packages a release this fork does not cut.
+- [x] **`update.sh`.** Kept verbatim with a header at the time of the rename,
+      pending the deletion question this note routed to
+      [15](15-deliberate-cleanup.md). That plan's C11 answered it: deleted,
+      along with `.devtools/create_release_package.bat`, which packaged a
+      release this fork does not cut. Neither file exists in the tree any
+      longer.
 
 ### Accepted costs, recorded rather than fixed
 

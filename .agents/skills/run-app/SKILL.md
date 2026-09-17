@@ -13,11 +13,8 @@ generation. All commands from the repo root.
 ## 1. PHP dependencies
 
 ```bash
-composer install --no-interaction --ignore-platform-req=php
+composer install --no-interaction
 ```
-
-`--ignore-platform-req=php` because containers commonly ship PHP 8.4 while
-`composer.json` pins 8.5.*. The dependencies themselves work fine on 8.4.
 
 ## 2. Frontend packages
 
@@ -32,27 +29,7 @@ symlink exists from an earlier session, yarn fails with
 `EEXIST: file already exists, mkdir '.../public/packages'`; `rm -f
 public/packages` and re-run. Without the packages the app boots unstyled.
 
-## 3. PHP version gate (only if `php -v` < 8.5)
-
-`helpers/PrerequisiteChecker.php` hard-fails below `REQUIRED_PHP_VERSION`
-('8.5.0'). On a container with PHP 8.4, temporarily lower it — saving the
-file's exact prior state first, so the restore cannot discard uncommitted
-local edits the way a `git checkout` would:
-
-```bash
-cp helpers/PrerequisiteChecker.php /tmp/PrerequisiteChecker.php.orig
-sed -i "s/const REQUIRED_PHP_VERSION = '8.5.0';/const REQUIRED_PHP_VERSION = '8.4.0';/" helpers/PrerequisiteChecker.php
-```
-
-**Restore before committing anything** — this is a local run hack, never
-repo state, and the restore puts back whatever was there before, local
-edits included:
-
-```bash
-mv /tmp/PrerequisiteChecker.php.orig helpers/PrerequisiteChecker.php
-```
-
-## 4. PostgreSQL
+## 3. PostgreSQL
 
 Since [ADR-0008](../../../docs/adr/0008-postgresql-only-runtime-engine.md)'s
 retirement landed there is no SQLite boot: `DB_DRIVER` accepts `pgsql` and
@@ -70,7 +47,7 @@ createdb victual_demo
 `pg_isready` says whether the cluster came up. If PostgreSQL is not
 installed at all, `docker-compose.yml` has a service for it.
 
-## 5. Data directory and boot
+## 4. Data directory and boot
 
 Use a throwaway data directory - never `./data`, which may hold a real
 local `config.php` and database that an unconditional copy would destroy.
@@ -116,7 +93,7 @@ If the demo tables are empty afterwards, read `/tmp/php-server.log`: a boot
 that fails a prerequisite answers 200 with an error page, which looks like
 success to `curl -o /dev/null`.
 
-## 6. Screenshots (Playwright)
+## 5. Screenshots (Playwright)
 
 `playwright-core` is not in this repo's `package.json` — install it in a
 throwaway directory, not here, and point it at whatever Chromium the

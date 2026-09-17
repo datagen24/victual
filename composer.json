@@ -1,6 +1,6 @@
 {
 	"require": {
-		"php": "8.5.*",
+		"php": "^8.4.1",
 		"eluceo/ical": "^2.2.0",
 		"erusev/parsedown": "^1.7",
 		"ezyang/htmlpurifier": "^4.13",

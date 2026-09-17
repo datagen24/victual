@@ -79,6 +79,20 @@ jobs:
             exit 1
           fi
 
+      # The frontend twin of the syntax sweep above. public/packages is yarn-installed
+      # (gitignored, and absent in a bare checkout) rather than this fork's own code, so
+      # it is excluded the same way php -l excludes packages/. Plan 14 piece 3 names this
+      # check; 15-C14 is what actually wired it in.
+      - name: Check JS syntax
+        run: |
+          if ! find public -name '*.js' \
+              -not -path 'public/packages/*' \
+              -print0 \
+            | xargs -0 -n1 -P4 node --check > jslint.log 2>&1; then
+            cat jslint.log
+            exit 1
+          fi
+
       # SQL assembled inside PHP is invisible to the view/trigger differential suite.
       # Keep SQLite-only functions out of request-time queries so PostgreSQL does not
       # discover them as a user-facing 400 or 500.
@@ -128,9 +142,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 8.4 is the fork's real language floor. composer.json still declares 8.5 until
-      # 15-C7 lowers it, which is why the install below ignores the platform
-      # requirement; once that lands, the flag can go.
+      # 8.4 is the fork's real language floor, and composer.json/PrerequisiteChecker
+      # declare it too since 15-C7.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
@@ -146,7 +159,7 @@ jobs:
           key: composer-${{ hashFiles('composer.lock') }}
 
       - name: Install dependencies
-        run: composer install --no-interaction --no-progress --no-scripts --ignore-platform-req=php
+        run: composer install --no-interaction --no-progress --no-scripts
 
       # PathParameterMiddleware reads which path parameters are integer ids out of
       # victual.openapi.json, so an undocumented parameter is an unvalidated one - and an
@@ -299,9 +312,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # 8.5, not the 8.4 the suite job uses. This one boots the application through
-      # public/index.php, where PrerequisiteChecker enforces REQUIRED_PHP_VERSION, and
-      # composer.json pins 8.5.* - so this is the version the app says it needs, and no
-      # platform requirement has to be ignored to install against it.
+      # public/index.php, where PrerequisiteChecker enforces REQUIRED_PHP_VERSION (8.4,
+      # since 15-C7) - 8.5 is what the serving image actually ships (plan 15-C7 Q4), and
+      # this job matches that rather than the declared floor.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'

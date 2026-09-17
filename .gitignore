@@ -2,7 +2,7 @@ embedded.txt
 /.release
 /packages
 /public/packages
-/.phpdoc
+.phpdoc
 /.docs-build
 /site
 /phpdoc.xml

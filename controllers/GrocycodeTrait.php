@@ -25,7 +25,8 @@ trait GrocycodeTrait
 	 */
 	public function ServeGrocycodeImage(Request $request, Response $response, Grocycode $grocycode)
 	{
-		$size = $request->getQueryParam('size', null);
+		$queryParams = $request->getQueryParams();
+		$size = $queryParams['size'] ?? null;
 
 		if (VICTUAL_GROCYCODE_TYPE == '2D')
 		{
@@ -36,7 +37,7 @@ trait GrocycodeTrait
 			$png = (new BarcodeFactory())->setType('C128')->setCode((string)$grocycode)->setHeight($size)->getBarcodePngData();
 		}
 
-		$isDownload = $request->getQueryParam('download', false);
+		$isDownload = $queryParams['download'] ?? false;
 		if ($isDownload)
 		{
 			$response = $response->withHeader('Content-Type', 'application/octet-stream')

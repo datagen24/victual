@@ -55,11 +55,13 @@ class UrlManager
 	 */
 	private function GetBaseUrl()
 	{
-		if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strpos($_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false)
-		{
-			$_SERVER['HTTPS'] = 'on';
-		}
+		// A local boolean rather than the read-then-mutate-$_SERVER['HTTPS'] this used to
+		// do: mutating a superglobal to make a later read see the forwarded scheme is the
+		// kind of thing that is fine only for as long as nothing else reads $_SERVER first
+		// (plan 15-C8).
+		$forwardedProto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
+		$isHttps = isset($_SERVER['HTTPS']) || strpos($forwardedProto, 'https') !== false;
 
-		return (isset($_SERVER['HTTPS']) ? 'https' : 'http') . "://$_SERVER[HTTP_HOST]";
+		return ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
 	}
 }
