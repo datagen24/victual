@@ -2705,6 +2705,10 @@
         "status": 204,
         "shape": "empty"
     },
+    "PUT /api/user/settings/{settingKey} (for the CHILD replay)": {
+        "status": 204,
+        "shape": "empty"
+    },
     "PUT /api/users/{userId}": {
         "status": 400,
         "shape": {

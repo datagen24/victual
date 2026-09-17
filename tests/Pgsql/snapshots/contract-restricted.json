@@ -1890,6 +1890,7 @@
             "calendar_color_tasks": "string",
             "chores_due_soon_days": "integer",
             "chores_overview_swap_tracking_buttons": "boolean",
+            "contract_test_setting_persist": "string",
             "keep_screen_on": "boolean",
             "keep_screen_on_when_fullscreen_card": "boolean",
             "night_mode": "string",
@@ -1927,6 +1928,12 @@
             "stock_due_soon_days": "integer",
             "stock_overview_show_all_out_of_stock_products": "boolean",
             "tasks_due_soon_days": "integer"
+        }
+    },
+    "GET /api/user/settings/{settingKey}": {
+        "status": 200,
+        "shape": {
+            "value": "string"
         }
     },
     "GET /api/userfields/{entity}/{objectId}": {

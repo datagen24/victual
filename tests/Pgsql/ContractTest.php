@@ -571,8 +571,13 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('GET /api/user', fn() => $users->CurrentUser(self::request(), new Response(), []));
 		self::invokeAdmin('PUT /api/user/settings/{settingKey}', fn() => $users->SetUserSetting(self::request('PUT', ['value' => 'dark']), new Response(), ['settingKey' => 'contract_test_setting']));
 		self::invokeAdmin('GET /api/user/settings', fn() => $users->GetUserSettings(self::request(), new Response(), []));
-		self::invokeAdmin('GET /api/user/settings/{settingKey}', fn() => $users->GetUserSetting(self::request(), new Response(), ['settingKey' => 'contract_test_setting']));
 		self::invokeAdmin('DELETE /api/user/settings/{settingKey}', fn() => $users->DeleteUserSetting(self::request('DELETE'), new Response(), ['settingKey' => 'contract_test_setting']));
+
+		// A second, undeleted setting: the restricted sweep replays every GET route
+		// recorded here (self::routeCallForKey()), so a setting this call deleted would
+		// have nothing left to read back for CHILD.
+		self::invokeAdmin('PUT /api/user/settings/{settingKey} (for the CHILD replay)', fn() => $users->SetUserSetting(self::request('PUT', ['value' => 'dark']), new Response(), ['settingKey' => 'contract_test_setting_persist']));
+		self::invokeAdmin('GET /api/user/settings/{settingKey}', fn() => $users->GetUserSetting(self::request(), new Response(), ['settingKey' => 'contract_test_setting_persist']));
 
 		self::assertGreaterThan(0, self::$ids['user'], 'Fixture user created');
 	}
@@ -778,6 +783,7 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/users/{userId}/roles' => fn() => $roles->ListUserRoles(self::request(), new Response(), ['userId' => self::$ids['user']]),
 			$key === 'GET /api/user' => fn() => $users->CurrentUser(self::request(), new Response(), []),
 			$key === 'GET /api/user/settings' => fn() => $users->GetUserSettings(self::request(), new Response(), []),
+			$key === 'GET /api/user/settings/{settingKey}' => fn() => $users->GetUserSetting(self::request(), new Response(), ['settingKey' => 'contract_test_setting_persist']),
 			$key === 'GET /api/files/{group}/{fileName}' => null, // deleted by the Admin sweep; nothing left to serve
 			$key === 'GET /api/system/info' => fn() => $system->GetSystemInfo(self::request(), new Response(), []),
 			$key === 'GET /api/system/time' => fn() => $system->GetSystemTime(self::request(), new Response(), []),
@@ -823,10 +829,98 @@ class ContractTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------------------------------------
 
 	#[Depends('testRestrictedSweepMatchesGolden')]
+	/**
+	 * Which entity governs which part of a hand-built response's JSON tree, keyed by the
+	 * dotted path prefix JsonShape::MissingKeys()/fieldsAtPathPrefix() use (see their own
+	 * docblocks): '' is the response's own top-level object, '[]' is a top-level list,
+	 * 'x[]' is a list nested under key x. Read off each controller method's own
+	 * FieldPolicy::RedactRow()/RedactRows() calls, not guessed from field names - a field
+	 * name alone is not proof of which policy row governs it (issue found by review: two
+	 * routes can carry a same-named field under different entities, and a redaction
+	 * correctly observed under one must never be credited to the other). The generic
+	 * `/objects/{entity}` sweep needs no entry here - entityPathMapForRoute() reads its
+	 * entity straight out of the route key, which already names it.
+	 */
+	private const HAND_BUILT_ROUTE_ENTITIES = [
+		'GET /api/stock' => ['[]' => 'stock_current'],
+		'GET /api/stock/entry/{entryId}' => ['' => 'stock'],
+		'GET /api/stock/volatile' => ['due_products[]' => 'stock_current', 'overdue_products[]' => 'stock_current', 'expired_products[]' => 'stock_current'],
+		'GET /api/stock/products/{productId}' => ['' => 'product_details', 'product_barcodes[]' => 'product_barcodes'],
+		'GET /api/stock/products/{productId}/entries' => ['[]' => 'stock_next_use'],
+		'GET /api/stock/locations/{locationId}/entries' => ['[]' => 'stock'],
+		'GET /api/stock/products/by-barcode/{barcode}' => ['' => 'product_details', 'product_barcodes[]' => 'product_barcodes'],
+		'GET /api/stock/bookings/{bookingId}' => ['' => 'stock_log'],
+		'GET /api/stock/transactions/{transactionId}' => ['[]' => 'stock_log'],
+		'GET /api/recipes/{recipeId}/fulfillment' => ['' => 'recipes_resolved'],
+		'GET /api/recipes/fulfillment' => ['[]' => 'recipes_resolved'],
+	];
+
+	/** @return array<string, string> path prefix => entity, for the routes this leg can check with entity precision. */
+	private static function entityPathMapForRoute(string $key): array
+	{
+		if (preg_match('/^GET \/api\/objects\/\{entity\}\/\{objectId\} \(([a-z_]+)\)$/', $key, $m))
+		{
+			return ['' => $m[1]];
+		}
+		if (preg_match('/^GET \/api\/objects\/\{entity\} \(([a-z_]+)\)$/', $key, $m))
+		{
+			return ['[]' => $m[1]];
+		}
+
+		return self::HAND_BUILT_ROUTE_ENTITIES[$key] ?? [];
+	}
+
+	/** Object keys present in $value at the given dotted path prefix - the admin-side counterpart to JsonShape::MissingKeys()'s paths. */
+	private static function fieldsAtPathPrefix($value, string $targetPrefix, string $currentPrefix = ''): array
+	{
+		if (is_array($value) && array_is_list($value))
+		{
+			$childPrefix = $currentPrefix === '' ? '[]' : $currentPrefix . '[]';
+			$out = [];
+			foreach ($value as $item)
+			{
+				$out += self::fieldsAtPathPrefix($item, $targetPrefix, $childPrefix);
+			}
+			return $out;
+		}
+
+		if (is_array($value))
+		{
+			if ($currentPrefix === $targetPrefix)
+			{
+				return array_fill_keys(array_keys($value), true);
+			}
+
+			$out = [];
+			foreach ($value as $k => $v)
+			{
+				$childPrefix = $currentPrefix === '' ? (string)$k : $currentPrefix . '.' . $k;
+				$out += self::fieldsAtPathPrefix($v, $targetPrefix, $childPrefix);
+			}
+			return $out;
+		}
+
+		return [];
+	}
+
 	public function testRestrictedMatchesAdminMinusRedactedFields(): void
 	{
-		$observedRedactions = [];
+		$childPermissions = array_column(self::$db->query('SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9000')->fetchAll(PDO::FETCH_ASSOC), 'permission_name');
+		$policyRows = self::$db->query("SELECT entity, field, permission_name FROM permission_fields WHERE field != '*'")->fetchAll(PDO::FETCH_ASSOC);
+
+		// entity => set of fields CHILD's resolved permissions do not cover.
+		$requiredByEntity = [];
+		foreach ($policyRows as $row)
+		{
+			if (in_array($row['permission_name'], $childPermissions, true))
+			{
+				continue;
+			}
+			$requiredByEntity[$row['entity']][$row['field']] = true;
+		}
+
 		$unexpectedStatuses = [];
+		$missingCoverage = [];
 
 		foreach (self::$restrictedSnapshot as $key => $restrictedResult)
 		{
@@ -848,42 +942,49 @@ class ContractTest extends PgsqlSchemaTestCase
 				continue; // A legitimate whole-object gate - nothing field-level to diff.
 			}
 
-			$missing = JsonShape::MissingKeys(self::$adminBodies[$key], self::$restrictedBodies[$key]);
+			$entityPaths = self::entityPathMapForRoute($key);
+			if ($entityPaths === [])
+			{
+				continue; // No entry in HAND_BUILT_ROUTE_ENTITIES and not a generic /objects/{entity} route - not one this leg can attribute an entity to.
+			}
+
+			$adminBody = self::$adminBodies[$key];
+			$missing = JsonShape::MissingKeys($adminBody, self::$restrictedBodies[$key]);
+			$missingByPrefix = [];
 			foreach ($missing as $path)
 			{
-				$observedRedactions[JsonShape::Leaf($path)] = true;
+				$lastDot = strrpos($path, '.');
+				$prefix = $lastDot === false ? '' : substr($path, 0, $lastDot);
+				$field = $lastDot === false ? $path : substr($path, $lastDot + 1);
+				$missingByPrefix[$prefix][$field] = true;
+			}
+
+			foreach ($entityPaths as $prefix => $entity)
+			{
+				$requiredFields = array_keys($requiredByEntity[$entity] ?? []);
+				if ($requiredFields === [])
+				{
+					continue;
+				}
+
+				$presentFields = self::fieldsAtPathPrefix($adminBody, $prefix);
+
+				foreach ($requiredFields as $field)
+				{
+					if (!array_key_exists($field, $presentFields))
+					{
+						continue; // This route's shape of $entity doesn't carry the field at all.
+					}
+					if (!isset($missingByPrefix[$prefix][$field]))
+					{
+						$missingCoverage[] = "$key ($entity.$field)";
+					}
+				}
 			}
 		}
 
 		self::assertSame([], $unexpectedStatuses, "CHILD got a status other than 200/403 on a route Admin could read: " . implode('; ', $unexpectedStatuses));
-
-		// Ground truth: permission_fields, exactly as FieldPolicy reads it - never a
-		// hand-maintained list, per that class's own docblock.
-		$childPermissions = array_column(self::$db->query('SELECT permission_name FROM user_permissions_resolved WHERE user_id = 9000')->fetchAll(PDO::FETCH_ASSOC), 'permission_name');
-		$rows = self::$db->query("SELECT entity, field, permission_name FROM permission_fields WHERE field != '*'")->fetchAll(PDO::FETCH_ASSOC);
-
-		$adminFieldNames = [];
-		foreach (self::$adminBodies as $body)
-		{
-			self::collectFieldNames($body, $adminFieldNames);
-		}
-
-		$mustBeRedacted = [];
-		foreach ($rows as $row)
-		{
-			if (in_array($row['permission_name'], $childPermissions, true))
-			{
-				continue; // CHILD holds this permission - not expected to be redacted.
-			}
-			if (!array_key_exists($row['field'], $adminFieldNames))
-			{
-				continue; // This field was never reached by the fixture sweep at all.
-			}
-			$mustBeRedacted[$row['field']] = true;
-		}
-
-		$missingCoverage = array_keys(array_diff_key($mustBeRedacted, $observedRedactions));
-		self::assertSame([], $missingCoverage, 'permission_fields names these fields as CHILD-redacted, and the fixture sweep reached them, but CHILD received them anyway: ' . implode(', ', $missingCoverage));
+		self::assertSame([], $missingCoverage, 'permission_fields names these entity.field pairs as CHILD-redacted, and the route reaches them at the mapped path, but CHILD received them anyway: ' . implode(', ', $missingCoverage));
 	}
 
 	private static function collectFieldNames($value, array &$out): void
