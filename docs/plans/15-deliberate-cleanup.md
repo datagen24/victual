@@ -229,11 +229,19 @@ currently disagree with reality in the same direction, so this is a decision, no
 edit.
 
 > **C7 executed, 2026-09-17.** Q4's response (8.4, against the plan's own lean) applied in
-> both declared places: `composer.json`'s `require.php` is `^8.4` (was `8.5.*`) and
-> `PrerequisiteChecker::REQUIRED_PHP_VERSION` is `'8.4.0'` (was `'8.5.0'`). No README states
+> both declared places: `composer.json`'s `require.php` and
+> `PrerequisiteChecker::REQUIRED_PHP_VERSION` (was `8.5.*` / `'8.5.0'`). No README states
 > a PHP floor, so there was no third place to fix. The image keeps building on 8.5
 > (`Dockerfile`, `nix/`), per Q4's "keep shipping 8.5 in the image" — that is the declared
 > floor and the serving image agreeing to differ on purpose, not drift.
+>
+> **Corrected the same day, on review**: the first pass declared `8.4.0` in both places,
+> which is a floor `composer install` cannot actually stand on - two locked dependencies,
+> `symfony/clock` and `symfony/translation`, require `>=8.4.1`. Both declarations are now
+> `8.4.1` (`composer.json`'s `require.php` is `^8.4.1`), which is the real floor rather
+> than the nearest round number to it. The PHP running in this environment (8.4.19)
+> already satisfied the corrected floor, so the "actually boot on it" verification below
+> did not need to be redone.
 >
 > **Verification item 5 — actually boot on the floor version — was met directly**, not
 > simulated: the environment this landed in already runs PHP 8.4.19. `composer install`
