@@ -8,7 +8,13 @@
 
 services:
   postgres:
-    image: postgres:16
+    # Built rather than pulled plain, so the pgtap extension (ADR-0025 tier 2) is there
+    # for `run-tests.sh pgtap` from a clean checkout - decision 6 installs it only where
+    # PostgreSQL runs for tests, which for local/CI use is this container, not the dev
+    # image (that one never runs a PostgreSQL server itself).
+    build:
+      context: .
+      dockerfile: .devtools/pgtap/postgres.Dockerfile
     # victual/victual, in the open, on purpose: this database exists for the length of a
     # suite run, on a tmpfs, with no published ports, and every run creates it from
     # nothing. Sweep finding S25 records the credentials as an Info-level observation

@@ -36,6 +36,10 @@ FROM php:8.5-cli-bookworm AS dev
 # package. sqlite3 is the CLI, useful for poking at a failing seed by hand, and libsqlite3-dev
 # is what docker-php-ext-install needs to build pdo_sqlite: the base image ships the headers
 # for neither stage, and the first CI build of this file failed on exactly that.
+# libtap-parser-sourcehandler-pgtap-perl is ADR-0025 tier 2's pg_prove, the client that
+# runs .devtools/pgtap/*.sql - this image never runs a PostgreSQL server itself (see
+# docker-compose.yml's separate postgres service), so the pgtap *extension* is installed
+# there instead, per decision 6.
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		git \
 		unzip \
@@ -48,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 		libpng-dev \
 		libjpeg62-turbo-dev \
 		libfreetype6-dev \
+		libtap-parser-sourcehandler-pgtap-perl \
 	&& docker-php-ext-configure gd --with-freetype --with-jpeg \
 	&& docker-php-ext-install -j"$(nproc)" \
 		pdo_sqlite \

@@ -46,7 +46,10 @@ the run spawns then loads `prepend.php` first.
 - **`prepend.php`** starts a line-coverage driver and registers a shutdown handler that
   writes one `.cov` file named for the process. It returns immediately when
   `VICTUAL_COVERAGE_DIR` is unset, so an ordinary run is untouched: no driver, no autoloader,
-  no handler.
+  no handler. This is also what tier 1 (ADR-0025) measures: `packages/bin/phpunit` is a PHP
+  process like any other the suite spawns, so it loads `prepend.php` through the same
+  `auto_prepend_file` mechanism with no PHPUnit-specific wiring at all — one number, from
+  one run, whether the process is `difftest.php` or a PHPUnit test class.
 - **`report.php`** merges every `.cov` in the directory — no single process can know it is
   the last one — and prints the summary. It is run with `VICTUAL_COVERAGE_DIR` unset so it
   does not measure itself into the directory it is reading.

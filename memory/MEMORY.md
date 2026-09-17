@@ -59,6 +59,37 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-17 — ADR-0025's five acceptance spikes executed** (branch
+  `claude/adr-0025-spike-execution-893row`), spike 2 first as the record requires since it
+  gates the other four. **Spike 1**: `composer require --dev phpunit/phpunit` resolved
+  `11.5.56` against the `php: ^8.4.1` floor with no `php-code-coverage ^11.0` conflict.
+  **Spike 2 (the gate, passed)**: `.devtools/pgsql/rbac-tests.php` ported to
+  `tests/Pgsql/RbacTest.php`, a new `Victual\Tests\Support\PgsqlSchemaTestCase` giving
+  each PHPUnit class its own PostgreSQL schema (migrated in-process via
+  `DatabaseMigrationService::MigrateDatabase()`) with `DatabaseService`'s singleton
+  reflection-injected onto it — the label suites' own injection pattern, extended to the
+  real migration path. Five identity-fixed scenarios (default roles, the two own-picture
+  exceptions) still spawn their own process via a new
+  `tests/Pgsql/rbac-subprocess-helper.php`, attaching to the class's schema by env var.
+  `run-tests.sh rbac` now runs `phpunit --testsuite rbac`; per-class coverage is identical
+  or higher on every RBAC class, three points lower only in bootstrap plumbing the
+  schema-per-class design no longer runs as a separate process (`.spike-adr25/RESULTS.md`
+  has the full diff). **Spike 3**: pgTAP installs into the stock `postgres:16` image and
+  `pg_prove` into the stock dev image with a plain `apt-get install` each side - no custom
+  base image; wired into `tests.yml` (`docker exec` into the running service container)
+  and `docker-compose.yml` (`postgres` now builds `.devtools/pgtap/postgres.Dockerfile`).
+  **Spike 4**: `.devtools/pgtap/010-locations-trigger-family.sql`, 8 pgTAP assertions
+  against migrations 0269/0273's real trigger family (self-parent, cycle, the six-node
+  depth limit, the child guard, the retirement snapshot), all against a fully migrated
+  database. **Spike 5**: `.devtools/pgtap/check-pgtap-coverage.php` (the shape of
+  `check-migrations.php`) parses `.devtools/pgtap/README.md`'s table against every
+  migration above the SQLite baseline; proven against the real tree's own backlog (16
+  unlisted names across 5 migrations) rather than a synthetic fixture. **Not done**:
+  wiring `check-pgtap-coverage.php` into CI (would fail on those 16 pre-existing names;
+  tracked in the README as future work, same ratchet-then-gate shape as issue 192) and
+  porting the other four bespoke phases to PHPUnit (this record's decision 3 - one at a
+  time, `run-tests.sh` stays the entry point). PR not yet opened as of this entry.
+
 - **2026-09-17 — Post-merge bookkeeping for #186–#189** (plan 32 → `0283.pgsql.php`, files
   API own-picture fix, plan 15's cleanup batch, manual corrections). Closed #132 and #177
   with landing notes; #179's two named items were already fixed by PR 172's second round
@@ -93,16 +124,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   roles page said price visibility was "still-unbuilt" on the day it shipped). Lesson: when a
   feature's state lives in a table the SQLite import span cannot carry, the importer is part of
   the feature — check it in the same change, not in the follow-up issue.
-- **2026-09-15 — Wave 5 bookkeeping after six reviewed merges** (#169–#175). Reviewed each PR
-  with one adversarial agent per PR, verified the top findings by reading the branch, posted one
-  comment per PR. #173 and #175 fixed their blockers before merge (rotated key owner; designer
-  field and OpenAPI `path`); #170 (19 piece 2, now `0281.pgsql.sql` after losing the 0280 race
-  to #173) merged with only its CI fix, so four price channels are still open on master —
-  [issue #176](https://github.com/datagen24/victual/issues/176), which should land before 14
-  piece 2 snapshots per role. #174's own-picture bypass is #177, #171's manual errors #178,
-  #172's stale plan-27 wording #179. Closed #84, #130, #138, #137, #126, #121 with landing
-  notes. Lesson: a review comment is not a gate — the dispatching session merges on green CI,
-  so blocking findings need a follow-up issue the moment the PR merges without them.
 - **2026-09-16 — Plan 32 landed** (label kinds, issue #182 closed), the largest item and the
   one everything else in labels waited on. Migration `0283.pgsql.php` (a PHP migration, not
   `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only; renumbered down

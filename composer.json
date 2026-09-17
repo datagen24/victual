@@ -40,12 +40,18 @@
 			"helpers/extensions.php"
 		]
 	},
+	"autoload-dev": {
+		"psr-4": {
+			"Victual\\Tests\\": "tests/"
+		}
+	},
 	"config": {
 		"vendor-dir": "packages",
 		"platform-check": false,
 		"optimize-autoloader": true
 	},
 	"require-dev": {
-		"phpunit/php-code-coverage": "^11.0"
+		"phpunit/php-code-coverage": "^11.0",
+		"phpunit/phpunit": "^11.5"
 	}
 }

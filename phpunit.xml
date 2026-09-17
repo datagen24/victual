@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Tier 1 (ADR-0025): PHPUnit against a real PostgreSQL. Each testsuite is one of the
+	bespoke phases .devtools/pgsql/run-tests.sh migrates a phase at a time - the
+	testsuite name matches the run-tests.sh target exactly, per decision 3, so
+	running phpunit with "testsuite=rbac" is what the rbac phase now runs.
+
+	The connection is never configured here: each test class gets its own schema and
+	injects DatabaseService's singleton by reflection (see
+	Victual\Tests\Support\PgsqlSchemaTestCase), reading PGHOST/PGPORT/PGUSER/PGPASSWORD,
+	PHPUNIT_DB_NAME and VICTUAL_DATAPATH from the environment run-tests.sh already sets up
+	for every other phase.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="packages/phpunit/phpunit/phpunit.xsd"
+	bootstrap="tests/bootstrap.php"
+	colors="true"
+	failOnWarning="true"
+	failOnDeprecation="false"
+	beStrictAboutOutputDuringTests="false">
+	<testsuites>
+		<testsuite name="rbac">
+			<file>tests/Pgsql/RbacTest.php</file>
+		</testsuite>
+	</testsuites>
+</phpunit>
