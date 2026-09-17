@@ -12,6 +12,8 @@ settings, hex codes). `CALENDAR_FIRST_DAY_OF_WEEK` and `CALENDAR_SHOW_WEEK_OF_YE
 `GET /api/calendar/ical` serves the same due dates as an iCalendar feed; a signed-in user's
 personal, unguessable feed URL is available from `GET /api/calendar/ical/sharing-link`.
 Anyone holding that URL can read the feed without further authentication — treat it like a
-password, and reissue it (a new call to the sharing-link endpoint) if it leaks. Calendar
+password. If it leaks, delete your calendar sharing key on `/manageapikeys`, then call
+`GET /api/calendar/ical/sharing-link` to create a new one and update your subscriptions.
+Calling the endpoint without deleting the unexpired key returns the existing URL. Calendar
 sharing keys are never redacted, including through the SQLite import path described in
 [Getting started](../getting-started.md#moving-an-existing-sqlite-installation-across).

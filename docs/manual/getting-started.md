@@ -88,7 +88,7 @@ migration, because the target is already migrated when the rows arrive) it also 
 HTML sanitizer over the five rich-text columns and replaces any plaintext API key with its
 hash; calendar sharing keys stay readable, as they do in an in-place grocy upgrade.
 
-See [db/pgsql/README.md](https://github.com/datagen24/victual/blob/master/db/pgsql/README.md)
+See [db/pgsql/README.md](../../db/pgsql/README.md)
 for the porting rules and the accepted behavioural differences between the two engines.
 
 ## Platform support

@@ -12,8 +12,10 @@ Users, roles, custom data, and the pages that don't belong to any one household 
   from the role-bundle grants below.
 - **`/roles`** / **`/role/{id}`** — role bundles: a named set of permissions granted or
   revoked together, so a household does not have to tick the same twelve boxes for every
-  new account. A role can also be marked immutable and assigned by default to new users
-  (`DEFAULT_ROLES`, [Configuration](../configuration.md#authentication)).
+  new account. Role codes are immutable; display names are editable, and built-in roles
+  cannot be deleted ([ADR-0018](../../adr/0018-role-grants-and-domain-reads.md)).
+  `DEFAULT_ROLES` assigns roles to new users by default
+  ([Configuration](../configuration.md#authentication)).
 
 ## User settings
 

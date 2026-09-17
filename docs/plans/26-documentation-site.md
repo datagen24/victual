@@ -696,113 +696,48 @@ following this plan locally gets an untracked build tree. `/site` is now in `.gi
 
 ### Piece 2 — the Manual, 2026-09-15
 
-Shipped as designed, with the structure question 3 skipped over: `docs/usage.md` split into
-`docs/manual/` (getting started, configuration, nine "Using Victual" task pages plus a
-tenth for cross-cutting tips, and seven operator-reference pages), staged into the site by a
-new `TREES` entry (`docs/manual` → `manual`) exactly as `docs/adr` and `docs/diagrams`
-already were, and added to `mkdocs.yml`'s nav ahead of Development. `docs/usage.md` and
-`docs/label-printing.md` are deleted; the four documents that linked either
-(`README.md`, `AGENTS.md`, [ADR-0011](../adr/0011-label-namespace.md),
-[ADR-0017](../adr/0017-doctrine-dbal-is-the-persistence-seam.md)) now point at the Manual.
-The landing page's piece-1 notice deferring the Manual (verification check 14's cost) is
-removed, per check 20.
+[PR 171](https://github.com/datagen24/victual/pull/171), merged as `683095c5`, delivered
+20 pages under `docs/manual/`: getting started, configuration, ten household-task pages
+(including cross-cutting tips), and seven operator-reference pages. They replace
+`docs/usage.md` and `docs/label-printing.md`. The root README, AGENTS.md, ADR-0011 and
+ADR-0017 link to the Manual. `stage.py` stages `docs/manual` as `manual`, and `mkdocs.yml`
+places it before Development. The landing page no longer defers the Manual.
 
-**The 81-page and 84-setting figures this plan and issue 138 both cite are stale, for the
-same reason verification check 3 already accounts for on the ADR-link count: the corpus grew
-while the figure sat unwritten.** Measured today against this branch: `config-dist.php`
-declares 85 `Setting()` calls
-(`grep -cE "^(if \(!defined|Setting\()" config-dist.php`, unchanged formula, one more than
-84 — `FEATURE_FLAG_LABELS` was added after the count was taken). The page count needed a
-corrected method rather than just a rerun: issue 138's own `grep -vc "^'/api"` formula
-excludes only the single literal route named `/api` and does not exclude the `/api` route
-group at all, because Slim's group prefix never appears in the route strings it matches —
-run today it returns 98, which is not "non-API routes" but "routes outside `/api` whose
-path happens to start with a lowercase letter and contain no uppercase character," an
-accident of which route parameter names happen to be all-lowercase. The reproducible count
-is by line range instead: `sed -n '40,170p' routes.php` is the first `$app->group('', ...)`
-block (the actual page routes; the second, `'/api'`, block is the REST API), and
-`grep -oE "\$group->(get|post|put|delete)\('[^']*'" | sed -n ... | sort -u | wc -l` over that
-range gives 89 unique paths. Both the settings and page counts grew for the same reason —
-label subsystem and role-bundle pages landed between when 81/84 were written and now — and
-both this document's Scope section and issue 138 keep their original figures un-edited,
-per this repository's convention that a landed plan's proposed design stays in its original
-tense while delivery facts move to Executed.
+**Coverage.** The 2026-09-15 delivery recorded 85 settings and 89 page routes against the
+PR 171 working copy, rather than the proposal's 84 settings and 81 pages. Settings are
+counted from `Setting()` declarations in `config-dist.php`; page routes are the unique
+paths in the first, unprefixed page group in `routes.php`, excluding the `/api` group.
+Counting route strings by an `/api` prefix is insufficient because Slim supplies that
+prefix through the group. The proposal's original figures remain above as design history.
 
-**Coverage is enforced two ways, not just claimed.** `.devtools/docs/stage.py` gained
-`check_settings_reference()`, run from `main()` right after `check_offsite_links()`: it
-parses every `Setting('NAME', …)` in `config-dist.php` and fails the staging run, naming
-every missing one, if `docs/manual/configuration.md` does not carry that name in backticks.
-This is the script issue 138's own verification criterion asks for ("asserted by a script
-rather than by reading"), not a one-time count. Page coverage against the 89 routes above
-has no such standing check — it was verified by hand this session, with a small script
-comparing every page-group path (placeholder names normalized, e.g. `{productId}` and
-`{id}` treated alike) against the Manual's Markdown, which is how the three real gaps below
-were actually found rather than assumed absent — but nothing enforces it on the next pull
-request. Six of the paths the script still reports "missing" are not defects: `/logout`,
-`/manageapikeys/new` and the four `*/grocycode` and `*/label` image-render endpoints are
-each already covered in prose next to the page that reaches them, just not by their literal
-route string.
+`check_settings_reference()` in `.devtools/docs/stage.py` checks every declared setting
+against backticked names in `docs/manual/configuration.md` and fails on omissions.
+Page coverage was checked separately by comparing page-group paths to the Manual, treating
+parameter names such as `{productId}` and `{id}` as equivalent. That check is not retained
+as a CI gate. Six paths lacked literal matches but were covered in surrounding prose:
+`/logout`, `/manageapikeys/new` and four Grocycode/label image-rendering endpoints.
+Date-field shorthands, button shortcuts and PWA installation are covered in
+`docs/manual/using-victual/tips.md`.
 
-**Three sections of `docs/usage.md` were not carried anywhere in the first pass, and the
-same coverage check caught it.** Date-field shorthands, the button-shortcut-key convention,
-and the installable-PWA note had no natural home in the task-grouped structure issue 138
-asks for, so they were about to be dropped rather than deliberately excluded. They now have
-one: a new `docs/manual/using-victual/tips.md`, wired into the nav and into
-`docs/manual/index.md`.
+**Links.** Manual-to-Development links use repository source paths, which `stage.py`
+rewrites to staged destinations. Nine links across six pages needed this correction.
+The Manual overview links to the ADR index because the hand-copied Development landing
+page has no source mapping in `PAGES` or `TREES`.
 
-**Cross-links from the Manual into the Development section needed the source path, not the
-staged one.** `stage.py`'s `rewrite_link()` resolves a relative link against the repository
-path of the file that carries it, then looks up where that resolved path is staged — so a
-link written as `../development/deployment.md` from `docs/manual/getting-started.md`
-resolves to the nonexistent repository path `docs/development/deployment.md` rather than to
-`deploy/README.md`, which is the real source `development/deployment.md` is staged from.
-Nine links across six Manual pages were written the "staged-tree-relative" way and caught
-by `check_offsite_links()` on the first staging run; the fix was writing each as if linking
-from `docs/manual/`'s real position in the repository (e.g. `../../deploy/README.md`,
-`../../adr/0011-label-namespace.md`), the same discipline the existing Development pages
-already follow. One link — `docs/manual/index.md` to the Development section's own
-overview — has no fix in that form, because `development/index.md` is one of the two
-hand-copied landing pages (`.devtools/docs/pages/development/index.md`) with no
-corresponding entry in `stage.py`'s `PAGES`/`TREES` tables at all; it was pointed at the ADR
-index instead ([`../adr/README.md`](../adr/README.md), which does have a real source and a
-real destination) rather than left broken or given a raw GitHub URL into an otherwise
-on-site cross-reference.
+**Recorded verification, 2026-09-15, PR 171 working copy.**
+`python3 .devtools/docs/stage.py --no-api` reported 321 resolving repository links,
+85 referenced settings and 66 staged Markdown pages. Run it before
+`mkdocs build --strict --site-dir /tmp/docs-site` to reproduce the build; both commands
+exited 0 in that check. Inspection of built HTML confirmed the configuration section
+anchors and cross-links into Development resolved on-site.
 
-**Verified against this branch, 2026-09-15.** `python3 .devtools/docs/stage.py --no-api`:
-321 links to the repository all resolving, 85 settings all referenced, 66 Markdown pages
-staged (up from piece 1's last recorded 46, i.e. exactly the 20 new Manual pages, so nothing
-on the Development side moved). `mkdocs build --strict --site-dir /tmp/docs-site` — the
-exact two commands the `lint` job runs — exits 0 with no warnings. Spot-checked in the built
-HTML: the `configuration.md` section anchors added via `attr_list` (`#database`,
-`#application-mode`, `#configuration-outside-configphp`) render as written, and the
-corrected cross-links land on in-site Development pages
-(`manual/configuration/` → `development/deployment/`,
-`manual/operator/label-printing/` → `development/adr/0011-label-namespace/`) rather than on
-GitHub.
+**Verification limits.** Checks 18 and 19, following Getting started to a login prompt
+on both installation paths, were not exercised end to end. Printer setup and backup/restore
+instructions were based on code and storage behavior; physical worker pairing and a
+backup/restore cycle were not verified. The build and coverage checks do not establish
+factual accuracy: [issue 178](https://github.com/datagen24/victual/issues/178) records
+corrections required after delivery.
 
-**Not verified, and why.** No running instance was booted this session — the dispatching
-task scoped this as writing-only, no application code changes — so verification checks 18
-and 19 (a reader reaching a login prompt from Getting started alone, on both installation
-paths) were not exercised end to end; the installation steps are transcribed from
-`docs/usage.md`'s prior text, itself presumably checked when piece 1's predecessor content
-was written, plus the platform and PostgreSQL facts already cited in this plan's Design.
-The label subsystem's operator-facing prose (worker pairing, printer registration) is
-written from the controller code and `routes.php` rather than from a runbook, because none
-exists in the repository; [Label printing](../manual/operator/label-printing.md) says so
-in place rather than inventing a pairing walkthrough this session could not run. Backup and
-restore is new operational guidance derived from the storage architecture
-([Configuration](../manual/configuration.md#file-storage)), not transcribed from an
-existing script, and says so in place as well — there is no `bin/victual-*` backup command
-to describe instead. No discrepancy between documented and actual settings UI behavior was
-found; `ConfigurationValidator` was read in full and its allowed values and cross-setting
-requirements are what the Configuration reference states.
-
-**ADR-0020's status, found stale while cross-checking this plan's own dependency note.**
-This plan's Piece 1 note above and the plans README's row for this plan both still say
-ADR-0020 is Proposed. It is not: the record's own Status line and its
-[index row](../adr/README.md) both say **Accepted, 2026-09-14**, with all four prerequisites
-met — the acceptance landed the same day as several other records this branch's base
-already carries, and nothing here re-opens or re-argues it. That correction is bookkeeping
-for [issue 135](https://github.com/datagen24/victual/issues/135), not this piece, and is not
-made in this plan's own dependency note above, which stays in its original tense with the
-rest of the proposed design; the plans README's row is corrected separately.
+**Dependency status.** ADR-0020 was accepted on 2026-09-14. PR 171 corrected the stale
+Proposed reference in the plans README. Earlier proposal text remains in its original tense;
+that historical wording does not change the accepted record or current delivery status.

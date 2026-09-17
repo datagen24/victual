@@ -36,9 +36,9 @@ booking can be undone from the stock journal.
 
 - **`/stockentries`** lists individual stock entries (batches) rather than the per-product
   totals the overview shows — due date, location, opened state and amount for each one.
-  From here you can edit an entry (`/stockentry/{id}`), print its Grocycode or a full label,
-  and (with the label subsystem, see [Label printing](../operator/label-printing.md))
-  reprint or void its label.
+  From here you can edit an entry (`/stockentry/{id}`) or request a label through the
+  [label subsystem](../operator/label-printing.md). Its API can reprint a job
+  from retained bytes or cancel a job; cancelling a job does not void a label identity.
 - **`/stockjournal`** is the full booking history: every purchase, consume, transfer,
   inventory and open, each undoable individually. Filter by product or by how many months
   back to load. **`/stockjournal/summary`** aggregates the same history by product.
@@ -76,8 +76,7 @@ booking can be undone from the stock journal.
 - **`/labelprinters`** and **`/labelprintjobs`** administer the label subsystem's printers
   and print job queue; **`/labeltemplates`** and **`/labeltemplate/{id}`** are the label
   designer. All four need `FEATURE_FLAG_LABELS`. See
-  [Label printing](../operator/label-printing.md) for the whole subsystem, including the
-  older webhook path these do not replace.
+  [Label printing](../operator/label-printing.md) for printer setup and print operations.
 
 ## Settings
 

@@ -38,6 +38,11 @@ is caught here, and a rewrite that does not fire leaves a relative link, which s
 reports. Tracking is the test rather than existence on disk, because a gitignored path that
 exists locally is still a 404 on GitHub.
 
+`check_settings_reference()` checks every `Setting('NAME', …)` declaration in
+`config-dist.php` against the backticked names in `docs/manual/configuration.md`.
+Staging fails and lists missing settings if the reference is incomplete. This checks name
+coverage; it does not verify the descriptions, defaults or allowed values.
+
 ## Branding and diagrams
 
 `stage.py` also stages three things the repository does not keep in a documentation
@@ -95,7 +100,8 @@ so it resolves on both arm64 and amd64.
 ## What CI checks
 
 The `lint` job in `tests.yml` runs `stage.py --no-api` and `mkdocs build --strict`. The
-staging run fails on a link it rewrote to a repository path that is not tracked; strict mode
+staging run fails on an untracked rewritten repository link or a setting missing from the
+configuration reference; strict mode
 turns a broken relative link, a page missing from the nav, and an anchor that does not
 resolve into a failed pull request rather than a defect on the published site. `lint` is the
 job that runs on Markdown-only changes, which is what both checks exist for.

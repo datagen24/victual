@@ -90,24 +90,13 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   #172's stale plan-27 wording #179. Closed #84, #130, #138, #137, #126, #121 with landing
   notes. Lesson: a review comment is not a gate — the dispatching session merges on green CI,
   so blocking findings need a follow-up issue the moment the PR merges without them.
-- **2026-09-15 — Plan 26 piece 2 landed** (the Manual, issue #138), wave-independent.
-  `docs/manual/` (getting started; an 85-setting configuration reference generated-checked
-  against `config-dist.php`; nine household-task pages plus a tips page; seven operator
-  pages, including a label-printing chapter rewritten for plans 25/27's actual subsystem
-  rather than only the legacy webhook) replaces `docs/usage.md` and `docs/label-printing.md`,
-  wired into `mkdocs.yml`'s nav and a new `TREES` entry in `.devtools/docs/stage.py`. Both
-  counts issue 138 cites (81 pages, 84 settings) were stale from corpus growth; measured
-  today: 85 settings, 89 page routes — the issue's own route-counting grep only excludes the
-  literal `/api` route, not the whole `/api` group, so it had to be redone by line range.
-  Verified: `python3 .devtools/docs/stage.py --no-api && mkdocs build --strict --site-dir
-  /tmp/docs-site` (the exact `lint` job commands) exit 0; 321/321 offsite links resolving;
-  the new `check_settings_reference()` reports 85/85 settings covered. Not run: booting a
-  live instance to click through Getting started end to end (writing-only session scope) —
-  said plainly in the plan's Executed section rather than assumed. Found and fixed in the
-  same change, not re-litigated: ADR-0020 is **Accepted** 2026-09-14 in its own file and
-  index row; `docs/plans/README.md` still called it Proposed and is now corrected — that is
-  a stale cross-reference fix, not [issue 135](https://github.com/datagen24/victual/issues/135)'s
-  acceptance bookkeeping, which this session did not touch. [→](project_state.md)
+- **2026-09-15 — Plan 26 piece 2 landed** ([PR 171](https://github.com/datagen24/victual/pull/171),
+  merge `683095c5`, issue #138). The Manual replaces `docs/usage.md` and
+  `docs/label-printing.md`. Staging and the strict MkDocs build passed; the settings check
+  covered all 85 declarations. Installation walkthroughs and backup/restore were not
+  verified end to end. Delivery evidence and limitations are in
+  [plan 26's Executed section](../docs/plans/26-documentation-site.md#piece-2--the-manual-2026-09-15).
+  [Issue 178](https://github.com/datagen24/victual/issues/178) tracks factual corrections.
 - **2026-09-15 — Issue #126 landed** (label designer off fabric 5.x, plan 27's last
   dependency-bump-blocking item besides S32). Fabric 7.4.0 via a `type="module"` shim
   (`views/layout/default.blade.php`) assigning `window.fabric` from `dist/index.min.mjs` —

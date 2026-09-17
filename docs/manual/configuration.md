@@ -16,8 +16,9 @@ all, and set `VICTUAL_DB_*`, `VICTUAL_FILE_STORAGE` and the rest as environment 
 from a ConfigMap and Secret — see [Deployment](../../deploy/README.md).
 `VICTUAL_DATAPATH` moves the data directory itself, before any of the above is read.
 
-Settings are validated at startup by `ConfigurationValidator`, in the order the sections
-below appear; an invalid value refuses to serve rather than failing on first use. Where a
+Settings are validated at startup by `ConfigurationValidator`; an invalid value refuses
+to serve rather than failing on first use. Validation starts with `MODE`, then `AUTH_CLASS`,
+then the database settings. The sections below group settings by purpose. Where a
 setting's allowed values or cross-setting requirements matter, they are noted below.
 
 ## Application mode {: #application-mode }
