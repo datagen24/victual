@@ -1,9 +1,25 @@
 # ADR-0025: Three test tiers — PHPUnit against a real PostgreSQL, pgTAP for the SQL logic, probes for the browser
 
-- **Status: Proposed.** Written 2026-09-17 for the coverage floor the maintainer set the
-  same day (`docs/constitution.md`, standing invariants;
-  [issue 192](https://github.com/datagen24/victual/issues/192) holds the backlog). Five
-  acceptance prerequisites below, each a disposable spike.
+- **Status: Accepted, 2026-09-17.** **Three test tiers: PHPUnit against a real PostgreSQL
+  for application code, pgTAP for the SQL logic, the browser probes as they are.** All five
+  acceptance prerequisites below are met, each annotated in place with what met it; the
+  evidence is [`.spike-adr25/RESULTS.md`](../../.spike-adr25/RESULTS.md), merged as
+  [PR #194](https://github.com/datagen24/victual/pull/194), and the spikes' products
+  (`tests/Support/PgsqlSchemaTestCase.php`, `tests/Pgsql/RbacTest.php`,
+  `.devtools/pgtap/`, the `pgtap` phase of `run-tests.sh`, `phpunit/phpunit ^11.5` in
+  `composer.json`) are in `master`. **Nothing in the decision was revised by this
+  acceptance.** Three edges the spikes reported are recorded here rather than smoothed
+  over: decision 3's "nothing else changes" needed one addendum for a ported phase (its
+  database is migrated by the test class, not by `build_pgsql()`, which follows from
+  decision 2); decision 6's "the dev image carries it" was met with `pg_prove` in the dev
+  image and the extension in the compose-built PostgreSQL image, since the dev image never
+  runs a server; and decision 5's CI check exists and is proven but is **not yet wired
+  into CI**, because sixteen functions and triggers predate pgTAP and would fail every
+  build — `.devtools/pgtap/README.md`'s "What is not covered yet" names them, and
+  [issue 192](https://github.com/datagen24/victual/issues/192)'s ratchet-then-gate shape
+  is the path to turning it on. Written 2026-09-17 for the coverage floor the maintainer
+  set the same day (`docs/constitution.md`, standing invariants; issue 192 holds the
+  backlog).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-17.
@@ -165,26 +181,53 @@ any branch. The accepting pull request states how each was met.
    against `php: ^8.4.1`, the lock installs on both PHP 8.4 and the dev image's 8.5, and
    `vendor/bin/phpunit --version` runs. Answers: is there a dependency conflict with
    `phpunit/php-code-coverage ^11` or anything in the lock.
+   *Met 2026-09-17:* `phpunit/phpunit` 11.5.56 resolved as `^11.5` beside
+   `php-code-coverage ^11.0` with no conflict; `packages/bin/phpunit --version` runs on PHP
+   8.4.19. The 8.5 half rests on PHPUnit's `php: >=8.2` having no upper bound, not on a
+   measured run — the spike says so, and CI's `frontend-security` job on 8.5 is where a
+   conflict would have surfaced since.
 2. **One bespoke phase ports without losing an assertion.** `rbac-tests.php` (the largest
    phase with its own `check()` and `status()` helpers, session and permission fixtures)
    becomes a PHPUnit test class with the same assertions, run under `run-tests.sh rbac`,
    and the per-class coverage of the classes it exercises is equal or higher than before
    the port. Answers: does the schema-per-class pattern and the reflection injection hold
    up inside PHPUnit, and does coverage flow through `prepend.php` into the same report.
+   *Met 2026-09-17, run first as the gate:* `rbac-tests.php` became `tests/Pgsql/RbacTest.php`
+   on `tests/Support/PgsqlSchemaTestCase.php` (schema per class, `DatabaseService` injected
+   by reflection, real migrations run in-process); 17 tests, 361 assertions, repeatable
+   with clean teardown; `run-tests.sh rbac` runs it. Every class the phase exercises is
+   identical or higher per class; the total dipped 14.62% to 14.45% only in bootstrap
+   plumbing (`ConfigurationValidator`, `PostgresDialect::CreateConnection`,
+   `LocalizationService`) that the ported phase no longer runs as a separate process and
+   other phases cover in a full run.
 3. **pgTAP installs in CI and in the dev image.** The `suite` job installs the extension
    into the `postgres:16` service and `pg_prove` runs a trivial test; the `Dockerfile` dev
    image carries both. Answers: can the stock image take the extension without a custom
    image, and how long it adds to the job.
+   *Met 2026-09-17:* the `suite` job installs `libtap-parser-sourcehandler-pgtap-perl` on
+   the runner and `postgresql-16-pgtap` into the running `postgres:16` service by
+   `docker exec`; the dev image carries `pg_prove`, and `docker-compose.yml`'s PostgreSQL
+   service builds from `.devtools/pgtap/postgres.Dockerfile` for local runs. No custom base
+   image; an ordinary `apt-get` of 167 kB, seconds per run.
 4. **One trigger family has a pgTAP file.** `trg_locations_check_parent`,
    `trg_locations_guard_children` and `retire_location_labels` (migrations 0269 and
    0273) get a test file asserting the recursion refusal, the depth limit, the
    child-guard and the retirement snapshot, run by `pg_prove` in the job. Answers: does
    pgTAP reach the fork's PL/pgSQL as written, including `RAISE` messages, and what a test
    file for this codebase looks like.
+   *Met 2026-09-17:* `.devtools/pgtap/010-locations-trigger-family.sql`, eight assertions
+   against a fully migrated database: self-parent and cycle refusals, the six-node chain
+   accepted and the seventh generation refused, the child guard and its positive control,
+   retirement and its snapshot. `throws_ok()` matched every `RAISE` message verbatim.
 5. **The list check works.** `check-pgtap-coverage.php` reads `.devtools/pgtap/README.md`'s
    list and the migrations, and fails on a fixture migration that creates a function the
    list does not name. Answers: is the completeness rule mechanically enforceable, and
    what the list's format is.
+   *Met 2026-09-17:* `.devtools/pgtap/check-pgtap-coverage.php` parses the README's table
+   and every migration above 0255; against the real tree it names the sixteen unlisted
+   functions and triggers and exits 1, and adding five rows to the list removed exactly
+   those five, so it reacts to the list and nothing else. The list's format is the
+   markdown table itself. Not yet wired into CI — see the status line.
 
 Spike 2 is the schedule risk and runs first; if it fails, decision 2's injection approach
 is wrong and the record is rewritten before the rest is attempted.
