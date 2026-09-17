@@ -32,17 +32,23 @@ is the difference. `report.php` takes `--min=NN`, and a pull request that lowers
 number, or leaves a file it touched below 75%, has not met the verification bar.
 
 The ratchet issue 192 asks for as its first step is wired: `tests.yml`'s `suite` job gates
-on `report.php --min=47` in its "Enforce the coverage ratchet" step, near the end rather
-than inside `run-tests.sh`, because it has to see everything the job measured — including
-the label phases below — not just the differential suite's share of it. 47, not the 37.81
-`6133e15` measured, because that figure predates both fixes below: the pull request that
-wired this ratchet ([#196](https://github.com/datagen24/victual/pull/196)) had its own
-`suite` job run report 4824 of 10199 executable lines covered, 47.30%, from 216 processes,
-at `f6e7225` (2026-09-17) — with never-loaded files shown and the label suites measured,
-the real total turned out well above the last recorded one, not below it, which is what
-adding coverage rather than hiding or losing it should do. 47 leaves a small margin below
-that for ordinary run-to-run noise. `--min` is raised by hand as the number climbs; the
-hard floor of 75% is issue 192's last step, once the backlog in it is retired.
+on `report.php --min=47.298` in its "Enforce the coverage ratchet" step, near the end
+rather than inside `run-tests.sh`, because it has to see everything the job measured —
+including the label phases below — not just the differential suite's share of it. Not the
+37.81 `6133e15` measured, because that figure predates both fixes below: the pull request
+that wired this ratchet ([#196](https://github.com/datagen24/victual/pull/196)) had its
+own `suite` job report 4824 of 10199 executable lines covered, 47.29875% exactly, from 216
+processes, at `f6e7225` (2026-09-17) — with never-loaded files shown and the label suites
+measured, the real total turned out well above the last recorded one, not below it, which
+is what adding coverage rather than hiding or losing it should do.
+
+`--min` is set to that figure rather than rounded to 47, because a round number is not a
+ratchet: 47 would still pass a run that lost one covered line (47.28895%) or added one
+uncovered executable line (47.29412%), both still at or above a bare 47. Issue 192 asks
+for a gate "at the current total", and the current total is 47.29875%, not 47 — this was
+caught in review on this same PR before merge (see the PR discussion for the arithmetic).
+`--min` is raised by hand as the number climbs; the hard floor of 75% is issue 192's last
+step, once the backlog in it is retired.
 
 ## Every file in scope, not just the ones a table happened to list
 

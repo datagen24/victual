@@ -311,16 +311,18 @@ jobs:
       # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
       # an interim report before the label phases above ran; this is the one that counts,
       # over every .cov file the whole job left behind, including theirs. --min is raised by
-      # hand as the number climbs — this PR's own run of this job (f6e7225,
-      # 2026-09-17) reported 4824 of 10199 executable lines (47.30%, from 216 processes)
-      # with both fixes above in place, up from the 37.81% master measured at 6133e15
-      # before them; 47 leaves a small margin against ordinary run-to-run noise. A pull
-      # request that lowers the true number fails here; the hard floor of 75% is issue 192's
-      # last step, once the backlog in it is retired.
+      # hand as the number climbs — this PR's own run of this job (f6e7225, 2026-09-17)
+      # reported 4824 of 10199 executable lines, 47.29875% exactly, with both fixes above
+      # in place, up from the 37.81% master measured at 6133e15 before them. --min is set
+      # to that figure rather than rounded: a round 47 would pass a one-line regression
+      # (losing one covered line reads 47.28895%, adding one uncovered line reads
+      # 47.29412% — both still ≥ 47), which defeats the point of a ratchet. A pull request
+      # that lowers the true number fails here; the hard floor of 75% is issue 192's last
+      # step, once the backlog in it is retired.
       - name: Enforce the coverage ratchet
         run: |
           env -u VICTUAL_COVERAGE_DIR php .devtools/coverage/report.php \
-            "$SUITE_SCRATCH/coverage" --clover=clover.xml --min=47
+            "$SUITE_SCRATCH/coverage" --clover=clover.xml --min=47.298
 
       # Uploaded even when the suite fails: which code a failing run did and did not
       # reach is part of reading the failure.
