@@ -747,6 +747,7 @@ class StockApiController extends BaseApiController
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($args['productId']));
+			$details['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $details['product_barcodes']);
 			return $this->ApiResponse($response, $details);
 		});
 	}
@@ -763,6 +764,7 @@ class StockApiController extends BaseApiController
 		{
 			$productId = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
 			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($productId));
+			$details['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $details['product_barcodes']);
 			return $this->ApiResponse($response, $details);
 		});
 	}

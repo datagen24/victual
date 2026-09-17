@@ -458,6 +458,12 @@ run_contract_tests() {
 	local datapath="$SUITE_SCRATCH/contract-data"
 	rm -rf "$datapath"
 	mkdir -p "$datapath"
+	# HTMLPurifier serialises its definition cache under VIEWCACHE_PATH, which config-dist.php
+	# puts inside the data path. The fixture graph writes through GenericEntityApiController
+	# repeatedly, so the purifier runs on every one of those; without the directory it warns,
+	# and phpunit.xml's failOnWarning=true turns that into a failure. Same reason every other
+	# write-capable phase below creates this directory.
+	mkdir -p "$datapath/viewcache"
 	cat > "$datapath/config.php" <<-PHPCONFIG
 		<?php
 		Setting('DB_DRIVER', 'pgsql');

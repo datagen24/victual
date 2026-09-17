@@ -368,7 +368,10 @@ class ContractTest extends PgsqlSchemaTestCase
 
 		self::invokeAdmin('PUT /api/objects/{entity}/{objectId} (products)', fn() => $generic->EditObject(self::request('PUT', ['description' => 'Edited by the contract snapshot']), new Response(), ['entity' => 'products', 'objectId' => self::$ids['product']]));
 
-		self::$ids['barcode'] = $createId('product_barcodes', ['product_id' => self::$ids['product'], 'barcode' => '4006381333931']);
+		// A real last_price, not null, so the Admin-vs-restricted leg can actually observe
+		// whether it survives redaction on every route that embeds a barcode row - not only
+		// the ones that read product_barcodes as its own entity.
+		self::$ids['barcode'] = $createId('product_barcodes', ['product_id' => self::$ids['product'], 'barcode' => '4006381333931', 'last_price' => 2.5]);
 
 		self::$ids['substitution_target'] = $createId('products', [
 			'name' => 'Contract Substitute',

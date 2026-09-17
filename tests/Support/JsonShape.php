@@ -166,7 +166,8 @@ class JsonShape
 				if ($missing && is_string($sub))
 				{
 					$sub = implode('|', array_unique(array_merge(explode('|', $sub), ['missing'])));
-					sort($types = explode('|', $sub));
+					$types = explode('|', $sub);
+					sort($types);
 					$sub = implode('|', $types);
 				}
 				$merged[$key] = $sub;

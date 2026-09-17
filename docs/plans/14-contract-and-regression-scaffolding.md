@@ -706,7 +706,7 @@ this piece having landed, not performed by it - see the wave 5 status line):
    must actually be missing from the restricted response, and every restricted 200/403
    split must be one of those two codes and nothing else.
 4. **Schema and snapshot bodies vs the sensitive-field vocabulary.** The completeness
-   leg leg 3 is structurally blind to (`price`, `cost`, `value`, `amount_paid` and their
+   leg 3 is structurally blind to (`price`, `cost`, `value`, `amount_paid` and their
    prefixed/suffixed forms) walks both the recorded Admin bodies and every OpenAPI
    schema property, failing on a match with neither an `x-visibility` annotation (schema-
    or property-level - `ProductPriceHistory`'s own schema carries it once rather than
@@ -715,7 +715,7 @@ this piece having landed, not performed by it - see the wave 5 status line):
    row. Verified the way the plan's own Verification section asks: `FieldPolicy::RedactRow`
    was mutated to redact nothing, and this leg named all nine leaked fields
    (`value, costs, costs_per_serving, prices_incomplete, last_price, avg_price,
-   oldest_price, current_price, stock_value`) before the mutation was reverted. Six
+   oldest_price, current_price, stock_value`) before the mutation was reverted. Seven
    field names the regex matches but that are not amounts at all (`qu_id_price`,
    `default_purchase_price_type`, `quantity_unit_price`, `qu_conversion_factor_price_to_stock`,
    `price_factor`, `stock_auto_decimal_separator_prices`, `default_value`) are the
