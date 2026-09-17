@@ -32,15 +32,17 @@ is the difference. `report.php` takes `--min=NN`, and a pull request that lowers
 number, or leaves a file it touched below 75%, has not met the verification bar.
 
 The ratchet issue 192 asks for as its first step is wired: `tests.yml`'s `suite` job gates
-on `report.php --min=37` in its "Enforce the coverage ratchet" step, near the end rather
+on `report.php --min=47` in its "Enforce the coverage ratchet" step, near the end rather
 than inside `run-tests.sh`, because it has to see everything the job measured — including
-the label phases below — not just the differential suite's share of it. 37, not the 37.81
-`6133e15` measured, because that figure predates both fixes below and this change was not
-itself re-run against a live suite (no coverage driver — pcov or Xdebug — was installable
-in the sandbox this was written in, so nothing here could execute `SUITE_COVERAGE=1`
-end to end); 37 is a safe floor under either number, raised to match once CI reports the
-real one. `--min` is raised by hand as the number climbs; the hard floor of 75% is issue
-192's last step, once the backlog in it is retired.
+the label phases below — not just the differential suite's share of it. 47, not the 37.81
+`6133e15` measured, because that figure predates both fixes below: the pull request that
+wired this ratchet ([#196](https://github.com/datagen24/victual/pull/196)) had its own
+`suite` job run report 4824 of 10199 executable lines covered, 47.30%, from 216 processes,
+at `f6e7225` (2026-09-17) — with never-loaded files shown and the label suites measured,
+the real total turned out well above the last recorded one, not below it, which is what
+adding coverage rather than hiding or losing it should do. 47 leaves a small margin below
+that for ordinary run-to-run noise. `--min` is raised by hand as the number climbs; the
+hard floor of 75% is issue 192's last step, once the backlog in it is retired.
 
 ## Every file in scope, not just the ones a table happened to list
 
