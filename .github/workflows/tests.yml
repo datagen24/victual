@@ -124,6 +124,13 @@ jobs:
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
     runs-on: ubuntu-latest
 
+    # Fixed rather than left to run-tests.sh's own default (${TMPDIR:-/tmp}/victual-suite)
+    # so the label test steps below — which run-tests.sh never sees, since they are their
+    # own workflow steps — know where to find the coverage-ini directory and the .cov
+    # files it left behind, and can add to them instead of measuring in isolation.
+    env:
+      SUITE_SCRATCH: /tmp/victual-suite
+
     services:
       postgres:
         image: postgres:16
@@ -192,10 +199,11 @@ jobs:
       # restating the commands. A suite that drifts from the one people run by hand is
       # a suite nobody trusts.
       #
-      # Coverage is measured but nothing is gated on it. What the suite reaches is
-      # worth seeing in the log of every run — it is how a phase that silently stopped
-      # exercising something gets noticed — but a threshold nobody has chosen would
-      # only ever be tuned until it stopped failing.
+      # This step's own coverage report is interim: it runs before the label phases below,
+      # which now measure into the same directory, so it undercounts what the job as a
+      # whole reaches. Nothing is gated here for that reason — the "Enforce the coverage
+      # ratchet" step near the end of this job is the one that counts, and is where the
+      # maintainer's chosen threshold (docs/constitution.md) is actually checked.
       - name: Run the differential test suite
         env:
           PGHOST: 127.0.0.1
@@ -212,18 +220,29 @@ jobs:
       - name: RFC 8785 canonicalization
         run: php .devtools/labels/canonical-json-tests.php
 
+      # Issue 192 mechanics item 2: this phase drives Services\Labels\LabelIdentityService
+      # directly and used to do it outside SUITE_COVERAGE, so the coverage number never saw
+      # it. Same auto_prepend_file mechanism run-tests.sh set up above, pointed at the same
+      # coverage directory so its .cov files are merged with the differential suite's
+      # rather than measured in isolation.
       - name: Label identity and import concurrency
         env:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/identity-tests.php
 
+      # Same reason as the identity phase above: this is most of TemplateDocument and
+      # FieldCatalogue's real exercise, and it was invisible to the coverage number until now.
       - name: Label templates, renders and artifacts
         env:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/artifact-tests.php
 
       - name: Label print jobs and fences
@@ -231,6 +250,8 @@ jobs:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/print-job-tests.php
 
       - name: Label kinds (plan 32 - product, stock_entry, recipe, chore, battery)
@@ -238,6 +259,8 @@ jobs:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/kinds-tests.php
 
       # The check neither repository can make alone: the real renderer's output, fed to the
@@ -272,6 +295,8 @@ jobs:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/worker-api-tests.php
 
       - name: Label registry and configuration
@@ -279,7 +304,28 @@ jobs:
           LABEL_TEST_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=victual'
           PGUSER: victual
           PGPASSWORD: victual
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
         run: php .devtools/labels/registry-tests.php
+
+      # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
+      # an interim report before the label phases above ran; this is the one that counts,
+      # over every .cov file the whole job left behind, including theirs. --min is raised by
+      # hand as the number climbs — this PR's own run of this job (f6e7225, 2026-09-17)
+      # reported 4824 of 10199 executable lines, 47.29875477988038% exactly, with both
+      # fixes above in place, up from the 37.81% master measured at 6133e15 before them.
+      # --min is that full figure, not a rounded one: a bare 47 lets a one-line regression
+      # through in either direction (losing a covered line reads 47.28895%, adding an
+      # uncovered one reads 47.29412%), and even 47.298 still admits a regression that
+      # changes both counts together — deleting a two-line, one-covered file reads
+      # 4823/10197 = 47.298225%, which is below the true baseline but still ≥ 47.298 (both
+      # caught in review on this PR). Only the exact figure closes that gap. A pull request
+      # that lowers the true number fails here; the hard floor of 75% is issue 192's last
+      # step, once the backlog in it is retired.
+      - name: Enforce the coverage ratchet
+        run: |
+          env -u VICTUAL_COVERAGE_DIR php .devtools/coverage/report.php \
+            "$SUITE_SCRATCH/coverage" --clover=clover.xml --min=47.29875477988038
 
       # Uploaded even when the suite fails: which code a failing run did and did not
       # reach is part of reading the failure.

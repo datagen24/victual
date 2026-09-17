@@ -78,10 +78,11 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   [.devtools/coverage/README.md](.devtools/coverage/README.md). A change that adds code adds
   the tests that reach it; a change never drops a file or the total below the floor. The
   tree is below the floor today ([issue 192](https://github.com/datagen24/victual/issues/192)
-  holds the backlog; its first step wires the CI ratchet that precedes the hard gate), so
-  the operative rule until that gate exists is that every pull request leaves the number no lower than it found it, and a
-  file it touches no lower than 75% or higher than before. Say in the PR's Verification
-  section what the run reported.
+  holds the backlog), and its first step is wired: `tests.yml`'s `suite` job gates on
+  `report.php --min` in a dedicated ratchet step, raised by hand as the number climbs, so
+  the operative rule until the hard gate replaces it is that every pull request leaves the
+  number no lower than it found it, and a file it touches no lower than 75% or higher than
+  before. Say in the PR's Verification section what the run reported.
 
 ## Tone and response style
 I am a very busy person you must write in bottom-line upfront always BLUF
