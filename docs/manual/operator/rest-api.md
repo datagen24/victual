@@ -18,9 +18,8 @@ afterward. Send it on every request as the `VICTUAL-API-KEY` header. A request a
 either with a valid session cookie (the browser frontend) or a valid API key; there is no
 third scheme.
 
-A wrong key is throttled the same way a wrong password is — see
-[Login throttling](../configuration.md#authentication) — because both are a credential
-guess against an account.
+Invalid API keys are rejected but are not throttled by `LoginThrottleService`.
+[Login throttling](../configuration.md#authentication) applies to password login only.
 
 ## What a key can do
 

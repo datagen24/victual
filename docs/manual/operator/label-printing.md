@@ -20,19 +20,31 @@ re-running whatever booking produced it.
   A template is validated against its own document model on every save; the designer
   cannot produce anything the validator would reject. Creating a template asks for the
   entity kind it is for — one of the six above.
-- **`/labelprinters`** — the configured printers.
-- **`/labelprintjobs`** — the job queue: pending, delivered and dead-lettered jobs, with
-  the printer each targeted.
+- **`/labelprinters`** — register and edit workers and printers, issue credentials or
+  pairing material, and revoke worker credentials. Requires `ADMIN`.
+- **`/labelprintjobs`** — the job queue, with the printer each job targets. States include
+  `awaiting_artifact`, `queued`, `claimed`, `sent`, `reported`, `failed`, `blocked`,
+  `uncertain`, `uncertain_but_reported`, `awaiting_authorization`, `cancelled` and
+  `dead_lettered`. A `printed` outcome appears as `reported` in this view.
 - A print action on each kind's own page: the product form, the stock entries list and
   form, the recipe form and list, the chore form and overview, and the battery form and
   overview — a printer picker, and a button that requests a label for that one record.
 
-**Printing a label** is one of four operations on `POST /api/labels/{kind}/{id}/print` (or
-`revised-print`, `jobs/{id}/reprint`, `jobs/{id}/cancel`), where `kind` is `location`,
-`product`, `stock_entry`, `recipe`, `chore` or `battery` — reached from the relevant entity's
-own page rather than typed by hand (locations keep their own longer-standing
-`/api/labels/locations/{locationId}/print` path, which is the same operation). Each requires
-`MASTER_DATA_EDIT` *and* the domain read permission for what is being printed — `STOCK_VIEW`
+**Five operations** are available under `/api/labels`:
+
+| Operation | POST path |
+|---|---|
+| Print a new label | `/api/labels/{kind}/{id}/print` |
+| Print revised data with the same identity | `/api/labels/{kind}/{id}/revised-print` |
+| Reprint retained bytes | `/api/labels/jobs/{jobId}/reprint` |
+| Cancel a job | `/api/labels/jobs/{jobId}/cancel` |
+| Promote a preview to a print job | `/api/labels/artifacts/{artifactId}/promote` |
+
+`kind` is `location`, `product`, `stock_entry`, `recipe`, `chore` or `battery`.
+The entity pages expose printing without typing these paths. Locations also retain
+`/api/labels/locations/{locationId}/print` and `/revised-print` under the same prefix.
+Printing new or revised data requires `MASTER_DATA_EDIT` *and* the domain read permission
+for what is being printed — `STOCK_VIEW`
 for a location, product or stock entry, `RECIPES_VIEW`, `CHORES_VIEW`, or `BATTERIES` —
 because printing a physical, hard-to-recall label is treated as editing master data, not as a
 read. A reprint, a promotion and a cancellation check only `MASTER_DATA_EDIT`: none of the
@@ -51,15 +63,15 @@ opened, frozen or thawed gets its label reprinted (a revised print, same identit
 one was already printed for that entry; opening or moving stock never mints a first label on
 its own.
 
-**Registering a printer and a worker.** There is no browser form for this yet — it is done
-through the administrative API (`ADMIN`), under the routes named `label-admin-printer-*` and
-`label-admin-worker-*` in `routes.php`, reachable from the [API browser](rest-api.md) at
-`/api`. A worker authenticates with its own credential (issued through
-`label-admin-issue`/`label-admin-pairing`, rotated through `label-admin-rotate`, and
-revocable independently of any household user account) and claims jobs, submits results and
-reports printer status through its own `/api/labels/*` endpoints — a separate protocol from
-the one a browser or a `VICTUAL-API-KEY` uses. This manual does not walk through pairing a
-specific physical worker step by step: no such operator runbook exists in the repository as
-of this writing, and the worker/renderer software is deployed and paired independently of
-Victual itself — see [Deployment](../../../deploy/README.md) for where those
-workloads sit.
+**Registering a printer and a worker.** Use the forms on `/labelprinters` (`ADMIN`).
+The worker form registers a worker in declared or paired mode; its buttons issue a
+credential or pairing material and revoke credentials. The printer form registers a
+printer for a worker. The same operations are available through the administrative API:
+`label-admin-printer-*`, `label-admin-worker-*`, `label-admin-issue`,
+`label-admin-pairing` and `label-admin-revoke` in `routes.php`.
+
+A worker rotates its own credential through `POST /api/labels/credentials/rotate`
+(`labels-rotate`), authenticating with that credential. Worker credentials are independent
+of household user accounts and authorize the worker protocol for claiming jobs, submitting
+results and reporting printer status. Deploy and pair the worker/renderer software
+separately from Victual; see [Deployment](../../../deploy/README.md) for these workloads.

@@ -1,11 +1,8 @@
 # Backup and restore
 
-There is no `bin/victual-*` backup command. What follows is derived from how Victual stores
-its state — [PostgreSQL as the sole datastore](../getting-started.md#postgresql), with file
-storage as either `BYTEA` rows in the same database or a separate filesystem path — rather
-than transcribed from an existing operational runbook, because none exists in this
-repository as of this writing. Test a restore against a disposable database before relying
-on this for a real household's data.
+Back up PostgreSQL and, when `FILE_STORAGE` is `filesystem`, the uploaded files.
+Victual has no `bin/victual-*` backup command. Test a restore against a disposable database
+before relying on it for a household's data.
 
 ## What to back up
 
@@ -35,15 +32,23 @@ on this for a real household's data.
 
 ## Restoring
 
+Stop application and worker writes. Create an empty target database and configure Victual's
+`DB_*` settings to point to it. Do not run the migrator before restoring: the custom-format
+dump contains the schema, so pre-created tables cause "relation already exists" errors.
+
 ```
-php bin/victual-migrate                          # create the schema (skip if pg_restore recreates it)
-pg_restore -h <DB_HOST> -p <DB_PORT> -U <DB_USER> -d <DB_NAME> victual.dump
+pg_restore --exit-on-error -h <DB_HOST> -p <DB_PORT> -U <DB_USER> -d <DB_NAME> victual.dump
 ```
 
-Restore the storage directory (if used) to the same path `FILE_STORAGE` names, then run
-`php bin/victual-migrate` again — it is idempotent, and confirms the restored schema matches
-what this version of Victual expects rather than leaving that to be discovered on first
-request. An application that finds the schema out of date refuses to serve rather than
+Restore the storage directory (if used) to `<data path>/storage`, then apply any migrations
+required by the installed version:
+
+```
+php bin/victual-migrate
+```
+
+Resume the application and workers only after the restore and migrations succeed.
+An application that finds the schema out of date refuses to serve rather than
 guessing, which is the same refusal [Updating and migrations](updating-migrations.md)
 describes for an ordinary upgrade.
 
