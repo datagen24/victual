@@ -26,12 +26,63 @@ It is also a score, since 2026-09-17. The maintainer set a **floor of 75%** line
 of application code, a **target of 85% or better** and **90% as the ideal**
 (`docs/constitution.md`, standing invariants). The tree is below the floor —
 37.81% on master at `6133e15`, with the backlog and the plan to close it in
-[issue 192](https://github.com/datagen24/victual/issues/192) — whose first step wires a CI ratchet
-(`report.php --min` at the current total, raised as it climbs) and whose last turns on the
-hard floor.
+[issue 192](https://github.com/datagen24/victual/issues/192).
 A threshold nobody chose gets lowered until it stops failing; this one was chosen, which
 is the difference. `report.php` takes `--min=NN`, and a pull request that lowers the
 number, or leaves a file it touched below 75%, has not met the verification bar.
+
+The ratchet issue 192 asks for as its first step is wired: `tests.yml`'s `suite` job gates
+on `report.php --min=37` in its "Enforce the coverage ratchet" step, near the end rather
+than inside `run-tests.sh`, because it has to see everything the job measured — including
+the label phases below — not just the differential suite's share of it. 37, not the 37.81
+`6133e15` measured, because that figure predates both fixes below and this change was not
+itself re-run against a live suite (no coverage driver — pcov or Xdebug — was installable
+in the sandbox this was written in, so nothing here could execute `SUITE_COVERAGE=1`
+end to end); 37 is a safe floor under either number, raised to match once CI reports the
+real one. `--min` is raised by hand as the number climbs; the hard floor of 75% is issue
+192's last step, once the backlog in it is retired.
+
+## Every file in scope, not just the ones a table happened to list
+
+Issue 192's first mechanics question was whether a file the suite never loads at all shows
+up as 0%, or drops out of the report entirely — because if it drops out, a percentage
+computed from what remains reads too high. It does not drop out of the *total*:
+`CodeCoverage::getData()` adds every file `prepend.php`'s filter names to the report at 0%
+by default (`includeUncoveredFiles()`), so `report.php`'s aggregate percentage always
+counted them. What used to drop a never-loaded class was the per-file table underneath it:
+`Report\Text` omits a class with zero covered statements unless told `showUncoveredFiles:
+true`, which `report.php` did not pass. The backlog table issue 192 carries was built from
+that listing, so a class the suite never reaches even once was invisible in it rather than
+named at 0% — 140 files across the five scoped directories and three top-level ones, 69
+classes shown. `report.php` now passes `showUncoveredFiles: true`, so every file the filter
+names appears, at 0% where nothing reached it.
+
+## What the label phases add
+
+`tests.yml` also runs the label subsystem's own PHP test scripts as separate steps —
+`identity-tests.php`, `artifact-tests.php`, `print-job-tests.php`, `kinds-tests.php`,
+`worker-api-tests.php`, `registry-tests.php` — and until now they ran outside
+`SUITE_COVERAGE` entirely: they are their own workflow steps, not something
+`run-tests.sh` invokes, so the `auto_prepend_file` wiring above never reached them and a
+real share of `Services\Labels\*`'s exercise went uncounted. They now carry the same
+`VICTUAL_COVERAGE_DIR` and `PHP_INI_SCAN_DIR` `run-tests.sh` set up, pointed at the same
+directory, so their `.cov` files merge with the differential suite's rather than being
+measured — or not measured — on their own.
+
+Two things named in issue 192's mechanics section are still outside the number, and stay
+that way for now rather than being folded in without saying so:
+
+- **`canonical-json-tests.php` and `renderer-agreement-tests.php`.** Both are label-related
+  PHP processes in the same job, and could be wired the same way; they are not yet, so the
+  ratchet below does not yet count what they reach.
+- **The frontend Playwright probes** (`.devtools/frontend/*.js`, the `frontend-security`
+  job). These drive a running `php -S` server over HTTP from a separate job on a separate
+  runner, so counting them means the server process loading `prepend.php` and a
+  cross-job merge of two coverage directories before `report.php` sees either — not
+  something this change does. What they reach (Blade views, `routes.php`'s dispatch, the
+  session and CORS middleware) is real application code no PHP-process phase here drives at
+  all, so folding them in later would raise the number, not just add more of what is
+  already measured.
 
 ## How it is wired
 

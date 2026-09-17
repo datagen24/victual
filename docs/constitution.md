@@ -40,10 +40,10 @@ executable lines; **85% or better** is the target and **90%** the ideal. New cod
 covered, a change never lowers a file or the total below the floor, and the number is
 measured by the suite CI runs, not by a separate unit-test tier this fork does not have.
 The floor was chosen by the maintainer on 2026-09-17; the tree is below it, and
-[issue 192](https://github.com/datagen24/victual/issues/192) holds the backlog: its first step
-wires a CI ratchet that only rises, its last turns on the floor itself. A threshold nobody chose gets tuned until it
-stops failing; this one was chosen, which is why it is written here rather than in a
-workflow comment.
+[issue 192](https://github.com/datagen24/victual/issues/192) holds the backlog: its first step —
+a CI ratchet that only rises — is wired; its last turns on the floor itself. A threshold
+nobody chose gets tuned until it stops failing; this one was chosen, which is why it is
+written here rather than in a workflow comment.
 
 **A Proposed record constrains nothing; an Accepted one constrains everything.** Work in
 flight follows the accepted state of the world. Acceptance is also not delivery:

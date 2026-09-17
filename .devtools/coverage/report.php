@@ -94,7 +94,13 @@ foreach ($files as $file)
 	$merged->merge($coverage);
 }
 
-echo (new Text(Thresholds::default(), false, false))->process($merged, false);
+// showUncoveredFiles: true. CodeCoverage::getData() already adds every filtered file
+// CodeCoverage never saw a line from (includeUncoveredFiles() is the library default),
+// so the aggregate percentage below always counted them — but Text::process() drops a
+// class with zero covered statements from the per-class listing unless told not to,
+// which hid every never-loaded file from this report entirely rather than showing it at
+// 0%. Issue 192 asked which one was true; this was the gap.
+echo (new Text(Thresholds::default(), true, false))->process($merged, false);
 
 if ($clover !== null)
 {
