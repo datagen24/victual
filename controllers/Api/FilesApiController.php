@@ -389,14 +389,26 @@ class FilesApiController extends BaseApiController
 	 * A picture no user row claims is orphaned, and deleting it needs USERS_EDIT and
 	 * nothing more: there is no owner to compare against.
 	 *
+	 * VICTUAL_USER_PICTURE_FILE_NAME is caller-writable (PUT /api/users/{self} under
+	 * USERS_EDIT_SELF), so - the same issue #177 gap CheckGroupReadPermission's read
+	 * exception had - a caller could claim another user's real picture name as their
+	 * own and have this early return delete it with no USERS_EDIT/administer check at
+	 * all. Settled the same way: the exception only holds when no other user row
+	 * claims $fileName.
+	 *
 	 * @throws PermissionMissingException
 	 */
 	private function CheckUserPictureDeletion(Request $request, string $fileName): void
 	{
 		if (defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
-			// Own picture - the group permission was enough
-			return;
+			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
+
+			if ($otherOwner === null)
+			{
+				// Own picture, and no other user claims the same name - the group permission was enough
+				return;
+			}
 		}
 
 		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);

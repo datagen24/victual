@@ -9,10 +9,11 @@ require_once VICTUAL_DATAPATH . '/config.php';
 if (isset($argv[1])) define('VICTUAL_DEFAULT_ROLES', [$argv[1]]);
 require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 // VICTUAL_USER_PICTURE_FILE_NAME is a constant fixed for the whole process (issue #177),
-// so exercising CheckGroupReadPermission's own-picture branch needs a caller whose id and
-// claimed picture name are settled before this process starts - the OWNPICTURE subcommand
-// below, run in its own subprocess the way CHILD/ADMIN/UNKNOWN already are.
-$isOwnPictureSubprocess = isset($argv[1]) && $argv[1] === 'OWNPICTURE';
+// so exercising CheckGroupReadPermission's and CheckUserPictureDeletion's own-picture
+// branches needs a caller whose id and claimed picture name are settled before this
+// process starts - the OWNPICTURE/OWNPICTUREDELETE subcommands below, run in their own
+// subprocess the way CHILD/ADMIN/UNKNOWN already are.
+$isOwnPictureSubprocess = isset($argv[1]) && ($argv[1] === 'OWNPICTURE' || $argv[1] === 'OWNPICTUREDELETE');
 define('VICTUAL_USER_ID', $isOwnPictureSubprocess ? (int)$argv[2] : 9000);
 define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 define('VICTUAL_LOCALE', 'en');
@@ -103,13 +104,24 @@ if (isset($argv[1]))
 		$args = ['group' => 'userpictures', 'fileName' => base64_encode($argv[3])];
 		status(fn() => $files->ServeFile(request(), new Response(), $args), (int)$argv[4], $argv[5]);
 	}
+	elseif ($code === 'OWNPICTUREDELETE')
+	{
+		// Issue #177's delete-path counterpart. This caller (VICTUAL_USER_ID from
+		// $argv[2]) holds USERS_EDIT_SELF but not USERS_EDIT - the Child shape - so a
+		// 204 below only happens because CheckUserPictureDeletion's own-picture
+		// exception let DeleteFile through with no administer check, and a 403 only
+		// happens because it fell through to the USERS_EDIT requirement and refused.
+		$files = new Victual\Controllers\Api\FilesApiController($container);
+		$args = ['group' => 'userpictures', 'fileName' => base64_encode($argv[3])];
+		status(fn() => $files->DeleteFile(request('DELETE'), new Response(), $args), (int)$argv[4], $argv[5]);
+	}
 	else
 	{
 		try { UsersService::GetInstance()->CreateUser('unknown-default', null, null, 'fixture'); throw new RuntimeException('Unknown default accepted'); }
 		catch (Victual\Controllers\Api\EInvalidApiQuery $e) {}
 		check((int)$pdo->query("SELECT COUNT(*) FROM users WHERE username='unknown-default'")->fetchColumn() === 0, 'Unknown default rolls back account');
 	}
-	echo ($code === 'OWNPICTURE' ? "OWNPICTURE PASSED: $argv[3]" : "DEFAULT ROLES PASSED: $code") . " ($checks assertions)\n";
+	echo ($isOwnPictureSubprocess ? "$code PASSED: $argv[3]" : "DEFAULT ROLES PASSED: $code") . " ($checks assertions)\n";
 	exit(0);
 }
 
@@ -252,6 +264,26 @@ foreach ([
 	$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
 	fclose($pipes[1]); fclose($pipes[2]);
 	check(proc_close($process) === 0, "Own-picture exception ($callerId, $claimedPictureFileName): $output $errors");
+	echo $output;
+}
+
+// Issue #177's delete-path counterpart: CheckUserPictureDeletion's own-picture early
+// return had exactly the same gap - USERS_EDIT_SELF (Child) is enough to claim
+// rbac-admin's real picture name as one's own and have DeleteFile take it out with no
+// USERS_EDIT/administer check at all. This caller holds USERS_EDIT_SELF only, the
+// weakest grant that reaches CheckUserPictureDeletion, so a 204 below can only come
+// from the loosening, never from an independent permission.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9006, 'rbac-picture-delete-caller', 'fixture', 'delete-caller-own.png')");
+$pdo->exec('INSERT INTO user_permissions(user_id, permission_id) VALUES (9006, ' . permissionId('USERS_EDIT_SELF') . ')');
+foreach ([
+	['delete-caller-own.png', 204, 'No other user claims the caller\'s own picture name, so USERS_EDIT_SELF alone deletes it'],
+	['protected.png', 403, 'The caller\'s row claims rbac-admin\'s real picture name, and USERS_EDIT was never granted - the loosening no longer applies'],
+] as [$claimedPictureFileName, $expectedStatus, $message])
+{
+	$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTUREDELETE', '9006', $claimedPictureFileName, (string)$expectedStatus, $message], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+	$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+	fclose($pipes[1]); fclose($pipes[2]);
+	check(proc_close($process) === 0, "Own-picture deletion exception ($claimedPictureFileName): $output $errors");
 	echo $output;
 }
 
