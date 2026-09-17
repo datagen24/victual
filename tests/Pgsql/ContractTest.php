@@ -763,6 +763,7 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/stock/locations/{locationId}/entries' => fn() => $stock->LocationStockEntries(self::request(), new Response(), ['locationId' => self::$ids['location']]),
 			$key === 'GET /api/stock/products/by-barcode/{barcode}' => fn() => $stock->ProductDetailsByBarcode(self::request(), new Response(), ['barcode' => '4006381333931']),
 			$key === 'GET /api/stock/bookings/{bookingId}' => fn() => $stock->StockBooking(self::request(), new Response(), ['bookingId' => self::$ids['booking']]),
+			$key === 'GET /api/stock/transactions/{transactionId}' => fn() => $stock->StockTransactions(self::request(), new Response(), ['transactionId' => self::$ids['transaction']]),
 			$key === 'GET /api/recipes/{recipeId}/fulfillment' => fn() => $recipes->GetRecipeFulfillment(self::request(), new Response(), ['recipeId' => self::$ids['recipe']]),
 			$key === 'GET /api/recipes/fulfillment' => fn() => $recipes->GetRecipeFulfillment(self::request(), new Response(), []),
 			$key === 'GET /api/chores' => fn() => $chores->Current(self::request(), new Response(), []),

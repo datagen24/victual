@@ -1438,6 +1438,38 @@
             "error_message": "string"
         }
     },
+    "GET /api/stock/transactions/{transactionId}": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "string",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
     "GET /api/stock/volatile": {
         "status": 200,
         "shape": {
