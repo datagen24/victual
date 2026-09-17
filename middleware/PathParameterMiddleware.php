@@ -90,6 +90,12 @@ class PathParameterMiddleware extends BaseMiddleware
 			$pattern = substr($pattern, strlen('/api'));
 		}
 
+		// A Slim/FastRoute pattern can carry a regex constraint - {kind:location|product}
+		// - that victual.openapi.json does not: the constraint lives in the parameter's
+		// schema there, not the path template, so the spec's key is unconstrained
+		// ({kind}). Strip the same suffix here so this lookup lands on it.
+		$pattern = preg_replace('/\{([a-zA-Z0-9_]+):[^}]+\}/', '{$1}', $pattern);
+
 		return self::$IntegerParameters[strtoupper($method) . ' ' . $pattern] ?? [];
 	}
 

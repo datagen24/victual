@@ -62,6 +62,16 @@ if (!is_array($spec) || !isset($spec['paths']))
 // answers any unmatched /api path so that a browser's OPTIONS request succeeds.
 $ignoredPatterns = ['/api/{routes:.+}'];
 
+// Slim/FastRoute path parameters can carry a regex constraint - {kind:location|product}
+// - which is not legal OpenAPI path templating (the constraint belongs in the
+// parameter's schema, not the template). victual.openapi.json spells these
+// unconstrained ({kind}); this strips the same suffix from the route pattern so both
+// sides land on the same key.
+function StripFastRouteConstraints(string $pattern): string
+{
+	return preg_replace('/\{([a-zA-Z0-9_]+):[^}]+\}/', '{$1}', $pattern);
+}
+
 $problems = [];
 $checked = 0;
 
@@ -82,7 +92,7 @@ foreach ($app->getRouteCollector()->getRoutes() as $route)
 		continue;
 	}
 
-	$specPathKey = substr($pattern, strlen('/api'));
+	$specPathKey = StripFastRouteConstraints(substr($pattern, strlen('/api')));
 
 	foreach ($route->getMethods() as $method)
 	{
