@@ -2453,6 +2453,20 @@ class StockService extends BaseService
 	 * @throws \Exception When the booking does not exist or was already undone, has newer dependent
 	 *                    bookings on the same stock_id, or its transaction type cannot be undone
 	 */
+	/**
+	 * Marks a stock_log row undone, with the current timestamp. Every branch of
+	 * UndoBooking() below reverses the booking's effect on `stock` differently, but ends
+	 * the same way; factored out so the seven-plus repetitions of this pair do not drift
+	 * from each other one at a time (plan 15-C10).
+	 */
+	private function MarkBookingUndone($logRow): void
+	{
+		$logRow->update([
+			'undone' => 1,
+			'undone_timestamp' => date('Y-m-d H:i:s')
+		]);
+	}
+
 	public function UndoBooking($bookingId, $skipCorrelatedBookings = false)
 	{
 		$logRow = $this->DB->stock_log()->where('id = :1 AND undone = 0', $bookingId)->fetch();
@@ -2507,10 +2521,7 @@ class StockService extends BaseService
 				$stockRows->delete();
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_CONSUME || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount < 0))
 			{
@@ -2539,10 +2550,7 @@ class StockService extends BaseService
 				$stockRow->save();
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_TRANSFER_TO)
 			{
@@ -2566,10 +2574,7 @@ class StockService extends BaseService
 				}
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_TRANSFER_FROM)
 			{
@@ -2598,10 +2603,7 @@ class StockService extends BaseService
 				}
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_PRODUCT_OPENED)
 			{
@@ -2623,18 +2625,12 @@ class StockService extends BaseService
 				]);
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_EDIT_NEW)
 			{
 				// Update log entry, no action needed
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_EDIT_OLD)
 			{
@@ -2672,19 +2668,13 @@ class StockService extends BaseService
 				]);
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_MEASURED_NEW)
 			{
 				// Update log entry, no action needed - undoing the correlated OLD booking
 				// (below) is what actually restores the prior measurement.
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_MEASURED_OLD)
 			{
@@ -2707,10 +2697,7 @@ class StockService extends BaseService
 				]);
 
 				// Update log entry
-				$logRow->update([
-					'undone' => 1,
-					'undone_timestamp' => date('Y-m-d H:i:s')
-				]);
+				$this->MarkBookingUndone($logRow);
 			}
 			else
 			{

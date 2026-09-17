@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Psr\Http\Message\ServerRequestInterface as Request;
+
 /**
  * Provides application level metadata: version information, the changelog and
  * system/time diagnostics.
@@ -77,9 +79,13 @@ class ApplicationService extends BaseService
 	/**
 	 * Collects environment information for the "About" dialog / system info API endpoint.
 	 *
+	 * @param Request|null $request The current request, for the "client" field below
+	 * (plan 15-C8: read through PSR-7 rather than $_SERVER directly). Null is answered
+	 * the same as a request carrying no User-Agent header - every caller has one in
+	 * scope, but a service method should not require it to run.
 	 * @return array {victual_version: object, php_version: string, sqlite_version: string, db_version: int, os: string, client: string}
 	 */
-	public function GetSystemInfo()
+	public function GetSystemInfo(?Request $request = null)
 	{
 		return [
 			'victual_version' => $this->GetInstalledVersion(),
@@ -88,7 +94,7 @@ class ApplicationService extends BaseService
 			'database_engine' => $this->GetDatabaseEngine(),
 			'db_version' => $this->DB->migrations()->max('migration'),
 			'os' => php_uname('s') . ' ' . php_uname('r') . ' ' . php_uname('v') . ' ' . php_uname('m'),
-			'client' => isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'unknown'
+			'client' => $request !== null ? ($request->getHeaderLine('User-Agent') ?: 'unknown') : 'unknown'
 		];
 	}
 

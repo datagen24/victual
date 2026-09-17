@@ -22,7 +22,7 @@ class SystemController extends BaseController
 	public function About(Request $request, Response $response, array $args)
 	{
 		return $this->RenderPage($response, 'about', [
-			'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo(),
+			'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo($request),
 			'versionInfo' => ApplicationService::GetInstance()->GetInstalledVersion(),
 			'changelog' => ApplicationService::GetInstance()->GetChangelog()
 		]);

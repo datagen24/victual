@@ -256,10 +256,10 @@ class DatabaseService
 	 * service would nest wrongly and the mistake would surface as a runtime error far from
 	 * its cause.
 	 *
-	 * The engine-specific counterpart is on the dialect: see DatabaseDialect for the
-	 * per-engine locking used around migrations. Engine-neutral composition belongs here;
-	 * anything an engine does differently belongs there.
+	 * The engine-specific counterpart is on the dialect: engine-neutral composition
+	 * belongs here; anything an engine does differently belongs there.
 	 *
+	 * @see DatabaseDialect::WithMigrationLock() The per-engine locking used around migrations
 	 * @param callable $work Receives no arguments; its return value is passed through
 	 * @return mixed Whatever $work returns
 	 * @throws \Throwable Whatever $work throws, after the transaction is rolled back

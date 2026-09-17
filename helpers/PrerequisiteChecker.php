@@ -33,7 +33,7 @@ const REQUIRED_PHP_EXTENSIONS = ['fileinfo', 'gd', 'ctype', 'intl', 'zlib', 'mbs
  */
 const REQUIRED_DRIVER_EXTENSIONS = ['sqlite' => 'pdo_sqlite', 'pgsql' => 'pdo_pgsql'];
 
-const REQUIRED_PHP_VERSION = '8.5.0';
+const REQUIRED_PHP_VERSION = '8.4.0';
 const REQUIRED_SQLITE_VERSION = '3.40.0';
 
 /**

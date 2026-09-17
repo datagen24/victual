@@ -132,11 +132,11 @@ class ExceptionController extends BaseApiController
 		// The template variables are built inside RenderErrorPage() rather than here: the
 		// system info reads the database (ApplicationService extends BaseService), so
 		// assembling them is part of what can fail and has to be inside its try.
-		return $this->RenderErrorPage($response, 500, 'errors/500', function () use ($exception)
+		return $this->RenderErrorPage($response, 500, 'errors/500', function () use ($exception, $request)
 		{
 			return [
 				'exception' => $exception,
-				'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo()
+				'systemInfo' => ApplicationService::GetInstance()->GetSystemInfo($request)
 			];
 		});
 	}

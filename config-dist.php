@@ -87,8 +87,8 @@ Setting('MIGRATE_ON_ROOT_REQUEST', false);
 // The directory name of one of the available localization folders
 // in the "/localization" directory (e.g. "en" or "de")
 // Victual uses the first available locale / setting in this order
-// 1. Browser prefered locale
-// 2. The one set in user settings
+// 1. The one set in user settings
+// 2. Browser prefered locale
 // 3. The one defined here below
 Setting('DEFAULT_LOCALE', 'en');
 
