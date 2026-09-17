@@ -8,12 +8,18 @@ require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
 require_once VICTUAL_DATAPATH . '/config.php';
 if (isset($argv[1])) define('VICTUAL_DEFAULT_ROLES', [$argv[1]]);
 require_once VICTUAL_ROOT_PATH . '/config-dist.php';
-define('VICTUAL_USER_ID', 9000);
+// VICTUAL_USER_PICTURE_FILE_NAME is a constant fixed for the whole process (issue #177),
+// so exercising CheckGroupReadPermission's and CheckUserPictureDeletion's own-picture
+// branches needs a caller whose id and claimed picture name are settled before this
+// process starts - the OWNPICTURE/OWNPICTUREDELETE subcommands below, run in their own
+// subprocess the way CHILD/ADMIN/UNKNOWN already are.
+$isOwnPictureSubprocess = isset($argv[1]) && ($argv[1] === 'OWNPICTURE' || $argv[1] === 'OWNPICTUREDELETE');
+define('VICTUAL_USER_ID', $isOwnPictureSubprocess ? (int)$argv[2] : 9000);
 define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 define('VICTUAL_LOCALE', 'en');
 define('VICTUAL_AUTHENTICATED', true);
 define('VICTUAL_USER_USERNAME', 'rbac-caller');
-define('VICTUAL_USER_PICTURE_FILE_NAME', null);
+define('VICTUAL_USER_PICTURE_FILE_NAME', $isOwnPictureSubprocess ? $argv[3] : null);
 
 use Victual\Services\DatabaseService;
 use Victual\Services\RolesService;
@@ -85,13 +91,37 @@ if (isset($argv[1]))
 		status(fn() => $userApi->CreateUser(request('POST', ['username' => 'blocked-admin', 'password' => 'fixture']), new Response(), []), 403, 'Default Admin is bounded by creator');
 		check((int)$pdo->query("SELECT COUNT(*) FROM users WHERE username='blocked-admin'")->fetchColumn() === 0, 'Refused default leaves no user');
 	}
+	elseif ($code === 'OWNPICTURE')
+	{
+		// Issue #177. This caller (VICTUAL_USER_ID from $argv[2]) holds no permissions
+		// at all, so a 404 below only happens because CheckGroupReadPermission's
+		// own-picture exception let ServeFile through to the (nonexistent) file lookup,
+		// and a 403 only happens because it refused. $argv[3] is what the caller's own
+		// row claims as VICTUAL_USER_PICTURE_FILE_NAME - genuinely theirs in one run,
+		// spoofed to another user's real picture name (set up by the parent process
+		// below) in the other.
+		$files = new Victual\Controllers\Api\FilesApiController($container);
+		$args = ['group' => 'userpictures', 'fileName' => base64_encode($argv[3])];
+		status(fn() => $files->ServeFile(request(), new Response(), $args), (int)$argv[4], $argv[5]);
+	}
+	elseif ($code === 'OWNPICTUREDELETE')
+	{
+		// Issue #177's delete-path counterpart. This caller (VICTUAL_USER_ID from
+		// $argv[2]) holds USERS_EDIT_SELF but not USERS_EDIT - the Child shape - so a
+		// 204 below only happens because CheckUserPictureDeletion's own-picture
+		// exception let DeleteFile through with no administer check, and a 403 only
+		// happens because it fell through to the USERS_EDIT requirement and refused.
+		$files = new Victual\Controllers\Api\FilesApiController($container);
+		$args = ['group' => 'userpictures', 'fileName' => base64_encode($argv[3])];
+		status(fn() => $files->DeleteFile(request('DELETE'), new Response(), $args), (int)$argv[4], $argv[5]);
+	}
 	else
 	{
 		try { UsersService::GetInstance()->CreateUser('unknown-default', null, null, 'fixture'); throw new RuntimeException('Unknown default accepted'); }
 		catch (Victual\Controllers\Api\EInvalidApiQuery $e) {}
 		check((int)$pdo->query("SELECT COUNT(*) FROM users WHERE username='unknown-default'")->fetchColumn() === 0, 'Unknown default rolls back account');
 	}
-	echo "DEFAULT ROLES PASSED: $code ($checks assertions)\n";
+	echo ($isOwnPictureSubprocess ? "$code PASSED: $argv[3]" : "DEFAULT ROLES PASSED: $code") . " ($checks assertions)\n";
 	exit(0);
 }
 
@@ -207,6 +237,72 @@ $editor = json_decode((string)$response->getBody(), true)['created_object_id'];
 $roles->SetPermissions(request(), $editor, [permissionId('USERS_EDIT'), permissionId('USERS_EDIT_SELF')]);
 grant([]); $pdo->exec('INSERT INTO user_roles(user_id,role_id) VALUES (9000, ' . $editor . ')');
 status(fn() => $files->DeleteFile(request('DELETE'), new Response(), ['group' => 'userpictures', 'fileName' => base64_encode('protected.png')]), 403, 'Role-only editor cannot delete stronger user picture');
+
+// Issue #177: CheckGroupReadPermission's own-picture exception used to key on
+// VICTUAL_USER_PICTURE_FILE_NAME alone, and USERS_EDIT_SELF (which the Child role
+// holds) lets a caller's own users row claim any name via PUT /api/users/{self} - so
+// a caller who learned rbac-admin's real picture name could set it as their own and
+// read it back with no USERS_READ. Both branches need a caller whose id and claimed
+// picture name are fixed for a whole process, so each runs in its own subprocess
+// exactly like the CHILD/ADMIN/UNKNOWN default-role cases below already do.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9003, 'rbac-picture-caller', 'fixture', 'caller-own.png')");
+// picture_file_name carries no uniqueness constraint (migration 0040 adds it as plain
+// TEXT), so a naive "fetch one matching row and compare its id" is only as safe as
+// fetch()'s row order - undefined once two real users share a filename. This caller is
+// inserted *before* the user whose picture it does not own, the ordering a plain
+// fetch() is likeliest to return first, so a regression that goes back to trusting one
+// arbitrary row is caught however the database happens to order it.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9004, 'rbac-picture-caller-dup', 'fixture', 'shared.png')");
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9005, 'rbac-picture-other-dup', 'fixture', 'shared.png')");
+foreach ([
+	['9003', 'caller-own.png', 404, 'No other user claims the caller\'s own picture name, so it still falls through to the file lookup'],
+	['9003', 'protected.png', 403, 'The caller\'s row claims rbac-admin\'s real picture name, and USERS_READ was never granted - the loosening no longer applies'],
+	['9004', 'shared.png', 403, 'A second real user also owns the exact same picture_file_name - the caller\'s own matching row does not excuse the other owner'],
+] as [$callerId, $claimedPictureFileName, $expectedStatus, $message])
+{
+	$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTURE', $callerId, $claimedPictureFileName, (string)$expectedStatus, $message], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+	$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+	fclose($pipes[1]); fclose($pipes[2]);
+	check(proc_close($process) === 0, "Own-picture exception ($callerId, $claimedPictureFileName): $output $errors");
+	echo $output;
+}
+
+// Issue #177's delete-path counterpart: CheckUserPictureDeletion's own-picture early
+// return had exactly the same gap - USERS_EDIT_SELF (Child) is enough to claim
+// rbac-admin's real picture name as one's own and have DeleteFile take it out with no
+// USERS_EDIT/administer check at all. This caller holds USERS_EDIT_SELF only, the
+// weakest grant that reaches CheckUserPictureDeletion, so a 204 below can only come
+// from the loosening, never from an independent permission.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9006, 'rbac-picture-delete-caller', 'fixture', 'delete-caller-own.png')");
+$pdo->exec('INSERT INTO user_permissions(user_id, permission_id) VALUES (9006, ' . permissionId('USERS_EDIT_SELF') . ')');
+foreach ([
+	['delete-caller-own.png', 204, 'No other user claims the caller\'s own picture name, so USERS_EDIT_SELF alone deletes it'],
+	['protected.png', 403, 'The caller\'s row claims rbac-admin\'s real picture name, and USERS_EDIT was never granted - the loosening no longer applies'],
+] as [$claimedPictureFileName, $expectedStatus, $message])
+{
+	$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTUREDELETE', '9006', $claimedPictureFileName, (string)$expectedStatus, $message], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+	$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+	fclose($pipes[1]); fclose($pipes[2]);
+	check(proc_close($process) === 0, "Own-picture deletion exception ($claimedPictureFileName): $output $errors");
+	echo $output;
+}
+
+// The administer check must weigh the actual other owner, not an arbitrary row a second
+// unconstrained fetch() happens to return. This caller holds both USERS_EDIT and
+// USERS_EDIT_SELF - strong enough to pass CheckPermission - and genuinely shares one
+// filename with an ADMIN user it cannot administer. Inserted before that ADMIN user, the
+// ordering a plain fetch() is likeliest to return, so a regression back to refetching
+// picture_file_name with no id filter (and landing on the caller's own duplicate) is
+// caught however the database orders it.
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9007, 'rbac-picture-delete-caller-strong', 'fixture', 'strongshared.png')");
+$pdo->exec('INSERT INTO user_permissions(user_id, permission_id) VALUES (9007, ' . permissionId('USERS_EDIT') . '), (9007, ' . permissionId('USERS_EDIT_SELF') . ')');
+$pdo->exec("INSERT INTO users(id, username, password, picture_file_name) VALUES (9008, 'rbac-picture-delete-target-strong', 'fixture', 'strongshared.png')");
+$pdo->exec('INSERT INTO user_roles(user_id, role_id) VALUES (9008, ' . roleId('ADMIN') . ')');
+$process = proc_open([PHP_BINARY, __FILE__, 'OWNPICTUREDELETE', '9007', 'strongshared.png', '403', 'USERS_EDIT does not excuse administering an ADMIN who shares the filename'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+$output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+fclose($pipes[1]); fclose($pipes[2]);
+check(proc_close($process) === 0, "Own-picture deletion exception (strongshared.png, stronger duplicate owner): $output $errors");
+echo $output;
 
 // Failure on the second insert must restore the entire previous bundle.
 grant(['ADMIN']);

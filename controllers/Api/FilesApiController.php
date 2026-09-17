@@ -177,6 +177,16 @@ class FilesApiController extends BaseApiController
 	 * regardless of whether they hold USERS_READ, so reading it needs no permission
 	 * beyond being logged in.
 	 *
+	 * VICTUAL_USER_PICTURE_FILE_NAME is users.picture_file_name for the caller, and
+	 * PUT /api/users/{self} lets USERS_EDIT_SELF write that column verbatim with no
+	 * check that the caller uploaded the file or that somebody else owns it - so the
+	 * name alone is caller-writable and cannot be trusted to mean "my picture" (issue
+	 * #177). picture_file_name carries no uniqueness constraint, so the question this
+	 * asks is deliberately "does any *other* row claim it", not "does fetch() turn up
+	 * a row of mine" - the latter can land on the caller's own duplicate of a name
+	 * someone else also claims and grant the read anyway. Same property
+	 * CheckUserPictureDeletion's owner lookup enforces on delete.
+	 *
 	 * @throws PermissionMissingException
 	 */
 	protected function CheckGroupReadPermission(Request $request, string $group, ?string $fileName = null): void
@@ -186,7 +196,12 @@ class FilesApiController extends BaseApiController
 		if ($group === 'userpictures' && $fileName !== null
 			&& defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
 		{
-			return;
+			$otherOwner = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetch();
+
+			if ($otherOwner === null)
+			{
+				return;
+			}
 		}
 
 		$permission = self::GROUP_READ_PERMISSIONS[$group];
@@ -374,21 +389,39 @@ class FilesApiController extends BaseApiController
 	 * A picture no user row claims is orphaned, and deleting it needs USERS_EDIT and
 	 * nothing more: there is no owner to compare against.
 	 *
+	 * VICTUAL_USER_PICTURE_FILE_NAME is caller-writable (PUT /api/users/{self} under
+	 * USERS_EDIT_SELF), so - the same issue #177 gap CheckGroupReadPermission's read
+	 * exception had - a caller could claim another user's real picture name as their
+	 * own and have this early return delete it with no USERS_EDIT/administer check at
+	 * all. Settled the same way: the exception only holds when no other user row
+	 * claims $fileName.
+	 *
+	 * $otherOwners is fetched once, by the same "someone other than the caller" query
+	 * that decides the exception, and reused for the administer check below rather than
+	 * refetched with a bare where('picture_file_name', ...) - picture_file_name has no
+	 * uniqueness constraint, so a second, caller-inclusive fetch() could turn up the
+	 * caller's own row instead of the other owner it was found to have moments earlier,
+	 * and CheckMayAdminister would then check the caller against themselves. A caller
+	 * who holds both USERS_EDIT and USERS_EDIT_SELF and shares a filename with someone
+	 * they may not administer is exactly the case that refetch let through. Every
+	 * matching non-caller owner is checked, not just one, in case duplicates are ever
+	 * more than a coincidence of two.
+	 *
 	 * @throws PermissionMissingException
 	 */
 	private function CheckUserPictureDeletion(Request $request, string $fileName): void
 	{
-		if (defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME)
+		$otherOwners = $this->DB->users()->where('picture_file_name = :1 AND id != :2', $fileName, (int)VICTUAL_USER_ID)->fetchAll();
+
+		if (defined('VICTUAL_USER_PICTURE_FILE_NAME') && $fileName === VICTUAL_USER_PICTURE_FILE_NAME && count($otherOwners) === 0)
 		{
-			// Own picture - the group permission was enough
+			// Own picture, and no other user claims the same name - the group permission was enough
 			return;
 		}
 
 		User::CheckPermission($request, User::PERMISSION_USERS_EDIT);
 
-		$owner = $this->DB->users()->where('picture_file_name', $fileName)->fetch();
-
-		if ($owner !== null)
+		foreach ($otherOwners as $owner)
 		{
 			User::CheckMayAdminister($request, (int)$owner->id);
 		}
