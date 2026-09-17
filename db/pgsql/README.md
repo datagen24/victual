@@ -180,11 +180,13 @@ it. A number is retired rather than reused once a file has existed under it in `
 
 Loading cleanly proves very little. The suite is one command:
 
-    .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|files|mqtt]
+    .devtools/pgsql/run-tests.sh [phase]
 
-The runner's own header says what each phase asks and why; this list has been wrong three
-times now by being maintained separately from it, so it is deliberately not repeated here -
-and even the one line above is worth checking against `run-tests.sh` rather than trusted.
+The runner's own header says what each phase asks and why, and names every one of them; that
+list has been wrong here three times now by being maintained separately from it (most
+recently at four phases, when there were five), so it is deliberately not repeated - not even
+as an abbreviated example, which is what the previous version of this line was and is exactly
+how it went stale again.
 `migratedifftest.php` is the one to know about at this point: it migrates a database on each
 engine, touches neither afterwards, and compares every table - that is the equivalence claim
 above, written as a test, and it is the phase the missing seed data would have failed. The
