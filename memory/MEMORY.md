@@ -59,6 +59,38 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-17 — Issue #83 / plan 14 piece 2 landed** (branch `claude/nifty-fermat-g3mffe`),
+  the largest remaining item in wave 5: the response-contract snapshot, `tests/Pgsql/ContractTest.php`
+  on `PgsqlSchemaTestCase` per ADR-0025 decision 4, a `contract` phase in `run-tests.sh`/`phpunit.xml`
+  beside `rbac`. `tests/Support/RouteInventory.php` boots `routes.php` for the live Slim route
+  table (the `.devtools/check-path-id-validation.php` pattern, generalised) rather than a second
+  regex extractor; `tests/Support/JsonShape.php` turns a decoded JSON value into its key-set-and-
+  scalar-type shape, list items collapsed to one merged representative element. One fixture graph
+  built as Admin through the real write endpoints (stock add/consume/transfer/inventory/open/
+  measure/weigh/merge by id and by barcode, recipes, chores, batteries, tasks, users/roles, a file
+  round trip, the generic `/objects/{entity}` sweep over every non-label `ExposedEntity`) is
+  snapshotted, then re-swept as the **existing CHILD role** (not a new fixture — CHILD already
+  holds the STOCK leaves/not-STOCK shape the plan asks for) for a restricted comparison. Four
+  comparison legs, not the plan's five: "engine vs engine" is moot since ADR-0008 retired SQLite
+  as a runtime, so only one engine boots the app. The redaction leg computes expected-redacted
+  fields from the live `permission_fields` table (never hand-maintained, per `FieldPolicy`'s own
+  docblock) and was verified the mutation-shaped way — `FieldPolicy::RedactRow`'s loop body
+  replaced with `foreach ([] as $field)`, confirmed the leg named exactly the nine leaked fields,
+  reverted. Two real defects found and fixed on the way, on a route nothing had called with real
+  event data before: `CalendarApiController::Ical` called `$response->write()` (not a
+  `ResponseInterface` method) and hand the iCal library's `Presentation\Component` object to
+  `getBody()->write()` unstringified. Spec fixes landed with the parity assertion:
+  `/api/openapi/specification` added to `victual.openapi.json` (the one real gap plan 14 found
+  by hand), `info.version` `"xxx"` → `version.json`'s `4.6.0`, and `ProductPriceHistory`'s schema
+  description corrected (claimed "see x-visibility on the operation"; the operation carries none,
+  only the schema does — fixed the sentence to match the code rather than the code to match a
+  stale sentence). **Not done, contrary to the issue's own text**: S15 (regex filter bounds) and
+  S16's remaining half (11's Q5, a schema-derived write allowlist) are separately-scoped input-
+  validation work, not response-contract testing, and stayed out on purpose — recorded as such in
+  security-sweep.md and plan 14's own Executed section rather than silently left implied-closed.
+  Full account: [plan 14's Executed section](../docs/plans/14-contract-and-regression-scaffolding.md#executed).
+  Next: retiring the SQLite differential harness (unblocked by this landing, not performed by
+  it), plan 22, issue 192's remaining items.
 - **2026-09-17 — ADR-0025 accepted** (bookkeeping PR after PR #194's spikes): status line
   annotates each prerequisite with what met it and records three edges honestly — the
   ported phase migrates its own schema (decision 3 addendum), the extension lives in the
@@ -130,53 +162,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   roles page said price visibility was "still-unbuilt" on the day it shipped). Lesson: when a
   feature's state lives in a table the SQLite import span cannot carry, the importer is part of
   the feature — check it in the same change, not in the follow-up issue.
-- **2026-09-16 — Plan 32 landed** (label kinds, issue #182 closed), the largest item and the
-  one everything else in labels waited on. Migration `0283.pgsql.php` (a PHP migration, not
-  `.sql`: the five seeded templates need `CanonicalJson::Digest()`, PHP-only; renumbered down
-  from `0285.pgsql.php` after PR #186's CI failed the un-renumbered branch — see the follow-up
-  entry below) widens the three
-  `entity_kind`/`kind` `CHECK`s to six values, adds `import_epoch` to `products`/`stock`/
-  `recipes`/`chores`/`batteries`, adds one retirement trigger per table, and seeds a QR-only
-  default template per new kind through the real `LabelTemplateService`. `FieldCatalogue` gained
-  five catalogues plus `DomainPermission()`; `LabelIdentityService::Resolve()` now takes a
-  `callable(string):bool` instead of one flag, since which permission gates a code is not known
-  until its row names a kind; `LabelOperationsService::IssueLocation()`/`RevisedPrint()` take a
-  leading `$kind` and `ResolvePrinter()` gained a default-printer fallback for `null`. Routes
-  `POST /labels/{kind:location|product|stock_entry|recipe|chore|battery}/{id:[0-9]+}/print` etc,
-  `{kind}` constrained by the route's own regex (the tree's first inline-regex route) rather than
-  validated in the controller; OpenAPI path keys had to repeat that regex verbatim; `check-path-id-validation.php` matches on the raw Slim pattern. Thirteen `viewjs`/blade pairs
-  migrated onto a shared `Victual.LabelPrinting.Wire()` and two new partials
-  (`label_print_widget`/`label_print_list_header`) — three more than the plan's own ten-file
-  list named (`stockjournal.js`/`stockoverview.js` print a *product* from a stock row;
-  `stockentryform.js`'s reprint-on-save checkbox became the standard standalone widget).
-  `StockService::AddProduct()` now issues a `stock_entry` label and enqueues its job inside the
-  same transaction as the booking (replacing an after-commit webhook loop); `OpenProduct()`/
-  `TransferProduct()`'s `auto_reprint_stock_label` webhook sites (not named in the plan's piece D
-  prose, found by grepping for what piece E asks to delete) became a revised print gated on the
-  entry already carrying a live label. Piece E deleted `LABEL_PRINTER_*`/`FEATURE_FLAG_LABEL_PRINTER`
-  end to end — config, `EXPOSED_SETTINGS`, the manual, `AGENTS.md`, `Victual.Webhooks`,
-  `RunWebhook()` — leaving `grep -rn "printlabel\|LABEL_PRINTER"` clean. Three corrections to the
-  plan's own text found while implementing it, recorded rather than silently fixed: no seeded
-  location template exists anywhere in `master` to model the new ones on ("the way the location
-  default is seeded today" describes nothing real); `ConfigurationValidator` never had
-  `LABEL_PRINTER_*` entries to remove; `InfluxEventWriter` calls Guzzle directly, not
-  `WebhookRunner`, so `WebhookRunner` (kept per the plan) is actually dead code now, just not
-  this plan's dead code to remove. A real bug this session's own consistency check caught before
-  any test ran: `FieldsOf()` (two copies) assumed every kind's always-captured field is
-  `<kind>.name`, which does not exist for `stock_entry` (`stock_entry.product_name` does).
-  Verified against real PostgreSQL 16.13 in this sandbox: `check-migrations.php`,
-  `check-path-id-validation.php`, `identity-tests.php` (10047), `artifact-tests.php` (55),
-  `print-job-tests.php` (36), `registry-tests.php` (23), `worker-api-tests.php` (25), and a new
-  `kinds-tests.php` (44, added to CI) exercising all five new kinds' capture/issue/resolve/retire
-  for real; a disposable script drove `StockService::AddProduct()` against a `bin/victual-migrate`d
-  database confirming exact label/job counts per `stockLabelType` and a full rollback (no stock
-  entry, no booking) when the configured printer is inactive. Not verified: any live HTTP
-  rendering (PHP 8.5 unavailable in this sandbox, only 8.4 — blade templates were instead
-  compiled through the real `Jenssegers\Blade` compiler and `php -l`-checked), `mkdocs build
-  --strict` (mkdocs unavailable, pip timed out — the settings-reference half was verified by
-  replicating its check directly), and physical printing on the QL-820NWBc for the five new
-  kinds. See the plan's own [Executed section](../docs/plans/32-label-kinds.md#executed-2026-09-16)
-  for the full account, piece by piece.
 
 ## DOCTRINE (operator-locked decisions)
 

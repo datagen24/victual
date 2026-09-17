@@ -162,8 +162,10 @@ connective makes the order ambiguous. Those get full prose.
   `.devtools/pgsql/` (see its README), CI runs both engines against `postgres:16`.
 - Three test tiers, per [ADR-0025](docs/adr/0025-three-test-tiers.md): PHPUnit against a
   real PostgreSQL schema for application code (`packages/bin/phpunit --testsuite <name>`,
-  run through `run-tests.sh <phase>` like any other phase — `rbac` is the first one
-  ported); pgTAP for the SQL logic every migration adds, run with `run-tests.sh pgtap`
+  run through `run-tests.sh <phase>` like any other phase — `rbac` was the first phase
+  ported; `contract` is plan 14 piece 2's response-contract snapshot, decision 4's own
+  example of a tier-1 test written from the start rather than ported later); pgTAP for
+  the SQL logic every migration adds, run with `run-tests.sh pgtap`
   ([.devtools/pgtap/README.md](.devtools/pgtap/README.md) is the completeness list); the
   Playwright probes in `.devtools/frontend/` for the browser, unchanged.
 - Business logic lives in `services/`; routes in `routes.php`; permissions are the 37

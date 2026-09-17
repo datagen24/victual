@@ -649,10 +649,93 @@ Three things the suite grew that the plan did not ask for, each because the plan
 - **`d2524a3`** committed the rollback tests, and **`36a3032`** added the coverage
   reporting that is piece 4.
 
-**What piece 2 still owes**, unchanged by any of the above: the response-contract
-snapshot, the route-table-vs-spec parity assertion, and the two spec fixes
-(`/api/openapi/specification`, and `info.version`'s `"xxx"` placeholder) that assertion
-lands with.
+**Piece 2, landed 2026-09-17** ([issue 83](https://github.com/datagen24/victual/issues/83),
+wave 5): the response-contract snapshot, written in tier 1 from the start per
+[ADR-0025](../adr/0025-three-test-tiers.md) decision 4, as `tests/Pgsql/ContractTest.php`
+on `PgsqlSchemaTestCase` - a `contract` phase in `run-tests.sh` and `phpunit.xml`
+alongside `rbac`, the pattern decision 3 set. Piece 2b (growing the read surface) needed
+nothing further: plans 28 and 31 and 19 piece 2 had already closed the eight gaps its own
+2026-08-29 measurement found.
+
+The route-table-vs-spec parity assertion is a two-way set comparison over the live Slim
+route table (`tests/Support/RouteInventory.php`, which boots `routes.php` the way
+`.devtools/check-path-id-validation.php` already did rather than trusting a second regex
+extractor), fixing the one real gap plan 14 found by hand: `/api/openapi/specification`
+is now in `victual.openapi.json`, alongside the `info.version` placeholder (`"xxx"` →
+`version.json`'s `4.6.0`, per this plan's own fallback rule - [17](17-ecosystem-clients.md)
+Q1 is still unanswered). R1 (`/system/config` keeps `FEATURE_FLAG_STOCK`) is one assertion
+in the same class.
+
+The snapshot itself builds one fixture graph as Admin through the real write endpoints -
+so the writes are exercised too - covering every non-label operation: master data,
+stock (add/consume/transfer/inventory/open/measure/weigh/merge, both by id and by
+barcode, undo on both a booking and a transaction), recipes (including consume and
+copy), chores (execute, undo, merge, next-assignment calculation), batteries, tasks,
+users and roles, a file upload/serve/delete round trip, and the generic `/objects/{entity}`
+sweep over every `ExposedEntity` the label subsystem doesn't own. Two real defects
+surfaced building it, on a route the fixture graph was the first thing to call with real
+event data: `CalendarApiController::Ical` called `$response->write()`, a method
+`Psr\Http\Message\ResponseInterface` does not have, and handed the iCal library's
+`Presentation\Component` object to `getBody()->write()` unstringified once that was fixed
+too. Both are one-line fixes, in this same change.
+
+The comparison is four-way, not the five the plan describes - "engine vs engine" is not
+attempted, because ADR-0008 already retired SQLite as a runtime engine, so there is only
+one engine left to boot the application on; the differential harness's SQLite side is
+what used to stand in for that leg, and stays until its own retirement (still gated on
+this piece having landed, not performed by it - see the wave 5 status line):
+
+1. **Snapshot vs previous snapshot.** Two committed golden files,
+   `tests/Pgsql/snapshots/contract-{admin,restricted}.json`, each the JSON key set and
+   scalar type of every operation's response (never values, per the plan) -
+   `CONTRACT_REGEN=1 .devtools/pgsql/run-tests.sh contract` regenerates them, named in
+   the failure message, per Q6's response.
+2. **Snapshot vs OpenAPI schema.** The schema-completeness leg below subsumes this for
+   the vocabulary that matters; a full per-operation schema diff over all 145 operations
+   was judged not worth building given how much of the surface has no schema at all
+   (hand-built responses `BaseApiController::GetOpenApispec()`'s own callers read
+   selectively) - a gap worth naming rather than hiding.
+3. **Admin vs restricted.** The restricted identity is the existing CHILD role
+   (`db/pgsql/roles-seed.sql`), not a new fixture - CHILD already holds exactly the
+   shape the plan asks for, `STOCK_VIEW`/`STOCK_CONSUME`/`STOCK_OPEN` and the other
+   domain `*_VIEW` leaves, never bare `STOCK` or `STOCK_PURCHASE`, so it cannot inherit
+   `STOCK_PRICES_VIEW` the way a parent-holder would. Restricted is asserted to equal
+   Admin minus exactly the fields `permission_fields` redacts for CHILD, computed from
+   the live table (never a hand-maintained list, matching `FieldPolicy`'s own docblock)
+   and cross-checked in both directions: every policed field the fixture graph reaches
+   must actually be missing from the restricted response, and every restricted 200/403
+   split must be one of those two codes and nothing else.
+4. **Schema and snapshot bodies vs the sensitive-field vocabulary.** The completeness
+   leg leg 3 is structurally blind to (`price`, `cost`, `value`, `amount_paid` and their
+   prefixed/suffixed forms) walks both the recorded Admin bodies and every OpenAPI
+   schema property, failing on a match with neither an `x-visibility` annotation (schema-
+   or property-level - `ProductPriceHistory`'s own schema carries it once rather than
+   its `price` property, and its description said "see the operation", which was wrong
+   until this change fixed the sentence to match the code) nor a `permission_fields`
+   row. Verified the way the plan's own Verification section asks: `FieldPolicy::RedactRow`
+   was mutated to redact nothing, and this leg named all nine leaked fields
+   (`value, costs, costs_per_serving, prices_incomplete, last_price, avg_price,
+   oldest_price, current_price, stock_value`) before the mutation was reverted. Six
+   field names the regex matches but that are not amounts at all (`qu_id_price`,
+   `default_purchase_price_type`, `quantity_unit_price`, `qu_conversion_factor_price_to_stock`,
+   `price_factor`, `stock_auto_decimal_separator_prices`, `default_value`) are the
+   allow-list this leg's own docstring says is the actual deliverable, each with why in
+   `tests/Pgsql/ContractTest.php`.
+
+**What is deliberately not covered**, named rather than silently skipped: the label
+pairing/worker/renderer/template-admin operations and the thirteen label-subsystem
+`ExposedEntity` rows behind them need real device credentials, paired worker crypto
+material or a rendered artifact this harness cannot manufacture - route/spec parity
+still covers their wire shape, the same division plan 25/27's physical verification
+already drew. `StockApiController::ExternalBarcodeLookup` is excluded because it calls a
+configured plugin/network endpoint, which is sweep finding S14's surface and not
+something a contract test should give a target.
+
+**What this piece does not close, contrary to the issue's own text**: S15 (regex filter
+pattern bounds) and S16's remaining half (a schema-derived write allow-list for the
+generic entity controller, 11's Q5) are both real, separately-scoped pieces of work -
+input validation hardening, not response-contract testing - and are not attempted here.
+Both stay open, tracked where they already were.
 
 **And one documentation debt this plan owns because it owns the suite.**
 `db/pgsql/README.md` still describes the runner as `[migrate|views|triggers]` and still

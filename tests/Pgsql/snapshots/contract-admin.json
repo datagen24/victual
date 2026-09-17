@@ -1,0 +1,2718 @@
+{
+    "DELETE /api/files/{group}/{fileName}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "DELETE /api/user/settings/{settingKey}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "GET /api/batteries": {
+        "status": 200,
+        "shape": [
+            {
+                "battery": {
+                    "active": "integer",
+                    "charge_interval_days": "integer",
+                    "description": "null",
+                    "id": "integer",
+                    "import_epoch": "integer",
+                    "name": "string",
+                    "row_created_timestamp": "string",
+                    "used_in": "null"
+                },
+                "battery_id": "integer",
+                "id": "integer",
+                "last_tracked_time": "null",
+                "next_estimated_charge_time": "string"
+            }
+        ]
+    },
+    "GET /api/batteries/{batteryId}": {
+        "status": 200,
+        "shape": {
+            "battery": {
+                "active": "integer",
+                "charge_interval_days": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "row_created_timestamp": "string",
+                "used_in": "null"
+            },
+            "charge_cycles_count": "integer",
+            "last_charged": "null",
+            "next_estimated_charge_time": "string"
+        }
+    },
+    "GET /api/calendar/ical": {
+        "status": 200,
+        "shape": {
+            "__non_json__": true,
+            "content_type": "text/calendar; charset=utf-8"
+        }
+    },
+    "GET /api/calendar/ical/sharing-link": {
+        "status": 200,
+        "shape": {
+            "url": "string"
+        }
+    },
+    "GET /api/chores": {
+        "status": 200,
+        "shape": [
+            {
+                "chore_id": "integer",
+                "chore_name": "string",
+                "id": "integer",
+                "is_reassigned": "integer",
+                "is_rescheduled": "integer",
+                "last_tracked_time": "null",
+                "next_estimated_execution_time": "null",
+                "next_execution_assigned_to_user_id": "null",
+                "next_execution_assigned_user": "null",
+                "track_date_only": "integer"
+            }
+        ]
+    },
+    "GET /api/chores/{choreId}": {
+        "status": 200,
+        "shape": {
+            "average_execution_frequency_hours": "null",
+            "chore": {
+                "active": "integer",
+                "assignment_config": "null",
+                "assignment_type": "null",
+                "consume_product_on_execution": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "next_execution_assigned_to_user_id": "null",
+                "period_config": "null",
+                "period_days": "null",
+                "period_interval": "integer",
+                "period_type": "string",
+                "product_amount": "null",
+                "product_id": "null",
+                "rescheduled_date": "null",
+                "rescheduled_next_execution_assigned_to_user_id": "null",
+                "rollover": "integer",
+                "row_created_timestamp": "string",
+                "start_date": "string",
+                "track_date_only": "integer"
+            },
+            "last_done_by": "null",
+            "last_tracked": "null",
+            "next_estimated_execution_time": "null",
+            "next_execution_assigned_user": "null",
+            "tracked_count": "integer"
+        }
+    },
+    "GET /api/files/{group}/{fileName}": {
+        "status": 200,
+        "shape": {
+            "__non_json__": true,
+            "content_type": "application/pdf"
+        }
+    },
+    "GET /api/objects/{entity} (api_keys)": {
+        "status": 400,
+        "shape": {
+            "error_message": "string"
+        }
+    },
+    "GET /api/objects/{entity} (batteries)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "charge_interval_days": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "row_created_timestamp": "string",
+                "used_in": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (battery_charge_cycles)": {
+        "status": 200,
+        "shape": [
+            {
+                "battery_id": "integer",
+                "id": "integer",
+                "row_created_timestamp": "string",
+                "tracked_time": "string",
+                "undone": "integer",
+                "undone_timestamp": "null|string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (chores)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "assignment_config": "null",
+                "assignment_type": "null",
+                "consume_product_on_execution": "integer",
+                "description": "null",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "next_execution_assigned_to_user_id": "null",
+                "period_config": "null",
+                "period_days": "null",
+                "period_interval": "integer",
+                "period_type": "string",
+                "product_amount": "null",
+                "product_id": "null",
+                "rescheduled_date": "null",
+                "rescheduled_next_execution_assigned_to_user_id": "null",
+                "rollover": "integer",
+                "row_created_timestamp": "string",
+                "start_date": "string",
+                "track_date_only": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (chores_log)": {
+        "status": 200,
+        "shape": [
+            {
+                "chore_id": "integer",
+                "done_by_user_id": "integer",
+                "id": "integer",
+                "row_created_timestamp": "string",
+                "scheduled_execution_time": "null",
+                "skipped": "integer",
+                "tracked_time": "string",
+                "undone": "integer",
+                "undone_timestamp": "null|string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (equipment)": {
+        "status": 200,
+        "shape": [
+            {
+                "description": "null",
+                "id": "integer",
+                "instruction_manual_file_name": "null",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (locations)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "is_freezer": "integer",
+                "name": "string",
+                "parent_location_id": "null",
+                "row_created_timestamp": "string",
+                "storage_class_id": "null",
+                "tare_qu_id": "null",
+                "tare_weight": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (locations_resolved)": {
+        "status": 200,
+        "shape": [
+            {
+                "ancestor_location_id": "integer",
+                "depth": "integer",
+                "descendant_location_id": "integer",
+                "id": "integer",
+                "path": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (meal_plan)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (meal_plan_sections)": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string",
+                "sort_number": "integer",
+                "time_info": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (mqtt_product_entities)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (permission_hierarchy)": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "name": "string",
+                "parent": "integer|null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_barcodes)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "null",
+                "barcode": "string",
+                "id": "integer",
+                "last_price": "null",
+                "note": "null",
+                "product_id": "integer",
+                "qu_id": "integer",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_barcodes_view)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "null",
+                "barcode": "string",
+                "id": "integer",
+                "last_price": "null",
+                "note": "null",
+                "product_id": "integer",
+                "qu_id": "integer",
+                "shopping_location_id": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_groups)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "min_stock_amount": "integer",
+                "name": "string",
+                "parent_product_group_id": "null",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_groups_missing)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (product_groups_resolved)": {
+        "status": 200,
+        "shape": [
+            {
+                "ancestor_product_group_id": "integer",
+                "depth": "integer",
+                "descendant_product_group_id": "integer",
+                "id": "integer",
+                "path": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_location_min_stock)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (product_location_missing)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (product_substitutions)": {
+        "status": 200,
+        "shape": [
+            {
+                "from_product_id": "integer",
+                "id": "integer",
+                "row_created_timestamp": "string",
+                "to_product_id": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (product_substitutions_resolved)": {
+        "status": 200,
+        "shape": [
+            {
+                "direction": "string",
+                "from_product_amount_in_stock": "integer",
+                "from_product_best_before_date": "string",
+                "from_product_id": "integer",
+                "id": "integer",
+                "to_product_id": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (products)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "auto_reprint_stock_label": "integer",
+                "calories": "null",
+                "cumulate_min_stock_amount_of_sub_products": "integer",
+                "default_best_before_days": "integer",
+                "default_best_before_days_after_freezing": "integer",
+                "default_best_before_days_after_open": "integer",
+                "default_best_before_days_after_thawing": "integer",
+                "default_consume_location_id": "null",
+                "default_purchase_price_type": "integer",
+                "default_refill_location_id_from": "null",
+                "default_refill_location_id_to": "null",
+                "default_stock_label_type": "integer",
+                "description": "null|string",
+                "disable_open": "integer",
+                "due_type": "integer",
+                "enable_tare_weight_handling": "integer",
+                "hide_on_stock_overview": "integer",
+                "id": "integer",
+                "import_epoch": "integer",
+                "location_id": "integer",
+                "min_stock_amount": "integer",
+                "move_on_open": "integer",
+                "name": "string",
+                "no_own_stock": "integer",
+                "not_check_stock_fulfillment_for_recipes": "integer",
+                "parent_product_id": "null",
+                "picture_file_name": "null",
+                "product_group_id": "integer|null",
+                "qu_id_consume": "integer",
+                "qu_id_price": "integer",
+                "qu_id_purchase": "integer",
+                "qu_id_stock": "integer",
+                "quick_consume_amount": "integer",
+                "quick_open_amount": "integer",
+                "quick_refill_amount": "integer",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "should_not_be_frozen": "integer",
+                "tare_weight": "integer",
+                "treat_opened_as_out_of_stock": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (products_average_price)": {
+        "status": 200,
+        "shape": [
+            {
+                "id": "integer",
+                "price": "number",
+                "product_id": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (products_last_purchased)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "shopping_location_id": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (quantity_unit_conversions)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (quantity_unit_conversions_resolved)": {
+        "status": 200,
+        "shape": [
+            {
+                "factor": "integer",
+                "from_qu_id": "integer",
+                "from_qu_name": "string",
+                "from_qu_name_plural": "string",
+                "id": "integer",
+                "path": "string",
+                "product_id": "integer",
+                "to_qu_id": "integer",
+                "to_qu_name": "string",
+                "to_qu_name_plural": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (quantity_units)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (recipes)": {
+        "status": 200,
+        "shape": [
+            {
+                "base_servings": "integer",
+                "description": "null",
+                "desired_servings": "integer",
+                "id": "integer",
+                "import_epoch": "integer",
+                "name": "string",
+                "not_check_shoppinglist": "integer",
+                "picture_file_name": "null",
+                "product_id": "null",
+                "row_created_timestamp": "string",
+                "type": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (recipes_nestings)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (recipes_pos)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "id": "integer",
+                "ingredient_group": "null",
+                "not_check_stock_fulfillment": "integer",
+                "note": "null",
+                "only_check_single_unit_in_stock": "integer",
+                "price_factor": "integer",
+                "product_id": "integer",
+                "qu_id": "integer",
+                "recipe_id": "integer",
+                "round_up": "integer",
+                "row_created_timestamp": "string",
+                "variable_amount": "null"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (recipes_pos_resolved)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount_on_shopping_list": "integer",
+                "calories": "integer",
+                "child_recipe_id": "integer",
+                "costs": "number",
+                "due_score": "integer",
+                "id": "integer",
+                "ingredient_group": "null",
+                "is_nested_recipe_pos": "integer",
+                "missing_amount": "integer",
+                "need_fulfilled": "integer",
+                "need_fulfilled_with_shopping_list": "integer",
+                "note": "null",
+                "only_check_single_unit_in_stock": "integer",
+                "product_active": "integer",
+                "product_group": "string",
+                "product_id": "integer",
+                "product_id_effective": "integer",
+                "product_name": "string",
+                "qu_id": "integer",
+                "recipe_amount": "integer",
+                "recipe_id": "integer",
+                "recipe_pos_id": "integer",
+                "recipe_type": "string",
+                "recipe_variable_amount": "null",
+                "stock_amount": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (roles)": {
+        "status": 200,
+        "shape": [
+            {
+                "builtin": "integer",
+                "code": "string",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (shopping_list)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (shopping_lists)": {
+        "status": 200,
+        "shape": [
+            {
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (shopping_locations)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (stock)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "id": "integer",
+                "import_epoch": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "open": "integer",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "stock_id": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (stock_current_locations)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "id": "integer",
+                "location_id": "integer",
+                "location_is_freezer": "integer",
+                "location_name": "string",
+                "product_id": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (stock_log)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null|string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null|string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "null|number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "integer|null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null|string",
+                "used_date": "null|string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (storage_classes)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "id": "integer",
+                "max_temp_c": "string",
+                "min_temp_c": "string",
+                "name": "string",
+                "row_created_timestamp": "string",
+                "sort_order": "integer",
+                "treats_as_freezer": "integer"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (task_categories)": {
+        "status": 200,
+        "shape": [
+            {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (tasks)": {
+        "status": 200,
+        "shape": [
+            {
+                "assigned_to_user_id": "null",
+                "category_id": "integer|null",
+                "description": "null",
+                "done": "integer",
+                "done_timestamp": "null",
+                "due_date": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/objects/{entity} (uihelper_shopping_list)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (userentities)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (userfields)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity} (userobjects)": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (batteries)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "charge_interval_days": "integer",
+            "description": "null",
+            "id": "integer",
+            "import_epoch": "integer",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "used_in": "null",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (chores)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "assignment_config": "null",
+            "assignment_type": "null",
+            "consume_product_on_execution": "integer",
+            "description": "null",
+            "id": "integer",
+            "import_epoch": "integer",
+            "name": "string",
+            "next_execution_assigned_to_user_id": "null",
+            "period_config": "null",
+            "period_days": "null",
+            "period_interval": "integer",
+            "period_type": "string",
+            "product_amount": "null",
+            "product_id": "null",
+            "rescheduled_date": "null",
+            "rescheduled_next_execution_assigned_to_user_id": "null",
+            "rollover": "integer",
+            "row_created_timestamp": "string",
+            "start_date": "string",
+            "track_date_only": "integer",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (equipment)": {
+        "status": 200,
+        "shape": {
+            "description": "null",
+            "id": "integer",
+            "instruction_manual_file_name": "null",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (locations)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "description": "null",
+            "id": "integer",
+            "is_freezer": "integer",
+            "name": "string",
+            "parent_location_id": "null",
+            "row_created_timestamp": "string",
+            "storage_class_id": "null",
+            "tare_qu_id": "null",
+            "tare_weight": "null",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (locations_resolved)": {
+        "status": 404,
+        "shape": {
+            "error_message": "string"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (product_barcodes)": {
+        "status": 200,
+        "shape": {
+            "amount": "null",
+            "barcode": "string",
+            "id": "integer",
+            "last_price": "null",
+            "note": "null",
+            "product_id": "integer",
+            "qu_id": "integer",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (product_groups)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "description": "null",
+            "id": "integer",
+            "min_stock_amount": "integer",
+            "name": "string",
+            "parent_product_group_id": "null",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (product_groups_resolved)": {
+        "status": 200,
+        "shape": {
+            "ancestor_product_group_id": "integer",
+            "depth": "integer",
+            "descendant_product_group_id": "integer",
+            "id": "integer",
+            "path": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (products)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "auto_reprint_stock_label": "integer",
+            "calories": "null",
+            "cumulate_min_stock_amount_of_sub_products": "integer",
+            "default_best_before_days": "integer",
+            "default_best_before_days_after_freezing": "integer",
+            "default_best_before_days_after_open": "integer",
+            "default_best_before_days_after_thawing": "integer",
+            "default_consume_location_id": "null",
+            "default_purchase_price_type": "integer",
+            "default_refill_location_id_from": "null",
+            "default_refill_location_id_to": "null",
+            "default_stock_label_type": "integer",
+            "description": "string",
+            "disable_open": "integer",
+            "due_type": "integer",
+            "enable_tare_weight_handling": "integer",
+            "hide_on_stock_overview": "integer",
+            "id": "integer",
+            "import_epoch": "integer",
+            "location_id": "integer",
+            "min_stock_amount": "integer",
+            "move_on_open": "integer",
+            "name": "string",
+            "no_own_stock": "integer",
+            "not_check_stock_fulfillment_for_recipes": "integer",
+            "parent_product_id": "null",
+            "picture_file_name": "null",
+            "product_group_id": "integer",
+            "qu_id_consume": "integer",
+            "qu_id_price": "integer",
+            "qu_id_purchase": "integer",
+            "qu_id_stock": "integer",
+            "quick_consume_amount": "integer",
+            "quick_open_amount": "integer",
+            "quick_refill_amount": "integer",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "should_not_be_frozen": "integer",
+            "tare_weight": "integer",
+            "treat_opened_as_out_of_stock": "integer",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (recipes)": {
+        "status": 200,
+        "shape": {
+            "base_servings": "integer",
+            "description": "null",
+            "desired_servings": "integer",
+            "id": "integer",
+            "import_epoch": "integer",
+            "name": "string",
+            "not_check_shoppinglist": "integer",
+            "picture_file_name": "null",
+            "product_id": "null",
+            "row_created_timestamp": "string",
+            "type": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (recipes_pos)": {
+        "status": 200,
+        "shape": {
+            "amount": "integer",
+            "id": "integer",
+            "ingredient_group": "null",
+            "not_check_stock_fulfillment": "integer",
+            "note": "null",
+            "only_check_single_unit_in_stock": "integer",
+            "price_factor": "integer",
+            "product_id": "integer",
+            "qu_id": "integer",
+            "recipe_id": "integer",
+            "round_up": "integer",
+            "row_created_timestamp": "string",
+            "userfields": "null",
+            "variable_amount": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (recipes_pos_resolved)": {
+        "status": 200,
+        "shape": {
+            "amount_on_shopping_list": "integer",
+            "calories": "integer",
+            "child_recipe_id": "integer",
+            "costs": "number",
+            "due_score": "integer",
+            "id": "integer",
+            "ingredient_group": "null",
+            "is_nested_recipe_pos": "integer",
+            "missing_amount": "integer",
+            "need_fulfilled": "integer",
+            "need_fulfilled_with_shopping_list": "integer",
+            "note": "null",
+            "only_check_single_unit_in_stock": "integer",
+            "product_active": "integer",
+            "product_group": "string",
+            "product_id": "integer",
+            "product_id_effective": "integer",
+            "product_name": "string",
+            "qu_id": "integer",
+            "recipe_amount": "integer",
+            "recipe_id": "integer",
+            "recipe_pos_id": "integer",
+            "recipe_type": "string",
+            "recipe_variable_amount": "null",
+            "stock_amount": "integer",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (roles)": {
+        "status": 200,
+        "shape": {
+            "builtin": "integer",
+            "code": "string",
+            "description": "null",
+            "id": "integer",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (shopping_locations)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "description": "null",
+            "id": "integer",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (stock)": {
+        "status": 404,
+        "shape": {
+            "error_message": "string"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (task_categories)": {
+        "status": 200,
+        "shape": {
+            "active": "integer",
+            "description": "null",
+            "id": "integer",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/objects/{entity}/{objectId} (tasks)": {
+        "status": 200,
+        "shape": {
+            "assigned_to_user_id": "null",
+            "category_id": "integer",
+            "description": "null",
+            "done": "integer",
+            "done_timestamp": "null",
+            "due_date": "null",
+            "id": "integer",
+            "name": "string",
+            "row_created_timestamp": "string",
+            "userfields": "null"
+        }
+    },
+    "GET /api/print/shoppinglist/thermal": {
+        "status": 200,
+        "shape": {
+            "result": "string"
+        }
+    },
+    "GET /api/recipes/fulfillment": {
+        "status": 200,
+        "shape": [
+            {
+                "calories": "integer",
+                "costs": "number",
+                "costs_per_serving": "number",
+                "due_score": "integer",
+                "id": "integer",
+                "missing_products_count": "integer",
+                "need_fulfilled": "integer",
+                "need_fulfilled_with_shopping_list": "integer",
+                "prices_incomplete": "integer",
+                "product_names_comma_separated": "string",
+                "recipe_id": "integer"
+            }
+        ]
+    },
+    "GET /api/recipes/{recipeId}/fulfillment": {
+        "status": 200,
+        "shape": {
+            "calories": "integer",
+            "costs": "number",
+            "costs_per_serving": "number",
+            "due_score": "integer",
+            "id": "integer",
+            "missing_products_count": "integer",
+            "need_fulfilled": "integer",
+            "need_fulfilled_with_shopping_list": "integer",
+            "prices_incomplete": "integer",
+            "product_names_comma_separated": "string",
+            "recipe_id": "integer"
+        }
+    },
+    "GET /api/roles": {
+        "status": 200,
+        "shape": [
+            {
+                "builtin": "integer",
+                "code": "string",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/roles/{roleId}/permissions": {
+        "status": 200,
+        "shape": [
+            {
+                "permission_id": "integer",
+                "role_id": "integer"
+            }
+        ]
+    },
+    "GET /api/stock": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "amount_aggregated": "integer",
+                "amount_measured": "integer",
+                "amount_opened": "integer",
+                "amount_opened_aggregated": "integer",
+                "best_before_date": "string",
+                "due_type": "integer",
+                "is_aggregated_amount": "integer",
+                "product": {
+                    "active": "integer",
+                    "auto_reprint_stock_label": "integer",
+                    "calories": "null",
+                    "cumulate_min_stock_amount_of_sub_products": "integer",
+                    "default_best_before_days": "integer",
+                    "default_best_before_days_after_freezing": "integer",
+                    "default_best_before_days_after_open": "integer",
+                    "default_best_before_days_after_thawing": "integer",
+                    "default_consume_location_id": "null",
+                    "default_purchase_price_type": "integer",
+                    "default_refill_location_id_from": "null",
+                    "default_refill_location_id_to": "null",
+                    "default_stock_label_type": "integer",
+                    "description": "string",
+                    "disable_open": "integer",
+                    "due_type": "integer",
+                    "enable_tare_weight_handling": "integer",
+                    "hide_on_stock_overview": "integer",
+                    "id": "integer",
+                    "import_epoch": "integer",
+                    "location_id": "integer",
+                    "min_stock_amount": "integer",
+                    "move_on_open": "integer",
+                    "name": "string",
+                    "no_own_stock": "integer",
+                    "not_check_stock_fulfillment_for_recipes": "integer",
+                    "parent_product_id": "null",
+                    "picture_file_name": "null",
+                    "product_group_id": "integer",
+                    "qu_id_consume": "integer",
+                    "qu_id_price": "integer",
+                    "qu_id_purchase": "integer",
+                    "qu_id_stock": "integer",
+                    "quick_consume_amount": "integer",
+                    "quick_open_amount": "integer",
+                    "quick_refill_amount": "integer",
+                    "row_created_timestamp": "string",
+                    "shopping_location_id": "null",
+                    "should_not_be_frozen": "integer",
+                    "tare_weight": "integer",
+                    "treat_opened_as_out_of_stock": "integer"
+                },
+                "product_id": "integer",
+                "value": "integer"
+            }
+        ]
+    },
+    "GET /api/stock/bookings/{bookingId}": {
+        "status": 200,
+        "shape": {
+            "amount": "integer",
+            "best_before_date": "string",
+            "correlation_id": "null",
+            "id": "integer",
+            "location_id": "integer",
+            "note": "null",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "price": "null",
+            "product_id": "integer",
+            "purchased_date": "string",
+            "recipe_id": "null",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "spoiled": "integer",
+            "stock_id": "string",
+            "stock_row_id": "null",
+            "transaction_id": "string",
+            "transaction_type": "string",
+            "undone": "integer",
+            "undone_timestamp": "null",
+            "used_date": "null",
+            "user_id": "integer"
+        }
+    },
+    "GET /api/stock/entry/{entryId}": {
+        "status": 200,
+        "shape": {
+            "amount": "integer",
+            "best_before_date": "string",
+            "id": "integer",
+            "import_epoch": "integer",
+            "location_id": "integer",
+            "note": "null",
+            "open": "integer",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "price": "number",
+            "product_id": "integer",
+            "purchased_date": "string",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "stock_id": "string"
+        }
+    },
+    "GET /api/stock/locations/{locationId}/entries": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "id": "integer",
+                "import_epoch": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "open": "integer",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "stock_id": "string"
+            }
+        ]
+    },
+    "GET /api/stock/products/by-barcode/{barcode}": {
+        "status": 200,
+        "shape": {
+            "average_shelf_life_days": "integer",
+            "avg_price": "number",
+            "current_price": "number",
+            "default_consume_location": "null",
+            "default_quantity_unit_consume": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "default_quantity_unit_purchase": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "default_shopping_location_id": "null",
+            "has_childs": "boolean",
+            "is_aggregated_amount": "integer",
+            "last_price": "number",
+            "last_purchased": "string",
+            "last_shopping_location_id": "null",
+            "last_used": "string",
+            "location": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "is_freezer": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            },
+            "next_due_date": "string",
+            "oldest_price": "number",
+            "product": {
+                "active": "integer",
+                "auto_reprint_stock_label": "integer",
+                "calories": "null",
+                "cumulate_min_stock_amount_of_sub_products": "integer",
+                "default_best_before_days": "integer",
+                "default_best_before_days_after_freezing": "integer",
+                "default_best_before_days_after_open": "integer",
+                "default_best_before_days_after_thawing": "integer",
+                "default_consume_location_id": "null",
+                "default_purchase_price_type": "integer",
+                "default_refill_location_id_from": "null",
+                "default_refill_location_id_to": "null",
+                "default_stock_label_type": "integer",
+                "description": "string",
+                "disable_open": "integer",
+                "due_type": "integer",
+                "enable_tare_weight_handling": "integer",
+                "hide_on_stock_overview": "integer",
+                "id": "integer",
+                "import_epoch": "integer",
+                "location_id": "integer",
+                "min_stock_amount": "integer",
+                "move_on_open": "integer",
+                "name": "string",
+                "no_own_stock": "integer",
+                "not_check_stock_fulfillment_for_recipes": "integer",
+                "parent_product_id": "null",
+                "picture_file_name": "null",
+                "product_group_id": "integer",
+                "qu_id_consume": "integer",
+                "qu_id_price": "integer",
+                "qu_id_purchase": "integer",
+                "qu_id_stock": "integer",
+                "quick_consume_amount": "integer",
+                "quick_open_amount": "integer",
+                "quick_refill_amount": "integer",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "should_not_be_frozen": "integer",
+                "tare_weight": "integer",
+                "treat_opened_as_out_of_stock": "integer"
+            },
+            "product_barcodes": [
+                {
+                    "amount": "null",
+                    "barcode": "string",
+                    "id": "integer",
+                    "last_price": "null",
+                    "note": "null",
+                    "product_id": "integer",
+                    "qu_id": "integer",
+                    "row_created_timestamp": "string",
+                    "shopping_location_id": "null"
+                }
+            ],
+            "qu_conversion_factor_price_to_stock": "integer",
+            "qu_conversion_factor_purchase_to_stock": "integer",
+            "quantity_unit_price": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "quantity_unit_stock": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "spoil_rate_percent": "integer",
+            "stock_amount": "integer",
+            "stock_amount_aggregated": "integer",
+            "stock_amount_measured": "integer",
+            "stock_amount_opened": "integer",
+            "stock_amount_opened_aggregated": "integer",
+            "stock_value": "number",
+            "substitution_candidates": {
+                "__empty_list__": true
+            }
+        }
+    },
+    "GET /api/stock/products/{productId}": {
+        "status": 200,
+        "shape": {
+            "average_shelf_life_days": "integer",
+            "avg_price": "number",
+            "current_price": "number",
+            "default_consume_location": "null",
+            "default_quantity_unit_consume": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "default_quantity_unit_purchase": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "default_shopping_location_id": "null",
+            "has_childs": "boolean",
+            "is_aggregated_amount": "integer",
+            "last_price": "number",
+            "last_purchased": "string",
+            "last_shopping_location_id": "null",
+            "last_used": "null",
+            "location": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "is_freezer": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            },
+            "next_due_date": "string",
+            "oldest_price": "number",
+            "product": {
+                "active": "integer",
+                "auto_reprint_stock_label": "integer",
+                "calories": "null",
+                "cumulate_min_stock_amount_of_sub_products": "integer",
+                "default_best_before_days": "integer",
+                "default_best_before_days_after_freezing": "integer",
+                "default_best_before_days_after_open": "integer",
+                "default_best_before_days_after_thawing": "integer",
+                "default_consume_location_id": "null",
+                "default_purchase_price_type": "integer",
+                "default_refill_location_id_from": "null",
+                "default_refill_location_id_to": "null",
+                "default_stock_label_type": "integer",
+                "description": "string",
+                "disable_open": "integer",
+                "due_type": "integer",
+                "enable_tare_weight_handling": "integer",
+                "hide_on_stock_overview": "integer",
+                "id": "integer",
+                "import_epoch": "integer",
+                "location_id": "integer",
+                "min_stock_amount": "integer",
+                "move_on_open": "integer",
+                "name": "string",
+                "no_own_stock": "integer",
+                "not_check_stock_fulfillment_for_recipes": "integer",
+                "parent_product_id": "null",
+                "picture_file_name": "null",
+                "product_group_id": "integer",
+                "qu_id_consume": "integer",
+                "qu_id_price": "integer",
+                "qu_id_purchase": "integer",
+                "qu_id_stock": "integer",
+                "quick_consume_amount": "integer",
+                "quick_open_amount": "integer",
+                "quick_refill_amount": "integer",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "should_not_be_frozen": "integer",
+                "tare_weight": "integer",
+                "treat_opened_as_out_of_stock": "integer"
+            },
+            "product_barcodes": [
+                {
+                    "amount": "null",
+                    "barcode": "string",
+                    "id": "integer",
+                    "last_price": "null",
+                    "note": "null",
+                    "product_id": "integer",
+                    "qu_id": "integer",
+                    "row_created_timestamp": "string",
+                    "shopping_location_id": "null"
+                }
+            ],
+            "qu_conversion_factor_price_to_stock": "integer",
+            "qu_conversion_factor_purchase_to_stock": "integer",
+            "quantity_unit_price": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "quantity_unit_stock": {
+                "active": "integer",
+                "description": "null",
+                "id": "integer",
+                "name": "string",
+                "name_plural": "string",
+                "plural_forms": "null",
+                "row_created_timestamp": "string"
+            },
+            "spoil_rate_percent": "integer",
+            "stock_amount": "integer",
+            "stock_amount_aggregated": "integer",
+            "stock_amount_measured": "integer",
+            "stock_amount_opened": "integer",
+            "stock_amount_opened_aggregated": "integer",
+            "stock_value": "integer",
+            "substitution_candidates": {
+                "__empty_list__": true
+            }
+        }
+    },
+    "GET /api/stock/products/{productId}/entries": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "open": "integer",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "priority": "integer",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "stock_id": "string"
+            }
+        ]
+    },
+    "GET /api/stock/products/{productId}/locations": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "id": "integer",
+                "location_id": "integer",
+                "location_is_freezer": "integer",
+                "location_name": "string",
+                "product_id": "integer"
+            }
+        ]
+    },
+    "GET /api/stock/products/{productId}/price-history": {
+        "status": 200,
+        "shape": [
+            {
+                "date": "string",
+                "price": "number",
+                "shopping_location": "null"
+            }
+        ]
+    },
+    "GET /api/stock/transactions/{transactionId}": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "GET /api/stock/volatile": {
+        "status": 200,
+        "shape": {
+            "due_products": {
+                "__empty_list__": true
+            },
+            "expired_products": {
+                "__empty_list__": true
+            },
+            "missing_products": {
+                "__empty_list__": true
+            },
+            "overdue_products": {
+                "__empty_list__": true
+            }
+        }
+    },
+    "GET /api/system/db-changed-time": {
+        "status": 200,
+        "shape": {
+            "changed_time": "string"
+        }
+    },
+    "GET /api/system/info": {
+        "status": 200,
+        "shape": {
+            "client": "string",
+            "database_engine": "string",
+            "db_version": "integer",
+            "os": "string",
+            "php_version": "string",
+            "sqlite_version": "string",
+            "victual_version": {
+                "ReleaseDate": "string",
+                "Version": "string"
+            }
+        }
+    },
+    "GET /api/system/localization-strings": {
+        "status": 200,
+        "shape": {
+            "domain": "string",
+            "messages": {
+                "": {
+                    "ADMIN": [
+                        "string"
+                    ],
+                    "BATTERIES": [
+                        "string"
+                    ],
+                    "BATTERIES_TRACK_CHARGE_CYCLE": [
+                        "string"
+                    ],
+                    "BATTERIES_UNDO_CHARGE_CYCLE": [
+                        "string"
+                    ],
+                    "CALENDAR": [
+                        "string"
+                    ],
+                    "CHORES": [
+                        "string"
+                    ],
+                    "CHORE_TRACK_EXECUTION": [
+                        "string"
+                    ],
+                    "CHORE_UNDO_EXECUTION": [
+                        "string"
+                    ],
+                    "EQUIPMENT": [
+                        "string"
+                    ],
+                    "MASTER_DATA_EDIT": [
+                        "string"
+                    ],
+                    "RECIPES": [
+                        "string"
+                    ],
+                    "RECIPES_MEALPLAN": [
+                        "string"
+                    ],
+                    "SHOPPINGLIST": [
+                        "string"
+                    ],
+                    "SHOPPINGLIST_ITEMS_ADD": [
+                        "string"
+                    ],
+                    "SHOPPINGLIST_ITEMS_DELETE": [
+                        "string"
+                    ],
+                    "STOCK": [
+                        "string"
+                    ],
+                    "STOCK_CONSUME": [
+                        "string"
+                    ],
+                    "STOCK_EDIT": [
+                        "string"
+                    ],
+                    "STOCK_INVENTORY": [
+                        "string"
+                    ],
+                    "STOCK_OPEN": [
+                        "string"
+                    ],
+                    "STOCK_PURCHASE": [
+                        "string"
+                    ],
+                    "STOCK_TRANSFER": [
+                        "string"
+                    ],
+                    "TASKS": [
+                        "string"
+                    ],
+                    "TASKS_MARK_COMPLETED": [
+                        "string"
+                    ],
+                    "TASKS_UNDO_EXECUTION": [
+                        "string"
+                    ],
+                    "USERS": [
+                        "string"
+                    ],
+                    "USERS_CREATE": [
+                        "string"
+                    ],
+                    "USERS_EDIT": [
+                        "string"
+                    ],
+                    "USERS_EDIT_SELF": [
+                        "string"
+                    ],
+                    "USERS_READ": [
+                        "string"
+                    ],
+                    "adaptive": [
+                        "string"
+                    ],
+                    "bg_BG": [
+                        "string"
+                    ],
+                    "bootstrap-select_locale": [
+                        "string"
+                    ],
+                    "ca": [
+                        "string"
+                    ],
+                    "checkbox": [
+                        "string"
+                    ],
+                    "consume": [
+                        "string"
+                    ],
+                    "cs": [
+                        "string"
+                    ],
+                    "da": [
+                        "string"
+                    ],
+                    "daily": [
+                        "string"
+                    ],
+                    "datatables_localization": [
+                        "string"
+                    ],
+                    "date": [
+                        "string"
+                    ],
+                    "datetime": [
+                        "string"
+                    ],
+                    "de": [
+                        "string"
+                    ],
+                    "el_GR": [
+                        "string"
+                    ],
+                    "en": [
+                        "string"
+                    ],
+                    "en_GB": [
+                        "string"
+                    ],
+                    "es": [
+                        "string"
+                    ],
+                    "et_EE": [
+                        "string"
+                    ],
+                    "fi": [
+                        "string"
+                    ],
+                    "file": [
+                        "string"
+                    ],
+                    "fr": [
+                        "string"
+                    ],
+                    "fullcalendar_locale": [
+                        "string"
+                    ],
+                    "he_IL": [
+                        "string"
+                    ],
+                    "hourly": [
+                        "string"
+                    ],
+                    "hu": [
+                        "string"
+                    ],
+                    "image": [
+                        "string"
+                    ],
+                    "in-alphabetical-order": [
+                        "string"
+                    ],
+                    "inventory-correction": [
+                        "string"
+                    ],
+                    "it": [
+                        "string"
+                    ],
+                    "ja": [
+                        "string"
+                    ],
+                    "ko_KR": [
+                        "string"
+                    ],
+                    "link": [
+                        "string"
+                    ],
+                    "link-with-title": [
+                        "string"
+                    ],
+                    "lt": [
+                        "string"
+                    ],
+                    "manually": [
+                        "string"
+                    ],
+                    "moment_locale": [
+                        "string"
+                    ],
+                    "monthly": [
+                        "string"
+                    ],
+                    "nl": [
+                        "string"
+                    ],
+                    "no": [
+                        "string"
+                    ],
+                    "no-assignment": [
+                        "string"
+                    ],
+                    "number-currency": [
+                        "string"
+                    ],
+                    "number-decimal": [
+                        "string"
+                    ],
+                    "number-integral": [
+                        "string"
+                    ],
+                    "pl": [
+                        "string"
+                    ],
+                    "preset-checklist": [
+                        "string"
+                    ],
+                    "preset-list": [
+                        "string"
+                    ],
+                    "product-opened": [
+                        "string"
+                    ],
+                    "pt_BR": [
+                        "string"
+                    ],
+                    "pt_PT": [
+                        "string"
+                    ],
+                    "purchase": [
+                        "string"
+                    ],
+                    "random": [
+                        "string"
+                    ],
+                    "ro_RO": [
+                        "string"
+                    ],
+                    "ru": [
+                        "string"
+                    ],
+                    "self-production": [
+                        "string"
+                    ],
+                    "sk_SK": [
+                        "string"
+                    ],
+                    "sl": [
+                        "string"
+                    ],
+                    "stock-edit-new": [
+                        "string"
+                    ],
+                    "stock-edit-old": [
+                        "string"
+                    ],
+                    "summernote_locale": [
+                        "string"
+                    ],
+                    "sv_SE": [
+                        "string"
+                    ],
+                    "ta": [
+                        "string"
+                    ],
+                    "text-multi-line": [
+                        "string"
+                    ],
+                    "text-single-line": [
+                        "string"
+                    ],
+                    "timeago_locale": [
+                        "string"
+                    ],
+                    "timeago_nan": [
+                        "string"
+                    ],
+                    "tr": [
+                        "string"
+                    ],
+                    "transfer_from": [
+                        "string"
+                    ],
+                    "transfer_to": [
+                        "string"
+                    ],
+                    "uk": [
+                        "string"
+                    ],
+                    "weekly": [
+                        "string"
+                    ],
+                    "who-least-did-first": [
+                        "string"
+                    ],
+                    "yearly": [
+                        "string"
+                    ],
+                    "zh_CN": [
+                        "string"
+                    ],
+                    "zh_TW": [
+                        "string"
+                    ]
+                }
+            },
+            "plural-forms": "null"
+        }
+    },
+    "GET /api/system/time": {
+        "status": 200,
+        "shape": {
+            "offset": "integer",
+            "time_local": "string",
+            "time_local_sqlite3": "string",
+            "time_utc": "string",
+            "timestamp": "integer",
+            "timezone": "string"
+        }
+    },
+    "GET /api/tasks": {
+        "status": 200,
+        "shape": [
+            {
+                "assigned_to_user": "null",
+                "assigned_to_user_id": "null",
+                "category": "null|object",
+                "category_id": "integer|null",
+                "description": "null",
+                "done": "integer",
+                "done_timestamp": "null",
+                "due_date": "null",
+                "id": "integer",
+                "name": "string",
+                "row_created_timestamp": "string"
+            }
+        ]
+    },
+    "GET /api/user": {
+        "status": 200,
+        "shape": [
+            {
+                "display_name": "string",
+                "first_name": "null",
+                "id": "integer",
+                "last_name": "null",
+                "picture_file_name": "null",
+                "row_created_timestamp": "string",
+                "username": "string"
+            }
+        ]
+    },
+    "GET /api/user/settings": {
+        "status": 200,
+        "shape": {
+            "auto_night_mode_enabled": "boolean",
+            "auto_night_mode_time_range_from": "string",
+            "auto_night_mode_time_range_goes_over_midnight": "boolean",
+            "auto_night_mode_time_range_to": "string",
+            "auto_reload_on_db_change": "boolean",
+            "batteries_due_soon_days": "integer",
+            "calendar_color_batteries": "string",
+            "calendar_color_chores": "string",
+            "calendar_color_meal_plan": "string",
+            "calendar_color_products": "string",
+            "calendar_color_tasks": "string",
+            "chores_due_soon_days": "integer",
+            "chores_overview_swap_tracking_buttons": "boolean",
+            "contract_test_setting": "string",
+            "keep_screen_on": "boolean",
+            "keep_screen_on_when_fullscreen_card": "boolean",
+            "night_mode": "string",
+            "night_mode_enabled_internal": "boolean",
+            "product_presets_default_due_days": "integer",
+            "product_presets_default_stock_label_type": "integer",
+            "product_presets_location_id": "integer",
+            "product_presets_product_group_id": "integer",
+            "product_presets_qu_id": "integer",
+            "product_presets_treat_opened_as_out_of_stock": "boolean",
+            "recipe_ingredients_group_by_product_group": "boolean",
+            "recipes_show_ingredient_checkbox": "boolean",
+            "recipes_show_list_side_by_side": "boolean",
+            "scan_mode_consume_enabled": "boolean",
+            "scan_mode_purchase_enabled": "boolean",
+            "shopping_list_auto_add_below_min_stock_amount": "boolean",
+            "shopping_list_auto_add_below_min_stock_amount_list_id": "integer",
+            "shopping_list_print_group_by_product_group": "boolean",
+            "shopping_list_print_layout_type": "string",
+            "shopping_list_print_show_header": "boolean",
+            "shopping_list_round_up": "boolean",
+            "shopping_list_show_calendar": "boolean",
+            "shopping_list_to_stock_workflow_auto_submit_when_prefilled": "boolean",
+            "show_clock_in_header": "boolean",
+            "show_icon_on_stock_overview_page_when_product_is_on_shopping_list": "boolean",
+            "show_purchased_date_on_purchase": "boolean",
+            "show_warning_on_purchase_when_due_date_is_earlier_than_next": "boolean",
+            "stock_auto_decimal_separator_prices": "boolean",
+            "stock_decimal_places_amounts": "integer",
+            "stock_decimal_places_prices_display": "integer",
+            "stock_decimal_places_prices_input": "integer",
+            "stock_default_consume_amount": "integer",
+            "stock_default_consume_amount_use_quick_consume_amount": "boolean",
+            "stock_default_purchase_amount": "integer",
+            "stock_due_soon_days": "integer",
+            "stock_overview_show_all_out_of_stock_products": "boolean",
+            "tasks_due_soon_days": "integer"
+        }
+    },
+    "GET /api/user/settings/{settingKey}": {
+        "status": 200,
+        "shape": {
+            "value": "string"
+        }
+    },
+    "GET /api/userfields/{entity}/{objectId}": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "GET /api/users": {
+        "status": 200,
+        "shape": [
+            {
+                "display_name": "string",
+                "first_name": "null",
+                "id": "integer",
+                "last_name": "null",
+                "picture_file_name": "null",
+                "row_created_timestamp": "string",
+                "username": "string"
+            }
+        ]
+    },
+    "GET /api/users/{userId}/permissions": {
+        "status": 200,
+        "shape": [
+            {
+                "has_permission": "integer",
+                "id": "integer",
+                "parent": "integer|null",
+                "permission_id": "integer",
+                "permission_name": "string",
+                "user_id": "integer",
+                "via_roles": "null"
+            }
+        ]
+    },
+    "GET /api/users/{userId}/roles": {
+        "status": 200,
+        "shape": {
+            "__empty_list__": true
+        }
+    },
+    "POST /api/batteries/charge-cycles/{chargeCycleId}/undo": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/batteries/{batteryId}/charge": {
+        "status": 200,
+        "shape": {
+            "battery_id": "integer",
+            "id": "integer",
+            "row_created_timestamp": "string",
+            "tracked_time": "string",
+            "undone": "integer",
+            "undone_timestamp": "null"
+        }
+    },
+    "POST /api/batteries/{batteryId}/charge (for undo)": {
+        "status": 200,
+        "shape": {
+            "battery_id": "integer",
+            "id": "integer",
+            "row_created_timestamp": "string",
+            "tracked_time": "string",
+            "undone": "integer",
+            "undone_timestamp": "null"
+        }
+    },
+    "POST /api/chores/executions/calculate-next-assignments": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/chores/executions/{executionId}/undo": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/chores/{choreIdToKeep}/merge/{choreIdToRemove}": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/chores/{choreId}/execute": {
+        "status": 200,
+        "shape": {
+            "chore_id": "integer",
+            "done_by_user_id": "integer",
+            "id": "integer",
+            "row_created_timestamp": "string",
+            "scheduled_execution_time": "null",
+            "skipped": "integer",
+            "tracked_time": "string",
+            "undone": "integer",
+            "undone_timestamp": "null"
+        }
+    },
+    "POST /api/chores/{choreId}/execute (for undo)": {
+        "status": 200,
+        "shape": {
+            "chore_id": "integer",
+            "done_by_user_id": "integer",
+            "id": "integer",
+            "row_created_timestamp": "string",
+            "scheduled_execution_time": "null",
+            "skipped": "integer",
+            "tracked_time": "string",
+            "undone": "integer",
+            "undone_timestamp": "null"
+        }
+    },
+    "POST /api/objects/{entity} (batteries)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (chores)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (chores, spare)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (equipment)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (locations)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (product_barcodes)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (product_groups)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (product_substitutions)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (products)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (recipes)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (recipes_pos)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (shopping_locations)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (task_categories)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (tasks)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/objects/{entity} (tasks, spare)": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/recipes/{recipeId}/consume": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/recipes/{recipeId}/copy": {
+        "status": 200,
+        "shape": {
+            "created_object_id": "string"
+        }
+    },
+    "POST /api/stock/bookings/{bookingId}/undo": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/stock/products/by-barcode/{barcode}/add": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "null",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/by-barcode/{barcode}/consume": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "null",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/by-barcode/{barcode}/inventory": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "null|number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/by-barcode/{barcode}/open": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/by-barcode/{barcode}/transfer": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productIdToKeep}/merge/{productIdToRemove}": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/stock/products/{productId}/add": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/add (for undo)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "null",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/consume": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/consume (for undo)": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/inventory": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "null|string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "string",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/open": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "null",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/products/{productId}/transfer": {
+        "status": 200,
+        "shape": [
+            {
+                "amount": "integer",
+                "best_before_date": "string",
+                "correlation_id": "string",
+                "id": "integer",
+                "location_id": "integer",
+                "note": "null",
+                "opened_amount": "null",
+                "opened_date": "string",
+                "opened_measured_at": "null",
+                "opened_qu_id": "null",
+                "opened_tare": "null",
+                "price": "number",
+                "product_id": "integer",
+                "purchased_date": "string",
+                "recipe_id": "null",
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null",
+                "spoiled": "integer",
+                "stock_id": "string",
+                "stock_row_id": "null",
+                "transaction_id": "string",
+                "transaction_type": "string",
+                "undone": "integer",
+                "undone_timestamp": "null",
+                "used_date": "null",
+                "user_id": "integer"
+            }
+        ]
+    },
+    "POST /api/stock/shoppinglist/add-expired-products": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/add-missing-products": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/add-overdue-products": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/add-product": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/clear": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/shoppinglist/remove-product": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/stock/transactions/{transactionId}/undo": {
+        "status": 204,
+        "shape": "null"
+    },
+    "POST /api/system/log-missing-localization": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/tasks/{taskId}/complete": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/tasks/{taskId}/undo": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/users": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "POST /api/users/{userId}/permissions": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/files/{group}/{fileName}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/objects/{entity}/{objectId} (products)": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/stock/entry/{entryId}": {
+        "status": 400,
+        "shape": {
+            "error_message": "string"
+        }
+    },
+    "PUT /api/user/settings/{settingKey}": {
+        "status": 204,
+        "shape": "empty"
+    },
+    "PUT /api/users/{userId}": {
+        "status": 400,
+        "shape": {
+            "error_message": "string"
+        }
+    },
+    "PUT /api/users/{userId}/roles": {
+        "status": 204,
+        "shape": "empty"
+    }
+}

@@ -22,5 +22,8 @@
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
 		</testsuite>
+		<testsuite name="contract">
+			<file>tests/Pgsql/ContractTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

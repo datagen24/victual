@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract]
 #
 # Twenty-three kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -193,6 +193,24 @@
 # comparison - and rbac for tier 1, PHPUnit against a real PostgreSQL, which run-tests.sh
 # reaches the same way (a phase's line here calling out to another runner) rather than by
 # reimplementing either one.
+#
+# The twenty-fourth, contract, is plan 14 piece 2 (issue #83): the response-contract
+# snapshot ADR-0025 decision 4 said would be written in tier 1 from the start, not as a
+# twenty-fifth bespoke script ported later. It is not a differential phase either - there
+# is only one engine left to boot the application on (ADR-0008), so the "engine vs engine"
+# leg the plan describes is moot and is not attempted here. What it compares instead: the
+# live Slim route table against victual.openapi.json (both directions, so a route removed
+# from one side is as loud as one added to the other); the recorded JSON key set and
+# scalar type of every GET operation's response, for an Admin caller and for the CHILD
+# role, against committed golden files (tests/Pgsql/snapshots/); the CHILD response at
+# every entity permission_fields gates against the Admin one, asserted equal minus exactly
+# the redacted keys; and a completeness sweep of the OpenAPI schemas and the recorded
+# bodies for the price/cost/value vocabulary, failing on any field carrying neither an
+# x-visibility annotation nor a permission_fields row. See tests/Pgsql/ContractTest.php's
+# own docblock for what is and is not invoked - the label pairing/worker/renderer
+# endpoints need real device credentials this harness does not have, and are covered by
+# the route-table/spec parity leg only, the same way plan 25/27's physical print
+# verification stayed outside every other phase here.
 #
 # This script is deliberately thin: it builds the databases, loops, and collects exit
 # codes. Everything that has to decide whether two result sets are the same is PHP, in
@@ -421,6 +439,43 @@ run_rbac_tests() {
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
 		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite rbac; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Response-contract snapshot (plan 14 piece 2, issue #83) -----------------------
+#
+# Same shape as run_rbac_tests(): an empty database PgsqlSchemaTestCase migrates itself,
+# per class, into its own schema.
+
+run_contract_tests() {
+	local dbname="victual_contract"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/contract-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+		// The thermal-print route is in this phase's fixture graph (it is a real /api
+		// operation the snapshot has to cover), and the default TPRINTER_CONNECTOR is a
+		// real device path (/dev/usb/lp0) - pointed at a scratch file instead so the
+		// suite never touches hardware.
+		Setting('TPRINTER_CONNECTOR', '$datapath/printer-out');
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite contract; then
 		failures=$((failures + 1))
 	fi
 
@@ -1476,8 +1531,9 @@ case "$WHICH" in
 	workingcontainer) run_working_container_tests ;;
 	apikeys) run_apikey_tests ;;
 	pgtap) run_pgtap_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap or all)" ;;
+	contract) run_contract_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

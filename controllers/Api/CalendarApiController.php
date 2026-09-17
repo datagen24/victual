@@ -91,7 +91,7 @@ class CalendarApiController extends BaseApiController
 				$vCalendar->addTimeZone(TimeZone::createFromPhpDateTimeZone(new \DateTimeZone(date_default_timezone_get()), $minDate, $maxDate));
 			}
 
-			$response->write((new CalendarFactory())->createCalendar($vCalendar));
+			$response->getBody()->write((string)(new CalendarFactory())->createCalendar($vCalendar));
 			$response = $response->withHeader('Content-Type', 'text/calendar; charset=utf-8');
 			return $response->withHeader('Content-Disposition', 'attachment; filename="Victual.ics"');
 		});
