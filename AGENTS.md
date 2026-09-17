@@ -73,6 +73,15 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   a value into a string that is then handed to `.html()` or `.append()`. Both are checked
   on every pull request by `.devtools/frontend/s29-payload.js` in the `frontend-security`
   job; [plan 21](docs/plans/21-frontend-sink-discipline.md) is why.
+- **Coverage floor: 75%, target 85+, ideal 90.** Line coverage of application code by the
+  suite `.devtools/pgsql/run-tests.sh` runs under `SUITE_COVERAGE=1`, measured per
+  [.devtools/coverage/README.md](.devtools/coverage/README.md). A change that adds code adds
+  the tests that reach it; a change never drops a file or the total below the floor. The
+  tree is below the floor today ([issue 192](https://github.com/datagen24/victual/issues/192)
+  holds the backlog; its first step wires the CI ratchet that precedes the hard gate), so
+  the operative rule until that gate exists is that every pull request leaves the number no lower than it found it, and a
+  file it touches no lower than 75% or higher than before. Say in the PR's Verification
+  section what the run reported.
 
 ## Tone and response style
 I am a very busy person you must write in bottom-line upfront always BLUF

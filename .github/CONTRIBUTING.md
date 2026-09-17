@@ -57,6 +57,13 @@ judged against here, and they are stricter than they look:
   checked it against instead. [14](../docs/plans/14-contract-and-regression-scaffolding.md)
   piece 2's response snapshot is what replaces the comparison, and the suite is retired
   when it lands.
+- **Coverage has a floor of 75%; aim for 85 or better.** Run the suite with
+  `SUITE_COVERAGE=1` and read the per-class summary it prints
+  ([.devtools/coverage/README.md](../.devtools/coverage/README.md)). Code you add comes with
+  the tests that reach it, and nothing you touch ends lower than it started or below 75%.
+  The tree is still climbing to the floor ([issue 192](https://github.com/datagen24/victual/issues/192)),
+  and its first step is a CI ratchet that only rises until the hard gate is on; until
+  that is wired, a pull request that lowers the number has not met this bar.
 
 The [pull request template](PULL_REQUEST_TEMPLATE.md) asks for exactly those three.
 

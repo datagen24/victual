@@ -66,7 +66,11 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   closed it. Fixed plan 32's status line (still
   said "ready to start"), marked 0283 in master, rewrote the root README's Labels row (six
   kinds, webhook gone) and the wave-independent cell. Next unclaimed migration: 0286. Wave
-  5's remaining items: #83 (14 piece 2, no longer blocked), then #86 and #85.
+  5's remaining items: #83 (14 piece 2, no longer blocked), then #86 and #85. **Coverage
+  floor decided the same day**: 75% minimum, 85+ target, 90 ideal, written into the
+  constitution, AGENTS.md, CONTRIBUTING and the PR template; master is at 37.81% and
+  [issue #192](https://github.com/datagen24/victual/issues/192) holds the 42-class backlog
+  and the ratchet-then-gate plan. Nothing is wired in CI yet; that is 192's first step.
 
 - **2026-09-15 — Issue #176 closed: 19 piece 2's four open price channels** (`0282.pgsql.php`,
   branch `claude/issue-176-regression-aqz409`). The one that mattered was the importer:
