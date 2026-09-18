@@ -59,6 +59,11 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-18 — Wave 5 order set**: 05 A/C (0286 claimed, snapshot regenerates with it)
+  and 20's remaining pieces (#133) first because they change responses and deployment;
+  then 02 (#86); then 18's HA checks (#139). Found 14 piece 2 had landed 2026-09-17
+  (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
+  closed and fixed. Next unclaimed migration: 0287.
 - **2026-09-17 — Issue #83 / plan 14 piece 2 landed** (branch `claude/nifty-fermat-g3mffe`),
   the largest remaining item in wave 5: the response-contract snapshot, `tests/Pgsql/ContractTest.php`
   on `PgsqlSchemaTestCase` per ADR-0025 decision 4, a `contract` phase in `run-tests.sh`/`phpunit.xml`
@@ -141,27 +146,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   [issue #192](https://github.com/datagen24/victual/issues/192) holds the 42-class backlog
   and the ratchet-then-gate plan. Nothing is wired in CI yet; that is 192's first step.
 
-- **2026-09-15 — Issue #176 closed: 19 piece 2's four open price channels** (`0282.pgsql.php`,
-  branch `claude/issue-176-regression-aqz409`). The one that mattered was the importer:
-  `TRUNCATE ... CASCADE` on `permission_hierarchy` empties `permission_fields` through its FK,
-  so **every import removed price redaction entirely and left `PricesVisible()` false even for
-  ADMIN** — a security feature that silently uninstalled itself. Fixed by extracting the seed to
-  `db/pgsql/prices-seed.sql`, the way `roles-seed.sql` already was, applied by the new migration
-  and re-applied by `DatabaseImporter` after its verbatim-copy assertions. Also: `/stock/bookings/{id}`
-  redacted (its sibling `StockTransactions` had been and it had not), policy rows for
-  `product_barcodes`/`product_barcodes_view` `last_price`, four Blade pages moved off the feature
-  flag onto `$pricesVisible` and made to *omit* the value rather than `d-none` it, `/stockreports/spendings`
-  now 403, the `'*'` whole-object marker wired into `AssertWholeObjectReadable()`, and the
-  `NaN`/`undefined` half in `shoppinglist.js`/`mealplan.js`. **Both defects were reproduced before
-  being fixed** — removing the `StockBooking` redaction fails 3 of the new assertions, removing the
-  importer's seed re-application fails 6 — which is the evidence the claim-check asks for and is
-  cheap to get here because the phases already isolate one identity at a time. The audit for other
-  injected regressions found one real leftover (`stockoverview.blade.php`'s Value and Default-store
-  `<td>`s were never paired with their `d-none` headers — invisible while it only fired on the
-  flag, visible now that every Child hits it) and one stale doc #178 does not list (the Manual's
-  roles page said price visibility was "still-unbuilt" on the day it shipped). Lesson: when a
-  feature's state lives in a table the SQLite import span cannot carry, the importer is part of
-  the feature — check it in the same change, not in the follow-up issue.
 
 ## DOCTRINE (operator-locked decisions)
 
