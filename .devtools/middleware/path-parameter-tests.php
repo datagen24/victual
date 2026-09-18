@@ -76,6 +76,15 @@ function BuildApp(): \Slim\App
 	return $app;
 }
 
+// A constraint that itself contains braces - a bounded quantifier, {1,9} - which is what
+// StripFastRouteConstraints has to get right by reusing FastRoute's own recursive
+// placeholder regex rather than a hand-rolled one: a pattern that just stops at the
+// first "}" splits this as "{id:[0-9]{1,9}" + a stray trailing "}", not "{id}".
+Check(
+	PathParameterMiddleware::StripFastRouteConstraints('/labels/{kind:location|product}/{id:[0-9]{1,9}}/print') === '/labels/{kind}/{id}/print',
+	'StripFastRouteConstraints mishandled a constraint containing its own braces'
+);
+
 // An {id} that FastRoute's own {id:[0-9]+} constraint already lets through - all
 // digits, so the route matches - but that overflows what filter_var(..., FILTER_VALIDATE_INT)
 // accepts. This is the case only PathParameterMiddleware catches on this route (a
