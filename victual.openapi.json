@@ -3,7 +3,7 @@
 	"info": {
 		"title": "Victual REST API",
 		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).",
-		"version": "xxx",
+		"version": "4.6.0",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
 			"url": "https://github.com/datagen24/victual/blob/master/LICENSE.md"
@@ -306,6 +306,36 @@
 					},
 					"404": {
 						"description": "Target not found"
+					}
+				}
+			}
+		},
+		"/openapi/specification": {
+			"get": {
+				"summary": "Returns this OpenAPI specification",
+				"tags": [
+					"System"
+				],
+				"responses": {
+					"200": {
+						"description": "This document",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
 					}
 				}
 			}
@@ -9897,7 +9927,7 @@
 			},
 			"ProductPriceHistory": {
 				"type": "object",
-				"description": "Every field here is a price. GET /stock/products/{productId}/price-history refuses the whole call with 403 for a caller without STOCK_PRICES_VIEW rather than filtering these fields out of an otherwise-200 response - see x-visibility on the operation, not on individual properties here.",
+				"description": "Every field here is a price. GET /stock/products/{productId}/price-history refuses the whole call with 403 for a caller without STOCK_PRICES_VIEW rather than filtering these fields out of an otherwise-200 response - see this schema's own x-visibility, which classifies every property under it rather than needing one per property.",
 				"x-visibility": "STOCK_PRICES_VIEW",
 				"properties": {
 					"date": {
