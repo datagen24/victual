@@ -84,6 +84,11 @@ YAML
 # 4. http://localhost:8080/
 ```
 
+**The passwords in this walkthrough are local-only.** `victual_migrate` owns the schema, and
+the Secrets above write both passwords in the clear into objects a `podman kube play` leaves
+on the machine. Use them against the throwaway PostgreSQL in step 2 and nothing else; for a
+persistent or shared database pick your own and keep them out of anything committed.
+
 **The ConfigMap and both Secrets must be in the stream, and each Secret must be a
 Kubernetes `Secret`.** This is worth stating plainly because two plausible-looking
 alternatives both fail:

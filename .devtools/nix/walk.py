@@ -87,12 +87,23 @@ class Walker:
                 status, text, location = err.code, err.read().decode("utf-8", "replace"), err.headers.get("Location")
 
             if follow and status in (301, 302, 303, 307, 308) and location:
-                url = urllib.parse.urljoin(url, location)
-                method, data = "GET", None
-                headers.pop("Content-Type", None)
+                target = urllib.parse.urljoin(url, location)
+                # The server chooses Location, so an instance under test could send this walk
+                # to another host or scheme. Only the origin that was asked for is followed.
+                if not self.same_origin(target):
+                    return 599, urllib.parse.urlparse(url).path, f"redirect to another origin refused: {target}"
+                url = target
+                # 307 and 308 repeat the request as it was; the others become a GET.
+                if status in (301, 302, 303):
+                    method, data = "GET", None
+                    headers.pop("Content-Type", None)
                 continue
             return status, urllib.parse.urlparse(url).path, text
         return 599, path, "redirect loop"
+
+    def same_origin(self, url):
+        a, b = urllib.parse.urlparse(url), urllib.parse.urlparse(self.base)
+        return a.scheme in ("http", "https") and (a.scheme, a.netloc) == (b.scheme, b.netloc)
 
     # -- recording -----------------------------------------------------------------------
 

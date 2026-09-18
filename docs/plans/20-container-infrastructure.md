@@ -446,7 +446,7 @@ when the table is missing — which is only ever the migrate role, on an empty d
 | `victual-app` serves under the role with no DDL rights | The pod above, `victual_app` in the `app` container's environment; [`.devtools/nix/walk.py`](../../.devtools/nix/walk.py) drove 42 pages, 79 API reads and 7 writes (location create/edit/delete, product create, stock add/consume). No `EROFS`, no permission error |
 | The role really cannot run DDL | From inside the running `victual-app` container, through its own PHP: `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE` and `CREATE ROLE` all refused `42501`; `rolsuper` and `rolcreaterole` both 0 |
 | `victual-migrate` is the only image whose environment can migrate | `podman inspect`: `victual-app` holds `victual_app`, `victual-web` no `VICTUAL_DB_*` variable; the migrate image with `victual_migrate` reported "Schema is up to date at migration 286". `test_deploy_pod_parity.py` holds the manifest half of that from now on |
-| The fix is what makes it work | `tests/Pgsql/CredentialSplitTest.php`, phase `credentialsplit` in `run-tests.sh`: 3 tests, 28 assertions, run against PostgreSQL 16. With `PostgresDialect.php` reverted to master the same test fails with `SQLSTATE[42501] … permission denied for schema public` |
+| The fix is what makes it work | `tests/Pgsql/CredentialSplitTest.php`, phase `credentialsplit` in `run-tests.sh`: 3 tests, 29 assertions, run against PostgreSQL 16. With `PostgresDialect.php` reverted to master the same test fails with `SQLSTATE[42501] … permission denied for schema public` |
 
 What this does **not** establish: that `victual_app` is the *minimum*. It has DML on every
 table, including `migrations`, because a tighter grant list would have to be reapplied after

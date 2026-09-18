@@ -43,6 +43,10 @@ $attempts = [
 	// The sequence behind an INSERT, which is what USAGE on sequences is for: an INSERT
 	// that omits the id draws from it, and a role without the grant fails there.
 	'sequence' => "SELECT nextval(pg_get_serial_sequence('locations', 'id'))",
+	// setval() is what PostgresDialect::ResyncGeneratedIdCounters() calls after the demo and
+	// prerelease generators insert explicit ids, and it needs UPDATE on the sequence, which
+	// nextval() does not - so a grant that lost UPDATE would pass the line above.
+	'sequence_setval' => "SELECT setval(pg_get_serial_sequence('locations', 'id'), (SELECT COALESCE(MAX(id), 1) FROM locations))",
 	// The table the migrate role creates *after* roles.sql ran, which is what the default
 	// privileges are for; the test creates it, this reads and writes it.
 	'later_table_insert' => "INSERT INTO credential_split_later (note) VALUES ('written by the app role')",

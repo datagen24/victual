@@ -126,7 +126,7 @@ class CredentialSplitTest extends TestCase
 		$this->assertNull($report['connect_error'], 'the app role could not connect: ' . ($report['connect_error'] ?? ''));
 		$this->assertSame(self::APP_ROLE, $report['connected_as']);
 
-		foreach (['select_view', 'insert', 'update', 'delete', 'sequence', 'later_table_insert', 'later_table_select'] as $allowed)
+		foreach (['select_view', 'insert', 'update', 'delete', 'sequence', 'sequence_setval', 'later_table_insert', 'later_table_select'] as $allowed)
 		{
 			$this->assertNull($report['attempts'][$allowed], "the app role was refused {$allowed}: SQLSTATE " . var_export($report['attempts'][$allowed], true));
 		}

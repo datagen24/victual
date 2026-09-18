@@ -6,7 +6,11 @@
 --        -v app_password="$APP_PASSWORD" \
 --        -f deploy/postgres/roles.sql "postgresql://<superuser>@<host>/victual"
 --
--- Run it once, as a role that can create roles, against the database Victual will use.
+-- Run it once, against the database Victual will use, as a superuser. That is the only way it
+-- has been run. A lesser role would need at least CREATEROLE, ownership of the database, and
+-- membership in victual_migrate (ALTER SCHEMA ... OWNER TO and ALTER DEFAULT PRIVILEGES FOR
+-- ROLE both require it, and CREATEROLE does not confer it automatically on every version);
+-- this script does not grant that membership.
 -- It is safe to run again: roles are created only when missing, their restricted attributes
 -- and passwords are reset to what is written here and given, and every grant is repeatable. Run it *after* the first migration as
 -- well as before — `GRANT ... ON ALL TABLES` covers what exists, and the default
