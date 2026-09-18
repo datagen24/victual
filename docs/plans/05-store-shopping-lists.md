@@ -60,14 +60,13 @@ choosing every time. Falls back to the current behaviour when null.
 
 ### Schema
 
-Three columns and one table, and they do not all take the same migration shape. The rule
-is `db/pgsql/README.md`'s three cases — a portable `NNNN.sql`, a per engine
-`NNNN.sqlite.sql` / `NNNN.pgsql.sql` pair, or a documented engine-exclusive migration
-carrying `@engine-exclusive`. This plan uses the first two and has no business with the
-third: every change here is wanted on both engines, which is what would have to be false
-to write `@engine-exclusive` and mean it.
+Three columns and one table. **Since [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)
+every migration above 0265 is PostgreSQL-only**, so both ship as `NNNN.pgsql.sql` and the
+two-engine discussion that follows is history: it was written when SQLite was still a
+runtime engine, and it is kept because it explains the shapes the frozen range 0256–0265
+uses. Nothing here is `@engine-exclusive` in that range's sense; there is simply one engine.
 
-**A and C — one portable `NNNN.sql`.** All three are nullable `INTEGER` columns added to
+**A and C — one migration, `0286.pgsql.sql`.** All three are nullable `INTEGER` columns added to
 existing tables:
 
 ```sql

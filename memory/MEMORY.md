@@ -59,6 +59,11 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-18 — Wave 5 order set**: 05 A/C (0286 claimed, snapshot regenerates with it)
+  and 20's remaining pieces (#133) first because they change responses and deployment;
+  then 02 (#86); then 18's HA checks (#139). Found 14 piece 2 had landed 2026-09-17
+  (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
+  closed and fixed. Next unclaimed migration: 0287.
 - **2026-09-17 — Issue #83 / plan 14 piece 2 landed** (branch `claude/nifty-fermat-g3mffe`),
   the largest remaining item in wave 5: the response-contract snapshot, `tests/Pgsql/ContractTest.php`
   on `PgsqlSchemaTestCase` per ADR-0025 decision 4, a `contract` phase in `run-tests.sh`/`phpunit.xml`
@@ -91,11 +96,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   Full account: [plan 14's Executed section](../docs/plans/14-contract-and-regression-scaffolding.md#executed).
   Next: retiring the SQLite differential harness (unblocked by this landing, not performed by
   it), plan 22, issue 192's remaining items.
-- **2026-09-18 — Wave 5 order set**: 05 A/C (0286 claimed, snapshot regenerates with it)
-  and 20's remaining pieces (#133) first because they change responses and deployment;
-  then 02 (#86); then 18's HA checks (#139). Found 14 piece 2 had landed 2026-09-17
-  (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
-  closed and fixed. Next unclaimed migration: 0287.
 - **2026-09-17 — ADR-0025 accepted** (bookkeeping PR after PR #194's spikes): status line
   annotates each prerequisite with what met it and records three edges honestly — the
   ported phase migrates its own schema (decision 3 addendum), the extension lives in the

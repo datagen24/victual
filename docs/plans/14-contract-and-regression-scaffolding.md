@@ -621,7 +621,8 @@ it worked.
 
 ## Executed
 
-Wave 0, landed 2026-08-27 to 2026-08-29. Pieces 1, 3 and 4; piece 2 is untouched.
+Wave 0, landed 2026-08-27 to 2026-08-29: pieces 1, 3 and 4. Piece 2 landed 2026-09-17 in
+wave 5; its own entry follows the wave 0 items below.
 
 - **`40e1f57f` — the dev/CI environment and the migration CLI.** The `Dockerfile` and
   `docker-compose.yml` this plan's Today section says do not exist now do, and
