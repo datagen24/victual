@@ -59,6 +59,23 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-18 — Plan 20 / issue #133** (branch `claude/issue-133-f49546`): credential split
+  done — `deploy/postgres/roles.sql` (`victual_migrate` owns the schema, `victual_app` is DML
+  only), a Secret per workload in both pod manifests. The first run of the restricted role could
+  not connect: `PostgresDialect::OnConnected()` ran `CREATE TABLE IF NOT EXISTS` on every
+  connection and PG checks schema CREATE before existence; now `to_regclass()` first.
+  `tests/Pgsql/CredentialSplitTest.php` (`run-tests.sh credentialsplit`) holds it, verified by
+  reverting the fix. `zip` and `xmlwriter` trimmed from `nix/php.nix` (listed on callers that
+  do not exist); simplexml/openssl/dom/curl kept, each with a measured or sourced reason.
+  `.devtools/nix/walk.py` walks every page + API + a write cycle over HTTP and is now a step in
+  the `nix` workflow. **Found, not fixed** (spawned as tasks): `GET /` and `/mealplan` 500 on
+  master. **Not done, needs a cluster**: `deploy/k3s/victual.yaml` is validated structurally
+  only (rootless podman cannot host k3s: no cpuset cgroup v2); plan 25's verification 12 and
+  #93 stay open. SIGTERM half of check 9 measured on podman: php-fpm resets a DB-blocked
+  request on SIGQUIT too. Piece 3's issue text was stale (boot test has been on the Nix images
+  since 09-04). Warm nix builder: `podman commit victual-nix-builder` then
+  `BUILDER=… NIX_IMAGE=… nix/build-in-podman.sh` (existing builder is bound to another
+  worktree). Local `master` was stale; branch from `origin/master`.
 - **2026-09-18 — Plan 05 parts A/C landed**, issue #85: `migrations/0286.pgsql.sql` —
   three nullable columns (`shopping_lists.shopping_location_id`,
   `products.default_shopping_list_id`, `recipes.default_shopping_list_id`), no defaults,
@@ -124,38 +141,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   compose PostgreSQL image not the dev image, and `check-pgtap-coverage.php` is proven but
   not gating CI until the sixteen pre-pgTAP names are listed (issue 192's ratchet shape).
   Next: #83 in PHPUnit, #192 items 1–2, the ratchet.
-- **2026-09-17 — ADR-0025's five acceptance spikes executed** (branch
-  `claude/adr-0025-spike-execution-893row`), spike 2 first as the record requires since it
-  gates the other four. **Spike 1**: `composer require --dev phpunit/phpunit` resolved
-  `11.5.56` against the `php: ^8.4.1` floor with no `php-code-coverage ^11.0` conflict.
-  **Spike 2 (the gate, passed)**: `.devtools/pgsql/rbac-tests.php` ported to
-  `tests/Pgsql/RbacTest.php`, a new `Victual\Tests\Support\PgsqlSchemaTestCase` giving
-  each PHPUnit class its own PostgreSQL schema (migrated in-process via
-  `DatabaseMigrationService::MigrateDatabase()`) with `DatabaseService`'s singleton
-  reflection-injected onto it — the label suites' own injection pattern, extended to the
-  real migration path. Five identity-fixed scenarios (default roles, the two own-picture
-  exceptions) still spawn their own process via a new
-  `tests/Pgsql/rbac-subprocess-helper.php`, attaching to the class's schema by env var.
-  `run-tests.sh rbac` now runs `phpunit --testsuite rbac`; per-class coverage is identical
-  or higher on every RBAC class, three points lower only in bootstrap plumbing the
-  schema-per-class design no longer runs as a separate process (`.spike-adr25/RESULTS.md`
-  has the full diff). **Spike 3**: pgTAP installs into the stock `postgres:16` image and
-  `pg_prove` into the stock dev image with a plain `apt-get install` each side - no custom
-  base image; wired into `tests.yml` (`docker exec` into the running service container)
-  and `docker-compose.yml` (`postgres` now builds `.devtools/pgtap/postgres.Dockerfile`).
-  **Spike 4**: `.devtools/pgtap/010-locations-trigger-family.sql`, 8 pgTAP assertions
-  against migrations 0269/0273's real trigger family (self-parent, cycle, the six-node
-  depth limit, the child guard, the retirement snapshot), all against a fully migrated
-  database. **Spike 5**: `.devtools/pgtap/check-pgtap-coverage.php` (the shape of
-  `check-migrations.php`) parses `.devtools/pgtap/README.md`'s table against every
-  migration above the SQLite baseline; proven against the real tree's own backlog (16
-  unlisted names across 5 migrations) rather than a synthetic fixture. **Not done**:
-  wiring `check-pgtap-coverage.php` into CI (would fail on those 16 pre-existing names;
-  tracked in the README as future work, same ratchet-then-gate shape as issue 192) and
-  porting the other four bespoke phases to PHPUnit (this record's decision 3 - one at a
-  time, `run-tests.sh` stays the entry point). PR not yet opened as of this entry.
-
-
 ## DOCTRINE (operator-locked decisions)
 
 - [Verification discipline](feedback_verification_discipline.md) — "it loads" is not

@@ -28,9 +28,11 @@ curl cannot pass. Plus a third that no check could have found: every error page 
 images was a fatal error, because `GetSystemInfo()` opened a SQLite connection these images
 have no driver for.
 
-Plan 20's verification section is still the list, and two of its ten are open: the
-credential split (check 8) needs a role with no DDL rights, where the bootstrap uses one
-superuser, and the SIGTERM half of the signal check (9) is not done.
+Plan 20's verification section is still the list. As of 2026-09-18 the credential split
+(check 8) is done — `victual-app` runs under a role with no DDL rights, see
+[deploy/postgres/roles.sql](../deploy/postgres/roles.sql) — and so is the extension list
+(check 6, which trimmed `zip` and `xmlwriter`). Open, and needing a cluster: the SIGTERM half
+of the signal check (9), and the K3S apply.
 
 ## What gets built
 

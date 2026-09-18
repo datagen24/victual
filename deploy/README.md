@@ -19,9 +19,11 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | File | What it is |
 |---|---|
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
+| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. **Not applied to a cluster yet** — it passes `check_deploy_manifest.py` and `kubectl apply --dry-run=client`, and `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
+| [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
+| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer (a CronJob) and the label worker (a Deployment); neither holds a database credential |
 
-A k3s `Deployment`, `Service` and the ConfigMap/Secret shapes below as real manifests
-arrive with plan 20's second piece. The pod manifest is a Kubernetes object rather than
+The pod manifest is a Kubernetes object rather than
 a compose file on purpose: `podman kube play` gives the two serving containers a shared
 network namespace exactly as Kubernetes does, so `127.0.0.1:9000` means the same thing on
 a laptop and in the cluster, and there is one manifest to keep true instead of two.
@@ -34,8 +36,16 @@ nix run .#load
 
 # 2. A throwaway PostgreSQL. Not a deployment artifact; a database to point at.
 podman run -d --name victual-db \
-  -e POSTGRES_USER=victual -e POSTGRES_PASSWORD=victual -e POSTGRES_DB=victual \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=admin -e POSTGRES_DB=victual \
   -p 5432:5432 postgres:16
+
+# 2b. The two roles the pod connects as. The superuser above only bootstraps; nothing in
+#     the pod ever holds it. See "Two database roles" below. Wait over TCP first: the
+#     image's init-time server listens on its socket only, so a socket check passes early.
+until podman exec victual-db pg_isready -q -h 127.0.0.1 -U postgres -d victual; do sleep 1; done
+podman exec -i victual-db psql -q -v ON_ERROR_STOP=1 -U postgres -d victual \
+  -v db=victual -v migrate_password=victual-migrate -v app_password=victual-app \
+  < deploy/postgres/roles.sql
 
 # 3. The pod, with the ConfigMap and Secret it references appended to the same stream.
 { cat deploy/podman/victual.yaml; cat <<'YAML'
@@ -50,32 +60,39 @@ data:
   VICTUAL_DB_HOST: host.containers.internal
   VICTUAL_DB_PORT: "5432"
   VICTUAL_DB_NAME: victual
-  VICTUAL_DB_USER: victual
   VICTUAL_FILE_STORAGE: database
   VICTUAL_BASE_URL: http://localhost:8080
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: victual-secrets
-data:
-  # base64, because that is what a Kubernetes Secret's `data` holds. "victual".
-  VICTUAL_DB_PASSWORD: dmljdHVhbA==
+  name: victual-db-migrate
+stringData:
+  VICTUAL_DB_USER: victual_migrate
+  VICTUAL_DB_PASSWORD: victual-migrate
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-db-app
+stringData:
+  VICTUAL_DB_USER: victual_app
+  VICTUAL_DB_PASSWORD: victual-app
 YAML
 } | podman kube play -
 
 # 4. http://localhost:8080/
 ```
 
-**Both the ConfigMap and the Secret must be in the stream, and the Secret must be a
+**The ConfigMap and both Secrets must be in the stream, and each Secret must be a
 Kubernetes `Secret`.** This is worth stating plainly because two plausible-looking
 alternatives both fail:
 
 - `podman kube play --secret …` takes a *podman* secret (`podman secret create`), which
   is not the same object. Passing one fails with
-  `secret victual-secrets is not valid JSON/YAML: cannot unmarshal string into Go value of type v1.Secret`.
+  `secret victual-db-app is not valid JSON/YAML: cannot unmarshal string into Go value of type v1.Secret`.
 - `--configmap /dev/stdin` can only supply the ConfigMap, so the manifest is still
-  rejected with `no secret with name or id "victual-secrets"`.
+  rejected with `no secret with name or id "victual-db-app"`.
 
 Concatenating the documents, as above, is the form that works. `VICTUAL_FILE_STORAGE`
 belongs in the ConfigMap rather than being optional: this pod mounts nothing writable, so
@@ -103,13 +120,37 @@ The minimum for a PostgreSQL deployment:
 | Variable | Why |
 |---|---|
 | `VICTUAL_DB_DRIVER=pgsql` | The only value there is, since ADR-0008's retirement; set explicitly so the pod's configuration says what it runs on rather than relying on a default |
-| `VICTUAL_DB_HOST`, `_PORT`, `_NAME`, `_USER` | Connection |
-| `VICTUAL_DB_PASSWORD` | A Secret, never a ConfigMap |
+| `VICTUAL_DB_HOST`, `_PORT`, `_NAME` | Connection, from the ConfigMap |
+| `VICTUAL_DB_USER`, `VICTUAL_DB_PASSWORD` | From a Secret, **one Secret per workload** — see below. Never in the ConfigMap |
 | `VICTUAL_BASE_URL` | What the ingress publishes |
 | `VICTUAL_MODE=production` | Any other value disables authentication and generates demo data |
 
 `VICTUAL_DATAPATH` (`/data`) and `VICTUAL_VIEWCACHE_PATH` (the baked, read-only cache in
 the image's store path) are set by the image and should be left alone.
+
+### Two database roles
+
+`victual-migrate` and `victual-app` do not share a database credential
+([ADR-0010](../docs/adr/0010-workload-standard.md) property 3, plan 20 verification 8).
+[`postgres/roles.sql`](postgres/roles.sql) creates both, once, as a role that can create roles:
+
+| Role | Held by | Can |
+|---|---|---|
+| `victual_migrate` | the `migrate` initContainer, in the Secret `victual-db-migrate` | Everything: it owns the schema, so it is the only role that can `CREATE`, `ALTER` and `DROP` |
+| `victual_app` | the `app` container, in the Secret `victual-db-app` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables and `USAGE` on sequences, including on tables a later migration creates. Not `CREATE`, `ALTER`, `DROP`, `TRUNCATE` or `TRIGGER` |
+| — | the `web` container | Nothing; it holds no database variable at all |
+
+Run the script before the first migration or after it: it is repeatable. Three consequences
+worth knowing before they surprise anyone: **`VICTUAL_MIGRATE_ON_ROOT_REQUEST` cannot be turned
+on** in a pod running as `victual_app`, since migrating in a request needs DDL; a database
+already populated by another role has to be handed to `victual_migrate` first (`REASSIGN OWNED
+BY <old> TO victual_migrate`) or its tables stay owned by someone the migrations cannot alter;
+and `bin/victual-db-import`, which `TRUNCATE`s, belongs with the migrate credential, never the
+app's.
+
+The application had to change for this to work. `PostgresDialect::OnConnected()` used to run
+`CREATE TABLE IF NOT EXISTS` on every connection, and PostgreSQL checks `CREATE` on the schema
+before it checks whether the table exists, so a role with no `CREATE` could not connect.
 
 **Three security-context settings are load-bearing**, and each has a failure that does
 not say what it is:
@@ -133,6 +174,16 @@ nginx's graceful shutdown. Kubernetes ignores the image's `StopSignal` and sends
 again. On a cluster too old for that field the containers get `SIGTERM`, which both
 treat as "stop now" — acceptable for stateless request handlers, but not the same thing,
 and worth knowing before wondering where a truncated request went.
+
+**Measured, 2026-09-18, on podman rather than a cluster** (plan 20's Executed section has the
+method): with a request held inside PostgreSQL, `SIGQUIT` to nginx let the response finish and
+`SIGTERM` dropped the connection; php-fpm answered **both** by exiting within about a second and
+resetting the request, so nginx returned 502. That contradicts the sentence above for the app
+tier — "SIGQUIT is php-fpm's graceful stop" is what the documentation says and not what this
+deployment showed for a request blocked on the database. A request not blocked on the database
+was not measured. `lifecycle.stopSignal` is alpha (Kubernetes 1.33, feature gate
+`ContainerStopSignals`) and needs `spec.os.name`; on a cluster without the gate the API server
+drops the field.
 
 **Migrations run before anything serves.** The `migrate` initContainer runs
 `bin/victual-migrate`, which is a no-op against an up-to-date database, takes a
@@ -159,6 +210,11 @@ readiness probe, which renders `/login` through Blade.
 ## What this deployment does not yet do
 
 Stated plainly because the gap is the point of tracking it:
+
+- **The k3s manifest has never been applied to a cluster.** It is `deploy/k3s/victual.yaml`,
+  it passes the structural checks, and the pod it describes is the one that serves under
+  podman. A K3S apply that reaches a printer is plan 25's verification 12, and it is what keeps
+  [issue 93](https://github.com/datagen24/victual/issues/93) open.
 
 - ~~**One writable mount remains, and it is not the view cache.**~~ **Done, 2026-09-04.**
   It named `PrerequisiteChecker::checkForConfigFile()` as the only thing keeping `/data`,
