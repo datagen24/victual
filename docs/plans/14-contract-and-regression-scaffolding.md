@@ -4,13 +4,14 @@
 one command, add a response-contract snapshot so the additive-API rule is enforced by a
 failing test rather than by vigilance, and put both behind minimal CI.
 **Depends on:** nothing. Everything else in the roadmap is easier once this exists.
-**Status:** **partly landed.** Pieces 1, 3 and 4 are in the tree — the runnable suite, CI,
-and the coverage reporting added after the plan was written — landed as wave 0 between
-2026-08-27 and 2026-08-29. **Piece 2, the response-contract snapshot, is not built**, and
-remains scheduled for wave 5 after [11](11-api-error-handling.md) has stabilised the
-failure paths it would record. See [Executed](#executed) for what landed and what the
-suite grew in the doing. Everything below is the plan as written and reviewed; where it
-describes piece 1 in the future tense, read the Executed section for the present one.
+**Status:** **Landed.** Pieces 1, 3 and 4 — the runnable suite, CI, and the coverage
+reporting added after the plan was written — landed as wave 0 between 2026-08-27 and
+2026-08-29. **Piece 2, the response-contract snapshot, landed 2026-09-17** as
+`tests/Pgsql/ContractTest.php` per [ADR-0025](../adr/0025-three-test-tiers.md) decision 4,
+[issue 83](https://github.com/datagen24/victual/issues/83). See [Executed](#executed) for
+what landed, what the suite grew in the doing, and what piece 2 does not close (S15, and
+S16's remaining half). Everything below is the plan as written and reviewed; where it
+describes a piece in the future tense, read the Executed section for the present one.
 
 ## Today
 

@@ -5,7 +5,12 @@ default list.
 **Upstream:** [grocy/grocy#2702](https://github.com/grocy/grocy/issues/2702)
 **Depends on:** [12](12-frontend-shared-core.md) for the UI pieces (store selector,
 list-filter toggle) — the A + C schema and API work can proceed ahead of it.
-**Status:** draft for review.
+**Status:** **ready to start**, 2026-09-18: all five questions answered, parts A and C scheduled
+in wave 5 as [issue 85](https://github.com/datagen24/victual/issues/85), migration **0286**
+claimed (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — PostgreSQL-only above
+0265, so `0286.pgsql.sql` rather than the portable file the text below predates. Part A's
+columns reach exposed entities, so the response-contract snapshot regenerates in the same
+change. Part B waits on use.
 
 ## Today
 
