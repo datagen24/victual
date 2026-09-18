@@ -80,6 +80,13 @@ real share of `Services\Labels\*`'s exercise went uncounted. They now carry the 
 directory, so their `.cov` files merge with the differential suite's rather than being
 measured — or not measured — on their own.
 
+The same wiring now also covers `middleware/PathParameterMiddleware.php`, which had no
+test of any kind before: nothing else in this tree boots a real Slim App and dispatches a
+request through it (every controller test calls the controller method directly). The new
+`.devtools/middleware/path-parameter-tests.php` step does exactly that, against a
+throwaway app whose one route is registered with the same FastRoute-constrained pattern
+`routes.php` uses for the generic label routes.
+
 Two things named in issue 192's mechanics section are still outside the number, and stay
 that way for now rather than being folded in without saying so:
 

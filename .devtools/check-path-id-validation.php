@@ -26,6 +26,7 @@
 // Exit codes: 0 when every parameter is typed, 1 otherwise.
 
 use Slim\Factory\AppFactory;
+use Victual\Middleware\PathParameterMiddleware;
 
 if (PHP_SAPI !== 'cli')
 {
@@ -82,7 +83,13 @@ foreach ($app->getRouteCollector()->getRoutes() as $route)
 		continue;
 	}
 
-	$specPathKey = substr($pattern, strlen('/api'));
+	// Slim/FastRoute path parameters can carry a regex constraint -
+	// {kind:location|product} - which is not legal OpenAPI path templating (the
+	// constraint belongs in the parameter's schema, not the template).
+	// victual.openapi.json spells these unconstrained ({kind}); this strips the same
+	// suffix PathParameterMiddleware strips at runtime, so both sides land on the same
+	// key.
+	$specPathKey = PathParameterMiddleware::StripFastRouteConstraints(substr($pattern, strlen('/api')));
 
 	foreach ($route->getMethods() as $method)
 	{

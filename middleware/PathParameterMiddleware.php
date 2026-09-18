@@ -90,7 +90,33 @@ class PathParameterMiddleware extends BaseMiddleware
 			$pattern = substr($pattern, strlen('/api'));
 		}
 
+		$pattern = self::StripFastRouteConstraints($pattern);
+
 		return self::$IntegerParameters[strtoupper($method) . ' ' . $pattern] ?? [];
+	}
+
+	/**
+	 * The unconstrained form of a Slim/FastRoute pattern: {kind:location|product} becomes
+	 * {kind}, the same as victual.openapi.json spells it - the constraint lives in the
+	 * parameter's schema there, not the path template.
+	 *
+	 * Reuses FastRoute's own placeholder regex (`RouteParser\Std::VARIABLE_REGEX`, PCRE
+	 * recursion and all) rather than a hand-rolled one: a constraint can itself contain
+	 * braces - `{id:[0-9]{1,9}}` - and a pattern that just stops at the first `}` splits
+	 * that wrong, leaving a stray closing brace behind. .devtools/check-path-id-validation.php
+	 * strips route patterns the same way this method does, by calling this method - a
+	 * second regex here is a second regex that drifts from FastRoute's own grammar.
+	 */
+	public static function StripFastRouteConstraints(string $pattern): string
+	{
+		return preg_replace_callback(
+			'~' . \FastRoute\RouteParser\Std::VARIABLE_REGEX . '~x',
+			static function (array $matches): string
+			{
+				return '{' . $matches[1] . '}';
+			},
+			$pattern
+		);
 	}
 
 	/**
