@@ -31,5 +31,8 @@
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
 		</testsuite>
+		<testsuite name="mealplan">
+			<file>tests/Pgsql/MealPlanRedactionTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

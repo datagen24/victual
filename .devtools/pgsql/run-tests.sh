@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan]
 #
 # Twenty-three kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -554,6 +554,38 @@ run_credentialsplit_tests() {
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
 		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite credentialsplit; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# GET /mealplan rendered for a role that may and a role that may not see the price-bearing
+# recipes_resolved fields (plan 19 piece 2's redaction, issue #176 item 4). Tier 1 like
+# shopliststores: an empty database PgsqlSchemaTestCase migrates itself into its own schema.
+
+run_mealplan_tests() {
+	local dbname="victual_mealplan"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/mealplan-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite mealplan; then
 		failures=$((failures + 1))
 	fi
 
@@ -1612,8 +1644,9 @@ case "$WHICH" in
 	contract) run_contract_tests ;;
 	shopliststores) run_shopliststores_tests ;;
 	credentialsplit) run_credentialsplit_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit or all)" ;;
+	mealplan) run_mealplan_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

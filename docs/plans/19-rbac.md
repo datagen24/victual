@@ -920,6 +920,12 @@ by Child and Guest, and they were fixed the same day rather than left open acros
   refused with 403 — the whole page is `SUM(amount * price)` over `products_price_history`,
   which is the `'*'` whole-object row), and `productform.blade.php`'s barcode price. Each
   omits the value rather than hiding it with `d-none`, which verification 6 asks for.
+  The `mealplan.blade.php` change shipped broken: `RecipesController::MealPlan()` passed
+  `FieldPolicy::RedactRows()` the LessQL `Result` rather than its rows, so `GET /mealplan`
+  answered 500 for every user until 2026-09-18, and nothing rendered the page — the contract
+  snapshot calls API controllers only. Fixed with `->fetchAll()`; `tests/Pgsql/MealPlanRedactionTest.php`
+  (`run-tests.sh mealplan`) now renders the page as ADMIN and as CHILD and asserts the gated
+  `recipes_resolved` fields reach the first and not the second.
 
 Also closed with those: `shoppinglist.js` and `mealplan.js` no longer produce `NaN` from the
 absent keys (`mealplan.js` tested `=== null` and missed `undefined`), and the `'*'`
