@@ -97,7 +97,15 @@ class SystemController extends BaseController
 
 	/**
 	 * Resolves the relative URL of the configured entry page (VICTUAL_ENTRY_PAGE),
-	 * falling back to /about when the corresponding feature is disabled.
+	 * falling back to /about when the corresponding feature is disabled or the caller may
+	 * not view it.
+	 *
+	 * "The caller may not view it" is only asked of a caller who has been identified. The
+	 * root route is public, so an anonymous request arrives with no VICTUAL_USER_ID at all,
+	 * and asking per-user permissions of nobody was a fatal error (an undefined constant)
+	 * on every unauthenticated GET / - the page a logged-out browser opens first. Such a
+	 * caller is sent to the entry page by feature flag alone, as upstream grocy does for
+	 * everybody, and that page's own authentication sends them on to /login.
 	 *
 	 * @return string Relative URL, e.g. '/stockoverview'
 	 */
@@ -112,32 +120,34 @@ class SystemController extends BaseController
 			$entryPage = 'stock';
 		}
 
+		$mayView = fn (string $permission): bool => !defined('VICTUAL_USER_ID') || User::HasPermissions($permission);
+
 		// Stock
-		if ($entryPage === 'stock' && constant('VICTUAL_FEATURE_FLAG_STOCK') && User::HasPermissions(User::PERMISSION_STOCK_VIEW))
+		if ($entryPage === 'stock' && constant('VICTUAL_FEATURE_FLAG_STOCK') && $mayView(User::PERMISSION_STOCK_VIEW))
 		{
 			return '/stockoverview';
 		}
 
 		// Shoppinglist
-		if ($entryPage === 'shoppinglist' && constant('VICTUAL_FEATURE_FLAG_SHOPPINGLIST') && User::HasPermissions(User::PERMISSION_SHOPPINGLIST_VIEW))
+		if ($entryPage === 'shoppinglist' && constant('VICTUAL_FEATURE_FLAG_SHOPPINGLIST') && $mayView(User::PERMISSION_SHOPPINGLIST_VIEW))
 		{
 			return '/shoppinglist';
 		}
 
 		// Recipes
-		if ($entryPage === 'recipes' && constant('VICTUAL_FEATURE_FLAG_RECIPES') && User::HasPermissions(User::PERMISSION_RECIPES_VIEW))
+		if ($entryPage === 'recipes' && constant('VICTUAL_FEATURE_FLAG_RECIPES') && $mayView(User::PERMISSION_RECIPES_VIEW))
 		{
 			return '/recipes';
 		}
 
 		// Chores
-		if ($entryPage === 'chores' && constant('VICTUAL_FEATURE_FLAG_CHORES') && User::HasPermissions(User::PERMISSION_CHORES_VIEW))
+		if ($entryPage === 'chores' && constant('VICTUAL_FEATURE_FLAG_CHORES') && $mayView(User::PERMISSION_CHORES_VIEW))
 		{
 			return '/choresoverview';
 		}
 
 		// Tasks
-		if ($entryPage === 'tasks' && constant('VICTUAL_FEATURE_FLAG_TASKS') && User::HasPermissions(User::PERMISSION_TASKS_VIEW))
+		if ($entryPage === 'tasks' && constant('VICTUAL_FEATURE_FLAG_TASKS') && $mayView(User::PERMISSION_TASKS_VIEW))
 		{
 			return '/tasks';
 		}
