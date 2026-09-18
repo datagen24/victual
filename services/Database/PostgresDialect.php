@@ -85,19 +85,34 @@ class PostgresDialect extends DatabaseDialect
 		// means the table now exists, which is all this wanted, so it is not an error here.
 		// Without this catch, two pods starting together fail before the lock is reached
 		// and the whole guard below is untestable.
-		try
+		//
+		// The table is looked up before it is created, and that is not an optimisation:
+		// PostgreSQL checks CREATE on the schema *before* it checks whether the table
+		// exists, so a "CREATE TABLE IF NOT EXISTS" of a table that is already there still
+		// fails with 42501 for a role that has no CREATE - which is exactly the role the
+		// serving image is meant to hold (ADR-0010 property 3, plan 20 verification 8).
+		// This ran on every connection, so every request under such a role was a 500.
+		// to_regclass() answers from the catalog with no privilege beyond USAGE on the
+		// schema, and the CREATE below is then reached only by the role that migrates.
+		$exists = $pdo->prepare('SELECT to_regclass(?)');
+		$exists->execute([self::CHANGED_TIME_TABLE]);
+
+		if ($exists->fetchColumn() === null)
 		{
-			$pdo->exec('CREATE TABLE IF NOT EXISTS ' . self::CHANGED_TIME_TABLE . ' ('
-				. 'id INTEGER NOT NULL PRIMARY KEY, '
-				. 'changed_time TIMESTAMP NOT NULL DEFAULT LOCALTIMESTAMP)');
-		}
-		catch (\PDOException $ex)
-		{
-			// 42P07 duplicate_table, 23505 unique_violation (the pg_type index), 23P01
-			// exclusion_violation - the three shapes the lost race takes
-			if (!in_array($ex->getCode(), ['42P07', '23505', '23P01'], true))
+			try
 			{
-				throw $ex;
+				$pdo->exec('CREATE TABLE IF NOT EXISTS ' . self::CHANGED_TIME_TABLE . ' ('
+					. 'id INTEGER NOT NULL PRIMARY KEY, '
+					. 'changed_time TIMESTAMP NOT NULL DEFAULT LOCALTIMESTAMP)');
+			}
+			catch (\PDOException $ex)
+			{
+				// 42P07 duplicate_table, 23505 unique_violation (the pg_type index), 23P01
+				// exclusion_violation - the three shapes the lost race takes
+				if (!in_array($ex->getCode(), ['42P07', '23505', '23P01'], true))
+				{
+					throw $ex;
+				}
 			}
 		}
 
