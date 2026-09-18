@@ -75,17 +75,16 @@ ALTER TABLE products ADD COLUMN default_shopping_list_id INTEGER;
 ALTER TABLE recipes ADD COLUMN default_shopping_list_id INTEGER;
 ```
 
-`ALTER TABLE … ADD COLUMN <name> INTEGER` is accepted verbatim by both engines, and a
-nullable column with no default is the one form SQLite will add to a populated table
-without rewriting it. Nothing here needs a per-engine spelling, so writing a pair would be
-two files that say the same thing and drift apart later. Note the fork declares no foreign
+Those three statements are the whole of `0286.pgsql.sql`; no SQLite counterpart is written,
+because migrations above 0265 are PostgreSQL-only. A nullable column with no default adds
+to a populated table without a rewrite. Note the fork declares no foreign
 keys anywhere — the existing `products.shopping_location_id`, `stock.shopping_location_id`
 and the rest are all bare `INTEGER` — so these follow that, and referential integrity stays
 where it already is, which is nowhere.
 
-**B — a per engine pair, whenever it happens.** A *new table* is never portable in this
-codebase, and the reason is worth stating so nobody tries: the two baselines spell both an
-identity column and a creation timestamp differently.
+**B — its own `NNNN.pgsql.sql`, whenever it happens.** The table below is why a new table
+was never portable while two engines existed; it is kept as the reason the frozen range
+0256–0265 carries per-engine pairs, not as an instruction for B.
 
 | | SQLite | PostgreSQL |
 |---|---|---|
