@@ -1,0 +1,18 @@
+-- 0285: retired, does nothing.
+--
+-- This number was claimed for plan 22 (medication tracking), which has no file and no delivery
+-- slot. 0286 (plan 05 parts A and C, issue #85) merged to master ahead of it, leaving 0284 and
+-- 0285 as a hole: a database migrated through that tree records MAX(migration) = 286 without
+-- ever having run 0284 or 0285, and every gate built on the highest recorded number
+-- (GetLatestMigrationNumber(), SchemaVersionMiddleware's required set, DatabaseImporter) reads
+-- it as up to date. check-migrations.php refuses the tree for exactly that reason, and the
+-- suite job has been red on master since 0286 landed.
+--
+-- 0286 could not move down to close the gap: it is in master, so its number is spent (see
+-- RESERVATIONS.md, "a number is retired, never reused"), and moving it is only safe while no
+-- database anywhere has run it, which nobody can promise. So the hole is filled instead. A
+-- database that already ran 0286 applies this on its next start - the runner asks per number
+-- whether a row exists - and one that has not applies all three in order.
+--
+-- Plan 22's two claims moved up to 0287-0288. Nothing else is meant to be added to this file.
+SELECT 1;

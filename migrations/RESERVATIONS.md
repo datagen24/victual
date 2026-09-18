@@ -69,9 +69,11 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
 | 0282 | [issue #176](https://github.com/datagen24/victual/issues/176) items 1 and 3 — the price-visibility policy re-applied from `db/pgsql/prices-seed.sql`, plus the `product_barcodes`/`product_barcodes_view` `last_price` rows 0281 missed | in this tree |
 | 0283 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in `master` |
-| 0284 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0285 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
-| 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in this tree |
+| 0284 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
+| 0285 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
+| 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in `master` |
+| 0287 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0288 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 
@@ -231,6 +233,27 @@ table. The next unclaimed number is still **0286**.
 
 **2026-09-18:** plan 05 parts A and C claim **0286**, the lowest free slot; plan 22's
 0284–0285 are unaffected. The next unclaimed number is **0287**.
+
+**2026-09-18, later — the hole this table exists to prevent reached `master`, and the
+lowest-free-slot rule could not fix it.** 0286 merged (#201) while plan 22's 0284–0285 were
+still unwritten claims below it. That was the tree's first hole in `master`: every earlier
+one was closed on a branch, by moving the *file* down to the lowest free slot before anything
+had run it. Here the file is in `master`, its number is retired by the rule at the top of this
+document, and "moved down at merge time" is only safe while no database anywhere has run it —
+which cannot be promised for a number that has been on `master` for hours. `check-migrations.php`
+failed on `master` itself from that merge on, so the `suite` job was red for every branch
+until this.
+
+So the *hole* moved instead of the file. **0284 and 0285 are now written, as `SELECT 1`
+migrations**, which is what the rule already allowed ("a 0258 arriving later is applied"): a
+database that already ran 0286 applies them on its next start, and one that has not applies all
+three in order. Plan 22's two unwritten claims moved up to **0287–0288** — a fourteenth move,
+and the first that costs two numbers rather than nothing, because the numbers were spent on
+placeholders rather than merely renamed. They are two of a number space that is not scarce, and
+plan 22 is still an unscheduled draft. **The lesson for the next branch:** a migration
+scheduled ahead of an unwritten claim must take that claim's number, or move it up *in the
+same pull request*, because once it is in `master` the only way to close the gap is to write
+something into it. The next unclaimed number is **0289**.
 draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23

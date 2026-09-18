@@ -308,8 +308,10 @@ Collected because most of them are only visible from inside the existing code.
   [14](14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0284** (medication master data and subjects)
-  and **0285** (regimens, administrations, excursions) — 0275–0276 until 2026-09-14, when the
+- **Migration numbering.** Two files, claiming **0287** (medication master data and subjects)
+  and **0288** (regimens, administrations, excursions) — 0284–0285 until 2026-09-18, when plan
+  05's 0286 merged ahead of them and the hole was closed by writing both as no-ops rather than
+  by moving a file that was already in `master`; see [RESERVATIONS.md](../../migrations/RESERVATIONS.md) — 0275–0276 until 2026-09-14, when the
   four scheduled wave 4 plans took the lower slots, then 0279–0280 the next day when
   [issue 148](https://github.com/datagen24/victual/issues/148)'s own defect fix took 0277
   ahead of plan 30, then 0280–0281 the day after that when
