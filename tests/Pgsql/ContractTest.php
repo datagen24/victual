@@ -19,6 +19,7 @@ use Victual\Controllers\Api\StockApiController;
 use Victual\Controllers\Api\SystemApiController;
 use Victual\Controllers\Api\TasksApiController;
 use Victual\Controllers\Api\UsersApiController;
+use Victual\Middleware\PathParameterMiddleware;
 use Victual\Tests\Support\JsonShape;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
@@ -298,7 +299,19 @@ class ContractTest extends PgsqlSchemaTestCase
 			}
 		}
 
-		$routeOperations = array_map(fn($o) => $o->Key(), RouteInventory::Api());
+		// Operation::Key() reports the route pattern exactly as Slim registered it, which
+		// is right for a general-purpose inventory but not directly comparable to the
+		// spec here: a Slim/FastRoute pattern can carry a regex constraint -
+		// {kind:location|product} - that is not legal OpenAPI path templating, so
+		// victual.openapi.json spells the same parameter unconstrained ({kind}), with the
+		// constraint moved into the parameter's schema instead. Normalize the route side
+		// with the same method PathParameterMiddleware and
+		// .devtools/check-path-id-validation.php use for this exact comparison, rather
+		// than a third copy of the same regex.
+		$routeOperations = array_map(
+			fn($o) => strtoupper($o->Method) . ' ' . PathParameterMiddleware::StripFastRouteConstraints($o->Path),
+			RouteInventory::Api()
+		);
 
 		sort($specOperations);
 		sort($routeOperations);
