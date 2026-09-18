@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores]
 #
 # Twenty-three kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -482,6 +482,41 @@ run_contract_tests() {
 	say ""
 	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
 		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite contract; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Shopping list store link tests -------------------------------------------------
+#
+# Plan 05 parts A and C (issue #85), migrations/0286.pgsql.sql. Written directly in tier 1
+# (ADR-0025 decision 7 - new code arrives with its own tests) rather than as a 25th bespoke
+# script: same shape as run_contract_tests()/run_rbac_tests(), an empty database
+# PgsqlSchemaTestCase migrates itself, per class, into its own schema.
+
+run_shopliststores_tests() {
+	local dbname="victual_shopliststores"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/shopliststores-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite shopliststores; then
 		failures=$((failures + 1))
 	fi
 
@@ -1538,8 +1573,9 @@ case "$WHICH" in
 	apikeys) run_apikey_tests ;;
 	pgtap) run_pgtap_tests ;;
 	contract) run_contract_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract or all)" ;;
+	shopliststores) run_shopliststores_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

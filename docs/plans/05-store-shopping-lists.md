@@ -5,12 +5,9 @@ default list.
 **Upstream:** [grocy/grocy#2702](https://github.com/grocy/grocy/issues/2702)
 **Depends on:** [12](12-frontend-shared-core.md) for the UI pieces (store selector,
 list-filter toggle) — the A + C schema and API work can proceed ahead of it.
-**Status:** **ready to start**, 2026-09-18: all five questions answered, parts A and C scheduled
-in wave 5 as [issue 85](https://github.com/datagen24/victual/issues/85), migration **0286**
-claimed (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — PostgreSQL-only above
-0265, so `0286.pgsql.sql` rather than the portable file the text below predates. Part A's
-columns reach exposed entities, so the response-contract snapshot regenerates in the same
-change. Part B waits on use.
+**Status:** parts A and C landed 2026-09-18 as `migrations/0286.pgsql.sql`
+([issue 85](https://github.com/datagen24/victual/issues/85)); see
+[Executed](#executed). Part B waits on use, exactly as answered below.
 
 ## Today
 
@@ -176,3 +173,43 @@ response gains a field the moment the migration runs, whether or not any plan sa
 Medium. A alone is an afternoon. C is another. B is the bulk, mostly UI for the ordering
 screen. Recommend shipping A + C first and treating B as its own change once you have used
 A for a bit and know whether ordering is worth it.
+
+## Executed
+
+Landed as `migrations/0286.pgsql.sql`: the three nullable columns exactly as designed above,
+no defaults, no foreign keys, no SQLite counterpart (PostgreSQL-only above the freeze, per
+ADR-0008). `default_shopping_list_id` was also added to the `Product`/`ProductWithoutUserfields`
+OpenAPI schemas (nullable integer, matching the `default_refill_location_id_from/to` style) —
+`recipes` and `shopping_lists` have no dedicated schema to extend, so nothing else in
+`victual.openapi.json` changes for them. The response-contract snapshot
+(`tests/Pgsql/snapshots/contract-{admin,restricted}.json`) was regenerated in the same
+change per ADR-0024 decision 1: the diff is exactly the three new fields, appearing
+identically on both the Admin and CHILD sweeps (they carry no sensitive-vocabulary match,
+so redaction is unaffected).
+
+**`products_view` and `shopping_lists_view` are deliberately left un-reissued.** Both are
+`SELECT p.*`/`SELECT sl.*, ... FROM ...`, and PostgreSQL flattens `*` into an explicit
+column list at `CREATE VIEW` time. Re-issuing either with `CREATE OR REPLACE VIEW` would
+insert the new column where `*` sits, pushing every already-frozen column after it
+(`has_sub_products`/`qu_factor_*_to_stock` on `products_view`; `item_count` on
+`shopping_lists_view`) one position later — which PostgreSQL refuses ("cannot change name
+of view column ... to ..."). Migration 0276 already hit and documented this exact failure
+for `products_view` when it needed `quick_refill_amount` visible through
+`uihelper_stock_current_overview`; its fix (join straight to the base table instead of
+through the frozen view) is the pattern to follow if a future plan (12's UI, most likely)
+needs `shopping_location_id`/`default_shopping_list_id` through a view rather than the raw
+table. `GenericEntityApiController` is unaffected either way — it reads `products`,
+`recipes` and `shopping_lists` directly, never through the two views — so the generic API
+is additive exactly as the plan's own text says, and the migration comment header records
+this reasoning in place for the next person tempted to "fix" the view.
+
+**Verification:** a new tier 1 test (ADR-0025), `tests/Pgsql/ShoppingListStoresTest.php`
+(`run-tests.sh shopliststores`), round-trips all three columns through the real
+`POST`/`GET /api/objects/{entity}` endpoints (present when set, null when omitted) and
+asserts `products_view`/`shopping_lists_view` still query successfully while *not* carrying
+the new columns — locking in the tradeoff above as a test rather than only a comment. No
+shopping-list trigger is touched, so no pgTAP row applies. Confirmed 2026-09-18 against real
+PostgreSQL 16.13 (podman, this repository's `Dockerfile` dev target): the full
+`.devtools/pgsql/run-tests.sh all` (25 phases, `SUITE_ALLOW_RESERVED_HOLES=1` for the
+still-unwritten 0284/0285) passes, including the regenerated contract snapshot and the new
+`shopliststores` phase.

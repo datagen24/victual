@@ -372,6 +372,7 @@
                 "default_purchase_price_type": "integer",
                 "default_refill_location_id_from": "null",
                 "default_refill_location_id_to": "null",
+                "default_shopping_list_id": "null",
                 "default_stock_label_type": "integer",
                 "description": "null|string",
                 "disable_open": "integer",
@@ -469,6 +470,7 @@
         "shape": [
             {
                 "base_servings": "integer",
+                "default_shopping_list_id": "null",
                 "description": "null",
                 "desired_servings": "integer",
                 "id": "integer",
@@ -558,7 +560,8 @@
                 "description": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string",
+                "shopping_location_id": "null"
             }
         ]
     },
@@ -837,6 +840,7 @@
             "default_purchase_price_type": "integer",
             "default_refill_location_id_from": "null",
             "default_refill_location_id_to": "null",
+            "default_shopping_list_id": "null",
             "default_stock_label_type": "integer",
             "description": "string",
             "disable_open": "integer",
@@ -873,6 +877,7 @@
         "status": 200,
         "shape": {
             "base_servings": "integer",
+            "default_shopping_list_id": "null",
             "description": "null",
             "desired_servings": "integer",
             "id": "integer",
@@ -1055,6 +1060,7 @@
                     "default_purchase_price_type": "integer",
                     "default_refill_location_id_from": "null",
                     "default_refill_location_id_to": "null",
+                    "default_shopping_list_id": "null",
                     "default_stock_label_type": "integer",
                     "description": "string",
                     "disable_open": "integer",
@@ -1198,6 +1204,7 @@
                 "default_purchase_price_type": "integer",
                 "default_refill_location_id_from": "null",
                 "default_refill_location_id_to": "null",
+                "default_shopping_list_id": "null",
                 "default_stock_label_type": "integer",
                 "description": "string",
                 "disable_open": "integer",
@@ -1322,6 +1329,7 @@
                 "default_purchase_price_type": "integer",
                 "default_refill_location_id_from": "null",
                 "default_refill_location_id_to": "null",
+                "default_shopping_list_id": "null",
                 "default_stock_label_type": "integer",
                 "description": "string",
                 "disable_open": "integer",
