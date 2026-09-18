@@ -9129,6 +9129,13 @@
 							"null"
 						],
 						"description": "Which location a one-tap refill fills by default, e.g. the kitchen bin itself. A refill prompt raised by product_location_missing uses that row's own location instead of this default."
+					},
+					"default_shopping_list_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
 					}
 				},
 				"example": {
@@ -9154,7 +9161,8 @@
 					"move_on_open": "1",
 					"quick_refill_amount": "1",
 					"default_refill_location_id_from": null,
-					"default_refill_location_id_to": null
+					"default_refill_location_id_to": null,
+					"default_shopping_list_id": null
 				}
 			},
 			"ProductWithoutUserfields": {
@@ -9254,6 +9262,13 @@
 							"null"
 						],
 						"description": "Which location a one-tap refill fills by default, e.g. the kitchen bin itself. A refill prompt raised by product_location_missing uses that row's own location instead of this default."
+					},
+					"default_shopping_list_id": {
+						"type": [
+							"integer",
+							"null"
+						],
+						"description": "The shopping list a product lands on by default when added without choosing one (plan 05 part C). Null falls back to the pre-existing behaviour."
 					}
 				},
 				"example": {
@@ -9279,7 +9294,8 @@
 					"move_on_open": "1",
 					"quick_refill_amount": "1",
 					"default_refill_location_id_from": null,
-					"default_refill_location_id_to": null
+					"default_refill_location_id_to": null,
+					"default_shopping_list_id": null
 				}
 			},
 			"QuantityUnit": {

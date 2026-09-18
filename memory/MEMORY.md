@@ -59,11 +59,33 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-18 — Plan 05 parts A/C landed**, issue #85: `migrations/0286.pgsql.sql` —
+  three nullable columns (`shopping_lists.shopping_location_id`,
+  `products.default_shopping_list_id`, `recipes.default_shopping_list_id`), no defaults,
+  no foreign keys, PostgreSQL-only above the freeze exactly as the plan specified.
+  **Deliberately did NOT re-issue `products_view`/`shopping_lists_view`**: both flatten
+  `p.*`/`sl.*` at `CREATE VIEW` time, and migration 0276 already hit and documented the
+  failure mode (`CREATE OR REPLACE VIEW` refuses to reposition an existing output column) —
+  the generic API is unaffected either way since `GenericEntityApiController` reads the
+  base tables directly. Added `default_shopping_list_id` to the `Product`/
+  `ProductWithoutUserfields` OpenAPI schemas (no schema exists for `recipes`/
+  `shopping_lists` to extend) and regenerated `tests/Pgsql/snapshots/contract-{admin,
+  restricted}.json` per ADR-0024 decision 1 — diff is exactly the three new fields,
+  identical on both sweeps (no sensitive-vocabulary match). New tier-1 test
+  `tests/Pgsql/ShoppingListStoresTest.php` (`run-tests.sh shopliststores`, wired into
+  `phpunit.xml` and the `all` target) round-trips all three columns through the real API
+  and pins the view non-reissue as a test, not just a comment. Verified against real
+  PostgreSQL 16.13 in podman (`docker build --target dev`, stock `postgres:16` +
+  `apt-get install postgresql-16-pgtap`): `run-tests.sh all` (25 phases,
+  `SUITE_ALLOW_RESERVED_HOLES=1` for still-unwritten 0284/0285) ends `SUITE PASSED`. Next
+  unclaimed migration: 0287. Wave 5 remaining: 20's pieces (#133), then 02 (#86), then 18's
+  HA checks (#139).
 - **2026-09-18 — Wave 5 order set**: 05 A/C (0286 claimed, snapshot regenerates with it)
   and 20's remaining pieces (#133) first because they change responses and deployment;
   then 02 (#86); then 18's HA checks (#139). Found 14 piece 2 had landed 2026-09-17
   (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
-  closed and fixed. Next unclaimed migration: 0287.
+  closed and fixed. Next unclaimed migration (at the time): 0287, since claimed and landed
+  by the entry above.
 - **2026-09-17 — Issue #83 / plan 14 piece 2 landed** (branch `claude/nifty-fermat-g3mffe`),
   the largest remaining item in wave 5: the response-contract snapshot, `tests/Pgsql/ContractTest.php`
   on `PgsqlSchemaTestCase` per ADR-0025 decision 4, a `contract` phase in `run-tests.sh`/`phpunit.xml`
@@ -132,19 +154,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   tracked in the README as future work, same ratchet-then-gate shape as issue 192) and
   porting the other four bespoke phases to PHPUnit (this record's decision 3 - one at a
   time, `run-tests.sh` stays the entry point). PR not yet opened as of this entry.
-
-- **2026-09-17 — Post-merge bookkeeping for #186–#189** (plan 32 → `0283.pgsql.php`, files
-  API own-picture fix, plan 15's cleanup batch, manual corrections). Closed #132 and #177
-  with landing notes; #179's two named items were already fixed by PR 172's second round
-  (`d54dadb`); PR 190 then rewrote plan 27's Executed evidence for the image build and
-  closed it. Fixed plan 32's status line (still
-  said "ready to start"), marked 0283 in master, rewrote the root README's Labels row (six
-  kinds, webhook gone) and the wave-independent cell. Next unclaimed migration: 0286. Wave
-  5's remaining items: #83 (14 piece 2, no longer blocked), then #86 and #85. **Coverage
-  floor decided the same day**: 75% minimum, 85+ target, 90 ideal, written into the
-  constitution, AGENTS.md, CONTRIBUTING and the PR template; master is at 37.81% and
-  [issue #192](https://github.com/datagen24/victual/issues/192) holds the 42-class backlog
-  and the ratchet-then-gate plan. Nothing is wired in CI yet; that is 192's first step.
 
 
 ## DOCTRINE (operator-locked decisions)
