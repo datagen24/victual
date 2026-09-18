@@ -220,6 +220,20 @@ jobs:
       - name: RFC 8785 canonicalization
         run: php .devtools/labels/canonical-json-tests.php
 
+      # PathParameterMiddleware needs no database (see its constructor's own docblock),
+      # so this is a plain script rather than a run-tests.sh phase - but it still needs
+      # SUITE_COVERAGE's auto_prepend_file wiring to land in the same coverage directory
+      # as everything else, the same reason the label phases below carry these two env
+      # vars. Drives a real (throwaway) Slim dispatch through the middleware rather than
+      # calling its private methods directly, over the route pattern this PR renamed in
+      # victual.openapi.json - the regression a rename without updating the
+      # middleware's own FastRoute-constraint stripping would reintroduce.
+      - name: Path parameter validation middleware
+        env:
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+        run: php .devtools/middleware/path-parameter-tests.php
+
       # Issue 192 mechanics item 2: this phase drives Services\Labels\LabelIdentityService
       # directly and used to do it outside SUITE_COVERAGE, so the coverage number never saw
       # it. Same auto_prepend_file mechanism run-tests.sh set up above, pointed at the same
