@@ -211,5 +211,5 @@ the new columns — locking in the tradeoff above as a test rather than only a c
 shopping-list trigger is touched, so no pgTAP row applies. Confirmed 2026-09-18 against real
 PostgreSQL 16.13 (podman, this repository's `Dockerfile` dev target): the full
 `.devtools/pgsql/run-tests.sh all` (25 phases, `SUITE_ALLOW_RESERVED_HOLES=1` for the
-still-unwritten 0284/0285) passes, including the regenerated contract snapshot and the new
+then-unwritten 0284/0285, since filled by no-ops) passes, including the regenerated contract snapshot and the new
 `shopliststores` phase.
