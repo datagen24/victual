@@ -166,6 +166,25 @@ class UsersApiController extends BaseApiController
 				$requestBody = self::WithDecodedPassword($requestBody, 'password');
 				$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
 
+				// An account that has to change its password reaches this route through
+				// BaseAuthMiddleware's allowlist for that purpose alone. So it must actually change
+				// it: otherwise the one route left open is a way to rename the account - "admin"
+				// to something the operator does not know - without the change it exists for.
+				// And to something else: re-saving the printed or default password would clear
+				// the flag and leave that password in place. Found by CodeRabbit on PR #213.
+				if ($isSelf && UsersService::GetInstance()->MustChangePassword((int)$args['userId']))
+				{
+					if (empty($requestBody['password'] ?? null))
+					{
+						throw new EInvalidApiQuery('This account must change its password: send the new password and current_password');
+					}
+
+					if ($requestBody['password'] === ($requestBody['current_password'] ?? null))
+					{
+						throw new EInvalidApiQuery('The new password must differ from the current one');
+					}
+				}
+
 				if ($isSelf && !empty($requestBody['password'] ?? null))
 				{
 					UsersService::GetInstance()->CheckCurrentPassword((int)$args['userId'], $requestBody['current_password'] ?? null);

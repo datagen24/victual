@@ -295,6 +295,16 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 	{
 		self::assertSame(403, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => 'bootstrap-changes'])['status']);
 
+		// The allowlisted route is for the password change and nothing else (CodeRabbit, PR #213)
+		$rename = self::request(['method' => 'PUT', 'path' => '/api/users/' . self::CHANGES, 'cookie' => 'bootstrap-changes', 'json' => ['username' => 'renamed-while-flagged']]);
+		self::assertSame(400, $rename['status'], 'a flagged account cannot rename itself without changing its password');
+		$same = self::request(['method' => 'PUT', 'path' => '/api/users/' . self::CHANGES, 'cookie' => 'bootstrap-changes', 'json' => [
+			'username' => 'bootstrap-changes', 'password' => 'before-change-1', 'current_password' => 'before-change-1',
+		]]);
+		self::assertSame(400, $same['status'], 're-saving the same password does not count as changing it');
+		self::assertSame(1, self::flag(self::CHANGES));
+		self::assertSame('bootstrap-changes', self::$db->query('SELECT username FROM users WHERE id = ' . self::CHANGES)->fetchColumn());
+
 		$change = self::request(['method' => 'PUT', 'path' => '/api/users/' . self::CHANGES, 'cookie' => 'bootstrap-changes', 'json' => [
 			'username' => 'bootstrap-changes',
 			'password' => 'after-change-1',
