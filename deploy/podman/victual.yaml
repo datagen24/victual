@@ -72,6 +72,16 @@ spec:
     # up-to-date database, takes a pg_advisory_lock so concurrent runs are safe, and exits
     # non-zero on failure — so a bad migration keeps the pod from starting rather than
     # letting it start and answer 503 to everything.
+    #
+    # It is also the only container here that holds a database role able to run DDL.
+    # `victual-db-migrate` carries VICTUAL_DB_USER and VICTUAL_DB_PASSWORD for
+    # victual_migrate, the role that owns the schema; the `app` container below gets
+    # `victual-db-app` instead, for a role that can read and write rows and nothing else
+    # (ADR-0010 property 3, plan 20 verification 8). The two roles are created by
+    # deploy/postgres/roles.sql. VICTUAL_DB_USER is deliberately absent from the ConfigMap:
+    # two envFrom sources that both define a key resolve to the later one, and a user name
+    # that could be supplied by either would make "which role is this container" depend on
+    # list order.
     - name: migrate
       image: localhost/victual-migrate:4.6.0
       imagePullPolicy: Never
@@ -79,7 +89,7 @@ spec:
         - configMapRef:
             name: victual-config
         - secretRef:
-            name: victual-secrets
+            name: victual-db-migrate
       volumeMounts:
         - name: tmp-app
           mountPath: /tmp
@@ -102,11 +112,13 @@ spec:
       ports:
         - name: fastcgi
           containerPort: 9000
+      # The restricted role: rows, not structure. See the migrate initContainer above for
+      # why this is a different Secret and not a different key in the same one.
       envFrom:
         - configMapRef:
             name: victual-config
         - secretRef:
-            name: victual-secrets
+            name: victual-db-app
       volumeMounts:
         - name: tmp-app
           mountPath: /tmp

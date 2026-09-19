@@ -7,9 +7,12 @@
 # actually calls — helpers/PrerequisiteChecker.php names ten of them, and the rest carry
 # their caller in the comment beside them.
 #
-# Trimming further is a measurement, not a guess: boot the image, walk the UI and the
-# API, and remove what nothing loaded. Plan 20 carries that as a verification step
-# because it cannot be done by reading.
+# Trimming further is a measurement, not a guess, and it was measured on 2026-09-18 (plan 20
+# piece 2, issue #133): the image was booted, `.devtools/nix/walk.py` walked every page and
+# the API, and the extensions the walk did not need were dropped from a copy of the ini one
+# group at a time. The list below is what survived, and each entry below the required ones
+# carries its caller. Two came out — zip and xmlwriter — and both had been listed on a
+# caller that did not exist; see the comments where they were.
 {
   lib,
   php85,
@@ -95,12 +98,33 @@ phpWithoutShell.passthru.buildEnv {
       pdo_pgsql
 
       # --- Traced to a caller ---------------------------------------------------------
-      curl # guzzlehttp/guzzle, and through it the barcode-lookup plugins
-      dom # ezyang/htmlpurifier, gettext/gettext's non-.mo loaders
-      simplexml # ditto
-      xmlwriter # ditto
-      zip # mike42/escpos-php, gettext/gettext
-      openssl # TLS for guzzle, and for libpq when DB_SSLMODE asks for it
+      # Each was also dropped in turn on 2026-09-18 and the consequence measured, so "kept"
+      # below means "removing it breaks something a request can reach", not "somebody once
+      # thought it was needed".
+      curl # guzzlehttp/guzzle picks its cURL handler when this is loaded: the barcode
+      # lookup (plugins/OpenFoodFactsBarcodeLookupPlugin.php), StockService, the outgoing
+      # webhook (helpers/WebhookRunner.php) and the InfluxDB writer
+      # (services/Influx/InfluxEventWriter.php). HTTPS for all of them is libcurl's own TLS.
+      dom # ezyang/htmlpurifier's Lexer::create() chooses DOMLex when DOMDocument exists and
+      # falls back to DirectLex when it does not. Every API write that carries rich text
+      # goes through it, and a sanitiser on that boundary should run the lexer it is
+      # developed and tested against rather than its fallback.
+      simplexml # slim/slim's BodyParsingMiddleware and slim/http's ServerRequest both call
+      # simplexml_load_string() for an XML request body, and slim/http declares ext-simplexml.
+      # Measured without it: an `application/xml` POST answers 500 "Call to undefined
+      # function simplexml_load_string()" where it should be a 4xx the client can act on.
+      openssl # php-mqtt/client wraps the broker connection in a tls:// stream when
+      # MQTT_TLS is set (services/Mqtt/MqttPublisher.php), and PHP has no tls transport
+      # without this — measured: "Unable to find the socket transport "tls"". This is not
+      # what Guzzle's HTTPS or libpq's DB_SSLMODE use: libcurl and libpq bring their own
+      # OpenSSL, so the comment that stood here said two things this does not do.
+      # zip was here, on "mike42/escpos-php, gettext/gettext". Neither requires it — escpos
+      # asks for intl, json and zlib; gettext for nothing of the kind — and nothing under
+      # controllers/, services/, helpers/, middleware/ or plugins/ names ZipArchive. Dropped
+      # 2026-09-18; the walk was unchanged.
+      # xmlwriter was here on "ezyang/htmlpurifier, gettext/gettext". The only runtime-tree
+      # user is HTMLPurifier_ConfigSchema_Builder_Xml, a maintenance script that builds the
+      # purifier's schema and is not on any request path. Dropped 2026-09-18, likewise.
       # pcntl was here for nix/runtime/entrypoint.php, which pcntl_exec'd php-fpm after
       # seeding config.php. Both are gone (issue #49), and with them the only caller —
       # so the extension goes too, and disable_functions moves from the fpm pool to

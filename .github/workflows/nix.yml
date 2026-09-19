@@ -32,6 +32,8 @@ on:
       - '.github/workflows/nix.yml'
       - '.github/workflows/changes.yml'
       - '.devtools/ci/**'
+      - '.devtools/nix/**'
+      - 'deploy/postgres/**'
   push:
     branches: [master]
     paths:
@@ -47,6 +49,8 @@ on:
       - '.github/workflows/nix.yml'
       - '.github/workflows/changes.yml'
       - '.devtools/ci/**'
+      - '.devtools/nix/**'
+      - 'deploy/postgres/**'
 
 jobs:
   changes:
@@ -117,6 +121,26 @@ jobs:
           done
           docker exec victual-db pg_isready -U victual
 
+      # The credential split, exactly as an operator applies it (plan 20 verification 8): the
+      # `victual` superuser above exists only to bootstrap the database, and nothing below
+      # connects as it. The migrate container gets the role that owns the schema, the app
+      # container the one that cannot run DDL.
+      #
+      # The two passwords are made up per run rather than written here: they protect a database
+      # that lives for the length of this job, and a literal in a workflow is what a secret
+      # scanner is right to flag whatever it protects.
+      - name: Create the two database roles
+        run: |
+          migrate_pw=$(openssl rand -hex 16)
+          app_pw=$(openssl rand -hex 16)
+          echo "::add-mask::$migrate_pw"
+          echo "::add-mask::$app_pw"
+          echo "CI_MIGRATE_PASSWORD=$migrate_pw" >> "$GITHUB_ENV"
+          echo "CI_APP_PASSWORD=$app_pw" >> "$GITHUB_ENV"
+          docker exec -i victual-db psql -q -v ON_ERROR_STOP=1 -U victual -d victual \
+            -v db=victual -v migrate_password="$migrate_pw" -v app_password="$app_pw" \
+            < deploy/postgres/roles.sql
+
       - name: The images declare a non-root user
         run: |
           set -euo pipefail
@@ -142,24 +166,27 @@ jobs:
             -e VICTUAL_DB_HOST=victual-db
             -e VICTUAL_DB_PORT=5432
             -e VICTUAL_DB_NAME=victual
-            -e VICTUAL_DB_USER=victual
-            -e VICTUAL_DB_PASSWORD=victual
             -e VICTUAL_FILE_STORAGE=database
             -e VICTUAL_BASE_URL=http://127.0.0.1:8080
           )
+          migrate_env=(-e VICTUAL_DB_USER=victual_migrate -e "VICTUAL_DB_PASSWORD=$CI_MIGRATE_PASSWORD")
+          app_env=(-e VICTUAL_DB_USER=victual_app -e "VICTUAL_DB_PASSWORD=$CI_APP_PASSWORD")
 
           # The initContainer, as a one-shot run. Read-only from the start: if the
           # migration needed to write anything outside /tmp this fails here rather than
           # leaving a half-migrated database behind.
           docker run --rm --name victual-migrate-run \
             --network victual-ci --read-only --tmpfs /tmp:rw,mode=1777 \
-            "${env_args[@]}" victual-migrate:4.6.0
+            "${env_args[@]}" "${migrate_env[@]}" victual-migrate:4.6.0
 
           # The two serving containers share a network namespace exactly as they do in the
           # pod, which is what makes 127.0.0.1:9000 mean the same thing here as in k3s.
+          # Published on the runner's loopback so the walk below can reach nginx; the two
+          # in-container probes still run inside, which is where their answer is available.
           docker run -d --name victual-app \
             --network victual-ci --read-only --tmpfs /tmp:rw,mode=1777 \
-            "${env_args[@]}" victual-app:4.6.0
+            -p 127.0.0.1:8080:8080 \
+            "${env_args[@]}" "${app_env[@]}" victual-app:4.6.0
 
           docker run -d --name victual-web \
             --network "container:victual-app" --read-only --tmpfs /tmp:rw,mode=1777 \
@@ -233,11 +260,27 @@ jobs:
             }
             // pcntl left with nix/runtime/entrypoint.php (issue #49); pdo_sqlite is the
             // migrate image only, since ADR-0008 keeps SQLite as an import format.
-            foreach (["pcntl", "pdo_sqlite"] as $forbidden) {
+            // zip and xmlwriter went in plan 20 piece 2 (issue #133): each had been listed on a
+            // caller that does not exist, and the walk below is unchanged without them.
+            foreach (["pcntl", "pdo_sqlite", "zip", "xmlwriter"] as $forbidden) {
               if (in_array($forbidden, $loaded)) { fwrite(STDERR, "unexpectedly present: $forbidden\n"); exit(1); }
             }
             echo "  extensions are as declared\n";
           '
+
+      # Every page, the read side of the API and one write cycle, over HTTP, against the images
+      # rather than against whatever PHP setup-php provides. This is the half of "CI and
+      # production build different things" that the boot test above does not reach: that test
+      # proves the images start and serve /login, and this proves they serve the rest, on the
+      # extension list nix/php.nix actually enables and as the role that cannot run DDL.
+      #
+      # Two known failures, both found by the first walk on 2026-09-18 and both unrelated to
+      # this workflow: `GET /` and `/mealplan` answer 500 on master. They are named so that
+      # the walk can be a gate today; each fix deletes its line here.
+      - name: Walk every page and the API
+        run: |
+          python3 .devtools/nix/walk.py --base-url http://127.0.0.1:8080 \
+            --known /=500 --known /mealplan=500
 
       - name: Container logs, if anything went wrong
         if: failure()

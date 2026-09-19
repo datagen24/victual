@@ -7,10 +7,13 @@ else.
 (accepted 2026-09-04; piece 1 was its acceptance gate). Remaining pieces are tracked in
 [issue 133](https://github.com/datagen24/victual/issues/133). [10](10-cold-start-statelessness.md) has landed and supplies most of what this
 plan used to have to work around.
-**Status:** **piece 1 complete, 2026-09-04.** The flake under [`nix/`](../../nix/README.md)
-builds and the manifest under [`deploy/`](../../deploy/README.md) serves; the two Executed
-sections below record what the first build and the first run each found. Pieces 2 to 5
-remain. Piece 1 was ADR-0013's acceptance gate.
+**Status:** **piece 1 complete, 2026-09-04; pieces 2, 3 and the credential split done and
+piece 4 written but not applied, 2026-09-18.** The flake under [`nix/`](../../nix/README.md)
+builds and the manifest under [`deploy/`](../../deploy/README.md) serves; the Executed
+sections below record what each round found. **Still open, and gated on a cluster this
+plan's author did not have:** piece 4's K3S apply (which is also plan 25's verification 12,
+and therefore [issue 93](https://github.com/datagen24/victual/issues/93)'s last gate) and
+the cluster half of verification 9. Piece 1 was ADR-0013's acceptance gate.
 
 ## Today
 
@@ -408,3 +411,150 @@ still matches upstream grocy 4.6.0. The end state is better than what it replace
 was the argument for doing it at all — the suite compared upstream against an image the
 fork does not ship, and now compares against the one it does. `seed_victual_data()` went
 with it, having existed only for the `config.php` check issue #49 removed.
+
+## Executed, issue 133 (2026-09-18)
+
+Everything below was run on 2026-09-18 against `origin/master` at `9a5e9ae0` plus this
+change, on an Apple Silicon Mac: images built by
+[`nix/build-in-podman.sh`](../../nix/build-in-podman.sh) (aarch64-linux), PostgreSQL 16.15 in
+podman, the pod applied with `podman kube play`. **Not run: anything on a Kubernetes cluster.**
+Rootless podman cannot host k3s here (`failed to find cpuset cgroup (v2)`), and making the
+machine rootful would have changed the maintainer's setup for the sake of a check, so the
+K3S half of every item below is stated as not done rather than implied.
+
+### Verification 8 — the credential split — done
+
+**What was built.** [`deploy/postgres/roles.sql`](../../deploy/postgres/roles.sql), run once by
+an operator with `psql -v`: `victual_migrate` owns the schema and is the only role that can
+run DDL; `victual_app` gets `SELECT/INSERT/UPDATE/DELETE` on tables and `USAGE/SELECT/UPDATE`
+on sequences, with `ALTER DEFAULT PRIVILEGES` so a table a later migration creates is not a
+500 on the first page that touches it. No `TRUNCATE`, no `TRIGGER`, no `REFERENCES`, no
+`CREATE`. The pod manifest names a Secret per workload: `victual-db-migrate` for the
+initContainer, `victual-db-app` for php-fpm, nothing for nginx. `VICTUAL_DB_USER` moved out
+of the ConfigMap, because two `envFrom` sources defining one key resolve to the later one.
+
+**What reading could not have found.** The first run of the restricted role could not
+connect at all. `PostgresDialect::OnConnected()` ran `CREATE TABLE IF NOT EXISTS
+system_db_changed_time` on **every connection**, and PostgreSQL checks `CREATE` on the schema
+*before* it checks whether the table exists, so a role with no `CREATE` fails with `42501`
+even though the table is there. Nothing in the suite noticed because every phase connects as
+a superuser. `OnConnected()` now asks `to_regclass()` first and reaches the `CREATE` only
+when the table is missing — which is only ever the migrate role, on an empty database.
+
+| Claim | How it was checked |
+|---|---|
+| `victual-app` serves under the role with no DDL rights | The pod above, `victual_app` in the `app` container's environment; [`.devtools/nix/walk.py`](../../.devtools/nix/walk.py) drove 42 pages, 79 API reads and 7 writes (location create/edit/delete, product create, stock add/consume). No `EROFS`, no permission error |
+| The role really cannot run DDL | From inside the running `victual-app` container, through its own PHP: `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE` and `CREATE ROLE` all refused `42501`; `rolsuper` and `rolcreaterole` both 0 |
+| `victual-migrate` is the only image whose environment can migrate | `podman inspect`: `victual-app` holds `victual_app`, `victual-web` no `VICTUAL_DB_*` variable; the migrate image with `victual_migrate` reported "Schema is up to date at migration 286". `test_deploy_pod_parity.py` holds the manifest half of that from now on |
+| The fix is what makes it work | `tests/Pgsql/CredentialSplitTest.php`, phase `credentialsplit` in `run-tests.sh`: 3 tests, 29 assertions, run against PostgreSQL 16. With `PostgresDialect.php` reverted to master the same test fails with `SQLSTATE[42501] … permission denied for schema public` |
+
+What this does **not** establish: that `victual_app` is the *minimum*. It has DML on every
+table, including `migrations`, because a tighter grant list would have to be reapplied after
+each migration. ADR-0010's open question 2 already says whether a role's grants are minimal
+is review's question and not a script's; this gives review a role to look at.
+
+### Verification 6 — the extension list — done, and the list was wrong in both directions
+
+The walk needs no extension beyond `nix/php.nix`'s list, so **nothing was missing**. Two were
+**unused**: `zip` and `xmlwriter`, each listed on a caller that does not exist. Neither
+`mike42/escpos-php` nor `gettext/gettext` requires `zip` (escpos asks for `intl`, `json`,
+`zlib`), no `ZipArchive` appears under `controllers/`, `services/`, `helpers/`, `middleware/`
+or `plugins/`, and `xmlwriter`'s only runtime-tree user is `HTMLPurifier_ConfigSchema_Builder_Xml`,
+a maintenance script. Both are removed; the walk was identical before and after.
+
+The other four candidates were dropped in turn from a copy of the ini (no rebuild — the pod
+was started with `PHP_INI_SCAN_DIR` pointed at it), and each is kept because removing it
+breaks something a request can reach:
+
+| Dropped | Measured consequence | Verdict |
+|---|---|---|
+| `simplexml` | `POST` with `Content-Type: application/xml` → `500 Call to undefined function simplexml_load_string()` (Slim's body parser and slim/http, which declares the requirement) | kept |
+| `openssl` | `stream_socket_client("tls://…")` → `Unable to find the socket transport "tls"` — what `php-mqtt/client` uses when `MQTT_TLS` is set. The old comment's other two reasons (Guzzle, libpq) were wrong: libcurl and libpq bring their own OpenSSL | kept, comment corrected |
+| `dom` | Not walked-out; `HTMLPurifier_Lexer::create()` picks `DOMLex` when `DOMDocument` exists and `DirectLex` otherwise, on the boundary S29 is about | kept on source, **not measured** |
+| `curl` | Guzzle's four callers (barcode lookup, `StockService`, `WebhookRunner`, `InfluxEventWriter`) — outbound network, not exercised by a walk | kept on source, **not measured** |
+
+Loaded and not listed in `php.nix`: `Phar` and `xml`, compiled in by nixpkgs' configure flags
+(`--enable-phar`, `--enable-xml`). `Phar` has no caller in the tree. It was **not** trimmed:
+`--disable-phar` means a PHP rebuild, and `--with-pear`, which nixpkgs also passes, needs it at
+build time. It is a candidate, not a decision.
+
+**Sizes, and what the number is.** Dated 2026-09-18, reproduce with
+`BUILDER=… nix/build-in-podman.sh images` then `nix path-info -Sh path:/src#php` inside the
+builder for the closure and `podman images` for the loaded size:
+
+| | 2026-09-04 (piece 1) | 2026-09-18 before trim | 2026-09-18 after trim |
+|---|---|---|---|
+| `victual-app` image | 284 MB | 287 MB | 286 MB |
+| `victual-web` image | 205 MB | 232 MB | 232 MB |
+| `victual-migrate` image | 291 MB | 293 MB | 293 MB |
+| `php-with-extensions` closure | — | 238.2 MiB | 237.6 MiB |
+
+The trim saves about 0.6 MiB: **this is an attack-surface change, not a size one.** The web
+image grew 27 MB between the two dates, which is not from this change and was not
+investigated. `nix path-info -Sh .#image-app` reports 419.2 MiB, which is the closure of the
+*streaming script* including the tooling that writes the tarball, and is not the image.
+
+### Piece 3, second half — the issue's description was stale
+
+The read-only boot test **has been on the Nix images since 2026-09-04** (the `nix` workflow's
+"Migrate, then serve" and its four following steps), and the parity suite was moved onto them
+the same day (#56). What was true is narrower: `tests.yml`'s `suite` job runs the differential
+and tier-1 suites on `setup-php` 8.4 on the runner — **not in the Debian `dev` image and not in
+the Nix images** — and its `frontend-security` job boots the app on `setup-php` 8.5.
+
+The gap that leaves is real and is not the one the issue named: nothing walked the Nix images
+beyond `/login` and `/robots.txt`, so a code path needing an extension `php.nix` does not enable
+would pass every suite and answer 500 in production. The `nix` workflow now runs
+`walk.py` against the booted images as the split roles, and asserts `zip` and `xmlwriter`
+stay out. Those workflow steps were executed locally — the workflow's own `run:` blocks, in
+order, with `docker` as podman — and pass; they have **not** yet run on GitHub Actions.
+
+**Two application defects the walk found, both unrelated to this plan and both on `master`:**
+`GET /` and `GET /mealplan` answer 500 (`Undefined constant …VICTUAL_USER_ID` from the public
+`root` route, and a `LessQL\Result` handed to `FieldPolicy::RedactRows()`). The walk lists them
+as known so it can be a gate today; each fix deletes its `--known` line in
+`.github/workflows/nix.yml`. They are not fixed here.
+
+### Piece 4 — the k3s manifests — written, validated structurally, **not applied**
+
+[`deploy/k3s/victual.yaml`](../../deploy/k3s/victual.yaml): a `ConfigMap`, the two Secrets, a
+`Service` named `victual` on 8080 (which is what `label-workers.yaml` already points at) and a
+`Deployment` with `replicas: 1`. It carries the same pod as
+[`deploy/podman/victual.yaml`](../../deploy/podman/victual.yaml), and
+[`.devtools/ci/test_deploy_pod_parity.py`](../../.devtools/ci/test_deploy_pod_parity.py) fails
+if the two diverge or if any container other than `migrate` names the migrate Secret; both
+were checked by mutation. `check_deploy_manifest.py` passes it (10 documents) and
+`kubectl apply --dry-run=client` accepts all five objects.
+
+**Plan 25's verification 12 — a K3S apply that reaches the printer — is not done and this
+does not advance it beyond having the manifest to apply.** It needs a cluster and the
+QL-820NWBc. Issue 93 stays open on it.
+
+### Verification 9's SIGTERM half — measured on podman, not on a cluster
+
+A request was held inside PostgreSQL by a table lock (so it was genuinely in flight), the
+signal was sent to one container, and the client's view recorded. Control with no signal:
+`200`.
+
+| Signal to | `SIGQUIT` | `SIGTERM` |
+|---|---|---|
+| `web` (nginx) | `200`, response completed | connection dropped (`curl` exit 52) |
+| `app` (php-fpm) | **`502`** | **`502`** |
+
+So on a cluster too old for `lifecycle.stopSignal`, the cost at the web tier is a dropped
+in-flight response. **The measurement also contradicts the manifest's premise for the app
+tier:** php-fpm answered `SIGQUIT` by exiting within about a second and resetting a request
+blocked on the database, exactly as it did for `SIGTERM`. A request that is not blocked in a
+database call was not measured, so this is not proof that php-fpm never drains — it is proof
+that "SIGQUIT is php-fpm's graceful stop" is not something this deployment has shown. That is
+open and is the reason the cluster half of check 9 stays open; nothing here changes the
+manifests' stop signal. `lifecycle.stopSignal` is alpha (feature gate `ContainerStopSignals`,
+Kubernetes 1.33) and needs `spec.os.name`, which the Deployment sets; on a cluster without
+the gate the API server drops the field.
+
+### Piece 5 — nothing to build
+
+`nix/images/lib.nix` is in the state piece 5 assumes: all five images (`app`, `web`,
+`migrate`, `label-renderer`, `label-worker`) take uid, labels, scaffold and common config from
+it. The MCP sidecar is a separate repository and no image for it was built.
+

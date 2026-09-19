@@ -125,6 +125,14 @@ with no DDL rights; the bootstrap uses one superuser." Accepting this record sti
 not require that split to exist — it requires it to stay the tracked item it already is,
 rather than becoming an unstated fact again.
 
+**Update, 2026-09-18 — the tracked gap is closed.** `victual-app` now holds `victual_app`, a
+role with no DDL rights, and `victual-migrate` alone holds the role that owns the schema
+([deploy/postgres/roles.sql](../../deploy/postgres/roles.sql); plan 20's
+[Executed section](../plans/20-container-infrastructure.md#executed-issue-133-2026-09-18)
+records the run). The paragraph above is left as written because it is what was true when
+this record was accepted. Whether the app role's grants are the *minimum* is still review's
+question, per open question 2.
+
 **New workloads are born compliant or not born.** For a Go or Node binary on a distroless
 base this costs nearly nothing, which is the point of deciding it before the family
 exists rather than after.

@@ -25,6 +25,9 @@
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
 		</testsuite>
+		<testsuite name="credentialsplit">
+			<file>tests/Pgsql/CredentialSplitTest.php</file>
+		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
 		</testsuite>

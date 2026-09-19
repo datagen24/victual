@@ -1,0 +1,251 @@
+# Victual on Kubernetes, written for k3s: a Deployment, a Service, and the ConfigMap and
+# Secrets the pod reads.
+#
+#   kubectl apply -f deploy/k3s/victual.yaml
+#   kubectl delete -f deploy/k3s/victual.yaml
+#
+# This is deploy/podman/victual.yaml as a workload rather than a bare Pod, and the two are
+# meant to stay the same pod: same containers, same probes, same security context, same
+# credentials per container. .devtools/ci/test_deploy_pod_parity.py fails when they drift, so
+# a probe fixed in one is not left wrong in the other. What differs is only what a cluster
+# adds (a controller to restart it, a Service to reach it) and what a laptop needs (a
+# hostPort, `imagePullPolicy: Never`).
+#
+# **Status: not applied.** The manifest passes `.devtools/ci/check_deploy_manifest.py` and
+# `kubectl apply --dry-run=client`, and the pod it describes is the one that was applied to
+# podman and served on 2026-09-18. It has not been applied to a cluster: none was available
+# to the session that wrote it. That is plan 20 piece 4's gate and plan 25's verification 12
+# (a label printing through the k3s apply), and it is stated here rather than implied by the
+# file existing.
+#
+# PostgreSQL is not in here, nor ingress, nor a storage class: the fork declares what its
+# workloads need and the operator decides where they run (ADR-0010's boundary, and
+# deploy/README.md). Before applying:
+#
+#   1. Create the two database roles with deploy/postgres/roles.sql.
+#   2. Put their passwords in the two Secrets below, and the database's address in the
+#      ConfigMap. The values in this file are placeholders and will not connect.
+#   3. Get the three images somewhere the node can pull them from, and change `image:` to
+#      match. The names below are what `nix run .#load` produces; on a single-node k3s,
+#      `k3s ctr images import` of the same stream is enough and needs no registry.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victual-config
+  labels:
+    app.kubernetes.io/name: victual
+data:
+  VICTUAL_MODE: "production"
+  VICTUAL_DB_DRIVER: "pgsql"
+  # The operator's database. Not `victual-db` or anything else this file could invent: where
+  # PostgreSQL lives is not this manifest's decision.
+  VICTUAL_DB_HOST: "replace-me-postgres.example.internal"
+  VICTUAL_DB_PORT: "5432"
+  VICTUAL_DB_NAME: "victual"
+  # There is nothing writable mounted, so the default `filesystem` backend has nowhere to
+  # write; see deploy/README.md.
+  VICTUAL_FILE_STORAGE: "database"
+  # What the ingress publishes.
+  VICTUAL_BASE_URL: "https://victual.example.internal"
+  # VICTUAL_DB_USER is deliberately not here. It arrives with the password, from a Secret
+  # per workload, so that which role a container holds is a property of which Secret it
+  # names and cannot be overridden by list order.
+---
+# The role that owns the schema: held by the migrate initContainer and by nothing else.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-db-migrate
+  labels:
+    app.kubernetes.io/name: victual
+type: Opaque
+stringData:
+  VICTUAL_DB_USER: "victual_migrate"
+  VICTUAL_DB_PASSWORD: "replace-me-with-the-migrate-role-password"
+---
+# The role that reads and writes rows and cannot change structure: held by php-fpm.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-db-app
+  labels:
+    app.kubernetes.io/name: victual
+type: Opaque
+stringData:
+  VICTUAL_DB_USER: "victual_app"
+  VICTUAL_DB_PASSWORD: "replace-me-with-the-app-role-password"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # `victual`, because deploy/podman/label-workers.yaml already points its workers at
+  # http://victual:8080.
+  name: victual
+  labels:
+    app.kubernetes.io/name: victual
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: victual
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victual
+  labels:
+    app.kubernetes.io/name: victual
+spec:
+  # One replica until something measures whether a second helps a household-sized instance
+  # (plan 20 piece 4). Plan 10's migration lock means correctness is no longer what stops
+  # anyone raising it: two pods starting together serialise on the advisory lock.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victual
+  # The default rolling update, and worth reading once. The new pod's migrate initContainer
+  # runs while the old pod is still serving, so for as long as it takes the old code sees a
+  # schema newer than it knows and SchemaVersionMiddleware answers it 503; the old pod goes
+  # away when the new one is ready. That window is short and it fails closed, which is why
+  # `Recreate` (a guaranteed outage) is not chosen to avoid it.
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual
+    spec:
+      # `lifecycle.stopSignal` below is only accepted for a pod that says what OS it is for.
+      os:
+        name: linux
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # Honoured by a real cluster, unlike `podman kube play` (issue #49). Nothing writable
+        # is mounted except the two /tmp volumes, so this is belt and braces today.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      volumes:
+        - name: tmp-app
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp-web
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+
+      initContainers:
+        # See deploy/podman/victual.yaml for why migration is a startup step and why this
+        # is the only container holding a role that can run DDL.
+        - name: migrate
+          image: localhost/victual-migrate:4.6.0
+          envFrom:
+            - configMapRef:
+                name: victual-config
+            - secretRef:
+                name: victual-db-migrate
+          volumeMounts:
+            - name: tmp-app
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+      containers:
+        - name: app
+          image: localhost/victual-app:4.6.0
+          ports:
+            - name: fastcgi
+              containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: victual-config
+            - secretRef:
+                name: victual-db-app
+          volumeMounts:
+            - name: tmp-app
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # An exec probe and it must stay one: the kubelet resolves a TCP probe to the pod
+          # IP while php-fpm binds loopback only. See deploy/podman/victual.yaml.
+          startupProbe:
+            exec:
+              command: ["/opt/victual/healthcheck"]
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["/opt/victual/healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          # php-fpm's graceful stop. This field is alpha (feature gate ContainerStopSignals,
+          # Kubernetes 1.33) and, on a cluster without the gate, is dropped by the API
+          # server: the container then gets SIGTERM, which php-fpm and nginx treat as "stop
+          # now". Plan 20 verification 9 measured what that costs; see deploy/README.md.
+          lifecycle:
+            stopSignal: SIGQUIT
+
+        - name: web
+          image: localhost/victual-web:4.6.0
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: tmp-web
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # exec rather than httpGet, for the reason in deploy/podman/victual.yaml: the
+          # image has no shell and no curl, and an exec probe means the same thing to
+          # podman and to the kubelet, which is what lets the two manifests stay one pod.
+          startupProbe:
+            exec:
+              command: ["/opt/victual/webcheck", "/robots.txt"]
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["/opt/victual/webcheck", "/robots.txt"]
+            periodSeconds: 10
+          # Through nginx, FastCGI, PHP and the database, and through the schema gate.
+          readinessProbe:
+            exec:
+              command: ["/opt/victual/webcheck", "/login"]
+            periodSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          lifecycle:
+            stopSignal: SIGQUIT

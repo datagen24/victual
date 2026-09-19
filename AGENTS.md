@@ -180,6 +180,9 @@ connective makes the order ambiguous. Those get full prose.
   disappearing. The flake **has** been built and the pod **does** serve
   ([deploy/](deploy/README.md), applied 2026-09-04) — a sentence here said otherwise until
   2026-09-04 and treating a first build as part of the work was right while it lasted:
-  that build found nine defects in two rounds. What is still open is
-  [plan 20](docs/plans/20-container-infrastructure.md) pieces 2–5 and two of its ten
-  verification checks (the credential split, and the SIGTERM half of the signal check).
+  that build found nine defects in two rounds. The credential split landed 2026-09-18:
+  `victual-app` holds a role that cannot run DDL ([deploy/postgres/roles.sql](deploy/postgres/roles.sql)),
+  `victual-migrate` holds the one that can. What is still open in
+  [plan 20](docs/plans/20-container-infrastructure.md) needs a cluster: piece 4's K3S apply
+  (`deploy/k3s/victual.yaml` exists and has not been applied anywhere) and the cluster half of
+  the signal check.
