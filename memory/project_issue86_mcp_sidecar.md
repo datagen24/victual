@@ -4,7 +4,19 @@ description: Status and next steps for the read-only MCP sidecar scaffolded in-r
 type: project
 ---
 
-## What exists (2026-09-19, branch `claude/cool-faraday-mx372b`)
+## What exists (2026-09-19, merged to master via PR 207)
+
+**PR [207](https://github.com/datagen24/victual/pull/207) merged 2026-09-19**, branch
+`claude/cool-faraday-mx372b`. CodeRabbit review round: 4 findings, all closed before
+merge — Node engine floor raised to `>=22.6.0`, `nix/mcp.nix` given
+`sourceRoot = "source/mcp"` (a real bug: `buildNpmPackage` would have looked for the
+manifest at the wrong path), the missing-lockfile/placeholder-hash finding withdrawn by
+CodeRabbit as intentional and already tracked, and an HTTPS-enforcement suggestion
+declined in writing (contradicts spec §8/§9's deliberate in-cluster-HTTP design) —
+left for @datagen24 to weigh in on if the threat model should change. A first push had
+also broken the `flake` CI job by wiring an `mcp-image-has-no-shell` check into
+`nix/checks.nix` that forced `nix flake check` to build the still-unbuildable `mcp`
+package on every PR; fixed by pulling that check back out until `mcpNpmDeps` is real.
 
 Framework only — nothing has been built, installed, or run. The sandbox that wrote this
 had no Nix and no npm registry access.
