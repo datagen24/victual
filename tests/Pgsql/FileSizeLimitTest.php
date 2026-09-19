@@ -60,9 +60,19 @@ class FileSizeLimitTest extends TestCase
 		}
 		$command[] = __DIR__ . '/file-size-limit-helper.php';
 
-		$env = array_merge(getenv(), [
+		$env = getenv();
+		// php-cgi decides it is under a web server from any of these four, and then it
+		// ignores the script argument, waits for SCRIPT_FILENAME, prints a header block
+		// and, with cgi.force_redirect on by default, refuses outright without
+		// REDIRECT_STATUS. A parent that leaks one must not turn this case into that.
+		foreach (['SERVER_SOFTWARE', 'SERVER_NAME', 'GATEWAY_INTERFACE', 'REQUEST_METHOD'] as $webServerHint)
+		{
+			unset($env[$webServerHint]);
+		}
+		$env = array_merge($env, [
 			'VICTUAL_DATAPATH' => self::$datapath,
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			'REDIRECT_STATUS' => '1',
 		]);
 		$process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
 		$output = stream_get_contents($pipes[1]);
