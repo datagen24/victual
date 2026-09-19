@@ -10228,6 +10228,11 @@
 			},
 			"CurrentUserCapabilities": {
 				"type": "object",
+				"required": [
+					"key_type",
+					"read_only",
+					"permissions"
+				],
 				"properties": {
 					"key_type": {
 						"type": [
@@ -10238,7 +10243,7 @@
 					},
 					"read_only": {
 						"type": "boolean",
-						"description": "Whether the authenticating API key is read-only: anything but GET, HEAD and OPTIONS is answered 403"
+						"description": "Whether the authenticating API key is read-only: anything but GET, HEAD and OPTIONS is answered 403, as are the three GET routes that change something (/calendar/ical/sharing-link, /stock/barcodes/external-lookup/{barcode} and /print/shoppinglist/thermal)"
 					},
 					"permissions": {
 						"type": "array",
@@ -10297,7 +10302,7 @@
 					},
 					"read_only": {
 						"type": "integer",
-						"description": "1 when the key may only make GET, HEAD and OPTIONS requests; anything else is answered 403."
+						"description": "1 when the key may only make GET, HEAD and OPTIONS requests; anything else is answered 403, as are the three GET routes that change something (/calendar/ical/sharing-link, /stock/barcodes/external-lookup/{barcode} and /print/shoppinglist/thermal)."
 					},
 					"expires": {
 						"type": "string",
