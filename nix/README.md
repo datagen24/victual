@@ -145,7 +145,10 @@ Paste the `got:` value into `hashes.nix` and build again. `nix build .#app` give
 `composerVendor`; `nix build .#frontend` gives you `yarnOfflineCache`. They change only
 when `composer.lock` or `yarn.lock` changes — and a changed lockfile with an unchanged
 hash here is a build failure rather than a silently stale dependency set, which is the
-property being bought.
+property being bought. A version bump does not move them: the vendor tree records a root
+package version, and `nix/app.nix` pins the one Composer sees rather than passing
+`version.json`'s through, both for this property and because Composer's parser refuses a
+suffix such as `-MVP` that an image tag is free to carry.
 
 `flake.lock` is committed, for the same reason the hashes are: it cannot be written by
 hand, `nix flake update` produces it, and it is the pin that makes "reproducible" mean

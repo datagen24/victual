@@ -85,6 +85,12 @@ jobs:
       - name: Check the flake is locked
         run: nix flake metadata --no-update-lock-file
 
+      # The image tag is version.json's Version, by way of nix/overlay.nix - the same
+      # string /api/system/info reports, and nix/checks.nix refuses a mismatch. Read it
+      # here rather than spelling it out below, so a release bump is a one-file change.
+      - name: Read the image tag from version.json
+        run: echo "VICTUAL_VERSION=$(jq -r .Version version.json)" >> "$GITHUB_ENV"
+
       # The 34 assertions in nix/checks.nix. Three of them are why this job is worth its
       # minutes: the runtime closure contains no shell, the web tier's closure does not
       # contain the application, and the baked view cache is actually warm. Each is a
@@ -155,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           for img in victual-app victual-web victual-migrate; do
-            user=$(docker inspect --format '{{.Config.User}}' "$img:4.6.0")
+            user=$(docker inspect --format '{{.Config.User}}' "$img:$VICTUAL_VERSION")
             echo "$img runs as $user"
             test "$user" = "65532:65532"
           done
@@ -194,7 +200,7 @@ jobs:
           # is fine: the database is thrown away with the runner.
           migrate_log=$(docker run --rm --name victual-migrate-run \
             --network victual-ci --read-only --tmpfs /tmp:rw,mode=1777 \
-            "${env_args[@]}" "${migrate_env[@]}" victual-migrate:4.6.0 2>&1)
+            "${env_args[@]}" "${migrate_env[@]}" victual-migrate:$VICTUAL_VERSION 2>&1)
           printf '%s\n' "$migrate_log"
           bootstrap_password=$(printf '%s\n' "$migrate_log" | sed -n 's/.*with the generated password \([0-9a-f]\{24\}\) .*/\1/p')
           if [ -z "$bootstrap_password" ]; then
@@ -210,11 +216,11 @@ jobs:
           docker run -d --name victual-app \
             --network victual-ci --read-only --tmpfs /tmp:rw,mode=1777 \
             -p 127.0.0.1:8080:8080 \
-            "${env_args[@]}" "${app_env[@]}" victual-app:4.6.0
+            "${env_args[@]}" "${app_env[@]}" victual-app:$VICTUAL_VERSION
 
           docker run -d --name victual-web \
             --network "container:victual-app" --read-only --tmpfs /tmp:rw,mode=1777 \
-            victual-web:4.6.0
+            victual-web:$VICTUAL_VERSION
 
           # Both probes run inside the containers, which is the only place the answer is
           # available: php-fpm binds loopback and nginx is in the app container's network
@@ -234,7 +240,7 @@ jobs:
           # The app image's own PHP, not the migrate image's: those are different store
           # paths, because migrate carries pdo_sqlite and the serving images do not. The
           # CLI sits beside php-fpm in the same buildEnv.
-          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:4.6.0)")/php"
+          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:$VICTUAL_VERSION)")/php"
 
           # Writes outside /tmp must fail; /tmp is the one writable mount.
           docker exec victual-app "$php" -r '
@@ -258,7 +264,7 @@ jobs:
           # The app image's own PHP, not the migrate image's: those are different store
           # paths, because migrate carries pdo_sqlite and the serving images do not. The
           # CLI sits beside php-fpm in the same buildEnv.
-          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:4.6.0)")/php"
+          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:$VICTUAL_VERSION)")/php"
           docker exec victual-app "$php" -r '
             $dir = getenv("VICTUAL_VIEWCACHE_PATH");
             if (is_writable($dir)) { fwrite(STDERR, "the baked cache is writable\n"); exit(1); }
@@ -276,7 +282,7 @@ jobs:
           # The app image's own PHP, not the migrate image's: those are different store
           # paths, because migrate carries pdo_sqlite and the serving images do not. The
           # CLI sits beside php-fpm in the same buildEnv.
-          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:4.6.0)")/php"
+          php="$(dirname "$(docker inspect --format '{{index .Config.Cmd 0}}' victual-app:$VICTUAL_VERSION)")/php"
           docker exec victual-app "$php" -r '
             $loaded = array_map("strtolower", get_loaded_extensions());
             foreach (["pdo_pgsql", "gd", "intl", "curl"] as $required) {

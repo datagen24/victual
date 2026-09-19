@@ -151,7 +151,7 @@ spec:
         # See deploy/podman/victual.yaml for why migration is a startup step and why this
         # is the only container holding a role that can run DDL.
         - name: migrate
-          image: localhost/victual-migrate:4.6.0
+          image: localhost/victual-migrate:0.1.0-MVP
           envFrom:
             - configMapRef:
                 name: victual-config
@@ -174,7 +174,7 @@ spec:
 
       containers:
         - name: app
-          image: localhost/victual-app:4.6.0
+          image: localhost/victual-app:0.1.0-MVP
           ports:
             - name: fastcgi
               containerPort: 9000
@@ -217,7 +217,7 @@ spec:
             stopSignal: SIGQUIT
 
         - name: web
-          image: localhost/victual-web:4.6.0
+          image: localhost/victual-web:0.1.0-MVP
           ports:
             - name: http
               containerPort: 8080

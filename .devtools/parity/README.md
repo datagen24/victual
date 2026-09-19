@@ -210,9 +210,9 @@ says so by not pretending to be one.
 
 | Container | Image | Port |
 |---|---|---|
-| `parity-victual-app` | `localhost/victual-app:4.6.0`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
-| `parity-victual-web` | `localhost/victual-web:4.6.0`, in the same pod | 8080, published by the pod |
-| — | `localhost/victual-migrate:4.6.0`, run once and removed | — |
+| `parity-victual-app` | `localhost/victual-app:0.1.0-MVP`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
+| `parity-victual-web` | `localhost/victual-web:0.1.0-MVP`, in the same pod | 8080, published by the pod |
+| — | `localhost/victual-migrate:0.1.0-MVP`, run once and removed | — |
 | `parity-upstream` | `docker.io/linuxserver/grocy:version-v4.6.0` | 8081 |
 | `parity-postgres` | `postgres:16`, on a tmpfs | — |
 | `parity-mosquitto` | `eclipse-mosquitto:2` | 1883 |
@@ -239,10 +239,12 @@ The app container's readiness gate is the manifest's `startupProbe` run the same
 because these images have no shell to run anything else with.
 
 The upstream image is pinned to `version-v4.6.0` rather than `latest`, and that is the
-whole argument of the suite: `version.json` says 4.6.0 / 2026-03-06 and so does the
-upstream image's own `version.json`, so a difference the suite reports is one *this fork*
-introduced, not one upstream shipped in a release the fork has not merged. Comparing
-against `latest` would produce a report full of upstream's changelog.
+whole argument of the suite: grocy 4.6.0 (2026-03-06) is the release the fork was cut
+from — `version.json` carried that number until the fork's first release, 0.1.0-MVP on
+2026-09-19, and the upstream image's own `version.json` still does — so a difference the
+suite reports is one *this fork* introduced, not one upstream shipped in a release the fork
+has not merged. Comparing against `latest` would produce a report full of upstream's
+changelog. The fork-side image tags above follow `version.json`, read by `stack.sh`.
 
 Both databases are thrown away and rebuilt on `parity reset`, and a cold start is a
 first-class check rather than a convenience: [plan 10](../../docs/plans/10-cold-start-statelessness.md)

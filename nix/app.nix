@@ -52,6 +52,37 @@ php.buildComposerProject2 (finalAttrs: {
   composerNoScripts = true;
   composerNoPlugins = true;
 
+  # The vendor tree is a fixed-output derivation, so its hash covers everything Composer
+  # writes into it - including composer/installed.php's record of the root package's
+  # version, which nixpkgs' vendor hook sets from this derivation's `version`. Two reasons
+  # not to let it. Composer's parser refuses a string like `0.1.0-MVP` (`MVP` is not a
+  # stability suffix it knows), and the image tag needs the string exactly as version.json
+  # spells it. And a root version that moves on every release would move the vendor hash
+  # with it, making hashes.nix's "changes only when composer.lock changes" untrue. So the
+  # root version Composer records is pinned to Composer's own sentinel for "not set" -
+  # nothing in Victual reads it - and the hash depends on composer.lock alone. postConfigure
+  # runs after the hook that exported the derivation's version, and before the install.
+  # The project derivation's own install hook does the same export, so both get it.
+  postConfigure = ''
+    export COMPOSER_ROOT_VERSION="1.0.0+no-version-set"
+  '';
+  composerVendor = php.mkComposerVendor {
+    inherit (finalAttrs)
+      pname
+      src
+      vendorHash
+      version
+      composerNoDev
+      composerNoScripts
+      composerNoPlugins
+      composerStrictValidation
+      ;
+    inherit php;
+    postConfigure = ''
+      export COMPOSER_ROOT_VERSION="1.0.0+no-version-set"
+    '';
+  };
+
   # Runs after the install hook has copied the tree into $out, and before fixup, so the
   # directory is still writable and already at its final path.
   postInstall = ''
