@@ -417,6 +417,14 @@ Per the roadmap's standard — booted-instance checks, not lint:
 
 ## 12. Repository bootstrap
 
+> **Amended 2026-09-19, see Open Question 1's amendment above: this section is kept as
+> reference material, not as what was built.** The sidecar lives in this repository at
+> `mcp/`, not in a new `victual-mcp` repository, so nothing below about a separate repo,
+> its own CI/release pipeline, or an imported `Dockerfile` was carried out. What *did*
+> transfer: tools declared one file per concern (`src/tools/<name>.ts`), matching the
+> skeleton's shape, and the packaging ideas worth remembering if this decision is ever
+> revisited. See `mcp/README.md` for the actual layout and status.
+
 Per Open question 1's response, the sidecar starts as a **new repository**, importing
 packaging from `datagen24/mcp-grocy` rather than rebasing inside it. The parent fork's
 rename settled on **Victual** ([plan 16](plans/16-project-rename.md)), so the repo is
@@ -471,6 +479,38 @@ recurring hygiene findings from Appendix A, stated as rules.
    > names at once. That rename has since landed on **Victual**
    > ([plan 16](plans/16-project-rename.md)), so the new repo is `victual-mcp`. §12
    > records what gets imported.
+   >
+   > **Amended 2026-09-19.** Reversed: the sidecar's TypeScript source lives in this
+   > repository, at `mcp/`, built by this flake as a fourth Nix image
+   > (`nix/mcp.nix`, `.#image-mcp`) alongside `image-app`/`image-web`/`image-migrate`.
+   > Two things moved this answer after it was written. First,
+   > [ADR-0013](adr/0013-nix-built-container-images.md), accepted 2026-09-04 — five
+   > days after this response — names this plan by number in its *Would affect* list
+   > and states the general rule directly: "a Go or TypeScript sidecar is a
+   > `buildGoModule` or `buildNpmPackage` away from an image with the same uid,
+   > labels, empty `/bin` and checks. That is the payoff for deciding before the
+   > family exists rather than after." Second, when work on this issue actually tried
+   > to create `datagen24/victual-mcp`, the GitHub App installed for the session
+   > lacked repository-creation scope (`403 Resource not accessible by integration`),
+   > which made the new-repo path a blocker rather than a preference in the moment it
+   > mattered. Faced with that, ADR-0013's precedent was the deciding argument, not
+   > merely a tiebreaker: this repository already builds two other non-PHP workloads
+   > (`labelRenderer`, `labelWorker`) by pinning their *own* repositories as flake
+   > inputs and building images from the pin — a shape this decision could have taken
+   > too. It did not, because those two exist for a reason specific to them (ADR-0019
+   > decision item 1: the driver matrix and device transport are deliberately kept
+   > out of this tree), and no equivalent reason applies to the sidecar, which has no
+   > device to drive and no logic Victual's own release cadence would need to
+   > outrun.
+   >
+   > **What this costs**, honestly: the independent release cadence, semantic-release
+   > pipeline and Home Assistant-adjacent packaging habits `mcp-grocy` would have
+   > contributed under §12's original import list do not apply to an in-repo
+   > workload, and are not built. §12 below is retained for its packaging ideas
+   > (Dockerfile structure, `.releaserc.json` conventions) as reference material, the
+   > same way the fork itself is Appendix A's reference material, but the "Repository
+   > bootstrap" and "Skeleton" sections describe a layout this plan no longer builds.
+   > See `mcp/README.md` for what actually exists.
 2. **Should `tools/list` reflect the key's capabilities** once writes exist — i.e.
    hide write tools from read-only keys? Requires the sidecar to learn the key's flag
    (a `GET /api/user`-adjacent probe or a header echo), which is a per-request lookup

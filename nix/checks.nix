@@ -108,6 +108,16 @@ in
         touch $out
       '';
 
+  # A `mcp-image-has-no-shell` check belongs here once nix/mcp.nix's `mcpNpmDeps` is a
+  # real hash. It is deliberately not added yet: `nix flake check` builds every
+  # `checks.<system>.*` derivation (see this file's header, and the comment on
+  # `checks` in nix/overlay.nix), so a check that closes over `mcp` would force a
+  # build of it on every pull request — including ones that never touch mcp/ — and
+  # that build fails on purpose today (nix/hashes.nix's `mcpNpmDeps` is still
+  # `fakeHash`, per mcp/README.md). Wiring this in before the hash is real is exactly
+  # what broke the `flake` CI job on PR #207; see nix/mcp.nix's own header for the
+  # rest of the bootstrap sequence.
+
   image-has-no-shell =
     runCommand "victual-check-no-shell"
       {

@@ -62,5 +62,14 @@ in
     (root + "/yarn.lock")
   ];
 
+  # The MCP sidecar's whole source tree, minus what npm/tsc produce locally and would
+  # otherwise get swept in if someone had run them in the working copy before building.
+  mcpFiles = fs.difference (root + "/mcp") (
+    fs.unions [
+      (fs.maybeMissing (root + "/mcp/node_modules"))
+      (fs.maybeMissing (root + "/mcp/dist"))
+    ]
+  );
+
   toSource = fileset: fs.toSource { inherit root fileset; };
 }
