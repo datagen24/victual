@@ -129,9 +129,7 @@ database it was generated beside, or one edited afterwards, does not change the 
 A database first migrated without the key (before `up.sh` wrote it) has a generated password
 instead, printed once in the migrate container's log and forced to change at first login:
 
-```sh
-kubectl -n victual logs deploy/victual -c migrate | grep 'generated password'
-```
+kubectl -n victual logs deploy/victual -c migrate --all-pods=true | grep 'generated password'
 
 Only the pod that created the database has that line. Until the password is changed the
 account can open only the change-password form, and the API answers
