@@ -1921,6 +1921,47 @@
 				}
 			}
 		},
+		"/user/capabilities": {
+			"get": {
+				"summary": "Returns what the credential making this request may do",
+				"description": "The type and read-only flag of the API key that authenticated the request (null and false for a session), and the acting user's resolved permission names. Needs no permission: the answer is about the caller. The MCP sidecar uses it to list only the tools a key can use.",
+				"tags": [
+					"Current user"
+				],
+				"responses": {
+					"200": {
+						"description": "The acting credential's capabilities",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CurrentUserCapabilities"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "The operation was not successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Error400"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "The request carried no valid API key or session",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ApiError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
 		"/user/settings": {
 			"get": {
 				"summary": "Returns all settings of the currently logged in user",
@@ -10185,6 +10226,29 @@
 					}
 				}
 			},
+			"CurrentUserCapabilities": {
+				"type": "object",
+				"properties": {
+					"key_type": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "The authenticating API key's type (\"default\" or \"mcp\"), or null when the request was not authenticated by a key"
+					},
+					"read_only": {
+						"type": "boolean",
+						"description": "Whether the authenticating API key is read-only: anything but GET, HEAD and OPTIONS is answered 403"
+					},
+					"permissions": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "The acting user's resolved permission names, sorted"
+					}
+				}
+			},
 			"UserDto": {
 				"type": "object",
 				"description": "A user object without the *password* and with an additional *display_name* property",
@@ -10226,6 +10290,14 @@
 					"key_hint": {
 						"type": "string",
 						"description": "The last four characters of the key, kept so that two keys can be told apart once neither can be read."
+					},
+					"key_type": {
+						"type": "string",
+						"description": "\"default\" for a regular key, \"mcp\" for a key issued for the MCP sidecar, or a special-purpose type (calendar sharing, label worker/verifier/renderer)."
+					},
+					"read_only": {
+						"type": "integer",
+						"description": "1 when the key may only make GET, HEAD and OPTIONS requests; anything else is answered 403."
 					},
 					"expires": {
 						"type": "string",

@@ -3,6 +3,7 @@
 namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
+use Victual\Services\ApiKeyService;
 use Victual\Services\UsersService;
 use Victual\Services\RolesService;
 use Victual\Services\DatabaseService;
@@ -271,6 +272,37 @@ class UsersApiController extends BaseApiController
 		return $this->HandleApiCall($response, function () use ($response)
 		{
 			return $this->ApiResponse($response, UsersService::GetInstance()->GetUsersAsDto()->where('id', VICTUAL_USER_ID));
+		});
+	}
+
+	/**
+	 * GET /api/user/capabilities - what the acting credential may do, about itself (issue
+	 * #208, docs/mcp-interface-spec.md §4.2 item 5): `{ key_type, read_only, permissions }`.
+	 *
+	 * `key_type` is the type of the API key that authenticated the request, or null for a
+	 * session or any other credential that is not a key. `permissions` is the acting user's
+	 * resolved permission names, sorted - resolved, so ADMIN brings every leaf it implies,
+	 * which is what a caller asking "may I call the route that checks X" needs.
+	 *
+	 * No permission is required, deliberately: the answer is about the caller, and
+	 * GET /api/users/{id}/permissions is USERS_READ-gated, so without this an ordinary key
+	 * could not learn its own permission set. It is what lets the MCP sidecar list only the
+	 * tools a key can use. A new endpoint rather than new fields on GET /api/user, per the
+	 * roadmap's additive-API rule.
+	 */
+	public function CurrentUserCapabilities(Request $request, Response $response, array $args)
+	{
+		return $this->HandleApiCall($response, function () use ($response)
+		{
+			$apiKey = ApiKeyService::GetInstance()->GetActingApiKey();
+			$permissions = User::ResolvedPermissionNames((int)VICTUAL_USER_ID);
+			sort($permissions);
+
+			return $this->ApiResponse($response, [
+				'key_type' => $apiKey === null ? null : (string)$apiKey->key_type,
+				'read_only' => ApiKeyService::GetInstance()->ActingKeyIsReadOnly(),
+				'permissions' => $permissions
+			]);
 		});
 	}
 

@@ -114,6 +114,21 @@ $("#new-api-key-button").on("click", function (e)
 	var form = $("<form>").attr({ method: "post", action: U("/manageapikeys/new") });
 	form.append($("<input>").attr({ type: "hidden", name: "description" }).val($("#description").val()));
 	form.append($("<input>").attr({ type: "hidden", name: "expires_in_days" }).val($("#expires_in_days").val()));
+	// Issue #208: the key type, and - for an MCP key only - whether it is read-only. A
+	// regular key never sends the flag, so hiding the checkbox cannot leave it applied.
+	var keyType = $("#key_type").val();
+	form.append($("<input>").attr({ type: "hidden", name: "key_type" }).val(keyType));
+	if (keyType === "mcp" && $("#read_only").is(":checked"))
+	{
+		form.append($("<input>").attr({ type: "hidden", name: "read_only" }).val("1"));
+	}
 	$(document.body).append(form);
 	form.trigger("submit");
+});
+
+// The read-only option belongs to an MCP key (issue #208); shown only while that type is
+// selected.
+$("#key_type").on("change", function ()
+{
+	$("#read_only_group").toggleClass("d-none", $(this).val() !== "mcp");
 });

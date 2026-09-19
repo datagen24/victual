@@ -42,8 +42,9 @@ class OpenApiController extends BaseApiController
 	 * @param int|null $rotatedFromId The predecessor this key replaces, when the request
 	 *                                that created it was a rotation rather than a plain
 	 *                                "add" (issue #130)
+	 * @param string $newApiKeyType That key's type, so the reveal can say it is an MCP key
 	 */
-	private function RenderApiKeysPage(Response $response, int $selectedKeyId, ?string $newApiKey = null, ?string $newApiKeyDescription = null, ?int $rotatedFromId = null)
+	private function RenderApiKeysPage(Response $response, int $selectedKeyId, ?string $newApiKey = null, ?string $newApiKeyDescription = null, ?int $rotatedFromId = null, string $newApiKeyType = ApiKeyService::API_KEY_TYPE_DEFAULT)
 	{
 		$apiKeys = $this->DB->api_keys();
 		if (!User::HasPermissions(User::PERMISSION_ADMIN))
@@ -58,13 +59,14 @@ class OpenApiController extends BaseApiController
 			'newApiKey' => $newApiKey,
 			'newApiKeyDescription' => $newApiKeyDescription,
 			'rotatedFromId' => $rotatedFromId,
+			'newApiKeyType' => $newApiKeyType,
 			'maxLifetimeDays' => (int)VICTUAL_API_KEY_MAX_LIFETIME_DAYS
 		]);
 	}
 
 	/**
-	 * POST /manageapikeys/new - creates a new API key (optional "description" and
-	 * "expires_in_days" form parameters) and renders the manage-keys page showing it,
+	 * POST /manageapikeys/new - creates a new API key (optional "description",
+	 * "expires_in_days", "key_type" - "default" or "mcp" - and "read_only" form parameters) and renders the manage-keys page showing it,
 	 * once. A missing or non-numeric "expires_in_days" gets the configured maximum; a
 	 * value outside [1, VICTUAL_API_KEY_MAX_LIFETIME_DAYS] is clamped rather than
 	 * refused, since this is a view form rather than an API request (ApiKeyService's own
@@ -89,15 +91,30 @@ class OpenApiController extends BaseApiController
 			}
 		}
 
-		$newApiKey = ApiKeyService::GetInstance()->CreateApiKey(ApiKeyService::API_KEY_TYPE_DEFAULT, $description, $lifetimeDays);
-		$newApiKeyId = ApiKeyService::GetInstance()->GetApiKeyId($newApiKey);
+		// The two types a person may issue here (issue #208). Anything else posted - a
+		// special-purpose type included - is a regular key, never an error and never the
+		// type asked for: the calendar and label credentials have their own issuing paths.
+		$keyType = ApiKeyService::API_KEY_TYPE_DEFAULT;
+		$readOnly = false;
+		if (is_array($postParams))
+		{
+			if (($postParams['key_type'] ?? null) === ApiKeyService::API_KEY_TYPE_MCP)
+			{
+				$keyType = ApiKeyService::API_KEY_TYPE_MCP;
+			}
+
+			$readOnly = in_array($postParams['read_only'] ?? null, ['1', 'on', 'true'], true);
+		}
+
+		$newApiKey = ApiKeyService::GetInstance()->CreateApiKey($keyType, $description, $lifetimeDays, null, null, $readOnly);
+		$newApiKeyId = ApiKeyService::GetInstance()->GetApiKeyId($newApiKey, $keyType);
 
 		// Rendered here rather than redirected to, because this response is the only place
 		// the key can ever be shown: what is stored is a SHA-256 hash (plan 11, question
 		// 4), so nothing can produce the plaintext again. The obvious alternative - putting
 		// it in the redirect URL - is the query-string key path sweep finding S11 exists to
 		// remove, in the one place it would be most durable: browser history.
-		return $this->RenderApiKeysPage($response, (int)$newApiKeyId, $newApiKey, $description);
+		return $this->RenderApiKeysPage($response, (int)$newApiKeyId, $newApiKey, $description, null, $keyType);
 	}
 
 	/**
@@ -124,7 +141,7 @@ class OpenApiController extends BaseApiController
 		$predecessor = $this->DB->api_keys($apiKeyId);
 
 		if ($predecessor === null
-			|| $predecessor->key_type !== ApiKeyService::API_KEY_TYPE_DEFAULT
+			|| !in_array($predecessor->key_type, ApiKeyService::USER_ISSUED_KEY_TYPES, true)
 			|| ($predecessor->user_id != VICTUAL_USER_ID && !User::HasPermissions(User::PERMISSION_ADMIN)))
 		{
 			throw new \Slim\Exception\HttpNotFoundException($request);
@@ -132,7 +149,7 @@ class OpenApiController extends BaseApiController
 
 		[$newApiKey, $newApiKeyId] = ApiKeyService::GetInstance()->RotateApiKey($apiKeyId);
 
-		return $this->RenderApiKeysPage($response, $newApiKeyId, $newApiKey, $predecessor->description, $apiKeyId);
+		return $this->RenderApiKeysPage($response, $newApiKeyId, $newApiKey, $predecessor->description, $apiKeyId, $predecessor->key_type);
 	}
 
 	/**

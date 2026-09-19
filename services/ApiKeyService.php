@@ -13,6 +13,16 @@ class ApiKeyService extends BaseService
 	 * type for the anonymously accessible calendar iCal export URL.
 	 */
 	const API_KEY_TYPE_DEFAULT = 'default';
+
+	/**
+	 * A key for the MCP sidecar (issue #208, docs/mcp-interface-spec.md §4.2). In every
+	 * respect but its type it is a regular key: issued by a user from the manage-keys
+	 * screen, stored as a hash, given a finite expiry, accepted in the API key header and
+	 * acting as its owner. The type exists so that MCP access is granted and revoked on its
+	 * own - delete the MCP keys and the assistant is out, without touching the keys other
+	 * clients use - and so that a request can insist on it (see EXPECTED_KEY_TYPE_HEADER).
+	 */
+	const API_KEY_TYPE_MCP = 'mcp';
 	const API_KEY_TYPE_LABEL_WORKER = 'label-worker';
 	const API_KEY_TYPE_LABEL_VERIFIER = 'label-verifier';
 
@@ -30,6 +40,34 @@ class ApiKeyService extends BaseService
 	 */
 	const API_KEY_TYPE_LABEL_RENDERER = 'label-renderer';
 	const API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL = 'special-purpose-calendar-ical';
+
+	/**
+	 * The types a person issues for themselves from the manage-keys screen, and so the types
+	 * accepted in the API key header on ordinary API routes. Each gets a finite expiry and
+	 * can be rotated; none can be read back once created.
+	 */
+	const USER_ISSUED_KEY_TYPES = [self::API_KEY_TYPE_DEFAULT, self::API_KEY_TYPE_MCP];
+
+	/**
+	 * A request header naming the one key type the caller's key must have. Optional: a
+	 * request without it is matched against every USER_ISSUED_KEY_TYPES type, as before.
+	 *
+	 * It exists for the MCP sidecar, which sends `mcp` on every call it forwards. The key a
+	 * client hands the sidecar is forwarded unchanged (spec §2), so without this a regular
+	 * key would work through the sidecar exactly as an MCP key does, and "MCP access is
+	 * granted and revoked independently" (§4.2) would hold only by convention. With it, only
+	 * an MCP key passes on that path. It narrows and never widens: a value outside
+	 * USER_ISSUED_KEY_TYPES matches nothing, so it cannot be used to reach the calendar or
+	 * label credential types from the header.
+	 */
+	const EXPECTED_KEY_TYPE_HEADER = 'VICTUAL-API-KEY-TYPE';
+
+	/**
+	 * The key row that authenticated the current request, when one did. Null for a session,
+	 * a reverse-proxy identity, or the modes that run without authentication. Read by the
+	 * read-only refusal in BaseAuthMiddleware and by GET /api/user/capabilities.
+	 */
+	private $ActingApiKey = null;
 
 	/**
 	 * The value stored in api_keys.api_key for a key of the given type.
@@ -92,7 +130,7 @@ class ApiKeyService extends BaseService
 	 *                          by the admin instead of by the key's actual owner
 	 * @return string The newly generated API key
 	 */
-	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null, ?int $lifetimeDays = null, ?int $rotatedFromId = null, ?int $ownerId = null)
+	public function CreateApiKey(string $keyType = self::API_KEY_TYPE_DEFAULT, ?string $description = null, ?int $lifetimeDays = null, ?int $rotatedFromId = null, ?int $ownerId = null, bool $readOnly = false)
 	{
 		$newApiKey = $this->GenerateKey();
 
@@ -103,7 +141,8 @@ class ApiKeyService extends BaseService
 			'expires' => $this->ExpiryFor($keyType, $lifetimeDays),
 			'key_type' => $keyType,
 			'description' => $description,
-			'rotated_from_id' => $rotatedFromId
+			'rotated_from_id' => $rotatedFromId,
+			'read_only' => $readOnly ? 1 : 0
 		]);
 		$apiKeyRow->save();
 
@@ -117,7 +156,7 @@ class ApiKeyService extends BaseService
 	 */
 	private function ExpiryFor(string $keyType, ?int $lifetimeDays): string
 	{
-		if ($keyType !== self::API_KEY_TYPE_DEFAULT)
+		if (!in_array($keyType, self::USER_ISSUED_KEY_TYPES, true))
 		{
 			return '2999-12-31 23:59:59';
 		}
@@ -139,7 +178,10 @@ class ApiKeyService extends BaseService
 	 * explicit act (deleting it, the existing DELETE /api/objects/api_keys/{id} - every
 	 * key is retired that way), never a side effect of rotating.
 	 *
-	 * Restricted to API_KEY_TYPE_DEFAULT on purpose: the special-purpose key types each
+	 * An MCP key rotates the same way, and its successor keeps the predecessor's read-only
+	 * flag: rotating a key must not be a way to widen what it may do.
+	 *
+	 * Restricted to USER_ISSUED_KEY_TYPES on purpose: the special-purpose key types each
 	 * have their own rotation story already (ADR-0019's paired rotation for label
 	 * credentials; the calendar key is meant to be long-lived and handed out as a URL) and
 	 * this must not regress them by offering a second, conflicting one.
@@ -157,14 +199,14 @@ class ApiKeyService extends BaseService
 	{
 		$predecessor = $this->DB->api_keys($apiKeyId);
 
-		if ($predecessor === null || $predecessor->key_type !== self::API_KEY_TYPE_DEFAULT)
+		if ($predecessor === null || !in_array($predecessor->key_type, self::USER_ISSUED_KEY_TYPES, true))
 		{
-			throw new \InvalidArgumentException('Only a regular API key can be rotated');
+			throw new \InvalidArgumentException('Only a regular or MCP API key can be rotated');
 		}
 
-		$newApiKey = $this->CreateApiKey(self::API_KEY_TYPE_DEFAULT, $predecessor->description, $lifetimeDays, $apiKeyId, (int)$predecessor->user_id);
+		$newApiKey = $this->CreateApiKey($predecessor->key_type, $predecessor->description, $lifetimeDays, $apiKeyId, (int)$predecessor->user_id, (bool)$predecessor->read_only);
 
-		return [$newApiKey, $this->GetApiKeyId($newApiKey)];
+		return [$newApiKey, $this->GetApiKeyId($newApiKey, $predecessor->key_type)];
 	}
 
 	/**
@@ -239,16 +281,36 @@ class ApiKeyService extends BaseService
 	 */
 	public function IsValidApiKey($apiKey, $keyType = self::API_KEY_TYPE_DEFAULT)
 	{
-		if ($apiKey === null || empty($apiKey))
+		return $this->FindValidApiKey($apiKey, [$keyType]) !== null;
+	}
+
+	/**
+	 * The unexpired key row matching the given key and one of the given types, or null;
+	 * stamps last_used as IsValidApiKey() describes.
+	 *
+	 * One lookup for several types is sound because every type in one call must be stored
+	 * the same way: StoredValueOf() is taken from the first, and a calendar key (stored as
+	 * issued) mixed with a hashed type would compare one of them wrongly. The callers pass
+	 * either a single type or USER_ISSUED_KEY_TYPES, which are all hashed.
+	 *
+	 * @param string[] $keyTypes
+	 * @return \LessQL\Row|null
+	 */
+	public function FindValidApiKey(?string $apiKey, array $keyTypes)
+	{
+		if ($apiKey === null || $apiKey === '' || $keyTypes === [])
 		{
-			return false;
+			return null;
 		}
 
-		$apiKeyRow = $this->DB->api_keys()->where('api_key = :1 AND expires > :2 AND key_type = :3', self::StoredValueOf($apiKey, $keyType), date('Y-m-d H:i:s', time()), $keyType)->fetch();
+		$apiKeyRow = $this->DB->api_keys()
+			->where('api_key = :1 AND expires > :2', self::StoredValueOf($apiKey, $keyTypes[0]), date('Y-m-d H:i:s', time()))
+			->where('key_type', array_values($keyTypes))
+			->fetch();
 
 		if ($apiKeyRow === null)
 		{
-			return false;
+			return null;
 		}
 
 		// Only once a day, not once a request. A read-only GET used to issue a write on
@@ -268,7 +330,33 @@ class ApiKeyService extends BaseService
 			DatabaseService::GetInstance()->SetDbChangedTime($dbModTime);
 		}
 
-		return true;
+		return $apiKeyRow;
+	}
+
+	/**
+	 * Records the key row that authenticated the current request.
+	 */
+	public function SetActingApiKey($apiKeyRow): void
+	{
+		$this->ActingApiKey = $apiKeyRow;
+	}
+
+	/**
+	 * The key row that authenticated the current request, or null when it was not a key.
+	 *
+	 * @return \LessQL\Row|null
+	 */
+	public function GetActingApiKey()
+	{
+		return $this->ActingApiKey;
+	}
+
+	/**
+	 * Whether the current request was authenticated by a read-only key.
+	 */
+	public function ActingKeyIsReadOnly(): bool
+	{
+		return $this->ActingApiKey !== null && (int)$this->ActingApiKey->read_only === 1;
 	}
 
 	/**
