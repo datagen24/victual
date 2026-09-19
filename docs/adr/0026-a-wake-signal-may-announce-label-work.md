@@ -207,8 +207,15 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
 
 9. **A broker carrying wake topics is authenticated and TLS.** Unlike the state topics, whose
    threat model is "a wall tablet can read this", the wake topics disclose household activity
-   timing. This is a deployment requirement recorded here and stated in the operator manual, not
-   something the code can enforce; `MQTT_TLS` and credentials already exist as settings.
+   timing. This is a deployment requirement, not something the code can enforce; `MQTT_TLS` and
+   broker credentials already exist as settings, and both default to off and empty.
+   **The operator manual does not say this today and has to be changed to say it.**
+   [The Home Assistant MQTT chapter](../manual/operator/home-assistant-mqtt.md) and
+   [the configuration reference](../manual/configuration.md) currently permit an anonymous
+   broker with `MQTT_TLS` false, which is a defensible default for the state topics under plan
+   18's own threat model and is not defensible for these. Writing that guidance is part of the
+   implementing work this record gates, so accepting the record without it would leave the
+   requirement stated nowhere an operator reads.
 
 ## Consequences
 
@@ -230,8 +237,9 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
   to the claim loop has to be considered against both.
 - Spurious wakes are harmless and expected. Each costs one `SKIP LOCKED` query that returns
   nothing.
-- Anything the broker admits learns when the household prints and how often. Decision 7 is the
-  mitigation and it is an operator obligation.
+- Anything the broker admits learns when the household prints and how often. Decision 9 is the
+  mitigation — broker authentication and TLS — and it is an operator obligation that the manual
+  does not yet carry.
 - Plan 18's rule that only *facts* go on topics is kept: `pending` is a count, not "you should
   print now".
 
@@ -247,9 +255,12 @@ Each is a gate. The accepting pull request says how each was met.
 2. **Killing the broker does not stop a print.** With the worker subscribed, stop the broker,
    enqueue a job, and show it printed on the fallback poll. Then restart the broker and show the
    worker recovers without operator action.
-3. **Nothing readable is on the topic.** Subscribe to `victual/labels/#` with a broker client
-   through a full print of a real label, and show the captured payloads contain no uid, no
-   entity name and no printer detail.
+3. **Nothing readable is on the topic.** Subscribe to `${MQTT_TOPIC_PREFIX}/labels/#` with a
+   broker client through a full print of a real label, and show the captured payloads contain no
+   uid, no entity name and no printer detail. Run it once with a **non-default**
+   `MQTT_TOPIC_PREFIX`, because decision 2 puts the wake topics under the configured prefix and
+   a check written against the `victual` default would pass while publishing somewhere it never
+   looked.
 4. **Latency is measured, not asserted.** Record the interval from enqueue to bytes leaving the
    worker, with and without the broker, on the same hardware, and put both numbers in plan 25.
 5. **Both topologies are demonstrated on something that is not Kubernetes.** The event-scaled
@@ -257,9 +268,15 @@ Each is a gate. The accepting pull request says how each was met.
    runs and the CronJob still in place; and the resident path under Docker Compose, printing a
    real label woken by the topic. A record that only works on the decider's own cluster has not
    met this gate.
-6. **A claim is still exclusive.** Run two workers against one printer's queue with the
-   subscription live and show that the `UNIQUE (outbox_id, attempt_number)` fence still admits
-   exactly one attempt — that the hint changed nothing about exclusivity.
+6. **A claim is still exclusive, and the lease fence is unmoved.** Run two workers against one
+   printer's queue with the subscription live and show that the
+   `UNIQUE (outbox_id, attempt_number)` fence still admits exactly one attempt — that the hint
+   changed nothing about exclusivity. The neighbouring property, that a report arriving after
+   the lease expired is **recorded rather than refused** and leaves the attempt uncertain, is
+   [plan 25](../plans/25-label-infrastructure.md)'s verification 8 and is not re-tested here:
+   this record changes nothing about leasing, and a gate that restated someone else's would
+   drift from it. What is this record's is that waking more often does not reach that fence more
+   often than polling did.
 
 ## Open questions
 
