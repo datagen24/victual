@@ -30,7 +30,11 @@ const TEMPORAL_FIELDS = new Set([
 	'timestamp',
 	'time_local',
 	'time_local_sqlite3',
-	'time_utc'
+	'time_utc',
+	// GET /api/system/db-changed-time: when the last write landed, which on two servers is two
+	// different seconds. Flaky rather than constant — it only differs when the scenario's last
+	// write straddles a second boundary — which is how it got past the suite until 2026-09-19.
+	'changed_time'
 ]);
 
 // Credentials. Masked in every mode: a clock cannot make two instances mint the same key.

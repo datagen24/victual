@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const { VICTUAL_ADMIN_PASSWORD } = require('./lib/instance');
+const { classifyUi } = require('./lib/accepted');
 
 const ROUTES_FILE = path.join(__dirname, '..', '..', 'frontend', 'routes.txt');
 
@@ -124,7 +125,12 @@ async function visit(page, baseUrl, route) {
 		shape = await page.evaluate(() => ({
 			tables: document.querySelectorAll('table').length,
 			rows: document.querySelectorAll('table tbody tr').length,
-			forms: document.querySelectorAll('form').length,
+			// The layout's logout control is a POST form on the fork and a link upstream (sweep
+			// finding S8: as a GET it fired from any <img src> a page carried). It is on every
+			// page, so counting it made all of them differ by one and hid a real change to
+			// a page's own forms behind the noise.
+			forms: [...document.querySelectorAll('form')]
+				.filter((f) => !/\/logout$/.test(f.getAttribute('action') || '')).length,
 			inputs: document.querySelectorAll('input, select, textarea').length,
 			hasMainContent: !!document.querySelector('main, .content, #page-content, .container-fluid')
 		}));
@@ -210,7 +216,10 @@ async function purchaseWorkflow(page, baseUrl, label) {
 	try {
 		await page.goto(`${baseUrl}/purchase`, { waitUntil: 'networkidle', timeout: 30000 });
 
-		const hasForm = await page.locator('#purchase-form, form').first().isVisible().catch(() => false);
+		// Not the layout's logout form (S8): it comes first in document order, inside a closed
+		// dropdown, so "the first form" was invisible on the fork and nowhere else.
+		const hasForm = await page.locator('#purchase-form, form:not([action$="/logout"])').first()
+			.isVisible().catch(() => false);
 		result.steps.push({ step: 'purchase form visible', value: hasForm });
 
 		// The product picker is a combobox both projects render the same way. Typing into
@@ -280,20 +289,24 @@ async function main() {
 		skipped: [...FORK_ONLY_OR_SKIPPED].map(([route, reason]) => ({ route, reason })),
 		routes: [],
 		workflow: { victual: victualWalk.workflow, upstream: upstreamWalk.workflow, differences: [] },
-		totals: { routes: routes.length, withDifferences: 0, differences: 0 }
+		totals: { routes: routes.length, withDifferences: 0, differences: 0, accepted: 0 }
 	};
 
+	// Classified the way the API phase classifies: an accepted difference is still recorded
+	// and printed, with the record that accepted it, and only the unexplained ones count.
 	for (let i = 0; i < routes.length; i++) {
-		const differences = compareVisits(victualWalk.visits[i], upstreamWalk.visits[i]);
-		run.routes.push({
-			route: routes[i],
-			victual: victualWalk.visits[i],
-			upstream: upstreamWalk.visits[i],
-			differences
+		const victual = victualWalk.visits[i];
+		const upstream = upstreamWalk.visits[i];
+		const differences = compareVisits(victual, upstream).map((difference) => {
+			const entry = classifyUi({ route: routes[i], difference, victual, upstream });
+			return entry ? { ...difference, accepted: { id: entry.id, reference: entry.reference } } : difference;
 		});
-		if (differences.length > 0) {
+		run.routes.push({ route: routes[i], victual, upstream, differences });
+		const reported = differences.filter((d) => !d.accepted);
+		run.totals.accepted += differences.length - reported.length;
+		if (reported.length > 0) {
 			run.totals.withDifferences++;
-			run.totals.differences += differences.length;
+			run.totals.differences += reported.length;
 		}
 	}
 
@@ -316,10 +329,19 @@ async function main() {
 
 	console.log('');
 	for (const r of run.routes) {
-		if (r.differences.length === 0) continue;
+		const reported = r.differences.filter((d) => !d.accepted);
+		if (reported.length === 0) continue;
 		console.log(`  \x1b[31m${r.route}\x1b[0m`);
-		for (const d of r.differences) {
+		for (const d of reported) {
 			console.log(`      [${d.kind}] ${d.detail}`);
+		}
+	}
+	if (run.totals.accepted > 0) {
+		console.log(`  Accepted differences (${run.totals.accepted}) — found, classified, not failed:`);
+		for (const r of run.routes) {
+			for (const d of r.differences.filter((x) => x.accepted)) {
+				console.log(`      ${r.route} [${d.kind}] ${d.detail}  — ${d.accepted.id}`);
+			}
 		}
 	}
 	for (const d of run.workflow.differences) {

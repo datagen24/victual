@@ -364,6 +364,98 @@ const ACCEPTED = [
 	},
 
 	{
+		id: 'plan-19-user-permissions-is-the-whole-tree',
+		reference: 'docs/plans/19-rbac.md; approved as a difference by the maintainer 2026-09-19 (issue #219)',
+		reason:
+			'GET /api/users/{id}/permissions answers from uihelper_user_permissions: one row per ' +
+			'permission in the tree, with has_permission, parent, permission_name and via_roles, where ' +
+			'upstream returns the user_permissions grant rows alone. So the length differs (37 against ' +
+			'the number of grants), and id and permission_id carry the permission\'s id rather than the ' +
+			'grant row\'s. Plan 19 recorded via_roles as its one additive field; the rest of the change ' +
+			'was not written down until the first full-stack parity run found it, and the maintainer ' +
+			'accepted it as a difference rather than restoring upstream\'s shape.',
+		match: ({ step, difference }) =>
+			step.method === 'GET' &&
+			/^\/users\/\d+\/permissions$/.test(String(step.path)) &&
+			(
+				(difference.kind === 'length' && difference.pointer === '/body') ||
+				(difference.kind === 'extra-field' &&
+					/\/body\/\d+\/(has_permission|parent|permission_name|via_roles)$/.test(difference.pointer)) ||
+				(difference.kind === 'value' && /\/body\/\d+\/(id|permission_id)$/.test(difference.pointer))
+			)
+	},
+
+	{
+		id: 'fork-permission-leaves',
+		reference: 'docs/plans/19-rbac.md (New permission leaves); approved 2026-09-19 (issue #219)',
+		reason:
+			'permission_hierarchy has more rows here: the read leaves plan 19 split out of their parents ' +
+			'(STOCK_PRICES_VIEW, RECIPES_VIEW and the other *_VIEW leaves the MCP capability filter keys ' +
+			'on). Only growth is accepted — a fork with fewer permissions than upstream is still reported.',
+		match: ({ step, difference }) =>
+			/^\/objects\/permission_hierarchy(\?|$)/.test(String(step.path)) &&
+			difference.kind === 'length' &&
+			difference.pointer === '/body' &&
+			Number(difference.victual) > Number(difference.upstream)
+	},
+
+	{
+		id: 'issue-46-price-views-have-a-defined-answer',
+		reference: 'issue #46, commit 9a0952d3 (migration 0261); approved as a difference 2026-09-19 (issue #219)',
+		reason:
+			'Upstream\'s products_last_purchased orders by purchased_date alone with LIMIT 1, which is not ' +
+			'a total order: two purchases on one day return whichever row the plan reaches first. The fork ' +
+			'breaks the tie on the ledger row id, so last_price is the last purchase — 4.56 after buying ' +
+			'at 1.23 then 4.56 in the stock scenario, 3 after buying at 2 then 3 in barcodes-and-undo — and ' +
+			'price history lists same-day rows in booking order. Upstream\'s products_average_price divides ' +
+			'SUM by SUM over NUMERIC-affinity columns that SQLite stores as INTEGER, so 4@2, 3@2 and 2@3 ' +
+			'average to 2 instead of 20/9 = 2.222222. Both are upstream defects the fork corrected; ' +
+			'StockService::InventoryProduct() uses last_price as a default price, so the undefined answer ' +
+			'was writing itself into the ledger.',
+		match: ({ step, difference }) =>
+			difference.kind === 'value' &&
+			(
+				/\/(last_price|avg_price)$/.test(difference.pointer) ||
+				(/\/body\/\d+\/price$/.test(difference.pointer) &&
+					/\/(price-history|products_last_purchased|products_average_price)(\?|$)/.test(String(step.path)))
+			)
+	},
+
+	{
+		id: 'plan-11-driver-text-not-returned',
+		reference: 'docs/plans/11-api-error-handling.md',
+		reason:
+			'Upstream answers a refused write with the database driver\'s own words (SQLSTATE[23000] … NOT ' +
+			'NULL constraint failed: user_permissions.permission_id); the fork answers with its own message ' +
+			'(permission_id is required, or a generic "the database rejected this request"). Same status, ' +
+			'same shape, and the fork is the side that does not quote its schema to a client. Only this ' +
+			'direction is accepted: driver text on the fork\'s side is still reported.',
+		match: ({ difference }) =>
+			difference.kind === 'value' &&
+			difference.pointer.endsWith('/error_message') &&
+			/SQLSTATE\[/.test(String(difference.upstream)) &&
+			!/SQLSTATE\[/.test(String(difference.victual))
+	},
+
+	{
+		id: 'server-defaulted-moment',
+		reference: 'harness/lib/normalize.js (temporal fields)',
+		reason:
+			'A chore created without a start_date takes "now" from the server that stored it, and two ' +
+			'servers asked a second apart answer a second apart. The same reason normalize.js masks ' +
+			'row_created_timestamp, but start_date cannot be masked wholesale: ADR-0005\'s start_date ' +
+			'rendering entry depends on comparing it. So this accepts two well-formed timestamps at most ' +
+			'two seconds apart and nothing else — a different day, or a malformed value, is still reported.',
+		match: ({ difference }) => {
+			if (difference.kind !== 'value' || !/\/start_date$/.test(difference.pointer)) return false;
+			const re = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+			if (!re.test(String(difference.victual)) || !re.test(String(difference.upstream))) return false;
+			const ms = (v) => Date.parse(String(v).replace(' ', 'T') + 'Z');
+			return Math.abs(ms(difference.victual) - ms(difference.upstream)) <= 2000;
+		}
+	},
+
+	{
 		id: 'fork-additive-fields',
 		reference: 'docs/adr/0005-wire-contract-is-the-invariant.md',
 		reason:
@@ -401,7 +493,47 @@ const FORK_ADDED_FIELDS = new Set([
 	// plan 20 — the database engine actually serving, which upstream has no need for
 	// because upstream is always SQLite and reports it in sqlite_version. See the
 	// sqlite-version entry above for why that field could not keep answering here.
-	'database_engine'
+	'database_engine',
+
+	// --- The MVP's schema, recorded 2026-09-19 from the first `parity all` after it ------
+	// Every one is a nullable or defaulted column, so an upstream client that ignores it is
+	// unaffected. The permissions route (plan 19) is deliberately not here: it changed
+	// shape as well as gaining fields, and `parent` is too generic a name to accept by name.
+	//
+	// plan 28 / ADR-0022, migration 0275 — an opened container's measured remainder, on
+	// every stock row and every booking.
+	'opened_amount',
+	'opened_qu_id',
+	'opened_tare',
+	'opened_measured_at',
+	'amount_measured',
+	'stock_amount_measured',
+	// plan 08, migration 0273 — nested locations.
+	'parent_location_id',
+	// plan 23, migration 0274 — storage classes for locations.
+	'storage_class_id',
+	// plan 29, migration 0276 — a refillable vessel's tare, on the location it sits at, and
+	// the (product, location) replenishment pair.
+	'tare_weight',
+	'tare_qu_id',
+	'default_refill_location_id_from',
+	'default_refill_location_id_to',
+	'quick_refill_amount',
+	// plan 05 parts A and C, migration 0286 — a list's store, a product's or recipe's list.
+	'shopping_location_id',
+	'default_shopping_list_id',
+	// plan 03, migration 0268 — a product group's own minimum (upstream has the column on
+	// products only, which is why it is extra here and nowhere else).
+	'min_stock_amount',
+	// plan 30 / ADR-0023, migration 0278 — nested product groups.
+	'parent_product_group_id',
+	// plan 31, migration 0279 — directed substitution, on the product details response.
+	'substitution_candidates',
+	// ADR-0021's label import state, migrations 0269 and 0283 — which import a location or
+	// product row belongs to.
+	'import_epoch',
+	// plans 25/27/32 — the label subsystem's feature flag, on GET /api/system/config.
+	'FEATURE_FLAG_LABELS'
 ]);
 
 function lastSegment(pointer) {
@@ -476,4 +608,45 @@ function classify(step, difference, mode = 'parity') {
 	return null;
 }
 
-module.exports = { ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify, appliesInMode };
+// The browser walk's registry. Same bar, same rule — found, printed, counted apart — but a
+// UI difference is a route plus a kind (`shape:forms`, `console-only-upstream`, …), not a
+// JSON pointer, so it gets its own list rather than a second shape squeezed into the one above.
+const UI_ACCEPTED = [
+	{
+		id: 'plan-28-measurement-form',
+		reference: 'docs/plans/28-open-container-measurement.md, commit a592ab3f',
+		reason:
+			'/stockentries carries #stock-measurement-form, the dialog that records an opened ' +
+			'container\'s remaining contents. Upstream has no such feature. Exactly one more form, on ' +
+			'this route only — any other change to the page\'s forms is still reported.',
+		match: ({ route, difference, victual, upstream }) =>
+			route === '/stockentries' &&
+			difference.kind === 'shape:forms' &&
+			victual.shape.forms === upstream.shape.forms + 1
+	},
+	{
+		id: 'upstream-equipment-fetches-undefined',
+		reference: 'upstream grocy 4.6.0 public/viewjs/equipment.js; measured 2026-09-19 (issue #219)',
+		reason:
+			'Upstream\'s /equipment requests GET /api/objects/equipment/undefined on load and logs the ' +
+			'404; the fork does not make that request. An upstream defect: only console errors on ' +
+			'upstream\'s side of this route are accepted, never one on the fork\'s.',
+		match: ({ route, difference }) =>
+			route === '/equipment' && difference.kind === 'console-only-upstream'
+	}
+];
+
+function classifyUi(context) {
+	for (const entry of UI_ACCEPTED) {
+		let matched = false;
+		try {
+			matched = entry.match(context);
+		} catch {
+			matched = false;
+		}
+		if (matched) return entry;
+	}
+	return null;
+}
+
+module.exports = { ACCEPTED, UI_ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify, classifyUi, appliesInMode };
