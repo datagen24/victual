@@ -67,6 +67,13 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   key's hash. New phase `mcpauth`; `tests/Pgsql/request-subprocess-helper.php` sends any
   request through the full stack. Full suite green. Sidecar side (send the header) is on
   #86's branch. See [[project_issue86_mcp_sidecar]].
+- **2026-09-19 — Issue #86 sidecar built, deployed to kind** (branch
+  `claude/issue-86-kubernetes-deploy-cc575a`): six tools implemented on the real SDK v2
+  (`@modelcontextprotocol/server`+`/node` 2.0.0 — the scaffold's `sdk ^2.0.0` did not
+  exist), 15 node:test tests, `.#image-mcp` built shell-free, and `deploy/k3s` applied to a
+  real cluster for the first time via `deploy/kind/up.sh`. Found: `stopSignal` dropped on
+  k8s 1.37. Next: #208 (capabilities endpoint, MCP key type, read_only). Detail and gotchas:
+  [[project_issue86_mcp_sidecar]].
 - **2026-09-19 — Issue #86 framework merged, in-repo, unbuilt** (PR
   [207](https://github.com/datagen24/victual/pull/207), branch
   `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers

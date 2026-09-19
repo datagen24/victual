@@ -42,6 +42,15 @@ and `2025-11-25` clients simultaneously. The v1 SDK line (`@modelcontextprotocol
 which the prior-art fork pins) tops out at `2025-11-25` and receives only maintenance
 fixes for a limited window — new work starts on v2.
 
+> **Amended 2026-09-19, first build (issue #86).** The package names above are right:
+> `@modelcontextprotocol/server`, `/node` and `/core`, all `2.0.0`. The scaffold's
+> `package.json` had pinned `@modelcontextprotocol/sdk ^2.0.0`, which does not exist —
+> that line stops at 1.30. The v2 entry point is `createMcpHandler(factory)`. It builds a
+> fresh `McpServer` per request and serves both revisions from one factory. The SDK
+> *client* defaults to the 2025 handshake unless it opts into `versionNegotiation`, so a
+> client that negotiates `2025-11-25` against this server says nothing about what the
+> server supports.
+
 **Implementation language is TypeScript** — settled by 02-Q6: the SDK does the protocol
 so the fork never tracks spec churn by hand. Zod v4.2+ for schemas (a v2 SDK
 requirement; input and output schemas are written once in Zod and serve as both
@@ -209,6 +218,14 @@ Six tools, the plan's table made concrete. Shared conventions first:
   stateless, nothing cached across requests. `tools/call` does *not* probe: Victual
   enforces on the forwarded call, and a race (permission revoked between list and
   call) surfaces as an honest `forbidden` (§7).
+  > **Amended 2026-09-19.** The permission names in that map predate
+  > [plan 19](plans/19-rbac.md)'s read/write split. The rule stated first — each tool
+  > checks what "the equivalent REST route" checks — is the one that holds, and those
+  > routes check the `*_VIEW` leaves. The map as built is therefore `STOCK_VIEW`
+  > (`stock_overview`, `expiring_soon`, `missing_products`, `find_product`),
+  > `SHOPPINGLIST_VIEW` (`shopping_list`) and `RECIPES_VIEW` (`recipes_i_can_cook`). The
+  > write tools' `SHOPPINGLIST_ITEMS_ADD`, `STOCK_CONSUME` and `STOCK_PURCHASE` are already
+  > leaves and stand as written.
 - **`tools/list` order and caching**: fixed, deterministic order; `ttlMs: 300000`,
   `cacheScope: "private"` — the list now varies per key, so it is private by
   necessity, and five minutes bounds how long a revoked permission or flipped
@@ -407,6 +424,30 @@ the SDK does natively, OAuth (§4.1), fuzzy search (§5.4), localization of name
 `text` blocks (English v1), and any write beyond §6's three.
 
 ## 11. Verification
+
+> **Status, 2026-09-19** (issue #86). Run against a production-mode Victual on kind
+> (Kubernetes v1.37) through `deploy/kind/up.sh`, using the official SDK v2 client
+> (`mcp/scripts/probe.mjs`):
+>
+> - **(2) Done except the capability filter, with one wording correction.** `server/discover`
+>   lists only `"2026-07-28"` in `supportedVersions`, not both revisions as (2) expects.
+>   `server/discover` is itself a 2026-era method, so a 2025 client never sends it; that
+>   client is served `2025-11-25` through the legacy fallback. Both revisions are served,
+>   and all six tools return schema-valid `structuredContent` over each.
+> - **(3) Partly done.**
+>   - A request with no header is 401 before any JSON-RPC.
+>   - A garbage key gets an `unauthorized` tool error.
+>   - The default-type-key and read-only rows wait on issue #208.
+>   - So does the listing filter. It is built and unit-tested against a fake Victual, but
+>     it has no Victual endpoint to call yet.
+> - **(5) Done.** Two replicas behind a ClusterIP Service, no affinity: 40 of 40
+>   good-key calls answered correctly. A 30-call bad-key run, whose failures each pod
+>   logs, showed the split: 13 calls on one pod, 17 on the other.
+> - **(1) and (4) are open.**
+>
+> One shaping field was added beyond the tables above: `total`, on `stock_overview`,
+> `missing_products` and `shopping_list`. Each counts the rows before `limit` is applied,
+> so a truncated answer says so ("212 products in stock; showing 100").
 
 Per the roadmap's standard — booted-instance checks, not lint:
 

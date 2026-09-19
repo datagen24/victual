@@ -20,15 +20,21 @@ dockerTools.streamLayeredImage (
     name = "victual-mcp";
     contents = [
       mcp
+      mcp.node
       imageLib.passwd
       imageLib.certificates
     ];
     extraCommands = imageLib.scaffold "";
     config = imageLib.commonConfig // {
-      Entrypoint = [ "${mcp}/bin/victual-mcp" ];
+      # Node itself, not a wrapper script — see nix/mcp.nix on why there is no bin/.
+      Entrypoint = [
+        "${mcp.node}/bin/node"
+        mcp.entrypoint
+      ];
 
       Env = imageLib.commonConfig.Env ++ [
         "MCP_PORT=${toString mcpPort}"
+        "NODE_ENV=production"
       ];
 
       ExposedPorts = {

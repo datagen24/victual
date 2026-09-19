@@ -34,6 +34,11 @@ on:
       - '.devtools/ci/**'
       - '.devtools/nix/**'
       - 'deploy/postgres/**'
+      # The MCP sidecar is a flake package (nix/mcp.nix), and nix/hashes.nix's mcpNpmDeps
+      # is a hash of mcp/package-lock.json: a lockfile change that forgot the hash must
+      # fail here, not on the next unrelated nix/ change.
+      - 'mcp/**'
+      - '!mcp/**/*.md'
   push:
     branches: [master]
     paths:
@@ -51,6 +56,11 @@ on:
       - '.devtools/ci/**'
       - '.devtools/nix/**'
       - 'deploy/postgres/**'
+      # The MCP sidecar is a flake package (nix/mcp.nix), and nix/hashes.nix's mcpNpmDeps
+      # is a hash of mcp/package-lock.json: a lockfile change that forgot the hash must
+      # fail here, not on the next unrelated nix/ change.
+      - 'mcp/**'
+      - '!mcp/**/*.md'
 
 jobs:
   changes:

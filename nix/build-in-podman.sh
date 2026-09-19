@@ -4,7 +4,7 @@
 #
 #   nix/build-in-podman.sh bootstrap    fill nix/hashes.nix and write flake.lock
 #   nix/build-in-podman.sh check        nix flake check
-#   nix/build-in-podman.sh images       build all three and `podman load` them
+#   nix/build-in-podman.sh images       build the four serving images and `podman load` them
 #   nix/build-in-podman.sh shell        an interactive nix shell in the builder
 #   nix/build-in-podman.sh all          bootstrap, then check, then images
 #
@@ -209,7 +209,7 @@ cmd_check() {
 # reads it — which is what nix/README.md's second snippet does, once per image.
 cmd_images() {
 	ensure_store
-	for img in image-app image-web image-migrate; do
+	for img in image-app image-web image-migrate image-mcp; do
 		log "building .#$img and loading it into $CONTAINER_ENGINE"
 		# The flags are spelled out rather than interpolated from NIX_FLAGS: `${NIX_FLAGS[*]}`
 		# flattens `--extra-experimental-features` and its single argument

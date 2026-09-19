@@ -1,0 +1,52 @@
+# The kind test harness: deploy/k3s's two workloads, unchanged, plus a throwaway
+# PostgreSQL and the values that make them connect. `deploy/kind/up.sh` is the entry point
+# (it loads the images and creates the roles script's ConfigMap first); `kubectl apply -k
+# deploy/kind` is what it runs.
+#
+# **No password is committed here.** deploy/kind/up.sh generates random ones into
+# deploy/kind/.secrets/ (gitignored) on its first run and reuses them after, and the
+# generators below read them from there. Run `up.sh` rather than `kubectl apply -k`
+# directly the first time, or those files will not exist yet. A real deployment writes
+# its own overlay with its own Secrets and never commits them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: victual
+
+resources:
+  - namespace.yaml
+  - ../k3s
+  - postgres.yaml
+  - roles-job.yaml
+
+secretGenerator:
+  - name: victual-postgres-superuser
+    envs:
+      - .secrets/superuser.env
+    options:
+      disableNameSuffixHash: true
+  # Replace the base's placeholder Secrets. The user names come along with the passwords,
+  # so each Secret stays whole: which role a container holds is still which Secret it names.
+  - name: victual-db-migrate
+    behavior: replace
+    envs:
+      - .secrets/migrate.env
+    options:
+      disableNameSuffixHash: true
+  - name: victual-db-app
+    behavior: replace
+    envs:
+      - .secrets/app.env
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: victual-config
+    patch: |-
+      - op: replace
+        path: /data/VICTUAL_DB_HOST
+        value: victual-postgres
+      - op: replace
+        path: /data/VICTUAL_BASE_URL
+        value: http://localhost:8080
