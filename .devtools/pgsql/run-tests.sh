@@ -9,7 +9,7 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp]
 #
 # Twenty-three kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
@@ -705,6 +705,23 @@ run_bootstrapadmin_tests() {
 	fi
 
 	rm -rf "$datapath"
+}
+
+# --- Upload clamp announcement ---------------------------------------------------
+#
+# Issue #217. FileSizeLimit kept the effective upload limit in a static property and
+# logged the clamp when it first filled it, calling that "once per process" - but a static
+# property does not outlive a php-fpm request (ADR-0007), so the line went out on every
+# request. ConfigurationValidator now announces it only under the CLI SAPI, which every
+# deployment shape runs exactly once before serving (bin/victual-migrate). The test boots
+# the configuration and the validator under php and under php-cgi with different php.ini
+# values and reads what reached error_log. No database.
+
+run_uploadclamp_tests() {
+	say ""
+	if ! php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite uploadclamp; then
+		failures=$((failures + 1))
+	fi
 }
 
 # --- Price visibility tests --------------------------------------------------------
@@ -1763,8 +1780,9 @@ case "$WHICH" in
 	rootentry) run_rootentry_tests ;;
 	mcpauth) run_mcpauth_tests ;;
 	bootstrapadmin) run_bootstrapadmin_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin or all)" ;;
+	uploadclamp) run_uploadclamp_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

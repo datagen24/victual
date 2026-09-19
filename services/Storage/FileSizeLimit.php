@@ -11,65 +11,31 @@ namespace Victual\Services\Storage;
  *
  * The reconciliation is the interesting half (plan 01 Q2). A configured 64 MB on a PHP
  * that accepts 2 MB is not a 64 MB limit, it is a lie with a number attached - so the
- * effective limit is the smallest of the three, it is logged once when the setting is not
- * the binding constraint, and GET /api/system/config reports the effective value rather
- * than the configured one. Startup keeps running either way; a clamp is information, not
- * a failure.
+ * effective limit is the smallest of the three, ConfigurationValidator announces the clamp
+ * once at boot when the setting is not the binding constraint, and GET /api/system/config
+ * reports the effective value rather than the configured one. Startup keeps running either
+ * way; a clamp is information, not a failure.
  *
  * upload_max_filesize and post_max_size do not actually gate a raw PUT body, which is
  * exactly why they are worth honouring here: they are what the household already told PHP
  * about how large an upload it wants to accept, and quietly exceeding that through a
  * different door is the dishonest outcome.
+ *
+ * Nothing here logs and nothing here is memoized. An earlier revision kept the effective
+ * value in a static property and logged the clamp when it first filled it, calling that
+ * "once per process" - but a static property does not outlive a php-fpm request
+ * (ADR-0007), so the line was written on every request (issue #217). The two ini reads are
+ * cheap enough to repeat, and where the announcement belongs is the caller's decision.
  */
 class FileSizeLimit
 {
-	/** @var int|null The memoized effective limit in bytes */
-	private static $EffectiveBytes = null;
-
 	/**
-	 * The effective maximum upload size in bytes.
-	 *
-	 * Computed once per process, which is what "logged once" means here: this application
-	 * keeps nothing between processes (ADR-0007), so a worker that has never resolved the
-	 * limit logs the clamp on the request that makes it, and the same worker never logs it
-	 * again. ConfigurationValidator resolves it at startup so that is normally the boot,
-	 * not an upload.
+	 * The effective maximum upload size in bytes: the smallest of FILE_STORAGE_MAX_SIZE_MB,
+	 * upload_max_filesize and post_max_size.
 	 */
 	public static function EffectiveMaxBytes(): int
 	{
-		if (self::$EffectiveBytes !== null)
-		{
-			return self::$EffectiveBytes;
-		}
-
-		$configured = (int)VICTUAL_FILE_STORAGE_MAX_SIZE_MB * 1024 * 1024;
-
-		$effective = $configured;
-		$clampedBy = null;
-
-		foreach (['upload_max_filesize', 'post_max_size'] as $directive)
-		{
-			$limit = self::ParseIniBytes((string)ini_get($directive));
-
-			// 0 (or an unparseable value) means "no limit" for these directives, which is
-			// nothing to clamp to
-			if ($limit > 0 && $limit < $effective)
-			{
-				$effective = $limit;
-				$clampedBy = $directive;
-			}
-		}
-
-		if ($clampedBy !== null)
-		{
-			error_log('Victual: FILE_STORAGE_MAX_SIZE_MB is ' . VICTUAL_FILE_STORAGE_MAX_SIZE_MB
-				. ' MB, but PHP\'s ' . $clampedBy . ' (' . ini_get($clampedBy) . ') is smaller, so uploads are limited to '
-				. self::FormatMegabytes($effective) . ' MB. Raise ' . $clampedBy . ' in php.ini to use the configured value.');
-		}
-
-		self::$EffectiveBytes = $effective;
-
-		return self::$EffectiveBytes;
+		return self::Resolve()['bytes'];
 	}
 
 	/**
@@ -87,6 +53,30 @@ class FileSizeLimit
 	}
 
 	/**
+	 * The line to log when a php.ini directive, not the setting, is what binds - or null
+	 * when FILE_STORAGE_MAX_SIZE_MB is honoured as configured.
+	 *
+	 * ConfigurationValidator writes it at boot, and only from the CLI SAPI: every
+	 * deployment shape runs bin/victual-migrate exactly once before it serves, so that is
+	 * the one place "logged once at startup" can be true. A web process has no boot of
+	 * its own to log from, and answers the question through GET /api/system/config instead.
+	 */
+	public static function ClampMessage(): ?string
+	{
+		$resolved = self::Resolve();
+		$directive = $resolved['clamped_by'];
+
+		if ($directive === null)
+		{
+			return null;
+		}
+
+		return 'Victual: FILE_STORAGE_MAX_SIZE_MB is ' . VICTUAL_FILE_STORAGE_MAX_SIZE_MB
+			. ' MB, but PHP\'s ' . $directive . ' (' . ini_get($directive) . ') is smaller, so uploads are limited to '
+			. self::FormatMegabytes($resolved['bytes']) . ' MB. Raise ' . $directive . ' in php.ini to use the configured value.';
+	}
+
+	/**
 	 * The same number as a string, for a message.
 	 */
 	public static function FormatMegabytes(int $bytes): string
@@ -94,6 +84,32 @@ class FileSizeLimit
 		$megabytes = $bytes / 1024 / 1024;
 
 		return $megabytes == (int)$megabytes ? (string)(int)$megabytes : (string)round($megabytes, 2);
+	}
+
+	/**
+	 * The effective limit and, when a directive rather than the setting decided it, which.
+	 *
+	 * @return array{bytes: int, clamped_by: string|null}
+	 */
+	private static function Resolve(): array
+	{
+		$effective = (int)VICTUAL_FILE_STORAGE_MAX_SIZE_MB * 1024 * 1024;
+		$clampedBy = null;
+
+		foreach (['upload_max_filesize', 'post_max_size'] as $directive)
+		{
+			$limit = self::ParseIniBytes((string)ini_get($directive));
+
+			// 0 (or an unparseable value) means "no limit" for these directives, which is
+			// nothing to clamp to
+			if ($limit > 0 && $limit < $effective)
+			{
+				$effective = $limit;
+				$clampedBy = $directive;
+			}
+		}
+
+		return ['bytes' => $effective, 'clamped_by' => $clampedBy];
 	}
 
 	/**
