@@ -3,9 +3,11 @@
 # (it loads the images and creates the roles script's ConfigMap first); `kubectl apply -k
 # deploy/kind` is what it runs.
 #
-# **Every password below is local-only**, for the same reason as deploy/README.md's podman
-# walkthrough: they are for a database that lives in an emptyDir and dies with its pod. A
-# real deployment writes its own overlay with its own Secrets and never commits them.
+# **No password is committed here.** deploy/kind/up.sh generates random ones into
+# deploy/kind/.secrets/ (gitignored) on its first run and reuses them after, and the
+# generators below read them from there. Run `up.sh` rather than `kubectl apply -k`
+# directly the first time, or those files will not exist yet. A real deployment writes
+# its own overlay with its own Secrets and never commits them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: victual
@@ -18,8 +20,22 @@ resources:
 
 secretGenerator:
   - name: victual-postgres-superuser
-    literals:
-      - password=kind-superuser
+    envs:
+      - .secrets/superuser.env
+    options:
+      disableNameSuffixHash: true
+  # Replace the base's placeholder Secrets. The user names come along with the passwords,
+  # so each Secret stays whole: which role a container holds is still which Secret it names.
+  - name: victual-db-migrate
+    behavior: replace
+    envs:
+      - .secrets/migrate.env
+    options:
+      disableNameSuffixHash: true
+  - name: victual-db-app
+    behavior: replace
+    envs:
+      - .secrets/app.env
     options:
       disableNameSuffixHash: true
 
@@ -34,17 +50,3 @@ patches:
       - op: replace
         path: /data/VICTUAL_BASE_URL
         value: http://localhost:8080
-  - target:
-      kind: Secret
-      name: victual-db-migrate
-    patch: |-
-      - op: replace
-        path: /stringData/VICTUAL_DB_PASSWORD
-        value: kind-migrate
-  - target:
-      kind: Secret
-      name: victual-db-app
-    patch: |-
-      - op: replace
-        path: /stringData/VICTUAL_DB_PASSWORD
-        value: kind-app

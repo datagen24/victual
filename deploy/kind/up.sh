@@ -32,6 +32,16 @@ for image in victual-app victual-web victual-migrate victual-mcp; do
 done
 kind load docker-image docker.io/library/postgres:16 --name "$CLUSTER"
 
+# Local-only credentials, generated once and kept beside the overlay (gitignored), so a
+# re-run reuses the passwords the database was initialised with.
+SECRETS=deploy/kind/.secrets
+mkdir -p "$SECRETS"
+password() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32; }
+[ -f "$SECRETS/superuser.env" ] || printf 'password=%s\n' "$(password)" > "$SECRETS/superuser.env"
+[ -f "$SECRETS/migrate.env" ] || printf 'VICTUAL_DB_USER=victual_migrate\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/migrate.env"
+[ -f "$SECRETS/app.env" ] || printf 'VICTUAL_DB_USER=victual_app\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/app.env"
+chmod 600 "$SECRETS"/*.env
+
 kubectl apply -f deploy/kind/namespace.yaml
 # The roles script from its one real location, not a copy kustomize could drift from.
 kubectl -n "$NAMESPACE" create configmap victual-db-roles-sql \
