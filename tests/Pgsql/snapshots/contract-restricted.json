@@ -1882,6 +1882,16 @@
             }
         ]
     },
+    "GET /api/user/capabilities": {
+        "status": 200,
+        "shape": {
+            "key_type": "null",
+            "permissions": [
+                "string"
+            ],
+            "read_only": "boolean"
+        }
+    },
     "GET /api/user/settings": {
         "status": 200,
         "shape": {

@@ -38,6 +38,9 @@
 //      an admin may rotate a key that is not theirs, and a successful rotation renders
 //      the manage-keys page with the new plaintext once rather than redirecting to it -
 //      the same S11 reasoning /manageapikeys/new already follows.
+//   9. The MCP key type (issue #208): hashed, finitely expiring, rotatable with its type and
+//      read-only flag kept, never shown as readable, and found by the header lookup only
+//      when the accepted types include it.
 //
 // Exit codes: 0 when every assertion holds, 1 otherwise.
 
@@ -299,6 +302,46 @@ $createBody = (string)$createResponse->getBody();
 
 check($createResponse->getStatusCode() === 200, 'CreateNewApiKey renders rather than redirects, so the plaintext is shown exactly once');
 check(str_contains($createBody, 'Via the controller'), 'the rendered page carries the description that was posted');
+
+// --- 9. The MCP key type (issue #208) --------------------------------------------------------
+
+echo "\n9. MCP keys\n";
+
+$mcpKey = $service->CreateApiKey(ApiKeyService::API_KEY_TYPE_MCP, 'Assistant', 30, null, null, true);
+$mcpId = $service->GetApiKeyId($mcpKey, ApiKeyService::API_KEY_TYPE_MCP);
+$mcpRow = $pdo->query("SELECT api_key, key_hint, key_type, read_only, expires FROM api_keys WHERE id = $mcpId")->fetch(PDO::FETCH_ASSOC);
+
+check($mcpRow['key_type'] === ApiKeyService::API_KEY_TYPE_MCP, 'an MCP key is stored with its own type');
+check($mcpRow['api_key'] === hash('sha256', $mcpKey), 'and as a SHA-256 hash, like a regular key - it is not readable back');
+check((int)$mcpRow['read_only'] === 1, 'the read-only flag is stored when asked for');
+check(substr($mcpRow['expires'], 0, 4) !== '2999', 'an MCP key gets a finite expiry, like a regular key (expires ' . $mcpRow['expires'] . ')');
+check(!ApiKeyIsReadable((object)$mcpRow), 'the manage-keys screen does not treat an MCP key as readable, so it never shows or QR-encodes the hash');
+
+check($service->FindValidApiKey($mcpKey, ApiKeyService::USER_ISSUED_KEY_TYPES) !== null, 'the header lookup over the user-issued types finds an MCP key');
+check($service->FindValidApiKey($mcpKey, [ApiKeyService::API_KEY_TYPE_MCP]) !== null, 'and so does a lookup narrowed to the MCP type');
+check($service->FindValidApiKey($mcpKey, [ApiKeyService::API_KEY_TYPE_DEFAULT]) === null, 'a lookup narrowed to the regular type does not');
+check($service->FindValidApiKey($successorKey, [ApiKeyService::API_KEY_TYPE_MCP]) === null, 'and a regular key does not pass a lookup narrowed to the MCP type');
+check($service->FindValidApiKey($mcpKey, []) === null, 'an empty set of accepted types matches nothing');
+
+$regularDefaultFlag = $pdo->query("SELECT read_only FROM api_keys WHERE id = $successorId")->fetchColumn();
+check((int)$regularDefaultFlag === 0, 'a key created without the flag is not read-only - existing keys keep the authority they had');
+
+[$mcpSuccessorKey, $mcpSuccessorId] = $service->RotateApiKey($mcpId);
+$mcpSuccessorRow = $pdo->query("SELECT key_type, read_only, rotated_from_id FROM api_keys WHERE id = $mcpSuccessorId")->fetch(PDO::FETCH_ASSOC);
+check($mcpSuccessorRow['key_type'] === ApiKeyService::API_KEY_TYPE_MCP, 'rotating an MCP key produces an MCP key');
+check((int)$mcpSuccessorRow['read_only'] === 1, 'and the successor keeps the read-only flag - rotation cannot widen a key');
+check((int)$mcpSuccessorRow['rotated_from_id'] === $mcpId, 'and records its lineage like any rotation');
+
+$mcpCreate = $api->CreateNewApiKey(request('POST', ['description' => 'Via the controller, MCP', 'key_type' => 'mcp', 'read_only' => '1']), new Response(), []);
+$mcpCreateBody = (string)$mcpCreate->getBody();
+$mcpCreatedRow = $pdo->query("SELECT key_type, read_only FROM api_keys WHERE description = 'Via the controller, MCP'")->fetch(PDO::FETCH_ASSOC);
+check($mcpCreatedRow !== false && $mcpCreatedRow['key_type'] === 'mcp' && (int)$mcpCreatedRow['read_only'] === 1,
+	'the manage-keys form creates a read-only MCP key when it posts key_type=mcp and read_only=1');
+check(str_contains($mcpCreateBody, 'Authorization: Bearer'), 'and the one-time reveal says how an MCP client presents it');
+
+$api->CreateNewApiKey(request('POST', ['description' => 'Posted a special-purpose type', 'key_type' => ApiKeyService::API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL]), new Response(), []);
+$smuggledType = $pdo->query("SELECT key_type FROM api_keys WHERE description = 'Posted a special-purpose type'")->fetchColumn();
+check($smuggledType === ApiKeyService::API_KEY_TYPE_DEFAULT, 'a special-purpose type posted to the form is issued as a regular key, not as the type asked for');
 
 echo "\n";
 

@@ -590,6 +590,7 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::invokeAdmin('PUT /api/users/{userId}/roles', fn() => $roles->SetUserRoles(self::request('PUT', ['roles' => [self::roleId('GUEST')]]), new Response(), ['userId' => self::$ids['user']]));
 
 		self::invokeAdmin('GET /api/user', fn() => $users->CurrentUser(self::request(), new Response(), []));
+		self::invokeAdmin('GET /api/user/capabilities', fn() => $users->CurrentUserCapabilities(self::request(), new Response(), []));
 		self::invokeAdmin('PUT /api/user/settings/{settingKey}', fn() => $users->SetUserSetting(self::request('PUT', ['value' => 'dark']), new Response(), ['settingKey' => 'contract_test_setting']));
 		self::invokeAdmin('GET /api/user/settings', fn() => $users->GetUserSettings(self::request(), new Response(), []));
 		self::invokeAdmin('DELETE /api/user/settings/{settingKey}', fn() => $users->DeleteUserSetting(self::request('DELETE'), new Response(), ['settingKey' => 'contract_test_setting']));
@@ -803,6 +804,7 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/roles/{roleId}/permissions' => fn() => $roles->ListPermissions(self::request(), new Response(), ['roleId' => self::roleId('CHILD')]),
 			$key === 'GET /api/users/{userId}/roles' => fn() => $roles->ListUserRoles(self::request(), new Response(), ['userId' => self::$ids['user']]),
 			$key === 'GET /api/user' => fn() => $users->CurrentUser(self::request(), new Response(), []),
+			$key === 'GET /api/user/capabilities' => fn() => $users->CurrentUserCapabilities(self::request(), new Response(), []),
 			$key === 'GET /api/user/settings' => fn() => $users->GetUserSettings(self::request(), new Response(), []),
 			$key === 'GET /api/user/settings/{settingKey}' => fn() => $users->GetUserSetting(self::request(), new Response(), ['settingKey' => 'contract_test_setting_persist']),
 			$key === 'GET /api/files/{group}/{fileName}' => null, // deleted by the Admin sweep; nothing left to serve
