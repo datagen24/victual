@@ -216,15 +216,35 @@ async function main() {
 	const stock = await rest('/stock');
 	const so = usable('tools', 'stock_overview', await callTool(client, 'stock_overview', { limit: 200 }));
 	if (so) {
+		const LIMIT = 200;
 		const got = ids(so.rows);
 		const want = ids(stock);
+		const pageSize = Math.min(stock.length, LIMIT);
+		const unique = got.length === so.rows.length;
 		const amountsAgree = so.rows.every((row) => {
 			const r = stock.find((s) => Number(s.product_id) === row.product_id);
 			return r && Math.abs(Number(r.amount) - row.amount) < 1e-9;
 		});
-		check('tools', 'stock_overview has GET /api/stock\'s products and amounts',
-			so.total === stock.length && (stock.length > 200 || same(got, want)) && amountsAgree,
-			`${describeDiff(got, want)}, total ${so.total}, amounts ${amountsAgree ? 'agree' : 'differ'}`);
+		// §5.1's order: soonest due first, undated last. Checked on every page, and when the
+		// REST result is longer than the page it is also what decides *which* rows belong on
+		// it: nothing left off may be due sooner than the last row kept.
+		const due = (d) => (d === null || d === undefined || d === '' ? Infinity : Date.parse(d));
+		const ordered = so.rows.every((row, i) => i === 0 || due(so.rows[i - 1].due_date) <= due(row.due_date));
+		let membership;
+		if (stock.length <= LIMIT) {
+			membership = same(got, want);
+		} else {
+			const lastKept = due(so.rows[so.rows.length - 1].due_date);
+			const kept = new Set(got);
+			membership = got.every((id) => want.includes(id)) &&
+				stock.filter((r) => !kept.has(Number(r.product_id)))
+					.every((r) => due(r.best_before_date === '2999-12-31' ? null : r.best_before_date) >= lastKept);
+		}
+		check('tools', 'stock_overview has GET /api/stock\'s products and amounts, in due order',
+			so.total === stock.length && so.rows.length === pageSize && unique && membership && ordered && amountsAgree,
+			`${describeDiff(got, want)}, total ${so.total}, page ${so.rows.length} of ${pageSize}` +
+			`${unique ? '' : ', duplicate ids'}${ordered ? '' : ', out of due order'}, ` +
+			`amounts ${amountsAgree ? 'agree' : 'differ'}`);
 	}
 
 	// expiring_soon ⇔ GET /api/stock/volatile?due_soon_days=5

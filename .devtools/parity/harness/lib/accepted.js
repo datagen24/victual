@@ -445,9 +445,15 @@ const ACCEPTED = [
 			'servers asked a second apart answer a second apart. The same reason normalize.js masks ' +
 			'row_created_timestamp, but start_date cannot be masked wholesale: ADR-0005\'s start_date ' +
 			'rendering entry depends on comparing it. So this accepts two well-formed timestamps at most ' +
-			'two seconds apart and nothing else — a different day, or a malformed value, is still reported.',
-		match: ({ difference }) => {
-			if (difference.kind !== 'value' || !/\/start_date$/.test(difference.pointer)) return false;
+			'two seconds apart, on a chore read or created through /objects/chores, and nothing else — ' +
+			'a different day, a malformed value, or a start_date on any other route is still reported. ' +
+			'It cannot key on "the request omitted start_date" as well, because the difference surfaces ' +
+			'on the GET that reads the chore back, which has no request body; what makes it safe is ' +
+			'that every chore this suite creates with a start_date sends a date-only value, which the ' +
+			'ADR-0005 entry above covers and two servers cannot disagree about by seconds.',
+		match: ({ step, difference }) => {
+			if (difference.kind !== 'value' || !/^\/body(\/\d+)?\/start_date$/.test(difference.pointer)) return false;
+			if (!/^(GET|POST) \/objects\/chores(\/\d+)?$/.test(routeOf(step))) return false;
 			const re = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 			if (!re.test(String(difference.victual)) || !re.test(String(difference.upstream))) return false;
 			const ms = (v) => Date.parse(String(v).replace(' ', 'T') + 'Z');
@@ -465,9 +471,9 @@ const ACCEPTED = [
 			'specific additions that exist today — the list is deliberately explicit rather than a ' +
 			'blanket "extra fields are fine", because a blanket rule would also accept a field that ' +
 			'appeared by accident.',
-		match: ({ difference }) =>
+		match: ({ step, difference }) =>
 			difference.kind === 'extra-field' &&
-			FORK_ADDED_FIELDS.has(lastSegment(difference.pointer))
+			isAddedFieldOnItsRoute(step, difference.pointer)
 	}
 ];
 
@@ -482,59 +488,106 @@ const FORK_ONLY_ENTITIES = [
 	'mqtt_product_entities'
 ];
 
-const FORK_ADDED_FIELDS = new Set([
-	// plan 18, MQTT state publication — the opt-in per-product entity flag.
-	'mqtt_publish_state',
-	// plan 01, file storage in the database.
-	'file_storage_backend',
+// Where an added field may appear, as `METHOD /path` with ids as \d+ and the query string
+// dropped. **A field is accepted on these routes and nowhere else** — an `opened_amount` on
+// a response that has no business carrying one is still a difference, because that is what
+// an accidental leak of a column into the wire contract looks like (CodeRabbit on PR #220).
+// Each set was recorded from `parity all` on 2026-09-19; a route that starts carrying a field
+// legitimately is a one-line change here, made on purpose.
+const ROUTES = {
+	systemInfo: [/^GET \/system\/info$/],
+	systemConfig: [/^GET \/system\/config$/],
+	locations: [/^GET \/objects\/locations(\/\d+)?$/],
+	productGroups: [/^GET \/objects\/product_groups(\/\d+)?$/],
+	shoppingLists: [/^GET \/objects\/shopping_lists(\/\d+)?$/],
+	// Every response that embeds a products row: the entity itself, the stock overview, the
+	// product details (by id or barcode) and the volatile lists.
+	productRows: [
+		/^GET \/objects\/products(\/\d+)?$/,
+		/^GET \/stock$/,
+		/^GET \/stock\/products\/(\d+|by-barcode\/[^/]+)$/,
+		/^GET \/stock\/volatile$/
+	],
+	productDetails: [/^GET \/stock\/products\/(\d+|by-barcode\/[^/]+)$/],
+	recipes: [/^GET \/objects\/recipes(\/\d+)?$/],
+	// Every response that returns stock or stock_log rows: reads, and the booking endpoints,
+	// which answer with the rows they wrote.
+	stockRows: [
+		/^GET \/objects\/(stock|stock_log)(\/\d+)?$/,
+		/^GET \/stock\/bookings\/\d+$/,
+		/^GET \/stock\/(locations|products)\/\d+\/entries$/,
+		/^GET \/stock\/transactions\/[^/]+$/,
+		/^POST \/stock\/products\/(\d+|by-barcode\/[^/]+)\/(add|consume|inventory|open|transfer)$/
+	],
+	stockOverview: [/^GET \/stock$/],
+	choresAndBatteries: [
+		/^GET \/objects\/(chores|batteries)(\/\d+)?$/,
+		/^GET \/(chores|batteries)(\/\d+)?$/
+	]
+};
+
+const FORK_ADDED_FIELDS = new Map([
 	// plan 01 Q2 / services/Storage/FileSizeLimit.php — the effective upload cap, which
 	// upstream has no concept of.
-	'FILE_STORAGE_MAX_SIZE_MB',
+	['FILE_STORAGE_MAX_SIZE_MB', ROUTES.systemConfig],
 	// plan 20 — the database engine actually serving, which upstream has no need for
 	// because upstream is always SQLite and reports it in sqlite_version. See the
 	// sqlite-version entry above for why that field could not keep answering here.
-	'database_engine',
+	['database_engine', ROUTES.systemInfo],
+	// (mqtt_publish_state and file_storage_backend used to be listed here; neither exists in
+	// the tree any more, so they are gone rather than kept as acceptances of nothing.)
 
 	// --- The MVP's schema, recorded 2026-09-19 from the first `parity all` after it ------
 	// Every one is a nullable or defaulted column, so an upstream client that ignores it is
-	// unaffected. The permissions route (plan 19) is deliberately not here: it changed
-	// shape as well as gaining fields, and `parent` is too generic a name to accept by name.
+	// unaffected. The permissions route (plan 19) is not here: its change is a shape, with an
+	// entry of its own above.
 	//
 	// plan 28 / ADR-0022, migration 0275 — an opened container's measured remainder, on
-	// every stock row and every booking.
-	'opened_amount',
-	'opened_qu_id',
-	'opened_tare',
-	'opened_measured_at',
-	'amount_measured',
-	'stock_amount_measured',
+	// every stock row and every booking, and its sum on the overview and product details.
+	['opened_amount', ROUTES.stockRows],
+	['opened_qu_id', ROUTES.stockRows],
+	['opened_tare', ROUTES.stockRows],
+	['opened_measured_at', ROUTES.stockRows],
+	['amount_measured', ROUTES.stockOverview],
+	['stock_amount_measured', ROUTES.productDetails],
 	// plan 08, migration 0273 — nested locations.
-	'parent_location_id',
+	['parent_location_id', ROUTES.locations],
 	// plan 23, migration 0274 — storage classes for locations.
-	'storage_class_id',
+	['storage_class_id', ROUTES.locations],
 	// plan 29, migration 0276 — a refillable vessel's tare, on the location it sits at, and
-	// the (product, location) replenishment pair.
-	'tare_weight',
-	'tare_qu_id',
-	'default_refill_location_id_from',
-	'default_refill_location_id_to',
-	'quick_refill_amount',
+	// the (product, location) replenishment pair on the product.
+	['tare_weight', ROUTES.locations],
+	['tare_qu_id', ROUTES.locations],
+	['default_refill_location_id_from', ROUTES.productRows],
+	['default_refill_location_id_to', ROUTES.productRows],
+	['quick_refill_amount', ROUTES.productRows],
 	// plan 05 parts A and C, migration 0286 — a list's store, a product's or recipe's list.
-	'shopping_location_id',
-	'default_shopping_list_id',
+	['shopping_location_id', ROUTES.shoppingLists],
+	['default_shopping_list_id', [...ROUTES.productRows, ...ROUTES.recipes]],
 	// plan 03, migration 0268 — a product group's own minimum (upstream has the column on
 	// products only, which is why it is extra here and nowhere else).
-	'min_stock_amount',
+	['min_stock_amount', ROUTES.productGroups],
 	// plan 30 / ADR-0023, migration 0278 — nested product groups.
-	'parent_product_group_id',
+	['parent_product_group_id', ROUTES.productGroups],
 	// plan 31, migration 0279 — directed substitution, on the product details response.
-	'substitution_candidates',
-	// ADR-0021's label import state, migrations 0269 and 0283 — which import a location or
-	// product row belongs to.
-	'import_epoch',
-	// plans 25/27/32 — the label subsystem's feature flag, on GET /api/system/config.
-	'FEATURE_FLAG_LABELS'
+	['substitution_candidates', ROUTES.productDetails],
+	// ADR-0021's label import state, migrations 0269 and 0283 — which import a row belongs
+	// to, on every table a label import writes.
+	['import_epoch', [...ROUTES.productRows, ...ROUTES.recipes, ...ROUTES.choresAndBatteries,
+		/^GET \/objects\/stock(\/\d+)?$/, /^GET \/stock\/locations\/\d+\/entries$/]],
+	// plans 25/27/32 — the label subsystem's feature flag.
+	['FEATURE_FLAG_LABELS', ROUTES.systemConfig]
 ]);
+
+// `METHOD /path`, ids kept (the patterns match them), the query string dropped.
+function routeOf(step) {
+	return `${step.method} ${String(step.path).split('?')[0]}`;
+}
+
+function isAddedFieldOnItsRoute(step, pointer) {
+	const routes = FORK_ADDED_FIELDS.get(lastSegment(pointer));
+	return Boolean(routes) && routes.some((re) => re.test(routeOf(step)));
+}
 
 function lastSegment(pointer) {
 	const parts = String(pointer).split('/');
@@ -631,8 +684,17 @@ const UI_ACCEPTED = [
 			'Upstream\'s /equipment requests GET /api/objects/equipment/undefined on load and logs the ' +
 			'404; the fork does not make that request. An upstream defect: only console errors on ' +
 			'upstream\'s side of this route are accepted, never one on the fork\'s.',
-		match: ({ route, difference }) =>
-			route === '/equipment' && difference.kind === 'console-only-upstream'
+		// Keyed on the request, not on the console text, which names no URL: upstream's side must
+		// have 404'd on exactly that request and on nothing else, and the fork's side must not
+		// have made it. Any other upstream error on this page is still reported.
+		match: ({ route, difference, victual, upstream }) =>
+			route === '/equipment' &&
+			difference.kind === 'console-only-upstream' &&
+			['Failed to load resource: the server responded with a status of 404 (Not Found)', 'XMLHttpRequest']
+				.includes(difference.detail) &&
+			Array.isArray(upstream.httpErrors) && upstream.httpErrors.length > 0 &&
+			upstream.httpErrors.every((r) => r === '404 GET /api/objects/equipment/undefined') &&
+			!(victual.httpErrors || []).some((r) => r.endsWith('/api/objects/equipment/undefined'))
 	}
 ];
 

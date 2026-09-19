@@ -94,16 +94,25 @@ async function visit(page, baseUrl, route) {
 	const consoleErrors = [];
 	const pageErrors = [];
 	const failedRequests = [];
+	// Requests that completed with an error status. `requestfailed` above is network failure
+	// only - a 404 is a completed request - and a console error such as "Failed to load
+	// resource" names no URL, so without this there is no way to say which request a
+	// console error was about. Recorded, not compared: it is evidence for the registry.
+	const httpErrors = [];
 
 	const onConsole = (msg) => {
 		if (msg.type() === 'error') consoleErrors.push(msg.text());
 	};
 	const onPageError = (err) => pageErrors.push(String(err && err.message ? err.message : err));
 	const onRequestFailed = (req) => failedRequests.push(`${req.method()} ${req.url()}`);
+	const onResponse = (res) => {
+		if (res.status() >= 400) httpErrors.push(`${res.status()} ${res.request().method()} ${res.url()}`);
+	};
 
 	page.on('console', onConsole);
 	page.on('pageerror', onPageError);
 	page.on('requestfailed', onRequestFailed);
+	page.on('response', onResponse);
 
 	let status = null;
 	let error = null;
@@ -139,6 +148,7 @@ async function visit(page, baseUrl, route) {
 	page.off('console', onConsole);
 	page.off('pageerror', onPageError);
 	page.off('requestfailed', onRequestFailed);
+	page.off('response', onResponse);
 
 	return {
 		route,
@@ -149,7 +159,8 @@ async function visit(page, baseUrl, route) {
 		// every line. Store paths and ids are not in console text, so nothing else needs it.
 		consoleErrors: consoleErrors.map(normalizeText),
 		pageErrors: pageErrors.map(normalizeText),
-		failedRequests: failedRequests.map((r) => normalizeText(r.replace(baseUrl, '')))
+		failedRequests: failedRequests.map((r) => normalizeText(r.replace(baseUrl, ''))),
+		httpErrors: httpErrors.map((r) => r.replace(baseUrl, ''))
 	};
 }
 
