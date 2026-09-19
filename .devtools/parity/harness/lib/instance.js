@@ -18,8 +18,9 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 
 class Instance {
-	constructor({ name, baseUrl, apiKeyHeader, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+	constructor({ name, baseUrl, apiKeyHeader, timeoutMs = DEFAULT_TIMEOUT_MS, adminPassword = 'admin' }) {
 		this.name = name;
+		this.adminPassword = adminPassword;
 		this.baseUrl = baseUrl.replace(/\/+$/, '');
 		this.apiKeyHeader = apiKeyHeader;
 		this.timeoutMs = timeoutMs;
@@ -96,10 +97,11 @@ class Instance {
 		return readText ? { response, text } : response;
 	}
 
-	// Logs in as admin/admin. Both projects create that user in migration 0027 with the
-	// same password, so this is the one credential the suite needs and it is the same on
-	// both sides.
-	async login(username = 'admin', password = 'admin') {
+	// Logs in as admin. Upstream creates that user in migration 0027 as admin/admin; the fork
+	// seeds it with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD instead and refuses the API to an account
+	// that logs in with "admin", so its password is VICTUAL_ADMIN_PASSWORD below - the value
+	// stack/stack.sh hands the fork's migrate container.
+	async login(username = 'admin', password = this.adminPassword) {
 		const response = await this.raw('POST', '/login', {
 			form: { username, password }
 		});
@@ -108,8 +110,8 @@ class Instance {
 		if (!ok) {
 			throw new Error(
 				`${this.name}: login failed (HTTP ${response.status}). ` +
-				'Both instances ship admin/admin from migration 0027 — a failure here means ' +
-				'the instance did not migrate, not that the credential is wrong.'
+				'A failure here usually means the instance did not migrate; on the fork side it can ' +
+				'also mean the database was seeded with a PARITY_VICTUAL_ADMIN_PASSWORD other than this one.'
 			);
 		}
 		return true;
@@ -173,12 +175,15 @@ class Instance {
 	}
 }
 
+// Same variable and default as stack/stack.sh, which seeds the fork's database with it
+const VICTUAL_ADMIN_PASSWORD = process.env.PARITY_VICTUAL_ADMIN_PASSWORD || 'parity-admin-password';
+
 function victual(baseUrl) {
-	return new Instance({ name: 'victual', baseUrl, apiKeyHeader: 'VICTUAL-API-KEY' });
+	return new Instance({ name: 'victual', baseUrl, apiKeyHeader: 'VICTUAL-API-KEY', adminPassword: VICTUAL_ADMIN_PASSWORD });
 }
 
 function upstream(baseUrl) {
 	return new Instance({ name: 'upstream', baseUrl, apiKeyHeader: 'GROCY-API-KEY' });
 }
 
-module.exports = { Instance, victual, upstream };
+module.exports = { Instance, victual, upstream, VICTUAL_ADMIN_PASSWORD };

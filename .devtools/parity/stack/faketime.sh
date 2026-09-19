@@ -239,12 +239,13 @@ ft_observed_epoch() {
 	esac
 }
 
-# The authenticated /api/system/time of a running instance. Both projects ship admin/admin
-# from migration 0027, which is the same credential the harness logs in with.
-ft_http_epoch() {
-	local base="$1" jar body
+# The authenticated /api/system/time of a running instance, logged in as admin with the
+# given password: upstream ships admin/admin, the fork's is PARITY_VICTUAL_ADMIN_PASSWORD
+# (see stack.sh).
+ft_http_epoch() { # base_url [password]
+	local base="$1" password="${2:-admin}" jar body
 	jar="$(mktemp)"
-	curl -s -c "$jar" -o /dev/null -X POST -d 'username=admin&password=admin' "$base/login" 2>/dev/null || true
+	curl -s -c "$jar" -o /dev/null -X POST --data-urlencode 'username=admin' --data-urlencode "password=$password" "$base/login" 2>/dev/null || true
 	body="$(curl -s -b "$jar" "$base/api/system/time" 2>/dev/null || true)"
 	rm -f "$jar"
 	printf '%s' "$body" | python3 -c 'import sys,json;print(int(json.load(sys.stdin)["timestamp"]))' 2>/dev/null || true

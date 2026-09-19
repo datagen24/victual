@@ -8,7 +8,8 @@ use Victual\Services\LocalizationService;
  * The rows a brand new Victual database needs before anyone can log into it.
  *
  * On SQLite these arrive as a side effect of replaying the migration history: 0027.php
- * creates the admin user, 0031.php the default quantity units and location, 0062/0063
+ * creates the admin user (with the fixed admin/admin credential this class no longer
+ * uses - see SeedAdminUser()), 0031.php the default quantity units and location, 0062/0063
  * the default shopping list, 0110.sql the permission hierarchy, 0149.sql the internal
  * meal plan section. An engine that starts from a squashed baseline never runs any of
  * those, and the baseline is schema only, so without this class a freshly migrated
@@ -132,19 +133,117 @@ class InitialDataSeeder
 	}
 
 	/**
-	 * The default "admin" / "admin" account, or the credentials from the pre-0027
-	 * config file settings when those are still present. Mirrors migrations/0027.php,
-	 * including hashing the password per install rather than shipping a fixed hash.
+	 * The environment variable an operator sets to choose the first administrator's
+	 * password. Read here, once, when the account is created, and nowhere else.
+	 *
+	 * An environment variable read directly rather than a Setting(): Setting() defines a
+	 * VICTUAL_* constant every request can see, and a password has no business being one.
+	 * It belongs in the migrate container's Secret only, which is the one workload that
+	 * seeds; the serving containers never hold it.
+	 */
+	const BOOTSTRAP_PASSWORD_ENV = 'VICTUAL_BOOTSTRAP_ADMIN_PASSWORD';
+
+	/**
+	 * The user_settings key that marks the administrator whose password was generated, until
+	 * DatabaseMigrationService has flagged it for a forced change. See
+	 * DatabaseMigrationService::FlagGeneratedAdminPasswordForChange() for why it is a row
+	 * rather than something held in memory, and why a user setting is safe for it here.
+	 */
+	const PENDING_FORCED_CHANGE_KEY = 'bootstrap_password_change_pending';
+
+	/** @var string|null The password SeedAdminUser() generated, when it had to generate one */
+	private $GeneratedAdminPassword = null;
+
+	/** @var string The user name SeedAdminUser() created */
+	private $AdminUsername = 'admin';
+
+	/**
+	 * The first administrator account. Its password is, in order:
+	 *
+	 *   1. the pre-0027 config file settings, when those are still present (mirrors
+	 *      migrations/0027.php);
+	 *   2. VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, when the operator set it;
+	 *   3. otherwise 24 random hex characters, which the caller reports once, through
+	 *      GetGeneratedAdminPassword(), and flags for a forced change.
+	 *
+	 * It used to be "admin" / "admin" - migration 0027's credential, publicly known -
+	 * which meant anybody who reached a new deployment before its operator did could log in
+	 * and, because the forced password change covers rendered pages only, use the whole
+	 * API. There is no fixed password left on this path for anybody to know.
+	 *
+	 * Hashed per install either way, rather than shipping a fixed hash.
 	 */
 	private function SeedAdminUser(): void
 	{
-		$username = defined('VICTUAL_HTTP_USER') ? VICTUAL_HTTP_USER : 'admin';
-		$password = defined('VICTUAL_HTTP_USER') ? VICTUAL_HTTP_PASSWORD : 'admin';
+		if (defined('VICTUAL_HTTP_USER'))
+		{
+			$username = VICTUAL_HTTP_USER;
+			$password = VICTUAL_HTTP_PASSWORD;
+		}
+		else
+		{
+			$username = 'admin';
+			$password = self::BootstrapPasswordFromEnvironment();
+
+			if ($password === null)
+			{
+				$password = bin2hex(random_bytes(12));
+				$this->GeneratedAdminPassword = $password;
+			}
+		}
+
+		$this->AdminUsername = $username;
 
 		$this->Insert('users', [
 			'username' => $username,
 			'password' => password_hash($password, PASSWORD_ARGON2ID)
 		]);
+
+		if ($this->GeneratedAdminPassword !== null)
+		{
+			$lookup = $this->Db->prepare('SELECT id FROM users WHERE username = ?');
+			$lookup->execute([$username]);
+
+			$this->Insert('user_settings', [
+				'user_id' => (int)$lookup->fetchColumn(),
+				'key' => self::PENDING_FORCED_CHANGE_KEY,
+				'value' => '1'
+			]);
+		}
+	}
+
+	/**
+	 * VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, or null when it is unset or blank. Blank counts as
+	 * unset rather than as a password: an empty Secret key is a mistake, not a choice.
+	 */
+	public static function BootstrapPasswordFromEnvironment(): ?string
+	{
+		$value = getenv(self::BOOTSTRAP_PASSWORD_ENV);
+
+		if ($value === false || trim($value) === '')
+		{
+			return null;
+		}
+
+		return $value;
+	}
+
+	/**
+	 * The administrator password Seed() generated, or null when it did not generate one
+	 * (the operator supplied it, or Seed() has not run). The only copy there is: the
+	 * database holds the hash.
+	 */
+	public function GetGeneratedAdminPassword(): ?string
+	{
+		return $this->GeneratedAdminPassword;
+	}
+
+	/**
+	 * The user name of the account Seed() created.
+	 */
+	public function GetAdminUsername(): string
+	{
+		return $this->AdminUsername;
 	}
 
 	/**

@@ -45,6 +45,9 @@ if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 	echo "  A database that was empty comes out ready to log into, with the admin account,\n";
 	echo "  the permission hierarchy and the default master data of a new installation. Use\n";
 	echo "  bin/victual-db-import instead to move an existing SQLite installation across.\n\n";
+	echo "  The admin account's password is VICTUAL_BOOTSTRAP_ADMIN_PASSWORD when that is set.\n";
+	echo "  Otherwise one is generated, printed once to stderr, and must be changed at first\n";
+	echo "  login.\n\n";
 	echo "  --quiet  Only print errors.\n";
 	exit(0);
 }
@@ -110,7 +113,13 @@ if (!$quiet)
 
 try
 {
-	DatabaseMigrationService::GetInstance()->MigrateDatabase();
+	// Printed even with --quiet, and to stderr so a redirected stdout does not swallow it:
+	// on a fresh database with no VICTUAL_BOOTSTRAP_ADMIN_PASSWORD this line is the only
+	// copy of the first administrator's password that exists.
+	DatabaseMigrationService::GetInstance()->MigrateDatabase(true, function (string $username, string $password)
+	{
+		fwrite(STDERR, DatabaseMigrationService::GeneratedAdminPasswordNotice($username, $password) . PHP_EOL);
+	});
 }
 catch (\Exception $ex)
 {

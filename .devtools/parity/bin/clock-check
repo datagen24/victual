@@ -34,19 +34,19 @@ PASS=0; FAIL=0
 # sent the first run of this script looking for a clock fault when the answer was an
 # unrelated stale image saying "could not find driver" — the endpoint answered, it just did
 # not answer with a time.
-why() { # base_url
+why() { # base_url [password]
 	local jar body; jar="$(mktemp)"
-	curl -s -c "$jar" -o /dev/null -X POST -d 'username=admin&password=admin' "$1/login" 2>/dev/null || true
+	curl -s -c "$jar" -o /dev/null -X POST --data-urlencode 'username=admin' --data-urlencode "password=${2:-admin}" "$1/login" 2>/dev/null || true
 	body="$(curl -s -b "$jar" "$1/api/system/time" 2>/dev/null || true)"
 	rm -f "$jar"
 	if [ -z "$body" ]; then printf 'no response'; else printf '%s' "$(printf '%s' "$body" | tr -d '\n' | cut -c1-58)"; fi
 }
 
-check() { # label expected_epoch observed_epoch [base_url]
-	local label="$1" want="$2" got="$3" base="${4:-}" delta
+check() { # label expected_epoch observed_epoch [base_url [password]]
+	local label="$1" want="$2" got="$3" base="${4:-}" password="${5:-admin}" delta
 	if [ -z "$got" ]; then
 		printf '  %-34s \033[1;31mUNREADABLE\033[0m %s\n' "$label" \
-			"$( [ -n "$base" ] && why "$base" )"
+			"$( [ -n "$base" ] && why "$base" "$password" )"
 		FAIL=$((FAIL+1)); return
 	fi
 	delta=$(( got - want ))
@@ -57,9 +57,9 @@ check() { # label expected_epoch observed_epoch [base_url]
 	fi
 }
 
-# The two HTTP surfaces. A session is needed because /api/system/time is authenticated, and
-# both projects ship admin/admin from migration 0027 — the same credential the harness uses.
-http_epoch() { ft_http_epoch "$1"; }
+# The two HTTP surfaces. A session is needed because /api/system/time is authenticated.
+# Upstream ships admin/admin; the fork's password is PARITY_VICTUAL_ADMIN_PASSWORD (stack.sh).
+http_epoch() { ft_http_epoch "$1" "${2:-admin}"; }
 
 log "clock-check: anchor $ANCHOR"
 ft_init "$ANCHOR"
@@ -81,7 +81,7 @@ for i in "${!STEPS[@]}"; do
 	printf '\033[1m step %d: %s\033[0m\n' "$i" "$when"
 	check "postgres LOCALTIMESTAMP (new conn)" "$want" "$(ft_observed_epoch postgres)"
 	check "victual CLI (newly spawned proc)"   "$want" "$(ft_observed_epoch cli)"
-	check "victual php-fpm (running worker)"   "$want" "$(http_epoch "http://127.0.0.1:${VICTUAL_PORT}")"  "http://127.0.0.1:${VICTUAL_PORT}"
+	check "victual php-fpm (running worker)"   "$want" "$(http_epoch "http://127.0.0.1:${VICTUAL_PORT}" "$PARITY_VICTUAL_ADMIN_PASSWORD")"  "http://127.0.0.1:${VICTUAL_PORT}" "$PARITY_VICTUAL_ADMIN_PASSWORD"
 	check "upstream php + SQLite (running)"    "$want" "$(http_epoch "http://127.0.0.1:${UPSTREAM_PORT}")" "http://127.0.0.1:${UPSTREAM_PORT}"
 done
 

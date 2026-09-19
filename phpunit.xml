@@ -40,5 +40,8 @@
 		<testsuite name="mcpauth">
 			<file>tests/Pgsql/McpAuthTest.php</file>
 		</testsuite>
+		<testsuite name="bootstrapadmin">
+			<file>tests/Pgsql/BootstrapAdminTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

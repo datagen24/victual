@@ -163,7 +163,7 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 					return $readOnly;
 				}
 
-				$forcedChange = $this->PasswordChangeRedirect($request, (int)$user->id);
+				$forcedChange = $this->PasswordChangeRequired($request, (int)$user->id);
 
 				if ($forcedChange !== null)
 				{
@@ -375,30 +375,66 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 	}
 
 	/**
-	 * A redirect to the account's own edit form when it is still using the password
-	 * migration 0027 seeds, and null otherwise.
+	 * API routes an account that must change its password may still call: what the
+	 * change-password page itself needs, and nothing that reads or writes household data.
+	 * Method, then the route pattern as routes.php declares it (group prefix included).
 	 *
-	 * Sweep finding S12's second half: the installation ships with admin/admin and nothing
-	 * ever made anybody change it. "Force" here means every rendered page sends the
-	 * account to the form that changes it, with the password fields already open - the
-	 * `changepw` parameter userform.js already understands. Logging out is left reachable,
-	 * because trapping somebody on one page with no way off it is a worse answer than the
-	 * problem.
+	 * - `PUT /api/users/{userId}` is the save; OwnAccountOnly below restricts it to the
+	 *   caller's own id, because the flag is about this account's credential and editing
+	 *   somebody else's account is not how it gets resolved.
+	 * - `GET /api/user` answers "who am I", which is how a script learns the id to PUT to.
+	 * - `GET /api/system/db-changed-time` is polled by every rendered page, the forced
+	 *   one included (victual_dbchangedhandling.js); refusing it only fills the console.
+	 */
+	const PASSWORD_CHANGE_API_ALLOWLIST = [
+		['PUT', '/api/users/{userId}'],
+		['GET', '/api/user'],
+		['GET', '/api/system/db-changed-time'],
+	];
+
+	/**
+	 * The refusal for an account that has to change its password first, or null when it
+	 * does not have to or this request is one it may make anyway. Sweep finding S12's
+	 * second half, and the bootstrap issue CodeRabbit raised on PR #211.
 	 *
-	 * Deliberately limited to rendered pages. API routes are untouched, which is not an
-	 * oversight and is worth being explicit about: the form on that page saves through the
-	 * API, so gating API routes too would make the one page a person is allowed to reach
-	 * the one page that cannot work. An API key is also a credential of its own, issued
-	 * deliberately, rather than a default nobody chose.
+	 * The account is flagged when it logged in with the publicly known "admin" password,
+	 * or when it is the first administrator and its password was generated and printed to
+	 * the migrate log (see UsersService::RecordPasswordUsedAtLogin()).
+	 *
+	 * **Rendered pages** redirect to the account's own edit form with the password fields
+	 * already open - the `changepw` parameter userform.js already understands. Logging out
+	 * is left reachable, because trapping somebody on one page with no way off it is a
+	 * worse answer than the problem.
+	 *
+	 * **API routes** answer 403, except the short list in PASSWORD_CHANGE_API_ALLOWLIST.
+	 * Until this they were exempt altogether, because the form saves through the API - and
+	 * that exemption meant anybody who logged into a new deployment with admin/admin before
+	 * its operator did had the whole API, `POST /api/users` included: a second
+	 * administrator account nobody would notice, which survives the password change the
+	 * redirect then forced. The allowlist keeps the form working; nothing else gets
+	 * through. What it cannot do is stop the first arrival from changing the password
+	 * themselves - on an installation still on admin/admin whoever logs in first owns the
+	 * account, and only seeding without a known password (InitialDataSeeder) prevents
+	 * that. What it does do is make the takeover visible: the operator's password stops
+	 * working, rather than the operator carrying on unaware beside a planted account.
+	 *
+	 * An API key belonging to a flagged account is refused the same way. A key is a
+	 * credential of its own, but a flagged account is by definition one whose password
+	 * somebody else may know, and a key minted in that state is no more the operator's
+	 * than the session that minted it. Changing the password lifts the flag and the key
+	 * works again.
+	 *
+	 * Not applied when authentication is managed outside the application (a reverse
+	 * proxy): there is no password here to change.
 	 *
 	 * It costs one row read rather than a password hash - see
 	 * UsersService::RecordPasswordUsedAtLogin() for why that distinction is the whole
 	 * design, and why the flag is a column on `users` rather than a setting the account
 	 * could delete.
 	 */
-	private function PasswordChangeRedirect(Request $request, int $userId): ?Response
+	private function PasswordChangeRequired(Request $request, int $userId): ?Response
 	{
-		if ($this->IsApiRoute || defined('VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION'))
+		if (defined('VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION'))
 		{
 			return null;
 		}
@@ -406,6 +442,21 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 		if (!UsersService::GetInstance()->MustChangePassword($userId))
 		{
 			return null;
+		}
+
+		if ($this->IsApiRoute)
+		{
+			if ($this->IsAllowedWhilePasswordChangeIsPending($request, $userId))
+			{
+				return null;
+			}
+
+			$response = $this->ResponseFactory->createResponse();
+			$response->getBody()->write(json_encode([
+				'error_message' => 'This account must change its password before it can use the API: PUT /api/users/' . $userId . ' with the new password and current_password'
+			]));
+
+			return $response->withStatus(403);
 		}
 
 		$path = $request->getUri()->getPath();
@@ -418,6 +469,42 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 		return $this->ResponseFactory->createResponse()
 			->withStatus(302)
 			->withHeader('Location', $this->AppContainer->get('UrlManager')->ConstructUrl('/user/' . $userId . '?changepw=true'));
+	}
+
+	/**
+	 * Whether an API request is on PASSWORD_CHANGE_API_ALLOWLIST - matched on the route
+	 * Slim resolved, not on the raw path, so a base path, a trailing slash or an encoded
+	 * character cannot make one route look like another.
+	 */
+	private function IsAllowedWhilePasswordChangeIsPending(Request $request, int $userId): bool
+	{
+		$route = RouteContext::fromRequest($request)->getRoute();
+
+		if ($route === null)
+		{
+			return false;
+		}
+
+		$method = strtoupper($request->getMethod());
+		$pattern = $route->getPattern();
+
+		foreach (self::PASSWORD_CHANGE_API_ALLOWLIST as [$allowedMethod, $allowedPattern])
+		{
+			if ($method !== $allowedMethod || $pattern !== $allowedPattern)
+			{
+				continue;
+			}
+
+			// OwnAccountOnly: the one parameterised entry must name the caller
+			if ($route->getArgument('userId') !== null && (string)$route->getArgument('userId') !== (string)$userId)
+			{
+				return false;
+			}
+
+			return true;
+		}
+
+		return false;
 	}
 
 	/**

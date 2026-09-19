@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Walk a running Victual: every top-level page, the read side of the API, and one write cycle.
 
-    .devtools/nix/walk.py --base-url http://127.0.0.1:8080
+    .devtools/nix/walk.py --base-url http://127.0.0.1:8080 --password <the administrator's>
 
 It exists for plan 20 (issue #133), and answers the question the differential suite cannot:
 does the *image* serve. The suites run on PHP that setup-php or a Debian image provides, so a
@@ -12,8 +12,10 @@ holds - and reports every response that is not what a healthy instance answers.
 
 What it does, in order:
 
-  1. Logs in as the seeded administrator. A fresh database forces a password change before any
-     page renders, so if that is pending it is satisfied through the API first (--new-password).
+  1. Logs in as the seeded administrator (--password: the one the first migration generated and
+     printed, or VICTUAL_BOOTSTRAP_ADMIN_PASSWORD). A generated password has to be changed before
+     any page renders and before the API answers anything but the change itself, so it is
+     changed through the API first (--new-password).
   2. GETs every page the navigation links to, following redirects. A page must end in 200.
   3. GETs every parameterless GET path in the OpenAPI document the instance itself serves,
      and lists every entity the generic /objects endpoint exposes. 2xx is healthy; a 5xx is a
@@ -125,13 +127,14 @@ class Walker:
             sys.exit(f"GET /api/user after login answered {status}")
         user = json.loads(text)
         user = user[0] if isinstance(user, list) else user
-        # A fresh database forces a password change before any *page* renders; the API is
-        # exempt, so it is the way to satisfy it without a browser.
+        # A generated password has to be changed before any page renders, and until it is the
+        # API answers only this route, GET /api/user and the db-changed-time poll - so this is
+        # both the way to satisfy it without a browser and a check that the allowlist holds.
         if self.new_password and self.new_password != self.password:
             status, _, text = self.request("PUT", f"/api/users/{user['id']}", body={"username": self.user, "password": self.new_password, "current_password": self.password})
             self.record("setup", "PUT /api/users/{id} (password)", status, status in (200, 204), text[:120] if status >= 300 else "")
-            # The must-change flag is cleared at *login*, by noticing that the password used is
-            # no longer the seeded one, so changing it is not enough - it has to be used.
+            # The change itself clears the must-change flag. Logging in again with the new
+            # password proves it took.
             self.password = self.new_password
             status, _, _ = self.request("POST", "/login", form={"username": self.user, "password": self.password}, follow=False)
             self.record("setup", "POST /login (new password)", status, status == 302)
@@ -239,7 +242,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--user", default="admin")
-    parser.add_argument("--password", default="admin")
+    # No default: a fresh database no longer has a password anybody knows in advance
+    parser.add_argument("--password", required=True, help="the administrator's current password")
     parser.add_argument("--new-password", default="walk-password-1")
     parser.add_argument("--known", action="append", default=[], metavar="PATH=STATUS",
                         help="a path that is known to answer STATUS, with the issue that tracks it; "

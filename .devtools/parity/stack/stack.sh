@@ -63,6 +63,14 @@ MOSQUITTO_IMAGE="${MOSQUITTO_IMAGE:-docker.io/library/eclipse-mosquitto:2}"
 INFLUX_IMAGE="${INFLUX_IMAGE:-docker.io/library/influxdb:2.7}"
 
 VICTUAL_PORT="${VICTUAL_PORT:-8080}"
+
+# The fork's administrator password. Not admin/admin, which upstream still ships and the
+# fork no longer does: a fresh Victual database gets VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, and an
+# account that logs in with "admin" is refused by the API until it changes it. So the two
+# sides now differ in one credential, deliberately, and this is the one place that says so.
+# harness/lib/instance.js reads the same variable, with the same default.
+PARITY_VICTUAL_ADMIN_PASSWORD="${PARITY_VICTUAL_ADMIN_PASSWORD:-parity-admin-password}"
+export PARITY_VICTUAL_ADMIN_PASSWORD
 UPSTREAM_PORT="${UPSTREAM_PORT:-8081}"
 INFLUX_PORT="${INFLUX_PORT:-8086}"
 MQTT_PORT="${MQTT_PORT:-1883}"
@@ -239,9 +247,11 @@ migrate_victual() {
 	local args=()
 	while IFS= read -r a; do args+=("$a"); done < <(victual_env_args)
 	while IFS= read -r a; do args+=("$a"); done < <(victual_hardening_args)
-	# No command: the image's Cmd is already bin/victual-migrate.
+	# No command: the image's Cmd is already bin/victual-migrate. The bootstrap password goes
+	# to this container only, as it does in deploy/: the serving containers never hold it.
 	"$ENGINE" run --rm --network "$PARITY_NETWORK" \
 		"${args[@]}" \
+		-e "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=$PARITY_VICTUAL_ADMIN_PASSWORD" \
 		"$VICTUAL_MIGRATE_IMAGE" \
 		|| die "victual migration failed"
 }
@@ -294,7 +304,7 @@ start_victual() {
 	# action is a login, so the stack is not "up" until one succeeds.
 	wait_for "victual login" 90 sh -c \
 		"test \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-			-d 'username=admin&password=admin' \
+			-d 'username=admin&password=${PARITY_VICTUAL_ADMIN_PASSWORD}' \
 			'http://127.0.0.1:${VICTUAL_PORT}/login')\" = 302"
 }
 
