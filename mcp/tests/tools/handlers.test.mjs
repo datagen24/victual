@@ -165,3 +165,20 @@ test("REST failures propagate as VictualApiError for the server's §7 mapping", 
   const c = ctx({ "/api/stock": () => { throw new VictualApiError("forbidden", "Victual answered 403", 403); } });
   await assert.rejects(run(stockOverview, {}, c), (error) => error.category === "forbidden" && error.victualStatus === 403);
 });
+
+test("a volatile-stock response missing a section is a victual_error, not an empty answer", async () => {
+  const c = ctx({ "/api/stock/volatile": { due_products: [], overdue_products: [], missing_products: [] } });
+  await assert.rejects(run(expiringSoon, {}, c), (error) => error.category === "victual_error" && /expired_products/.test(error.message));
+
+  const m = ctx({ "/api/stock/volatile": { due_products: [], overdue_products: [], expired_products: [] } });
+  await assert.rejects(run(missingProducts, {}, m), (error) => error.category === "victual_error" && /missing_products/.test(error.message));
+});
+
+test("a required number Victual did not send is a victual_error, not a plausible 0", async () => {
+  for (const bad of [undefined, "", "abc", Number.NaN, Number.POSITIVE_INFINITY]) {
+    const c = ctx({
+      "/api/stock": [{ product_id: 1, amount: bad, amount_opened: 0, best_before_date: null, product: product(1, "Rice") }],
+    });
+    await assert.rejects(run(stockOverview, {}, c), (error) => error.category === "victual_error", `amount ${String(bad)}`);
+  }
+});

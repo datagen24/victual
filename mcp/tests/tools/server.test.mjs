@@ -16,8 +16,10 @@ before(async () => {
       res.writeHead(capabilities.status, { "content-type": "application/json" });
       return res.end(JSON.stringify(capabilities.body));
     }
-    if (path === "/api/stock") { res.writeHead(403); return res.end("{}"); }
-    res.writeHead(404); res.end("{}");
+    // Every data route is 403, not just /api/stock: a tool fetches several in parallel,
+    // and whichever rejects first decides the category - a 404 on the unit lookup raced
+    // the 403 this test asserts, and won about one run in four.
+    res.writeHead(403); res.end("{}");
   });
   await new Promise((resolve) => victual.listen(0, resolve));
   sidecar = buildServer({
@@ -91,4 +93,14 @@ test("a Victual 403 on tools/call is an isError result categorized forbidden", a
   assert.equal(payload.error, "forbidden");
   assert.equal(payload.victual_status, 403);
   assert.match(res.content[0].text, /retrying will not help/);
+});
+
+test("the resolver forwards the key and asks Victual for an MCP-type key", async () => {
+  const { resolveCredential, UnauthenticatedError } = await import("../../dist/auth/resolver.js");
+  assert.deepEqual(resolveCredential(new Headers({ authorization: "Bearer abc" })).headers, {
+    "VICTUAL-API-KEY": "abc",
+    "VICTUAL-API-KEY-TYPE": "mcp",
+  });
+  assert.equal(resolveCredential({ "victual-api-key": "def" }).headers["VICTUAL-API-KEY"], "def");
+  assert.throws(() => resolveCredential(new Headers()), UnauthenticatedError);
 });

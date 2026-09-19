@@ -89,8 +89,21 @@ explains each fix.
 
 The client needs:
 
-- the sidecar's URL, `http://<host>:3000/mcp`;
+- the sidecar's URL;
 - a static header, `Authorization: Bearer <Victual API key>`.
+
+**The key travels in that header, so only send it over plain HTTP where nobody else can
+read the traffic.** The sidecar speaks plain HTTP by design, and TLS is the ingress's job
+(spec §8, §9).
+- Over `http://`, use `kubectl port-forward` to `localhost:3000/mcp`, or a tunnel that
+  encrypts, such as a tailnet.
+- Anything else reaches it through the operator's ingress with TLS, as `https://…/mcp`.
+- The manifest publishes no ingress, and the spec keeps the sidecar on the cluster or
+  tailnet (§9, plan 02 Q4).
+
+Inside the cluster, the sidecar forwards the key to Victual over the cluster network. If
+you don't trust pod-to-pod traffic there, encrypting it is a mesh or CNI concern (mTLS);
+the manifests don't provide it.
 
 The key's user is who the assistant acts as, so its permissions are what the assistant
 can see. **No v1 tool returns a price field**: every row is shaped from named fields

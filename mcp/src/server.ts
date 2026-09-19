@@ -123,20 +123,33 @@ export function buildServer(config: Config) {
   );
 
   const httpServer = createServer((req, res) => {
-    void handle(req).then(
-      async (response) => {
+    const fail = (error: unknown) => {
+      log.error(`unhandled: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      if (!res.headersSent) {
+        res.writeHead(500);
+        res.end();
+      } else {
+        // Mid-stream: the status line is already out, so the only honest signal left is
+        // cutting the connection rather than ending a response that looks complete.
+        res.destroy();
+      }
+    };
+
+    // One chain, so a failure while streaming the SDK's response body (a rejected
+    // async iterator) is caught too - not only a failure producing the Response. Left
+    // unhandled, that rejection terminates Node.
+    handle(req)
+      .then(async (response) => {
         res.writeHead(response.status, Object.fromEntries(response.headers));
         if (response.body) {
-          for await (const chunk of response.body) res.write(chunk);
+          for await (const chunk of response.body) {
+            if (res.destroyed) break;
+            res.write(chunk);
+          }
         }
         res.end();
-      },
-      (error: unknown) => {
-        log.error(`unhandled: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-        if (!res.headersSent) res.writeHead(500);
-        res.end();
-      },
-    );
+      })
+      .catch(fail);
   });
 
   async function handle(req: IncomingMessage): Promise<Response> {

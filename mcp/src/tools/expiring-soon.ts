@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
 import type { CurrentStockRow, VolatileStock } from "../victual/types.js";
-import { byDueDate, fetchUnitNames, normalizeDueDate, num, plural, unitName } from "../victual/shape.js";
+import { byDueDate, fetchUnitNames, list, normalizeDueDate, num, plural, unitName } from "../victual/shape.js";
 
 // §5.2. Backed by GET /api/stock/volatile?due_soon_days={days}. Three sections, not
 // three tools — a model asking about expiry wants all three severities in one answer.
@@ -39,8 +39,10 @@ export const expiringSoon: ToolDefinition<typeof inputSchema, typeof outputSchem
       fetchUnitNames(ctx),
     ]);
 
-    const shape = (rows: CurrentStockRow[] | undefined) =>
-      (rows ?? [])
+    // Each section must be present: a missing one is a response this sidecar does not
+    // understand, not "nothing is expiring".
+    const shape = (rows: CurrentStockRow[] | undefined, section: string) =>
+      list(rows, section)
         .map((row) => ({
           product_id: num(row.product_id),
           name: row.product?.name ?? "",
@@ -52,9 +54,9 @@ export const expiringSoon: ToolDefinition<typeof inputSchema, typeof outputSchem
         .slice(0, input.limit);
 
     const data = {
-      due: shape(volatile.due_products),
-      overdue: shape(volatile.overdue_products),
-      expired: shape(volatile.expired_products),
+      due: shape(volatile.due_products, "due_products"),
+      overdue: shape(volatile.overdue_products, "overdue_products"),
+      expired: shape(volatile.expired_products, "expired_products"),
     };
     const text =
       `${plural(data.due.length, "product")} due within ${plural(input.days, "day")}, ` +

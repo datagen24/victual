@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
 import type { VolatileStock } from "../victual/types.js";
-import { bool, num, plural } from "../victual/shape.js";
+import { bool, list, num, plural } from "../victual/shape.js";
 
 // §5.3. Backed by GET /api/stock/volatile -> missing_products. Plan 03 deliberately
 // keeps group shortfalls out of this view; when it lands, group shortfalls become a new
@@ -28,7 +28,7 @@ export const missingProducts: ToolDefinition<typeof inputSchema, typeof outputSc
   outputSchema,
   handler: async (input, ctx) => {
     const volatile = await ctx.client.get<VolatileStock>("/api/stock/volatile", ctx.credential);
-    const all = (volatile.missing_products ?? [])
+    const all = list(volatile.missing_products, "missing_products")
       .map((row) => ({
         product_id: num(row.id),
         name: row.name,
