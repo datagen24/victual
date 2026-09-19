@@ -67,12 +67,29 @@ INFLUX_IMAGE="${INFLUX_IMAGE:-docker.io/library/influxdb:2.7}"
 
 VICTUAL_PORT="${VICTUAL_PORT:-8080}"
 
+# Where the stack leaves what a later step reads: the migrate log the bootstrap handover
+# parses, that handover's report, and the administrator password below. The reports
+# directory is gitignored.
+PARITY_STATE_DIR="${PARITY_STATE_DIR:-${PARITY_REPORTS:-$STACK_DIR/../reports}}"
+
 # The fork's administrator password. Not admin/admin, which upstream still ships and the
-# fork no longer does: a fresh Victual database gets VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, and an
-# account that logs in with "admin" is refused by the API until it changes it. So the two
-# sides now differ in one credential, deliberately, and this is the one place that says so.
-# harness/lib/instance.js reads the same variable, with the same default.
-PARITY_VICTUAL_ADMIN_PASSWORD="${PARITY_VICTUAL_ADMIN_PASSWORD:-parity-admin-password}"
+# fork no longer does: a fresh Victual database has no password anybody knows, and the
+# handover below changes it to this one. So the two sides differ in one credential,
+# deliberately, and this is the one place that says so.
+#
+# **Random per stack, unless you set it.** It used to default to a fixed string, which with
+# a published port was an administrator login anyone on the network could look up
+# (CodeRabbit, PR #220). Now each fresh database gets a new random one, written to a mode-600
+# file so that later `parity` invocations and harness/lib/instance.js - separate processes -
+# can read it; it is never printed and never on a command line. Setting
+# PARITY_VICTUAL_ADMIN_PASSWORD yourself still pins it.
+PARITY_ADMIN_PASSWORD_FILE="$PARITY_STATE_DIR/.victual-admin-password"
+if [ -n "${PARITY_VICTUAL_ADMIN_PASSWORD:-}" ]; then
+	PARITY_ADMIN_PASSWORD_PINNED=yes
+else
+	PARITY_ADMIN_PASSWORD_PINNED=no
+	PARITY_VICTUAL_ADMIN_PASSWORD="$(cat "$PARITY_ADMIN_PASSWORD_FILE" 2>/dev/null || true)"
+fi
 export PARITY_VICTUAL_ADMIN_PASSWORD
 
 # **How that password gets there.** `generated`, the default, is what a deployment that sets
@@ -111,10 +128,6 @@ p_victual="${PARITY_PREFIX}-victual"
 c_victual_app="${PARITY_PREFIX}-victual-app"
 c_victual_web="${PARITY_PREFIX}-victual-web"
 c_victual_mcp="${PARITY_PREFIX}-victual-mcp"
-
-# Where the stack leaves what a later step reads: the migrate log the bootstrap handover
-# parses, and that handover's report. The reports directory is gitignored.
-PARITY_STATE_DIR="${PARITY_STATE_DIR:-${PARITY_REPORTS:-$STACK_DIR/../reports}}"
 
 # There is no victual data volume. There was one, seeded with a stub config.php to satisfy
 # PrerequisiteChecker::checkForConfigFile(); the application no longer requires the file at
@@ -161,13 +174,28 @@ wait_for() {
 # pass on a wrong password. Success is a 302 anywhere else.
 login_accepted() {
 	local base="$1" password="$2" out
-	out="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
-		--data-urlencode username=admin --data-urlencode "password=$password" "$base/login")"
+	# The password on stdin (`password@-`), not in curl's arguments, where `ps` would show it.
+	out="$(printf '%s' "$password" | curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
+		--data-urlencode username=admin --data-urlencode "password@-" "$base/login")"
 	case "$out" in
 		"302 "*invalid=*) return 1 ;;
 		"302 "*) return 0 ;;
 		*) return 1 ;;
 	esac
+}
+
+# **Every published port is on loopback.** The stack holds an administrator login on both
+# applications - upstream's is admin/admin and cannot be anything else - so nothing here is
+# for another machine to reach.
+
+# A new random administrator password for a fresh database, unless one was pinned.
+new_admin_password() {
+	[ "$PARITY_ADMIN_PASSWORD_PINNED" = yes ] && return 0
+	mkdir -p "$PARITY_STATE_DIR"
+	PARITY_VICTUAL_ADMIN_PASSWORD="$(od -An -N18 -tx1 /dev/urandom | tr -d ' \n')"
+	[ "${#PARITY_VICTUAL_ADMIN_PASSWORD}" -eq 36 ] || die "could not generate an administrator password"
+	( umask 077; printf '%s' "$PARITY_VICTUAL_ADMIN_PASSWORD" > "$PARITY_ADMIN_PASSWORD_FILE" )
+	export PARITY_VICTUAL_ADMIN_PASSWORD
 }
 
 ensure_network() {
@@ -204,7 +232,7 @@ start_mosquitto() {
 	# until it does not.
 	"$ENGINE" run -d --name "$c_mqtt" \
 		--network "$PARITY_NETWORK" --network-alias mosquitto \
-		-p "${MQTT_PORT}:1883" \
+		-p "127.0.0.1:${MQTT_PORT}:1883" \
 		"$MOSQUITTO_IMAGE" \
 		sh -c 'printf "listener 1883 0.0.0.0\nallow_anonymous true\npersistence false\n" > /tmp/mosquitto.conf && exec mosquitto -c /tmp/mosquitto.conf' >/dev/null
 	wait_for mosquitto 60 "$ENGINE" exec "$c_mqtt" sh -c "nc -z 127.0.0.1 1883"
@@ -215,7 +243,7 @@ start_influx() {
 	log "influxdb"
 	"$ENGINE" run -d --name "$c_influx" \
 		--network "$PARITY_NETWORK" --network-alias influxdb \
-		-p "${INFLUX_PORT}:8086" \
+		-p "127.0.0.1:${INFLUX_PORT}:8086" \
 		-e DOCKER_INFLUXDB_INIT_MODE=setup \
 		-e DOCKER_INFLUXDB_INIT_USERNAME=victual \
 		-e DOCKER_INFLUXDB_INIT_PASSWORD=victual-parity \
@@ -282,15 +310,18 @@ migrate_victual() {
 	# there is one, goes to this container only, as it does in deploy/: the serving
 	# containers never hold it. Under `generated` there is none, and the log is kept because
 	# it is the only place the generated password exists (PARITY_BOOTSTRAP_ADMIN above).
+	new_admin_password
+	# `-e NAME` with no value passes the variable through from this process's environment,
+	# which keeps the password off podman's command line.
 	local bootstrap=()
 	case "$PARITY_BOOTSTRAP_ADMIN" in
-		env) bootstrap=(-e "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=$PARITY_VICTUAL_ADMIN_PASSWORD") ;;
+		env) bootstrap=(-e VICTUAL_BOOTSTRAP_ADMIN_PASSWORD) ;;
 		generated) ;;
 		*) die "PARITY_BOOTSTRAP_ADMIN is '$PARITY_BOOTSTRAP_ADMIN'; it is 'generated' or 'env'" ;;
 	esac
 	mkdir -p "$PARITY_STATE_DIR"
 	local migrate_log="$PARITY_STATE_DIR/migrate.log"
-	if ! "$ENGINE" run --rm --network "$PARITY_NETWORK" \
+	if ! VICTUAL_BOOTSTRAP_ADMIN_PASSWORD="$PARITY_VICTUAL_ADMIN_PASSWORD" "$ENGINE" run --rm --network "$PARITY_NETWORK" \
 		"${args[@]}" \
 		${bootstrap[@]+"${bootstrap[@]}"} \
 		"$VICTUAL_MIGRATE_IMAGE" >"$migrate_log" 2>&1; then
@@ -312,7 +343,6 @@ bootstrap_admin_handover() {
 	node "$STACK_DIR/../harness/bootstrap-admin.js" \
 		--victual "http://127.0.0.1:${VICTUAL_PORT}" \
 		--migrate-log "$PARITY_STATE_DIR/migrate.log" \
-		--password "$PARITY_VICTUAL_ADMIN_PASSWORD" \
 		--out "$PARITY_STATE_DIR" \
 		|| die "the generated-password handover failed; see above and $PARITY_STATE_DIR/bootstrap-admin.json"
 }
@@ -326,7 +356,7 @@ create_victual_pod() {
 	"$ENGINE" pod rm -f "$p_victual" >/dev/null 2>&1 || true
 	"$ENGINE" pod create --name "$p_victual" \
 		--network "$PARITY_NETWORK" --network-alias victual \
-		-p "${VICTUAL_PORT}:8080" >/dev/null
+		-p "127.0.0.1:${VICTUAL_PORT}:8080" >/dev/null
 }
 
 start_victual() {
@@ -379,7 +409,7 @@ start_mcp() {
 	while IFS= read -r a; do args+=("$a"); done < <(victual_hardening_args)
 	"$ENGINE" run -d --name "$c_victual_mcp" \
 		--network "$PARITY_NETWORK" --network-alias victual-mcp \
-		-p "${MCP_PORT}:3000" \
+		-p "127.0.0.1:${MCP_PORT}:3000" \
 		"${args[@]}" \
 		-e VICTUAL_BASE_URL=http://victual:8080 \
 		-e MCP_ENABLED_TOOLS=all-read \
@@ -444,7 +474,7 @@ start_upstream() {
 	# testing a configuration nobody runs.
 	"$ENGINE" run -d --name "$c_upstream" \
 		--network "$PARITY_NETWORK" --network-alias upstream \
-		-p "${UPSTREAM_PORT}:80" \
+		-p "127.0.0.1:${UPSTREAM_PORT}:80" \
 		-v "$v_upstream_data:/config" \
 		-e PUID=1000 -e PGID=1000 -e TZ=UTC \
 		-e GROCY_MODE=production \
@@ -497,6 +527,7 @@ stack_down() {
 	done
 	"$ENGINE" volume rm -f "$v_upstream_data" >/dev/null 2>&1 || true
 	"$ENGINE" network rm -f "$PARITY_NETWORK" >/dev/null 2>&1 || true
+	rm -f "$PARITY_ADMIN_PASSWORD_FILE"
 }
 
 stack_status() {

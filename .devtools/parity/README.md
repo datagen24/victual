@@ -58,8 +58,8 @@ there is no SQLite path left to break.
 
 | Phase | Command | What it drives |
 |---|---|---|
-| API | `parity api` | 288 calls across 8 scenarios, both instances, responses diffed |
-| Browser | `parity ui` | 49 view routes plus a purchase workflow, both instances |
+| API | `parity api` | 291 calls across 8 scenarios, both instances, responses diffed |
+| Browser | `parity ui` | 48 view routes plus a purchase workflow, both instances |
 | Side effects | `parity side-effects` | MQTT retained topics, Home Assistant discovery, InfluxDB points — fork-only |
 | MCP | `parity mcp` | The read-only MCP sidecar through the official SDK client: auth, key types, all six tools against the REST GETs they wrap, the capability filter — fork-only |
 
@@ -259,11 +259,19 @@ fork does not have this problem, because plan 10 made migrating a step
 
 ## Credentials
 
-`victual`/`victual` for PostgreSQL, `admin`/`admin` for upstream, `admin` /
-`parity-admin-password` for the fork (`PARITY_VICTUAL_ADMIN_PASSWORD`), a fixed InfluxDB
-token — all in the open, for the reason `docker-compose.yml` already states about the same
+`victual`/`victual` for PostgreSQL, `admin`/`admin` for upstream and a fixed InfluxDB
+token — in the open, for the reason `docker-compose.yml` already states about the same
 shape: these exist for the length of a suite run, on a tmpfs, with every run creating them
 from nothing. Sweep finding **S25** records exactly this as an Info-level observation.
+**Every published port binds to `127.0.0.1`**, so none of them is reachable from another
+machine.
+
+The fork's administrator password is **not** in the open. Unless you set
+`PARITY_VICTUAL_ADMIN_PASSWORD`, every fresh database gets a random one, written to
+`reports/.victual-admin-password` (mode 600) for later `parity` invocations and the harness
+to read, and removed by `parity down`. It is never printed and never on a command line. It
+used to default to a fixed string, which with a published port was an administrator login
+anyone on the network could look up (CodeRabbit on PR #220).
 
 `admin`/`admin` is not a choice this suite made: upstream creates that user in migration
 `0027`. The fork no longer does. A fresh Victual database has no password anybody knows:

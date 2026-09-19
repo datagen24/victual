@@ -3,7 +3,10 @@
 // The first administrator's first login, as a deployment that set no password gets it.
 //
 //   node bootstrap-admin.js --victual http://127.0.0.1:8080 \
-//        --migrate-log <file> --password <the password to change to> [--out <dir>]
+//        --migrate-log <file> [--out <dir>]
+//
+// The password to change to is PARITY_VICTUAL_ADMIN_PASSWORD, from the environment rather
+// than an argument, so that it does not appear in `ps` (stack/stack.sh sets it).
 //
 // **A fresh Victual has no password anybody knows.** With VICTUAL_BOOTSTRAP_ADMIN_PASSWORD
 // unset, the first migration generates one, prints it once on stderr and flags the account
@@ -33,15 +36,14 @@ const path = require('path');
 const GENERATED = /created the first administrator "([^"]+)" with the generated password ([0-9a-f]{24})\b/;
 
 function parseArgs(argv) {
-	const args = { victual: 'http://127.0.0.1:8080', migrateLog: null, password: null, out: null };
+	const args = { victual: 'http://127.0.0.1:8080', migrateLog: null, password: process.env.PARITY_VICTUAL_ADMIN_PASSWORD || null, out: null };
 	for (let i = 2; i < argv.length; i++) {
 		if (argv[i] === '--victual') args.victual = argv[++i].replace(/\/+$/, '');
 		else if (argv[i] === '--migrate-log') args.migrateLog = argv[++i];
-		else if (argv[i] === '--password') args.password = argv[++i];
 		else if (argv[i] === '--out') args.out = argv[++i];
 	}
 	if (!args.migrateLog || !args.password) {
-		console.error('usage: node bootstrap-admin.js --victual <url> --migrate-log <file> --password <new>');
+		console.error('usage: PARITY_VICTUAL_ADMIN_PASSWORD=<new> node bootstrap-admin.js --victual <url> --migrate-log <file>');
 		process.exit(2);
 	}
 	return args;

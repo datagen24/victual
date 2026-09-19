@@ -68,7 +68,9 @@ rediscovering:
   the fork has no known password (PR 213). Since 2026-09-19 the stack migrates the fork with
   no bootstrap password, reads the generated one off `reports/migrate.log` and walks the
   forced change to `PARITY_VICTUAL_ADMIN_PASSWORD` (`harness/bootstrap-admin.js`);
-  `PARITY_BOOTSTRAP_ADMIN=env` skips that.
+  `PARITY_BOOTSTRAP_ADMIN=env` skips that. That password is random per fresh database unless
+  set, kept in `reports/.victual-admin-password` (mode 600) — `cat` it to log in by hand.
+  All published ports bind to 127.0.0.1.
 - **A failed login is a 302 too**, to `/login?invalid=true`, on both applications. Check the
   `Location`, never the status — the harness and both stack gates got this wrong until
   2026-09-19.

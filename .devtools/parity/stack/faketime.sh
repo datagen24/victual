@@ -245,7 +245,7 @@ ft_observed_epoch() {
 ft_http_epoch() { # base_url [password]
 	local base="$1" password="${2:-admin}" jar body
 	jar="$(mktemp)"
-	curl -s -c "$jar" -o /dev/null -X POST --data-urlencode 'username=admin' --data-urlencode "password=$password" "$base/login" 2>/dev/null || true
+	printf '%s' "$password" | curl -s -c "$jar" -o /dev/null -X POST --data-urlencode 'username=admin' --data-urlencode "password@-" "$base/login" 2>/dev/null || true
 	body="$(curl -s -b "$jar" "$base/api/system/time" 2>/dev/null || true)"
 	rm -f "$jar"
 	printf '%s' "$body" | python3 -c 'import sys,json;print(int(json.load(sys.stdin)["timestamp"]))' 2>/dev/null || true
