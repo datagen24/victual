@@ -11,7 +11,7 @@ Plan numbers are permanent identifiers, not execution order.
 
 ## Status
 
-This table is the authority on delivery status, updated through 2026-09-18. “Landed” means
+This table is the authority on delivery status, updated through 2026-09-19. “Landed” means
 implemented; outstanding verification and follow-up work are listed separately. A plan's
 **Executed** section records what shipped and any differences from the proposed design.
 
