@@ -101,7 +101,7 @@ podman container on the nixos/nix image. Two constraints that cost real time:
   `nix flake update --flake path:/src` — newer nix reads a bare positional arg as an input
   name.
 
-Images are `localhost/victual-{app,web,migrate}:4.6.0` — 284/205/291 MB against the old
+Images are `localhost/victual-{app,web,migrate}:<Version from version.json>` (`4.6.0` before the first release, `0.1.0-MVP` from 2026-09-19) — 284/205/291 MB against the old
 Dockerfile production image's 819 MB.
 
 ## Git: signing and the shared stash stack

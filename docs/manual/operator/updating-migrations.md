@@ -5,7 +5,9 @@ upstream grocy's. Pull the code, check `config-dist.php` for settings you have n
 (anything unset falls back to the default shown there), and run the migration command.
 Migrations are meant to work between releases, not between arbitrary commits, so pulling a
 tag rather than a mid-development commit is the safer habit — see
-[Getting started](../getting-started.md#updating).
+[Getting started](../getting-started.md#updating). A tag is placed only on a commit that
+was verified working (`v0.1.0-MVP`, 2026-09-19, is the first); the images built from it
+carry the same string as their tag and as `GET /api/system/info` reports.
 
 ## Running a migration
 

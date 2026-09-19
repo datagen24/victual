@@ -15,7 +15,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 CLUSTER="${KIND_CLUSTER:-kind-cluster}"
 NAMESPACE=victual
-VERSION="${VICTUAL_IMAGE_TAG:-4.6.0}"
+VERSION="${VICTUAL_IMAGE_TAG:-0.1.0-MVP}"
 export KIND_EXPERIMENTAL_PROVIDER="${KIND_EXPERIMENTAL_PROVIDER:-podman}"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }

@@ -86,7 +86,7 @@ spec:
                 secretName: victual-label-credentials
           containers:
             - name: renderer
-              image: localhost/victual-label-renderer:4.6.0
+              image: localhost/victual-label-renderer:0.1.0-MVP
               args:
                 - "--api"
                 - "$(VICTUAL_API_BASE)"
@@ -157,7 +157,7 @@ spec:
             secretName: victual-label-credentials
       containers:
         - name: worker
-          image: localhost/victual-label-worker:4.6.0
+          image: localhost/victual-label-worker:0.1.0-MVP
           args:
             - "--api"
             - "$(VICTUAL_API_BASE)"

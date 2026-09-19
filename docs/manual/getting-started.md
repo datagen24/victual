@@ -136,7 +136,9 @@ This fork tracks no release schedule. Pull, check `config-dist.php` for settings
 not set yet (an unset setting falls back to the default there), then run
 `php bin/victual-migrate` — a deployment's init step does that for you. Migrations are meant
 to work between releases, not between every commit, so pulling a specific tag rather than an
-arbitrary commit is the safer habit. Upstream's `update.sh` is not the path used here.
+arbitrary commit is the safer habit. A tag (`v0.1.0-MVP` is the first) marks a commit that
+was verified working, not a schedule: it is only placed after the full suites and a
+deployment have passed on that commit. Upstream's `update.sh` is not the path used here.
 
 ## Localization
 

@@ -18,6 +18,7 @@ preserve technical meaning, evidence, and unresolved questions.
 | ADR | Explain a specific architectural choice through context, evidence, alternatives, and consequences. | Task assignments and chronological accounts of deliberation. |
 | Plan | Research a major change: requirements, current behavior, scope, design, dependencies, unknowns, and verification criteria. | Prompts, session scripts, and an agent's execution checklist. |
 | Operational guide | Provide prerequisites, commands, configuration, expected results, and troubleshooting. | Roadmap status and extended architectural arguments. |
+| Release record | State what a tag is, what was verified before it was placed (dated, reproducible), what differs from upstream on purpose, and what is known to be missing, linking each to its authority. | Delivery status, decision rationale, implementation history. |
 
 A folder README may contain a concise inventory or status table. A row identifies the
 item, its state, and the dependency or next unresolved issue. Detailed evidence belongs

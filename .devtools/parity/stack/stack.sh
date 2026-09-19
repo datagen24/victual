@@ -54,10 +54,11 @@ VICTUAL_MIGRATE_IMAGE="${VICTUAL_MIGRATE_IMAGE:-localhost/victual-migrate:${VICT
 # has nothing to compare it with, so `parity mcp` checks it against the fork's own REST API.
 VICTUAL_MCP_IMAGE="${VICTUAL_MCP_IMAGE:-localhost/victual-mcp:${VICTUAL_VERSION}}"
 
-# Pinned to the fork's base version rather than :latest, and that is the whole argument of
-# this suite. version.json says 4.6.0 / 2026-03-06 and so does the upstream image's own
-# version.json, so a difference the suite reports is a difference *this fork* introduced —
-# not one upstream introduced in a release the fork has not merged. Comparing against
+# Pinned to the release the fork was cut from rather than :latest, and that is the whole
+# argument of this suite. grocy 4.6.0 / 2026-03-06 is the upstream image's own version.json,
+# and it was the fork's too until its first release (0.1.0-MVP, 2026-09-19), so a difference
+# the suite reports is a difference *this fork* introduced — not one upstream introduced in
+# a release the fork has not merged. Comparing against
 # :latest would produce a report full of upstream's changelog.
 UPSTREAM_IMAGE="${UPSTREAM_IMAGE:-docker.io/linuxserver/grocy:version-v4.6.0}"
 

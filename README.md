@@ -28,20 +28,24 @@ goals.
 
 ## Current state
 
-As of 2026-09-14, the Nix-built application has been deployed and serves requests, and a
-location label has been printed and scanned back through the fork's own label subsystem.
-Infrastructure and feature work remain in progress; there is no regular release schedule.
+**First release: [0.1.0-MVP](docs/releases/0.1.0-MVP.md), 2026-09-19**, tagged `v0.1.0-MVP`.
+The version line stays at 0.x while the release soaks in the household it was built for; 1.0
+follows that, not a date. There is no release schedule, and a tag is placed only on a commit
+that was verified working. As of the release, the Nix-built application serves under podman
+and on a kind cluster, a location label has been printed and scanned back through the
+fork's own label subsystem, and a simulated household year has run against the fork and
+upstream side by side.
 
 | Area | State |
 |---|---|
-| PostgreSQL and database file storage | Implemented, including import tools and database comparison tests. |
+| PostgreSQL and database file storage | Implemented; the only runtime engine. Import from grocy and Victual SQLite databases, migrations 0256–0287, and an engine comparison suite. |
 | Stateless runtime | Implemented: explicit migration command, database-backed state, and read-only application filesystem. |
-| MQTT and InfluxDB | State publication and event delivery implemented. Some Home Assistant checks remain outstanding. |
-| Production containers | Five Nix-built images (application, web, migrate, label renderer, label worker) and working pod manifests. K3S manifests, credential separation, and the SIGTERM check remain. |
-| Hardening | API error handling, authentication fixes, write transactions, and frontend sink fixes implemented. Contract snapshots and cleanup remain. |
-| Household features | Category minimums, nested locations and product groups, storage classes, open-container measurement, working-container replenishment (a weighed bin refilled from backstock) and directed product substitution are implemented. Store-aware shopping lists, barcode sources, and medication tracking are planned. |
-| Labels | Opaque `vctl:` label identities, print jobs, printer configuration, a browser template designer, a headless renderer, and a delivery worker are implemented; a location label was printed and scanned back on 2026-09-09. All six label kinds (locations, products, stock entries, recipes, chores, batteries) print through it since 2026-09-16, and the legacy webhook is gone. Deployment of the worker under K3S remains. |
-| Assistants and clients | MCP and first-party client work are planned. |
+| MQTT and InfluxDB | State publication and event delivery implemented. Three Home Assistant checks remain and need a running Home Assistant. |
+| Production containers | Six Nix-built images (application, web, migrate, label renderer, label worker, MCP sidecar), a podman pod serving since 2026-09-04, k3s manifests applied to a kind cluster on 2026-09-19. The apply to the household's own cluster remains. |
+| Hardening | API error contract, hashed and expiring API keys, write transactions, frontend sink discipline, a response-contract snapshot, and a generated first-administrator password. Line coverage is below the 75% floor and ratcheted in CI. |
+| Household features | Category minimums, nested locations and product groups, storage classes, open-container measurement, working-container replenishment, directed product substitution, and store-aware shopping lists are implemented. Barcode sources and medication tracking are planned. |
+| Labels | Opaque `vctl:` label identities, print jobs, printer configuration, a browser template designer, a headless renderer, and a delivery worker; all six label kinds print through it and the legacy webhook is gone. A worker image reaching the printer from the cluster remains. |
+| Assistants and clients | A read-only MCP sidecar with its own key type is built and deployed to kind; write tools wait on real use. First-party clients are planned. |
 
 PostgreSQL is the only runtime engine under
 [ADR-0008](docs/adr/0008-postgresql-only-runtime-engine.md), and since that record's
