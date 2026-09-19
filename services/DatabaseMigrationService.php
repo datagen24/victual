@@ -73,10 +73,19 @@ class DatabaseMigrationService extends BaseService
 	 *                              about to fill the database from an existing one, and
 	 *                              seeding first would leave it looking non-empty to its
 	 *                              own overwrite check.
+	 * @param callable|null $reportGeneratedAdminPassword Called with (username, password)
+	 *                              when this run seeded the first administrator with a
+	 *                              generated password - see ReportGeneratedAdminPassword().
+	 *                              Defaults to error_log(); bin/victual-migrate prints it.
 	 */
-	public function MigrateDatabase(bool $seedInitialData = true)
+	public function MigrateDatabase(bool $seedInitialData = true, ?callable $reportGeneratedAdminPassword = null)
 	{
 		$dialect = DatabaseService::GetInstance()->GetDialect();
+		$this->ReportGeneratedAdminPassword = $reportGeneratedAdminPassword ?? function (string $username, string $password)
+		{
+			error_log(self::GeneratedAdminPasswordNotice($username, $password));
+		};
+		$this->GeneratedAdminUsername = null;
 
 		// The whole run, baseline and the always-run 8888 included, happens with the
 		// engine's migration lock held: everything below is check-then-apply, so two
@@ -113,6 +122,7 @@ class DatabaseMigrationService extends BaseService
 		}
 
 		$this->SyncUserSettingDefaults($dialect);
+		$this->FlagGeneratedAdminPasswordForChange();
 
 		if ($migrationCounter > 0)
 		{
@@ -416,7 +426,8 @@ class DatabaseMigrationService extends BaseService
 
 			if ($seedInitialData)
 			{
-				(new InitialDataSeeder($pdo, $dialect))->Seed();
+				$seeder = new InitialDataSeeder($pdo, $dialect);
+				$seeder->Seed();
 			}
 
 			for ($migration = 1; $migration <= self::BASELINE_MIGRATION_ID; $migration++)
@@ -431,6 +442,60 @@ class DatabaseMigrationService extends BaseService
 		}
 
 		$pdo->commit();
+
+		// Reported as soon as the row it describes is committed, and not after the
+		// migrations that follow: were one of those to fail, the next run would find the
+		// baseline already loaded and never seed again, and an administrator whose password
+		// was generated and never shown is an installation nobody can log into.
+		if (isset($seeder) && $seeder->GetGeneratedAdminPassword() !== null)
+		{
+			$this->GeneratedAdminUsername = $seeder->GetAdminUsername();
+			($this->ReportGeneratedAdminPassword)($seeder->GetAdminUsername(), $seeder->GetGeneratedAdminPassword());
+		}
+	}
+
+	/** @var callable|null See MigrateDatabase() */
+	private $ReportGeneratedAdminPassword = null;
+
+	/** @var string|null Set when this run seeded an administrator with a generated password */
+	private $GeneratedAdminUsername = null;
+
+	/**
+	 * The text an operator reads in the migrate container's log after a first migration.
+	 * Deliberately says what to do with it, because it is the only copy there is.
+	 */
+	public static function GeneratedAdminPasswordNotice(string $username, string $password): string
+	{
+		return 'Victual: created the first administrator "' . $username . '" with the generated password ' . $password
+			. ' - it is shown once, here, and must be changed at first login.'
+			. ' Set ' . InitialDataSeeder::BOOTSTRAP_PASSWORD_ENV . ' before the first migration to choose it instead.';
+	}
+
+	/**
+	 * Marks the administrator this run created with a generated password as having to
+	 * change it (users.must_change_password, migration 0265), so the copy in a log stops
+	 * being a credential after its first use.
+	 *
+	 * Here rather than in InitialDataSeeder because the seeder runs with the baseline,
+	 * which stands in for migrations up to 0255, and the column arrives with 0265: at
+	 * seed time there is nothing to write to. By this point every migration has run.
+	 *
+	 * If a migration between the two fails, the forced change is lost for that
+	 * installation - the password itself was already reported, so it can still be logged
+	 * into, and changing it remains the first thing to do.
+	 */
+	private function FlagGeneratedAdminPasswordForChange(): void
+	{
+		if ($this->GeneratedAdminUsername === null)
+		{
+			return;
+		}
+
+		DatabaseService::GetInstance()->GetDbConnectionRaw()
+			->prepare('UPDATE users SET must_change_password = 1 WHERE username = ?')
+			->execute([$this->GeneratedAdminUsername]);
+
+		$this->GeneratedAdminUsername = null;
 	}
 
 	/**

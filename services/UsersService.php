@@ -105,13 +105,14 @@ class UsersService extends BaseService
 	}
 
 	/**
-	 * The password migration 0027 gives the account it creates.
+	 * The password migration 0027 gives the account it creates, and the one every
+	 * installation seeded before InitialDataSeeder stopped using it still has.
 	 */
 	const SEEDED_DEFAULT_PASSWORD = 'admin';
 
 	/**
-	 * Records whether the password just used to log in is the seeded default, so that
-	 * MustChangePassword() can answer without hashing anything.
+	 * Raises the must-change flag when the password just used to log in is the publicly
+	 * known default, so that MustChangePassword() can answer without hashing anything.
 	 *
 	 * A stored flag rather than a check, because checking means running password_verify()
 	 * against the seeded password on every request - an Argon2id verification, which is
@@ -124,22 +125,35 @@ class UsersService extends BaseService
 	 * without changing any password. Authentication state does not go somewhere its subject
 	 * can reach.
 	 *
+	 * **Raises only; never clears.** Changing the password (EditUser()) is what clears it.
+	 * It used to be cleared here too, whenever the password used was not "admin", which was
+	 * the same thing while "admin" was the only reason the flag was ever set. It is not the
+	 * only reason now: a first migration that generates the administrator's password sets
+	 * the flag as well (DatabaseMigrationService::FlagGeneratedAdminPasswordForChange()),
+	 * because that password has been printed to a log - and logging in with it is exactly
+	 * what must not lift the requirement to change it.
+	 *
 	 * Written only when the answer changes, so an ordinary login is still a read.
 	 */
 	public function RecordPasswordUsedAtLogin(int $userId, string $plaintextPassword): void
 	{
-		$mustChange = ($plaintextPassword === self::SEEDED_DEFAULT_PASSWORD) ? 1 : 0;
+		if ($plaintextPassword !== self::SEEDED_DEFAULT_PASSWORD)
+		{
+			return;
+		}
+
 		$user = $this->DB->users($userId);
 
-		if ($user !== null && (int)$user->must_change_password !== $mustChange)
+		if ($user !== null && (int)$user->must_change_password !== 1)
 		{
-			$user->update(['must_change_password' => $mustChange]);
+			$user->update(['must_change_password' => 1]);
 		}
 	}
 
 	/**
-	 * Whether this account is still on the seeded admin/admin password and should be
-	 * sent to change it before it is allowed to do anything else.
+	 * Whether this account has to change its password before it may do anything else:
+	 * it logged in with the publicly known default, or it is the first administrator and
+	 * its password was generated and printed to the migrate log.
 	 */
 	public function MustChangePassword($userId): bool
 	{
