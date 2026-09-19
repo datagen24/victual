@@ -13,7 +13,11 @@
 # See nix/README.md, "Bootstrapping the hashes".
 {
   # Hash of the Composer vendor tree built from composer.json + composer.lock.
-  composerVendor = "sha256-qpL24irDIKq3kf/AH12zksKDqwggBFUUuRvhL842n48=";
+  #
+  # Re-bootstrapped 2026-09-19 for the first release: the tree records the root package's
+  # version, which used to follow version.json (4.6.0) and is now pinned in nix/app.nix so
+  # that this hash really does depend on the lockfile alone.
+  composerVendor = "sha256-DUsfnMwcbbb9MNH/NrTLfK/1lZfiotH3X9+CG0gC0kU=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
   #
