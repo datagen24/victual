@@ -106,8 +106,10 @@ class RecipesController extends BaseController
 			// other view datum this one leaves the server verbatim, and costs/costs_per_serving
 			// would reach a Child or Guest (both hold MEALPLAN_VIEW) whatever the template
 			// chooses to render. Same entity name and same policy rows as the API path in
-			// RecipesApiController. Issue #176 item 4.
-			'recipesResolved' => FieldPolicy::GetInstance()->RedactRows('recipes_resolved', RecipesService::GetInstance()->GetRecipesResolved("recipe_id IN (SELECT recipe_id FROM meal_plan_internal_recipe_relation WHERE $mealPlanWhereTimespan) OR recipe_id = ?", array_merge($mealPlanWhereTimespanParams, [$weekRecipeId]))),
+			// RecipesApiController. Issue #176 item 4. GetRecipesResolved() returns a LessQL
+			// Result and RedactRows() takes rows, so it is fetched here - the same fetchAll()
+			// BaseApiController::FilteredApiResponse() does before it redacts.
+			'recipesResolved' => FieldPolicy::GetInstance()->RedactRows('recipes_resolved', RecipesService::GetInstance()->GetRecipesResolved("recipe_id IN (SELECT recipe_id FROM meal_plan_internal_recipe_relation WHERE $mealPlanWhereTimespan) OR recipe_id = ?", array_merge($mealPlanWhereTimespanParams, [$weekRecipeId]))->fetchAll()),
 			'products' => $this->DB->products()->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnits' => $this->DB->quantity_units()->orderBy('name', 'COLLATE NOCASE'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
