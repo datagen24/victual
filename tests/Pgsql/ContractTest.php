@@ -403,7 +403,15 @@ class ContractTest extends PgsqlSchemaTestCase
 		$stock = self::controller(StockApiController::class);
 		$productId = self::$ids['product'];
 
-		self::invokeAdmin('POST /api/stock/products/{productId}/add', fn() => $stock->AddProduct(self::request('POST', ['amount' => 10, 'price' => 2.5, 'best_before_date' => '2030-01-01']), new Response(), ['productId' => $productId]));
+		// Both dates are pinned. average_shelf_life_days is AVG(best_before - purchased) over the
+		// product's origin entries, and every other booking here takes both defaults (today, and
+		// today because the fixture products carry no default_best_before_days), so each contributes
+		// exactly 0. Left to default, this entry contributes (2030-01-01 - today), and whether that
+		// over the entry count is a whole number - JSON `integer` - or a fraction - JSON `number` -
+		// changed with the calendar day, which failed the golden files from 00:00 UTC on 2026-09-19.
+		// 1460 days (not 1461) because the mean is then fractional, which is the `number` the
+		// golden files record and the truthful type for an average.
+		self::invokeAdmin('POST /api/stock/products/{productId}/add', fn() => $stock->AddProduct(self::request('POST', ['amount' => 10, 'price' => 2.5, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-02']), new Response(), ['productId' => $productId]));
 		self::invokeAdmin('GET /api/stock', fn() => $stock->CurrentStock(self::request(), new Response(), []));
 		self::invokeAdmin('GET /api/stock/volatile', fn() => $stock->CurrentVolatileStock(self::request(), new Response(), []));
 		$entries = self::invokeAdmin('GET /api/stock/products/{productId}/entries', fn() => $stock->ProductStockEntries(self::request(), new Response(), ['productId' => $productId]));
