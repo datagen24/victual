@@ -19,10 +19,17 @@ had no Nix and no npm registry access.
   the actual `@modelcontextprotocol/sdk` v2 API is needed.
 - `nix/mcp.nix`, `nix/images/mcp.nix` — a fourth Nix image (`.#image-mcp`), wired into
   `flake.nix` and `nix/overlay.nix` alongside `image-app`/`image-web`/`image-migrate`/
-  `image-label-renderer`/`image-label-worker`. `nix/checks.nix` gained
-  `mcp-image-has-no-shell`.
+  `image-label-renderer`/`image-label-worker`.
 - `nix/hashes.nix`'s `mcpNpmDeps` — still the fakeHash placeholder, because
   `mcp/package-lock.json` doesn't exist yet.
+
+**Lesson from PR #207's first CI run:** an initial commit also added
+`mcp-image-has-no-shell` to `nix/checks.nix`. That broke the `flake` CI job outright —
+`nix flake check` builds every `checks.<system>.*` derivation, so a check closing over
+`mcp` forces `mcp` to build on *every* pull request, and that build fails on purpose
+while `mcpNpmDeps` is a placeholder. Reverted in the next commit, with a comment in
+`nix/checks.nix` explaining why the check waits for a real hash. Add it back only once
+`mcpNpmDeps` is real — don't repeat this.
 
 ## Why in-repo, not a new `victual-mcp` repository
 

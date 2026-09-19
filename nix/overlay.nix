@@ -116,7 +116,5 @@ in
       # callPackage cannot resolve `runtime.nginxConf` on its own.
       runtimeNginxConf = self.runtime.nginxConf;
     };
-    # (mcp is resolved into checks.nix's `mcp` argument by name, the same way
-    # labelRenderer/labelWorker are.)
   });
 }
