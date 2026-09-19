@@ -70,6 +70,7 @@ metadata:
 stringData:
   VICTUAL_DB_USER: victual_migrate
   VICTUAL_DB_PASSWORD: victual-migrate
+  VICTUAL_BOOTSTRAP_ADMIN_PASSWORD: victual-admin
 ---
 apiVersion: v1
 kind: Secret
@@ -81,13 +82,38 @@ stringData:
 YAML
 } | podman kube play -
 
-# 4. http://localhost:8080/
+# 4. http://localhost:8080/ — log in as admin / victual-admin (the bootstrap password above).
 ```
 
 **The passwords in this walkthrough are local-only.** `victual_migrate` owns the schema, and
 the Secrets above write both passwords in the clear into objects a `podman kube play` leaves
 on the machine. Use them against the throwaway PostgreSQL in step 2 and nothing else; for a
 persistent or shared database pick your own and keep them out of anything committed.
+
+**The first administrator's password comes from the migrate Secret.** A fresh database has
+no `admin`/`admin` any more: the migrate container seeds the `admin` account with
+`VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, read once, on the run that creates the database. It sits in
+`victual-db-migrate` and not in `victual-db-app` because the migrate container is the only
+one that seeds — the serving containers never need it, the same split as the database
+credentials. Leave the key out and the first migration generates a password instead, prints
+it once to the migrate container's log, and the account has to change it at first login;
+until it does, the API answers `403` to everything except the change itself. For a
+deployment that is the better default, since nothing then has to hold the password
+afterwards:
+
+```sh
+kubectl logs deploy/victual -c migrate | grep 'generated password'   # Kubernetes
+podman logs victual-migrate 2>&1 | grep 'generated password'          # podman kube play
+```
+
+Read it before anything replaces that pod. The line is in the log of the migrate container
+that created the database and nowhere else; a later pod's migrate run finds the database
+already there and prints nothing. If it is gone before anybody logged in, the way back is an
+empty database and a first migration with the key set.
+
+Either way the key does nothing after the first run: removing it, or changing it, does not
+touch an account that already exists. [The Manual's first-login
+section](../docs/manual/getting-started.md#the-first-login) has the rest.
 
 **The ConfigMap and both Secrets must be in the stream, and each Secret must be a
 Kubernetes `Secret`.** This is worth stating plainly because two plausible-looking
