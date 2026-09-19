@@ -14,8 +14,9 @@ use Slim\Routing\RouteContext;
 /**
  * Base class for all authentication middlewares (the concrete class is selected
  * via the VICTUAL_AUTH_CLASS setting). Handles the common flow: public routes
- * (root/login), authentication-less modes (dev/demo/prerelease, embedded
- * install, DISABLE_AUTH) and, otherwise, delegating to AuthenticateRequest().
+ * (root/login - root still identifies the caller when it can), authentication-less modes
+ * (dev/demo/prerelease, embedded install, DISABLE_AUTH) and, otherwise, delegating to
+ * AuthenticateRequest().
  * On success the VICTUAL_AUTHENTICATED / VICTUAL_USER_* constants are defined;
  * on failure API routes get a 401 response and other routes a redirect to /login.
  *
@@ -68,9 +69,36 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 			return $handler->handle($request->withAttribute('label_worker_id', (int)$worker['worker_id']));
 		}
 
-		if ($routeName === 'root' || $routeName === 'login' || $routeName === 'labels-pair')
+		if ($routeName === 'root')
 		{
-			// Root and Login routes are public/unauthenticated
+			// Public, but not anonymous-only: a login lands here (LoginController redirects
+			// to /), and Root() chooses the entry page by what the caller may view, which
+			// needs to know who that is. So the caller is identified when they can be, and
+			// an unidentified one simply is not - Root() then redirects by feature flag
+			// alone, as upstream does, and the page it names sends them to /login.
+			//
+			// Two cases leave it alone. The modes that fix a user up front (dev, demo,
+			// prerelease, embedded, DISABLE_AUTH) have already defined VICTUAL_USER_ID. And
+			// with MIGRATE_ON_ROOT_REQUEST on, Root() is what creates the schema, so there
+			// may be no sessions table to ask yet; SchemaVersionMiddleware lets this one
+			// route through unchecked for the same reason.
+			$user = (VICTUAL_MIGRATE_ON_ROOT_REQUEST || defined('VICTUAL_USER_ID')) ? null : $this->AuthenticateRequest($request);
+
+			if ($user === null)
+			{
+				define('VICTUAL_AUTHENTICATED', false);
+			}
+			else
+			{
+				$this->DefineUserContext($user);
+			}
+
+			return $handler->handle($request);
+		}
+
+		if ($routeName === 'login' || $routeName === 'labels-pair')
+		{
+			// Login and label pairing are public/unauthenticated
 
 			define('VICTUAL_AUTHENTICATED', false);
 			return $handler->handle($request);
@@ -118,11 +146,7 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 			}
 			else
 			{
-				define('VICTUAL_AUTHENTICATED', true);
-				define('VICTUAL_USER_ID', $user->id);
-				define('VICTUAL_USER_USERNAME', $user->username);
-				define('VICTUAL_USER_PICTURE_FILE_NAME', $user->picture_file_name);
-				self::SyncDatabaseUserContext();
+				$this->DefineUserContext($user);
 
 				$crossOrigin = $this->CrossOriginRefusal($request);
 
@@ -141,6 +165,18 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 				return $handler->handle($request);
 			}
 		}
+	}
+
+	/**
+	 * Makes the authenticated user the acting user for the rest of the request.
+	 */
+	private function DefineUserContext($user): void
+	{
+		define('VICTUAL_AUTHENTICATED', true);
+		define('VICTUAL_USER_ID', $user->id);
+		define('VICTUAL_USER_USERNAME', $user->username);
+		define('VICTUAL_USER_PICTURE_FILE_NAME', $user->picture_file_name);
+		self::SyncDatabaseUserContext();
 	}
 
 	/**

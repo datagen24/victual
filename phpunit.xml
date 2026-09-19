@@ -34,5 +34,8 @@
 		<testsuite name="mealplan">
 			<file>tests/Pgsql/MealPlanRedactionTest.php</file>
 		</testsuite>
+		<testsuite name="rootentry">
+			<file>tests/Pgsql/RootEntryTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

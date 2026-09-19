@@ -90,7 +90,7 @@ manuals — are kept.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `ENTRY_PAGE` | `stock` | One of `stock`, `shoppinglist`, `recipes`, `chores`, `tasks`, `batteries`, `equipment`, `calendar`, `mealplan` — which page `/` redirects to. |
+| `ENTRY_PAGE` | `stock` | One of `stock`, `shoppinglist`, `recipes`, `chores`, `tasks`, `batteries`, `equipment`, `calendar`, `mealplan` — which page `/` redirects to. A signed-in user who may not view that page (for example, no `STOCK_VIEW` for `stock`) is sent to `/about` instead; a signed-out visitor is sent to the page and from there to the login form. |
 
 ## Authentication {: #authentication }
 
