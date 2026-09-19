@@ -105,11 +105,15 @@ class Instance {
 		const response = await this.raw('POST', '/login', {
 			form: { username, password }
 		});
-		// A successful login redirects; a failed one re-renders the form with 200.
-		const ok = response.status >= 300 && response.status < 400;
+		// Both outcomes redirect, on both applications: to the app on success, to
+		// /login?invalid=true on refused credentials. So the status alone accepts a wrong
+		// password - which is what this said until 2026-09-19, when the bootstrap handover
+		// asserted that a replaced password no longer logs in and found it "still" did.
+		const location = response.headers.get('location') || '';
+		const ok = response.status >= 300 && response.status < 400 && !/[?&]invalid=/.test(location);
 		if (!ok) {
 			throw new Error(
-				`${this.name}: login failed (HTTP ${response.status}). ` +
+				`${this.name}: login failed (HTTP ${response.status}${location ? ` to ${location}` : ''}). ` +
 				'A failure here usually means the instance did not migrate; on the fork side it can ' +
 				'also mean the database was seeded with a PARITY_VICTUAL_ADMIN_PASSWORD other than this one.'
 			);
