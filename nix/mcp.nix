@@ -27,6 +27,14 @@ buildNpmPackage (finalAttrs: {
 
   src = sources.toSource sources.mcpFiles;
 
+  # sources.mcpFiles keeps paths relative to the repository root (nix/source.nix's
+  # `root`), so the unpacked source has package.json at source/mcp/package.json, not at
+  # its own root. buildNpmPackage looks for the manifest and lockfile at the source
+  # root, so this repositions it — the same reason composer.json and yarn.lock need no
+  # equivalent in nix/app.nix and nix/frontend.nix: those already sit at the repository
+  # root sources.nix uses.
+  sourceRoot = "source/mcp";
+
   npmDepsHash = hashes.mcpNpmDeps;
 
   npmBuildScript = "build";
