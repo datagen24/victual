@@ -1,88 +1,76 @@
 ---
-name: Issue 86 — MCP sidecar framework
-description: Status and next steps for the read-only MCP sidecar scaffolded in-repo at mcp/, and why it lives there instead of a new victual-mcp repository.
+name: Issue 86 — MCP sidecar
+description: Status, gotchas and next steps for the read-only MCP sidecar at mcp/ — built, tested, deployed to kind; what #208 still gates; how to drive the kind harness.
 type: project
 ---
 
-## What exists (2026-09-19, merged to master via PR 207)
+## Where it stands (2026-09-19, branch `claude/issue-86-kubernetes-deploy-cc575a`)
 
-**PR [207](https://github.com/datagen24/victual/pull/207) merged 2026-09-19**, branch
-`claude/cool-faraday-mx372b`. CodeRabbit review round: 4 findings, all closed before
-merge — Node engine floor raised to `>=22.6.0`, `nix/mcp.nix` given
-`sourceRoot = "source/mcp"` (a real bug: `buildNpmPackage` would have looked for the
-manifest at the wrong path), the missing-lockfile/placeholder-hash finding withdrawn by
-CodeRabbit as intentional and already tracked, and an HTTPS-enforcement suggestion
-declined in writing (contradicts spec §8/§9's deliberate in-cluster-HTTP design) —
-left for @datagen24 to weigh in on if the threat model should change. A first push had
-also broken the `flake` CI job by wiring an `mcp-image-has-no-shell` check into
-`nix/checks.nix` that forced `nix flake check` to build the still-unbuildable `mcp`
-package on every PR; fixed by pulling that check back out until `mcpNpmDeps` is real.
+Built and running. PR [207](https://github.com/datagen24/victual/pull/207) merged the
+framework; this branch made it real:
 
-Framework only — nothing has been built, installed, or run. The sandbox that wrote this
-had no Nix and no npm registry access.
+- **`mcp/`**: six §5 tools implemented, `createMcpHandler` wiring, 15 node:test tests
+  (`npm test`, green on Node 22 and 26). `scripts/probe.mjs` drives it with the official
+  SDK v2 client.
+- **Nix**: `mcpNpmDeps` is a real hash. `.#image-mcp` is 232 MB, with no `/bin/sh`, running as
+  uid 65532. `mcp-image-has-no-shell` is in `nix/checks.nix`.
+- **Deploy**: `deploy/k3s/victual-mcp.yaml` (two replicas), `deploy/k3s/kustomization.yaml`,
+  and the `deploy/kind/` harness (`up.sh`, a throwaway PostgreSQL, the roles Job).
+- **Verified on kind v1.37**:
+  - All six tools answer against a production-mode Victual over `2026-07-28` and
+    `2025-11-25`.
+  - A request with no header is 401 before any JSON-RPC.
+  - A garbage key gets an `unauthorized` tool error.
+  - Two-replica soak: 40 of 40 calls answered correctly.
 
-- `mcp/src/tools/*.ts` — Zod input/output schemas transcribed from
-  [docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md) §5 for all six v1 tools.
-  Every `handler` throws `not implemented`.
-- `mcp/src/auth/resolver.ts` — the credential→outbound-headers seam (spec §2, §4).
-- `mcp/src/victual/client.ts` — the REST client and spec §7 status→category error
-  mapping.
-- `mcp/src/server.ts`, `mcp/src/main.ts` — boot and server wiring, stubbed at the point
-  the actual `@modelcontextprotocol/sdk` v2 API is needed.
-- `nix/mcp.nix`, `nix/images/mcp.nix` — a fourth Nix image (`.#image-mcp`), wired into
-  `flake.nix` and `nix/overlay.nix` alongside `image-app`/`image-web`/`image-migrate`/
-  `image-label-renderer`/`image-label-worker`.
-- `nix/hashes.nix`'s `mcpNpmDeps` — still the fakeHash placeholder, because
-  `mcp/package-lock.json` doesn't exist yet.
+## Gotchas this session paid for — don't repeat
 
-**Lesson from PR #207's first CI run:** an initial commit also added
-`mcp-image-has-no-shell` to `nix/checks.nix`. That broke the `flake` CI job outright —
-`nix flake check` builds every `checks.<system>.*` derivation, so a check closing over
-`mcp` forces `mcp` to build on *every* pull request, and that build fails on purpose
-while `mcpNpmDeps` is a placeholder. Reverted in the next commit, with a comment in
-`nix/checks.nix` explaining why the check waits for a real hash. Add it back only once
-`mcpNpmDeps` is real — don't repeat this.
+- **SDK v2 package names.** Use `@modelcontextprotocol/server`, `/node`, `/core` and
+  `/client`. `@modelcontextprotocol/sdk` stops at 1.30.
+- **The v2 *client* defaults to the legacy handshake.** Pass
+  `versionNegotiation: { mode: 'auto' | {pin} }`. Otherwise a probe reports `2025-11-25` and
+  proves nothing about the server.
+- **The SDK turns a factory exception into its own 500.** So anything that must become
+  401/403, like the capability probe, runs *before* `handler.fetch`.
+- **Keeping bash out of the image** took three fixes, all in `nix/mcp.nix`:
+  - buildNpmPackage's bin wrapper is a bash script. It is deleted.
+  - The full `nodejs` drags in npm and corepack. The image uses `nodejs-slim` instead.
+  - nodejs-slim's `bin/node` embeds `process.config`, which names every `-dev` output
+    (icu4c-dev reaches bash). The runtime copies the binary and runs
+    `remove-references-to` on the `-dev`/`-bin` paths and on nodejs-slim's own prefix.
+  - The second `grep` in that pipeline needs `-a`, or it treats its input as binary and
+    silently scrubs nothing.
+- **`node --test <dir>` fails on Node 22.** Use a quoted glob.
+- **zsh does not word-split `$VAR`.** Build curl flags with a bash script or an array.
+- **Production-mode Victual forces `admin` through a password change** before any page,
+  API-key creation included. `PUT /api/users/1` needs `current_password`.
 
-## Why in-repo, not a new `victual-mcp` repository
+## Open, in order
 
-The interface spec's Open Question 1 (2026-08-29) answered "new repo." Two things
-reversed that, recorded as a dated amendment inline in the spec:
+1. **#208, Victual-side auth.** `API_KEY_TYPE_MCP`, the `read_only` column (claim the next
+   migration number), the `/manageapikeys` UI, and `GET /api/user/capabilities`. Until it
+   lands, `tools/list` is served unfiltered: the probe 404s and falls back. That includes
+   a garbage key, which gets a list and then `unauthorized` on the first call. The sidecar
+   expects `{key_type, read_only, permissions: [names]}`, with permission names from
+   `controllers/Users/User.php` — the `*_VIEW` leaves.
+2. §11.1: replay tests against plan 14's frozen fixtures.
+3. §11.4: the real Claude client, and tuning the `limit` defaults from transcripts.
+4. #209, the write tools: only after #208 and real use.
 
-1. [ADR-0013](../docs/adr/0013-nix-built-container-images.md), accepted 2026-09-04 —
-   five days after that answer — names plan 02 by number in its *Would affect* list and
-   states the rule directly: a TypeScript sidecar is a `buildNpmPackage` away from an
-   image with the same uid, labels, empty `/bin` and checks as `image-app`.
-2. `mcp__github__create_repository` for `datagen24/victual-mcp` failed:
-   `403 Resource not accessible by integration` — the GitHub App installed for Claude
-   Code sessions on this repo has no repository-creation scope. That made the new-repo
-   path a blocker, not a preference, in the moment it mattered.
+## Driving the kind harness
 
-The cost, stated honestly: the independent release cadence and `mcp-grocy`-derived
-CI/release packaging that a separate repo would have inherited under spec §12 do not
-apply here and are not built. `docs/mcp-interface-spec.md` §12 is kept as reference
-material only.
+The images come from the builder container `victual-nix-builder-86`, created from
+`localhost/victual-nix-warm:133`:
 
-## How to apply — next steps, in order
+```
+BUILDER=victual-nix-builder-86 NIX_IMAGE=localhost/victual-nix-warm:133 nix/build-in-podman.sh images
+```
 
-1. `cd mcp && npm install`. This also verifies the actual
-   `@modelcontextprotocol/sdk` v2 package name/version against the real npm registry —
-   the spec names it descriptively ("`@modelcontextprotocol/server` with the
-   `/express` or `/node` adapter, plus `@modelcontextprotocol/core`"), not exactly, and
-   was written from reading the spec rather than installing the package. Commit the
-   resulting `package-lock.json`.
-2. `npm run build` (tsc), then wire `mcp/src/server.ts`'s `buildServer()` to the real
-   SDK: the `/mcp` Streamable HTTP handler, `/healthz`, and the `tools/list` capability
-   filter against `GET /api/user/capabilities` (spec §5) — which does not exist in
-   Victual yet either (spec §4.2 item 5, Victual-side work, out of this step's scope).
-3. From the repository root: `nix build .#mcp`. First run fails on purpose with the
-   real `mcpNpmDeps` hash — paste it into `nix/hashes.nix`, same as
-   `nix/README.md`'s "Bootstrapping the hashes" describes for `composerVendor` and
-   `yarnOfflineCache`. Then `nix build .#image-mcp` and `nix flake check`.
-4. Fill in each tool's `handler`, replay-tested against plan 14's response-contract
-   fixtures per spec §11.1.
-5. Only then: the Victual-side auth work spec §4.2 describes (`API_KEY_TYPE_MCP`, the
-   per-key `read_only` flag, `GET /api/user/capabilities`) and spec §11's full
-   verification plan (MCP Inspector, the auth/capability matrix, the actual client,
-   the two-replica soak).
+Then `deploy/kind/up.sh`. The cluster is `kind-cluster`, podman provider, one arm64 node;
+the script sets `KIND_EXPERIMENTAL_PROVIDER`.
 
-See [mcp/README.md](../mcp/README.md) for the same list kept next to the code.
+## Why in-repo rather than `victual-mcp`
+
+Two reasons, recorded in the spec's Open Question 1 amendment:
+[ADR-0013](../docs/adr/0013-nix-built-container-images.md)'s precedent, and a `403` on repo
+creation. The cost: no independent release cadence.

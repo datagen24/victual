@@ -59,6 +59,13 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-19 — Issue #86 sidecar built, deployed to kind** (branch
+  `claude/issue-86-kubernetes-deploy-cc575a`): six tools implemented on the real SDK v2
+  (`@modelcontextprotocol/server`+`/node` 2.0.0 — the scaffold's `sdk ^2.0.0` did not
+  exist), 15 node:test tests, `.#image-mcp` built shell-free, and `deploy/k3s` applied to a
+  real cluster for the first time via `deploy/kind/up.sh`. Found: `stopSignal` dropped on
+  k8s 1.37. Next: #208 (capabilities endpoint, MCP key type, read_only). Detail and gotchas:
+  [[project_issue86_mcp_sidecar]].
 - **2026-09-19 — Issue #86 framework merged, in-repo, unbuilt** (PR
   [207](https://github.com/datagen24/victual/pull/207), branch
   `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers
@@ -115,42 +122,7 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
   closed and fixed. Next unclaimed migration (at the time): 0287, since claimed and landed
   by the entry above.
-- **2026-09-17 — Issue #83 / plan 14 piece 2 landed** (branch `claude/nifty-fermat-g3mffe`),
-  the largest remaining item in wave 5: the response-contract snapshot, `tests/Pgsql/ContractTest.php`
-  on `PgsqlSchemaTestCase` per ADR-0025 decision 4, a `contract` phase in `run-tests.sh`/`phpunit.xml`
-  beside `rbac`. `tests/Support/RouteInventory.php` boots `routes.php` for the live Slim route
-  table (the `.devtools/check-path-id-validation.php` pattern, generalised) rather than a second
-  regex extractor; `tests/Support/JsonShape.php` turns a decoded JSON value into its key-set-and-
-  scalar-type shape, list items collapsed to one merged representative element. One fixture graph
-  built as Admin through the real write endpoints (stock add/consume/transfer/inventory/open/
-  measure/weigh/merge by id and by barcode, recipes, chores, batteries, tasks, users/roles, a file
-  round trip, the generic `/objects/{entity}` sweep over every non-label `ExposedEntity`) is
-  snapshotted, then re-swept as the **existing CHILD role** (not a new fixture — CHILD already
-  holds the STOCK leaves/not-STOCK shape the plan asks for) for a restricted comparison. Four
-  comparison legs, not the plan's five: "engine vs engine" is moot since ADR-0008 retired SQLite
-  as a runtime, so only one engine boots the app. The redaction leg computes expected-redacted
-  fields from the live `permission_fields` table (never hand-maintained, per `FieldPolicy`'s own
-  docblock) and was verified the mutation-shaped way — `FieldPolicy::RedactRow`'s loop body
-  replaced with `foreach ([] as $field)`, confirmed the leg named exactly the nine leaked fields,
-  reverted. Two real defects found and fixed on the way, on a route nothing had called with real
-  event data before: `CalendarApiController::Ical` called `$response->write()` (not a
-  `ResponseInterface` method) and hand the iCal library's `Presentation\Component` object to
-  `getBody()->write()` unstringified. Spec fixes landed with the parity assertion:
-  `/api/openapi/specification` added to `victual.openapi.json` (the one real gap plan 14 found
-  by hand), `info.version` `"xxx"` → `version.json`'s `4.6.0`, and `ProductPriceHistory`'s schema
-  description corrected (claimed "see x-visibility on the operation"; the operation carries none,
-  only the schema does — fixed the sentence to match the code rather than the code to match a
-  stale sentence). **Not done, contrary to the issue's own text**: S15 (regex filter bounds) and
-  S16's remaining half (11's Q5, a schema-derived write allowlist) are separately-scoped input-
-  validation work, not response-contract testing, and stayed out on purpose — recorded as such in
-  security-sweep.md and plan 14's own Executed section rather than silently left implied-closed.
-  Full account: [plan 14's Executed section](../docs/plans/14-contract-and-regression-scaffolding.md#executed).
-  Next: retiring the SQLite differential harness (unblocked by this landing, not performed by
-  it), plan 22, issue 192's remaining items.
-## DOCTRINE (operator-locked decisions)
 
-- [Verification discipline](feedback_verification_discipline.md) — "it loads" is not
-  evidence; which suite answers which question; the parity suite is not a CI gate.
 
 ## REFERENCE PATTERNS
 
