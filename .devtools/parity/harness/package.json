@@ -10,6 +10,7 @@
 		"side-effects": "node run-side-effects.js"
 	},
 	"dependencies": {
+		"@modelcontextprotocol/client": "2.0.0",
 		"playwright": "1.56.1"
 	}
 }

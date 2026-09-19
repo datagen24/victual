@@ -64,8 +64,21 @@ rediscovering:
   `MigrateDatabase()`, so the schema is created by the first request to `/`. `curl -f`
   without `-L` treats the unauthenticated 302 as success and never gets there, leaving a
   0-byte `grocy.db` and a 500 on first login.
-- Auth on both sides is a **session cookie**, not an API key. Both ship `admin`/`admin` from
-  migration 0027; minting a key would need `psql` on one side and `sqlite3` on the other.
+- Auth on both sides is a **session cookie**, not an API key. Upstream ships `admin`/`admin`;
+  the fork has no known password (PR 213). Since 2026-09-19 the stack migrates the fork with
+  no bootstrap password, reads the generated one off `reports/migrate.log` and walks the
+  forced change to `PARITY_VICTUAL_ADMIN_PASSWORD` (`harness/bootstrap-admin.js`);
+  `PARITY_BOOTSTRAP_ADMIN=env` skips that. That password is random per fresh database unless
+  set, kept in `reports/.victual-admin-password` (mode 600) — `cat` it to log in by hand.
+  All published ports bind to 127.0.0.1.
+- **A failed login is a 302 too**, to `/login?invalid=true`, on both applications. Check the
+  `Location`, never the status — the harness and both stack gates got this wrong until
+  2026-09-19.
+- `parity mcp` drives the MCP sidecar (container `parity-victual-mcp`, port 8082) with the SDK
+  v2 client and checks each tool against the REST GET it wraps. `parity year` takes ~23 min
+  for the `year` profile on this Mac.
+- **Never edit `bin/parity` while a run is using it**: bash reads the script as it goes, so
+  the running process picks up shifted bytes (`web: command not found`, exit 127).
 - The login form's password field is `#password_input` (with a hidden `#password_base64`).
 - Phase order is load-bearing: `api` seeds, `ui` reads, `side-effects` runs last because it
   writes to the fork only and would otherwise show up as row-count noise.

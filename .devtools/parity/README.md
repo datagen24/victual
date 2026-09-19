@@ -26,9 +26,11 @@ when you know what you touched.
 
 That is why the report is written to be read rather than merely to exit non-zero: every
 difference names the step, the JSON pointer and both values, and accepted ones say which
-record accepted them. The suite currently exits non-zero against `master` because the
-differences it reports are real, which is another reason it is not a gate — a gate that is
-red on arrival is one people learn to route around.
+record accepted them. It exited non-zero against `master` for its first two weeks because
+the differences it reported were real, which is another reason it is not a gate — a gate
+that is red on arrival is one people learn to route around. Since 2026-09-19 (issue #219)
+`parity all` exits 0: every difference is either fixed or accepted with its record, so a
+new one stands out — but it is still a tool, not a gate.
 
 ## Why this exists next to `.devtools/pgsql/`
 
@@ -56,16 +58,18 @@ there is no SQLite path left to break.
 
 | Phase | Command | What it drives |
 |---|---|---|
-| API | `parity api` | 288 calls across 8 scenarios, both instances, responses diffed |
-| Browser | `parity ui` | 49 view routes plus a purchase workflow, both instances |
+| API | `parity api` | 291 calls across 8 scenarios, both instances, responses diffed |
+| Browser | `parity ui` | 48 view routes plus a purchase workflow, both instances |
 | Side effects | `parity side-effects` | MQTT retained topics, Home Assistant discovery, InfluxDB points — fork-only |
+| MCP | `parity mcp` | The read-only MCP sidecar through the official SDK client: auth, key types, all six tools against the REST GETs they wrap, the capability filter — fork-only |
 
 **The order matters and `all` fixes it.** `api` is what puts data into both instances, so
 the browser walk has tables with rows in them and the MQTT check has a stock level to
 publish. Running `ui` against a cold stack compares two empty applications, which is a
-comparison that cannot fail. `side-effects` runs last because it writes to the fork only,
-and anything it creates would show up in the browser walk as a row-count difference that
-means nothing — which is exactly what happened while this was being written.
+comparison that cannot fail. `side-effects` runs after the walk because it writes to the fork
+only, and anything it creates would show up in the browser walk as a row-count difference
+that means nothing — which is exactly what happened while this was being written. `mcp`
+runs last for the same reason: it mints keys and creates a user on the fork.
 
 ### The scenarios
 
@@ -97,7 +101,11 @@ say whether any of it is exposed, and cite the record that decided it. "It has a
 that" is not a reason, and neither is "no endpoint returns it" — ADR-0005 records that
 exact reasoning being withdrawn once already, over `qu_factor`.
 
-Sixteen entries exist today, plus an explicit `FORK_ADDED_FIELDS` list for fields the
+Twenty-four API entries exist today (six added on 2026-09-19 with the first full-stack run
+against the MVP, two of them the maintainer's approval of plan 19's permissions shape and
+issue #46's price views), and `UI_ACCEPTED` holds the browser walk's two: plan 28's
+measurement form on `/stockentries`, and upstream's own `/equipment` fetching
+`/api/objects/equipment/undefined`. There is also an explicit `FORK_ADDED_FIELDS` list for fields the
 fork adds that upstream never had — deliberately a named list rather than a blanket "extra
 fields are fine", so that a field arriving by accident is still a difference somebody has
 to explain. Two entries are ADR-0005's own accepted exceptions, and a third is the second
@@ -251,14 +259,37 @@ fork does not have this problem, because plan 10 made migrating a step
 
 ## Credentials
 
-`victual`/`victual` for PostgreSQL, `admin`/`admin` for both applications, a fixed InfluxDB
-token — all in the open, for the reason `docker-compose.yml` already states about the same
+`victual`/`victual` for PostgreSQL, `admin`/`admin` for upstream and a fixed InfluxDB
+token — in the open, for the reason `docker-compose.yml` already states about the same
 shape: these exist for the length of a suite run, on a tmpfs, with every run creating them
 from nothing. Sweep finding **S25** records exactly this as an Info-level observation.
+**Every published port binds to `127.0.0.1`**, so none of them is reachable from another
+machine.
 
-`admin`/`admin` in particular is not a choice this suite made: both projects create that
-user in migration `0027`, so it is the one credential that is the same on both sides, which
-is what lets a scenario be written once. Authentication is a session cookie rather than an
+The fork's administrator password is **not** in the open. Unless you set
+`PARITY_VICTUAL_ADMIN_PASSWORD`, every fresh database gets a random one, written to
+`reports/.victual-admin-password` (mode 600) for later `parity` invocations and the harness
+to read, and removed by `parity down`. It is never printed and never on a command line. It
+used to default to a fixed string, which with a published port was an administrator login
+anyone on the network could look up (CodeRabbit on PR #220).
+
+`admin`/`admin` is not a choice this suite made: upstream creates that user in migration
+`0027`. The fork no longer does. A fresh Victual database has no password anybody knows:
+with `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` unset, the first migration generates one, prints it
+once on stderr and flags the account, and until it is changed the API answers that account
+`403` on everything but the password change.
+
+**So the stack boots the fork the way a deployment that set nothing boots**, which is
+`PARITY_BOOTSTRAP_ADMIN=generated`, the default. The migrate log is kept at
+`reports/migrate.log`, and `harness/bootstrap-admin.js` reads the generated password out of
+it. It then walks the forced change over the API before anything else logs in, asserting
+each step: the password logs in, the API refuses the flagged account, re-saving the same
+password is refused, `PUT /api/users/{id}` with `current_password` changes it, and afterwards
+the old one fails while the new one opens the API. Its report is
+`reports/bootstrap-admin.json`. `PARITY_BOOTSTRAP_ADMIN=env` hands the migrate container the
+password directly instead: that is the other supported path, and it skips all of the above.
+
+The user name is the same on both sides, which is what lets a scenario be written once. Authentication is a session cookie rather than an
 API key for the same reason — `DefaultAuthMiddleware` accepts either on API routes, and
 minting a key would mean `psql` on one side and `sqlite3` on the other, i.e. a bootstrap
 that differs between the two things being compared.
@@ -274,13 +305,16 @@ that differs between the two things being compared.
 .devtools/parity/bin/parity reset          # cold start: drop both databases, re-migrate
 .devtools/parity/bin/parity logs app       # php-fpm — where a PHP error goes
 .devtools/parity/bin/parity logs web       # nginx — where a 502 is explained
+.devtools/parity/bin/parity logs mcp       # the MCP sidecar
+.devtools/parity/bin/parity mcp            # the sidecar phase alone, against a running stack
 .devtools/parity/bin/parity logs upstream
 .devtools/parity/bin/parity status
 .devtools/parity/bin/parity down
 ```
 
 Reports land in `reports/` — `api-parity.md` for reading, `api-parity.json`,
-`ui-parity.json` and `side-effects.json` for diffing against a later run. The directory is
+`ui-parity.json`, `side-effects.json`, `mcp.json` and `bootstrap-admin.json` for diffing
+against a later run. The directory is
 gitignored.
 
 ## What this does not prove

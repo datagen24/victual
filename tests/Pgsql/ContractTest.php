@@ -341,6 +341,30 @@ class ContractTest extends PgsqlSchemaTestCase
 		self::assertArrayHasKey('FEATURE_FLAG_STOCK', $body, '/system/config must keep reporting FEATURE_FLAG_STOCK - a client (and the "the flag is not the permission" S31 rule) depends on this key existing');
 	}
 
+	/**
+	 * Issue #218: an entity that does not exist is the documented 400 on every generic read,
+	 * not a 500. EntityReadPolicy::Check() used to run first and throw for an entity it did
+	 * not know, outside HandleApiCall - so called directly, as here, the old code does not
+	 * return a response at all, and this test fails on the exception.
+	 */
+	public function testUnknownEntityIsA400OnEveryGenericRead(): void
+	{
+		self::grantAdmin();
+		$generic = self::controller(GenericEntityApiController::class);
+		$calls = [
+			'GET /api/objects/{entity}' => fn() => $generic->GetObjects(self::request(), new Response(), ['entity' => 'not_an_entity']),
+			'GET /api/objects/{entity}/{objectId}' => fn() => $generic->GetObject(self::request(), new Response(), ['entity' => 'not_an_entity', 'objectId' => 1]),
+			'GET /api/userfields/{entity}/{objectId}' => fn() => $generic->GetUserfields(self::request(), new Response(), ['entity' => 'not_an_entity', 'objectId' => 1]),
+		];
+
+		foreach ($calls as $route => $call)
+		{
+			$response = $call();
+			self::assertSame(400, $response->getStatusCode(), $route);
+			self::assertSame('Entity does not exist or is not exposed', json_decode((string)$response->getBody(), true)['error_message'] ?? null, $route);
+		}
+	}
+
 	// ------------------------------------------------------------------------------
 	// 3. Building the fixture graph as Admin. Each method both writes real data through
 	//    the real endpoints (so the write itself is recorded) and stashes the ids the

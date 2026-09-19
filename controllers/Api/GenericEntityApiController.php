@@ -315,12 +315,12 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	public function GetObject(Request $request, Response $response, array $args)
 	{
-		EntityReadPolicy::Check($request, $args['entity']);
-		$this->AssertWholeObjectReadable($request, $args['entity']);
-		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
+		if (!EntityReadPolicy::Covers($args['entity']) || !$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
 		}
+		EntityReadPolicy::Check($request, $args['entity']);
+		$this->AssertWholeObjectReadable($request, $args['entity']);
 
 		$object = $args['entity'] === 'label_printer_status'
 			? $this->DB->label_printer_status()->where('printer_id', $args['objectId'])->fetch()
@@ -360,12 +360,12 @@ class GenericEntityApiController extends BaseApiController
 	 */
 	public function GetObjects(Request $request, Response $response, array $args)
 	{
-		EntityReadPolicy::Check($request, $args['entity']);
-		$this->AssertWholeObjectReadable($request, $args['entity']);
-		if (!$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
+		if (!EntityReadPolicy::Covers($args['entity']) || !$this->IsValidExposedEntity($args['entity']) || $this->IsEntityWithNoListing($args['entity']))
 		{
 			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
 		}
+		EntityReadPolicy::Check($request, $args['entity']);
+		$this->AssertWholeObjectReadable($request, $args['entity']);
 
 		$queryParams = $request->getQueryParams();
 		$source = $this->DB->{$args['entity']}();
@@ -420,6 +420,10 @@ class GenericEntityApiController extends BaseApiController
 	public function GetUserfields(Request $request, Response $response, array $args)
 	{
 		// The current-user profile remains readable without household user-directory access.
+		if (!EntityReadPolicy::Covers($args['entity']))
+		{
+			return $this->GenericErrorResponse($response, 'Entity does not exist or is not exposed');
+		}
 		if ($args['entity'] !== 'users' || (string)$args['objectId'] !== (string)VICTUAL_USER_ID)
 		{
 			EntityReadPolicy::Check($request, $args['entity']);

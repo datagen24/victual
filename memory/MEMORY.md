@@ -59,6 +59,16 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-19 — First full-stack year run against the MVP** (branch
+  `claude/full-stack-1yr-test-a49f77`): `parity year` PASS, 14/14 invariants, 0 clock
+  violations, ~23 min, after retiring the year's tare product (ADR-0022 removed product-level
+  tare). `parity all` now exits **0** for the first time. New: the stack boots on a
+  *generated* admin password and walks the forced change (`harness/bootstrap-admin.js`); a
+  `parity mcp` phase drives the sidecar with the SDK v2 client against the REST GETs each tool
+  wraps. Found and fixed: unknown-entity 500s (#218), the 32 MB upload clamp (#217, the
+  per-request log line half still open), and login checks that accepted wrong passwords (a
+  failed login is also a 302). Plan 19's permissions shape and #46's prices approved as
+  differences (#219). See [[reference_local_environment]].
 - **2026-09-19 — No more admin/admin** (branch `claude/opus5_bootstrap-admin-credential-435539`,
   CodeRabbit's finding on PR 211): `InitialDataSeeder` seeds `admin` from
   `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` (getenv, never a Setting) or a generated 24-hex password
@@ -97,23 +107,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   an HTTPS-enforcement suggestion was declined in writing as contradicting spec §8/§9.
   Nothing built or run — no Nix/npm in the sandbox. Full detail and the ordered
   next-steps list: [[project_issue86_mcp_sidecar]].
-- **2026-09-18 — Plan 20 / issue #133** (branch `claude/issue-133-f49546`): credential split
-  done — `deploy/postgres/roles.sql` (`victual_migrate` owns the schema, `victual_app` is DML
-  only), a Secret per workload in both pod manifests. The first run of the restricted role could
-  not connect: `PostgresDialect::OnConnected()` ran `CREATE TABLE IF NOT EXISTS` on every
-  connection and PG checks schema CREATE before existence; now `to_regclass()` first.
-  `tests/Pgsql/CredentialSplitTest.php` (`run-tests.sh credentialsplit`) holds it, verified by
-  reverting the fix. `zip` and `xmlwriter` trimmed from `nix/php.nix` (listed on callers that
-  do not exist); simplexml/openssl/dom/curl kept, each with a measured or sourced reason.
-  `.devtools/nix/walk.py` walks every page + API + a write cycle over HTTP and is now a step in
-  the `nix` workflow. **Found, not fixed** (spawned as tasks): `GET /` and `/mealplan` 500 on
-  master. **Not done, needs a cluster**: `deploy/k3s/victual.yaml` is validated structurally
-  only (rootless podman cannot host k3s: no cpuset cgroup v2); plan 25's verification 12 and
-  #93 stay open. SIGTERM half of check 9 measured on podman: php-fpm resets a DB-blocked
-  request on SIGQUIT too. Piece 3's issue text was stale (boot test has been on the Nix images
-  since 09-04). Warm nix builder: `podman commit victual-nix-builder` then
-  `BUILDER=… NIX_IMAGE=… nix/build-in-podman.sh` (existing builder is bound to another
-  worktree). Local `master` was stale; branch from `origin/master`.
 
 ## DOCTRINE (operator-locked decisions)
 

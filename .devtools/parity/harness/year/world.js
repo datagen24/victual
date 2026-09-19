@@ -8,10 +8,7 @@
 // script.
 //
 // **Chosen for coverage, not for realism alone.** Shelf lives span 3 to 900 days so that
-// some products expire inside the year and others never do; one product carries a tare
-// weight because `ConsumeProduct`'s tare branch (services/StockService.php:566-573) is
-// arithmetic nothing else exercises — and only one, because a tare product inside a recipe
-// would drag its gross-reading protocol into the cooking path (see narrative/tare.js); several buy in a different unit than they stock so the
+// some products expire inside the year and others never do; several buy in a different unit than they stock so the
 // quantity-unit conversion path runs on every booking; three sit at a default consume
 // location so `stock_next_use`'s first ordering term is not constant for the whole year.
 
@@ -84,7 +81,7 @@ const PRODUCTS = [
 	{ key: 'pasta',     name: 'Pasta',           group: 'pantrygrp', loc: 'pantry',  shelfLife: 700, min: 2, qu: 'gram', quPurchase: 'pack', conversion: 500 },
 	{ key: 'rice',      name: 'Rice',            group: 'pantrygrp', loc: 'pantry',  shelfLife: 900, min: 1, qu: 'gram', quPurchase: 'kilogram' },
 	{ key: 'tomatoes',  name: 'Tinned tomatoes', group: 'pantrygrp', loc: 'pantry',  shelfLife: 900, min: 4, qu: 'piece' },
-	{ key: 'detergent', name: 'Detergent',       group: 'household', loc: 'bathroom', shelfLife: null, min: 1, qu: 'millilitre', quPurchase: 'litre', tare: 250 },
+	{ key: 'detergent', name: 'Detergent',       group: 'household', loc: 'bathroom', shelfLife: null, min: 1, qu: 'millilitre', quPurchase: 'litre' },
 	{ key: 'soap',      name: 'Soap',            group: 'household', loc: 'bathroom', shelfLife: null, min: 2, qu: 'piece' }
 ];
 

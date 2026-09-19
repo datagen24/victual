@@ -7,6 +7,7 @@
 #   .devtools/parity/bin/parity api         the API scenarios
 #   .devtools/parity/bin/parity ui          the browser walk
 #   .devtools/parity/bin/parity side-effects  MQTT and InfluxDB (fork-only, no upstream)
+#   .devtools/parity/bin/parity mcp         the MCP sidecar against the fork's REST API (fork-only)
 #   .devtools/parity/bin/parity cli <tool> [args…]  one of the app's bin/ entry points
 #   .devtools/parity/bin/parity reset       throw both databases away and re-migrate
 #   .devtools/parity/bin/parity status      what is running
@@ -54,8 +55,8 @@ require_node() {
 
 ensure_harness_deps() {
 	require_node
-	if [ ! -d "$HARNESS/node_modules/playwright" ]; then
-		log "installing the harness's one dependency (playwright)"
+	if [ ! -d "$HARNESS/node_modules/playwright" ] || [ ! -d "$HARNESS/node_modules/@modelcontextprotocol/client" ]; then
+		log "installing the harness's dependencies (playwright, the MCP SDK client)"
 		( cd "$HARNESS" && npm install --no-audit --no-fund )
 	fi
 }
@@ -96,7 +97,7 @@ ensure_victual_images() {
 	local missing=()
 	local image
 
-	for image in "$VICTUAL_APP_IMAGE" "$VICTUAL_WEB_IMAGE" "$VICTUAL_MIGRATE_IMAGE"; do
+	for image in "$VICTUAL_APP_IMAGE" "$VICTUAL_WEB_IMAGE" "$VICTUAL_MIGRATE_IMAGE" "$VICTUAL_MCP_IMAGE"; do
 		"$ENGINE" image exists "$image" 2>/dev/null || missing+=("$image")
 	done
 
@@ -106,13 +107,13 @@ ensure_victual_images() {
 		fi
 		build_victual_images
 	else
-		log "reusing victual-{app,web,migrate}:${VICTUAL_VERSION} (pass --build to rebuild from the current tree)"
+		log "reusing victual-{app,web,migrate,mcp}:${VICTUAL_VERSION} (pass --build to rebuild from the current tree)"
 	fi
 
 	# The build is only half of it: `podman load` names the images from the streamer's own
 	# metadata, so a version.json the tags do not match is a suite that boots the previous
 	# build without saying so. Fail on the tag rather than on a confusing diff later.
-	for image in "$VICTUAL_APP_IMAGE" "$VICTUAL_WEB_IMAGE" "$VICTUAL_MIGRATE_IMAGE"; do
+	for image in "$VICTUAL_APP_IMAGE" "$VICTUAL_WEB_IMAGE" "$VICTUAL_MIGRATE_IMAGE" "$VICTUAL_MCP_IMAGE"; do
 		"$ENGINE" image exists "$image" 2>/dev/null \
 			|| die "$image is still not present after the build — check the tag against version.json ($VICTUAL_VERSION)"
 	done
@@ -168,7 +169,21 @@ phase_side_effects() {
 		"$@"
 }
 
-# The three phases run in a fixed order and **the order is load-bearing**: `api` is what
+# The sidecar the fork ships beside the app, driven with the official MCP client and checked
+# against the REST endpoints each tool wraps. Fork-only, like side-effects, and it mints keys
+# and creates a user on the fork — so it runs after the browser walk, for the reason
+# side-effects does.
+phase_mcp() {
+	ensure_harness_deps
+	log "fork-only MCP sidecar"
+	node "$HARNESS/run-mcp.js" \
+		--victual "$VICTUAL_URL" \
+		--mcp "http://127.0.0.1:${MCP_PORT}/mcp" \
+		--out "$REPORTS" \
+		"$@"
+}
+
+# The four phases run in a fixed order and **the order is load-bearing**: `api` is what
 # puts data into both instances, so the browser walk has tables with rows in them and the
 # MQTT check has a stock level to publish. Running `ui` against a cold stack compares two
 # empty applications, which is a comparison that cannot fail and therefore proves nothing.
@@ -180,13 +195,14 @@ phase_all() {
 	phase_api          || rc=1
 	phase_ui           || rc=1
 	phase_side_effects || rc=1
+	phase_mcp          || rc=1
 	return "$rc"
 }
 
 usage() {
 	# tail -n +2 drops the shebang, which `grep '^#'` would otherwise print as
 	# "!/usr/bin/env bash" at the top of the help.
-	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -17 | sed 's/^# \{0,1\}//'
+	tail -n +2 "${BASH_SOURCE[0]}" | grep '^#' | head -18 | sed 's/^# \{0,1\}//'
 }
 
 # --- Dispatch -------------------------------------------------------------------------------
@@ -288,6 +304,7 @@ case "${1:-all}" in
 		case "$name" in
 			victual|app) name=victual-app ;;
 			web)         name=victual-web ;;
+			mcp)         name=victual-mcp ;;
 		esac
 		"$ENGINE" logs --tail 200 "${PARITY_PREFIX}-${name}"
 		;;
@@ -302,6 +319,10 @@ case "${1:-all}" in
 	side-effects)
 		shift || true
 		phase_side_effects "$@"
+		;;
+	mcp)
+		shift || true
+		phase_mcp "$@"
 		;;
 	cli)
 		shift || true

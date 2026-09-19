@@ -105,13 +105,18 @@ class Instance {
 		const response = await this.raw('POST', '/login', {
 			form: { username, password }
 		});
-		// A successful login redirects; a failed one re-renders the form with 200.
-		const ok = response.status >= 300 && response.status < 400;
+		// Both outcomes redirect, on both applications: to the app on success, to
+		// /login?invalid=true on refused credentials. So the status alone accepts a wrong
+		// password - which is what this said until 2026-09-19, when the bootstrap handover
+		// asserted that a replaced password no longer logs in and found it "still" did.
+		const location = response.headers.get('location') || '';
+		const ok = response.status >= 300 && response.status < 400 && !/[?&]invalid=/.test(location);
 		if (!ok) {
 			throw new Error(
-				`${this.name}: login failed (HTTP ${response.status}). ` +
+				`${this.name}: login failed (HTTP ${response.status}${location ? ` to ${location}` : ''}). ` +
 				'A failure here usually means the instance did not migrate; on the fork side it can ' +
-				'also mean the database was seeded with a PARITY_VICTUAL_ADMIN_PASSWORD other than this one.'
+				'also mean there is no stack password to read (reports/.victual-admin-password) or ' +
+				'PARITY_VICTUAL_ADMIN_PASSWORD names a different one.'
 			);
 		}
 		return true;
@@ -175,8 +180,20 @@ class Instance {
 	}
 }
 
-// Same variable and default as stack/stack.sh, which seeds the fork's database with it
-const VICTUAL_ADMIN_PASSWORD = process.env.PARITY_VICTUAL_ADMIN_PASSWORD || 'parity-admin-password';
+// The fork's administrator password: PARITY_VICTUAL_ADMIN_PASSWORD when bin/parity (or you)
+// set it, otherwise the per-stack random one stack/stack.sh wrote for a fresh database. There
+// is no fixed fallback any more, so a harness started with no stack says so at login.
+function readAdminPassword() {
+	if (process.env.PARITY_VICTUAL_ADMIN_PASSWORD) return process.env.PARITY_VICTUAL_ADMIN_PASSWORD;
+	const path = require('path');
+	const dir = process.env.PARITY_STATE_DIR || process.env.PARITY_REPORTS || path.join(__dirname, '..', '..', 'reports');
+	try {
+		return require('fs').readFileSync(path.join(dir, '.victual-admin-password'), 'utf8').trim();
+	} catch {
+		return '';
+	}
+}
+const VICTUAL_ADMIN_PASSWORD = readAdminPassword();
 
 function victual(baseUrl) {
 	return new Instance({ name: 'victual', baseUrl, apiKeyHeader: 'VICTUAL-API-KEY', adminPassword: VICTUAL_ADMIN_PASSWORD });
