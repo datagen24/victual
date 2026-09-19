@@ -53,7 +53,7 @@ manuals — are kept.
 | Setting | Default | Notes |
 |---|---|---|
 | `FILE_STORAGE` | `filesystem` | `filesystem` puts files below `<data path>/storage`, one folder per group. `database` stores them as `BYTEA` rows instead, so the application directory needs no persistent volume and one `pg_dump` captures a file and the row pointing at it together. Requires `DB_DRIVER` `pgsql`, and is refused in `demo`/`prerelease` mode (those instances share a storage path by suffix, and the files table has no column for it). Switching does **not** move existing files: run `php bin/victual-files-import` once, then `php bin/victual-files-import --verify` before removing the old storage directory. |
-| `FILE_STORAGE_MAX_SIZE_MB` | `64` | The largest upload accepted, for either backend. The value actually enforced is the smallest of this setting, PHP's `upload_max_filesize` and `post_max_size` — raise those `php.ini` directives too if you raise this. `GET /api/system/config` reports the effective value, not this one. |
+| `FILE_STORAGE_MAX_SIZE_MB` | `64` | The largest upload accepted, for either backend. The value actually enforced is the smallest of this setting, PHP's `upload_max_filesize` and `post_max_size` — raise those `php.ini` directives too if you raise this. `GET /api/system/config` reports the effective value, not this one, and the migrate step's log says when a `php.ini` directive is the one that binds. |
 
 ## Database migrations {: #database-migrations }
 

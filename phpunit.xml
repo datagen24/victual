@@ -43,5 +43,8 @@
 		<testsuite name="bootstrapadmin">
 			<file>tests/Pgsql/BootstrapAdminTest.php</file>
 		</testsuite>
+		<testsuite name="uploadclamp">
+			<file>tests/Pgsql/FileSizeLimitTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

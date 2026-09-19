@@ -252,7 +252,9 @@ while this was in flight. Nothing else about the schema moved.
   written and the API answers **413** with a message naming the limit. The effective
   limit is the smallest of the setting, `upload_max_filesize` and `post_max_size` (Q2),
   resolved by `ConfigurationValidator` at startup so the clamp is logged where someone is
-  still looking, and reported by `GET /api/system/config`.
+  still looking — the CLI boot, `bin/victual-migrate`, and only there since
+  [issue 217](https://github.com/datagen24/victual/issues/217) — and reported by
+  `GET /api/system/config`.
 
   **That last one is this change's only wire addition** — one additive key,
   `FILE_STORAGE_MAX_SIZE_MB`, on an endpoint whose response schema is an untyped
@@ -492,6 +494,16 @@ form that reproduces it.
 - **The `upload_max_filesize` clamp was only exercised downward.** This environment's PHP
   accepts 2 MB, so the 64 MB default is never the binding constraint here and a genuine
   64 MB upload was never made.
+- **"Logged once per process" was once per request under php-fpm.** Found by the first
+  full-stack year run on 2026-09-19 ([issue 217](https://github.com/datagen24/victual/issues/217)):
+  5,332 clamp lines in one replay, one per request, because `FileSizeLimit`'s memo was a
+  static property and nothing in a php-fpm worker outlives the request (ADR-0007). Fixed the
+  same day: the memo is gone, `FileSizeLimit` no longer logs, and `ConfigurationValidator`
+  writes the line only under the CLI SAPI — `bin/victual-migrate`, which every deployment
+  shape runs once before it serves — so a web process stays silent and answers through
+  `GET /api/system/config`. `.devtools/pgsql/run-tests.sh uploadclamp` boots the validator
+  under `php` and `php-cgi` and reads what reached `error_log`. The shipped image's own
+  32 MB clamp, the other half of that issue, was raised to 64 MB in `aa9b1712`.
 
 ## Effort
 

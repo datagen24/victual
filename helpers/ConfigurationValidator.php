@@ -173,12 +173,22 @@ class ConfigurationValidator
 			throw new EInvalidConfig('FILE_STORAGE_MAX_SIZE_MB must be a positive number of megabytes, "' . VICTUAL_FILE_STORAGE_MAX_SIZE_MB . '" given');
 		}
 
-		// Resolving the limit here rather than at the first upload is what makes it a
-		// startup fact: a FILE_STORAGE_MAX_SIZE_MB larger than what PHP will accept logs
-		// its clamp while someone is still looking at the boot output, instead of the
-		// first time a household member is refused a picture. Startup keeps running
-		// either way - a clamp is information, not a failure (plan 01 Q2).
-		FileSizeLimit::EffectiveMaxBytes();
+		// Announcing the clamp here rather than at the first upload is what makes it a
+		// startup fact: a FILE_STORAGE_MAX_SIZE_MB larger than what PHP will accept is
+		// logged while someone is still looking at the boot output, instead of the first
+		// time a household member is refused a picture. Startup keeps running either way -
+		// a clamp is information, not a failure (plan 01 Q2).
+		//
+		// From the CLI SAPI only. This validator also runs at the top of every web request,
+		// and nothing in a php-fpm worker outlives the request (ADR-0007), so "once" cannot
+		// be kept there - it was one line per request until issue #217. Every deployment
+		// shape runs bin/victual-migrate exactly once before it serves; that is the boot
+		// output. A web process answers through GET /api/system/config instead.
+		$clamp = FileSizeLimit::ClampMessage();
+		if ($clamp !== null && PHP_SAPI === 'cli')
+		{
+			error_log($clamp);
+		}
 	}
 
 	/**
