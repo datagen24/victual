@@ -5,18 +5,18 @@
   the supported import span is stated in this record (open question 1, answered at
   acceptance; end fixtures land with the retirement PR per the amended gate), and the
   differential harness in `.devtools/pgsql/` stays until
-  [14](../plans/14-contract-and-regression-scaffolding.md) piece 2 exists. The
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2 exists. The
   retirement work itself is not yet scheduled in the roadmap's wave order.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-30.
 - **Relationship:** [ADR-0009](0009-database-as-the-logic-layer.md) is not viable unless
   this is accepted. This one is defensible on its own and should be judged on its own.
-- **Would affect:** [10](../plans/10-cold-start-statelessness.md),
-  [01](../plans/01-file-storage.md), [07](../plans/07-nested-products.md),
-  [08](../plans/08-nested-locations.md),
-  [14](../plans/14-contract-and-regression-scaffolding.md),
-  [15](../plans/15-deliberate-cleanup.md).
+- **Would affect:** [10](../plans/landed/10-cold-start-statelessness.md),
+  [01](../plans/landed/01-file-storage.md), [07](../plans/retired/07-nested-products.md),
+  [08](../plans/landed/08-nested-locations.md),
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md),
+  [15](../plans/landed/15-deliberate-cleanup.md).
 
 ## Context
 
@@ -60,7 +60,7 @@ got it wrong by conflating two different things:
 PostgreSQL is the only runtime, there is no second engine for it to agree with, and
 "behaves like grocy" stops being a property this project needs to hold — its contract is
 its own OpenAPI spec, frozen by
-[14](../plans/14-contract-and-regression-scaffolding.md) piece 2. The differential harness
+[14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2. The differential harness
 in `.devtools/pgsql/` may be kept **during the transition**, as a check that the retirement
 itself changed nothing, and retired afterwards. It is a migration aid, not a permanent
 architectural requirement.
@@ -93,7 +93,7 @@ chose. [ADR-0005](0005-wire-contract-is-the-invariant.md) is enforced going forw
 
 **Plan 10 gets shorter, and in places turns from "make it conditional" into "delete it."**
 
-| [Plan 10](../plans/10-cold-start-statelessness.md) item | Under two engines | Under one |
+| [Plan 10](../plans/landed/10-cold-start-statelessness.md) item | Under two engines | Under one |
 |---|---|---|
 | `PrerequisiteChecker` opening `sqlite::memory:` every request | Make it driver-aware | Delete the branch |
 | `pdo_sqlite` in the image | Conditional | Gone |
@@ -114,9 +114,9 @@ both engines.
 rather than maintained. The baseline stops being a stand-in and becomes the schema.
 
 **The ceiling comes off.** Recursive CTEs with known semantics for
-[07](../plans/07-nested-products.md) and [08](../plans/08-nested-locations.md) — which the
+[07](../plans/retired/07-nested-products.md) and [08](../plans/landed/08-nested-locations.md) — which the
 roadmap notes neither plan has ever exercised through the suite. `bytea` decided on its
-merits for [01](../plans/01-file-storage.md) rather than as half of a portable pair. And
+merits for [01](../plans/landed/01-file-storage.md) rather than as half of a portable pair. And
 everything in [ADR-0009](0009-database-as-the-logic-layer.md), which is not seriously
 available while this record is unaccepted.
 
@@ -127,7 +127,7 @@ until it does there is a gap.** Today the differential suite is what makes the w
 contract testable rather than aspirational — `difftest.php` puts both engines into an
 identical table state and compares what the views return. That mechanism disappears with
 the second engine. The replacement is
-[14](../plans/14-contract-and-regression-scaffolding.md) piece 2's response snapshot,
+[14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's response snapshot,
 which is the right mechanism and is **outstanding**. So the ordering constraint is real
 even though the permanent requirement is not: **do not retire the harness before 14 piece
 2 exists**, or the fork spends a window with neither check. Keeping the harness through
@@ -164,7 +164,7 @@ Gates, not suggestions. The accepting pull request says how each was met.
   guard the importer, and the importer does not change until the retirement PR, so
   their absence gates that PR rather than this decision. Stating the span is the
   decision-shaped half and remains an acceptance gate.
-- **[14](../plans/14-contract-and-regression-scaffolding.md) piece 2 exists**, or the
+- **[14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2 exists**, or the
   accepting PR states explicitly that the differential harness stays until it does. This
   is the enforcement-transfer gap above and is the one ordering constraint this record
   has.

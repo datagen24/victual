@@ -6,7 +6,7 @@
 - **Recorded:** 2026-09-04, alongside [plan 22](../plans/22-medication-tracking.md). The
   decision was made when the plan was drafted; this record is not a backfill.
 - **Relationship:** constrains [22](../plans/22-medication-tracking.md) throughout, and
-  [23](../plans/23-storage-classes.md) Q6 defers to it. Pairs with
+  [23](../plans/landed/23-storage-classes.md) Q6 defers to it. Pairs with
   [ADR-0016](0016-schedule-expansion-in-the-application.md), written at the same time and
   deciding a different question about the same plan.
 - **Would affect:** [02](../plans/02-mcp-endpoint.md),

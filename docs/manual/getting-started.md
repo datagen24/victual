@@ -101,7 +101,8 @@ schema is created from a squashed baseline on first migration, not by replaying 
 SQLite migration history.
 
 PostgreSQL 15 is the floor, because a nested-locations migration needs
-`UNIQUE ... NULLS NOT DISTINCT`, which 15 introduced. An installation whose `config.php`
+`UNIQUE ... NULLS NOT DISTINCT`, which 15 introduced. Victual refuses to start against an
+older server and names the version it found. An installation whose `config.php`
 still names `sqlite` is refused at startup, with the exact command that moves it.
 
 ### Moving an existing SQLite installation across

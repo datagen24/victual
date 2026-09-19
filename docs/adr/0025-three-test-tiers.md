@@ -25,7 +25,7 @@
 - **Recorded:** 2026-09-17.
 - **Relationship:** builds on [ADR-0008](0008-postgresql-only-runtime-engine.md), whose
   option C keeps the differential harness only until
-  [plan 14](../plans/14-contract-and-regression-scaffolding.md) piece 2 replaces it; this
+  [plan 14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2 replaces it; this
   record says what replaces it *with*. Does not touch
   [ADR-0005](0005-wire-contract-is-the-invariant.md): the response snapshot stays the wire
   contract's enforcement, and gains a runner. The constitution's verification bar — a
@@ -33,7 +33,7 @@
   tier below is shaped by.
 - **Referenced by:** [issue 192](https://github.com/datagen24/victual/issues/192), whose
   mechanics items become this record's first plan once accepted;
-  [14](../plans/14-contract-and-regression-scaffolding.md) piece 2, whose harness is written
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2, whose harness is written
   in tier 1 from the start; [.devtools/coverage/README.md](../../.devtools/coverage/README.md).
 
 ## Context

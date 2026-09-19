@@ -21,7 +21,7 @@
 # one became.
 #
 # PHP 8.5 even though composer.json pins 8.4: the fork's floor is 8.4 (so an 8.4 box can
-# still run it) while the shipped image stays current. See docs/plans/15-deliberate-cleanup.md,
+# still run it) while the shipped image stays current. See docs/plans/landed/15-deliberate-cleanup.md,
 # question 4.
 
 

@@ -5,7 +5,7 @@ nobody owned — stable opaque identities, a transactional print job with honest
 semantics, the minimum printer configuration to aim one, and a worker that renders and
 prints — so that a label requested in Victual comes off the printer and scans back to the
 thing it names.
-**Depends on:** [12](12-frontend-shared-core.md) (landed), [18](18-mqtt-state-publication.md)'s
+**Depends on:** [12](landed/12-frontend-shared-core.md) (landed), [18](18-mqtt-state-publication.md)'s
 `outbox` (landed), [19](19-rbac.md) piece 1 (implemented), [20](20-container-infrastructure.md)
 piece 1 (landed) and part of piece 4. Gated on
 [ADR-0019](../adr/0019-label-printers-are-master-data.md), **accepted 2026-09-07** with all
@@ -95,7 +95,7 @@ three boundaries of accepted [ADR-0011](../adr/0011-label-namespace.md), and two
 this plan's scope. Template documents become application data rather than the worker's, and a
 reprint becomes a new job over retained artifact bytes rather than "resetting a row". The
 machinery that follows from those — the designer, the headless renderer, previews, and the
-artifacts a reprint replays — is [27](27-label-templates-and-rendering.md)'s, written the same
+artifacts a reprint replays — is [27](landed/27-label-templates-and-rendering.md)'s, written the same
 week and scheduled alongside this plan.
 
 **This plan keeps** identity, the print job and its attempts, printer and worker configuration,
@@ -170,7 +170,7 @@ implementation and must not be grown into it:
    reading feature lists. There is **no JSON Schema validator in `composer.json`** today.
 5. The capability contract version 1 expresses two real driver families on paper.
 
-ADR-0021 carries six of its own, which [27](27-label-templates-and-rendering.md) runs; two of
+ADR-0021 carries six of its own, which [27](landed/27-label-templates-and-rendering.md) runs; two of
 them — the renderer comparison and the artifact-format comparison — also settle the two
 details ADR-0019 still owes before *it* is accepted.
 
@@ -330,7 +330,7 @@ configured printer, request a print, inspect the outcome.*
   two implement durable pairing sessions and pending rotations without widening `api_keys`.
   `print_jobs` is the one this plan found missing — see below.
   `label_templates` was the ninth and is **not here**: ADR-0021 makes it Victual's template
-  identity, owned by [27](27-label-templates-and-rendering.md). That is still a large surface
+  identity, owned by [27](landed/27-label-templates-and-rendering.md). That is still a large surface
   for one subsystem, and ADR-0019 says why it is the cost of keeping driver definitions
   immutable while what workers advertise changes underneath them.
 - **A driver registry, not a column set.** A printer's `settings` document is validated
@@ -349,7 +349,7 @@ configured printer, request a print, inspect the outcome.*
   `GenericEntityApiController`, which has no per-entity validation hook and whose
   `BaseApiController::GetParsedAndFilteredRequestBody` explicitly skips arrays when
   sanitising, so a nested settings document would reach the database unexamined.
-  [03](03-category-min-stock.md) already edited those enums in this wave; merge order matters.
+  [03](landed/03-category-min-stock.md) already edited those enums in this wave; merge order matters.
 - **Monitoring is a view of jobs and attempts**, not a dashboard: queued, claimed, sent,
   reported, failed with its error, uncertain, dead-lettered — and **uncertain-but-reported**,
   which is its own state rather than a shade of uncertain, and the one an operator must see
@@ -357,7 +357,7 @@ configured printer, request a print, inspect the outcome.*
   print, and if not, why" without a database client — and to authorize the next attempt, which
   is an operator action rather than a timer.
 - **What is deliberately not here:** the label designer, template editing, previews and
-  artifact storage — all [27](27-label-templates-and-rendering.md)'s under ADR-0021 — and
+  artifact storage — all [27](landed/27-label-templates-and-rendering.md)'s under ADR-0021 — and
   per-print printer selection, which nothing owns. A job still pins a template version; what
   changed is that the version it pins is one Victual published rather than one a worker
   registered. Configuration that is not a property of a printing device stays where it is —
@@ -373,7 +373,7 @@ that is already on the network over TCP.
 
 **It does not render.** ADR-0021 moves font shaping, layout, QR generation and rasterization
 into a headless renderer that reads Victual's template document, and
-[27](27-label-templates-and-rendering.md) owns it. What this piece's worker receives is a
+[27](landed/27-label-templates-and-rendering.md) owns it. What this piece's worker receives is a
 validated artifact; what it does is verify that artifact against the printer's resolved
 configuration and encode it for the device. The two may share a repository or a deployment,
 and their contracts stay separate — a render may be retried automatically because it cannot
@@ -424,7 +424,7 @@ from its `labels.py`. What a QL actually needs is the raster command stream and 
   the raster and transport path — and is read for its constants rather than ported. Its Flask `/print` route is the
   webhook ADR-0011 retires and does not survive the port. Its **imaging** code — layout,
   endless versus die-cut, 2-colour, short-date highlighting — is seed material for
-  [27](27-label-templates-and-rendering.md)'s renderer rather than for this worker, and the
+  [27](landed/27-label-templates-and-rendering.md)'s renderer rather than for this worker, and the
   renderer comparison run on 2026-09-07 found two defects in it that a port must not inherit:
   `getbbox()` raises on multi-line text under a libraqm-enabled Pillow, and Pillow cannot
   scale a glyph anisotropically at all, which a 300 × 600 device requires.
@@ -463,7 +463,7 @@ new surface stateless, and so distinct from the "current location" session conce
 on 2026-09-04.
 
 The human-readable line carries the location **name** in wave 3b.
-[08](08-nested-locations.md) adds the tree path later, and 06's Q5 response is unchanged by
+[08](landed/08-nested-locations.md) adds the tree path later, and 06's Q5 response is unchanged by
 anything here: the encoded payload stays the bare uid, and display strings are never encoded
 into the machine side.
 

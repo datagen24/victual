@@ -5,7 +5,7 @@ An interactive browser is served at **`/api`** (Swagger UI, driven by
 enriched at runtime with the installed version, this instance's own server URL, and the
 per-entity operations actually permitted). The frontend uses this API for every write; a
 few pages still read the database directly, so not every report has an API response yet —
-see [plan 14](https://github.com/datagen24/victual/blob/master/docs/plans/14-contract-and-regression-scaffolding.md).
+see [plan 14](https://github.com/datagen24/victual/blob/master/docs/plans/landed/14-contract-and-regression-scaffolding.md).
 Response shapes are governed by
 [ADR-0005](../../adr/0005-wire-contract-is-the-invariant.md): they do not change
 casually, and existing contracts are stable across releases.

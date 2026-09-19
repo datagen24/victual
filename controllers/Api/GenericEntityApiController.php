@@ -537,8 +537,8 @@ class GenericEntityApiController extends BaseApiController
 	 * ADR-0022 decisions 4 and 7 (2026-09-14), question 1's decided answer: the product-level
 	 * tare mechanism is retired, `enable_tare_weight_handling` and `tare_weight` stay on the
 	 * wire at their current values, and *enabling* the flag from here on answers 400 naming
-	 * the per-entry (docs/plans/28-open-container-measurement.md) or per-location
-	 * (docs/plans/29-working-container-replenishment.md) tare that replaced it.
+	 * the per-entry (docs/plans/landed/28-open-container-measurement.md) or per-location
+	 * (docs/plans/landed/29-working-container-replenishment.md) tare that replaced it.
 	 *
 	 * Only the 0 -> 1 transition is refused. A product that already has the flag enabled can
 	 * still be saved unchanged - this is a business rule about what a client may newly
@@ -560,7 +560,7 @@ class GenericEntityApiController extends BaseApiController
 
 		if (boolval($requestBody['enable_tare_weight_handling']) && !$currentlyEnabled)
 		{
-			throw new EInvalidApiQuery('enable_tare_weight_handling can no longer be enabled - weigh an opened purchased container on the stock entry instead (docs/plans/28-open-container-measurement.md), or a refillable vessel on its location (docs/plans/29-working-container-replenishment.md)');
+			throw new EInvalidApiQuery('enable_tare_weight_handling can no longer be enabled - weigh an opened purchased container on the stock entry instead (docs/plans/landed/28-open-container-measurement.md), or a refillable vessel on its location (docs/plans/landed/29-working-container-replenishment.md)');
 		}
 	}
 

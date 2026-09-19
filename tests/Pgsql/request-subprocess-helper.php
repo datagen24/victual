@@ -94,6 +94,11 @@ if (isset($spec['body']))
 
 $response = $app->handle($request);
 
+// Production writes the deferred changed time from a shutdown handler DatabaseService
+// registers when it opens the connection. This helper installs its own connection instead
+// (above), so that handler never exists here; flushing by hand is what it would have done.
+DatabaseService::GetInstance()->GetDialect()->FlushDbChangedTime($pdo);
+
 echo json_encode([
 	'status' => $response->getStatusCode(),
 	'body' => (string)$response->getBody()

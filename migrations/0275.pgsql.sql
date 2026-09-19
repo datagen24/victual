@@ -1,6 +1,6 @@
 -- The measured remainder of an opened container: three sealed bags of flour and one open
 -- bag holding 1.2 kg becomes a state `stock` can hold. See
--- docs/plans/28-open-container-measurement.md and docs/adr/0022-open-containers-carry-a-measured-remainder.md
+-- docs/plans/landed/28-open-container-measurement.md and docs/adr/0022-open-containers-carry-a-measured-remainder.md
 -- (Accepted 2026-09-14, all eight prerequisites met against real PostgreSQL 16.13 in
 -- .spike-adr22/, PR #152). This file mirrors that spike's 01-stock-measurement.pgsql.sql,
 -- widened to cover the full column set the affected views actually project and the two

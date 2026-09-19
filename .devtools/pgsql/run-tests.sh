@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion]
 #
-# Twenty-three kinds of check. Views are compared by what they return, because
+# Twenty-five kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -149,7 +149,7 @@
 # - its subject is migrations/0275.pgsql.sql - and the view phase cannot stand in for it for
 # the fifteenth's own reason: the importer's common-column copy would leave opened_amount NULL
 # on every row, so every assertion about a measured entry would be an assertion about an
-# unmeasured one. Its cases follow docs/plans/28-open-container-measurement.md's own
+# unmeasured one. Its cases follow docs/plans/landed/28-open-container-measurement.md's own
 # Verification list: coexistence against the negative control the old tare mechanism gets
 # wrong, two opened containers with one measured, the open=1/amount>1 refusal-or-split, an
 # undo round trip through a full consume, undoing an opening on a measured entry, a split
@@ -720,6 +720,52 @@ run_bootstrapadmin_tests() {
 run_uploadclamp_tests() {
 	say ""
 	if ! php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite uploadclamp; then
+		failures=$((failures + 1))
+	fi
+}
+
+# --- Label writes and change tracking -----------------------------------------------
+#
+# The label endpoints write through DatabaseService::InTransaction() and advance the
+# changed time (tests/Pgsql/LabelWriteTrackingTest.php): a committed write does, a read and
+# a rolled-back write do not. Same shape as run_mcpauth_tests().
+run_labeltracking_tests() {
+	local dbname="victual_labeltracking"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/labeltracking-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-PHPCONFIG
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite labeltracking; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- Server version -----------------------------------------------------------------
+#
+# PostgresDialect::MINIMUM_MAJOR_VERSION is the oldest server the application starts on.
+# The phase fails when the server the suite is running against is below it, so the number
+# cannot rise above what is actually tested. No database of its own.
+
+run_serverversion_tests() {
+	say ""
+	if ! php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite serverversion; then
 		failures=$((failures + 1))
 	fi
 }
@@ -1781,8 +1827,10 @@ case "$WHICH" in
 	mcpauth) run_mcpauth_tests ;;
 	bootstrapadmin) run_bootstrapadmin_tests ;;
 	uploadclamp) run_uploadclamp_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp or all)" ;;
+	labeltracking) run_labeltracking_tests ;;
+	serverversion) run_serverversion_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

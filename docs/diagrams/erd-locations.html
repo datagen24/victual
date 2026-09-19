@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Places · locations, storage classes, stores</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ER · VICTUAL</p>
+    <h1>Places · locations, storage classes, stores</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1200 730" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="erd-locations-title erd-locations-desc">
+      <title id="erd-locations-title">Victual locations, storage classes and stores data model</title>
+      <desc id="erd-locations-desc">Locations nest under a parent by convention and may name a storage class, and a tare unit, through declared foreign keys. A per-location minimum joins products to locations with two more declared keys. Products name a default store and a default shopping list, and a shopping list may name the store it is for, all by convention.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+    <g transform="translate(0,-160)">
+    <path d="M 180,560 V 504" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="188" y="512" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="196" y="522" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="188" y="536" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="196" y="546" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 360,340 H 440" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="368" y="320" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="376" y="330" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="416" y="320" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="424" y="330" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 760,340 H 840" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="768" y="320" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="776" y="330" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="816" y="320" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="824" y="330" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 960,280 V 248 Q 960,240 952,240 H 328 Q 320,240 320,248 V 280" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="608" y="220" width="64" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="640" y="229" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">LOCATION_ID</text>
+    <rect x="968" y="256" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="976" y="266" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="328" y="256" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="336" y="266" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 100,280 V 264 Q 100,256 108,256 H 192 Q 200,256 200,264 V 280" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="130" y="236" width="40" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="150" y="245" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PARENT</text>
+    <path d="M 1040,404 V 520" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="1048" y="412" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1056" y="422" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="1050" y="452" width="68" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1084" y="461" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DEFAULT LIST</text>
+    <rect x="1048" y="496" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1056" y="506" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 760,550 H 792 Q 800,550 800,542 V 448 Q 800,440 808,440 H 892 Q 900,440 900,432 V 404" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="812" y="420" width="76" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="850" y="429" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">DEFAULT STORE</text>
+    <rect x="768" y="530" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="776" y="540" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="908" y="412" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="916" y="422" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 760,600 H 840" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="768" y="580" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="776" y="590" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="816" y="580" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="824" y="590" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="40" y="280" width="320" height="224" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="280" width="320" height="224" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="40" y="280" width="320" height="44" rx="6" fill="rgba(200,90,61,0.10)" stroke="none"/>
+    <rect x="40" y="316" width="320" height="8" fill="rgba(200,90,61,0.10)"/>
+    <line x1="40" y1="324" x2="360" y2="324" stroke="rgba(200,90,61,0.40)" stroke-width="1"/>
+    <text x="56" y="296" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY · HUB</text>
+    <text x="56" y="314" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">locations</text>
+    <text x="56" y="344" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="344" y="344" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="364" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="344" y="364" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq/parent</text>
+    <text x="56" y="384" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ parent_location_id</text>
+    <text x="344" y="384" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="404" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ storage_class_id</text>
+    <text x="344" y="404" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="424" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">is_freezer</text>
+    <text x="344" y="424" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">tare_weight</text>
+    <text x="344" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">double</text>
+    <text x="56" y="464" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ tare_qu_id ↗</text>
+    <text x="344" y="464" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">quantity_units fk</text>
+    <text x="56" y="484" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">active</text>
+    <text x="344" y="484" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="40" y="560" width="280" height="184" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="560" width="280" height="184" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="560" width="280" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="596" width="280" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="604" x2="320" y2="604" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="576" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">VOCABULARY</text>
+    <text x="56" y="594" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">storage_classes</text>
+    <text x="56" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="304" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="644" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="304" y="644" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="56" y="664" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">min_temp_c</text>
+    <text x="304" y="664" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">numeric</text>
+    <text x="56" y="684" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">max_temp_c</text>
+    <text x="304" y="684" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">numeric</text>
+    <text x="56" y="704" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">treats_as_freezer</text>
+    <text x="304" y="704" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <text x="56" y="724" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">sort_order</text>
+    <text x="304" y="724" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <rect x="440" y="280" width="320" height="164" rx="6" fill="#f2e7d3"/>
+    <rect x="440" y="280" width="320" height="164" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="440" y="280" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="440" y="316" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="440" y1="324" x2="760" y2="324" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="456" y="296" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PER-LOCATION MINIMUM</text>
+    <text x="456" y="314" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">product_location_min_stock</text>
+    <text x="456" y="344" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="744" y="344" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="456" y="364" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ product_id</text>
+    <text x="744" y="364" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="456" y="384" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ location_id</text>
+    <text x="744" y="384" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="456" y="404" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">min_stock_amount</text>
+    <text x="744" y="404" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">double</text>
+    <text x="456" y="424" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">(product, location)</text>
+    <text x="744" y="424" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">unique</text>
+    <rect x="840" y="280" width="320" height="124" rx="6" fill="#f2e7d3"/>
+    <rect x="840" y="280" width="320" height="124" rx="6" fill="rgba(23,75,58,0.03)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="840" y="280" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="840" y="316" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="840" y1="324" x2="1160" y2="324" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="856" y="296" fill="#6b8579" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">REFERENCE</text>
+    <text x="856" y="314" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">products</text>
+    <text x="856" y="344" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="344" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="856" y="364" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="1144" y="364" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="856" y="384" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">…</text>
+    <text x="1144" y="384" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">see erd-stock</text>
+    <rect x="440" y="520" width="320" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="440" y="520" width="320" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="440" y="520" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="440" y="556" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="440" y1="564" x2="760" y2="564" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="456" y="536" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">STORE</text>
+    <text x="456" y="554" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">shopping_locations</text>
+    <text x="456" y="584" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="744" y="584" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="456" y="604" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="744" y="604" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="456" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">description</text>
+    <text x="744" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="456" y="644" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">active</text>
+    <text x="744" y="644" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="840" y="520" width="320" height="124" rx="6" fill="#f2e7d3"/>
+    <rect x="840" y="520" width="320" height="124" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="840" y="520" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="840" y="556" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="840" y1="564" x2="1160" y2="564" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="856" y="536" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LIST</text>
+    <text x="856" y="554" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">shopping_lists</text>
+    <text x="856" y="584" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="584" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="856" y="604" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="1144" y="604" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="856" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ shopping_location_id</text>
+    <text x="1144" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <line x1="40" y1="808" x2="1160" y2="808" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="824" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="842" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Hub entity</text>
+    <rect x="146" y="842" width="16" height="12" rx="2" fill="rgba(23,75,58,0.03)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="170" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Entity owned by another diagram</text>
+    <text x="348" y="852" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">→</text>
+    <text x="368" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Reference column</text>
+    <text x="477" y="852" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">↗</text>
+    <text x="497" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Target lives in another diagram</text>
+    <line x1="675" y1="848" x2="699" y2="848" stroke="#4a6459" stroke-width="1"/>
+    <text x="707" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Declared FOREIGN KEY</text>
+    <line x1="835" y1="848" x2="859" y2="848" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="867" y="852" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Convention only</text>
+    </g>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>

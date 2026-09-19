@@ -159,7 +159,7 @@ My recommendation is to ship **no** barcodes here and fix lookup instead — see
   `roles` are in scope that validation covers permission *names* against
   `permission_hierarchy` — which is sweep S27 (an unvalidated id that silently grants
   nothing) arriving on a second path, and it should not be re-derived here.
-- Plans [03](03-category-min-stock.md) and [05](05-store-shopping-lists.md) make
+- Plans [03](landed/03-category-min-stock.md) and [05](05-store-shopping-lists.md) make
   `product_groups` load-bearing (a minimum, a per-store position) — the shipped
   dataset should include a sane default group set.
 

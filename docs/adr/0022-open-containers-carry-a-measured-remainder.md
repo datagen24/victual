@@ -3,10 +3,10 @@
 - **Status:** Accepted 2026-09-14, all eight acceptance prerequisites met.
 - **Decider:** datagen24 (maintainer). Acceptance follows the [ADR lifecycle](README.md).
 - **Recorded:** 2026-09-09.
-- **Referenced by:** [28 — Open container measurement](../plans/28-open-container-measurement.md),
+- **Referenced by:** [28 — Open container measurement](../plans/landed/28-open-container-measurement.md),
   which owns implementation, and
-  [29 — Working container replenishment](../plans/29-working-container-replenishment.md),
-  which consumes decision 4's entry-scoped tare for the vessel pattern. Interacts with [07 — Nested products](../plans/07-nested-products.md)
+  [29 — Working container replenishment](../plans/landed/29-working-container-replenishment.md),
+  which consumes decision 4's entry-scoped tare for the vessel pattern. Interacts with [07 — Nested products](../plans/retired/07-nested-products.md)
   but does not depend on or settle its [question 6](https://github.com/datagen24/victual/issues/82).
 
 ## Context
@@ -140,7 +140,7 @@ that rescales the tare are removed, and a write that enables the flag answers 40
 location tare that replaced it. Booked amounts are already net, so no stored amount changes;
 a product that used the flag loses its weigh path until its vessel is a location, which is a
 manual upgrade step the migration notes. The two fields are deleted from the contract at
-[plan 14](../plans/14-contract-and-regression-scaffolding.md) piece 2's freeze, as a line in
+[plan 14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's freeze, as a line in
 the first snapshot rather than an amendment after it, with the
 [ADR-0005](0005-wire-contract-is-the-invariant.md) note that removal requires. The text below
 is the record as proposed on 2026-09-09.
@@ -185,7 +185,7 @@ view changes and fixtures if both proceed; measurement does not require plan 07'
 question to be resolved.
 
 New stock response fields require compatibility verification under ADR-0005. Their planned
-wave 4 delivery precedes [plan 14's response snapshot](../plans/14-contract-and-regression-scaffolding.md)
+wave 4 delivery precedes [plan 14's response snapshot](../plans/landed/14-contract-and-regression-scaffolding.md)
 ([issue 83](https://github.com/datagen24/victual/issues/83)) in wave 5. Later delivery would
 also require updating that snapshot contract.
 
@@ -245,7 +245,7 @@ recorded in decisions 4 and 7 and in question 1's response below.
    > all, via a third exclusion clause on that view, and is untouched by the same run.
 4. **Wire compatibility.** **Reworded 2026-09-14**, per issue
    [#129](https://github.com/datagen24/victual/issues/129): as written this named a snapshot
-   that does not exist — [14](../plans/14-contract-and-regression-scaffolding.md) piece 2
+   that does not exist — [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2
    ([issue 83](https://github.com/datagen24/victual/issues/83)) — while the record's own
    Consequences want plan 28 to land *before* that freeze, so the prerequisite could not be
    discharged either way. The new stock fields are listed and checked as additive against

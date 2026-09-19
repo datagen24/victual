@@ -210,9 +210,9 @@ says so by not pretending to be one.
 
 | Container | Image | Port |
 |---|---|---|
-| `parity-victual-app` | `localhost/victual-app:0.1.0-MVP`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
-| `parity-victual-web` | `localhost/victual-web:0.1.0-MVP`, in the same pod | 8080, published by the pod |
-| — | `localhost/victual-migrate:0.1.0-MVP`, run once and removed | — |
+| `parity-victual-app` | `localhost/victual-app:0.1.1-MVP`, in pod `parity-victual` | — (FastCGI on the pod's loopback) |
+| `parity-victual-web` | `localhost/victual-web:0.1.1-MVP`, in the same pod | 8080, published by the pod |
+| — | `localhost/victual-migrate:0.1.1-MVP`, run once and removed | — |
 | `parity-upstream` | `docker.io/linuxserver/grocy:version-v4.6.0` | 8081 |
 | `parity-postgres` | `postgres:16`, on a tmpfs | — |
 | `parity-mosquitto` | `eclipse-mosquitto:2` | 1883 |
@@ -247,7 +247,7 @@ has not merged. Comparing against `latest` would produce a report full of upstre
 changelog. The fork-side image tags above follow `version.json`, read by `stack.sh`.
 
 Both databases are thrown away and rebuilt on `parity reset`, and a cold start is a
-first-class check rather than a convenience: [plan 10](../../docs/plans/10-cold-start-statelessness.md)
+first-class check rather than a convenience: [plan 10](../../docs/plans/landed/10-cold-start-statelessness.md)
 is about what happens on the first request after a scale-up, and the only way to test that
 is to have a first request.
 

@@ -5,7 +5,7 @@ Deep freeze, freezer, fridge, cooler and ambient are distinguishable, so a wine 
 cheese cave and a medication fridge stop being the same thing.
 **Depends on:** nothing. Interacts with [08](08-nested-locations.md), whose Q3 answer this
 adopts unchanged.
-**Consumed by:** [22](22-medication-tracking.md), which needs a product to be able to
+**Consumed by:** [22](../22-medication-tracking.md), which needs a product to be able to
 require a class. Extracted from 22 per its Q1 — this is a general locations feature that
 medication happens to need first, and it changes a column every client of `/objects/locations`
 can see, which is not a change that should arrive as a side effect of a medication plan.
@@ -27,7 +27,7 @@ The household already has four things on the wrong side of that boolean — a wi
 cheese cave, a medication fridge and a deep freeze. All four are `is_freezer = 0` except the
 last, which is `is_freezer = 1` and thereby indistinguishable from a domestic freezer holding
 peas. Nothing in the tree can express that 2–8 °C is a requirement rather than a preference,
-which is why [22](22-medication-tracking.md) cannot be built on what exists.
+which is why [22](../22-medication-tracking.md) cannot be built on what exists.
 
 ## Proposed change
 
@@ -35,7 +35,7 @@ which is why [22](22-medication-tracking.md) cannot be built on what exists.
 
 New `storage_classes`: `name` (unique), `min_temp_c`, `max_temp_c`, `treats_as_freezer`,
 `sort_order`, `active`. Seeded — **in PHP, not in the baseline DDL**, per
-[ADR-0003](../adr/0003-seed-data-in-php.md) — with Deep freeze, Freezer, Fridge, Cooler and
+[ADR-0003](../../adr/0003-seed-data-in-php.md) — with Deep freeze, Freezer, Fridge, Cooler and
 Ambient. The table is user-extensible because the seed cannot anticipate a cheese cave's set
 point.
 
@@ -55,7 +55,7 @@ class on write via `storage_classes.treats_as_freezer`. The freeze/thaw due-date
 untouched, and so is every consumer of `/objects/locations`.
 
 This is what keeps the change additive under
-[ADR-0005](../adr/0005-wire-contract-is-the-invariant.md): one new field appears, no existing
+[ADR-0005](../../adr/0005-wire-contract-is-the-invariant.md): one new field appears, no existing
 field changes meaning. A version of this plan that replaced `is_freezer` with the class would
 be a contract break for the sake of tidiness, and would break the due-date path in the same
 stroke.
@@ -83,15 +83,15 @@ plan, and the one most likely to surprise someone who has been ticking that box 
 
 ### Migration
 
-One file, claiming **0274** in [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any
+One file, claiming **0274** in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md) before any
 file is written — moved up from 0269 on 2026-09-06 to make room for wave 3b's
-[25](25-label-infrastructure.md), again on 2026-09-08 for [27](27-label-templates-and-rendering.md),
+[25](../25-label-infrastructure.md), again on 2026-09-08 for [27](27-label-templates-and-rendering.md),
 and again on 2026-09-09 for [08](08-nested-locations.md), each of which is scheduled while
 this plan is not. Read the table rather than this line: it has moved three times. It is a table, a
 column and a seed — no views, and **no triggers**, since Q2 put derivation in the application
 — so it is the small kind of migration, and stays that way.
 
-Not a pair: this plan was written when [ADR-0004](../adr/0004-engine-specific-migrations.md)
+Not a pair: this plan was written when [ADR-0004](../../adr/0004-engine-specific-migrations.md)
 asked for one, and ADR-0008's retirement has since frozen the SQLite line at
 `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` = 0265. Above that number
 `check-migrations.php` refuses a `.sqlite.sql` outright, so this is a lone
@@ -99,7 +99,7 @@ asked for one, and ADR-0008's retirement has since frozen the SQLite line at
 freeze, where a lone engine-specific file really could be a missing counterpart. The new
 table also has to be named in `migratedifftest.php`'s `ENGINE_EXCLUSIVE_TABLES`, which above
 the freeze means "SQLite is frozen" rather than "SQLite is deliberately different"; see
-[db/pgsql/README.md](../../db/pgsql/README.md).
+[db/pgsql/README.md](../../../db/pgsql/README.md).
 
 ## Interaction with 08
 
@@ -115,7 +115,7 @@ That is the fixture this plan should be tested against too.
 
 ## Interaction with 22
 
-[22](22-medication-tracking.md) adds `required_storage_class_id` to its own medication master
+[22](../22-medication-tracking.md) adds `required_storage_class_id` to its own medication master
 data and warns on a mismatch — the product declares a requirement, the location declares a
 capability, and the comparison is between two fields a human entered. That comparison lives in
 22, not here. This plan supplies the vocabulary and nothing else.
@@ -140,17 +140,17 @@ capability, and the comparison is between two fields a human entered. That compa
    > `is_freezer = 1`, which is correct by construction, and **Ambient everywhere else**,
    > which is a guess. NULL and Ambient are not the same claim: NULL says nobody has
    > classified this, Ambient says someone has classified it as room temperature. Plan
-   > [22](22-medication-tracking.md) warns on a mismatch between a product's required class
+   > [22](../22-medication-tracking.md) warns on a mismatch between a product's required class
    > and its location's, so a guessed Ambient would make that check fire against data no
    > human entered — and a warning derived from a guess is the kind of thing
-   > [ADR-0015](../adr/0015-medication-records-never-advises.md) exists to keep out of a
+   > [ADR-0015](../../adr/0015-medication-records-never-advises.md) exists to keep out of a
    > medication surface. The two modes are cheaper than that.
 
 2. **Where does derivation live — a trigger, or the application?** A trigger catches
    `bin/victual-db-import` and any future direct writer; application-level derivation is
    easier to read and is bypassed by exactly those paths. *Lean: trigger, on the grounds that
    the importer is a first-class path under
-   [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) rather than a corner case, and a
+   [ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md) rather than a corner case, and a
    derived column that the importer silently leaves wrong is a defect nobody would think to
    look for.* Costs a trigger pair under the dual-engine discipline.
 
@@ -166,7 +166,7 @@ capability, and the comparison is between two fields a human entered. That compa
    > worth a trigger pair on both engines plus its differential proof — a real cost under
    > the live dual-engine discipline, paid against a speculative caller.
    >
-   > **This does not automatically settle [22](22-medication-tracking.md) Q4**, which asks
+   > **This does not automatically settle [22](../22-medication-tracking.md) Q4**, which asks
    > the same trigger-versus-application question about copying medication stock attributes
    > on a split. 22 Q4 said the two should be answered together or the difference explained;
    > here is the difference. This question's trigger case was the importer, and it
@@ -182,7 +182,7 @@ capability, and the comparison is between two fields a human entered. That compa
 4. **Do the seeded temperature ranges mean anything to the code, or are they documentation?**
    Nothing in v1 resolves a class *from* a temperature, so the ranges are metadata that
    happens to be structured — which also means the touching boundaries (Cooler 8–15, Ambient
-   15–25) are harmless. *Lean: keep them structured anyway. [22](22-medication-tracking.md)'s
+   15–25) are harmless. *Lean: keep them structured anyway. [22](../22-medication-tracking.md)'s
    excursion handling wants to compare an observed temperature against a range, and a range
    stored as two numbers is ready for that while a range stored in a name is not.*
 
@@ -192,7 +192,7 @@ capability, and the comparison is between two fields a human entered. That compa
 
 6. **Does a class carry an excursion tolerance** — how far out of range, for how long, before
    it matters? *Lean: no, and deliberately. That number is the beginning of a judgement about
-   whether a product is still usable, which [ADR-0015](../adr/0015-medication-records-never-advises.md)
+   whether a product is still usable, which [ADR-0015](../../adr/0015-medication-records-never-advises.md)
    says this project does not make, and it should not be designed before there is real sensor
    data to look at. 22 Q8 owns the question.*
 

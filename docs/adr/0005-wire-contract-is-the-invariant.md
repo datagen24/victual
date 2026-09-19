@@ -3,7 +3,7 @@
 - **Status:** **Accepted.** The overriding rule of the porting work.
 - **Decider:** datagen24 (maintainer), retrospectively — see the lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-30, retrospectively.
-- **Referenced by:** [14](../plans/14-contract-and-regression-scaffolding.md),
+- **Referenced by:** [14](../plans/landed/14-contract-and-regression-scaffolding.md),
   [17](../plans/17-ecosystem-clients.md), and every porting hazard in
   [db/pgsql/README.md](../../db/pgsql/README.md).
 

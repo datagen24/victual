@@ -23,7 +23,7 @@
   changes nothing there and relies on it. [ADR-0005](0005-wire-contract-is-the-invariant.md)
   is the engine-parity rule and stays the overriding rule of the porting work; this record
   narrows what "the wire" is protected *for*, not whether it is protected.
-- **Referenced by:** [32 — Label kinds](../plans/32-label-kinds.md), which owns the work;
+- **Referenced by:** [32 — Label kinds](../plans/landed/32-label-kinds.md), which owns the work;
   [25](../plans/25-label-infrastructure.md), whose mechanism plan 32 extends;
   [17 — Ecosystem clients](../plans/17-ecosystem-clients.md), whose premise this replaces;
   the manual's [label printing](../manual/operator/label-printing.md) chapter.
@@ -45,7 +45,7 @@ not yet say:
   keep working, and every planned Victual client will be maintained as part of the Victual
   project. Upstream's clients (the mobile apps, the Home Assistant integration) target
   upstream.
-- **No response-contract freeze has been declared.** [Plan 14](../plans/14-contract-and-regression-scaffolding.md)
+- **No response-contract freeze has been declared.** [Plan 14](../plans/landed/14-contract-and-regression-scaffolding.md)
   piece 2 is scheduled, not done; when it lands, its snapshot is an internal regression
   tripwire between a migration and the fork's own clients, not a promise to anyone outside.
 
@@ -88,7 +88,7 @@ opaque uid is the mapping that replaces it, for every kind.
 4. **ADR-0019 decision item 7's gate on step 2 is dissolved.** Step 2 (the five kinds) and
    step 3 (delete the webhook, the four `LABEL_PRINTER_*` settings, their
    `SystemApiController::EXPOSED_SETTINGS` entries and the browser-side webhook code) are
-   one plan, [32](../plans/32-label-kinds.md), scheduled as wave-independent work.
+   one plan, [32](../plans/landed/32-label-kinds.md), scheduled as wave-independent work.
 5. **`labels.kind` widens** from `location | product | stock_entry` to add `recipe`,
    `chore` and `battery`, each with its own field catalogue, identity issuer and retirement
    trigger, so that a label for any of the six kinds is the same kind of thing.

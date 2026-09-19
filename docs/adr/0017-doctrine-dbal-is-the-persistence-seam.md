@@ -5,13 +5,13 @@
   carries **acceptance prerequisites** — see the lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-05.
 - **Depends on:** [ADR-0008](0008-postgresql-only-runtime-engine.md), accepted 2026-08-31
-  and delivered by [plan 24](../plans/24-sqlite-runtime-retirement.md). Stage 3 of the
+  and delivered by [plan 24](../plans/landed/24-sqlite-runtime-retirement.md). Stage 3 of the
   decision additionally requires
-  [plan 14](../plans/14-contract-and-regression-scaffolding.md) piece 2.
-- **Would affect:** [14](../plans/14-contract-and-regression-scaffolding.md),
-  [15](../plans/15-deliberate-cleanup.md),
+  [plan 14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2.
+- **Would affect:** [14](../plans/landed/14-contract-and-regression-scaffolding.md),
+  [15](../plans/landed/15-deliberate-cleanup.md),
   [11](../plans/11-api-error-handling.md),
-  [01](../plans/01-file-storage.md).
+  [01](../plans/landed/01-file-storage.md).
 
 ## Context
 
@@ -27,9 +27,9 @@ Victual reaches its database through three layers. Measured against the working 
 [ADR-0008](0008-postgresql-only-runtime-engine.md) made PostgreSQL the only engine an
 installation can be configured for. The dialect seam survived that retirement because the
 differential suite still constructs a SQLite dialect, and that suite is scheduled for
-removal when [14](../plans/14-contract-and-regression-scaffolding.md) piece 2 exists. At
+removal when [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2 exists. At
 that point the seam has one implementation, one caller, and no test that depends on its
-existing in the abstract — and [15](../plans/15-deliberate-cleanup.md) is the plan that
+existing in the abstract — and [15](../plans/landed/15-deliberate-cleanup.md) is the plan that
 removes code with no remaining caller. Whether the seam stays is therefore a decision that
 has to be made before 14 piece 2 lands, not after.
 
@@ -45,7 +45,7 @@ diagnose and patch.
 `BaseApiController::ApiResponse()` hands those objects to `json_encode()`.
 `Row::jsonSerialize()` recurses into related rows and renders a `\DateTime` as
 `Y-m-d H:i:s`. [ADR-0005](0005-wire-contract-is-the-invariant.md) makes the JSON on the
-wire the invariant, and [14](../plans/14-contract-and-regression-scaffolding.md) records
+wire the invariant, and [14](../plans/landed/14-contract-and-regression-scaffolding.md) records
 that the database schema is that contract. Any replacement for LessQL changes response
 bodies unless it reproduces that method's behaviour, and nothing in the repository
 currently detects such a change.
@@ -119,7 +119,7 @@ Three stages, each independently valuable and independently abandonable.
 3. **The LessQL replacement.** DBAL's query builder replaces `$this->DB->…` at 440 call
    sites, and the `LessQL\Result` and `LessQL\Row` types named in 20 files' signatures and
    docblocks are replaced with fork-owned types. **This stage requires
-   [14](../plans/14-contract-and-regression-scaffolding.md) piece 2's response snapshot to
+   [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's response snapshot to
    exist first**, because `Row::jsonSerialize()` is the current definition of the wire
    format and nothing else records what it produces.
 
@@ -169,8 +169,8 @@ wire.
 - **Typed database errors.** Every place that currently distinguishes failure modes by
   SQLSTATE or message text can ask a class instead. `DatabaseDialect::IsMissingTableError()`
   is the existing instance; the boot check in
-  [plan 10](../plans/10-cold-start-statelessness.md) is its caller.
-- **One row type.** [Plan 15](../plans/15-deliberate-cleanup.md) item C10 records that
+  [plan 10](../plans/landed/10-cold-start-statelessness.md) is its caller.
+- **One row type.** [Plan 15](../plans/landed/15-deliberate-cleanup.md) item C10 records that
   `StockService` returns LessQL rows from some methods and plain `stdClass` from its
   raw-SQL methods, so callers have to know which they got. Stage 3 removes the cause.
 - **A stated home for engine-specific code.** `StockReportsController`'s three hand-written
@@ -207,7 +207,7 @@ Gates, not suggestions. The accepting pull request states how each was met.
    currently reads `information_schema.columns` restricted to the search path, which
    reports views and tables alike. If DBAL's schema manager does not match that, stage 2 is
    dropped and this record says so rather than leaving it to be discovered.
-2. **[14](../plans/14-contract-and-regression-scaffolding.md) piece 2 exists**, or the
+2. **[14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2 exists**, or the
    accepting pull request states that stage 3 is out of scope until it does. Stages 1 and 2
    do not need it.
 3. **The dependency is measured, not assumed.** `nix path-info -rSh .#image-app` before and

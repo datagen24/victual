@@ -2,7 +2,7 @@
 
 Assembles and builds the site published at Read the Docs. What goes on the site and why is
 [ADR-0020](../../docs/adr/0020-documentation-publication-boundary.md); the design is
-[plan 26](../../docs/plans/26-documentation-site.md).
+[plan 26](../../docs/plans/landed/26-documentation-site.md).
 
 ```bash
 pip install -r .devtools/docs/requirements.txt

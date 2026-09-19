@@ -19,7 +19,7 @@
   corpus of records exists to prevent. Numbers are permanent and reasons are preserved;
   so are non-reasons.
 - **Recorded:** 2026-09-03, and revised the same day when
-  [plan 10](../plans/10-cold-start-statelessness.md) landed a production image from the
+  [plan 10](../plans/landed/10-cold-start-statelessness.md) landed a production image from the
   `Dockerfile` while this was in review. The revision is in *Context*; the decision did
   not change, but half of what it was arguing against did.
 - **Relationship:** supplies the *how* for [ADR-0010](0010-workload-standard.md)'s fourth
@@ -29,14 +29,14 @@
   remembers to add. 0010 is Proposed and this record does not assume otherwise: what
   follows stands on the build-system argument alone.
 - **Supersedes:** the `Dockerfile`'s `production` target, which
-  [10](../plans/10-cold-start-statelessness.md) landed on 2026-08-31. **Not** its `dev` target,
+  [10](../plans/landed/10-cold-start-statelessness.md) landed on 2026-08-31. **Not** its `dev` target,
   which is a different artifact for a different job and stays — and which this acceptance
   makes the `Dockerfile`'s *only* job. Retiring the production stage is scheduled rather
   than done here, as [plan 20](../plans/20-container-infrastructure.md)'s piece 3: it
   carries the `images` CI job's assertions across, and the one that has no
   `nix flake check` equivalent — booting a container and fetching a URL — is now covered
   by that plan's verification instead. See *Consequences*.
-- **Would affect:** [01](../plans/01-file-storage.md),
+- **Would affect:** [01](../plans/landed/01-file-storage.md),
   [02](../plans/02-mcp-endpoint.md) and [18](../plans/18-mqtt-state-publication.md), whose
   workloads are born into this pattern or outside it;
   [16](../plans/16-project-rename.md) (registry claims).
@@ -47,7 +47,7 @@
 
 **This record was drafted against a repository with no production image, and that stopped
 being true while it was in review.** PR #33 landed
-[plan 10](../plans/10-cold-start-statelessness.md) with a `production` target in the same
+[plan 10](../plans/landed/10-cold-start-statelessness.md) with a `production` target in the same
 `Dockerfile`: Apache with mod_php, non-root `www-data`, a view cache baked at build time,
 a read-only root filesystem, a `.dockerignore`, and an `images` CI job asserting each of
 those against the built artifact. Three of this record's original premises — that there

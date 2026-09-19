@@ -4,8 +4,8 @@
 an assistant can answer "what is expiring this week" or "add milk to the shopping list"
 without a separate bridge process.
 **Depends on:** per the README's Wave 5 — [11](11-api-error-handling.md),
-[13](13-write-path-transactions.md) and [15](15-deliberate-cleanup.md) C1, plus
-[14](14-contract-and-regression-scaffolding.md)'s snapshot — all of which gate this plan.
+[13](landed/13-write-path-transactions.md) and [15](landed/15-deliberate-cleanup.md) C1, plus
+[14](landed/14-contract-and-regression-scaffolding.md)'s snapshot — all of which gate this plan.
 **Status:** superseded in part — the Open-question responses below are settled and now
 carried by the full [MCP interface specification](../mcp-interface-spec.md)
 (2026-08-29), which fixes the protocol baseline (`2026-07-28`, TypeScript SDK v2), the
@@ -166,7 +166,7 @@ handler together, rather than a switch — which the spec adopts.
 
 Additive, and additive in a smaller way than this plan first claimed: **no new routes in
 this server at all**. The sidecar consumes the existing REST surface, so what 02 needs
-from this repository is the surface being complete and frozen — [14](14-contract-and-regression-scaffolding.md)
+from this repository is the surface being complete and frozen — [14](landed/14-contract-and-regression-scaffolding.md)
 piece 2 — rather than new endpoints. One new API key type is the whole server-side change.
 
 **Client impact: none.** No existing endpoint changes. A new `key_type` value is additive

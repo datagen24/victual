@@ -2,7 +2,7 @@
 
 Publish one MkDocs site on Read the Docs with two top-level sections: a **Manual** for
 someone running Victual, and a **Development** section for someone changing it.
-[ADR-0020](../adr/0020-documentation-publication-boundary.md) owns what crosses into the
+[ADR-0020](../../adr/0020-documentation-publication-boundary.md) owns what crosses into the
 site and why; this plan owns the build, the navigation, and the writing.
 
 It ships in two pieces, in this order.
@@ -29,10 +29,10 @@ other people's work, not documentation the project maintains.
 
 That arrangement has held up for upstream because the installation it describes has been
 stable. It does not hold up for this fork. Victual runs on PostgreSQL alone
-([ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)), ships production images built by
-Nix from `scratch` ([ADR-0013](../adr/0013-nix-built-container-images.md)), runs without a
+([ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)), ships production images built by
+Nix from `scratch` ([ADR-0013](../../adr/0013-nix-built-container-images.md)), runs without a
 persistent application volume ([plan 10](10-cold-start-statelessness.md)), and has added
-roles and domain read permissions ([plan 19](19-rbac.md)). A community article explaining how
+roles and domain read permissions ([plan 19](../19-rbac.md)). A community article explaining how
 to point nginx at grocy on a Raspberry Pi with a SQLite file is not merely dated for Victual;
 it describes a system this one is not compatible with. The fork has made the community's
 installation documentation wrong for it and has published nothing of its own aimed at a user.
@@ -56,15 +56,15 @@ clean checkout with the command given.
 | Document | Lines | Section it serves |
 |---|---|---|
 | [`docs/usage.md`](../usage.md) | 271 | Manual — install, configuration, operations, operator reference, under 20 headings |
-| [`README.md`](../../README.md) | 98 | Both — project goals, current state, reading order |
-| [`docs/constitution.md`](../constitution.md) | 96 | Development — standing principles |
-| [`docs/documentation.md`](../documentation.md) | 222 | Development — writing conventions |
-| [`.github/CONTRIBUTING.md`](../../.github/CONTRIBUTING.md) | 101 | Development — where things go, pull requests, API documentation, licensing |
-| [`docs/adr/`](../adr/README.md) | 19 records + index | Development |
-| [`db/pgsql/README.md`](../../db/pgsql/README.md) | 841 | Development — schema, porting rules, 18 hazards |
-| [`nix/README.md`](../../nix/README.md) | 197 | Development — the three images |
-| [`deploy/README.md`](../../deploy/README.md) | 178 | Development — pod manifest |
-| [`docs/grocycode.md`](../grocycode.md) | 128 | Development — barcode payload format |
+| [`README.md`](../../../README.md) | 98 | Both — project goals, current state, reading order |
+| [`docs/constitution.md`](../../constitution.md) | 96 | Development — standing principles |
+| [`docs/documentation.md`](../../documentation.md) | 222 | Development — writing conventions |
+| [`.github/CONTRIBUTING.md`](../../../.github/CONTRIBUTING.md) | 101 | Development — where things go, pull requests, API documentation, licensing |
+| [`docs/adr/`](../../adr/README.md) | 19 records + index | Development |
+| [`db/pgsql/README.md`](../../../db/pgsql/README.md) | 841 | Development — schema, porting rules, 18 hazards |
+| [`nix/README.md`](../../../nix/README.md) | 197 | Development — the three images |
+| [`deploy/README.md`](../../../deploy/README.md) | 178 | Development — pod manifest |
+| [`docs/grocycode.md`](../../grocycode.md) | 128 | Development — barcode payload format |
 | [`docs/label-printing.md`](../label-printing.md) | 50 | Manual — label printer webhook |
 
 `config-dist.php` is 405 lines carrying 84 settings
@@ -104,7 +104,7 @@ handling this plan owns: the ADRs are published and the plans are not, so every 
 links has to resolve to the repository instead of to a page.
 
 **One defect found during this research has been fixed.** Four citations in
-[plan 22](22-medication-tracking.md) were written as links to a
+[plan 22](../22-medication-tracking.md) were written as links to a
 `services/StockService.php:1457` line-suffix form, which is not a path in the tree —
 `git ls-files --error-unmatch 'services/StockService.php:204'` fails — so they rendered as
 links on GitHub and resolved to nothing. They are now plain `` `StockService.php:1472` ``
@@ -122,7 +122,7 @@ on a broken link.
 84 settings, the task documentation, and the operator reference. Piece 2 adds pages and a nav
 branch to a site piece 1 has already built.
 
-Excluded because [ADR-0020](../adr/0020-documentation-publication-boundary.md) excludes them:
+Excluded because [ADR-0020](../../adr/0020-documentation-publication-boundary.md) excludes them:
 the 25 plans, both architecture reviews, the security sweep, the MCP interface specification,
 and the 83 changelog entries.
 
@@ -143,7 +143,7 @@ repository, because neither section maps to one. The Manual is new pages plus a 
 READMEs that sit beside the code they describe.
 
 Those READMEs are copied into the tree, not moved into it. The
-[documentation conventions](../documentation.md) give a folder README the job of explaining
+[documentation conventions](../../documentation.md) give a folder README the job of explaining
 the contents and entry points of the folder it sits in; moving `db/pgsql/README.md` empties
 the directory it exists to orient a reader inside. Copying keeps the source unchanged, so the
 same relative links still resolve on GitHub.
@@ -169,9 +169,9 @@ links to it in the repository until the Manual exists.
 
 It moves into the Manual and is deleted from `docs/`. Duplication is not an option — the
 conventions make one document the authoritative home for a fact — and the inbound cost is one
-line: three files mention `usage.md`, of which [`README.md`](../../README.md) line 57 is the
+line: three files mention `usage.md`, of which [`README.md`](../../../README.md) line 57 is the
 only link, one is this plan, and one is a sentence in
-[ADR-0017](../adr/0017-doctrine-dbal-is-the-persistence-seam.md) telling the author of
+[ADR-0017](../../adr/0017-doctrine-dbal-is-the-persistence-seam.md) telling the author of
 `usage.md` not to restate a decision more warmly. That constraint carries to the Manual
 unchanged: the Manual describes behaviour, and the ADR remains the home for why.
 
@@ -355,7 +355,7 @@ link fails the pull request instead of reaching the published site.
 
 The publication boundary's alternatives — publishing everything, publishing reference only,
 two separate sites — are argued in
-[ADR-0020](../adr/0020-documentation-publication-boundary.md) and are not restated here. What
+[ADR-0020](../../adr/0020-documentation-publication-boundary.md) and are not restated here. What
 remains at this plan's level:
 
 **MkDocs on GitHub Pages through Actions.** The fallback if the advertisements on Read the
@@ -375,19 +375,19 @@ whole site behind the slowest part of it.
 
 ## Dependencies
 
-- **[ADR-0020](../adr/0020-documentation-publication-boundary.md)** is Proposed and carries
+- **[ADR-0020](../../adr/0020-documentation-publication-boundary.md)** is Proposed and carries
   four acceptance prerequisites. This plan implements it and should not be scheduled ahead of
   it.
 - **[Pull request 92](https://github.com/datagen24/victual/pull/92)** adds
   `docs/data-model.md` and the six diagrams the Development section's data model pages are.
-- **[Plan 20](20-container-infrastructure.md)** — the Manual's installation chapter documents
+- **[Plan 20](../20-container-infrastructure.md)** — the Manual's installation chapter documents
   the Nix images and the pod deployment, and pieces 2 through 5 remain open along with the
   credential split and the SIGTERM check. The chapter can be written against what has shipped
   but cannot be called complete before that work is.
-- **[Plan 19](19-rbac.md)** — the roles and permissions chapter describes wave 3a's six domain
+- **[Plan 19](../19-rbac.md)** — the roles and permissions chapter describes wave 3a's six domain
   read permissions. Piece 2, including price visibility, remains, so that chapter will need
   revising when it lands.
-- **[Plan 16](16-project-rename.md)** holds the registry and domain research and its claims
+- **[Plan 16](../16-project-rename.md)** holds the registry and domain research and its claims
   await announcement. A custom documentation domain waits on that; `victual.readthedocs.io`
   does not, so this plan is not blocked by it.
 
@@ -404,7 +404,7 @@ whole site behind the slowest part of it.
    > with two top-level sections rather than two sites.
 
    The plan above is reconciled to the second response, and the boundary it draws is recorded
-   as [ADR-0020](../adr/0020-documentation-publication-boundary.md), because publishing the
+   as [ADR-0020](../../adr/0020-documentation-publication-boundary.md), because publishing the
    ADRs constrains every ADR written afterwards. Questions 3 and 5 are affected; see below.
 
 2. **Are advertisements acceptable on the site?** Read the Docs Community is free and
@@ -415,7 +415,7 @@ whole site behind the slowest part of it.
    Pages is the alternative rather than a paid plan.
 
 3. **Does everything in `docs/` go on the site?** Answered by
-   [ADR-0020](../adr/0020-documentation-publication-boundary.md): the ADRs and the reference
+   [ADR-0020](../../adr/0020-documentation-publication-boundary.md): the ADRs and the reference
    material do; the plans, both architecture reviews, the security sweep and the MCP interface
    specification do not. The boundary is stability rather than sensitivity, and that record
    carries the reasoning and the hazard.
@@ -453,7 +453,7 @@ whole site behind the slowest part of it.
    > **Response** (maintainer, 2026-09-07): Published, generated by calling the phpDocumentor
    > container from the documentation build script.
 
-   Recorded as [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s answered
+   Recorded as [ADR-0020](../../adr/0020-documentation-publication-boundary.md)'s answered
    question 1 and implemented in the design above. Two things it does not settle stay with
    that record: whether private members remain in the output, since `phpdoc.dist.xml`
    justifies including them on the grounds that it is "not a published library API" (its
@@ -505,7 +505,7 @@ whole site behind the slowest part of it.
     installation help where to go. This is the cost of shipping the pieces in this order and
     it has to be paid on the page, not assumed away.
 15. No page in the Development section is incomprehensible without a plan. This is
-    [ADR-0020](../adr/0020-documentation-publication-boundary.md)'s fourth acceptance
+    [ADR-0020](../../adr/0020-documentation-publication-boundary.md)'s fourth acceptance
     prerequisite.
 
 ### Piece 2 — the Manual
@@ -608,7 +608,7 @@ theme's.
 
 ### Piece 1 follow-up — ADR-0020's acceptance gates, 2026-09-14
 
-[ADR-0020](../adr/0020-documentation-publication-boundary.md) carries four acceptance
+[ADR-0020](../../adr/0020-documentation-publication-boundary.md) carries four acceptance
 prerequisites, two of which this plan's build is the evidence for. Working the gates found
 that one of those two was not actually met, for a mechanical reason nobody had tested.
 
@@ -644,8 +644,8 @@ links it now covers come from there.
 change, and re-measured unchanged after merging `master` at `b5e2421`.** 308 links to the
 repository, all resolving. Reproduce with `python3 .devtools/docs/stage.py --no-api`, which
 prints the count. The second measurement was taken because `master` accepted
-[ADR-0014](../adr/0014-administering-a-user-is-a-subset-question.md) and
-[ADR-0018](../adr/0018-role-grants-and-domain-reads.md) while this branch was open, and an
+[ADR-0014](../../adr/0014-administering-a-user-is-a-subset-question.md) and
+[ADR-0018](../../adr/0018-role-grants-and-domain-reads.md) while this branch was open, and an
 acceptance edits the ADR corpus these counts are taken over; both were bookkeeping and
 added no citation, so every count below holds on either base.
 

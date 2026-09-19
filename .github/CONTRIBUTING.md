@@ -54,7 +54,7 @@ judged against here, and they are stricter than they look:
   `difftest.php` for views and `trigdifftest.php` for trigger behaviour. Those phases
   compare the two engines over the schema as it stood at the SQLite freeze; a new
   PostgreSQL-only view has no SQLite counterpart to be compared against, so say what you
-  checked it against instead. [14](../docs/plans/14-contract-and-regression-scaffolding.md)
+  checked it against instead. [14](../docs/plans/landed/14-contract-and-regression-scaffolding.md)
   piece 2's response snapshot is what replaces the comparison, and the suite is retired
   when it lands.
 - **Two further tiers, per [ADR-0025](../docs/adr/0025-three-test-tiers.md).** Application

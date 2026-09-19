@@ -3,9 +3,9 @@
 **Goal:** Home Assistant knows what is in stock, what is due and what is expiring without
 ever asking the server — so the pod can sleep for days and the household still sees
 current information.
-**Depends on:** [13](13-write-path-transactions.md), landed, which centralised the write
+**Depends on:** [13](landed/13-write-path-transactions.md), landed, which centralised the write
 entrypoints and established that side effects fire *after* commit. Pairs with
-[10](10-cold-start-statelessness.md): 18 is what makes 10's scale-to-zero survive contact
+[10](landed/10-cold-start-statelessness.md): 18 is what makes 10's scale-to-zero survive contact
 with an always-on consumer.
 **Status:** landed; see Executed. Three Home Assistant verifications remain
 ([issue 139](https://github.com/datagen24/victual/issues/139)). Exists because of [17](17-ecosystem-clients.md)'s Q2, which
@@ -90,7 +90,7 @@ it buys three properties that a delta stream does not have:
 
 Two triggers, both moments the server is provably awake and correct:
 
-- **After commit**, on the write paths [13](13-write-path-transactions.md) already
+- **After commit**, on the write paths [13](landed/13-write-path-transactions.md) already
   centralised. The label printer webhook established the precedent and the reasoning is the
   same: never inside the transaction, because a published state that was then rolled back
   is a lie that persists in a retained topic.
@@ -164,7 +164,7 @@ invalidates everything else.
 
 **No HTTP client sees anything change; this plan adds a channel rather than altering one.**
 No route, status code, header or response field moves, so
-[14](14-contract-and-regression-scaffolding.md)'s snapshot is unaffected and neither is
+[14](landed/14-contract-and-regression-scaffolding.md)'s snapshot is unaffected and neither is
 anything [17](17-ecosystem-clients.md) tracks over REST.
 
 The impact is that a *new* class of consumer appears with no authentication to Victual at
@@ -703,7 +703,7 @@ drains itself when the endpoint comes back rather than waiting for somebody to n
 
 `EditStockEntry` was the one call not inside a transaction, because that method had none.
 **Corrected in the second review round below**: it is now an eighth transactional
-entrypoint, and [13](13-write-path-transactions.md)'s Executed section records that too.
+entrypoint, and [13](landed/13-write-path-transactions.md)'s Executed section records that too.
 
 **2. A purchase point had no unique identity.** `price_paid` was identified by `product_id`
 and a timestamp truncated to the second, so two purchases of one product within one second
@@ -826,7 +826,7 @@ takes one batch per request, which its docblock now says.
 and mutates the stock row between them, so a failure part way left a booking pair whose
 halves disagreed - and adding the outbox event gave it a ninth write that has to commit with
 the rest. It is now an eighth transactional entrypoint in 13's shape, recorded in
-[13](13-write-path-transactions.md)'s Executed section as well as here, because that list is
+[13](landed/13-write-path-transactions.md)'s Executed section as well as here, because that list is
 the authority on which paths are transactional.
 
 **5. The probes were not run by anything.** Three probes guarding four silent defects sat in
@@ -949,7 +949,7 @@ Three blocking findings, fixed 2026-09-03. Two are defects in what round 3 built
 is not a defect in the code at all but in this branch's relationship to the two beside it.
 
 **1. This branch is not independently mergeable, and now says so.** Migration 0258 belongs to
-[plan 01](01-file-storage.md) and lives in PR #34; this branch carries 0257 and 0259. A
+[plan 01](landed/01-file-storage.md) and lives in PR #34; this branch carries 0257 and 0259. A
 deployment migrated through this tree alone records `MAX(migration) = 259` while never having
 run 0258, and 0258 merging afterwards does not fix what has already been decided on that
 number: the migration *runner* is not fooled — it asks per number whether a row exists, so a

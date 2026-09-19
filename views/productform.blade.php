@@ -460,8 +460,8 @@
 					enabling it (0 -> 1) is refused by the server at 400, so the checkbox can
 					only stay checked on a product that already has it, never be newly checked.
 					Weigh an opened purchased container on the stock entry instead
-					(docs/plans/28-open-container-measurement.md), or a refillable vessel on its
-					location (docs/plans/29-working-container-replenishment.md). --}}
+					(docs/plans/landed/28-open-container-measurement.md), or a refillable vessel on its
+					location (docs/plans/landed/29-working-container-replenishment.md). --}}
 					<input @if($tareAlreadyEnabled) checked @else disabled @endif class="form-check-input custom-control-input" type="checkbox" id="enable_tare_weight_handling" name="enable_tare_weight_handling" value="1">
 					<label class="form-check-label custom-control-label"
 						for="enable_tare_weight_handling">{{ $__t('Enable tare weight handling') }}
@@ -880,7 +880,7 @@
 						<i class="fa-solid fa-question-circle text-muted"
 							data-toggle="tooltip"
 							data-trigger="hover click"
-							title="{{ $__t('A product this one can be used instead of, or that can be used instead of this one - see docs/plans/31-directed-substitution.md') }}"></i>
+							title="{{ $__t('A product this one can be used instead of, or that can be used instead of this one - see docs/plans/landed/31-directed-substitution.md') }}"></i>
 					</h4>
 					<button class="btn btn-outline-dark d-md-none mt-2 float-right order-1 order-md-3"
 						type="button"

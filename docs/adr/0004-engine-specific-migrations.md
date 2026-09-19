@@ -3,7 +3,7 @@
 - **Status:** **Accepted**, following from [ADR-0002](0002-squashed-baseline.md).
 - **Decider:** datagen24 (maintainer), retrospectively — see the lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-30, retrospectively.
-- **Referenced by:** [10](../plans/10-cold-start-statelessness.md) Q6 and Q7,
+- **Referenced by:** [10](../plans/landed/10-cold-start-statelessness.md) Q6 and Q7,
   `DatabaseMigrationService::GetLatestMigrationNumber`, `DatabaseImporter`,
   `.devtools/pgsql/check-migrations.php`.
 
@@ -39,6 +39,6 @@ Three rules enforce it:
   numbers would skip a future migration of its own believing it had already run.
 - `DatabaseImporter` checks each side against the latest migration for *its own* engine.
 - Guards 1 and 2 reason about the repository; neither can answer what a running database
-  actually ran. That gap is [plan 10](../plans/10-cold-start-statelessness.md) Q7's
+  actually ran. That gap is [plan 10](../plans/landed/10-cold-start-statelessness.md) Q7's
   `dialect` column, which is deliberately diagnostic and must never become load-bearing —
   a database migrated before the column existed cannot supply it.

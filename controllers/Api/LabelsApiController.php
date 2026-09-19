@@ -98,52 +98,50 @@ class LabelsApiController extends BaseApiController
 			$key = $key === '' ? null : $key;
 			$operation = str_replace('label-op-', '', str_replace('-generic', '', $route));
 
-			$db->beginTransaction();
 			try
 			{
-				// The permission the capture needs is checked against this caller rather
-				// than assumed from the route, so a field whose catalogue entry names a
-				// grant this caller lacks refuses the capture instead of reading it.
-				$permissions = static fn (string $permission): bool => User::HasPermissions($permission);
-				$operations = new \Victual\Services\Labels\LabelOperationsService($db, $permissions, $user);
-				$keys = new \Victual\Services\Labels\IdempotencyService($db);
-
-				$fingerprint = ['route' => $route, 'args' => $args, 'body' => $body];
-				$begun = $keys->Begin($user, $operation, $key, $fingerprint);
-				if ($begun['replay'])
+				return $this->InRequestTransaction($request, function () use ($response, $args, $route, $kind, $targetId, $body, $db, $user, $key, $operation)
 				{
-					$db->commit();
-					return $this->ApiResponse($response->withStatus(200), $begun['row']['response']);
-				}
+					// The permission the capture needs is checked against this caller rather
+					// than assumed from the route, so a field whose catalogue entry names a
+					// grant this caller lacks refuses the capture instead of reading it.
+					$permissions = static fn (string $permission): bool => User::HasPermissions($permission);
+					$operations = new \Victual\Services\Labels\LabelOperationsService($db, $permissions, $user);
+					$keys = new \Victual\Services\Labels\IdempotencyService($db);
 
-				$job = match ($route)
-				{
-					'label-op-print', 'label-op-print-generic' => $operations->IssueLocation($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
-					'label-op-revised-print', 'label-op-revised-print-generic' => $operations->RevisedPrint($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
-					'label-op-reprint' => $operations->Reprint((int)$args['jobId'], isset($body['printer_id']) ? (int)$body['printer_id'] : null),
-					'label-op-promote' => $operations->PromotePreview((int)$args['artifactId'], $this->Integer($body, 'printer_id')),
-					'label-op-cancel' => $operations->Cancel((int)$args['jobId'], (string)($body['reason'] ?? 'Cancelled by an operator')),
-					default => throw new \LogicException('Unknown label operation')
-				};
+					$fingerprint = ['route' => $route, 'args' => $args, 'body' => $body];
+					$begun = $keys->Begin($user, $operation, $key, $fingerprint);
+					if ($begun['replay'])
+					{
+						return $this->ApiResponse($response->withStatus(200), $begun['row']['response']);
+					}
 
-				$payload = ['job_id' => (int)$job['id'], 'label_uid' => $job['label_uid'],
-					'operation' => $job['operation'] ?? $operation,
-					'artifact_id' => isset($job['artifact_id']) && $job['artifact_id'] !== null ? (int)$job['artifact_id'] : null,
-					'render_request_id' => isset($job['render_request_id']) && $job['render_request_id'] !== null ? (int)$job['render_request_id'] : null,
-					'state' => ($job['cancelled_at'] ?? null) !== null ? 'cancelled'
-						: (($job['artifact_id'] ?? null) === null ? 'awaiting_artifact' : 'queued')];
+					$job = match ($route)
+					{
+						'label-op-print', 'label-op-print-generic' => $operations->IssueLocation($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
+						'label-op-revised-print', 'label-op-revised-print-generic' => $operations->RevisedPrint($kind, $targetId, $this->Integer($body, 'import_epoch'), $this->Integer($body, 'printer_id'), isset($body['template_id']) ? (int)$body['template_id'] : null, isset($body['template_version_id']) ? (int)$body['template_version_id'] : null, (string)($body['locale'] ?? 'en'), (string)($body['timezone'] ?? 'UTC')),
+						'label-op-reprint' => $operations->Reprint((int)$args['jobId'], isset($body['printer_id']) ? (int)$body['printer_id'] : null),
+						'label-op-promote' => $operations->PromotePreview((int)$args['artifactId'], $this->Integer($body, 'printer_id')),
+						'label-op-cancel' => $operations->Cancel((int)$args['jobId'], (string)($body['reason'] ?? 'Cancelled by an operator')),
+						default => throw new \LogicException('Unknown label operation')
+					};
 
-				$keys->Record($user, $operation, $key, 'print_job', (int)$job['id'], $payload);
-				$db->commit();
-				return $this->ApiResponse($response->withStatus($route === 'label-op-cancel' ? 200 : 202), $payload);
+					$payload = ['job_id' => (int)$job['id'], 'label_uid' => $job['label_uid'],
+						'operation' => $job['operation'] ?? $operation,
+						'artifact_id' => isset($job['artifact_id']) && $job['artifact_id'] !== null ? (int)$job['artifact_id'] : null,
+						'render_request_id' => isset($job['render_request_id']) && $job['render_request_id'] !== null ? (int)$job['render_request_id'] : null,
+						'state' => ($job['cancelled_at'] ?? null) !== null ? 'cancelled'
+							: (($job['artifact_id'] ?? null) === null ? 'awaiting_artifact' : 'queued')];
+
+					$keys->Record($user, $operation, $key, 'print_job', (int)$job['id'], $payload);
+					return $this->ApiResponse($response->withStatus($route === 'label-op-cancel' ? 200 : 202), $payload);
+				});
 			}
 			catch (\Victual\Services\Labels\LabelValidationException $error)
 			{
-				if ($db->inTransaction()) $db->rollBack();
 				$status = in_array($error->errorCode, ['idempotency_conflict', 'idempotency_in_progress', 'already_claimed'], true) ? 409 : 422;
 				return $this->ApiResponse($response->withStatus($status), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
 			}
-			catch (\Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
 		});
 	}
 

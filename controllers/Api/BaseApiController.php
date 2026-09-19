@@ -93,6 +93,37 @@ class BaseApiController extends BaseController
 	}
 
 	/**
+	 * Runs $work in a transaction opened through DatabaseService::InTransaction(), for
+	 * handlers that prepare their own statements on the raw connection.
+	 *
+	 * Going through InTransaction() rather than PDO::beginTransaction() is what keeps such a
+	 * handler inside the application's transaction rules: it joins a transaction that is
+	 * already open instead of throwing, and anything registered with
+	 * RegisterBeforeOutermostCommit() runs before it commits. A throw rolls back and is
+	 * rethrown, so a handler that turns an exception into a 4xx response catches it outside
+	 * this call.
+	 *
+	 * Statements on the raw connection never reach LessQL's change-tracking callback, so a
+	 * request that commits and is not a read advances the changed time here. $changesData
+	 * overrides the method-based default for the one caller, the label worker, whose POST
+	 * routes include polling that is not a change to anything a person sees.
+	 *
+	 * @return mixed Whatever $work returns
+	 */
+	protected function InRequestTransaction(Request $request, callable $work, ?bool $changesData = null)
+	{
+		$database = DatabaseService::GetInstance();
+		$result = $database->InTransaction($work);
+
+		if ($changesData ?? !in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true))
+		{
+			$database->MarkDbChanged();
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Runs a controller method's body and turns whatever it throws into the right status
 	 * code, so that no controller writes its own `try` again.
 	 *

@@ -13,7 +13,7 @@
 // happens to whoever sends the first request after a deployment. That matters in two
 // places: an initContainer can run it before any pod serves traffic, and the
 // differential test suite can build a schema without standing up a web server. See
-// docs/plans/10-cold-start-statelessness.md.
+// docs/plans/landed/10-cold-start-statelessness.md.
 //
 // Concurrent runs are serialised on a PostgreSQL session level advisory lock, so two
 // pods starting together are safe. That lock lives on the connection that took it, which

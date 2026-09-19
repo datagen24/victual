@@ -492,7 +492,7 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/entry/{entryId}/measure - records a new measurement of an
-	 * already-open, single-unit stock entry (ADR-0022, docs/plans/28-open-container-measurement.md).
+	 * already-open, single-unit stock entry (ADR-0022, docs/plans/landed/28-open-container-measurement.md).
 	 * Requires the STOCK_EDIT permission (403 otherwise).
 	 * Body fields: amount and qu_id (both required, the reading and the unit it was taken
 	 * in), gross (bool, default false) and tare (required, same unit, when gross is true -
@@ -655,7 +655,7 @@ class StockApiController extends BaseApiController
 	 * as opened. Requires the STOCK_OPEN permission (403 otherwise).
 	 * Body fields: amount (required), stock_entry_id (open a specific entry) and
 	 * allow_subproduct_substitution. Optionally, a measurement object records the
-	 * container's contents as it is opened (ADR-0022, docs/plans/28-open-container-measurement.md):
+	 * container's contents as it is opened (ADR-0022, docs/plans/landed/28-open-container-measurement.md):
 	 * measurement.amount and measurement.qu_id (both required within it), measurement.gross
 	 * (bool, default false) and measurement.tare (required, same unit, when gross is true).
 	 * A measurement requires stock_entry_id (a specific entry) and amount = 1.
@@ -1021,7 +1021,7 @@ class StockApiController extends BaseApiController
 	 * (403 otherwise). Body field gross_amount is required; gross_qu_id is optional and,
 	 * when given, must equal the location's own tare_qu_id - present so a client's unit
 	 * mismatch is refused rather than silently misweighed (ADR-0022 question 5's "gross"
-	 * contract; docs/plans/29-working-container-replenishment.md).
+	 * contract; docs/plans/landed/29-working-container-replenishment.md).
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function WeighLocation(Request $request, Response $response, array $args)

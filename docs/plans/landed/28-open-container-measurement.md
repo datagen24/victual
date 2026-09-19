@@ -3,14 +3,14 @@
 **Goal:** Three sealed bags of flour and one open bag holding 1.2 kg is a state the system
 can hold. An opened unit's remaining contents are measured — by weight or by volume,
 whichever the person can actually take — without giving up counting the units themselves.
-**Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
+**Depends on:** [ADR-0022](../../adr/0022-open-containers-carry-a-measured-remainder.md),
 **Accepted** 2026-09-14. Nothing else blocks it.
 **Interacts with:** [29](29-working-container-replenishment.md), which takes the location
 half of ADR-0022 decision 4's tare where this plan takes the entry half, and shares nothing
-else; [07](07-nested-products.md), which rewrites the same aggregation in
+else; [07](../retired/07-nested-products.md), which rewrites the same aggregation in
 `stock_current`, and with the container decision recorded below that came out of the same
 review. Scheduled into wave 4 beside 07 for that reason.
-**Consumed by:** nothing yet. [22](22-medication-tracking.md) is the obvious later
+**Consumed by:** nothing yet. [22](../22-medication-tracking.md) is the obvious later
 customer — a part-used bottle is the same shape of problem — but that plan is unscheduled
 and this one does not wait for it.
 **Status:** landed in wave 4; see [Executed](#executed).
@@ -137,7 +137,7 @@ same lines.
 ### API
 
 Additive fields on `/stock/entry` and on the stock reads, permitted under
-[ADR-0005](../adr/0005-wire-contract-is-the-invariant.md). **This wants to land before
+[ADR-0005](../../adr/0005-wire-contract-is-the-invariant.md). **This wants to land before
 [14](14-contract-and-regression-scaffolding.md) piece 2**
 ([issue 83](https://github.com/datagen24/victual/issues/83)) freezes the response contract
 in wave 5; afterwards the same change is an amendment to a frozen contract rather than an
@@ -193,7 +193,7 @@ per-unit and userfield-bearing entries and is the right place to add the third e
 
 ### Migration
 
-One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../migrations/RESERVATIONS.md).
+One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md).
 The SQLite line is frozen at 0265, so this is a lone `.pgsql.sql` file. Per the
 lowest-free-slot rule the table has now applied nine times, the number moves down if a
 plan holding a lower reservation has still not written a file when this one does.
@@ -250,7 +250,7 @@ Executed section records that distinction being missed.
 
    > **Response:** Review recommendation, 2026-09-09: record a reversible measurement with
    > before/after state rather than infer consumption from the difference or update silently.
-   > See [ADR-0022's responses](../adr/0022-open-containers-carry-a-measured-remainder.md#open-questions).
+   > See [ADR-0022's responses](../../adr/0022-open-containers-carry-a-measured-remainder.md#open-questions).
    > The ledger representation, permission and interaction with existing consumption bookings
    > remain to be designed; this is not a maintainer decision.
    >

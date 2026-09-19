@@ -2,9 +2,9 @@
 
 **Goal:** PostgreSQL is the only engine a Victual installation can be configured for, and
 SQLite is an input format that committed fixtures hold `bin/victual-db-import` to.
-**Depends on:** [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md), accepted
+**Depends on:** [ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md), accepted
 2026-08-31. This plan is the retirement work that record's Consequences describe and that
-the wave 2.5 row of the [work order](README.md) schedules.
+the wave 2.5 row of the [work order](../README.md) schedules.
 **Status:** landed 2026-09-05. Verification results, and the limits of what was verified,
 are in **Executed**.
 
@@ -14,7 +14,7 @@ are in **Executed**.
 that names no driver opens a file. Every view exists on both engines and is proved
 equivalent by the differential harness in `.devtools/pgsql/`. Every migration from 0256 on
 is portable or a matched pair under
-[ADR-0004](../adr/0004-engine-specific-migrations.md). The deployment target has been
+[ADR-0004](../../adr/0004-engine-specific-migrations.md). The deployment target has been
 PostgreSQL since the fork began.
 
 ADR-0008 decided that SQLite stops being a runtime engine without stating how the work is
@@ -120,7 +120,7 @@ not a change to make for tidiness alongside the retirement. It belongs to
 with [10](10-cold-start-statelessness.md) and are unchanged.
 
 The dialect seam itself outlives all three, and its future is a separate decision.
-[ADR-0017](../adr/0017-doctrine-dbal-is-the-persistence-seam.md) (Proposed) argues that
+[ADR-0017](../../adr/0017-doctrine-dbal-is-the-persistence-seam.md) (Proposed) argues that
 `DatabaseDialect` stays as a boundary and becomes Doctrine DBAL, making engine choice a
 structural affordance for a successor rather than a supported feature. That record requires
 a decision before [14](14-contract-and-regression-scaffolding.md) piece 2 removes the
@@ -248,10 +248,10 @@ phase.
 | # | Defect | Where |
 |---|---|---|
 | 1 | Refusals were printed and the process exited **0**. `exit('...')` with a string argument prints the string and exits zero, so a missing source file, an invalid `config.php`, and a target that was itself SQLite each reported success to a caller chaining commands with `&&`. | `bin/victual-db-import` |
-| 2 | `data/config.php` was required unconditionally, so the command failed on a missing file when run on a deployment configured entirely through `VICTUAL_*` environment variables, which is the deployment [`deploy/`](../../deploy/README.md) describes. | `bin/victual-db-import` |
+| 2 | `data/config.php` was required unconditionally, so the command failed on a missing file when run on a deployment configured entirely through `VICTUAL_*` environment variables, which is the deployment [`deploy/`](../../../deploy/README.md) describes. | `bin/victual-db-import` |
 | 3 | `getSqliteLocaltime()` opened `new PDO('sqlite::memory:')` without checking for the driver, so `GET /api/system/time` raised a fatal "could not find driver" on any image without `pdo_sqlite` — every serving image since [10](10-cold-start-statelessness.md). | `services/ApplicationService.php` |
 
-Defect 3 is the same defect [20](20-container-infrastructure.md)'s verification found in
+Defect 3 is the same defect [20](../20-container-infrastructure.md)'s verification found in
 `GetSqliteVersion()` and fixed in the method immediately above it. That verification walked
 the pages and endpoints a browser reaches, and no page calls `GET /api/system/time`.
 
@@ -278,6 +278,6 @@ therefore around 60 KB rather than the 1.2 MB the file sizes suggest.
 ### Unchanged
 
 The `ENGINE_EXCLUSIVE_TABLES` list in `migratedifftest.php` and the seventeen porting
-hazards in [db/pgsql/README.md](../../db/pgsql/README.md) are unchanged. ADR-0008 states
+hazards in [db/pgsql/README.md](../../../db/pgsql/README.md) are unchanged. ADR-0008 states
 that hazards 15 to 17 die with the retirement; they do not, because the harness that depends
 on them outlives it. They are removed with 14 piece 2.

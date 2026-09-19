@@ -26,35 +26,28 @@ class LabelPrintersApiController extends BaseApiController
                 if (in_array($action, ['label-admin-printer-create','label-admin-printer-update','label-admin-printer-move'], true)) {
                     (new PrinterConfigurationService($db))->Validate($body);
                 }
-                $db->beginTransaction();
-                $credentials = new LabelWorkerCredentialService($db);
-                $configuration = new PrinterConfigurationService($db);
-                $result = match($action) {
-                    'label-admin-printer-create' => ['id' => $configuration->Save($body)],
-                    'label-admin-printer-update' => ['id' => $configuration->Save($body, (int)$args['printerId'])],
-                    'label-admin-printer-move' => ['id' => $configuration->Save($body, (int)$args['printerId'], true)],
-                    'label-admin-printer-delete' => $this->DeletePrinter($db, (int)$args['printerId']),
-                    'label-admin-worker-create' => $this->SaveWorker($db, $body, null),
-                    'label-admin-worker-update' => $this->SaveWorker($db, $body, (int)$args['workerId']),
-                    'label-admin-pairing' => $credentials->PairingMaterial((int)$args['workerId'], VICTUAL_USER_ID),
-                    'label-admin-issue' => $credentials->IssueDeclared((int)$args['workerId'], VICTUAL_USER_ID),
-                    'label-admin-revoke' => $this->Revoke($credentials, (int)$args['workerId']),
-                    'label-admin-jobs' => (new LabelPrintJobService($db))->Monitor(),
-                    'label-admin-authorize' => (new LabelPrintJobService($db))->AuthorizeAnotherAttempt((int)$args['jobId'], $this->Id($body, 'attempt_id')),
-                    'label-admin-schema' => $this->Schema($db, $args),
-                    default => throw new \LogicException('Unknown label administration route')
-                };
-                $db->commit();
-                return $this->ApiResponse($response, $result);
+                return $this->InRequestTransaction($request, function () use ($db, $response, $action, $args, $body) {
+                    $credentials = new LabelWorkerCredentialService($db);
+                    $configuration = new PrinterConfigurationService($db);
+                    $result = match($action) {
+                        'label-admin-printer-create' => ['id' => $configuration->Save($body)],
+                        'label-admin-printer-update' => ['id' => $configuration->Save($body, (int)$args['printerId'])],
+                        'label-admin-printer-move' => ['id' => $configuration->Save($body, (int)$args['printerId'], true)],
+                        'label-admin-printer-delete' => $this->DeletePrinter($db, (int)$args['printerId']),
+                        'label-admin-worker-create' => $this->SaveWorker($db, $body, null),
+                        'label-admin-worker-update' => $this->SaveWorker($db, $body, (int)$args['workerId']),
+                        'label-admin-pairing' => $credentials->PairingMaterial((int)$args['workerId'], VICTUAL_USER_ID),
+                        'label-admin-issue' => $credentials->IssueDeclared((int)$args['workerId'], VICTUAL_USER_ID),
+                        'label-admin-revoke' => $this->Revoke($credentials, (int)$args['workerId']),
+                        'label-admin-jobs' => (new LabelPrintJobService($db))->Monitor(),
+                        'label-admin-authorize' => (new LabelPrintJobService($db))->AuthorizeAnotherAttempt((int)$args['jobId'], $this->Id($body, 'attempt_id')),
+                        'label-admin-schema' => $this->Schema($db, $args),
+                        default => throw new \LogicException('Unknown label administration route')
+                    };
+                    return $this->ApiResponse($response, $result);
+                });
             } catch (LabelValidationException $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
                 return $this->ApiResponse($response->withStatus(422), ['field' => $error->field,'code' => $error->errorCode,'error_message' => $error->getMessage()]);
-            } catch (\Throwable $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }throw $error;
             }
         });
     }

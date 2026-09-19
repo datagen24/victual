@@ -28,9 +28,9 @@ goals.
 
 ## Current state
 
-**First release: [0.1.0-MVP](docs/releases/0.1.0-MVP.md), 2026-09-19**, tagged `v0.1.0-MVP`.
-The version line stays at 0.x while the release soaks in the household it was built for; 1.0
-follows that, not a date. There is no release schedule, and a tag is placed only on a commit
+**Latest release: [0.1.1-MVP](docs/releases/0.1.1-MVP.md), 2026-09-19**, tagged `v0.1.1-MVP`;
+the first was [0.1.0-MVP](docs/releases/0.1.0-MVP.md) the same day. The version line stays
+at 0.x while the release soaks in the household it was built for; 1.0 follows that, not a date. There is no release schedule, and a tag is placed only on a commit
 that was verified working. As of the release, the Nix-built application serves under podman
 and on a kind cluster, a location label has been printed and scanned back through the
 fork's own label subsystem, and a simulated household year has run against the fork and

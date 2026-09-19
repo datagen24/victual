@@ -4,10 +4,10 @@
 regimen drawing on a shared physical supply — rather than as groceries that happen never to
 appear in a recipe. Scheduling, adherence, days-of-supply, lot traceability and cold chain,
 built on the stock subsystem rather than beside it.
-**Depends on:** [23](23-storage-classes.md) (the storage vocabulary, extracted from this plan
-per Q1) and [14](14-contract-and-regression-scaffolding.md) piece 2 (this surface is invisible
+**Depends on:** [23](landed/23-storage-classes.md) (the storage vocabulary, extracted from this plan
+per Q1) and [14](landed/14-contract-and-regression-scaffolding.md) piece 2 (this surface is invisible
 to the parity suite and contract tests are its only guard). Builds on
-[12](12-frontend-shared-core.md), landed. **Not** blocked on [19](19-rbac.md) — Q5 decided
+[12](landed/12-frontend-shared-core.md), landed. **Not** blocked on [19](19-rbac.md) — Q5 decided
 this ships its own narrow visibility enforcement and becomes a client of 19 later.
 **Governed by:** [ADR-0015](../adr/0015-medication-records-never-advises.md) (scope boundary)
 and [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md) (where expansion lives),
@@ -42,7 +42,7 @@ pair, so the audit trail and its reversal already exist.
 **What does not.** No person dimension — `users` requires `password NOT NULL`, so a child or a
 pet cannot be represented without minting a credentialed account. No lot number: `stock` has
 `note`, untyped and unindexed, and recalls are issued by lot. No storage vocabulary beyond a
-freezer boolean, which is [23](23-storage-classes.md)'s subject. No schedule that survives
+freezer boolean, which is [23](landed/23-storage-classes.md)'s subject. No schedule that survives
 contact with real dosing, and no adherence record.
 
 **Chores are the near miss.** `chores` already has `period_type`, `period_interval`,
@@ -56,7 +56,7 @@ This plan reads chores as a design source and does not extend it.
 ## Proposed change
 
 Seven pieces, each shippable alone. Pieces 1–2 are useful with no scheduler at all: together
-with [23](23-storage-classes.md) they give cold-chain-aware inventory with recall
+with [23](landed/23-storage-classes.md) they give cold-chain-aware inventory with recall
 traceability, which is most of the value for the smallest fraction of the work.
 
 ### Piece 1 — Medication master data
@@ -67,7 +67,7 @@ and nothing in the wire contract moves.
 
 Columns: form (tablet / capsule / inhaler / vial / pen / drops / patch / suspension),
 `strength_amount` + `strength_qu_id` (50 mg per tablet), route, `splittable`,
-`min_dose_increment`, `required_storage_class_id` (FK into [23](23-storage-classes.md)),
+`min_dose_increment`, `required_storage_class_id` (FK into [23](landed/23-storage-classes.md)),
 `requires_reconstitution`, `days_after_reconstitution`, and the prescription block —
 `is_prescription`, prescriber, pharmacy, `rx_number`, `refills_remaining`, `rx_expires_on`.
 
@@ -228,7 +228,7 @@ different direction.
 
 Consumption follows the log: recording a `taken` calls `StockService::ConsumeProduct` and
 stores the returned transaction id, inheriting FEFO, the correlated bookings and the
-transactional write path [13](13-write-path-transactions.md) landed. Correction is
+transactional write path [13](landed/13-write-path-transactions.md) landed. Correction is
 undo-and-rerecord on the `stock_log` precedent — rows are never deleted.
 
 ### Piece 6 — Supply and refills
@@ -240,7 +240,7 @@ does not allocate stock to subjects, and the UI must not imply it does.
 Refills surface in the medication module, keyed on `refill_lead_days`. They deliberately do
 **not** flow into the shopping list: `min_stock_amount` is a static number where
 days-of-supply is derived, and a refill is a pharmacy call rather than a grocery item.
-Adjacent to [03](03-category-min-stock.md) but not built on it.
+Adjacent to [03](landed/03-category-min-stock.md) but not built on it.
 
 ### Piece 7 — Labels and scanning
 
@@ -305,7 +305,7 @@ Collected because most of them are only visible from inside the existing code.
   medication data will synthesise advice whether or not a tool offers it.
 - **The parity suite cannot see this.** Fork-only surface with no upstream counterpart, so
   `.devtools/parity/` will never exercise it and contract tests are the only guard —
-  [14](14-contract-and-regression-scaffolding.md) piece 2.
+  [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
 - **Migration numbering.** Two files, claiming **0288** (medication master data and subjects)
@@ -323,17 +323,17 @@ Collected because most of them are only visible from inside the existing code.
   free slot instead, then 0283–0284 later the same day when
   [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19 piece 2
   was written as `0282.pgsql.php` and took that slot with a file behind it, and finally
-  **0284–0285** on 2026-09-16 when [plan 32](32-label-kinds.md)'s own migration, written on its
+  **0284–0285** on 2026-09-16 when [plan 32](landed/32-label-kinds.md)'s own migration, written on its
   branch at 0285, was refused by CI over exactly this hole and renumbered down to 0283 — the
   same rule applied once more, this time against a file rather than a scheduled plan, with rows
   added to [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0274
-  belongs to [23](23-storage-classes.md), which lands first. **These numbers have moved
+  belongs to [23](landed/23-storage-classes.md), which lands first. **These numbers have moved
   thirteen times** — claimed as 0261–0262 until `master` landed 0261, then 0262–0264 until wave
   2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266, then 0268–0270 to make
-  room for 0267, then 0269–0271 to make room for wave 3b's [03](03-category-min-stock.md), then
+  room for 0267, then 0269–0271 to make room for wave 3b's [03](landed/03-category-min-stock.md), then
   0272–0273 to make room for wave 3b's [25](25-label-infrastructure.md), then 0273–0275 for
-  [27](27-label-templates-and-rendering.md), then 0275–0276 for
-  [08](08-nested-locations.md), then 0279–0280 for issue 148's fix, then 0280–0281 for
+  [27](landed/27-label-templates-and-rendering.md), then 0275–0276 for
+  [08](landed/08-nested-locations.md), then 0279–0280 for issue 148's fix, then 0280–0281 for
   issue 130, then 0282–0283 for plan 19 piece 2's collision with it, then 0283–0284 for
   that plan's own written follow-up, and now 0284–0285 for plan 32's own written migration — so
   re-read that table at every resync rather than trusting a number this plan claimed a week
@@ -363,7 +363,7 @@ Collected because most of them are only visible from inside the existing code.
 
 1. **Should the storage-class work be its own plan?**
 
-   > **Response:** Yes — extracted as [23](23-storage-classes.md). It changes a column
+   > **Response:** Yes — extracted as [23](landed/23-storage-classes.md). It changes a column
    > every `/objects/locations` client can see for the sake of a wine cooler and a
    > cheese cave as much as a medication fridge, and a schema change justified only
    > inside a medication plan is one nobody reading `locations` would think to open.
@@ -387,7 +387,7 @@ Collected because most of them are only visible from inside the existing code.
    `stock_id` belonging to a medication product lacks an attribute row — belt and braces,
    because the failure is silent and safety-relevant.*
 
-   **Still open, and now with one constraint.** [23](23-storage-classes.md) Q2 asked the same
+   **Still open, and now with one constraint.** [23](landed/23-storage-classes.md) Q2 asked the same
    trigger-versus-application question about deriving `is_freezer` and was answered
    *application*, overturning its own lean — because its trigger case was
    `bin/victual-db-import`, and an upstream grocy database carries no storage class for a
@@ -452,7 +452,7 @@ Collected because most of them are only visible from inside the existing code.
 7. **What is the storage class of a location used at two set points over the year?** The wine
    cooler again. One class per location and a second location for the second use, or a class
    with a range wide enough for both? *Lean: two locations. Honest, and costs nothing.* Belongs
-   to [23](23-storage-classes.md) but is recorded here because 23 was extracted from this plan
+   to [23](landed/23-storage-classes.md) but is recorded here because 23 was extracted from this plan
    and the question originated with the medication fridge.
 
 8. **Does an excursion quarantine automatically, or only flag?** Automatic quarantine of every
@@ -471,7 +471,7 @@ Collected because most of them are only visible from inside the existing code.
 ## Effort
 
 Large, and genuinely so — seven pieces, two migration pairs, a new service, a new UI section
-and a new permission family, on top of [23](23-storage-classes.md). But the pieces are
+and a new permission family, on top of [23](landed/23-storage-classes.md). But the pieces are
 separable and the first two are independently useful: with 23, medication master data and lot
 attributes give cold-chain-aware inventory with recall traceability and no scheduler at all.
 Regimens and administrations are the second half and the larger one.

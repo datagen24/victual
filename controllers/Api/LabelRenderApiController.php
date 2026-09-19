@@ -35,38 +35,32 @@ class LabelRenderApiController extends BaseApiController
             }
 
             try {
-                $db->beginTransaction();
-                $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
-                $target = match ($route) {
-                    'labels-artifact-bytes' => (int)$args['artifactId'],
-                    default => null,
-                };
-                $authorization->Authorize($route, $worker, $target);
+                // A claim is the renderer polling; only a request's outcome is a change.
+                $changesData = $route !== 'labels-render-claim';
+                return $this->InRequestTransaction($request, function () use ($db, $response, $route, $args, $body, $worker) {
+                    $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
+                    $target = match ($route) {
+                        'labels-artifact-bytes' => (int)$args['artifactId'],
+                        default => null,
+                    };
+                    $authorization->Authorize($route, $worker, $target);
 
-                $requests = new RenderRequestService($db);
-                $result = match ($route) {
-                    'labels-render-claim' => $requests->Claim() ?? ['render_request_id' => null],
-                    'labels-render-result' => $this->Result($db, (int)$args['requestId'], $body),
-                    'labels-render-invalid' => $requests->RecordInvalid((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['code'] ?? 'UNSPECIFIED'), $body['element'] ?? null, (string)($body['detail'] ?? '')),
-                    'labels-render-failed' => $requests->RecordFailure((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['detail'] ?? '')),
-                    default => throw new \LogicException('Unknown render route'),
-                };
-                $db->commit();
+                    $requests = new RenderRequestService($db);
+                    $result = match ($route) {
+                        'labels-render-claim' => $requests->Claim() ?? ['render_request_id' => null],
+                        'labels-render-result' => $this->Result($db, (int)$args['requestId'], $body),
+                        'labels-render-invalid' => $requests->RecordInvalid((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['code'] ?? 'UNSPECIFIED'), $body['element'] ?? null, (string)($body['detail'] ?? '')),
+                        'labels-render-failed' => $requests->RecordFailure((int)$args['requestId'], (string)($body['generation_token'] ?? ''), (string)($body['detail'] ?? '')),
+                        default => throw new \LogicException('Unknown render route'),
+                    };
 
-                if ($route === 'labels-artifact-bytes' || $route === 'labels-asset-bytes') {
-                    return $result;
-                }
-                return $this->ApiResponse($response, $result);
+                    if ($route === 'labels-artifact-bytes' || $route === 'labels-asset-bytes') {
+                        return $result;
+                    }
+                    return $this->ApiResponse($response, $result);
+                }, $changesData);
             } catch (LabelValidationException $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
                 return $this->ApiResponse($response->withStatus(422), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
-            } catch (\Throwable $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
-                throw $error;
             }
         });
     }
@@ -86,31 +80,30 @@ class LabelRenderApiController extends BaseApiController
         $worker = (int)$request->getAttribute('label_worker_id');
 
         try {
-            $db->beginTransaction();
-            $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
+            [$bytes, $type] = $this->InRequestTransaction($request, function () use ($db, $route, $args, $worker) {
+                $authorization = new \Victual\Services\Labels\LabelWorkerAuthorization($db);
 
-            if ($route === 'labels-artifact-bytes') {
-                $authorization->Authorize($route, $worker, (int)$args['artifactId']);
-                $bytes = (new ArtifactService($db))->Bytes((int)$args['artifactId']);
-                $type = ArtifactService::MIME_TYPE;
-            } else {
-                $authorization->Authorize($route, $worker, null);
-                $assets = new LabelAssetService($db);
-                $bytes = $assets->Bytes((int)$args['assetId']);
-                if ($bytes === null) {
-                    $db->rollBack();
-                    return $this->ApiResponse($response->withStatus(404), ['field' => 'asset_id', 'code' => 'not_found', 'error_message' => 'No such asset']);
+                if ($route === 'labels-artifact-bytes') {
+                    $authorization->Authorize($route, $worker, (int)$args['artifactId']);
+                    $bytes = (new ArtifactService($db))->Bytes((int)$args['artifactId']);
+                    $type = ArtifactService::MIME_TYPE;
+                } else {
+                    $authorization->Authorize($route, $worker, null);
+                    $bytes = (new LabelAssetService($db))->Bytes((int)$args['assetId']);
+                    $type = $bytes === null ? null
+                        : (string)$db->query('SELECT mime_type FROM label_assets WHERE id=' . (int)$args['assetId'])->fetchColumn();
                 }
-                $type = (string)$db->query('SELECT mime_type FROM label_assets WHERE id=' . (int)$args['assetId'])->fetchColumn();
+
+                return [$bytes, $type];
+            });
+
+            if ($bytes === null) {
+                return $this->ApiResponse($response->withStatus(404), ['field' => 'asset_id', 'code' => 'not_found', 'error_message' => 'No such asset']);
             }
-            $db->commit();
 
             $response->getBody()->write($bytes);
             return $response->withHeader('Content-Type', $type)->withHeader('Cache-Control', 'no-store');
         } catch (LabelValidationException $error) {
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
             return $this->ApiResponse($response->withStatus(422), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
         }
     }

@@ -3,7 +3,7 @@
 **Goal:** Clear the accumulated small debt in one deliberate pass, and put everything that
 breaks compatibility onto one explicit, batched list instead of leaking it into feature
 plans one item at a time.
-**Depends on:** [11](11-api-error-handling.md) for the auth middleware ordering (do the
+**Depends on:** [11](../11-api-error-handling.md) for the auth middleware ordering (do the
 ordering fix there, the refactor here);
 [14](14-contract-and-regression-scaffolding.md) for anything verified by result-set diff.
 **Status:** Landed 2026-09-17, [issue 132](https://github.com/datagen24/victual/issues/132).
@@ -12,7 +12,7 @@ in the wave 0.5 hotfix; see its Executed note. B3 declined (Q5), B4 not applicab
 resolved the PHP floor downward). Two items shipped as documented partial residuals
 rather than complete — see C8 and C10's own Executed notes below.
 
-> **Read [19](19-rbac.md) before starting C1** — as a consistency check, not as a blocker.
+> **Read [19](../19-rbac.md) before starting C1** — as a consistency check, not as a blocker.
 > It landed as a plan on 2026-08-30, and the sweep's permission findings that were parked
 > against it — S5, S6, S27 and the `userpictures` residual — came back to wave 2 once it
 > was read against the code: each needs the subset-of-caller *rule*, which
@@ -31,7 +31,7 @@ defer forever. They also share a property that makes batching them the right cal
 half of them are **breaking**, and breaking changes want to happen together, once, with a
 changelog entry, rather than dribbling out attached to unrelated features.
 
-The review response to [05](05-store-shopping-lists.md) Q4 already established this for
+The review response to [05](../05-store-shopping-lists.md) Q4 already established this for
 the `shopping_locations` → `stores` rename: park it on an explicit "breaking changes,
 batched" list for the fork rather than in any feature plan. This is that list.
 
@@ -76,7 +76,7 @@ HTTP status — and `GetParsedAndFilteredRequestBody` already throws a raw
 |---|---|---|
 | B1 | **Done (wave 2)** — remove the LDAP auth backend (`LdapAuthMiddleware`, six `LDAP_*` settings) | Anyone using `AUTH_CLASS=…LdapAuthMiddleware` |
 | B2 | Session cookie hardening: `HttpOnly`, `SameSite`, expiry | Plain-HTTP access if `Secure` is set; embedded/iframe use if `SameSite=Strict`; "stays logged in forever" if expiry is added |
-| B3 | `shopping_locations` → `stores` rename (parked from [05](05-store-shopping-lists.md) Q4) | An `ExposedEntity` name, a table, ~250 references across 63 files, the iOS app and the Home Assistant integration |
+| B3 | `shopping_locations` → `stores` rename (parked from [05](../05-store-shopping-lists.md) Q4) | An `ExposedEntity` name, a table, ~250 references across 63 files, the iOS app and the Home Assistant integration |
 | B4 | PHP version floor, if C7 resolves upward rather than downward | Anyone on 8.4 |
 
 **B1's context.** Defect 8 fixed an LDAP filter injection in this middleware — by
@@ -84,7 +84,7 @@ inspection only, because no `ldap` extension was available in the fixing environ
 is the argument for removal rather than maintenance: a security-relevant code path that
 cannot be exercised is a liability, and `ReverseProxyAuthMiddleware` plus an OAuth proxy
 at the ingress is both the deployment-appropriate answer and the direction the IdP
-future-state note in [02](02-mcp-endpoint.md) records.
+future-state note in [02](../02-mcp-endpoint.md) records.
 
 **B2's context.** The cookie is set by a bare `setcookie()` outside PSR-7
 (`BaseAuthMiddleware::SetSessionCookie`), with `PHP_INT_MAX` as the expiry and no flags at
@@ -112,7 +112,7 @@ middlewares. `ProcessLogin` moves to whichever authenticator can actually proces
 so the three `throw`-stubs disappear rather than being documented.
 
 This is the "do it opportunistically when something touches auth" item from the review.
-[02 MCP](02-mcp-endpoint.md) is the plan most likely to touch auth (a new API key type,
+[02 MCP](../02-mcp-endpoint.md) is the plan most likely to touch auth (a new API key type,
 possibly a new authenticator); if 02 starts before this lands, do this first.
 
 > **Executed, 2026-09-04, in wave 2.** The three named symptoms are gone and so is the
@@ -357,7 +357,7 @@ write-up; recorded together here for the same reason.
 
 **C11.** `update.sh` and `.devtools/create_release_package.bat` are deleted. Closes
 **sweep S13**. The two places that pointed at this plan for the deletion question -
-[16](16-project-rename.md)'s "kept verbatim... a deletion question, which is 15's
+[16](../16-project-rename.md)'s "kept verbatim... a deletion question, which is 15's
 business" checklist item and the architecture rigor review's H3 row - are both updated to
 say so rather than left describing a file that no longer exists.
 
@@ -409,7 +409,7 @@ blocklist would have made this a two-part change.
 `Secure` and the expiry each need a decision — Q2, Q3. Move the call inside PSR-7 while
 in there, so the response carries the header rather than PHP's output layer emitting it.
 
-> **Executed, 2026-08-29.** Pulled forward by the [security sweep](../security-sweep.md)
+> **Executed, 2026-08-29.** Pulled forward by the [security sweep](../../security-sweep.md)
 > as S3, because it is what turns that sweep's two stored-XSS findings from "script runs"
 > into "session stolen". Q2 and Q3's recorded answers are what shipped: `HttpOnly` and
 > `SameSite=Lax` always, `Secure` when the request arrived over HTTPS
@@ -460,7 +460,7 @@ sibling or loses its meaning. The breaking table below *is* the client-impact li
 rest, and B3 is the largest single client break available anywhere on the roadmap: it
 changes response *fields* on `stock`, `stock_log` and `shopping_list`, not just a path,
 which is why both 05-Q4 and 15-Q5 declined it and why
-[the MCP spec](../mcp-interface-spec.md) now uses `shopping_location_id` rather than
+[the MCP spec](../../mcp-interface-spec.md) now uses `shopping_location_id` rather than
 minting a second name for it.
 
 **The breaking items, explicitly:**
@@ -518,13 +518,13 @@ worthless across a batch this heterogeneous.
 
 **Last of the hardening plans, but not "eventually".** Two items have earlier triggers:
 
-- **C1 (auth refactor) before [02 MCP](02-mcp-endpoint.md)** if 02 adds an authenticator
+- **C1 (auth refactor) before [02 MCP](../02-mcp-endpoint.md)** if 02 adds an authenticator
   or a key type, which it plans to. Refactoring auth with a new backend already in it is
   strictly harder.
 - **C7 (PHP pin) whenever the runtime image is next rebuilt**, which
   [10](10-cold-start-statelessness.md) will do. Cheap to fold in there.
 
-**After [11](11-api-error-handling.md)** for the auth work specifically: 11 moves
+**After [11](../11-api-error-handling.md)** for the auth work specifically: 11 moves
 `JsonMiddleware`/`CorsMiddleware` to app level relative to the auth middleware, which is a
 three-line change in `app.php` and `routes.php`. Doing that ordering fix inside this
 plan's refactor would entangle a behaviour change with a structural one. Small fix there,
@@ -538,7 +538,7 @@ both are verified by comparing result sets, and 14 is what makes that a command 
 than an afternoon.
 
 **Against the feature roadmap: blocks nothing, de-risks 02.** B3 interacts with
-[05 store shopping lists](05-store-shopping-lists.md), which is the plan that made the
+[05 store shopping lists](../05-store-shopping-lists.md), which is the plan that made the
 rename tempting; 05 should ship using the existing name and this list should decide the
 rename separately, exactly as the response to 05's Q4 concluded.
 
@@ -598,7 +598,7 @@ rename separately, exactly as the response to 05's Q4 concluded.
 5. **Is the `shopping_locations` → `stores` rename worth doing at all?** ~250 references
    across 63 files, an `ExposedEntity` name, a column name on four tables and several
    views, and a break for the two known external consumers. Against: "shopping location"
-   genuinely is a confusing name next to "location", and [05](05-store-shopping-lists.md)
+   genuinely is a confusing name next to "location", and [05](../05-store-shopping-lists.md)
    makes it more load-bearing. The compatibility-view option (rename the table, add a
    `shopping_locations` view over it) is a real middle path and would keep the API
    additive, at the cost of two names in the schema permanently. I lean to the middle path

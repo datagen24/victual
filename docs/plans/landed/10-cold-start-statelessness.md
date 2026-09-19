@@ -6,7 +6,7 @@ gamble.
 **Depends on:** nothing. Pairs with [01 file storage](01-file-storage.md), which removes
 the other half of the writable data directory.
 **Status:** **landed in the codebase** (2026-09-02), except Q7's `dialect` column, which
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)'s acceptance made unnecessary
+[ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)'s acceptance made unnecessary
 before it was built. See [Executed](#executed) for what landed, for the two defects the
 verification found that the plan did not predict, and for the one check this environment
 could not run. Everything from here down is the plan as written and reviewed, kept
@@ -200,7 +200,7 @@ plainly because they are visible to clients:
   an existing deployment, and it should be in the changelog rather than discovered.
 
 **Client impact: no field changes, two behavioural ones, and both are above.** Neither
-tracked client in [17](17-ecosystem-clients.md) follows the cold-start redirect or relies
+tracked client in [17](../17-ecosystem-clients.md) follows the cold-start redirect or relies
 on `GET /` to migrate — they authenticate to `/api/` and would have failed against an
 unmigrated database anyway. The exposure is deployment scripts rather than clients, which
 is the distinction 16 got wrong in the other direction: 16's premise was true of
@@ -255,7 +255,7 @@ this one first — 01's importer is easier to reason about when the cold-start p
 longer rewriting requests.
 
 Against the other hardening plans it is independent: it touches `app.php`, the migration
-service and `PrerequisiteChecker`, none of which [11](11-api-error-handling.md),
+service and `PrerequisiteChecker`, none of which [11](../11-api-error-handling.md),
 [12](12-frontend-shared-core.md), [13](13-write-path-transactions.md) or
 [14](14-contract-and-regression-scaffolding.md) go near. It can be done in parallel with
 any of them — with the two seams noted below.
@@ -371,7 +371,7 @@ resolves, or the docblock is reworded first — 15-C12 carries it as the cheaper
    > **What the failure looks like:** HTTP 503 with a plain-text body naming the
    > database's number, the code's number, `MIGRATE_ON_ROOT_REQUEST` and
    > `bin/victual-migrate` (per Q4's refinement). 503 rather than 500 because the
-   > condition is transient and operational, and it is the one pre-[11](11-api-error-handling.md)
+   > condition is transient and operational, and it is the one pre-[11](../11-api-error-handling.md)
    > status decision that 11 should inherit rather than revisit.
 7. **Should the `migrations` table record which dialect applied each migration?**
    Today it stores the number and a timestamp, and nothing else. The number is the
@@ -422,7 +422,7 @@ its warmer, the lock, the redirect and the boot check, the prerequisite split, a
 image. Measured against the working copy at `1036a52` (this plan's branch, off
 `5be7a58`), on PHP 8.4.19 and PostgreSQL 16.
 
-**[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) was accepted while this was
+**[ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md) was accepted while this was
 in flight, and it shortened the plan rather than changing it.** The plan text above is
 left as written; each item it shrank or dropped is named below with 0008 as the reason.
 The retirement *work* is not scheduled, so SQLite still runs here — the differential
@@ -459,7 +459,7 @@ suite, `run-app`, demo mode — and nothing below breaks it.
   is recorded as moot rather than answered.
 
   **The lock requires a direct connection or a session-mode pool entry**, which
-  [ADR-0009](../adr/0009-database-as-the-logic-layer.md)'s finding F1 asked this plan to
+  [ADR-0009](../../adr/0009-database-as-the-logic-layer.md)'s finding F1 asked this plan to
   say. A session-scoped advisory lock lives on a backend, so a transaction-mode pooler can
   hand the unlock to a different one and leak the lock permanently. It is stated in
   `PostgresDialect::WithMigrationLock()`'s docblock and in `bin/victual-migrate`'s header
@@ -531,7 +531,7 @@ suite, `run-app`, demo mode — and nothing below breaks it.
 "Unnecessary" — the column exists to tell two engines' identically numbered rows apart,
 and after retirement there is only one engine. The migration number `0257` is released
 rather than consumed. The gap the column would have closed is recorded in
-[ADR-0004](../adr/0004-engine-specific-migrations.md) and stays open until retirement
+[ADR-0004](../../adr/0004-engine-specific-migrations.md) and stays open until retirement
 closes it by removing the ambiguity itself.
 
 ### What was verified, and how
@@ -765,7 +765,7 @@ The first two are the GROUP BY strictness difference between the engines reachin
 PHP-built queries the differential suite never asks for; the third is a SQLite function
 name written into PHP. All three are invisible to `difftest.php`, which compares views
 rather than pages, and all three become "the application is broken" rather than "one
-engine is broken" once [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)'s
+engine is broken" once [ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)'s
 retirement lands.
 
 ## Effort

@@ -4,7 +4,7 @@
 of having to set one on every individual product.
 **Upstream:** [grocy/grocy#2616](https://github.com/grocy/grocy/issues/2616)
 **Status:** landed in wave 3b; see [Executed](#executed). Decided 2026-09-04:
-this plan does not wait on [07](07-nested-products.md)'s Q6. If Q6 lands on *taxonomy*,
+this plan does not wait on [07](../retired/07-nested-products.md)'s Q6. If Q6 lands on *taxonomy*,
 the nullable `parent_product_group_id` column lands as an additive follow-on to this plan,
 not as a change to its scope now.
 
@@ -133,7 +133,7 @@ above the table is what explains why the row is there.
 3. **Should group stock count sub products?** If a group contains a parent product,
    presumably its children's stock counts toward the group. That falls out naturally if the
    branch aggregates through `products_resolved` — and becomes a real question once
-   [07](07-nested-products.md) makes that recursive.
+   [07](../retired/07-nested-products.md) makes that recursive.
 
    > **Response:** Aggregate per product, not via `stock_current`'s aggregated rows.
    > Concrete trap: if the group sum is built from rows that already aggregate
@@ -169,7 +169,7 @@ above the table is what explains why the row is there.
 Small: one column, one view, a form field, and an overview indication. Automatic
 shopping-list entries are out of scope for v1.
 
-This plan is scheduled for wave 3b and does not wait for [07](07-nested-products.md)'s Q6.
+This plan is scheduled for wave 3b and does not wait for [07](../retired/07-nested-products.md)'s Q6.
 If Q6 selects taxonomy, nested product groups are an additive follow-up. That follow-up
 would require a parent-group column and recursive aggregation; it does not expand this
 plan's current scope.

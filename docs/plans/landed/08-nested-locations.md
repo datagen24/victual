@@ -2,7 +2,7 @@
 
 **Goal:** Locations form a tree — floor / room / cabinet / shelf — rather than a flat list.
 **Depends on:** [12](12-frontend-shared-core.md) and [14](14-contract-and-regression-scaffolding.md),
-per the README. Worth doing before [07](07-nested-products.md), which needs the same
+per the README. Worth doing before [07](../retired/07-nested-products.md), which needs the same
 recursive pattern against far more call sites.
 **Status:** landed in wave 4; see [Executed](#executed).
 
@@ -57,7 +57,7 @@ parent needs a decision — Q2.
   rather than walking parents.
 
 **Client impact: one additive field and one new entity, plus the same semantic widening
-[07](07-nested-products.md) has.** A client that renders a location name now renders a
+[07](../retired/07-nested-products.md) has.** A client that renders a location name now renders a
 node in a tree; nothing forces it to notice. Milder than 07's, because a location is
 displayed far more often than it is aggregated over — but a client that builds a location
 picker from a flat list will show a flat list of names that are no longer unique in
@@ -147,7 +147,7 @@ Fourteen things are worth recording because they are not derivable from it.
 
 **The migration number moved once more, and this was the eighth move of the same three
 numbers.** The plan was scoped against a table that had 0273 for [23](23-storage-classes.md)
-and 0274–0275 for [22](22-medication-tracking.md); 0273 went to this plan, so 23 is now 0274
+and 0274–0275 for [22](../22-medication-tracking.md); 0273 went to this plan, so 23 is now 0274
 and 22 is 0275–0276. The rule is the one the reservations table has applied seven times
 before: the number about to have a *file* behind it takes the lowest free slot and unwritten
 drafts move up. Both plans' bodies and the status table moved with it, and the table's running
@@ -212,7 +212,7 @@ Making that a second refusal would be a behaviour change this plan did not ask f
 **Question 1's SQLite half is moot and was not built.** The answer named a unique
 *expression* index on `(IFNULL(parent_location_id, -1), name)` as the SQLite equivalent, and
 called this "the first migration pair where the two engines need genuinely different DDL".
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)'s retirement landed between that
+[ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)'s retirement landed between that
 answer and this work: the SQLite line is frozen at 0265 and `check-migrations.php` refuses a
 `.sqlite.sql` above it, so there is no pair to write and no second dialect to test the
 convention with. `0273.pgsql.sql` is a lone file.

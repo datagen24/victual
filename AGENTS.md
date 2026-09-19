@@ -15,14 +15,14 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   behind.
 - **PostgreSQL is the only engine, and SQLite is an input format.**
   [ADR-0008](docs/adr/0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31 and
-  its retirement landed with [plan 24](docs/plans/24-sqlite-runtime-retirement.md):
+  its retirement landed with [plan 24](docs/plans/landed/24-sqlite-runtime-retirement.md):
   `DB_DRIVER` accepts `pgsql` alone, **new migrations are PostgreSQL-only** (the SQLite line
   is frozen at 0265 and `check-migrations.php` refuses a `.sqlite.sql` above it), and
   `bin/victual-db-import` reads SQLite within a stated span that committed fixtures hold it
   to.
   Two things survive the retirement and are not oversights. The differential harness in
   `.devtools/pgsql/` still builds a SQLite side — ADR-0008's option C keeps it until
-  [14](docs/plans/14-contract-and-regression-scaffolding.md) piece 2's response snapshot
+  [14](docs/plans/landed/14-contract-and-regression-scaffolding.md) piece 2's response snapshot
   replaces it, so **do not delete SQLite behaviour the suite compares against**; it is
   permitted to construct that dialect only through
   `DatabaseDialect::SQLITE_TOOLING_ENV`, which is an environment variable rather than a
@@ -46,8 +46,8 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   minted; printing is an outbox a drainer consumes. Built out by plan
   [25](docs/plans/25-label-infrastructure.md) (the machinery: identity, jobs, printer
   configuration, the delivery worker), plan
-  [27](docs/plans/27-label-templates-and-rendering.md) (templates and rendering) and plan
-  [32](docs/plans/32-label-kinds.md) (the five entity types — products, stock entries,
+  [27](docs/plans/landed/27-label-templates-and-rendering.md) (templates and rendering) and plan
+  [32](docs/plans/landed/32-label-kinds.md) (the five entity types — products, stock entries,
   recipes, chores, batteries — that used to print through
   `VICTUAL_LABEL_PRINTER_WEBHOOK`, moved onto this subsystem and the webhook deleted with its
   four settings and `FEATURE_FLAG_LABEL_PRINTER`). Every kind Victual can print a label for
@@ -72,7 +72,7 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   HTML. And markup is built as nodes (`$("<option>").text(value)`), never by concatenating
   a value into a string that is then handed to `.html()` or `.append()`. Both are checked
   on every pull request by `.devtools/frontend/s29-payload.js` in the `frontend-security`
-  job; [plan 21](docs/plans/21-frontend-sink-discipline.md) is why.
+  job; [plan 21](docs/plans/landed/21-frontend-sink-discipline.md) is why.
 - **Coverage floor: 75%, target 85+, ideal 90.** Line coverage of application code by the
   suite `.devtools/pgsql/run-tests.sh` runs under `SUITE_COVERAGE=1`, measured per
   [.devtools/coverage/README.md](.devtools/coverage/README.md). A change that adds code adds
@@ -159,7 +159,8 @@ connective makes the order ambiguous. Those get full prose.
   ADR-0008's retirement work lands, not merely until the record was accepted):
   [.agents/skills/run-app/SKILL.md](.agents/skills/run-app/SKILL.md).
 - PostgreSQL work: baseline DDL in `db/pgsql/baseline/`, differential test phases in
-  `.devtools/pgsql/` (see its README), CI runs both engines against `postgres:16`.
+  `.devtools/pgsql/` (see its README), CI runs the suite on `postgres:16`, and on `postgres:15`, the minimum the application enforces
+  (`PostgresDialect::MINIMUM_MAJOR_VERSION`).
 - Three test tiers, per [ADR-0025](docs/adr/0025-three-test-tiers.md): PHPUnit against a
   real PostgreSQL schema for application code (`packages/bin/phpunit --testsuite <name>`,
   run through `run-tests.sh <phase>` like any other phase — `rbac` was the first phase

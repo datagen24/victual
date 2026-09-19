@@ -1,7 +1,7 @@
 -- Working container replenishment: a minimum on the (product, location) pair, so "keep 5 lb
 -- of flour in the kitchen bin" is expressible separately from "keep 20 lb of flour" — and
 -- the tare that lets a vessel (a bin, a spice jar) be weighed directly. See
--- docs/plans/29-working-container-replenishment.md and issue #131.
+-- docs/plans/landed/29-working-container-replenishment.md and issue #131.
 --
 -- WHY A FOURTH MINIMUM TABLE RATHER THAN A COLUMN. Most products have no location minimum
 -- and most locations are not a bin anybody refills, so a column on `products` or `locations`

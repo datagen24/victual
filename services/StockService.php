@@ -200,7 +200,7 @@ class StockService extends BaseService
 	 * reading with the container weight subtracted) was removed under ADR-0022 decisions 4
 	 * and 7 (2026-09-14); this signature dropped the $addExactAmount parameter that only ever
 	 * had an effect for tare-enabled products, since no API caller ever set it true (see
-	 * docs/plans/28-open-container-measurement.md).
+	 * docs/plans/landed/28-open-container-measurement.md).
 	 *
 	 * @param int $productId
 	 * @param float $amount Amount in the product's stock quantity unit
@@ -236,7 +236,7 @@ class StockService extends BaseService
 		// Product-level tare weight arithmetic against the product's whole stock total was
 		// removed here under ADR-0022 decisions 4 and 7 (2026-09-14): weighing one container
 		// subtracted the stock amount of every entry of the product, sealed ones included.
-		// See docs/plans/28-open-container-measurement.md and the spike's negative control
+		// See docs/plans/landed/28-open-container-measurement.md and the spike's negative control
 		// (.spike-adr22/RESULTS.md#prerequisite-1-coexistence-with-a-negative-control) for the
 		// demonstrated defect. The fields stay on the wire at their current values per decision
 		// 7; only the arithmetic goes. Per-entry measurement (OpenProduct(), MeasureStockEntry())
@@ -527,7 +527,7 @@ class StockService extends BaseService
 	 * The product-level tare weight mechanism this paragraph used to describe is retired under
 	 * ADR-0022 decisions 4 and 7 (2026-09-14): $amount is always the net amount to consume now,
 	 * and $consumeExactAmount has no effect (kept on the signature for wire compatibility with
-	 * existing callers that still pass exact_amount; see docs/plans/28-open-container-measurement.md).
+	 * existing callers that still pass exact_amount; see docs/plans/landed/28-open-container-measurement.md).
 	 *
 	 * With $allowSubproductSubstitution, stock of sub products (products_resolved) may be used;
 	 * amounts are then converted to the sub product's stock quantity unit via QU conversions and
@@ -1734,7 +1734,7 @@ class StockService extends BaseService
 	 * Sub product substitution works as in ConsumeProduct() (amounts converted via QU conversions).
 	 *
 	 * $measurement, when given, records the container's contents as it is opened (ADR-0022
-	 * decisions 1, 3, 4, 8; docs/plans/28-open-container-measurement.md). It requires
+	 * decisions 1, 3, 4, 8; docs/plans/landed/28-open-container-measurement.md). It requires
 	 * $specificStockEntryId naming one entry and $amount = 1.0 - opening exactly one container
 	 * - because a measurement describes exactly one container and the coherence constraint on
 	 * `stock` enforces open = 1 AND amount = 1 wherever one is attached. Shape:
@@ -2340,7 +2340,7 @@ class StockService extends BaseService
 	/**
 	 * Weighs a vessel (a bin, a spice jar - a location that stock passes through rather than
 	 * arrives in) and corrects its one stock entry to match, per ADR-0022 decision 4's
-	 * location-scoped tare and docs/plans/29-working-container-replenishment.md.
+	 * location-scoped tare and docs/plans/landed/29-working-container-replenishment.md.
 	 *
 	 * The device posts a gross reading in the location's own tare unit; this method
 	 * subtracts the location's tare weight, converts the net remainder into the stocked

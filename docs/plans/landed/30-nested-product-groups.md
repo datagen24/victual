@@ -3,20 +3,20 @@
 **Goal:** The catalogue's tree of kinds — `Spices / Garlic / Fresh`, `Dairy / Cheese`,
 `Drinks / Soda / Coca-Cola` — lives in `product_groups`, so browsing, reporting and grouping
 work at every level without any of it touching stock.
-**Depends on:** [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
+**Depends on:** [ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
 **accepted 2026-09-14**, which this implements. [03](03-category-min-stock.md) shipped the table this
 adds a column to.
 **Interacts with:** [31](31-directed-substitution.md), which carries the relations between
 the products this groups; [08](08-nested-locations.md), whose pattern this copies almost
 exactly.
-**Replaces:** [07](07-nested-products.md), retired 2026-09-14 by the pull request that
+**Replaces:** [07](../retired/07-nested-products.md), retired 2026-09-14 by the pull request that
 scheduled this plan — after ADR-0023's acceptance, not as part of it.
 **Status:** landed in wave 4, 2026-09-15; see [Executed](#executed). Was scheduled 2026-09-14 as
 the first of the two product plans and tracked as
 [issue 124](https://github.com/datagen24/victual/issues/124). Migration
 **0278**, renumbered from 0277 to make room for
 [issue 148](https://github.com/datagen24/victual/issues/148)'s own migration 0277 (see
-[RESERVATIONS.md](../../migrations/RESERVATIONS.md)). That issue is now fixed: the
+[RESERVATIONS.md](../../../migrations/RESERVATIONS.md)). That issue is now fixed: the
 nesting-level trigger this plan copies fired only on `UPDATE`, never `INSERT`, and checked
 only one of the two directions a violation can arrive from. Copy `trg_enfore_product_nesting_level`
 as migrations/0277.pgsql.sql left it, not as the baseline still shows it.
@@ -44,7 +44,7 @@ through `products.product_group_id`, which is nullable.
 ## The tree this has to hold
 
 Supplied 2026-09-13 as the worked case behind
-[ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md):
+[ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md):
 
 ```
 Spices                    group
@@ -133,7 +133,7 @@ the shared write path, so this should now work; confirm it rather than assume it
 
 ### Migration
 
-One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../migrations/RESERVATIONS.md).
+One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md).
 
 ## Verification
 
@@ -178,7 +178,7 @@ to write a fresh one.
 ## Executed
 
 Landed as `migrations/0278.pgsql.sql`, at the migration number the plan header and
-[RESERVATIONS.md](../../migrations/RESERVATIONS.md) already named — issue 148's own fix took
+[RESERVATIONS.md](../../../migrations/RESERVATIONS.md) already named — issue 148's own fix took
 0277 ahead of it on 2026-09-15, so no further renumbering was needed here. One column, one
 reused function (`hierarchy_depth_limit()`, unchanged from 0273 — this is the second consumer
 it was written generic for), one view and two triggers, plus the API surface, the group form's

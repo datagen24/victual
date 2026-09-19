@@ -10,7 +10,7 @@ namespace Victual\Services\Storage;
  * above it opens a path. That is the whole point: the current code is path oriented
  * (file_exists, mime_content_type($path), fopen($path), new ImageResize($path)), and the
  * paths are what stop the container from being volume free. See
- * docs/plans/01-file-storage.md.
+ * docs/plans/landed/01-file-storage.md.
  *
  * A "source" here is either a string of bytes or a readable stream resource, because the
  * two writers genuinely have one each: an upload arrives as the request body's stream,
