@@ -28,11 +28,11 @@
 const { call, bookingRows, verifyLots, LOT_FIELDS } = require('../ops');
 
 // Something with no default consume location (so the ordering's location term is uniform
-// across lots), no tare handling, and not the product the FIFO tie probe uses.
+// across lots), and not the product the FIFO tie probe uses.
 function subject(ctx) {
 	const { world, plainProducts } = ctx;
 	const taken = world.products[0].key;
-	return plainProducts.find((p) => p.key !== taken && !p.consumeAt && !p.tare) || null;
+	return plainProducts.find((p) => p.key !== taken && !p.consumeAt) || null;
 }
 
 function priceProbe({ ctx, ops }) {

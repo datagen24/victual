@@ -31,7 +31,6 @@ const audit = require('./narrative/audit');
 const prices = require('./narrative/prices');
 const conversions = require('./narrative/conversions');
 const splitedit = require('./narrative/splitedit');
-const tare = require('./narrative/tare');
 
 // Bumped when the generator's output changes on purpose. plan.lock.json is keyed by it, so
 // a deliberate change to the narrative and an accidental one look different in review.
@@ -147,7 +146,6 @@ function emitFixture(ctx, ops) {
 		if (p.shelfLife !== null) body.default_best_before_days = p.shelfLife;
 		if (p.freezeBonus) body.default_best_before_days_after_freezing = p.freezeBonus;
 		if (p.consumeAt) body.default_consume_location_id = `{location:${p.consumeAt}}`;
-		if (p.tare) { body.enable_tare_weight_handling = 1; body.tare_weight = p.tare; }
 		simple('products', p.key, 'product', body);
 	}
 
@@ -301,9 +299,11 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 
 	const ctx = {
 		world, profile, cal, ledger, sym,
-		// Everything the generic emitters may touch. A tare product speaks a different
-		// protocol on the wire (narrative/tare.js) and is handled only there.
-		plainProducts: world.products.filter((p) => !p.tare),
+		// Everything the generic emitters may touch. Once narrower than `world.products`: a
+		// product with tare weight handling spoke gross readings and had a stream of its own.
+		// Product-level tare was retired by ADR-0022 (plans 28 and 29), so every product is
+		// plain again.
+		plainProducts: world.products,
 		users: world.users,
 		choreState: household.initChoreSchedule(world),
 		batteryState: household.initBatterySchedule(world),
@@ -319,7 +319,7 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 	// state is the right one. It costs a request, so it is emitted after every operation
 	// whose effect is not a plain add or subtract — opening splits an entry, a transfer moves
 	// between locations, an inventory correction books a delta from an absolute, an undo
-	// reverses a booking, an edit writes a pair, a tare product speaks in gross readings —
+	// reverses a booking, an edit writes a pair —
 	// and at a sampled cadence for ordinary purchases and consumes.
 	//
 	// The cadence is what bounds how far a divergence can travel: without it the first
@@ -362,7 +362,7 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		}));
 	};
 
-	const ALWAYS_VERIFY = new Set(['open', 'transfer', 'inventory', 'undo', 'edit', 'spoil', 'self-production', 'tare']);
+	const ALWAYS_VERIFY = new Set(['open', 'transfer', 'inventory', 'undo', 'edit', 'spoil', 'self-production']);
 	let verifyCounter = 0;
 	ctx.verifyAfter = (ops, product, day, kind) => {
 		verifyCounter += 1;
@@ -419,8 +419,6 @@ function buildYearPlan({ profile: profileName = 'year', seed = 20260905, anchor 
 		if (weekday === 5) withStream('cooking', () => cooking.cook({ ctx, day, ops }));
 		if (weekday === 6) withStream('cooking', () => cooking.planWeek({ ctx, day, ops }));
 
-		withStream('tare', () => tare.refill({ ctx, day, ops }));
-		withStream('tare', () => tare.use({ ctx, day, ops }));
 		withStream('household', () => household.doChores({ ctx, day, ops }));
 		withStream('batteries', () => household.chargeBatteries({ ctx, day, ops }));
 		withStream('tasks', () => household.tasks({ ctx, day, ops }));
