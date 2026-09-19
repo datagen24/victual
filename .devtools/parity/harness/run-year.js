@@ -17,7 +17,7 @@ const path = require('path');
 
 const { buildYearPlan, lockKey, GENERATOR_VERSION, CANONICAL_ANCHOR, PROFILES } = require('./year/plan');
 const { validate } = require('./year/validate');
-const { Instance } = require('./lib/instance');
+const { Instance, VICTUAL_ADMIN_PASSWORD } = require('./lib/instance');
 const { replay, Incomplete } = require('./year/replay');
 const invariants = require('./year/invariants');
 
@@ -104,7 +104,8 @@ async function runAgainstInstance(args, plan) {
 	// accumulated stock is legitimately slower than the same read over a scenario's handful
 	// of rows, and the first full-year run aborted on one rather than reporting it.
 	const api = new Instance({
-		name: 'victual', baseUrl: args.victual, apiKeyHeader: 'VICTUAL-API-KEY', timeoutMs: 180000
+		name: 'victual', baseUrl: args.victual, apiKeyHeader: 'VICTUAL-API-KEY', timeoutMs: 180000,
+		adminPassword: VICTUAL_ADMIN_PASSWORD
 	});
 	// Replaying is the default now, so the common way to get here by accident is to run the
 	// runner directly with no stack up. Say that, rather than letting a raw fetch error stand

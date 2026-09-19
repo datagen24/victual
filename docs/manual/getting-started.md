@@ -26,14 +26,16 @@ From the repository root:
 2. Copy `config-dist.php` to `data/config.php` and edit it — at minimum the `DB_*` settings
    under [Configuration](configuration.md#database).
 3. Make sure the `data` directory is writable by the web server user.
-4. Run `php bin/victual-migrate` to create the schema in your PostgreSQL database.
+4. Run `php bin/victual-migrate` to create the schema in your PostgreSQL database. On an
+   empty database it creates the `admin` account and prints its generated password to
+   stderr, once — or uses `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` if you set it for this command.
 5. Point your web server's document root at the `public` directory.
    - nginx: add `try_files $uri /index.php$is_args$query_string;` in the location block.
    - Any server that cannot rewrite URLs: set `DISABLE_URL_REWRITING` to `true` instead
      (see [Configuration](configuration.md)).
 6. Open the site — you land on `/login` unless `DISABLE_AUTH` is set — and log in as
-   `admin` / `admin`. **Change that password immediately**: user menu, top right, "Change
-   password". Signing out again is "Log out" on the same menu.
+   `admin` with the password from step 4; see [The first login](#the-first-login).
+   Signing out again is "Log out" on the user menu, top right.
 
 ## From the Nix-built images
 
@@ -58,8 +60,37 @@ Configuration for these images comes entirely from environment variables and mou
 secrets rather than a `config.php` file; see
 [Configuration outside config.php](configuration.md#configuration-outside-configphp).
 
-Log in the same way as a checkout install — `admin` / `admin` — and change the password
-immediately.
+Log in as `admin`. The password is `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` if the migrate
+container's Secret carried one on the first run, and otherwise the one that container
+printed — see [The first login](#the-first-login).
+
+## The first login {: #the-first-login }
+
+A new installation has no password anybody knows in advance. The migration that creates the
+database creates one account, `admin`, and gives it:
+
+- **`VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`**, when the environment `bin/victual-migrate` runs in
+  has it. You chose it, so nothing forces you to change it.
+- **Otherwise a generated password**, printed once on the migration's stderr:
+
+  ```text
+  Victual: created the first administrator "admin" with the generated password 9dc6e6780888a9c05e896f80 - it is shown once, here, and must be changed at first login. ...
+  ```
+
+  In a container that is the migrate container's log (`podman logs`, or
+  `kubectl logs <pod> -c migrate`). Logs are kept and often shipped elsewhere, so this
+  password **must be changed at the first login**: every page sends you to the
+  change-password form, and the API answers `403` to everything except that form's save
+  (`PUT /api/users/{your id}`), `GET /api/user` and `GET /api/system/db-changed-time`. That
+  includes API keys the account already holds.
+
+The same restriction applies to any account that logs in with the password `admin` — which is
+how an installation seeded before this change, still on grocy's old `admin` / `admin`, is
+caught at its next login. Changing the password lifts it.
+
+If the password line was lost before anybody logged in, empty the database and migrate again
+with `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` set; the seeding happens only when the database is
+empty.
 
 ## PostgreSQL
 

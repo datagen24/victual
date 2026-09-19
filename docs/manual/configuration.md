@@ -220,7 +220,16 @@ Secret in [Deployment](../../deploy/README.md) set `VICTUAL_DB_*`,
 `VICTUAL_FILE_STORAGE` and the rest as environment variables rather than shipping a
 `config.php`.
 
-Two more mechanisms sit outside `config.php` entirely:
+Three more mechanisms sit outside `config.php` entirely:
+
+- **The first administrator's password.** `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` is an
+  environment variable, not a setting, and is read once: when a migration creates the
+  database from nothing and seeds the `admin` account. Set it only on whatever runs
+  `bin/victual-migrate` (the migrate container's Secret in [Deployment](../../deploy/README.md)),
+  never on the serving containers. Changing or removing it later does nothing — the account
+  exists by then and its password is changed like any other. Without it the migration
+  generates a password, prints it once to stderr, and the account must change it at first
+  login; see [Getting started](getting-started.md#the-first-login).
 
 - **Custom CSS or JS.** If `data/custom_js.html` exists, its contents are inserted just
   before `</body>` on every page; `data/custom_css.html`, just before `</head>`.

@@ -21,10 +21,32 @@ third scheme.
 Invalid API keys are rejected but are not throttled by `LoginThrottleService`.
 [Login throttling](../configuration.md#authentication) applies to password login only.
 
+### Key types and read-only keys
+
+A key is either **regular** or **MCP**. An MCP key is for the MCP sidecar, which lets an AI
+assistant query Victual (`mcp/`, [the interface
+spec](https://github.com/datagen24/victual/blob/master/docs/mcp-interface-spec.md)).
+Otherwise the two are the same: both act as you, expire, rotate, and work in the
+`VICTUAL-API-KEY` header. The separate type means you can revoke the assistant's access,
+by deleting your MCP keys, without touching the keys your other clients use.
+
+- **MCP-only requests.** A request can send `VICTUAL-API-KEY-TYPE: mcp` to insist on an MCP
+  key; any other key is then rejected. The sidecar does this on every call, so a regular
+  key given to an assistant does not work through it.
+- **Read-only keys.** An MCP key can be created **read-only**, and the form defaults to
+  it. A read-only key may make GET, HEAD and OPTIONS requests; everything else is answered
+  `403`. So are the three GET routes that change something: the calendar sharing link, the
+  external barcode lookup, and the thermal shopping-list print. Victual enforces this
+  itself, whatever client holds the key.
+- **What a credential can do.** `GET /api/user/capabilities` answers, for the credential
+  making the request, its key type, whether it is read-only, and the permissions its user
+  holds.
+
 ## What a key can do
 
 An API key inherits exactly its owning user's permissions; it is not a separate,
-narrower-scoped credential. Revoking the user's access, or deleting the user, revokes every
+narrower-scoped credential. A read-only key (above) is the one narrowing: the same
+permissions, minus every write. Revoking the user's access, or deleting the user, revokes every
 key they hold. See [Roles and permissions](roles-permissions.md) for what a permission
 actually gates.
 

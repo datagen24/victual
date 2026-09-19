@@ -73,10 +73,18 @@ class DatabaseMigrationService extends BaseService
 	 *                              about to fill the database from an existing one, and
 	 *                              seeding first would leave it looking non-empty to its
 	 *                              own overwrite check.
+	 * @param callable|null $reportGeneratedAdminPassword Called with (username, password)
+	 *                              when this run seeded the first administrator with a
+	 *                              generated password - see ReportGeneratedAdminPassword().
+	 *                              Defaults to error_log(); bin/victual-migrate prints it.
 	 */
-	public function MigrateDatabase(bool $seedInitialData = true)
+	public function MigrateDatabase(bool $seedInitialData = true, ?callable $reportGeneratedAdminPassword = null)
 	{
 		$dialect = DatabaseService::GetInstance()->GetDialect();
+		$this->ReportGeneratedAdminPassword = $reportGeneratedAdminPassword ?? function (string $username, string $password)
+		{
+			error_log(self::GeneratedAdminPasswordNotice($username, $password));
+		};
 
 		// The whole run, baseline and the always-run 8888 included, happens with the
 		// engine's migration lock held: everything below is check-then-apply, so two
@@ -113,6 +121,7 @@ class DatabaseMigrationService extends BaseService
 		}
 
 		$this->SyncUserSettingDefaults($dialect);
+		$this->FlagGeneratedAdminPasswordForChange();
 
 		if ($migrationCounter > 0)
 		{
@@ -416,12 +425,94 @@ class DatabaseMigrationService extends BaseService
 
 			if ($seedInitialData)
 			{
-				(new InitialDataSeeder($pdo, $dialect))->Seed();
+				$seeder = new InitialDataSeeder($pdo, $dialect);
+				$seeder->Seed();
 			}
 
 			for ($migration = 1; $migration <= self::BASELINE_MIGRATION_ID; $migration++)
 			{
 				DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO migrations (migration) VALUES (' . $migration . ')');
+			}
+		}
+		catch (\Exception $ex)
+		{
+			$pdo->rollback();
+			throw $ex;
+		}
+
+		$pdo->commit();
+
+		// Reported as soon as the row it describes is committed, and not after the
+		// migrations that follow: were one of those to fail, the next run would find the
+		// baseline already loaded and never seed again, and an administrator whose password
+		// was generated and never shown is an installation nobody can log into.
+		if (isset($seeder) && $seeder->GetGeneratedAdminPassword() !== null)
+		{
+			($this->ReportGeneratedAdminPassword)($seeder->GetAdminUsername(), $seeder->GetGeneratedAdminPassword());
+		}
+	}
+
+	/** @var callable|null See MigrateDatabase() */
+	private $ReportGeneratedAdminPassword = null;
+
+	/**
+	 * The text an operator reads in the migrate container's log after a first migration.
+	 * Deliberately says what to do with it, because it is the only copy there is.
+	 */
+	public static function GeneratedAdminPasswordNotice(string $username, string $password): string
+	{
+		return 'Victual: created the first administrator "' . $username . '" with the generated password ' . $password
+			. ' - it is shown once, here, and must be changed at first login.'
+			. ' Set ' . InitialDataSeeder::BOOTSTRAP_PASSWORD_ENV . ' before the first migration to choose it instead.';
+	}
+
+	/**
+	 * Marks the administrator whose password the seeder generated as having to change it
+	 * (users.must_change_password, migration 0265), so the copy in a log stops being a
+	 * credential after its first use.
+	 *
+	 * Not in InitialDataSeeder, because the seeder runs with the baseline, which stands in
+	 * for migrations up to 0255, and the column arrives with 0265: at seed time there is
+	 * nothing to write to. So the seeder leaves a marker row
+	 * (InitialDataSeeder::PENDING_FORCED_CHANGE_KEY in user_settings) in the same
+	 * transaction as the account, and this - run at the end of every migration run, once
+	 * every migration has applied - turns it into the flag and removes it, in one
+	 * transaction.
+	 *
+	 * A row rather than something this object remembers, because the baseline commits
+	 * before the migrations after it run. If one of those fails, the retry finds the
+	 * baseline loaded, seeds nothing, and would have nothing in memory to act on - the
+	 * account would keep a password that has been printed to a log with no forced change.
+	 * Found by CodeRabbit in review of PR #213.
+	 *
+	 * A user setting is safe for the marker even though its owner can delete it through
+	 * the API (the reason 0265 is a column): nothing serves requests until a migration run
+	 * has completed - the boot check refuses a database missing any required migration -
+	 * and the run that completes is the one that consumes the marker.
+	 */
+	private function FlagGeneratedAdminPasswordForChange(): void
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$pending = $pdo->prepare('SELECT user_id FROM user_settings WHERE key = ?');
+		$pending->execute([InitialDataSeeder::PENDING_FORCED_CHANGE_KEY]);
+		$userIds = $pending->fetchAll(\PDO::FETCH_COLUMN);
+
+		if (empty($userIds))
+		{
+			return;
+		}
+
+		$pdo->beginTransaction();
+
+		try
+		{
+			$flag = $pdo->prepare('UPDATE users SET must_change_password = 1 WHERE id = ?');
+			$clear = $pdo->prepare('DELETE FROM user_settings WHERE user_id = ? AND key = ?');
+
+			foreach ($userIds as $userId)
+			{
+				$flag->execute([(int)$userId]);
+				$clear->execute([(int)$userId, InitialDataSeeder::PENDING_FORCED_CHANGE_KEY]);
 			}
 		}
 		catch (\Exception $ex)

@@ -280,6 +280,7 @@ $app->group('/api', function (RouteCollectorProxy $group)
 
 	// User
 	$group->get('/user', [UsersApiController::class, 'CurrentUser']);
+	$group->get('/user/capabilities', [UsersApiController::class, 'CurrentUserCapabilities']);
 	$group->get('/user/settings', [UsersApiController::class, 'GetUserSettings']);
 	$group->get('/user/settings/{settingKey}', [UsersApiController::class, 'GetUserSetting']);
 	$group->put('/user/settings/{settingKey}', [UsersApiController::class, 'SetUserSetting']);
