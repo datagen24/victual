@@ -50,6 +50,9 @@ VICTUAL_VERSION="${VICTUAL_VERSION:-$(sed -n 's/.*"Version"[[:space:]]*:[[:space
 VICTUAL_APP_IMAGE="${VICTUAL_APP_IMAGE:-localhost/victual-app:${VICTUAL_VERSION}}"
 VICTUAL_WEB_IMAGE="${VICTUAL_WEB_IMAGE:-localhost/victual-web:${VICTUAL_VERSION}}"
 VICTUAL_MIGRATE_IMAGE="${VICTUAL_MIGRATE_IMAGE:-localhost/victual-migrate:${VICTUAL_VERSION}}"
+# The read-only MCP sidecar (mcp/, issue #86). Fork-only, like MQTT and InfluxDB: upstream
+# has nothing to compare it with, so `parity mcp` checks it against the fork's own REST API.
+VICTUAL_MCP_IMAGE="${VICTUAL_MCP_IMAGE:-localhost/victual-mcp:${VICTUAL_VERSION}}"
 
 # Pinned to the fork's base version rather than :latest, and that is the whole argument of
 # this suite. version.json says 4.6.0 / 2026-03-06 and so does the upstream image's own
@@ -71,9 +74,18 @@ VICTUAL_PORT="${VICTUAL_PORT:-8080}"
 # harness/lib/instance.js reads the same variable, with the same default.
 PARITY_VICTUAL_ADMIN_PASSWORD="${PARITY_VICTUAL_ADMIN_PASSWORD:-parity-admin-password}"
 export PARITY_VICTUAL_ADMIN_PASSWORD
+
+# **How that password gets there.** `generated`, the default, is what a deployment that sets
+# nothing gets: the migrate container runs with no VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, prints
+# a generated one once on stderr and flags the account, and harness/bootstrap-admin.js reads
+# it off that log and walks the forced change over the API to PARITY_VICTUAL_ADMIN_PASSWORD
+# — asserting each step — before anything else logs in. `env` hands the migrate container
+# the password directly instead, which is the other supported path and skips all of that.
+PARITY_BOOTSTRAP_ADMIN="${PARITY_BOOTSTRAP_ADMIN:-generated}"
 UPSTREAM_PORT="${UPSTREAM_PORT:-8081}"
 INFLUX_PORT="${INFLUX_PORT:-8086}"
 MQTT_PORT="${MQTT_PORT:-1883}"
+MCP_PORT="${MCP_PORT:-8082}"
 
 # Credentials for throwaway infrastructure, in the open for the same reason
 # docker-compose.yml states: these databases exist for the length of a suite run, on a
@@ -98,6 +110,11 @@ c_upstream="${PARITY_PREFIX}-upstream"
 p_victual="${PARITY_PREFIX}-victual"
 c_victual_app="${PARITY_PREFIX}-victual-app"
 c_victual_web="${PARITY_PREFIX}-victual-web"
+c_victual_mcp="${PARITY_PREFIX}-victual-mcp"
+
+# Where the stack leaves what a later step reads: the migrate log the bootstrap handover
+# parses, and that handover's report. The reports directory is gitignored.
+PARITY_STATE_DIR="${PARITY_STATE_DIR:-${PARITY_REPORTS:-$STACK_DIR/../reports}}"
 
 # There is no victual data volume. There was one, seeded with a stub config.php to satisfy
 # PrerequisiteChecker::checkForConfigFile(); the application no longer requires the file at
@@ -137,6 +154,20 @@ wait_for() {
 	warn "last output from the readiness check for $what:"
 	"$@" 2>&1 | tail -n 20 >&2 || true
 	die "$what was not ready within ${timeout}s"
+}
+
+# Whether admin logs in with the given password. **A 302 is not enough**: both applications
+# answer refused credentials with a 302 too, to /login?invalid=true, so these gates used to
+# pass on a wrong password. Success is a 302 anywhere else.
+login_accepted() {
+	local base="$1" password="$2" out
+	out="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
+		--data-urlencode username=admin --data-urlencode "password=$password" "$base/login")"
+	case "$out" in
+		"302 "*invalid=*) return 1 ;;
+		"302 "*) return 0 ;;
+		*) return 1 ;;
+	esac
 }
 
 ensure_network() {
@@ -247,13 +278,43 @@ migrate_victual() {
 	local args=()
 	while IFS= read -r a; do args+=("$a"); done < <(victual_env_args)
 	while IFS= read -r a; do args+=("$a"); done < <(victual_hardening_args)
-	# No command: the image's Cmd is already bin/victual-migrate. The bootstrap password goes
-	# to this container only, as it does in deploy/: the serving containers never hold it.
-	"$ENGINE" run --rm --network "$PARITY_NETWORK" \
+	# No command: the image's Cmd is already bin/victual-migrate. The bootstrap password, when
+	# there is one, goes to this container only, as it does in deploy/: the serving
+	# containers never hold it. Under `generated` there is none, and the log is kept because
+	# it is the only place the generated password exists (PARITY_BOOTSTRAP_ADMIN above).
+	local bootstrap=()
+	case "$PARITY_BOOTSTRAP_ADMIN" in
+		env) bootstrap=(-e "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=$PARITY_VICTUAL_ADMIN_PASSWORD") ;;
+		generated) ;;
+		*) die "PARITY_BOOTSTRAP_ADMIN is '$PARITY_BOOTSTRAP_ADMIN'; it is 'generated' or 'env'" ;;
+	esac
+	mkdir -p "$PARITY_STATE_DIR"
+	local migrate_log="$PARITY_STATE_DIR/migrate.log"
+	if ! "$ENGINE" run --rm --network "$PARITY_NETWORK" \
 		"${args[@]}" \
-		-e "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=$PARITY_VICTUAL_ADMIN_PASSWORD" \
-		"$VICTUAL_MIGRATE_IMAGE" \
-		|| die "victual migration failed"
+		${bootstrap[@]+"${bootstrap[@]}"} \
+		"$VICTUAL_MIGRATE_IMAGE" >"$migrate_log" 2>&1; then
+		cat "$migrate_log" >&2
+		die "victual migration failed"
+	fi
+	# Echoed, generated password included: the database is on a tmpfs and is thrown away
+	# with the run, and this is the operator's view of a first boot.
+	cat "$migrate_log"
+}
+
+# The first administrator's forced password change, walked over the API. Only under
+# `generated`: under `env` the account was never flagged and there is nothing to walk.
+bootstrap_admin_handover() {
+	[ "$PARITY_BOOTSTRAP_ADMIN" = generated ] || return 0
+	command -v node >/dev/null 2>&1 \
+		|| die "node is not on PATH; the generated-password handover needs it (or set PARITY_BOOTSTRAP_ADMIN=env)"
+	log "victual: first login with the generated administrator password"
+	node "$STACK_DIR/../harness/bootstrap-admin.js" \
+		--victual "http://127.0.0.1:${VICTUAL_PORT}" \
+		--migrate-log "$PARITY_STATE_DIR/migrate.log" \
+		--password "$PARITY_VICTUAL_ADMIN_PASSWORD" \
+		--out "$PARITY_STATE_DIR" \
+		|| die "the generated-password handover failed; see above and $PARITY_STATE_DIR/bootstrap-admin.json"
 }
 
 # The pod exists for one reason: php-fpm binds 127.0.0.1:9000 and nginx's `fastcgi_pass`
@@ -300,12 +361,33 @@ start_victual() {
 	# the stronger question here because it also proves the published port works.
 	wait_for victual 120 curl -fsS -o /dev/null "http://127.0.0.1:${VICTUAL_PORT}/login"
 
+	bootstrap_admin_handover
+
 	# The same assertive gate the upstream side has, for the same reason: the suite's first
 	# action is a login, so the stack is not "up" until one succeeds.
-	wait_for "victual login" 90 sh -c \
-		"test \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-			-d 'username=admin&password=${PARITY_VICTUAL_ADMIN_PASSWORD}' \
-			'http://127.0.0.1:${VICTUAL_PORT}/login')\" = 302"
+	wait_for "victual login" 90 login_accepted "http://127.0.0.1:${VICTUAL_PORT}" "$PARITY_VICTUAL_ADMIN_PASSWORD"
+}
+
+# The MCP sidecar, the way deploy/k3s/victual-mcp.yaml runs it: read-only root, a /tmp,
+# no capabilities, and the ConfigMap's four settings. It reaches Victual by the pod's
+# network alias, as the k3s one reaches the `victual` Service, and holds no credential of
+# its own: every request carries the caller's key through to Victual (spec §8).
+start_mcp() {
+	rm_container "$c_victual_mcp"
+	log "victual: mcp sidecar"
+	local args=()
+	while IFS= read -r a; do args+=("$a"); done < <(victual_hardening_args)
+	"$ENGINE" run -d --name "$c_victual_mcp" \
+		--network "$PARITY_NETWORK" --network-alias victual-mcp \
+		-p "${MCP_PORT}:3000" \
+		"${args[@]}" \
+		-e VICTUAL_BASE_URL=http://victual:8080 \
+		-e MCP_ENABLED_TOOLS=all-read \
+		-e MCP_REQUEST_TIMEOUT_MS=10000 \
+		-e LOG_LEVEL=info \
+		"$VICTUAL_MCP_IMAGE" >/dev/null
+	# /healthz is the manifest's livenessProbe; the image has no shell to probe from inside.
+	wait_for "victual mcp" 60 curl -fsS -o /dev/null "http://127.0.0.1:${MCP_PORT}/healthz"
 }
 
 # Runs one of the application's `bin/` CLI entry points against this stack, from the
@@ -385,13 +467,10 @@ start_upstream() {
 	wait_for upstream 180 curl -fsSL -o /dev/null "http://127.0.0.1:${UPSTREAM_PORT}/"
 
 	# And then assert the thing the suite actually needs rather than a proxy for it: that
-	# admin/admin logs in. A 302 is a successful login; the form re-renders with 200 when
-	# the credentials are refused, and answers 500 when the schema is not there — so this
-	# one check distinguishes all three.
-	wait_for "upstream login" 90 sh -c \
-		"test \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-			-d 'username=admin&password=admin' \
-			'http://127.0.0.1:${UPSTREAM_PORT}/login')\" = 302"
+	# admin/admin logs in. A 302 to the app is a successful login; refused credentials are a
+	# 302 to /login?invalid=true, and a missing schema is a 500 — login_accepted tells all
+	# three apart.
+	wait_for "upstream login" 90 login_accepted "http://127.0.0.1:${UPSTREAM_PORT}" admin
 }
 
 # --- Lifecycle -------------------------------------------------------------------------
@@ -403,8 +482,9 @@ stack_up() {
 	start_influx
 	migrate_victual
 	start_victual
+	start_mcp
 	start_upstream
-	log "up:  victual http://127.0.0.1:${VICTUAL_PORT}   upstream http://127.0.0.1:${UPSTREAM_PORT}"
+	log "up:  victual http://127.0.0.1:${VICTUAL_PORT}   upstream http://127.0.0.1:${UPSTREAM_PORT}   mcp http://127.0.0.1:${MCP_PORT}/mcp"
 }
 
 stack_down() {
@@ -412,7 +492,7 @@ stack_down() {
 	# The pod first: `pod rm -f` takes its containers and its infra container with it, and
 	# removing a member container on its own would leave the pod holding the published port.
 	"$ENGINE" pod rm -f "$p_victual" >/dev/null 2>&1 || true
-	for c in "$c_upstream" "$c_influx" "$c_mqtt" "$c_pg"; do
+	for c in "$c_victual_mcp" "$c_upstream" "$c_influx" "$c_mqtt" "$c_pg"; do
 		rm_container "$c"
 	done
 	"$ENGINE" volume rm -f "$v_upstream_data" >/dev/null 2>&1 || true
@@ -421,7 +501,7 @@ stack_down() {
 
 stack_status() {
 	printf '%-22s %-10s %s\n' CONTAINER STATE IMAGE
-	for c in "$c_pg" "$c_mqtt" "$c_influx" "$c_victual_app" "$c_victual_web" "$c_upstream"; do
+	for c in "$c_pg" "$c_mqtt" "$c_influx" "$c_victual_app" "$c_victual_web" "$c_victual_mcp" "$c_upstream"; do
 		if exists "$c"; then
 			printf '%-22s %-10s %s\n' "$c" \
 				"$("$ENGINE" inspect -f '{{.State.Status}}' "$c")" \
