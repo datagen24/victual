@@ -3,7 +3,7 @@
 **Goal:** Bagged flour in dry stores feeds a bin in the kitchen. Both quantities are visible,
 refilling is one tap, and running the bin down tells you whether there is another bag behind
 it or whether flour goes on the list.
-**Depends on:** [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md),
+**Depends on:** [ADR-0022](../../adr/0022-open-containers-carry-a-measured-remainder.md),
 **Accepted** 2026-09-14 — decision 4's location-scoped tare is what lets the bin be weighed.
 Nothing else blocks it.
 **Interacts with:** [28](28-open-container-measurement.md), which shares that primitive and
@@ -35,7 +35,7 @@ Everything the flow needs exists except the weighing and the level.
 
 **Weighing is missing because tare is on the product.** Weighing the bin subtracts the stock
 amount of every entry of that product, dry stores included
-([ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md) context limit 2). And
+([ADR-0022](../../adr/0022-open-containers-carry-a-measured-remainder.md) context limit 2). And
 the obvious workaround — make the bin its own tare-enabled product — is refused outright:
 `TransferProduct()` throws for tare-enabled products (limit 4). Tare on the product and
 backstock feeding a vessel are mutually exclusive by construction, not by convention.
@@ -97,11 +97,11 @@ through the global quantity unit conversions and is refused, never assumed, when
 stock unit is not a weight.
 
 **The scale posts gross weight against a location and the server subtracts.** The device
-identifies the vessel by scanning its location label ([06](06-location-barcodes.md), a `vctl:`
+identifies the vessel by scanning its location label ([06](../06-location-barcodes.md), a `vctl:`
 payload) and posts the gross reading. The server resolves the one product stocked at that
 location — refusing when there is none or more than one — subtracts the tare in the product's
 stock unit, and sets the entry's amount through
-[`EditStockEntry()`](../../services/StockService.php), which already takes a stock row id and
+[`EditStockEntry()`](../../../services/StockService.php), which already takes a stock row id and
 an amount and does no tare arithmetic. The contract names the reading `gross`.
 
 **Spice jars are the same pattern at a smaller scale.** Each refilled jar is a location under
@@ -130,18 +130,18 @@ reported rather than found by navigating to the product.
 
 The device this is likely to be operated from — a panel with a scale and a barcode scanner —
 is out of this repository, and its contract is already settled.
-[ADR-0012](../adr/0012-observations-are-proposals.md) decision item 5 names it exactly: *"A
+[ADR-0012](../../adr/0012-observations-are-proposals.md) decision item 5 names it exactly: *"A
 scale that weighs an open jar against a known tare is not guessing; neither is a human with a
 scanner. Those clients use the booking API."* So a kitchen terminal books directly and writes
 no proposals, and nothing in ADR-0012 has to be revisited to build one.
 
 Two repository-side questions such a device raises are open questions 4 and 5 below. Client
 implementations themselves sit outside this repository's wave order, per
-[17](17-ecosystem-clients.md).
+[17](../17-ecosystem-clients.md).
 
 ### Migration
 
-One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../migrations/RESERVATIONS.md):
+One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md):
 the location-minimum table and its view. The lowest-free-slot rule applies as it has nine
 times before.
 
@@ -178,7 +178,7 @@ distinction being missed.
    > in the plan's verification cases needed it.
 
 2. **What raises the refill prompt?** A view read by the stock overview is the cheap answer.
-   Whether it also reaches [18](18-mqtt-state-publication.md)'s published state — so a panel
+   Whether it also reaches [18](../18-mqtt-state-publication.md)'s published state — so a panel
    or Home Assistant can show it without polling — is a wire question this plan does not
    settle.
 
@@ -201,10 +201,10 @@ distinction being missed.
    > therefore not possible from `stock_log` alone today; the cost of a new value every
    > consumer must tolerate was judged not worth paying for that, since nothing in this plan's
    > verification needs the distinction and a refill is, mechanically, exactly a transfer.
-4. **How does a device authenticate?** [ADR-0019](../adr/0019-label-printers-are-master-data.md)
+4. **How does a device authenticate?** [ADR-0019](../../adr/0019-label-printers-are-master-data.md)
    established durable pairing and credential rotation for the label worker. Whether a kitchen
    terminal reuses that pattern, uses an API key, or needs something else is unowned, and
-   [11](11-api-error-handling.md)'s outstanding API key expiry and rotation follow-up is the
+   [11](../11-api-error-handling.md)'s outstanding API key expiry and rotation follow-up is the
    nearest existing work ([issue 130](https://github.com/datagen24/victual/issues/130)). The
    scale unit carries a scanner for location labels, so its identity question is the same one
    the label worker answered with pairing under ADR-0019; still open.
@@ -281,7 +281,7 @@ uses.
 `LabelIdentityService` (plan 06/25's machinery, unchanged) and delegates to `WeighLocation()`.
 No fixture or suite case exercises it directly beyond confirming the resolved-location branch
 compiles and routes; the device this plan anticipates is out of this repository per
-[17](17-ecosystem-clients.md), so there is no client yet to test the route against end to end.
+[17](../17-ecosystem-clients.md), so there is no client yet to test the route against end to end.
 
 **Two things needed generic-controller changes the plan did not anticipate.**
 `GenericEntityApiController` projects `/objects/locations` through an explicit column list

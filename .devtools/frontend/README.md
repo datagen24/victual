@@ -1,7 +1,7 @@
 # Frontend baseline harness
 
 Records what the list and form pages do today, so a refactor of them can be checked
-against something better than an opinion. It is [plan 12](../../docs/plans/12-frontend-shared-core.md)
+against something better than an opinion. It is [plan 12](../../docs/plans/landed/12-frontend-shared-core.md)
 verification check 1; `baseline-2026-09-02.json` and its `.md` summary are the recorded
 run.
 
@@ -69,7 +69,7 @@ It carries four families, added at different times for different reasons:
 | `file-name`, `barcode-echo` | the browser itself — a chosen file, a typed barcode | nothing executes, and the payload is present as text |
 
 The last two families exist because of
-[plan 21](../../docs/plans/21-frontend-sink-discipline.md). `html-column` is the only
+[plan 21](../../docs/plans/landed/21-frontend-sink-discipline.md). `html-column` is the only
 assertion anywhere that `BaseApiController::HTML_RENDERED_COLUMNS` and its purifier
 configuration still do their job — five columns are deliberately rendered as HTML, so
 escaping is not available and that server-side purifier is the whole boundary. To watch the

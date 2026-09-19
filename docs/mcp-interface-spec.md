@@ -6,8 +6,8 @@ settled: separate container (02-Q6), read-only v1 (02-Q2), bearer API key behind
 credential→user seam (02-Q1/Q3), local network only (02-Q4), narrow tools with compact
 responses (02-Q5).
 **Gated by:** per the roadmap's Wave 5 — [11](plans/11-api-error-handling.md),
-[13](plans/13-write-path-transactions.md), [15](plans/15-deliberate-cleanup.md) C1, and
-[14](plans/14-contract-and-regression-scaffolding.md)'s response-contract snapshot.
+[13](plans/landed/13-write-path-transactions.md), [15](plans/landed/15-deliberate-cleanup.md) C1, and
+[14](plans/landed/14-contract-and-regression-scaffolding.md)'s response-contract snapshot.
 **Prior art:** the `datagen24/mcp-grocy` fork was evaluated for reuse on 2026-08-29;
 the verdict (rebuild the protocol layer, salvage the packaging and selected handler
 logic) is recorded in [Appendix A](#appendix-a-evaluation-of-the-mcp-grocy-fork).
@@ -268,7 +268,7 @@ Below minimum stock.
 | Backed by | `GET /api/stock/volatile` → `missing_products` |
 | Output row | `product_id, name, amount_missing, is_partly_in_stock` |
 
-Note for later: [plan 03](plans/03-category-min-stock.md) deliberately keeps group
+Note for later: [plan 03](plans/landed/03-category-min-stock.md) deliberately keeps group
 shortfalls out of `stock_missing_products`; when 03 lands, group shortfalls become a
 new section here (additive), not a change to this row shape.
 
@@ -312,7 +312,7 @@ Appendix A for why that internal naming convention must never be load-bearing ag
 ## 6. Tools — deferred writes (specified now, built later)
 
 Per 02-Q2 these ship only after read-only v1 has proven the transport in use, and
-after [13](plans/13-write-path-transactions.md) is in place. Specified here so the
+after [13](plans/landed/13-write-path-transactions.md) is in place. Specified here so the
 write wave is an implementation task, not a design task:
 
 | Tool | Input | Backed by |
@@ -324,7 +324,7 @@ write wave is an implementation task, not a design task:
 **On `shopping_location_id`, which reads worse than `store_id` and is the right name
 anyway.** Earlier drafts of this table said `store_id`, and the household vocabulary is
 "store". But [05](plans/05-store-shopping-lists.md)'s Q4 and
-[15](plans/15-deliberate-cleanup.md)'s Q5 both considered renaming
+[15](plans/landed/15-deliberate-cleanup.md)'s Q5 both considered renaming
 `shopping_locations` → `stores` and both declined: it is an `ExposedEntity` name, a table,
 a column on `stock`, `stock_log` and `shopping_list`, several views, and ~250 references
 across 63 files — the largest compatibility break available in the fork, for a nicer noun.
@@ -406,7 +406,7 @@ unknown `MCP_ENABLED_TOOLS` entry or missing required variable.
 - One container, distroless-or-alpine Node image, non-root, listening on `MCP_PORT`.
   Scale-to-zero on k3s is the practiced pattern; statelessness (§2, §3) is what makes
   it safe. Cold start is the sidecar's Node boot plus — on the first REST call —
-  Victual's own cold start, which is [plan 10](plans/10-cold-start-statelessness.md)'s
+  Victual's own cold start, which is [plan 10](plans/landed/10-cold-start-statelessness.md)'s
   problem and another reason 10 precedes Wave 5.
 - Exposure per 02-Q4: cluster/tailnet only. The ingress route for `/mcp` is not
   published externally; if that ever flips, the IdP future state (§4.1) owns the
@@ -452,7 +452,7 @@ the SDK does natively, OAuth (§4.1), fuzzy search (§5.4), localization of name
 Per the roadmap's standard — booted-instance checks, not lint:
 
 1. **Contract tests against recorded fixtures** from
-   [14](plans/14-contract-and-regression-scaffolding.md)'s response-contract snapshot:
+   [14](plans/landed/14-contract-and-regression-scaffolding.md)'s response-contract snapshot:
    each tool's REST consumption is replayed against the frozen fixtures, so a Victual
    response-shape change breaks the sidecar's CI, not a household conversation.
 2. **MCP Inspector** against a compose stack (sidecar + Victual + PostgreSQL, demo

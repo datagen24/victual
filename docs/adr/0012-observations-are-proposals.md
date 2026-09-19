@@ -21,7 +21,7 @@
   counts *two* tables where the Decision names one entity, `proposals`, and never names a
   second. The tax is real at one table, nothing in the record turns on the count, and the
   sentence is left as written rather than tidied on the way through.) The same section says
-  evidence *wants* [01](../plans/01-file-storage.md); 01 landed 2026-09-02, so that
+  evidence *wants* [01](../plans/landed/01-file-storage.md); 01 landed 2026-09-02, so that
   conditional is settled in the favourable direction and an evidence reference can be a
   stored artifact from day one — "V1 can ship with evidence optional" is now a choice
   rather than a constraint. And *Where the boundary of this repository is* puts the pending
@@ -39,13 +39,13 @@
   repository**; what lives here is the entity, the endpoints, and the invariant. The
   proposals schema is one of the flat contracts
   [ADR-0010](0010-workload-standard.md) requires consumers to share.
-- **Would affect:** [01](../plans/01-file-storage.md) (**landed**; it is what evidence
+- **Would affect:** [01](../plans/landed/01-file-storage.md) (**landed**; it is what evidence
   storage rests on), [18](../plans/18-mqtt-state-publication.md) (**landed**; carries a note
   from this acceptance naming the sensor this work adds and the payload it must never
   publish), [19](../plans/19-rbac.md) (carries a note from this acceptance naming the two
   permission facts decided here, and the one thing item 6 hands back to it — its
   `FIELD_POLICY` is keyed by column and a proposal's price is a key inside a payload),
-  [14](../plans/14-contract-and-regression-scaffolding.md) and
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md) and
   [02](../plans/02-mcp-endpoint.md) (neither states anything this acceptance makes false —
   the wire surface is additive and lands under 14's snapshot discipline when it is built,
   and 02 reads through a Victual user like any other client).
@@ -54,7 +54,7 @@
 
 The stock ledger is exact, trusted history: every booking in `stock_log` is a fact a
 household member made happen and can undo, and
-[13](../plans/13-write-path-transactions.md) centralised the write paths that keep it
+[13](../plans/landed/13-write-path-transactions.md) centralised the write paths that keep it
 that way. The API accordingly offers exactly one kind of write: a booking, asserted as
 true.
 
@@ -147,10 +147,10 @@ and it is why proposals surface through channels the household already looks at 
 than a page nobody visits.
 
 **New wire surface.** The entity and endpoints land under
-[14](../plans/14-contract-and-regression-scaffolding.md)'s snapshot discipline, and are
+[14](../plans/landed/14-contract-and-regression-scaffolding.md)'s snapshot discipline, and are
 additive.
 
-**Evidence wants [01](../plans/01-file-storage.md).** An evidence reference without file
+**Evidence wants [01](../plans/landed/01-file-storage.md).** An evidence reference without file
 storage is a URL to somewhere with its own retention; with 01 it is a stored artifact
 that lives exactly as long as the proposal. V1 can ship with evidence optional.
 
@@ -223,7 +223,7 @@ and they are answered by whoever schedules the work.
 ## Research
 
 - Ledger and write-path facts: `stock_log`,
-  [13](../plans/13-write-path-transactions.md)'s Executed section, working copy of
+  [13](../plans/landed/13-write-path-transactions.md)'s Executed section, working copy of
   2026-08-31.
 - The narrow-grant argument is [ADR-0006](0006-authenticated-issues-in-scope.md)'s
   threat model applied to operator-side observers; the idempotency rule is

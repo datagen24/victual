@@ -3,9 +3,9 @@
 - **Status:** **Accepted**, with [ADR-0001](0001-postgresql-alongside-sqlite.md).
 - **Decider:** datagen24 (maintainer), retrospectively — see the lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-30, retrospectively.
-- **Referenced by:** [10](../plans/10-cold-start-statelessness.md) (its boot check and its
+- **Referenced by:** [10](../plans/landed/10-cold-start-statelessness.md) (its boot check and its
   Q7 dialect column both reason about migration numbers),
-  [14](../plans/14-contract-and-regression-scaffolding.md).
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md).
 
 ## Context
 

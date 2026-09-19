@@ -9,7 +9,7 @@
 // written by the first request that happens to need them: the compiled Blade templates,
 // the Slim route cache, and the HTMLPurifier definition cache. Writing them here instead
 // is what lets that directory be baked into a container image and mounted read-only -
-// the point of docs/plans/10-cold-start-statelessness.md.
+// the point of docs/plans/landed/10-cold-start-statelessness.md.
 //
 // Run it as the last step of an image build, and after updating a mutable installation
 // (update.sh does). It is a pure function of the source tree plus VICTUAL_BASE_PATH, so

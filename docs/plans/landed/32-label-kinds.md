@@ -3,18 +3,18 @@
 **Goal:** Every label Victual prints is a `labels` row with an opaque uid, rendered from a
 template and delivered by the worker. The five entity types that still print a Grocycode
 through the webhook move onto that path, and the webhook goes.
-**Depends on:** [ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md), **accepted
-2026-09-15**. Builds on [ADR-0011](../adr/0011-label-namespace.md),
-[ADR-0019](../adr/0019-label-printers-are-master-data.md) decision item 7 (steps 2 and 3,
-whose gate 0024 dissolves) and [ADR-0021](../adr/0021-label-templates-are-application-data.md).
-**Interacts with:** [25](25-label-infrastructure.md) and [27](27-label-templates-and-rendering.md),
-whose mechanism this extends kind by kind; [06](06-location-barcodes.md), the location
+**Depends on:** [ADR-0024](../../adr/0024-the-fork-writes-its-own-clients.md), **accepted
+2026-09-15**. Builds on [ADR-0011](../../adr/0011-label-namespace.md),
+[ADR-0019](../../adr/0019-label-printers-are-master-data.md) decision item 7 (steps 2 and 3,
+whose gate 0024 dissolves) and [ADR-0021](../../adr/0021-label-templates-are-application-data.md).
+**Interacts with:** [25](../25-label-infrastructure.md) and [27](27-label-templates-and-rendering.md),
+whose mechanism this extends kind by kind; [06](../06-location-barcodes.md), the location
 precedent every piece below mirrors; [14](14-contract-and-regression-scaffolding.md) piece 2,
-which should snapshot after this lands or regenerate when it does; [17](17-ecosystem-clients.md),
+which should snapshot after this lands or regenerate when it does; [17](../17-ecosystem-clients.md),
 whose premise 0024 replaces.
 **Status:** **Landed 2026-09-16** as `migrations/0283.pgsql.php`, [issue 182](https://github.com/datagen24/victual/issues/182)
 closed; see [Executed](#executed-2026-09-16). Was: draft, ready to start once ADR-0024 was
-accepted 2026-09-15. Migration **0283** (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)) — 0284
+accepted 2026-09-15. Migration **0283** (see [RESERVATIONS.md](../../../migrations/RESERVATIONS.md)) — 0284
 until [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19
 piece 2 was written as `0282.pgsql.php` hours after this plan claimed its number, taking the
 lowest free slot with a file behind it and moving plan 22 and this plan up one each; then 0285
@@ -23,7 +23,7 @@ below it — plan 22's two numbers, still unwritten claims, moved up to 0284-028
 
 ## Why this exists
 
-[Plan 25](25-label-infrastructure.md) was ADR-0019's step 1 and only step 1: location
+[Plan 25](../25-label-infrastructure.md) was ADR-0019's step 1 and only step 1: location
 labels, purely additive because locations had no `/printlabel` endpoint. The five endpoints
 that existed — `GET /api/stock/products/{id}/printlabel`, `/stock/entry/{id}/printlabel`,
 `/recipes/{id}/printlabel`, `/chores/{id}/printlabel`, `/batteries/{id}/printlabel` — kept

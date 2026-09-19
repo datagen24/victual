@@ -6,7 +6,7 @@ use Victual\Services\DatabaseService;
 use Victual\Services\LocalizationService;
 
 // Storage classes for locations: how cold a location is kept, not merely whether it is a
-// freezer. See docs/plans/23-storage-classes.md and issue #127.
+// freezer. See docs/plans/landed/23-storage-classes.md and issue #127.
 //
 // WHY ONE PHP FILE RATHER THAN A .pgsql.sql SCHEMA MIGRATION PLUS A DATA MIGRATION LIKE
 // 0263/0264. ADR-0003 puts seed data in PHP rather than SQL literals, because the five

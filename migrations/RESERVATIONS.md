@@ -40,9 +40,9 @@ have recorded it.
 |---|---|---|
 | 0256 | dual-engine hazard fix (`products_view` `qu_factor_*` cast) | in `master` |
 | 0257 | [plan 18](../docs/plans/18-mqtt-state-publication.md) — `mqtt_product_entities`, `mqtt_published_entities` | in this tree |
-| 0258 | [plan 01](../docs/plans/01-file-storage.md) — the files table | in `master` (PR #39) |
+| 0258 | [plan 01](../docs/plans/landed/01-file-storage.md) — the files table | in `master` (PR #39) |
 | 0259 | [plan 18](../docs/plans/18-mqtt-state-publication.md) — `outbox` | in this tree |
-| 0260 | [plan 21](../docs/plans/21-frontend-sink-discipline.md) — purify stored rich text that predates the API purifier | in this tree |
+| 0260 | [plan 21](../docs/plans/landed/21-frontend-sink-discipline.md) — purify stored rich text that predates the API purifier | in this tree |
 | 0261 | [issue #46](https://github.com/datagen24/victual/issues/46) — a total order for `products_last_purchased.price`, and SQLite's integer division in `products_average_price` | in this tree |
 | 0262 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `login_attempts`, the login throttle's out-of-process state | in this tree |
 
@@ -53,22 +53,22 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0265 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `users.must_change_password`, moved out of `user_settings` in review | in this tree |
 | 0266 | [plan 19](../docs/plans/19-rbac.md) — roles and read permissions (wave 3a) | in this tree |
 | 0267 | the split-entry defect in `products_average_price` — `stock_entry_origins`, and `stock_edited_entries` following it | in this tree |
-| 0268 | [plan 03](../docs/plans/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
+| 0268 | [plan 03](../docs/plans/landed/03-category-min-stock.md) — `product_groups.min_stock_amount`, `product_groups_missing` (wave 3b) | in this tree |
 | 0269 | [plan 25](../docs/plans/25-label-infrastructure.md) — `labels`, the uid-to-target mapping [ADR-0011](../docs/adr/0011-label-namespace.md) requires (wave 3b), plus the import epoch | in this tree |
 | 0270 | [plan 25](../docs/plans/25-label-infrastructure.md) group B — ten tables: eight configuration/job/delivery tables plus `label_worker_sessions` and `label_worker_credentials` for durable pairing and pending rotation; templates/artifacts belong to plan 27 | in this tree |
-| 0271 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group A — `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`, `label_media_profiles` (wave 3b) | in this tree |
-| 0272 | [plan 27](../docs/plans/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
-| 0273 | [plan 08](../docs/plans/08-nested-locations.md) — `locations.parent_location_id`, `locations_resolved`, `hierarchy_depth_limit()` and the nesting guards | in this tree |
-| 0274 | [plan 23](../docs/plans/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | in this tree |
-| 0275 | [plan 28](../docs/plans/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | in this tree |
-| 0276 | [plan 29](../docs/plans/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view, and `locations.tare_weight`/`tare_qu_id` (wave 4) | in this tree |
+| 0271 | [plan 27](../docs/plans/landed/27-label-templates-and-rendering.md) group A — `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`, `label_media_profiles` (wave 3b) | in this tree |
+| 0272 | [plan 27](../docs/plans/landed/27-label-templates-and-rendering.md) group B — `label_captures`, `label_render_requests`, `label_artifacts`, `label_idempotency_keys`, and the artifact/operation columns on plan 25's `print_jobs` (wave 3b) | in this tree |
+| 0273 | [plan 08](../docs/plans/landed/08-nested-locations.md) — `locations.parent_location_id`, `locations_resolved`, `hierarchy_depth_limit()` and the nesting guards | in this tree |
+| 0274 | [plan 23](../docs/plans/landed/23-storage-classes.md) — `storage_classes`, `locations.storage_class_id` | in this tree |
+| 0275 | [plan 28](../docs/plans/landed/28-open-container-measurement.md) — the measured-remainder columns on `stock` (`opened_amount`, `opened_qu_id`, `opened_tare`, `opened_measured_at`) and their coherence constraint (wave 4) | in this tree |
+| 0276 | [plan 29](../docs/plans/landed/29-working-container-replenishment.md) — the (product, location) minimum table and its shortfall view, and `locations.tare_weight`/`tare_qu_id` (wave 4) | in this tree |
 | 0277 | [issue #148](https://github.com/datagen24/victual/issues/148) — `enfore_product_nesting_level` fires on `INSERT` as well as `UPDATE`, checks the nesting relationship in both directions, and nulls out any existing multi-level chain | in this tree |
-| 0278 | [plan 30](../docs/plans/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | in this tree |
-| 0279 | [plan 31](../docs/plans/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
+| 0278 | [plan 30](../docs/plans/landed/30-nested-product-groups.md) — `product_groups.parent_product_group_id`, the `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT` replacement, `product_groups_resolved` and the nesting guards (wave 4) | in this tree |
+| 0279 | [plan 31](../docs/plans/landed/31-directed-substitution.md) — the directed product substitution edges and their view (wave 4) | in this tree |
 | 0280 | [issue #130](https://github.com/datagen24/victual/issues/130) — `api_keys.rotated_from_id`, the lineage a regular-key rotation leaves behind (sweep S11's expiry-and-rotation half, plan 11's follow-up) | in `master` |
 | 0281 | [plan 19](../docs/plans/19-rbac.md) piece 2, [issue 84](https://github.com/datagen24/victual/issues/84) — `STOCK_PRICES_VIEW`, `permission_fields` and its seed (wave 5) | in `master` |
 | 0282 | [issue #176](https://github.com/datagen24/victual/issues/176) items 1 and 3 — the price-visibility policy re-applied from `db/pgsql/prices-seed.sql`, plus the `product_barcodes`/`product_barcodes_view` `last_price` rows 0281 missed | in this tree |
-| 0283 | [plan 32](../docs/plans/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in `master` |
+| 0283 | [plan 32](../docs/plans/landed/32-label-kinds.md) — `labels.kind`, `label_templates.entity_kind` and `label_captures.entity_kind` widened to six kinds, one retirement trigger per target table, one seeded default template per kind | in `master` |
 | 0284 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
 | 0285 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
 | 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in `master` |
@@ -90,8 +90,8 @@ plan copies fires only on `UPDATE`." That fix is being written now, on this bran
 makes it the thing with a real file behind it — the same standing plans 03, 25 and 27 had on
 the fifth, sixth and seventh moves — while 0278–0281 remain claims with no file. So the fix
 takes the lowest free slot, 0277, and plans 30, 31 and 22 each move up by one: 30 to 0278, 31
-to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/30-nested-product-groups.md) and
-[31](../docs/plans/31-directed-substitution.md)'s own migration-number lines move with this
+to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/landed/30-nested-product-groups.md) and
+[31](../docs/plans/landed/31-directed-substitution.md)'s own migration-number lines move with this
 table; [22](../docs/plans/22-medication-tracking.md)'s numbering note does too.
 
 ## The merge order this implies — discharged
@@ -234,7 +234,7 @@ here as it did against issue #176 and issue #130 — a number that has a file ta
 free slot, and a claim without one yields, whoever holds each. Applying it: plan 32 moves from
 0285 to **0283**, the lowest free slot below its own written file, and plan 22's two numbers
 move up in turn, from 0283–0284 to **0284–0285**. `check-migrations.php` then passes with no
-waiver needed. [Plan 32](../docs/plans/32-label-kinds.md)'s own numbering line moves with this
+waiver needed. [Plan 32](../docs/plans/landed/32-label-kinds.md)'s own numbering line moves with this
 table. The next unclaimed number is still **0286**.
 
 **2026-09-18:** plan 05 parts A and C claim **0286**, the lowest free slot; plan 22's
@@ -260,7 +260,7 @@ plan 22 is still an unscheduled draft. **The lesson for the next branch:** a mig
 scheduled ahead of an unwritten claim must take that claim's number, or move it up *in the
 same pull request*, because once it is in `master` the only way to close the gap is to write
 something into it. The next unclaimed number is **0289**.
-draft: **[plan 08](../docs/plans/08-nested-locations.md) is scheduled, its questions are
+draft: **[plan 08](../docs/plans/landed/08-nested-locations.md) is scheduled, its questions are
 answered, and its migration is being written on this branch**, while 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23
 moves to 0274 with 22 behind it at 0275–0276, keeping the one ordering constraint between
@@ -316,7 +316,7 @@ not fixable by renumbering within one branch: 0258 was claimed by plan 01 while 
 first migration was already written, and moving plan 18's second migration down to 0258
 would collide rather than close the hole.
 
-[Plan 01](../docs/plans/01-file-storage.md) was written calling its migration
+[Plan 01](../docs/plans/landed/01-file-storage.md) was written calling its migration
 `0257.pgsql.sql`, before plan 18 took 0257; what it ships is `0258.pgsql.sql`, which is now
 in `master` and settles the question. Whether that plan's own body still says otherwise is
 for a reader of it to check — this table is the authority on the number either way.

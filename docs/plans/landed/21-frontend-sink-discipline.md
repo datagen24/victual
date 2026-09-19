@@ -39,11 +39,11 @@ Both were verified by reverting the fix and driving a demo instance with Playwri
 Three documents in this repository state that the S29 payload probe runs on every pull
 request:
 
-- [plans README row 12](README.md#hardening) — "the probe now runs on every pull request as
+- [plans README row 12](../README.md#hardening) — "the probe now runs on every pull request as
   the `frontend-security` job"
 - [12-frontend-shared-core.md](12-frontend-shared-core.md) — "the probe now runs on every
   pull request rather than once"
-- [.devtools/frontend/README.md](../../.devtools/frontend/README.md) — "**it is the one
+- [.devtools/frontend/README.md](../../../.devtools/frontend/README.md) — "**it is the one
   this repository runs on every pull request** — the `frontend-security` job in
   `.github/workflows/tests.yml`"
 
@@ -170,10 +170,10 @@ So:
    fixed in `victual_summernote.js` (fontsize, bold/underline, colour, lists, tables, link,
    picture, video) and `codeview` lets a user type anything else. **Q5**.
 
-This decides where HTML is trusted in this application, so per [AGENTS.md](../../AGENTS.md)
+This decides where HTML is trusted in this application, so per [AGENTS.md](../../../AGENTS.md)
 it leaves an ADR behind — *Rich text is sanitised in the browser at render time* — recording
 the client-side choice, that the API is deliberately not a sanitising boundary, and what
-that means for [ADR-0006](../adr/0006-authenticated-issues-in-scope.md)'s threat model. The
+that means for [ADR-0006](../../adr/0006-authenticated-issues-in-scope.md)'s threat model. The
 ADR is accepted in its own PR carrying bookkeeping only, per the same file.
 
 ### Step 5 — the last of the selector class, and a convention
@@ -196,7 +196,7 @@ twelve lines away is a change a reviewer cannot trust, and because CodeQL will e
 raise them and this plan will be read again from scratch.
 
 `$(document).find(sel)` throughout, matching step 0. Then one line in
-[AGENTS.md](../../AGENTS.md)'s security posture: **a string that came out of the DOM reaches
+[AGENTS.md](../../../AGENTS.md)'s security posture: **a string that came out of the DOM reaches
 jQuery through `.find()`, never through `$()`** — short enough to be checked in review,
 which is the only kind of convention that survives.
 
@@ -342,7 +342,7 @@ whether markup was injected. Both probes report `xss=1` against a tree with step
 fixes reverted, and clean against the fixed tree.
 
 **Step 5.** Twelve sites in six picker components converted to `$(document).find()`. The
-convention is now a bullet in [AGENTS.md](../../AGENTS.md), stated as two rules — DOM
+convention is now a bullet in [AGENTS.md](../../../AGENTS.md), stated as two rules — DOM
 strings reach jQuery through `.find()`, and markup is built as nodes — with a pointer at
 the job that checks them.
 

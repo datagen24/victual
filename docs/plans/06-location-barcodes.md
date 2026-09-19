@@ -4,8 +4,8 @@
 system can tell *where* it is looking and keep stock by location current without anyone
 typing anything.
 **Depends on:** [25](25-label-infrastructure.md)'s **first usable release** — the point at
-which a requested label physically prints — and [12](12-frontend-shared-core.md), per the
-README. Pairs naturally with [08](08-nested-locations.md) but does not need it.
+which a requested label physically prints — and [12](landed/12-frontend-shared-core.md), per the
+README. Pairs naturally with [08](landed/08-nested-locations.md) but does not need it.
 **Status:** draft for review, **narrowed 2026-09-04 by
 [ADR-0011](../adr/0011-label-namespace.md)**, **scoped 2026-09-06 against
 [25](25-label-infrastructure.md)**, and **unblocked but not advanced 2026-09-08** by the
@@ -45,14 +45,14 @@ what the record took from it is marked here and in place rather than deleted.
 **Still this plan's, and owned by nobody else:**
 
 - **Where the label goes and what it says.** Placement on a shelf, and whether the
-  human-readable line carries the tree path once [08](08-nested-locations.md) lands —
+  human-readable line carries the tree path once [08](landed/08-nested-locations.md) lands —
   Q5, which ADR-0011 explicitly leaves to the plans that consume labels.
 - **The locations UI.** A print action on the locations list and form, mirroring
-  products, over whatever [12](12-frontend-shared-core.md) landed.
+  products, over whatever [12](landed/12-frontend-shared-core.md) landed.
 - **Interactive scanning — decided out of this plan, 2026-09-04.** The "current
   location" notion — scan the shelf, then scan items onto it — is a session concept that
   touches the stock forms rather than the locations pair, and it gets its own plan after
-  [08](08-nested-locations.md). This plan ships labels and the print action only.
+  [08](landed/08-nested-locations.md). This plan ships labels and the print action only.
 
 Q2's machine-reporting endpoint left this plan before ADR-0011 did, and by its own
 response: it is the subject of [ADR-0012](../adr/0012-observations-are-proposals.md),
@@ -82,7 +82,7 @@ The chain to this issue, and where it now breaks:
 | 1 | ADR-0019 and ADR-0021 accepted | **Met**, 2026-09-07 |
 | 2 | [25](25-label-infrastructure.md) group A — identity, migration 0269 | unwritten |
 | 3 | 25 group B — migration 0270, the job service, the worker routes, the admin surface | unwritten |
-| 4 | [27](27-label-templates-and-rendering.md) — the template document, the renderer, artifacts | unwritten |
+| 4 | [27](landed/27-label-templates-and-rendering.md) — the template document, the renderer, artifacts | unwritten |
 | 5 | 25 group C — the worker repository, its image, the manifest, a physical print | unwritten |
 | 6 | **This plan** — the print actions, the label's content, the `vctl:` resolve surface | unwritten |
 
@@ -127,7 +127,7 @@ locations UI question and therefore this plan's.
 whole reason this can be added without reopening that decision.** What was deferred is a
 *session* concept: scan the shelf, and subsequent scans of items are booked against it. That
 touches the stock forms, it holds state between requests, and it still gets its own plan after
-[08](08-nested-locations.md). What is added here is **stateless**: a `vctl:` code entered or
+[08](landed/08-nested-locations.md). What is added here is **stateless**: a `vctl:` code entered or
 scanned resolves to one location and shows it. Nothing is remembered, no stock form changes,
 and no booking targets it. If an implementation of this starts holding a selected location
 across requests, it has crossed into the deferred plan and should stop.
@@ -246,13 +246,13 @@ Two separate concerns:
 ### Label printing
 
 **Half superseded.** The print *action* is still this plan's, and so is what the label
-says — the location name, and its path once [08](08-nested-locations.md) lands. What it
+says — the location name, and its path once [08](landed/08-nested-locations.md) lands. What it
 may not do is reuse the webhook: [ADR-0011](../adr/0011-label-namespace.md) decision item
 4 makes printing an outbox row a drainer consumes, and retires
 `VICTUAL_LABEL_PRINTER_WEBHOOK` with the tree's only outbound call.
 
 Locations get a "print label" action, reusing the existing webhook/thermal printer paths.
-The label wants the location name and, once [08](08-nested-locations.md) lands, probably
+The label wants the location name and, once [08](landed/08-nested-locations.md) lands, probably
 its path rather than the bare name.
 
 ### API
@@ -333,7 +333,7 @@ A print action on the locations list and form, mirroring products.
    > **Response:** Just locations now. `quantity_units` and `product_groups` never
    > get physical labels; add `shopping_locations` only if a use appears.
 5. **Does the label need the tree path** or just the name? Path is more useful physically
-   but longer on a small label. Interacts with [08](08-nested-locations.md).
+   but longer on a small label. Interacts with [08](landed/08-nested-locations.md).
 
    > **Response:** The human-readable text line shows the path once 08 lands; the
    > encoded payload stays the bare uuid. Never encode display strings into the
@@ -416,7 +416,7 @@ first, and the label printed when the address was restored. Plan 25's Executed s
 the full record, including the two worker defects the first attempt found.
 
 What this plan still owed at that point: question 5's tree path on the human-readable line,
-now that [08](08-nested-locations.md) has landed ([issue 137](https://github.com/datagen24/victual/issues/137)),
+now that [08](landed/08-nested-locations.md) has landed ([issue 137](https://github.com/datagen24/victual/issues/137)),
 and the placement convention. Interactive current-location scanning remains deferred to a plan
 of its own. The worker's deployment under K3S is plan 25's verification 12 and
 [issue 93](https://github.com/datagen24/victual/issues/93)'s, not this plan's.

@@ -1,7 +1,7 @@
 // The open/measure modal in a real browser: node open-container-measurement.js <url>
 // Run against a disposable demo instance, from the frontend-security job.
 //
-// docs/plans/28-open-container-measurement.md's own verification asks for "a browser probe
+// docs/plans/landed/28-open-container-measurement.md's own verification asks for "a browser probe
 // for the open dialog, in the shape of .devtools/frontend/nested-locations.js and invoked by
 // the frontend-security job rather than merely placed beside it - plan 08's Executed section
 // records that distinction being missed." Four things here cannot be asserted from PHP:
@@ -51,7 +51,7 @@ const payload = '<img src=x onerror=window.__xss=1>';
 		// summary this probe reads later has something to fail on if it were ever built by
 		// concatenation.
 		// Also the product's own stock unit - the measurement modal defaults to it, and the
-		// common case (per docs/plans/28-open-container-measurement.md's UI section) is
+		// common case (per docs/plans/landed/28-open-container-measurement.md's UI section) is
 		// weighing in the same unit the product is stocked in, which needs no conversion at
 		// all. The gross+tare case below uses it too, for the same reason.
 		const measureQu = await api('objects/quantity_units', 'POST', { name: payload + ' ' + token, name_plural: payload + ' ' + token });

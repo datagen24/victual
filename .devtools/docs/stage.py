@@ -6,7 +6,7 @@ section draws from docs/, from .github/, and from READMEs that sit beside the co
 they describe. This script copies those into one tree and rewrites their links, so
 that the sources stay where they are and keep working on GitHub.
 
-See docs/plans/26-documentation-site.md for the design and
+See docs/plans/landed/26-documentation-site.md for the design and
 docs/adr/0020-documentation-publication-boundary.md for what is published and why.
 """
 from __future__ import annotations
@@ -148,7 +148,7 @@ def check_pins() -> None:
         raise SystemExit(
             "CONTRIBUTING.md does not document the pinned image this script uses.\n"
             f"  expected: {PHPDOC_IMAGE}\n"
-            "Both pins move together; see docs/plans/26-documentation-site.md."
+            "Both pins move together; see docs/plans/landed/26-documentation-site.md."
         )
 
 

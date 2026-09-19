@@ -4,7 +4,7 @@
 - **Decider:** datagen24 (maintainer), retrospectively — see [the lifecycle](README.md#lifecycle).
 - **Recorded:** 2026-08-30, retrospectively.
 - **Referenced by:** [security sweep](../security-sweep.md) S12,
-  [11](../plans/11-api-error-handling.md), [10](../plans/10-cold-start-statelessness.md).
+  [11](../plans/11-api-error-handling.md), [10](../plans/landed/10-cold-start-statelessness.md).
 
 ## Context
 
@@ -22,7 +22,7 @@ Store login throttle state in always-on Redis or a database table. Do not store 
 process memory or APCu.
 
 Apply the same persistence requirement to other state needed between requests, as
-specified in [plan 10](../plans/10-cold-start-statelessness.md). Pure caches may remain
+specified in [plan 10](../plans/landed/10-cold-start-statelessness.md). Pure caches may remain
 in memory when losing them only requires recomputation.
 
 ## Consequences

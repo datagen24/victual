@@ -2,9 +2,9 @@
 
 **Goal:** Know, before each plan lands, which third-party clients it breaks — and hold a
 standing decision for each about whether this fork forks it, replaces it, or lets it go.
-**Depends on:** [14](14-contract-and-regression-scaffolding.md) supplies the mechanism.
+**Depends on:** [14](landed/14-contract-and-regression-scaffolding.md) supplies the mechanism.
 [11](11-api-error-handling.md) and [16](16-project-rename.md) are the two plans that break
-clients hardest, and both are early. [10](10-cold-start-statelessness.md) has a conflict
+clients hardest, and both are early. [10](landed/10-cold-start-statelessness.md) has a conflict
 with the Home Assistant integration that is not an API-compatibility problem at all.
 **Status:** premise replaced 2026-09-15 by [ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md)
 (accepted the same day): the fork writes its own clients, so what follows is a catalogue of couplings those
@@ -15,7 +15,7 @@ key header and the `/system/info` version field are renamed in the tree today. C
 records what that costs and what the options are; the three open questions at the end are
 all still unanswered, and Q1 is now being asked after the event rather than before it. The
 rule still holds for [11](11-api-error-handling.md) and
-[10](10-cold-start-statelessness.md), which are both still ahead.
+[10](landed/10-cold-start-statelessness.md), which are both still ahead.
 
 **Answered 2026-08-29, and the premise moved.** Q2 and Q4 now carry responses, and they
 change what this document is for. Both tracked clients are being replaced by first-party
@@ -41,7 +41,7 @@ the roadmap's plans reach them without breaking a single response shape:
   `/system/info` field from `grocy_version` to `victual_version`. Neither changes a
   response *shape* in the sense the additive rule polices; the first stops both clients
   authenticating at all. Coupling 0.
-- [10](10-cold-start-statelessness.md) makes the pod scale to zero. The Home Assistant
+- [10](landed/10-cold-start-statelessness.md) makes the pod scale to zero. The Home Assistant
   integration polls every thirty seconds and would keep it awake forever. Nothing about
   that is visible in an API contract.
 
@@ -160,7 +160,7 @@ integration's thirteen entity types enabled that is thirteen serialized requests
 thirty seconds, each one a blocking `requests` call hopped onto the executor pool because
 the underlying library is synchronous.
 
-[10](10-cold-start-statelessness.md) exists to produce a pod that scales to zero. A client
+[10](landed/10-cold-start-statelessness.md) exists to produce a pod that scales to zero. A client
 that touches the API twice a minute, forever, means the pod never idles and never scales
 down. The two plans are in direct conflict, and the conflict does not appear in any
 response shape, status code or schema — it is a design assumption of the client that the
@@ -251,7 +251,7 @@ coordinator unavailable, so a single 403 on one entity takes out all of them —
 defect in that integration worth fixing in the fork regardless of plan 11.
 
 Error *message* text is not a tracked coupling. No client in scope matches on it, so
-[14](14-contract-and-regression-scaffolding.md)'s snapshot has no reason to freeze message
+[14](landed/14-contract-and-regression-scaffolding.md)'s snapshot has no reason to freeze message
 strings, and plan 11 stays free to reword them.
 
 **One thing on this surface was a client-visible decision rather than a status code, and it
@@ -277,7 +277,7 @@ Two things to carry forward from it, both of which sharpen "How this plan stays 
 
 ## Coupling 4 — hierarchies presented to a client that assumes flatness
 
-[07](07-nested-products.md) and [08](08-nested-locations.md) add depth to
+[07](retired/07-nested-products.md) and [08](landed/08-nested-locations.md) add depth to
 `objects/product_groups` and `objects/locations`. Both are additive on the wire — a new
 nullable parent column — and both change what a flat list *means*.
 
@@ -336,10 +336,10 @@ client work resumes": after it, every generated model is generated twice.
 
 | Plan | Client exposure |
 |---|---|
-| [01](01-file-storage.md) files in the database | Plan 01 states "No change. Same three routes, same headers, same 404 behaviour", which is the right commitment: Home Assistant builds picture URLs by hand from `/api/files/{picture_type}/{filename}` with base64 filenames, and Grocy-SwiftUI uses `/files/{group}/{fileName}`. Both are URL constructors, so the *route* is the contract, not the storage behind it. The one client-visible risk is the one plan 01 already lists — `mime_content_type($path)` and `finfo_buffer($bytes)` disagreeing and shifting `Content-Type` on an existing endpoint. An image client renders that difference; a schema snapshot does not see it. |
-| [03](03-category-min-stock.md) | Home Assistant's missing-products sensor reads `stock/volatile`. The plan keeps group shortfalls out of `stock_missing_products`, so the sensor is unchanged — which is also why the feature is invisible to it until the integration is taught about it. |
+| [01](landed/01-file-storage.md) files in the database | Plan 01 states "No change. Same three routes, same headers, same 404 behaviour", which is the right commitment: Home Assistant builds picture URLs by hand from `/api/files/{picture_type}/{filename}` with base64 filenames, and Grocy-SwiftUI uses `/files/{group}/{fileName}`. Both are URL constructors, so the *route* is the contract, not the storage behind it. The one client-visible risk is the one plan 01 already lists — `mime_content_type($path)` and `finfo_buffer($bytes)` disagreeing and shifting `Content-Type` on an existing endpoint. An image client renders that difference; a schema snapshot does not see it. |
+| [03](landed/03-category-min-stock.md) | Home Assistant's missing-products sensor reads `stock/volatile`. The plan keeps group shortfalls out of `stock_missing_products`, so the sensor is unchanged — which is also why the feature is invisible to it until the integration is taught about it. |
 | [05](05-store-shopping-lists.md) | Additive fields on `objects/shopping_list`; both clients ignore unknown fields. Note Grocy-SwiftUI reads `objects/shopping_locations` by that name, so 15-Q5's declined rename stays declined. |
-| [02](02-mcp-endpoint.md), [12](12-frontend-shared-core.md), [13](13-write-path-transactions.md) | None. |
+| [02](02-mcp-endpoint.md), [12](landed/12-frontend-shared-core.md), [13](landed/13-write-path-transactions.md) | None. |
 
 ## Posture per client
 
@@ -353,7 +353,7 @@ clean.
 
 The temptation is to fork, swap the dead dependency, and stop. That produces a working
 integration and inherits every design decision above, including the one that stops
-[10](10-cold-start-statelessness.md) from delivering what it is for.
+[10](landed/10-cold-start-statelessness.md) from delivering what it is for.
 
 Posture: fork, and treat the upstream code as a reference implementation of the entity
 model rather than a base to rebase on. The entity descriptions, config flow and service
@@ -484,7 +484,7 @@ Posture: fork. **The order of work changed when [16](16-project-rename.md) lande
 first commit is now the API key header, because without it the app cannot authenticate and
 nothing else in the list is reachable to test. Then the `victual_version` key, then the
 version gate's value, then the two latent 404s above, then hierarchical pickers when
-[07](07-nested-products.md)/[08](08-nested-locations.md) land. Track upstream and rebase; a
+[07](retired/07-nested-products.md)/[08](landed/08-nested-locations.md) land. Track upstream and rebase; a
 single-maintainer app is easier to follow than to diverge from. See Q3 on distribution,
 which is the real cost here and is not a code problem, and Q4 on whether the server meets
 the client half way on the header so this fork is not the only way to reach the server.
@@ -507,7 +507,7 @@ the client half way on the header so this fork is not the only way to reach the 
 >   "a single-maintainer app is easier to follow than to diverge from" is an argument about
 >   carrying someone else's code, and there is none to carry.
 > - **The wire contract can be generated rather than hand-written.**
->   `victual.openapi.json` is 73 paths and [14](14-contract-and-regression-scaffolding.md)
+>   `victual.openapi.json` is 73 paths and [14](landed/14-contract-and-regression-scaffolding.md)
 >   piece 2 is about to freeze the response shapes; generating the module's transport from
 >   the spec makes that snapshot the client's contract too. Sequence it after
 >   [11](11-api-error-handling.md), which moves status codes across ~74 routes — generating
@@ -517,7 +517,7 @@ the client half way on the header so this fork is not the only way to reach the 
 >
 > **One thing this commits the server to.** A Swift module generated from the spec can
 > only render what the API returns, and the API does not currently return everything the
-> web UI shows — [14](14-contract-and-regression-scaffolding.md)'s section 2b measures the
+> web UI shows — [14](landed/14-contract-and-regression-scaffolding.md)'s section 2b measures the
 > gap, and a stock overview is the first thing on the list. So the read surface is not a
 > someday concern of a hypothetical tier split: it is a scheduled dependency of a client
 > decided here, and it has to grow before 14 piece 2 freezes the contract the module is
@@ -531,7 +531,7 @@ opening it. The mechanism, not the list, is the deliverable:
 
 1. **The client surface becomes a fixture, not prose.** Each tracked client's endpoint and
    field usage is extracted into a checked-in manifest and asserted against
-   [14](14-contract-and-regression-scaffolding.md)'s snapshot. A plan that changes a route
+   [14](landed/14-contract-and-regression-scaffolding.md)'s snapshot. A plan that changes a route
    or a status code on a path some client consumes fails CI with the client named. The
    failure has to arrive before the merge, not from a household member saying the app
    stopped working.
@@ -573,7 +573,7 @@ Q4 exists because that rename took a decision this document was supposed to hold
    be; nothing has foreclosed any of the answers. With the iOS app the only version gate
    left, and a soft one, this is no longer constrained by the ecosystem. I lean to
    resetting the version at the rename rather than continuing upstream's `4.x.y` line: the
-   fork stops being 4.x in any meaningful sense around [07](07-nested-products.md), and a
+   fork stops being 4.x in any meaningful sense around [07](retired/07-nested-products.md), and a
    client that believes it is talking to grocy 4.8 fails in more confusing ways than one
    that knows it is talking to something else. The forked iOS app's supported-versions list
    is updated in the same change, so the warning banner never appears. The case against is
@@ -585,7 +585,7 @@ Q4 exists because that rename took a decision this document was supposed to hold
 2. **Does the Home Assistant fork depend on grocy-py, or reimplement its client?** The
    argument is worked above; I recommend reimplementing async-native against `aiohttp`,
    polling `/system/db-changed-time` and fetching entity data only when it moves. The
-   decisive reason is [10](10-cold-start-statelessness.md): thirteen serial requests every
+   decisive reason is [10](landed/10-cold-start-statelessness.md): thirteen serial requests every
    thirty seconds is not a client that lets a pod scale to zero, and no dependency choice
    fixes that — but the async rewrite is also the thing that makes depending on a sync
    library pointless, so the two decisions are one decision. If the answer is to depend on
@@ -709,7 +709,7 @@ roadmap is held to. Lint is not verification, and neither is reading a client's 
    count requests from the Home Assistant integration over ten minutes, before and after
    the rework. The target is one `/system/db-changed-time` request per interval with no
    entity fetches while nothing changes, and the number that matters is how long the pod
-   stays idle — [10](10-cold-start-statelessness.md)'s scale-to-zero is the actual
+   stays idle — [10](landed/10-cold-start-statelessness.md)'s scale-to-zero is the actual
    acceptance criterion, not the request count itself.
 
    > **Revised with Q2.** The target is now *zero* requests from Home Assistant while
@@ -758,7 +758,7 @@ roadmap is held to. Lint is not verification, and neither is reading a client's 
    > **Wave 2 reduced it to two**, which makes the check smaller rather than unnecessary:
    > S11's query-string path is deleted and S17's branch now works, so what is left to
    > confirm is the header and the calendar `secret` parameter.
-7. **After [07](07-nested-products.md)/[08](08-nested-locations.md), look at the pickers.**
+7. **After [07](retired/07-nested-products.md)/[08](landed/08-nested-locations.md), look at the pickers.**
    Screenshot Grocy-SwiftUI's product-group and location pickers against a seeded tree
    three levels deep. The failure mode is visual and correct-looking, so it has to be
    looked at rather than asserted.

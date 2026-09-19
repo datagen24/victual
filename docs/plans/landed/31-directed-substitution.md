@@ -3,7 +3,7 @@
 **Goal:** Whole beans stand in for ground coffee and never the reverse. A block of cheddar
 stands in for shredded; unsalted butter stands in for salted. The system can say so, for
 products that share no parent.
-**Depends on:** [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
+**Depends on:** [ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md),
 **accepted 2026-09-14**, decision 4.
 **Interacts with:** [30](30-nested-product-groups.md), which groups the products this
 relates; [14](14-contract-and-regression-scaffolding.md) piece 2, which freezes the response
@@ -11,7 +11,7 @@ contract this adds to.
 **Status:** **Landed 2026-09-15**, after [30](30-nested-product-groups.md). Tracked as
 [issue 125](https://github.com/datagen24/victual/issues/125). Migration **0279**, renumbered
 from 0278 to make room for [issue 148](https://github.com/datagen24/victual/issues/148)'s
-migration ahead of 30's (see [RESERVATIONS.md](../../migrations/RESERVATIONS.md)).
+migration ahead of 30's (see [RESERVATIONS.md](../../../migrations/RESERVATIONS.md)).
 
 ## Why this exists
 
@@ -74,7 +74,7 @@ can disagree.
 ### API and UI
 
 Additive: the edges as an entity, and the candidates on the product detail read. Permitted
-under [ADR-0005](../adr/0005-wire-contract-is-the-invariant.md).
+under [ADR-0005](../../adr/0005-wire-contract-is-the-invariant.md).
 
 **This wants to land before [14](14-contract-and-regression-scaffolding.md) piece 2**
 ([issue 83](https://github.com/datagen24/victual/issues/83)) freezes the response contract in
@@ -87,7 +87,7 @@ navigation.
 
 ### Migration
 
-One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../migrations/RESERVATIONS.md).
+One PostgreSQL-only migration, claimed in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md).
 
 ## Verification
 
@@ -106,7 +106,7 @@ A suite phase, PostgreSQL-only for the reason 08's and 30's are. Cases:
 
 1. **Does an edge carry a quantity factor?** Whole and ground coffee are 1:1 by weight; a
    tablespoon of fresh herb is a teaspoon of dried. A factor that is right sometimes is worse
-   than absent, and [ADR-0022](../adr/0022-open-containers-carry-a-measured-remainder.md)
+   than absent, and [ADR-0022](../../adr/0022-open-containers-carry-a-measured-remainder.md)
    decision 3 has already set a precedent for refusing rather than approximating.
 2. **Is the relation transitive?** Whole spice → cracked → ground is a plausible chain. A
    recursive closure is the pattern this repository has three times already

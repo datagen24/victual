@@ -50,7 +50,7 @@
   [ADR-0008](0008-postgresql-only-runtime-engine.md)'s importer without depending on it.
 - **Would affect:** [06](../plans/06-location-barcodes.md) (**narrowed** by this
   acceptance — see its header),
-  [08](../plans/08-nested-locations.md), [17](../plans/17-ecosystem-clients.md),
+  [08](../plans/landed/08-nested-locations.md), [17](../plans/17-ecosystem-clients.md),
   [18](../plans/18-mqtt-state-publication.md).
 
 ## Context
@@ -174,7 +174,7 @@ amended, relaxed or dropped, and each carries what met it.
   what this record took from it — the payload format, label stability, the symbology
   choice and the print path — and what it still owns: label placement and the tree path
   on the human-readable line (its Q5, which interacts with
-  [08](../plans/08-nested-locations.md)), the locations print action and UI, and the
+  [08](../plans/landed/08-nested-locations.md)), the locations print action and UI, and the
   current-location notion interactive scanning needs. Its Q1 and Q3 responses are marked
   superseded in place rather than deleted; its Q2 was already routed out to what became
   [ADR-0012](0012-observations-are-proposals.md). Absorption was the alternative and was
@@ -196,7 +196,7 @@ amended, relaxed or dropped, and each carries what met it.
    Grocycodes only.*
 3. **Do per-unit labels stay the default print granularity** (`stockLabelType 2`), or
    does labelling shift toward containers and locations with per-unit as the precision
-   tier? Interacts with [08](../plans/08-nested-locations.md). *Lean: decide in the
+   tier? Interacts with [08](../plans/landed/08-nested-locations.md). *Lean: decide in the
    plans that consume labels, not here — this record only guarantees any of them a
    stable payload.*
 4. **Retirement semantics.** *Lean: labels are never deleted; `retired_at` is set when

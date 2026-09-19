@@ -6,7 +6,7 @@
   [.github/SECURITY.md](../../.github/SECURITY.md) and is the reason the
   [security sweep](../security-sweep.md) exists in the shape it does.
 - **Referenced by:** [security sweep](../security-sweep.md),
-  [11](../plans/11-api-error-handling.md), [15](../plans/15-deliberate-cleanup.md),
+  [11](../plans/11-api-error-handling.md), [15](../plans/landed/15-deliberate-cleanup.md),
   [19](../plans/19-rbac.md).
 
 ## Context

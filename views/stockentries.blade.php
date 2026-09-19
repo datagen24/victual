@@ -361,7 +361,7 @@
 'asModal' => true
 ])
 
-{{-- ADR-0022 / docs/plans/28-open-container-measurement.md. One modal serves two actions,
+{{-- ADR-0022 / docs/plans/landed/28-open-container-measurement.md. One modal serves two actions,
 switched by #stock-measurement-modal-mode: opening a single sealed unit while recording
 what it holds, or re-measuring a unit that is already open. Either way the amount typed
 here is stock.opened_amount, never stock.amount - the container count never changes. --}}

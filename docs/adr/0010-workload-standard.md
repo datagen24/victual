@@ -25,7 +25,7 @@
   intent this record makes binding. [ADR-0019](0019-label-printers-are-master-data.md)
   relies on two of its properties while it is still Proposed, and decision item 3 below is
   written with that reliance in view.
-- **Would affect:** [10](../plans/10-cold-start-statelessness.md),
+- **Would affect:** [10](../plans/landed/10-cold-start-statelessness.md),
   [02](../plans/02-mcp-endpoint.md), [18](../plans/18-mqtt-state-publication.md).
 
 ## Context
@@ -38,7 +38,7 @@ The failure modes have names, and the fork has already ruled on two of them piec
 State between requests is a cold-start problem
 ([ADR-0007](0007-auth-state-outlives-the-process.md); plan 10 owns the rule). Side
 effects on write paths fire after commit and must tolerate redelivery
-([13](../plans/13-write-path-transactions.md), [18](../plans/18-mqtt-state-publication.md)'s
+([13](../plans/landed/13-write-path-transactions.md), [18](../plans/18-mqtt-state-publication.md)'s
 retained-snapshot design). What has never been ruled on is privilege and declaration —
 and the tree showed it on 2026-08-31: `Dockerfile` built `FROM php:8.5-cli-bookworm` with
 **no `USER` directive**, so the container holding the database owner's credentials ran as
@@ -216,10 +216,10 @@ not only the reviewed one.
   "measured, not assumed" does not protect a measurement from going stale between taking
   it and acting on it.
 - The at-least-once and after-commit disciplines this record generalizes are established
-  in [13](../plans/13-write-path-transactions.md) and
+  in [13](../plans/landed/13-write-path-transactions.md) and
   [18](../plans/18-mqtt-state-publication.md); the state rule in
   [ADR-0007](0007-auth-state-outlives-the-process.md) and
-  [10](../plans/10-cold-start-statelessness.md).
+  [10](../plans/landed/10-cold-start-statelessness.md).
 - The database-credential-split gap is plan 20's own verification record, check 8: "Not
   done. Needs a role with no DDL rights; the bootstrap uses one superuser." Read
   2026-09-07 against [`docs/plans/20-container-infrastructure.md`](../plans/20-container-infrastructure.md).

@@ -1,7 +1,7 @@
 -- Nested product groups: the catalogue's tree of kinds -- Spices / Garlic / Fresh, Dairy /
 -- Cheese, Drinks / Soda / Coca-Cola -- lives in product_groups, so browsing, reporting and
 -- grouping work at every level without any of it touching stock. See
--- docs/plans/30-nested-product-groups.md, docs/adr/0023-taxonomy-is-groups-packaging-is-parent-product.md
+-- docs/plans/landed/30-nested-product-groups.md, docs/adr/0023-taxonomy-is-groups-packaging-is-parent-product.md
 -- (accepted 2026-09-14) and issue 124.
 --
 -- This is migrations/0273.pgsql.sql with the nouns changed, per plan 30's own instruction to

@@ -7,7 +7,7 @@ failing test rather than by vigilance, and put both behind minimal CI.
 **Status:** **Landed.** Pieces 1, 3 and 4 — the runnable suite, CI, and the coverage
 reporting added after the plan was written — landed as wave 0 between 2026-08-27 and
 2026-08-29. **Piece 2, the response-contract snapshot, landed 2026-09-17** as
-`tests/Pgsql/ContractTest.php` per [ADR-0025](../adr/0025-three-test-tiers.md) decision 4,
+`tests/Pgsql/ContractTest.php` per [ADR-0025](../../adr/0025-three-test-tiers.md) decision 4,
 [issue 83](https://github.com/datagen24/victual/issues/83). See [Executed](#executed) for
 what landed, what the suite grew in the doing, and what piece 2 does not close (S15, and
 S16's remaining half). Everything below is the plan as written and reviewed; where it
@@ -65,7 +65,7 @@ column type and the JSON changes; nothing anywhere notices.
 
 The route/spec mismatch is a small illustration, and the story of how it was counted is a
 better argument for piece 2 than the mismatch itself. **Corrected 2026-08-29:** this plan
-and [11](11-api-error-handling.md) both said there were *two* mismatches pointing in
+and [11](../11-api-error-handling.md) both said there were *two* mismatches pointing in
 opposite directions — `/api/openapi/specification` registered at `routes.php:154` and
 missing from `victual.openapi.json`, and `/api/recipes/{recipeId}/copy` documented in the
 spec with no route behind it. Only the first is real. The copy route exists, at
@@ -128,7 +128,7 @@ trust.
   still be wrong: it inserts explicit `quantity_units` ids and never calls
   `ResyncGeneratedIdCounters`, so the identity sequence would sit behind the data.
 - `difftest.php` has never been run against a recursive CTE. Plans
-  [07](07-nested-products.md) and [08](08-nested-locations.md) both introduce one, so
+  [07](../retired/07-nested-products.md) and [08](08-nested-locations.md) both introduce one, so
   their fixtures will be new ground for the tool as well as for the schema.
 
 ## Proposed change
@@ -182,7 +182,7 @@ new ones, and they already cover the interesting cases.
 Committed fixture data, not a generated demo database — for the reasons above, and
 because a fixture whose contents are visible in the diff is a fixture you can reason
 about. What that fixture *is* — a `.sql` seed, a checked-in SQLite file, or the seed
-importer from [04](04-seed-datasets.md) — is Q2.
+importer from [04](../04-seed-datasets.md) — is Q2.
 
 ### 2. Response-contract snapshot
 
@@ -211,7 +211,7 @@ The comparison is five-way once piece 2 lands, and each leg catches something di
 | Admin snapshot vs restricted-identity snapshot | a field that should be redacted and is not, or one redacted that should not be — asserted as *equal minus exactly the `x-visibility` keys*. The only leg that requires a difference rather than forbidding one. |
 | schemas + snapshot bodies vs the sensitive-field vocabulary | a price or cost field nobody classified — the leak the leg above is structurally blind to, since an unannotated field is identical for both identities |
 
-**Piece 2 runs per identity, not once.** [19](19-rbac.md) makes response *content* a
+**Piece 2 runs per identity, not once.** [19](../19-rbac.md) makes response *content* a
 function of the caller, so "a valid key" no longer describes the contract. Every operation
 is called twice against the same fixture — once as Admin, once as a fixture user without
 `STOCK_PRICES_VIEW` — and the restricted snapshot is asserted to equal the
@@ -311,7 +311,7 @@ may be intentional — loosening a resolved-permission read from `ADMIN` to `USE
 has consequences the server-rendered page's stricter phrasing might have been protecting.
 Both want a recorded answer, in the manner of this roadmap's other open questions.
 
-> **The permissions one is deferred to [19](19-rbac.md)**, which landed as a plan on
+> **The permissions one is deferred to [19](../19-rbac.md)**, which landed as a plan on
 > 2026-08-30 and carries it as its own question 9. It is not a missing endpoint but a
 > question about who may see the permission model, and answering it here would fix a number
 > in one view while the model it reflects is being redesigned. 19's API section states the
@@ -360,7 +360,7 @@ The reason it is worth having here specifically is the blind spot this plan's ow
 had, and which cost three PostgreSQL defects to find: the view and trigger phases drive
 SQL at each engine and never enter application code, so for a while nothing in the suite
 executed a single line of `StockService` against PostgreSQL and no report said so. A
-coverage figure would have. See [.devtools/coverage/README.md](../../.devtools/coverage/README.md).
+coverage figure would have. See [.devtools/coverage/README.md](../../../.devtools/coverage/README.md).
 
 **A fourth defect of exactly that shape was found later, and it is the argument for piece
 2 covering behaviour and not only shape.** `db/pgsql/README.md`'s hazard 16: the `~`
@@ -412,7 +412,7 @@ None. This plan adds no migration and touches no view. It does add fixture SQL, 
 not schema and does not ship in the image, and a `Dockerfile`/`docker-compose.yml` for
 the development and CI environment, which is not schema either.
 
-If Q2 lands on reusing [04](04-seed-datasets.md)'s importer for fixtures, that creates a
+If Q2 lands on reusing [04](../04-seed-datasets.md)'s importer for fixtures, that creates a
 dependency in the other direction — 04 would need building first — which is an argument
 against it for now.
 
@@ -420,7 +420,7 @@ against it for now.
 
 **No change to any endpoint**, with one exception: `victual.openapi.json` gains the missing
 `/api/openapi/specification` path, and gains documented error responses for whatever
-[11](11-api-error-handling.md) has converted by then. Adding a path to the spec is
+[11](../11-api-error-handling.md) has converted by then. Adding a path to the spec is
 additive by definition and changes no response. Nothing is removed from the spec — the
 earlier plan to drop `/api/recipes/{recipeId}/copy` rested on a miscount and would have
 deleted the documentation of a working endpoint.
@@ -431,13 +431,13 @@ rather than a rule that gets remembered.
 
 `info.version` in the spec is the literal `"xxx"` and is fixed here too, with the path
 addition — a placeholder in a document a contract suite now reads is its own small
-absurdity. What version string it should carry is [17](17-ecosystem-clients.md)'s Q1 and
+absurdity. What version string it should carry is [17](../17-ecosystem-clients.md)'s Q1 and
 is still open; if Q1 has not answered by the time piece 2 lands, the spec takes
 `version.json`'s value, which is at least a fact.
 
 **Client impact: none directly, and this plan is where every other plan's becomes
 visible.** Nothing here changes a response. Piece 2 is the mechanism
-[17](17-ecosystem-clients.md)'s item 1 asks for — client endpoint and field manifests
+[17](../17-ecosystem-clients.md)'s item 1 asks for — client endpoint and field manifests
 asserted against the snapshot, so a plan that moves a route or a status code fails CI with
 the client named. 17's own post-mortem on 16 is the argument for widening that from paths
 to **request headers and response keys**: neither of 16's two breaks was a path change, so
@@ -480,7 +480,7 @@ things deliberately and confirm the suite notices.
    `bin/victual-migrate` from piece 1 are what make this check passable at all.
 8. **Recursive CTE coverage.** Add a throwaway fixture with a three-level product tree and
    a recursive view over it, and confirm the runner compares it correctly on both engines.
-   This is a check on the *tool*, not on the schema — [07](07-nested-products.md) and
+   This is a check on the *tool*, not on the schema — [07](../retired/07-nested-products.md) and
    [08](08-nested-locations.md) depend on it working and it has never been exercised.
 
 ## Sequencing
@@ -488,12 +488,12 @@ things deliberately and confirm the suite notices.
 **Highest leverage of the hardening plans, and the one with the most downstream
 dependents.** Three separate things in the roadmap already assume it exists:
 
-- [07](07-nested-products.md)'s "Verification" section says to extend `.devtools/pgsql/`
+- [07](../retired/07-nested-products.md)'s "Verification" section says to extend `.devtools/pgsql/`
   with a three-level-tree fixture *before touching anything*. That is this plan.
 - The review comments in [08](08-nested-locations.md) make the same point, and the
   roadmap's order of operations puts the fixture suite before the recursive-hierarchy
   work generally.
-- [02 MCP](02-mcp-endpoint.md) is the reason the response-contract snapshot is worth
+- [02 MCP](../02-mcp-endpoint.md) is the reason the response-contract snapshot is worth
   building at all: it puts a second consumer on an API whose wire format is an accident of
   the schema.
 
@@ -501,7 +501,7 @@ dependents.** Three separate things in the roadmap already assume it exists:
 is the one most likely to be missed, because nothing about the snapshot script depends on
 it — the script works fine against an incomplete surface and freezes it just as happily.
 
-**Before [11](11-api-error-handling.md)**, if both are being done. 11 deliberately changes
+**Before [11](../11-api-error-handling.md)**, if both are being done. 11 deliberately changes
 status codes on failure paths across 87 operations, and its own verification section is two
 full-surface sweeps. Building the sweep here and letting 11 present its changes as a diff
 is strictly better than 11 asserting them by hand.
@@ -513,10 +513,10 @@ because the trigger suite needs a migrated SQLite database it can build itself. 
 everything else it owns and inherits a working migrate command when it starts.
 
 **It blocks no feature plan today**, but it is the fixture home that
-[07](07-nested-products.md) and [08](08-nested-locations.md) both plan against, and the
+[07](../retired/07-nested-products.md) and [08](08-nested-locations.md) both plan against, and the
 enforcement mechanism the README's additive-API ground rule currently lacks. The first
 shipped dual-engine migration should still be a small one
-([06](06-location-barcodes.md), per the review) — this suite is what will tell you whether
+([06](../06-location-barcodes.md), per the review) — this suite is what will tell you whether
 it worked.
 
 ## Open questions
@@ -531,7 +531,7 @@ it worked.
    > parsing belongs in PHP, not grep.
 2. **What is the fixture?** Committed `.sql` seeds are the most legible and match the
    existing `trigger-tests/` convention. A checked-in SQLite file is faster to load and
-   harder to review. [04](04-seed-datasets.md)'s name-keyed importer would be the most
+   harder to review. [04](../04-seed-datasets.md)'s name-keyed importer would be the most
    reusable but does not exist yet, and building this plan on an unbuilt one is backwards.
    I lean to committed `.sql` seeds now, with the option to regenerate them from 04's
    importer later. Note that the demo data generator is *not* an option on PostgreSQL.
@@ -653,7 +653,7 @@ Three things the suite grew that the plan did not ask for, each because the plan
 
 **Piece 2, landed 2026-09-17** ([issue 83](https://github.com/datagen24/victual/issues/83),
 wave 5): the response-contract snapshot, written in tier 1 from the start per
-[ADR-0025](../adr/0025-three-test-tiers.md) decision 4, as `tests/Pgsql/ContractTest.php`
+[ADR-0025](../../adr/0025-three-test-tiers.md) decision 4, as `tests/Pgsql/ContractTest.php`
 on `PgsqlSchemaTestCase` - a `contract` phase in `run-tests.sh` and `phpunit.xml`
 alongside `rbac`, the pattern decision 3 set. Piece 2b (growing the read surface) needed
 nothing further: plans 28 and 31 and 19 piece 2 had already closed the eight gaps its own
@@ -664,7 +664,7 @@ route table (`tests/Support/RouteInventory.php`, which boots `routes.php` the wa
 `.devtools/check-path-id-validation.php` already did rather than trusting a second regex
 extractor), fixing the one real gap plan 14 found by hand: `/api/openapi/specification`
 is now in `victual.openapi.json`, alongside the `info.version` placeholder (`"xxx"` →
-`version.json`'s `4.6.0`, per this plan's own fallback rule - [17](17-ecosystem-clients.md)
+`version.json`'s `4.6.0`, per this plan's own fallback rule - [17](../17-ecosystem-clients.md)
 Q1 is still unanswered). R1 (`/system/config` keeps `FEATURE_FLAG_STOCK`) is one assertion
 in the same class.
 
@@ -762,5 +762,5 @@ Piece 2 is the larger piece and the more interesting one: a day for the harness,
 per-route work, plus the schema comparison. Piece 3 is an hour once piece 1 exists.
 
 Worth splitting: land piece 1 on its own and use it. Piece 2 can wait until
-[11](11-api-error-handling.md) or [02](02-mcp-endpoint.md) makes it urgent, but not later
+[11](../11-api-error-handling.md) or [02](../02-mcp-endpoint.md) makes it urgent, but not later
 than either of those.

@@ -12,8 +12,8 @@
   0008*. If 0008 is rejected, this is rejected with it.
 - **Would affect:** [18](../plans/18-mqtt-state-publication.md),
   [02](../plans/02-mcp-endpoint.md), [19](../plans/19-rbac.md),
-  [10](../plans/10-cold-start-statelessness.md),
-  [14](../plans/14-contract-and-regression-scaffolding.md).
+  [10](../plans/landed/10-cold-start-statelessness.md),
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md).
 
 ## Context: what scale-to-zero actually charges for
 
@@ -97,7 +97,7 @@ This is about where the next several years of *added* logic should live.
    `StockService::ConsumeProduct` already runs its mutation inside
    `DatabaseService::InTransaction`, which rolls back on any throw — and a connection lost
    before commit is rolled back by PostgreSQL regardless of what the client was doing.
-   [13](../plans/13-write-path-transactions.md) bought this outright, not "most of it."
+   [13](../plans/landed/13-write-path-transactions.md) bought this outright, not "most of it."
    A stored function may still be worth it for encapsulation, for holding invariants the
    application cannot express, or for reducing a multi-statement critical section — but
    crash safety is not among the reasons, and this record should not have claimed it.
@@ -109,7 +109,7 @@ This is about where the next several years of *added* logic should live.
 
 - **Cold start.** See the context section. PHP bootstrap dominates.
 - **The HTML pages.** 71 rendered templates and 173 direct `$this->DB->` call sites
-  (measured in [14](../plans/14-contract-and-regression-scaffolding.md) §2b) still need
+  (measured in [14](../plans/landed/14-contract-and-regression-scaffolding.md) §2b) still need
   Blade, the baked view cache and a warm pod. Views do not make a page render.
 - **The HTMLPurifier serializer path**, which is plan 10's most annoying writable-path
   problem and is untouched by any of this.
@@ -172,7 +172,7 @@ accepted**, and should be lifted into their owning plans rather than discarded w
 it is rejected. They are constraints, not decisions, which is why they are noted here
 rather than given ADRs of their own.
 
-**F1 — [Plan 10](../plans/10-cold-start-statelessness.md)'s migration lock is a trap under
+**F1 — [Plan 10](../plans/landed/10-cold-start-statelessness.md)'s migration lock is a trap under
 transaction-mode pooling.** 10 specifies `pg_advisory_lock`, which is session-scoped, and
 correctly notes it is held on the connection. If pgbouncer in transaction mode is ever
 introduced — the obvious thing to reach for when many short-lived pods each open
@@ -237,7 +237,7 @@ Gates, not suggestions. The accepting pull request says how each was met.
   candidate and leaves the lean where it is.
 - **The LessQL spike is done** — question 5. Whether a view layer is addressable through
   the existing read layer changes what stage 3 costs and what
-  [14](../plans/14-contract-and-regression-scaffolding.md) is testing.
+  [14](../plans/landed/14-contract-and-regression-scaffolding.md) is testing.
 
 ## Open questions
 
@@ -318,7 +318,7 @@ Gates, not suggestions. The accepting pull request says how each was met.
 5. **Views through LessQL, or raw SQL?** The read layer is `morris/lessql` (berrnd's fork),
    and hazard 17 is already about its identifier quoting. A view layer LessQL cannot
    address naturally is a view layer read by hand-written SQL, which changes what
-   [14](../plans/14-contract-and-regression-scaffolding.md)'s contract tests are testing.
+   [14](../plans/landed/14-contract-and-regression-scaffolding.md)'s contract tests are testing.
    *Lean: unresolved. Deserves a spike before stage 3 rather than a guess here.*
 6. **Does the MQTT bridge live in the database, beside it, or in the app?** `pg_cron` +
    `pg_notify` + a listener is one shape; a k3s CronJob that selects and publishes is
@@ -343,7 +343,7 @@ Gates, not suggestions. The accepting pull request says how each was met.
 4. **Rollback stops being an image swap.** Mild on a single-replica household deployment;
    still a real property given up.
 5. **It arrives with a contract-enforcement gap** — [ADR-0008](0008-postgresql-only-runtime-engine.md)
-   hands the wire contract to [14](../plans/14-contract-and-regression-scaffolding.md)
+   hands the wire contract to [14](../plans/landed/14-contract-and-regression-scaffolding.md)
    piece 2, which is outstanding, and this record starts changing what the views return.
    Doing both before 14 lands would be changing the answers and the check at once.
 6. **It is a lot of work for one household.** The tax it removes is paid in small

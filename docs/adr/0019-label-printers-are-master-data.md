@@ -141,7 +141,7 @@ captured fields into an immutable artifact; the worker turns an artifact into de
 instructions and reports what happened. The renderer and the worker may share a repository or
 a deployment, and their **contracts stay separate** — a render may be retried automatically
 precisely because it cannot touch a printer, and no rendering retry may become a second
-physical attempt. [Plan 27](../plans/27-label-templates-and-rendering.md) owns the renderer
+physical attempt. [Plan 27](../plans/landed/27-label-templates-and-rendering.md) owns the renderer
 and the document; this record's worker keeps the device. This preserves ADR-0011's consequence that rendering leaves
 this repository: driver quirks and imaging bugs move on their own schedule, and neither is a
 reason to cut a Victual release. Template *semantics* no longer travel with them — ADR-0021
@@ -408,7 +408,7 @@ print.
 instances and the validation.** Four kinds of row: the printer instances, the driver
 definitions, what each worker advertises, and the observed status. Template definitions are
 **not** among them — ADR-0021 makes the template document application data, owned by
-[plan 27](../plans/27-label-templates-and-rendering.md) rather than registered by a worker.
+[plan 27](../plans/landed/27-label-templates-and-rendering.md) rather than registered by a worker.
 
 #### Common fields stay typed columns
 
@@ -845,7 +845,7 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
 | Kind | Set by | Lives in | Example |
 |---|---|---|---|
 | Device settings | An admin | `label_printers` columns and its validated `settings` | Which tape is loaded; the connection |
-| Template settings | The template author | Victual's published template version ([27](../plans/27-label-templates-and-rendering.md)) | The font; rendering the due date in red |
+| Template settings | The template author | Victual's published template version ([27](../plans/landed/27-label-templates-and-rendering.md)) | The font; rendering the due date in red |
 | Observed status | A worker, reporting | `label_printer_status` | The tape the device says is loaded; a paper-out warning |
 
 The rule for placing a value: if a person sets it, it is device settings; if a worker
@@ -875,7 +875,7 @@ it unexamined. `ExposedEntityNoEdit` already holds fifteen entities read generic
 written through their own endpoints, `roles` among them.
 
 The migrations are PostgreSQL-only; the SQLite line is frozen at 0265 by
-[plan 24](../plans/24-sqlite-runtime-retirement.md).
+[plan 24](../plans/landed/24-sqlite-runtime-retirement.md).
 
 #### What stops this becoming a settings framework
 
@@ -1215,7 +1215,7 @@ the label call sites and the class stays.)*
    wire, and the resolution below gates *this step*, not step 1. *(Gate dissolved by
    [ADR-0024](0024-the-fork-writes-its-own-clients.md), accepted 2026-09-15: the fork writes
    its own clients, the five endpoints are removed rather than reshaped, and
-   [plan 32](../plans/32-label-kinds.md) owns steps 2 and 3.)*
+   [plan 32](../plans/landed/32-label-kinds.md) owns steps 2 and 3.)*
 3. **The webhook and its constants are deleted** when step 2 completes, taking
    `WebhookRunner`'s last caller and the four `SystemApiController::EXPOSED_SETTINGS`
    entries (`controllers/Api/SystemApiController.php:46-49`) with them.
@@ -1434,7 +1434,7 @@ Each holds a different lifetime — worker identities and admin-edited instances
 driver definitions, current per-worker advertisements, worker-overwritten status, mutable
 per-job authorization state, append-only attempts, and append-only observations with the
 shortest retention. `label_templates` was the ninth until ADR-0021 made it Victual's template
-identity rather than a worker's registration; it is [27](../plans/27-label-templates-and-rendering.md)'s
+identity rather than a worker's registration; it is [27](../plans/landed/27-label-templates-and-rendering.md)'s
 now, and this subsystem's migration drops it. It is a large surface for one subsystem, and the cost of keeping
 definitions immutable while what workers advertise changes underneath them.
 

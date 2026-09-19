@@ -3,7 +3,7 @@
 **Goal:** Segregate and sort shopping lists by store, and give products and recipes a
 default list.
 **Upstream:** [grocy/grocy#2702](https://github.com/grocy/grocy/issues/2702)
-**Depends on:** [12](12-frontend-shared-core.md) for the UI pieces (store selector,
+**Depends on:** [12](landed/12-frontend-shared-core.md) for the UI pieces (store selector,
 list-filter toggle) — the A + C schema and API work can proceed ahead of it.
 **Status:** parts A and C landed 2026-09-18 as `migrations/0286.pgsql.sql`
 ([issue 85](https://github.com/datagen24/victual/issues/85)); see
@@ -43,7 +43,7 @@ ordering of *something*. Two candidates, and this is the main design fork (Q1):
 - **Order product groups per store.** A new table
   `(shopping_location_id, product_group_id, sort_number)`. Small — a store has maybe 15
   groups — and a product inherits its position from its group. Setup is one screen.
-- **Order locations per store.** Reuses [08](08-nested-locations.md)'s tree but conflates
+- **Order locations per store.** Reuses [08](landed/08-nested-locations.md)'s tree but conflates
   where a thing is stored at home with where it sits in a shop, which are different things.
 
 Product groups is the better fit. "Produce, bakery, dairy, frozen" is exactly a store
@@ -151,7 +151,7 @@ response gains a field the moment the migration runs, whether or not any plan sa
    probably a "later, deliberately, with the other breaking changes" item rather than
    something to slip in here.
 
-   > **Response:** Not now — and [15](15-deliberate-cleanup.md) Q5's review landed
+   > **Response:** Not now — and [15](landed/15-deliberate-cleanup.md) Q5's review landed
    > on declining the rename outright, including the compatibility-view middle path,
    > unless a breaking batch happens for other reasons.
 5. **Recipe default lists** — per recipe, or per meal plan section? Per recipe is simpler
@@ -164,7 +164,7 @@ response gains a field the moment the migration runs, whether or not any plan sa
 - For the B ordering table: `(shopping_location_id, product_group_id, sort_number)`
   with a unique constraint on the pair; the drag-to-order UI already exists in spirit
   on meal plan sections, so copy that pattern rather than inventing one.
-- `product_groups` is quietly becoming a hub — [03](03-category-min-stock.md) gives it
+- `product_groups` is quietly becoming a hub — [03](landed/03-category-min-stock.md) gives it
   a minimum, this plan a per-store position. Fine (it is the natural place), but it
   moves the group picker from "optional taxonomy" to load-bearing master data.
 

@@ -3,8 +3,8 @@
 **Goal:** Stop the copy-paste conventions drifting: one request core in `Victual.Api` with
 a default error path, factories for the list and form clone families, and the latent bugs
 those copies have already accumulated.
-**Depends on:** nothing. Must land before [05](05-store-shopping-lists.md),
-[06](06-location-barcodes.md) and [08](08-nested-locations.md) add more list/form pairs to
+**Depends on:** nothing. Must land before [05](../05-store-shopping-lists.md),
+[06](../06-location-barcodes.md) and [08](08-nested-locations.md) add more list/form pairs to
 copy from.
 **Status:** **landed in full**, steps 1 to 6, with all seven verification checks. Step 3a —
 sweep finding **S29**, a High stored-XSS class across ~45 sites assigned here on 2026-08-30 —
@@ -94,7 +94,7 @@ Worth stating before the steps, because it costs nothing to aim at and is expens
 retrofit: **the endpoint of this work is a frontend that is a real client of the API**,
 not merely one whose JavaScript has stopped drifting.
 
-That matters now rather than someday, because [17](17-ecosystem-clients.md)'s answers
+That matters now rather than someday, because [17](../17-ecosystem-clients.md)'s answers
 committed this household to two more first-party clients — a Home Assistant integration
 and a Swift module with per-platform UI targets. Three clients against one API is what
 the architecture already is; the browser is simply the one that has been allowed to skip
@@ -120,7 +120,7 @@ what falls out once the API stops treating the browser as special.
 
 ## This plan now carries a live security finding
 
-[Sweep S29](../security-sweep.md), raised while fixing S1 on the wave 0.5 hotfix branch and
+[Sweep S29](../../security-sweep.md), raised while fixing S1 on the wave 0.5 hotfix branch and
 assigned here: `bootbox` renders its message with `.html()` and `toastr` ships
 `escapeHtml: false`, so every "are you sure you want to delete X" and every success toast is
 an HTML sink — and roughly 45 of them interpolate a name straight from a text column that can
@@ -201,7 +201,7 @@ The 5 files under `public/viewjs/components/` are not clone scripts and get no f
 but their 9 handlers are on the same list and are deleted in a pass of their own.
 
 Convert **one** pair first (`locations` is the smallest and is also what
-[06](06-location-barcodes.md) and [08](08-nested-locations.md) will extend), verify it,
+[06](../06-location-barcodes.md) and [08](08-nested-locations.md) will extend), verify it,
 then do the rest mechanically.
 
 ### Step 3a — the factories escape by default, and the stragglers are swept
@@ -290,7 +290,7 @@ none, since the current behaviour is not documented anywhere and reads as a typo
 `transaction_type` means a client sending `transactiontype` — the current, undocumented,
 typo'd spelling — stops having its value honoured and silently gets the default. No status
 code changes and no field moves, so nothing fails loudly. Neither client
-[17](17-ecosystem-clients.md) tracks sends either spelling, which is what makes the
+[17](../17-ecosystem-clients.md) tracks sends either spelling, which is what makes the
 stricter answer affordable; it is recorded because "no API change" was this section's
 first sentence and it is not quite true.
 
@@ -352,7 +352,7 @@ Everything here is browser behaviour, so verification is a booted instance and a
 
 ## Sequencing
 
-**Before [05](05-store-shopping-lists.md), [06](06-location-barcodes.md) and
+**Before [05](../05-store-shopping-lists.md), [06](../06-location-barcodes.md) and
 [08](08-nested-locations.md)** — this is the ordering the review is emphatic about and it
 is the whole argument for the plan's priority. Each of those three adds at least one
 list/form pair. Written before this plan they are copies of the old pattern that then
@@ -363,12 +363,12 @@ here as the first conversion.
 **Independent of everything else in the hardening set.** It touches
 `public/js/victual.js`, `public/viewjs/*` and `views/*.blade.php`; only its step-1 consume
 fix reaches into `controllers/Api/`, and even that does not collide with
-[11](11-api-error-handling.md), which changes error paths rather than request parsing. It
+[11](../11-api-error-handling.md), which changes error paths rather than request parsing. It
 can be done in parallel with 10, 11, 13 or 14.
 
 **It blocks no feature plan outright** but it de-risks 05/06/08 by removing ~1,500 lines
 those plans would otherwise have to keep consistent, and it de-risks
-[04 seed datasets](04-seed-datasets.md) indirectly: a seeded test instance is much more
+[04 seed datasets](../04-seed-datasets.md) indirectly: a seeded test instance is much more
 useful when a failed import says so instead of logging to a console nobody has open.
 
 **S29 sharpens the ordering rather than changing it.** "12 before 05/06/08" was an argument
@@ -476,7 +476,7 @@ be the one that slips when wave 1 gets busy.
    > `tasks.js` (278) and `stockjournal.js` are mixin adopters — list-shaped with
    > enough page-specific behaviour that the full factory would fight them.
    >
-   > Third, added 2026-08-30: [19](19-rbac.md)'s `/role/{id}` joins the partial-clone
+   > Third, added 2026-08-30: [19](../19-rbac.md)'s `/role/{id}` joins the partial-clone
    > bucket by construction — it is `userpermissions.js`'s checkbox tree bound to
    > `role_permissions` — and 19 also edits `userpermissions.js` itself. So that list
    > grows by one rather than the factory list growing by two, and 19's `/roles` list is

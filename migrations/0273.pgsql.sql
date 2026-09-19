@@ -1,6 +1,6 @@
 -- Deeply nested locations: `locations` becomes a tree, so that "what is in the basement"
 -- has an answer that does not depend on every shelf being named "Basement — ...".
--- See docs/plans/08-nested-locations.md and issue 81.
+-- See docs/plans/landed/08-nested-locations.md and issue 81.
 --
 -- The column is `parent_location_id INTEGER NULL` with no foreign key, which is the shape
 -- `products.parent_product_id` already has and the shape the rest of this schema uses. Plan

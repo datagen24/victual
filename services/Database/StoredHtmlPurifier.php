@@ -22,7 +22,7 @@ use Victual\Controllers\Api\BaseApiController;
  * views/recipes.blade.php, the `.html()` renders in shoppinglist.js, equipment.js,
  * productcard.js and chorecard.js, and summernote's own editable div - none of which can
  * defend themselves, by design. So the rows are purified where they sit. Review finding P1
- * on pull request #41; see docs/plans/21-frontend-sink-discipline.md.
+ * on pull request #41; see docs/plans/landed/21-frontend-sink-discipline.md.
  *
  * The column list is read from BaseApiController rather than restated here on purpose. A
  * second copy of it is how one of these two paths silently stops being covered when a

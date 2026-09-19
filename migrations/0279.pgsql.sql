@@ -5,7 +5,7 @@
 -- mechanism, products_current_substitutions, is entirely a view over products_resolved (the
 -- parent/child mapping); with beans and grounds modelled as separate products there is no
 -- parent to hang a substitution off, so the relationship has nowhere to live. See
--- docs/plans/31-directed-substitution.md,
+-- docs/plans/landed/31-directed-substitution.md,
 -- docs/adr/0023-taxonomy-is-groups-packaging-is-parent-product.md (decision 4, accepted
 -- 2026-09-14) and issue 125.
 --

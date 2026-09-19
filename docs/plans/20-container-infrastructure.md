@@ -5,7 +5,7 @@ them, so that what ships is the transitive closure of what the process needs and
 else.
 **Depends on:** [ADR-0013](../adr/0013-nix-built-container-images.md) for the decision
 (accepted 2026-09-04; piece 1 was its acceptance gate). Remaining pieces are tracked in
-[issue 133](https://github.com/datagen24/victual/issues/133). [10](10-cold-start-statelessness.md) has landed and supplies most of what this
+[issue 133](https://github.com/datagen24/victual/issues/133). [10](landed/10-cold-start-statelessness.md) has landed and supplies most of what this
 plan used to have to work around.
 **Status:** **piece 1 complete, 2026-09-04; pieces 2, 3 and the credential split done and
 piece 4 written but not applied, 2026-09-18.** The flake under [`nix/`](../../nix/README.md)
@@ -20,7 +20,7 @@ the cluster half of verification 9. Piece 1 was ADR-0013's acceptance gate.
 `master` builds a production image from the `Dockerfile` and CI asserts four things about
 it: not root, a baked and unwritable view cache, no `.git` or `data/`, and a live
 read-only container serving a page. That image landed with
-[10](10-cold-start-statelessness.md) while this plan's first draft was in review, and it
+[10](landed/10-cold-start-statelessness.md) while this plan's first draft was in review, and it
 is a genuinely good artifact.
 
 What it does not do is what ADR-0013 argues for and this plan builds: a dependency graph
@@ -175,7 +175,7 @@ here, and `images/lib.nix` carries more weight than piece 5 assumed when it was 
 
 ## What this cannot fix
 
-- ~~**File attachments still need a real volume.**~~ **Resolved.** [01](01-file-storage.md)
+- ~~**File attachments still need a real volume.**~~ **Resolved.** [01](landed/01-file-storage.md)
   landed, and the pod sets `VICTUAL_FILE_STORAGE=database` rather than treating it as an
   option — with nothing writable mounted, `filesystem` has nowhere to write.
 - ~~**One writable mount remains, and it is not the view cache.**~~ **Resolved, 2026-09-04,
@@ -229,11 +229,11 @@ Nothing below can be done by reading, which is the whole reason this section is 
 
 **Independent of the feature roadmap.** It touches no PHP the application runs.
 
-Against [10](10-cold-start-statelessness.md) the dependency is now settled in one
+Against [10](landed/10-cold-start-statelessness.md) the dependency is now settled in one
 direction: 10 landed, and this plan is built on what it supplies rather than working around
 what it had not yet done.
 
-It pairs with [01](01-file-storage.md): 01 removes `data/storage`, and together with
+It pairs with [01](landed/01-file-storage.md): 01 removes `data/storage`, and together with
 removing the `config.php` existence check that gives a pod with no writable mount at all.
 
 ## Effort
@@ -363,7 +363,7 @@ verification accidentally sent — stores a **zero-byte file and answers 204**. 
 consumed the body by then and `php://input` is empty. The web UI sends a real type and
 upstream behaves the same way, so nothing here is broken; but "success" for a write that
 stored nothing is the same shape as the two findings review caught in
-[01](01-file-storage.md)'s importer, and it belongs in [11](11-api-error-handling.md)'s
+[01](landed/01-file-storage.md)'s importer, and it belongs in [11](11-api-error-handling.md)'s
 sweep rather than being lost with this session.
 
 ## Executed — piece 3, first half: the `production` target is retired, 2026-09-04

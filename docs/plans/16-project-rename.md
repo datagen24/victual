@@ -5,13 +5,13 @@ identifiers — landing the would-be-breaking parts while nothing is deployed
 to break.
 **Depends on:** nothing — and the internal renames depend on *happening before
 the first deployment*, not on any other plan (the earlier lean on
-[15](15-deliberate-cleanup.md)'s breaking batch is the fallback, not the plan).
+[15](landed/15-deliberate-cleanup.md)'s breaking batch is the fallback, not the plan).
 **Status:** **landed in the codebase.** Direction settled (Q1), namespaces
 checked (Q3), and Tiers 1, 2 and 3 all executed — see [Executed](#executed)
 below for what landed, what the survey missed, and what deliberately did not
 move. No instance of this fork was deployed anywhere when it landed — the
 household runs upstream grocy — which is exactly why the breaking parts went in
-now rather than waiting for [15](15-deliberate-cleanup.md)'s batch. What remains
+now rather than waiting for [15](landed/15-deliberate-cleanup.md)'s batch. What remains
 is outside the repository: the GitHub repo rename and the registry/domain claims
 of Q3, which are done at announcement time, not by a commit.
 
@@ -102,7 +102,7 @@ Counts from the tree as of this plan's writing.
   merge-conflict bomb for every open branch; do it at a quiet point between
   waves, as one mechanical commit with nothing else in it.
 - **JS global `Grocy.` and the `public/js/grocy_*.js` files** — coordinate with
-  [12](12-frontend-shared-core.md), which rewrites those files wholesale
+  [12](landed/12-frontend-shared-core.md), which rewrites those files wholesale
   anyway. Renaming before or with 12 avoids touching them twice.
 - **`grocy.openapi.json`** — filename and `"title": "Grocy REST API"`. The API
   paths themselves carry no name (all `/api/...`), so this is cosmetic — but
@@ -190,7 +190,7 @@ Counts from the tree as of this plan's writing.
 
    > **Response:** Split per the touchpoint tiers above, but the timing
    > changed on learning there are **no deployed instances of this fork** —
-   > the earlier instinct to park Tier 1 on [15](15-deliberate-cleanup.md)'s
+   > the earlier instinct to park Tier 1 on [15](landed/15-deliberate-cleanup.md)'s
    > breaking batch assumed something running that could break. Nothing is.
    > So: the outward rename (repo, branding, docs, Tier 3) happens first, and
    > Tier 1 — `GROCY_*` prefixes, DB defaults, database identifiers, the
@@ -200,7 +200,7 @@ Counts from the tree as of this plan's writing.
    > mints more code under the old identifiers; the batch-with-15 fallback
    > remains only if the rename somehow slips past first deployment. Tier 2
    > lands opportunistically (namespace between waves, JS global with
-   > [12](12-frontend-shared-core.md)). Tier 0 never lands.
+   > [12](landed/12-frontend-shared-core.md)). Tier 0 never lands.
 
 5. **Upstream attribution.** grocy is the origin and its license terms follow
    the code. Decide the attribution wording in README/about and whether any
@@ -433,7 +433,7 @@ before*, so they are not oversights and there is nothing to do in code:
       write path it describes.
 - [x] **`update.sh`.** Kept verbatim with a header at the time of the rename,
       pending the deletion question this note routed to
-      [15](15-deliberate-cleanup.md). That plan's C11 answered it: deleted,
+      [15](landed/15-deliberate-cleanup.md). That plan's C11 answered it: deleted,
       along with `.devtools/create_release_package.bat`, which packaged a
       release this fork does not cut. Neither file exists in the tree any
       longer.

@@ -76,9 +76,9 @@ believed very much are:
 | Weakness | Tracked in |
 |---|---|
 | API keys stored and compared in plaintext; accepted via query parameter, so they land in access logs | [plan 11](../docs/plans/11-api-error-handling.md) |
-| Session cookie set with no `HttpOnly`, `SameSite` or `Secure`, and no expiry | [plan 15](../docs/plans/15-deliberate-cleanup.md) |
+| Session cookie set with no `HttpOnly`, `SameSite` or `Secure`, and no expiry | [plan 15](../docs/plans/landed/15-deliberate-cleanup.md) |
 | No error logging at all in production, so an attack leaves no trace | [plan 11](../docs/plans/11-api-error-handling.md) |
-| LDAP backend is unmaintained here and pending removal; its filter-injection fix was verified by inspection only | [plan 15](../docs/plans/15-deliberate-cleanup.md) |
+| LDAP backend is unmaintained here and pending removal; its filter-injection fix was verified by inspection only | [plan 15](../docs/plans/landed/15-deliberate-cleanup.md) |
 | Generic CRUD allows mass assignment of `id` and timestamp columns | [plan 11](../docs/plans/11-api-error-handling.md) |
 
 The full picture is in [docs/architecture-review.md](../docs/architecture-review.md).

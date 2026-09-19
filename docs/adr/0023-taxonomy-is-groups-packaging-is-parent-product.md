@@ -9,12 +9,12 @@
 - **Recorded:** 2026-09-13.
 - **Answers** [plan 07 question 6](https://github.com/datagen24/victual/issues/82), which
   blocked wave 4's product half.
-- **Referenced by:** [30 — Nested product groups](../plans/30-nested-product-groups.md) and
-  [31 — Directed substitution](../plans/31-directed-substitution.md), which own the work;
-  [07 — Deeply nested products](../plans/07-nested-products.md), which is retired **after**
+- **Referenced by:** [30 — Nested product groups](../plans/landed/30-nested-product-groups.md) and
+  [31 — Directed substitution](../plans/landed/31-directed-substitution.md), which own the work;
+  [07 — Deeply nested products](../plans/retired/07-nested-products.md), which is retired **after**
   this record is accepted, by a separate pull request and never by the acceptance itself —
   that plan stays blocked meanwhile;
-  [03 — Category minimum stock](../plans/03-category-min-stock.md), whose table gains the
+  [03 — Category minimum stock](../plans/landed/03-category-min-stock.md), whose table gains the
   parent column.
 
 ## Context
@@ -22,7 +22,7 @@
 `products.parent_product_id` exists and supports exactly one level, enforced by the
 `enfore_product_nesting_level` trigger from `migrations/0130.sql`. Upstream it means *the
 same product in different packagings*: stock rolls up to the parent and siblings substitute
-for one another. [Plan 07](../plans/07-nested-products.md) proposed making that recursive.
+for one another. [Plan 07](../plans/retired/07-nested-products.md) proposed making that recursive.
 
 Its question 6 asked whether the requirement is that relation at all, or a taxonomy — a
 kind-of tree whose interior nodes are labels rather than things you buy. The answer could
@@ -60,8 +60,8 @@ shared parent expresses.
 Garlic / Fresh`, `Dairy / Cheese`, `Drinks / Soda / Coca-Cola` — lives there. Groups hold no
 stock and carry no quantity unit, so nothing aggregates across them and no unit has to agree.
 
-This is [plan 03](../plans/03-category-min-stock.md)'s table, and the column is additive to
-what that plan shipped. [Plan 30](../plans/30-nested-product-groups.md) owns the work.
+This is [plan 03](../plans/landed/03-category-min-stock.md)'s table, and the column is additive to
+what that plan shipped. [Plan 30](../plans/landed/30-nested-product-groups.md) owns the work.
 
 ### 2. `parent_product_id` keeps its upstream meaning and its existing depth
 
@@ -71,7 +71,7 @@ recursive, and no depth cap is introduced for products.
 
 Its surviving use is container sizes of one SKU family — an 8 oz can, a 12 oz can and a 2 L
 bottle of one soda under a parent that supplies the combined total, which
-[plan 28](../plans/28-open-container-measurement.md) records as forced by per-unit labelling
+[plan 28](../plans/landed/28-open-container-measurement.md) records as forced by per-unit labelling
 rather than chosen.
 
 ### 3. A relation that is a taxonomy does not go in `parent_product_id`
@@ -95,7 +95,7 @@ shared parent, so no substitution is expressible at all.
 
 The relation is therefore its own directed edge between arbitrary products — beans substitute
 for grounds, not the reverse — and the shared-parent case becomes one source of edges rather
-than the definition. [Plan 31](../plans/31-directed-substitution.md) owns it.
+than the definition. [Plan 31](../plans/landed/31-directed-substitution.md) owns it.
 
 ### 5. A UPC identifies a product; it does not define one
 
@@ -107,7 +107,7 @@ shelf, not by whether they carry distinct UPCs:
   product — the soda case.
 - Anything not labelled per unit is one product in a weight or volume unit with several
   barcodes carrying `qu_id` and `amount` — the flour case
-  ([plan 29](../plans/29-working-container-replenishment.md)).
+  ([plan 29](../plans/landed/29-working-container-replenishment.md)).
 
 A deli counter sticker is not a UPC at all; it is a scale barcode with the weight embedded,
 so it cannot mint a product in principle.
@@ -138,7 +138,7 @@ observed tree reaches three group levels against a limit of six nodes.
 
 **`product_groups.name` is globally `UNIQUE` and has to stop being.** Nesting makes the rule
 `UNIQUE(parent_product_group_id, name) NULLS NOT DISTINCT`, exactly the change
-[plan 08](../plans/08-nested-locations.md) made to `locations` and for the same reason. Plan
+[plan 08](../plans/landed/08-nested-locations.md) made to `locations` and for the same reason. Plan
 30 inherits that plan's finding that `NULLS NOT DISTINCT` requires PostgreSQL 15.
 
 **The catalogue gets wider and shallower.** Seven of thirteen sampled pairs are separate
@@ -191,7 +191,7 @@ flour, and as answering a question about *counting* with a fact about *labelling
 1. **The sampled classification recorded in plan 07**, with the answer and its date, so the
    evidence this record rests on is inspectable rather than asserted.
 
-   **Met 2026-09-14.** [Plan 07 question 6](../plans/07-nested-products.md)'s response block
+   **Met 2026-09-14.** [Plan 07 question 6](../plans/retired/07-nested-products.md)'s response block
    carries the thirteen-pair classification, the date it was run (2026-09-13) and the method
    (the maintainer and a second household member, together, against real kitchen items).
 
@@ -207,7 +207,7 @@ flour, and as answering a question about *counting* with a fact about *labelling
    podman. **`.spike-adr23/` is a path in that commit, not in a checkout of `master`, where it
    has never existed and never will** — this is preview work for
    [migration 0277](../../migrations/RESERVATIONS.md), which stays unwritten until
-   [plan 30](../plans/30-nested-product-groups.md) is scheduled. Read a file with
+   [plan 30](../plans/landed/30-nested-product-groups.md) is scheduled. Read a file with
    `git show 4da3d35d:.spike-adr23/<path>`, or check the branch out into a worktree to run
    it; `.spike-adr23/RESULTS.md` at that SHA has the full transcript.
 
@@ -287,7 +287,7 @@ here; accepting the record above them settles the taxonomy/packaging split, not 
 acceptance rather than being implicitly closed by it.
 
 1. **Does a group minimum roll up to descendant groups?**
-   [Plan 03](../plans/03-category-min-stock.md) shipped `product_groups.min_stock_amount`
+   [Plan 03](../plans/landed/03-category-min-stock.md) shipped `product_groups.min_stock_amount`
    against a flat table. Whether a parent group's minimum covers products in its children is
    undecided, and plan 03's Q1 note-only shopping list follow-up interacts with it.
 2. **Is the one-level trigger left as it is, or made explicit?**

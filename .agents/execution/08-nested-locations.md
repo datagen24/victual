@@ -1,6 +1,6 @@
 # Execution plan: plan 08, deeply nested locations (issue 81)
 
-This is the work breakdown for [docs/plans/08-nested-locations.md](../../docs/plans/08-nested-locations.md)
+This is the work breakdown for [docs/plans/landed/08-nested-locations.md](../../docs/plans/landed/08-nested-locations.md)
 as scoped by [issue 81](https://github.com/datagen24/victual/issues/81). It assigns pieces to
 subagents, fixes the shared contracts between them, and names the checks each piece has to
 pass. It decides nothing the plan and the issue did not already decide; where execution
@@ -16,7 +16,7 @@ README table and plan 08's **Executed** section, both written by piece E.
 ## Inputs, in reading order
 
 1. [AGENTS.md](../../AGENTS.md), [docs/constitution.md](../../docs/constitution.md).
-2. [Plan 08](../../docs/plans/08-nested-locations.md) with its five answered questions, and
+2. [Plan 08](../../docs/plans/landed/08-nested-locations.md) with its five answered questions, and
    issue 81's **Decided** list, which restates them. Restated here so no piece re-opens them:
    `UNIQUE(parent_location_id, name)` with `NULLS NOT DISTINCT` (Q1); deleting a location
    that has children is refused (Q2); `is_freezer` is literal, and the form defaults the
@@ -36,7 +36,7 @@ README table and plan 08's **Executed** section, both written by piece E.
    `migrations/0268.pgsql.sql`, the read entity, the UI, a PostgreSQL-only suite phase
    (`.devtools/pgsql/group-min-stock-tests.php`) and a browser probe
    (`.devtools/frontend/group-min-stock.js`) wired into the `frontend-security` job. Its
-   **Executed** section in [plan 03](../../docs/plans/03-category-min-stock.md) is the
+   **Executed** section in [plan 03](../../docs/plans/landed/03-category-min-stock.md) is the
    model for piece E.
 
 ## Decisions the maintainer owns
@@ -168,7 +168,7 @@ branch. D2 after C. E last. One feature branch, one pull request, following plan
 
 Files: `migrations/0273.pgsql.sql` (new), `migrations/RESERVATIONS.md`, `db/pgsql/README.md`
 (the target line), `docs/plans/22-medication-tracking.md` and
-`docs/plans/23-storage-classes.md` (migration numbers only), `docs/plans/README.md` (the
+`docs/plans/landed/23-storage-classes.md` (migration numbers only), `docs/plans/README.md` (the
 same numbers in the status rows for 22, 23 and 08).
 
 1. Claim 0273 for plan 08 in the reservations table, move 23 to 0274 and 22 to 0275–0276,
@@ -330,9 +330,9 @@ for its probe, and say so in the commit message.
 
 ### E. Records
 
-Files: `docs/plans/08-nested-locations.md` (**Executed** section), `docs/plans/README.md`
+Files: `docs/plans/landed/08-nested-locations.md` (**Executed** section), `docs/plans/README.md`
 (status row for 08, wave 4 row, and the migration renumbering from piece A),
-`docs/plans/07-nested-products.md` (one sentence: the depth function exists), `docs/data-model.md`
+`docs/plans/retired/07-nested-products.md` (one sentence: the depth function exists), `docs/data-model.md`
 (the view in the inventory), `docs/usage.md` if it describes locations.
 
 The Executed section records, with dates: what shipped and under which number; the

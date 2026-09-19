@@ -20,7 +20,7 @@
   ADR behind.
 - **Referenced by:** [security sweep](../security-sweep.md) S5, S6, S27 and the
   `userpictures` residual; [19](../plans/19-rbac.md), whose question 9 carries wave 2's
-  answer; [15](../plans/15-deliberate-cleanup.md)'s C1, which opened the files.
+  answer; [15](../plans/landed/15-deliberate-cleanup.md)'s C1, which opened the files.
 
 ## Context
 

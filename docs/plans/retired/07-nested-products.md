@@ -1,15 +1,15 @@
 # 07. Deeply nested products
 
 **Goal:** Support product hierarchies more than one level deep.
-**Depends on:** nothing, but do [08 nested locations](08-nested-locations.md) first — same
+**Depends on:** nothing, but do [08 nested locations](../landed/08-nested-locations.md) first — same
 pattern, far fewer call sites.
 **Status: retired 2026-09-14.** Question 6 was answered on 2026-09-13 — **taxonomy** — and
-[ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) accepted that answer on
+[ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) accepted that answer on
 2026-09-14 with all four prerequisites met
 ([issue 128](https://github.com/datagen24/victual/issues/128)). This is the separate retirement
 the record's lifecycle table called for, after the acceptance and not as part of it: the tree
-of kinds lives in nested `product_groups`, owned by [30](30-nested-product-groups.md), and the
-relation between forms that are separate products is [31](31-directed-substitution.md)'s
+of kinds lives in nested `product_groups`, owned by [30](../landed/30-nested-product-groups.md), and the
+relation between forms that are separate products is [31](../landed/31-directed-substitution.md)'s
 directed substitution. Both are scheduled into wave 4 with this retirement. The body below is
 kept in its original tense as the record of the packaging reading the sampling did not
 support; the *Retired* section at the end says what survives and where.
@@ -92,7 +92,7 @@ exactly this in `prevent_infinite_nested_recipes_*`, which is ported and can be 
 Optionally cap depth at something sane (5?) so a mis-click cannot create a pathological
 tree — see Q3.
 
-**The cap already exists.** [08](08-nested-locations.md) landed
+**The cap already exists.** [08](../landed/08-nested-locations.md) landed
 `hierarchy_depth_limit()` in `migrations/0273.pgsql.sql` — an `IMMUTABLE` SQL function
 returning 6, which is what question 3's shared constant asked for. This plan's guard calls
 it rather than writing a second number, and 08's `check_location_parent` trigger is the
@@ -110,7 +110,7 @@ client holding a one-level assumption about `parent_product_id` — that a paren
 parent, that summing children is summing a leaf set — keeps compiling and starts being
 wrong, with no shape difference to notice. Absent is not the same as none, and this is the
 plan where the distinction has teeth: a manifest of paths and response keys, which is what
-[17](17-ecosystem-clients.md)'s item 1 builds, cannot catch it either. It is caught by
+[17](../17-ecosystem-clients.md)'s item 1 builds, cannot catch it either. It is caught by
 reading each client's aggregation code, or not at all.
 
 ### UI
@@ -210,7 +210,7 @@ compared against a deliberate expectation rather than against whatever falls out
    >
    > If the requirement is purely taxonomy — browse and report by class, group the
    > shopping list by aisle — then **nesting `product_groups` is the right change and
-   > this plan is mostly unnecessary**. That is [03](03-category-min-stock.md)'s
+   > this plan is mostly unnecessary**. That is [03](../landed/03-category-min-stock.md)'s
    > territory, one nullable parent column on a lookup table, and it costs none of
    > what 07 costs: no stock aggregation, no substitution semantics, no
    > `cascade_change_qu_id_stock`, none of the one-level audit at the top of this
@@ -227,12 +227,12 @@ compared against a deliberate expectation rather than against whatever falls out
    > shrinks to whatever the packaging cases actually need, and Q1 and Q4 above are
    > rewritten against that narrower relation rather than against the taxonomy.
    >
-   > The locations tree in [08](08-nested-locations.md) has no equivalent problem —
+   > The locations tree in [08](../landed/08-nested-locations.md) has no equivalent problem —
    > containment is exactly what `parent_location_id` would mean — which is one more
    > reason 08 goes first.
 
    > **Answered 2026-09-13: taxonomy.** Recorded as
-   > [ADR-0023](../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md), **Accepted
+   > [ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md), **Accepted
    > 2026-09-14 with all four prerequisites met** (this response met the first). The
    > acceptance is a decision in force; what follows is still the sampling result and the
    > reasoning it supports, unchanged by acceptance. This plan is retired **after** that
@@ -267,13 +267,13 @@ compared against a deliberate expectation rather than against whatever falls out
    > against a tree that does not exist; Q2's mixed middle node turns out to be a *group*
    > holding a product and a subgroup at once, which costs nothing because a group holds no
    > stock. Q3's depth cap shipped anyway, as `hierarchy_depth_limit()` in
-   > `migrations/0273.pgsql.sql`, and [30](30-nested-product-groups.md) is the second
+   > `migrations/0273.pgsql.sql`, and [30](../landed/30-nested-product-groups.md) is the second
    > consumer it was written generic for — just not the one expected.
    >
    > **What survives into new work.** The forms under a leaf relate one way — beans grind,
    > grounds do not un-grind — and that is a directed edge between separate products, which
    > sibling substitution under a shared parent cannot express.
-   > [31](31-directed-substitution.md) owns it.
+   > [31](../landed/31-directed-substitution.md) owns it.
 
 ## Review notes
 
@@ -291,7 +291,7 @@ an afternoon; the audit, the decisions above and the regression fixtures are the
 Worth doing after 08 has established the pattern.
 
 On the taxonomy reading, most of that cost belongs to a nullable parent column on
-`product_groups` in [03](03-category-min-stock.md), and what is left here is only the
+`product_groups` in [03](../landed/03-category-min-stock.md), and what is left here is only the
 genuine same-product-different-packaging cases — small, and possibly nothing at all. The
 roadmap's wave 4 is written around the first branch and says so.
 
@@ -305,8 +305,8 @@ question 6 found none of thirteen candidate pairs pooled, so none of it is built
 
 What survives, and where it lives now:
 
-- `hierarchy_depth_limit()`, which [08](08-nested-locations.md) wrote generic expecting this
-  plan to be its second consumer, is consumed by [30](30-nested-product-groups.md) instead.
+- `hierarchy_depth_limit()`, which [08](../landed/08-nested-locations.md) wrote generic expecting this
+  plan to be its second consumer, is consumed by [30](../landed/30-nested-product-groups.md) instead.
 - The one-level `parent_product_id` for genuine packaging is unchanged and is now defined by
   ADR-0023 decision 2. Its trigger enforced the level on `UPDATE` only, never `INSERT`, and
   checked only one of the two directions a violation can arrive from —
@@ -314,6 +314,6 @@ What survives, and where it lives now:
   prerequisite 4 and fixed by migration `0277.pgsql.sql` before 30 copies that trigger.
 - The directed "beans become grounds, grounds never become beans" relation, which question 2's
   mixed node and question 6's separate-products finding left with nowhere to live, is
-  [31](31-directed-substitution.md).
+  [31](../landed/31-directed-substitution.md).
 - Question 2's mixed middle node turned out to be a group holding a product and a subgroup at
   once, which costs nothing because a group holds no stock; ADR-0023 decision 6 records it.

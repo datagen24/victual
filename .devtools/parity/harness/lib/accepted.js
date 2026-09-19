@@ -667,7 +667,7 @@ function classify(step, difference, mode = 'parity') {
 const UI_ACCEPTED = [
 	{
 		id: 'plan-28-measurement-form',
-		reference: 'docs/plans/28-open-container-measurement.md, commit a592ab3f',
+		reference: 'docs/plans/landed/28-open-container-measurement.md, commit a592ab3f',
 		reason:
 			'/stockentries carries #stock-measurement-form, the dialog that records an opened ' +
 			'container\'s remaining contents. Upstream has no such feature. Exactly one more form, on ' +

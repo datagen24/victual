@@ -19,7 +19,7 @@
 // WHAT IT GUARDS. Six things, most of which produce no error of any kind when they are wrong:
 //
 //   1. THE RULE THAT MUST NOT BE GOT WRONG. A location minimum is a refill prompt, never a
-//      shopping list entry - docs/plans/29-working-container-replenishment.md says getting
+//      shopping list entry - docs/plans/landed/29-working-container-replenishment.md says getting
 //      this backwards is the failure case the whole plan exists to avoid. Cases 8 and 9 assert
 //      a short (product, location) pair puts nothing into stock_missing_products and that
 //      running the shopping list top-up leaves the list alone, mirroring how
@@ -35,7 +35,7 @@
 //   5. Weighing a vessel corrects the one entry at that location through the location's own
 //      tare, dry stores untouched - and the present *product*-scoped tare mechanism gets the
 //      same physical scenario wrong, which is the negative control
-//      docs/plans/29-working-container-replenishment.md's verification section asks for by
+//      docs/plans/landed/29-working-container-replenishment.md's verification section asks for by
 //      name. Cases 11-16.
 //   6. The refusals a vessel weighing has to raise rather than silently misweigh: no tare
 //      configured, more than one product at the location, a gross reading in the wrong unit,

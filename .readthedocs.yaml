@@ -1,5 +1,5 @@
 # Read the Docs build configuration.
-# Design: docs/plans/26-documentation-site.md. Boundary: docs/adr/0020-documentation-publication-boundary.md.
+# Design: docs/plans/landed/26-documentation-site.md. Boundary: docs/adr/0020-documentation-publication-boundary.md.
 version: 2
 
 build:

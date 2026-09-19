@@ -4,8 +4,8 @@
 will actually print, and print it — with the printed bytes kept, so an exact reprint is the
 same label rather than a similar one.
 **Depends on:** [12](12-frontend-shared-core.md) (landed), [01](01-file-storage.md) (landed),
-[19](19-rbac.md) piece 1 (implemented), and [25](25-label-infrastructure.md)'s identity and
-job work. Gated on [ADR-0021](../adr/0021-label-templates-are-application-data.md),
+[19](../19-rbac.md) piece 1 (implemented), and [25](../25-label-infrastructure.md)'s identity and
+job work. Gated on [ADR-0021](../../adr/0021-label-templates-are-application-data.md),
 **accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
 cleared.**
 **Status:** implemented in wave 3b alongside 25; see Executed. Both follow-ups landed
@@ -16,14 +16,14 @@ and sweep S32, the fail-closed group-to-read-permission table for the files API
 
 ## Why this plan exists
 
-[ADR-0011](../adr/0011-label-namespace.md) put label templates in the drainer and
-[ADR-0019](../adr/0019-label-printers-are-master-data.md) implemented that split, which makes
+[ADR-0011](../../adr/0011-label-namespace.md) put label templates in the drainer and
+[ADR-0019](../../adr/0019-label-printers-are-master-data.md) implemented that split, which makes
 a household's label appearance editable only by whoever can cut a worker release.
-[ADR-0021](../adr/0021-label-templates-are-application-data.md) moves the template document
+[ADR-0021](../../adr/0021-label-templates-are-application-data.md) moves the template document
 into Victual while leaving rendering outside it, and this plan owns what that creates: the
 editor, the renderer contract, previews, and the artifacts a reprint replays.
 
-**The division with [25](25-label-infrastructure.md)**, which is the plan this one was split
+**The division with [25](../25-label-infrastructure.md)**, which is the plan this one was split
 out of:
 
 | 25 owns | 27 owns |
@@ -33,7 +33,7 @@ out of:
 | Printer and worker configuration, the nine worker routes, delivery | Previews, and promoting a preview to a print |
 | The import refusal ADR-0021 decision item 3 requires, since `labels` is its table | The browser designer, and the renderer service and its deployment |
 
-[06](06-location-barcodes.md) is unchanged and still owns the locations print action, what the
+[06](../06-location-barcodes.md) is unchanged and still owns the locations print action, what the
 label says, and the stateless `vctl:` resolve surface.
 
 ## Gates
@@ -244,7 +244,7 @@ Two consequences to carry rather than discover:
   (`config-dist.php`, default false) and gates the *webhook* path's buttons across nine
   `public/viewjs` call sites. Binding the storage requirement to it would make turning on the
   existing product/stock-entry printing demand database storage — a behaviour change to the
-  path [ADR-0019](../adr/0019-label-printers-are-master-data.md) item 7 deliberately leaves
+  path [ADR-0019](../../adr/0019-label-printers-are-master-data.md) item 7 deliberately leaves
   alone through wave 3b. A separate flag keeps the two paths independent during coexistence
   and gives step 3 something to delete.
 - **The label subsystem cannot be enabled in `demo` or `prerelease` mode.**
@@ -313,8 +313,8 @@ per-request grant is ADR-0021 question 1 and this plan decides it with evidence.
 ### Piece 8 — deployment
 
 Both services are images on no base image with no shell, per
-[ADR-0013](../adr/0013-nix-built-container-images.md) and
-[ADR-0010](../adr/0010-workload-standard.md); this plan grants no interpreter or shell
+[ADR-0013](../../adr/0013-nix-built-container-images.md) and
+[ADR-0010](../../adr/0010-workload-standard.md); this plan grants no interpreter or shell
 exception, and a candidate runtime that cannot meet it is disqualified rather than waived.
 The renderer needs Victual's assigned assets and its result API — not printers, not arbitrary
 outbound destinations — and runs under bounded memory, pixels, elements, text length and
@@ -373,9 +373,9 @@ Nothing here is dual-engine: every number is above 0265 and therefore PostgreSQL
 
 Additive. No existing response shape changes, no existing print path moves, and the five
 `/printlabel` endpoints keep the webhook through wave 3b —
-[ADR-0019](../adr/0019-label-printers-are-master-data.md) item 7's steps 2 and 3 are untouched
+[ADR-0019](../../adr/0019-label-printers-are-master-data.md) item 7's steps 2 and 3 are untouched
 by this plan. The `FileGroups` enum is deliberately **not** extended, so no client sees a new
-file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling 4.
+file group. [17](../17-ecosystem-clients.md) gains nothing to carry beyond coupling 4.
 
 ## Security
 
@@ -387,7 +387,7 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
   entity kind; a digest is not a capability.
 - **No new outbound capability.** The renderer reaches Victual's API and nothing else; the
   worker reaches its declared devices. Victual remains the server, never the client — the
-  property [25](25-label-infrastructure.md)'s security section already claims and this plan
+  property [25](../25-label-infrastructure.md)'s security section already claims and this plan
   must not quietly spend.
 - **Uploads are bounded and validated** on decode as well as on declared type, and no remote
   retrieval exists to be pointed anywhere.
@@ -559,7 +559,7 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    > `python3 .spike-renderer/qualify/kerning.py`,
    > `python3 .spike-renderer/qualify/rtl.py <font with Hebrew and Arabic>`,
    > `python3 .spike-renderer/qualify/cost.py`. See
-   > [ADR-0021](../adr/0021-label-templates-are-application-data.md) prerequisite 1, which owns
+   > [ADR-0021](../../adr/0021-label-templates-are-application-data.md) prerequisite 1, which owns
    > this evidence and records what of it is not recoverable.
    >
    > **Candidate C is selected.** ADR-0021 prerequisite 1 is met.
@@ -596,7 +596,7 @@ file group. [17](17-ecosystem-clients.md) gains nothing to carry beyond coupling
    > accepted or drafted by this reconciliation; its acceptance is an implementation gate,
    > alongside ADR-0019's existing gates.
 
-   > **Answered 2026-09-07 by [ADR-0021](../adr/0021-label-templates-are-application-data.md)**,
+   > **Answered 2026-09-07 by [ADR-0021](../../adr/0021-label-templates-are-application-data.md)**,
    > which supersedes three boundaries of ADR-0011 — template ownership, reprint semantics and
    > the importer's mapping obligation — and is **Proposed**, with acceptance a separate
    > bookkeeping-only pull request.
@@ -703,7 +703,7 @@ and painting in another — cannot arise; what is asserted instead is the cross-
 agreement below, which is the property a per-axis error would break.
 
 **The check neither repository could make alone.**
-[`.devtools/labels/renderer-agreement-tests.php`](../../.devtools/labels/renderer-agreement-tests.php)
+[`.devtools/labels/renderer-agreement-tests.php`](../../../.devtools/labels/renderer-agreement-tests.php)
 runs the real binary over a request Victual composed and feeds the bytes back to the verifier
 that will accept or refuse them in production. Ten assertions, including the QR verified
 against the pinned payload. It fails rather than skipping when the binary is absent: a
@@ -752,7 +752,7 @@ change or intermediate 6.x upgrade was required.
 `ea3f8f7f`, reported that value in its fixed-output-derivation failure. Commit `888e38c8`
 recorded it; [Nix run 38](https://github.com/datagen24/victual/actions/runs/34985019714)
 then passed the flake checks, built all three images, and passed the migration and serving
-checks. See [Nix's hash bootstrap procedure](../../nix/README.md#bootstrapping-the-hashes)
+checks. See [Nix's hash bootstrap procedure](../../../nix/README.md#bootstrapping-the-hashes)
 to reproduce the hash measurement with `nix build .#frontend`.
 
 **The loader.** Fabric 6 dropped the UMD build issue 126 found missing; there is still no

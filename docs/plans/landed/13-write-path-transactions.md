@@ -8,7 +8,7 @@ importer are wrapped; see [Executed](#executed) below for what landed, and for t
 places the plan's own scope grew in the doing. Everything from here down is the plan as
 written and reviewed, kept because the reasoning is what the code has to keep being
 judged against. Still the prerequisite it was written to be for letting anything other
-than a human drive writes — in particular [02 MCP](02-mcp-endpoint.md) — which is now
+than a human drive writes — in particular [02 MCP](../02-mcp-endpoint.md) — which is now
 satisfied rather than pending.
 
 ## Today
@@ -216,7 +216,7 @@ a *failed* operation leaves nothing behind.
 
 ## Sequencing
 
-**Before [02 MCP](02-mcp-endpoint.md), and specifically before 02's write tools.** This
+**Before [02 MCP](../02-mcp-endpoint.md), and specifically before 02's write tools.** This
 is the review's own ordering and it is right: read-only MCP tools do not need it, but the
 moment an assistant can call `consume_product`, "a failure mid-loop leaves a half-consumed
 booking" stops being a theoretical risk and becomes something that will happen unattended,
@@ -227,10 +227,10 @@ land during that window rather than blocking it.
 **Independent of the other hardening plans.** It touches `services/StockService.php`,
 `services/DatabaseService.php` and `services/Database/DatabaseImporter.php`.
 [10](10-cold-start-statelessness.md) touches the migration service and
-[11](11-api-error-handling.md) touches controllers; neither collides. It can be done in
+[11](../11-api-error-handling.md) touches controllers; neither collides. It can be done in
 parallel with any of them.
 
-**It de-risks [07 nested products](07-nested-products.md) as a side effect.** 07 makes
+**It de-risks [07 nested products](../retired/07-nested-products.md) as a side effect.** 07 makes
 `stock_current` aggregate across a subtree, which means more rows touched per operation
 and more places for a half-completed loop to produce a plausible-looking but wrong
 aggregate. Doing this first means 07's fixtures are asserting against a ledger that
@@ -342,7 +342,7 @@ then the entrypoints that use it, then the importer.
   loop so a label describes the entry as it was booked.
 
   **Eight since 2026-09-02**: `EditStockEntry` was wrapped by
-  [18](18-mqtt-state-publication.md)'s review, which found it writing a correlated pair of
+  [18](../18-mqtt-state-publication.md)'s review, which found it writing a correlated pair of
   `stock_log` rows and mutating the stock row between them with no transaction at all. That
   it was missed here is the interesting part - "every stock write path is transactional"
   was said above about the seven *booking* entrypoints, and an edit that rewrites a booking

@@ -8,7 +8,7 @@ use Victual\Controllers\Users\User;
  * Answers "which fields of this entity must the current user not see", from the
  * permission_fields table (docs/plans/19-rbac.md piece 2, Q2's response: a table rather
  * than a PHP constant, so a household can widen the policy without a release; the response
- * contract snapshot [14](docs/plans/14-contract-and-regression-scaffolding.md) piece 2 will
+ * contract snapshot [14](docs/plans/landed/14-contract-and-regression-scaffolding.md) piece 2 will
  * generate from this migration's seeded rows, never a live database).
  *
  * Enforcement happens at the boundary, not here and not in the services that build

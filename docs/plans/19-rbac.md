@@ -10,7 +10,7 @@ assignment is a grant — this plan inherits that rule rather than defining it, 
 why S5 and S6 are not parked here. **Piece 2 additionally** depends on
 [11](11-api-error-handling.md) for the single error helper (a redacted field and a
 refused call must be distinguishable and both must be spec'd) and on
-[14](14-contract-and-regression-scaffolding.md) piece 2 for the response-contract
+[14](landed/14-contract-and-regression-scaffolding.md) piece 2 for the response-contract
 snapshot that proves redaction; piece 1 needs neither, and verifies its views against
 14 **piece 1**, which landed in wave 0. Feeds [04](04-seed-datasets.md) (the four
 roles are a seed) and constrains [02](02-mcp-endpoint.md) and
@@ -32,7 +32,7 @@ land before any client work in [17](17-ecosystem-clients.md) resumes, because th
 client renders price fields and needs to know they may be absent.
 One of the five permission findings that were parked against "an RBAC plan in draft on a
 branch" stays here — the permissions page's `ADMIN`-versus-`USERS_READ` mismatch from
-[14](14-contract-and-regression-scaffolding.md)'s section 2b, carried as question 9. The
+[14](landed/14-contract-and-regression-scaffolding.md)'s section 2b, carried as question 9. The
 other four (**S5**, **S6**, **S27** and the `userpictures` residual) go back to wave 2;
 see the roadmap's tail for why parking them here inverted this plan's own Depends-on line.
 
@@ -259,7 +259,7 @@ the caller's effective permissions be a superset of the *new* set, not just of t
 The users list gains a Roles column. `/user/{id}/permissions` grows a roles multi-select
 above the existing tree; inherited ticks render disabled with the role name as a tooltip.
 A new `/roles` and `/role/{id}` pair reuses the same tree component with the checkbox
-tree bound to `role_permissions` instead. Under [12](12-frontend-shared-core.md) that is
+tree bound to `role_permissions` instead. Under [12](landed/12-frontend-shared-core.md) that is
 one `Victual.EntityList` call for `/roles` and **two mixin adopters, not a factory form**
 — `/role/{id}` is the same partial-clone shape 12's Q5 response already buckets
 `userpermissions.js` into, and this plan modifies `userpermissions.js` itself. Nor is
@@ -335,7 +335,7 @@ channel today rather than a future one.
 `uihelper_stock_current_overview` (`migrations/0252.sql:38-39` — the highest-numbered
 migration defining it; 0219 is superseded) is what the Blade stock overview renders, what [02](02-mcp-endpoint.md)'s `stock_overview` tool reads and what
 [18](18-mqtt-state-publication.md) would publish as attributes; it is not an API path
-today, but [14](14-contract-and-regression-scaffolding.md)'s section 2b requires it to
+today, but [14](landed/14-contract-and-regression-scaffolding.md)'s section 2b requires it to
 become one before piece 2 freezes the contract, so it will be. And
 `products_price_history` is the entity 14's 2b parked as "a deliberate widening pending a
 decision" — this plan is that decision, and the leaf is what makes exposing it safe.
@@ -375,7 +375,7 @@ asks whether that is what the household wants).
 #### OpenAPI
 
 Every redactable field gets `x-visibility: STOCK_PRICES_VIEW` in `victual.openapi.json`
-and is no longer listed as `required` on its schema. [14](14-contract-and-regression-scaffolding.md)'s
+and is no longer listed as `required` on its schema. [14](landed/14-contract-and-regression-scaffolding.md)'s
 contract snapshot is run twice per affected path, once as Admin and once as a fixture
 user without the leaf, and the second snapshot is asserted to equal the first minus
 exactly the `x-visibility` fields. That assertion is the proof that redaction *works* — and
@@ -468,7 +468,7 @@ to catch: additive is not the same as invisible. A strict decoder that rejects u
 breaks on it exactly as a strict decoder breaks on a removed key in piece 2 — the same
 compatibility model, applied in the other direction — and neither tracked client is known
 to read this endpoint, which is what makes it affordable rather than what makes it absent.
-It goes in [14](14-contract-and-regression-scaffolding.md)'s contract snapshot as an
+It goes in [14](landed/14-contract-and-regression-scaffolding.md)'s contract snapshot as an
 addition on a path piece 2 later removes fields from, so both directions are recorded on
 the same endpoint. Piece 2 removes `price`, `costs` and their
 relatives from responses to users who lack `STOCK_PRICES_VIEW` — `stock.price`,
@@ -737,7 +737,7 @@ topic, and has no Response yet. See Q5.
    > domain filters, and neither replaces the other.
 
 9. **The permissions page's `ADMIN`-versus-`USERS_READ` mismatch, which
-   [14](14-contract-and-regression-scaffolding.md)'s section 2b deferred to this plan.**
+   [14](landed/14-contract-and-regression-scaffolding.md)'s section 2b deferred to this plan.**
    `UsersController` renders `/user/{id}/permissions` behind `USERS_READ` in the resolved,
    hierarchy-joined shape; the API returns raw unresolved rows behind `ADMIN`. So a
    `USERS_READ` user can open the page, tick boxes and get a 403 on save. This plan

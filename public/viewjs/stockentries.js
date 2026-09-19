@@ -197,7 +197,7 @@ $(document).on('click', '.product-open-button', function(e)
 	);
 });
 
-// Opens the measurement modal (ADR-0022, docs/plans/28-open-container-measurement.md) in
+// Opens the measurement modal (ADR-0022, docs/plans/landed/28-open-container-measurement.md) in
 // either mode a .stock-measure-button can be in: 'open' (opening a single sealed unit while
 // recording what it holds) or 'remeasure' (re-measuring a unit that is already open, the
 // common case over a container's life). The unit picker defaults to the product's own stock
@@ -461,7 +461,7 @@ function RefreshStockEntryRow(stockRowId)
 				{
 					if (result.opened_amount !== null && result.opened_amount !== undefined)
 					{
-						// ADR-0022 / docs/plans/28-open-container-measurement.md. .text() only -
+						// ADR-0022 / docs/plans/landed/28-open-container-measurement.md. .text() only -
 						// quResult.name/name_plural are user-editable master data, so this never
 						// goes through .html() with a concatenated value (frontend sink discipline,
 						// docs/constitution.md).

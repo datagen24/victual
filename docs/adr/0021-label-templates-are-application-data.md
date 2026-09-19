@@ -39,8 +39,8 @@
   this acceptance**: 0011's three superseded boundaries are superseded as of today, and 0019 is
   free to be accepted next.
 - **Would affect:** [25](../plans/25-label-infrastructure.md),
-  [27](../plans/27-label-templates-and-rendering.md), [06](../plans/06-location-barcodes.md),
-  [01](../plans/01-file-storage.md), [17](../plans/17-ecosystem-clients.md).
+  [27](../plans/landed/27-label-templates-and-rendering.md), [06](../plans/06-location-barcodes.md),
+  [01](../plans/landed/01-file-storage.md), [17](../plans/17-ecosystem-clients.md).
 
 ## Context
 
@@ -203,7 +203,7 @@ If one is ever built, re-keying becomes a real question again and gets its own r
 ## Consequences
 
 **A designer, a renderer and artifact storage become scheduled work**, which
-[plan 27](../plans/27-label-templates-and-rendering.md) owns. Plan 25 narrows to identity,
+[plan 27](../plans/landed/27-label-templates-and-rendering.md) owns. Plan 25 narrows to identity,
 jobs, printer configuration and the delivery worker. That is more surface in wave 3b than
 0011 implied, and the alternative is shipping a print action whose appearance nobody can
 change without a Python release.
@@ -362,7 +362,7 @@ before deleting it.
      [ADR-0013](0013-nix-built-container-images.md)'s assertion by the very name that check's negative control
      was built to catch.
 
-   Two findings belong to [plan 27](../plans/27-label-templates-and-rendering.md) rather than
+   Two findings belong to [plan 27](../plans/landed/27-label-templates-and-rendering.md) rather than
    here: the renderer emits RGBA where the identifier says indexed, 14× larger for identical
    pixels (37,145 bytes against 2,573, and the re-encode is lossless — decoded palette counts
    match the renderer's reported 38,439 black / 0 red / 339,489 white exactly); and a form

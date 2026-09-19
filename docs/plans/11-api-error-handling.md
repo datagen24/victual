@@ -4,7 +4,7 @@
 error shape, permission failures that say 403 — and close the API-key and middleware
 gaps found alongside them.
 **Depends on:** nothing hard, but land
-[14 contract and regression scaffolding](14-contract-and-regression-scaffolding.md)
+[14 contract and regression scaffolding](landed/14-contract-and-regression-scaffolding.md)
 first if both are being done, so the status-code changes here show up as a diff rather
 than as an assertion.
 **Status:** landed in wave 2, 2026-09-04, recorded inline under each section rather than in an
@@ -17,7 +17,7 @@ only deliberate response-shape changes in the hardening set.
 
 The `/api` route group registers 87 operations across 74 paths and `victual.openapi.json`
 documents 86 across 73 — one mismatch, `GET /openapi/specification`, which is routed and
-undocumented (see [14](14-contract-and-regression-scaffolding.md)). The earlier reading
+undocumented (see [14](landed/14-contract-and-regression-scaffolding.md)). The earlier reading
 here, that the totals agreed at 86 apiece with two mismatches hidden inside them, was
 wrong in both halves: it dropped one route on the way in and invented one spec-only path.
 The
@@ -549,7 +549,7 @@ it:
 
 `api_keys.api_key` changes meaning from plaintext to hash. Note that it is irreversible
 by construction, which is the point, and that both files must run under the lock from
-[10](10-cold-start-statelessness.md) like everything else.
+[10](landed/10-cold-start-statelessness.md) like everything else.
 
 ### API
 
@@ -590,7 +590,7 @@ that bite are the ones where a client's *success* path moves: a client treating 
 non-2xx as "retry" now retries a 403 forever, and one that read a bodyless 401 by status
 alone now parses a JSON body it did not expect. The wildcard CORS removal is the one that
 breaks silently in a browser and not in a test. This is why the roadmap puts
-[14](14-contract-and-regression-scaffolding.md) before this plan — ~74 routes are better
+[14](landed/14-contract-and-regression-scaffolding.md) before this plan — ~74 routes are better
 shown as a diff than asserted by hand — and why [17](17-ecosystem-clients.md)'s manifests
 want to cover status codes and response keys, not just paths.
 
@@ -614,7 +614,7 @@ from a documented body with an optional `error_details` object to one without it
 is a narrowing, the additive-API rule in the [README](README.md) is about exactly this,
 and it needs two things rather than a shrug: a spec edit removing the `500`/`Error500`
 response from those nine operations as part of this plan (not left for
-[14](14-contract-and-regression-scaffolding.md) to notice), and a changelog entry naming
+[14](landed/14-contract-and-regression-scaffolding.md) to notice), and a changelog entry naming
 the nine.
 
 Response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
@@ -630,7 +630,7 @@ it — no operation documents a `403`, a `404` or a `401` anywhere. So the work 
 adding error responses to a spec that has none; it is adding the codes this plan makes
 real to operations that currently claim `400` is the only way to fail. Each converted
 endpoint gets its real `4xx` responses added, which also makes the spec the place the
-contract test in [14](14-contract-and-regression-scaffolding.md) reads from. There is one
+contract test in [14](landed/14-contract-and-regression-scaffolding.md) reads from. There is one
 route/spec mismatch, not the two this plan previously listed — `/api/openapi/specification`
 is in the route table and not the spec, and is fixed in 14 alongside the parity check that
 would have caught it. `/api/recipes/{recipeId}/copy` was *not* the second: **corrected
@@ -645,7 +645,7 @@ section for the corrected counts and for what it means for the parity assertion.
    `?order=zzz`, and against a non-existent id. Record method, path, case, status. The
    before-run is the baseline; the after-run must differ only in the rows of the table
    above. Doing this by hand across 87 operations is the argument for landing
-   [14](14-contract-and-regression-scaffolding.md) first and adding this as a case there.
+   [14](landed/14-contract-and-regression-scaffolding.md) first and adding this as a case there.
 2. **Success responses byte-identical.** Same harness, happy paths only, both engines:
    the diff must be empty. This is the check that the helper refactor did not change
    anything it was not supposed to.
@@ -672,7 +672,7 @@ section for the corrected counts and for what it means for the parity assertion.
 
 ## Sequencing
 
-**After [14](14-contract-and-regression-scaffolding.md), before
+**After [14](landed/14-contract-and-regression-scaffolding.md), before
 [02 MCP](02-mcp-endpoint.md).** The dependency on 14 is soft but real: verification
 checks 1 and 2 above are exactly what 14 builds, and doing this plan first means doing
 that work twice or doing it by hand.
@@ -683,8 +683,8 @@ allowed" and 500 for "you typed the filter wrong" cannot recover sensibly from e
 If 02's Q6 response lands on a separate MCP container calling
 the REST API, this plan stops being a nicety and becomes the interface contract.
 
-Against the other hardening plans: independent of [10](10-cold-start-statelessness.md)
-and [12](12-frontend-shared-core.md). It overlaps [15](15-deliberate-cleanup.md) in the
+Against the other hardening plans: independent of [10](landed/10-cold-start-statelessness.md)
+and [12](landed/12-frontend-shared-core.md). It overlaps [15](landed/15-deliberate-cleanup.md) in the
 auth middleware — do the middleware *ordering* change here (it is three lines in
 `app.php` and `routes.php`) and leave the authenticator-class extraction to 15, rather
 than entangling a small ordering fix with a refactor.
@@ -711,7 +711,7 @@ On this deployment, "keep it in memory" means "keep it until the pod next sleeps
 1. **Ship the status-code changes outright, or behind a compatibility flag?** They are
    corrections, every one of them is on a failure path, and a flag means maintaining two
    behaviours forever. I lean to shipping them outright and putting them on the
-   deliberate breaking-changes list in [15](15-deliberate-cleanup.md) — but that is a
+   deliberate breaking-changes list in [15](landed/15-deliberate-cleanup.md) — but that is a
    real call, and the answer depends on whether the Home Assistant integration
    distinguishes 400 from 403 anywhere. Worth ten minutes reading its error handling
    before deciding.
@@ -793,7 +793,7 @@ On this deployment, "keep it in memory" means "keep it until the pod next sleeps
 7. **What is the retention story for the error log?** stderr and let the platform handle
    it is the k3s answer and needs no code. But a household instance with no log
    aggregation gets errors that scroll away. A file with rotation is more work and
-   reintroduces a writable path that [10](10-cold-start-statelessness.md) just removed.
+   reintroduces a writable path that [10](landed/10-cold-start-statelessness.md) just removed.
    I lean stderr only.
 
    > **Response:** stderr only. Correct for k3s and for the household case too —

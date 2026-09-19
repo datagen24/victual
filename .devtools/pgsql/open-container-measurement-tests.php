@@ -1,7 +1,7 @@
 <?php
 
 // Does an opened container's measured remainder behave the way ADR-0022 and
-// docs/plans/28-open-container-measurement.md say it must?
+// docs/plans/landed/28-open-container-measurement.md say it must?
 //
 //   php open-container-measurement-tests.php
 //

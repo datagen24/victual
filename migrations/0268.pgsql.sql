@@ -1,6 +1,6 @@
 -- Category level minimum stock: a product group can carry a minimum of its own, so that
 -- "always have some milk" does not require inventing a parent product to hang it on.
--- See docs/plans/03-category-min-stock.md.
+-- See docs/plans/landed/03-category-min-stock.md.
 --
 -- DOUBLE PRECISION, not INTEGER. products.min_stock_amount is declared INTEGER upstream and
 -- demonstrably holds 2.5 (db/pgsql/README.md hazard 2); the new column means the same kind of
