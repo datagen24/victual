@@ -1,0 +1,9 @@
+# The workloads this repository ships, as one kustomize base: `kubectl apply -k deploy/k3s`
+# applies both, and an operator's overlay (deploy/kind is one) puts `../k3s` — or this
+# repository's URL at a pinned ref — in its `resources` and patches the ConfigMap, the two
+# Secrets and the image references for its own cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - victual.yaml
+  - victual-mcp.yaml

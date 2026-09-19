@@ -606,6 +606,30 @@ jobs:
         if: failure()
         run: tail -50 /tmp/php-server.log || true
 
+  # The MCP sidecar's own tests (mcp/tests/tools): handler shaping against recorded
+  # response shapes, and the HTTP face against a fake Victual over real sockets. The Nix
+  # build of the same package runs in nix.yml; this is the fast feedback half.
+  mcp:
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The major nix/mcp.nix builds and ships (nodejs_24), so CI tests what runs.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mcp/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   images:
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')

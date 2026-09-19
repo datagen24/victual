@@ -11,12 +11,18 @@
 # adds (a controller to restart it, a Service to reach it) and what a laptop needs (a
 # hostPort, `imagePullPolicy: Never`).
 #
-# **Status: not applied.** The manifest passes `.devtools/ci/check_deploy_manifest.py` and
-# `kubectl apply --dry-run=client`, and the pod it describes is the one that was applied to
-# podman and served on 2026-09-18. It has not been applied to a cluster: none was available
-# to the session that wrote it. That is plan 20 piece 4's gate and plan 25's verification 12
-# (a label printing through the k3s apply), and it is stated here rather than implied by the
-# file existing.
+# **Status: applied to a cluster, 2026-09-19** — kind (Kubernetes v1.37, one node, podman
+# provider) through deploy/kind, with the MCP sidecar beside it (issue #86). The
+# migrate initContainer ran all migrations as `victual_migrate`, php-fpm served as
+# `victual_app`, and all three probes passed. Two things the cluster showed that podman
+# could not:
+#   - `lifecycle.stopSignal` is **dropped by the API server** on v1.37 without the
+#     ContainerStopSignals gate. The stored Deployment has no `lifecycle` at all, so
+#     both containers get SIGTERM. See deploy/README.md, "Signals".
+#   - The initContainer failing while the roles do not exist yet is expected, and
+#     converges: it exited 1 once, was restarted by the kubelet, and succeeded.
+# Not yet applied to k3s itself. A k3s apply that reaches a printer is plan 25's
+# verification 12 and is still open.
 #
 # PostgreSQL is not in here, nor ingress, nor a storage class: the fork declares what its
 # workloads need and the operator decides where they run (ADR-0010's boundary, and
