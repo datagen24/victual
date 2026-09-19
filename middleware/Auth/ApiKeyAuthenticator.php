@@ -10,7 +10,9 @@ use Slim\Routing\RouteContext;
 /**
  * Recognises a request by an API key, against the keys ApiKeyService manages.
  *
- * The key is read from the configured header (default VICTUAL-API-KEY), and - on the
+ * The key is read from the configured header (default VICTUAL-API-KEY) and matched against
+ * the user-issued key types, regular and MCP (issue #208); the key that matched is recorded
+ * on ApiKeyService as the acting key. Also - on the
  * calendar iCal route only - from the "secret" query parameter, checked against
  * special-purpose calendar keys. That second path exists because a calendar application
  * subscribing to the feed cannot set a custom header, and it is scoped to one route and
@@ -66,9 +68,16 @@ class ApiKeyAuthenticator extends Authenticator
 
 		$headerKey = $request->getHeaderLine($this->ApiKeyHeaderName);
 
-		if ($headerKey !== '' && $apiKeyService->IsValidApiKey($headerKey))
+		if ($headerKey !== '')
 		{
-			return $apiKeyService->GetUserByApiKey($headerKey);
+			$apiKeyRow = $apiKeyService->FindValidApiKey($headerKey, $this->AcceptedHeaderKeyTypes($request));
+
+			if ($apiKeyRow !== null)
+			{
+				$apiKeyService->SetActingApiKey($apiKeyRow);
+
+				return $apiKeyService->GetUserByApiKey($headerKey, $apiKeyRow->key_type);
+			}
 		}
 
 		$calendarKey = $this->CalendarSharingSecret($request);
@@ -79,6 +88,26 @@ class ApiKeyAuthenticator extends Authenticator
 		}
 
 		return null;
+	}
+
+	/**
+	 * The key types a header key may have on this request: the user-issued types, narrowed
+	 * to one by ApiKeyService::EXPECTED_KEY_TYPE_HEADER when the caller sends it. A value
+	 * that is not a user-issued type narrows to nothing, so the request is not recognised -
+	 * the header can only ever take authority away.
+	 *
+	 * @return string[]
+	 */
+	private function AcceptedHeaderKeyTypes(Request $request): array
+	{
+		$expected = trim($request->getHeaderLine(ApiKeyService::EXPECTED_KEY_TYPE_HEADER));
+
+		if ($expected === '')
+		{
+			return ApiKeyService::USER_ISSUED_KEY_TYPES;
+		}
+
+		return in_array($expected, ApiKeyService::USER_ISSUED_KEY_TYPES, true) ? [$expected] : [];
 	}
 
 	/**

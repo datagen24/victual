@@ -1,0 +1,77 @@
+# Runs deploy/postgres/roles.sql against the throwaway PostgreSQL, as its superuser — the
+# kind equivalent of step 2b of deploy/README.md's podman walkthrough. deploy/kind/up.sh
+# creates the ConfigMap holding the script from the file itself, so there is one copy of
+# roles.sql, not two. Retries until PostgreSQL answers; repeatable, like the script.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: victual-db-roles
+  labels:
+    app.kubernetes.io/name: victual-db-roles
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-db-roles
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: sql
+          configMap:
+            name: victual-db-roles-sql
+      containers:
+        - name: roles
+          image: docker.io/library/postgres:16
+          command:
+            - psql
+            - -v
+            - ON_ERROR_STOP=1
+            - -v
+            - db=victual
+            - -v
+            - migrate_password=$(MIGRATE_PASSWORD)
+            - -v
+            - app_password=$(APP_PASSWORD)
+            - -f
+            - /sql/roles.sql
+          env:
+            - name: PGHOST
+              value: victual-postgres
+            - name: PGDATABASE
+              value: victual
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: victual-postgres-superuser
+                  key: password
+            - name: MIGRATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: victual-db-migrate
+                  key: VICTUAL_DB_PASSWORD
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: victual-db-app
+                  key: VICTUAL_DB_PASSWORD
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              memory: 64Mi

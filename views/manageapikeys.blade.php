@@ -54,6 +54,12 @@
 			     on its own row and easy to forget once the new value is copied. --}}
 			<p>{{ $__t('This key replaces the one you rotated. It keeps working alongside its predecessor until you delete that key from the table below.') }}</p>
 			@endif
+			@if($newApiKeyType === \Victual\Services\ApiKeyService::API_KEY_TYPE_MCP)
+			{{-- Issue #208. An MCP client presents the key as a bearer token to the sidecar,
+			     not in Victual's own header, and that is the one thing about it people get
+			     wrong when configuring a client. --}}
+			<p>{{ $__t('This is an MCP key: give it to your assistant\'s MCP client as the header "Authorization: Bearer <key>". It works on Victual\'s API as well, as you.') }}</p>
+			@endif
 			<p>{{ $__t('Copy it now - it cannot be shown again') }}</p>
 			<pre class="user-select-all mb-2"><code id="new-api-key-value">{{ $newApiKey }}</code></pre>
 			{{-- The description carried here is the one just typed, so that the QR dialog says
@@ -63,7 +69,7 @@
 			<a class="btn btn-info btn-sm apikey-show-qr-button"
 				href="#"
 				data-apikey-key="{{ $newApiKey }}"
-				data-apikey-type="default"
+				data-apikey-type="{{ $newApiKeyType }}"
 				data-apikey-description="{{ empty($newApiKeyDescription) ? $__t('Your new API key') : $newApiKeyDescription }}">
 				<i class="fa-solid fa-qrcode"></i>&nbsp;{{ $__t('Show a QR-Code for this API key') }}
 			</a>
@@ -118,6 +124,7 @@
 					<th>{{ $__t('Last used') }}</th>
 					<th>{{ $__t('Created') }}</th>
 					<th class="allow-grouping">{{ $__t('Key type') }}</th>
+					<th class="allow-grouping">{{ $__t('Read-only') }}</th>
 				</tr>
 			</thead>
 			<tbody class="d-none">
@@ -137,8 +144,9 @@
 							title="{{ $__t('Delete this item') }}">
 							<i class="fa-solid fa-trash"></i>
 						</a>
-						@if($apiKey->key_type === \Victual\Services\ApiKeyService::API_KEY_TYPE_DEFAULT)
-						{{-- Rotation (issue #130) is offered for the regular key type only - the
+						@if(in_array($apiKey->key_type, \Victual\Services\ApiKeyService::USER_ISSUED_KEY_TYPES, true))
+						{{-- Rotation (issue #130) is offered for the user-issued types only, regular
+						and MCP (issue #208) - the
 						special-purpose types (calendar, label worker/verifier/renderer) each already
 						have their own rotation story and this must not add a second, conflicting one.
 						Creates a successor only; retiring this row stays the "Delete" button above. --}}
@@ -194,6 +202,9 @@
 					<td>
 						{{ $apiKey->key_type }}
 					</td>
+					<td>
+						@if($apiKey->read_only == 1){{ $__t('Yes') }}@else{{ $__t('No') }}@endif
+					</td>
 				</tr>
 				@endforeach
 			</tbody>
@@ -216,6 +227,37 @@
 						class="form-control"
 						id="description"
 						name="description">
+				</div>
+				<div class="form-group">
+					<label for="key_type">{{ $__t('Key type') }}</label>
+					<select class="custom-control custom-select"
+						id="key_type"
+						name="key_type">
+						<option value="default">{{ $__t('Regular') }}</option>
+						<option value="mcp">{{ $__t('MCP (for an AI assistant)') }}</option>
+					</select>
+				</div>
+				{{-- Offered for an MCP key only, and on by default there (issue #208): the
+				     assistant's tools are read-only today, so a key that can do no more is the
+				     sensible default, and the restriction is enforced by Victual, not by the
+				     sidecar. --}}
+				<div class="form-group d-none"
+					id="read_only_group">
+					<div class="custom-control custom-checkbox">
+						<input type="checkbox"
+							class="form-check-input custom-control-input"
+							id="read_only"
+							name="read_only"
+							value="1"
+							checked>
+						<label class="form-check-label custom-control-label"
+							for="read_only">{{ $__t('Read-only') }}
+							&nbsp;<i class="fa-solid fa-question-circle text-muted"
+								data-toggle="tooltip"
+								data-trigger="hover click"
+								title="{{ $__t('A read-only key can look things up but cannot change anything: Victual refuses every other request made with it') }}"></i>
+						</label>
+					</div>
 				</div>
 				<div class="form-group">
 					<label for="expires_in_days">{{ $__t('Expires in (days)') }}</label>

@@ -1,0 +1,106 @@
+# A throwaway PostgreSQL for the kind test harness. **Not a deployment artifact**: its data
+# is an emptyDir, so it is gone with the pod, which is the point — the same role as the
+# `podman run postgres:16` in deploy/README.md's walkthrough. Production PostgreSQL is the
+# operator's (ADR-0010), not something deploy/k3s ships.
+#
+# It still meets .devtools/ci/check_deploy_manifest.py's bar (non-root, read-only root
+# filesystem, dropped capabilities, a memory limit, probes), because that check reads every
+# file under deploy/ and a test harness that needed an exemption would be the first.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victual-postgres
+  labels:
+    app.kubernetes.io/name: victual-postgres
+spec:
+  selector:
+    app.kubernetes.io/name: victual-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victual-postgres
+  labels:
+    app.kubernetes.io/name: victual-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victual-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-postgres
+    spec:
+      automountServiceAccountToken: false
+      # The official image's `postgres` user. It starts as root only to chown PGDATA; given
+      # a PGDATA it already owns (a subdirectory of an fsGroup emptyDir), it runs as 999
+      # throughout.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:16
+          env:
+            - name: POSTGRES_DB
+              value: victual
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: victual-postgres-superuser
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # Over TCP, not the socket: during init the image's temporary server listens on
+          # its socket only, so a socket check passes before the real server is up.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "victual"]
+            periodSeconds: 2
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "victual"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

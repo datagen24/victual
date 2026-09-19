@@ -37,6 +37,9 @@
 		<testsuite name="rootentry">
 			<file>tests/Pgsql/RootEntryTest.php</file>
 		</testsuite>
+		<testsuite name="mcpauth">
+			<file>tests/Pgsql/McpAuthTest.php</file>
+		</testsuite>
 		<testsuite name="bootstrapadmin">
 			<file>tests/Pgsql/BootstrapAdminTest.php</file>
 		</testsuite>

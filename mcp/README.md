@@ -1,53 +1,112 @@
 # victual-mcp
 
-Read-only MCP sidecar for Victual. Build from
-[docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md) — this tree is the
-skeleton it describes in §12, adapted to live in this repository rather than a
-separate one (see the spec's Open Question 1 amendment, 2026-09-19, and
-[ADR-0013](../docs/adr/0013-nix-built-container-images.md)).
+Read-only MCP sidecar for Victual, built from
+[docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md). It lives in this repository
+rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
+[ADR-0013](../docs/adr/0013-nix-built-container-images.md).
 
-## Status: framework only, unbuilt
+## Status (2026-09-19)
 
-This was scaffolded in a sandbox with no `npm` registry access and no Nix, so **nothing
-here has been installed, compiled, or run.** Treat the first real build as part of the
-work, the same way `nix/README.md` treats the first `nix build` of the other three
-images — the SDK v2 API surface is described in the spec from a reading, not a build,
-and it is exactly the kind of interface that turns out to differ once code is written
-against it.
+Built, tested and running on a Kubernetes cluster (kind, v1.37) beside Victual. The six
+§5 tools answer against a production-mode Victual over both protocol revisions §1 names:
+`2026-07-28` (stateless, `server/discover`) and `2025-11-25` (the stateless legacy
+fallback). Checked with the official SDK v2 client, not hand-built envelopes.
 
-## What's here
+**Not done, and what it gates:**
 
-- `src/config.ts` — the §8 environment schema.
-- `src/auth/resolver.ts` — the credential→outbound-headers seam (§2, §4), the IdP swap
-  point later.
-- `src/victual/client.ts` — the REST client and §7 status→category error mapping.
-- `src/victual/shape.ts` — row shaping helpers (unit names, due-date sentinel).
-- `src/tools/*.ts` — one file per §5 tool: input/output Zod schemas transcribed from the
-  spec, handlers that throw `not implemented`. The schemas are real; the bodies are not.
-- `src/server.ts`, `src/main.ts` — boot and server wiring, stubbed at the point the
-  actual `@modelcontextprotocol/sdk` v2 API is needed.
-- `tests/{fixtures,contract,tools}/` — empty, waiting on plan 14 piece 2's
-  response-contract fixtures (landed 2026-09-17 in the main tree) to be copied in.
+- **Victual's side of the auth seam — issue #208.** Until it lands:
+  - Any regular API key works. MCP-type keys (`API_KEY_TYPE_MCP`) are what keep MCP access
+    separately grantable and revocable (§4.2), and they don't exist yet.
+  - There is no per-key `read_only` flag. For the six read tools this changes nothing,
+    but the write tools (issue #209) must not ship without it.
+  - `GET /api/user/capabilities` answers 404, so `tools/list` is **served unfiltered**.
+    That also means a key Victual would reject still gets a tool list; its first
+    `tools/call` then answers `unauthorized`. This is a UX gap, not a security one:
+    every call is still permission-checked by Victual as the key's user (§5, §7).
+- **Contract replay against plan 14's fixtures (§11.1).** The handler tests use the
+  recorded *shapes*, but not the frozen fixtures themselves.
+- **The actual client (§11.4).** The two motivating questions have not yet been asked
+  through Claude in real use.
 
-## What the local session needs to do first
+## Layout
 
-1. `npm install` to generate `package-lock.json` (not committed — could not be produced
-   without npm registry access here) and confirm the dependency versions in
-   `package.json` against whatever the MCP TypeScript SDK v2 actually ships as on
-   npm — the spec names it descriptively (`@modelcontextprotocol/server` /
-   `/express`/`/node`, `@modelcontextprotocol/core`), not by exact package name, and
-   that needs verifying against the real registry, not memory.
-2. `npm run build`, then wire `src/server.ts`'s `buildServer()` to the real SDK: the
-   `/mcp` Streamable HTTP handler, `/healthz`, and the `tools/list` capability filter
-   (§5) against `GET /api/user/capabilities` — which does not exist in Victual yet
-   either (spec §4.2 item 5). That endpoint, `API_KEY_TYPE_MCP`, and the `read_only`
-   key flag are Victual-side work this scaffolding step deliberately left undone; it
-   was scoped to the sidecar and its Nix build only.
-3. Fill in each tool's `handler`, replay-tested against plan 14's fixtures per spec
-   §11.1.
-4. `nix build .#mcp` from the repository root once `package-lock.json` exists — this
-   will fail on the first run with a hash mismatch for `nix/hashes.nix`'s
-   `mcpNpmDeps` placeholder, by design; see `nix/README.md`, "Bootstrapping the
-   hashes". `nix build .#image-mcp` after that.
-5. `compose.yaml` (§11.2–§11.5's stack) is not written yet — add it once there is a
-   real server to point MCP Inspector at.
+| Path | What |
+|---|---|
+| `src/main.ts` | Boot: parse the environment (§8), listen, stop on SIGTERM |
+| `src/config.ts` | The §8 environment schema; exits non-zero on anything invalid |
+| `src/server.ts` | `/healthz`, the pre-JSON-RPC 401, the §5 capability probe, and `createMcpHandler` with a per-request server factory |
+| `src/auth/resolver.ts` | Credential → outbound headers (§2, §4). The IdP swap point |
+| `src/victual/client.ts` | The REST client and the §7 status → category mapping |
+| `src/victual/capabilities.ts` | `GET /api/user/capabilities`; a 404 means "serve unfiltered" |
+| `src/victual/shape.ts`, `types.ts` | Row shaping (units, the `2999-12-31` sentinel, numeric coercion) and the REST slices read |
+| `src/tools/*.ts` | One file per §5 tool: Zod input/output schemas and the handler |
+| `tests/tools/` | Handler tests (mocked client) and HTTP tests (a fake Victual over real sockets) |
+| `scripts/probe.mjs` | Drives a running sidecar with the official SDK v2 client |
+
+## Working on it
+
+```sh
+npm ci
+npm test                  # tsc, then node:test — 15 tests
+npm run typecheck
+```
+
+Run it against a Victual:
+
+```sh
+npm run build
+VICTUAL_BASE_URL=http://localhost:8080 MCP_PORT=3000 node dist/main.js
+```
+
+Probe it as a client would:
+
+```sh
+PROBE_NEGOTIATION=2026-07-28 npm run probe -- http://localhost:3000/mcp "$KEY" expiring_soon '{"days":7}'
+```
+
+`PROBE_NEGOTIATION` takes `auto` (the default: `server/discover` first, then fall back),
+`legacy`, or a revision to pin. **The SDK client's own default is `legacy`.** A client
+that doesn't opt in speaks `2025-11-25` without saying so. That is how the first probe of
+this server reported `2025-11-25` against a server that serves both.
+
+## Build and deploy
+
+- **Image:** `nix build .#image-mcp`, or `nix/build-in-podman.sh images` from a Mac, which
+  builds and loads all four images.
+- **Changing `package-lock.json` changes `nix/hashes.nix`'s `mcpNpmDeps`.** Re-run
+  `nix build .#mcp` and take the `got:` value.
+- **Manifest:** [`deploy/k3s/victual-mcp.yaml`](../deploy/k3s/victual-mcp.yaml).
+- **Local cluster:** [`deploy/kind/up.sh`](../deploy/kind/up.sh) brings up Victual, the
+  sidecar and a throwaway PostgreSQL on kind.
+
+**The image runs `node` directly and carries no shell.** `nix/checks.nix`'s
+`mcp-image-has-no-shell` holds that. The first build had bash in the closure three ways:
+buildNpmPackage's bin wrapper, npm through the full `nodejs`, and nodejs-slim's embedded
+`process.config` naming its `-dev` outputs. [`nix/mcp.nix`](../nix/mcp.nix)'s header
+explains each fix.
+
+## Connecting a client
+
+The client needs:
+
+- the sidecar's URL;
+- a static header, `Authorization: Bearer <Victual API key>`.
+
+**The key travels in that header, so only send it over plain HTTP where nobody else can
+read the traffic.** The sidecar speaks plain HTTP by design, and TLS is the ingress's job
+(spec §8, §9).
+- Over `http://`, use `kubectl port-forward` to `localhost:3000/mcp`, or a tunnel that
+  encrypts, such as a tailnet.
+- Anything else reaches it through the operator's ingress with TLS, as `https://…/mcp`.
+- The manifest publishes no ingress, and the spec keeps the sidecar on the cluster or
+  tailnet (§9, plan 02 Q4).
+
+Inside the cluster, the sidecar forwards the key to Victual over the cluster network. If
+you don't trust pod-to-pod traffic there, encrypting it is a mesh or CNI concern (mTLS);
+the manifests don't provide it.
+
+The key's user is who the assistant acts as, so its permissions are what the assistant
+can see. **No v1 tool returns a price field**: every row is shaped from named fields
+(§5), and none of them is a price. Issue #86's price-visibility residual applies once a
+tool does. Then either each person gets their own key, or the shared key's user holds no
+`STOCK_PRICES_VIEW`.

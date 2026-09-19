@@ -69,7 +69,22 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   (`tests/Pgsql/BootstrapAdminTest.php`); run-tests.sh exports a suite bootstrap password so
   migrated schemas don't log generated ones. **walk.py now needs `--password`** (nix.yml reads
   the generated one from the migrate container); the parity stack uses
-  `PARITY_VICTUAL_ADMIN_PASSWORD`. The kind half is a separate PR into PR 211's branch.
+  `PARITY_VICTUAL_ADMIN_PASSWORD`. The kind half is PR 214.
+- **2026-09-19 — Issue #208 Victual-side MCP auth** (branch `claude/issue-208-mcp-auth`):
+  `API_KEY_TYPE_MCP`, `api_keys.read_only` (**0287** — plan 22's unwritten claims moved to
+  0288–0289), the read-only 403 in `BaseAuthMiddleware` (plus a named list of upstream GET
+  routes that write), a `VICTUAL-API-KEY-TYPE` header that narrows the lookup, and
+  `GET /api/user/capabilities`. Also fixed `ApiKeyIsReadable()`, which would have shown an MCP
+  key's hash. New phase `mcpauth`; `tests/Pgsql/request-subprocess-helper.php` sends any
+  request through the full stack. Full suite green. Sidecar side (send the header) is on
+  #86's branch. See [[project_issue86_mcp_sidecar]].
+- **2026-09-19 — Issue #86 sidecar built, deployed to kind** (branch
+  `claude/issue-86-kubernetes-deploy-cc575a`): six tools implemented on the real SDK v2
+  (`@modelcontextprotocol/server`+`/node` 2.0.0 — the scaffold's `sdk ^2.0.0` did not
+  exist), 15 node:test tests, `.#image-mcp` built shell-free, and `deploy/k3s` applied to a
+  real cluster for the first time via `deploy/kind/up.sh`. Found: `stopSignal` dropped on
+  k8s 1.37. Next: #208 (capabilities endpoint, MCP key type, read_only). Detail and gotchas:
+  [[project_issue86_mcp_sidecar]].
 - **2026-09-19 — Issue #86 framework merged, in-repo, unbuilt** (PR
   [207](https://github.com/datagen24/victual/pull/207), branch
   `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers
@@ -99,38 +114,9 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   since 09-04). Warm nix builder: `podman commit victual-nix-builder` then
   `BUILDER=… NIX_IMAGE=… nix/build-in-podman.sh` (existing builder is bound to another
   worktree). Local `master` was stale; branch from `origin/master`.
-- **2026-09-18 — Plan 05 parts A/C landed**, issue #85: `migrations/0286.pgsql.sql` —
-  three nullable columns (`shopping_lists.shopping_location_id`,
-  `products.default_shopping_list_id`, `recipes.default_shopping_list_id`), no defaults,
-  no foreign keys, PostgreSQL-only above the freeze exactly as the plan specified.
-  **Deliberately did NOT re-issue `products_view`/`shopping_lists_view`**: both flatten
-  `p.*`/`sl.*` at `CREATE VIEW` time, and migration 0276 already hit and documented the
-  failure mode (`CREATE OR REPLACE VIEW` refuses to reposition an existing output column) —
-  the generic API is unaffected either way since `GenericEntityApiController` reads the
-  base tables directly. Added `default_shopping_list_id` to the `Product`/
-  `ProductWithoutUserfields` OpenAPI schemas (no schema exists for `recipes`/
-  `shopping_lists` to extend) and regenerated `tests/Pgsql/snapshots/contract-{admin,
-  restricted}.json` per ADR-0024 decision 1 — diff is exactly the three new fields,
-  identical on both sweeps (no sensitive-vocabulary match). New tier-1 test
-  `tests/Pgsql/ShoppingListStoresTest.php` (`run-tests.sh shopliststores`, wired into
-  `phpunit.xml` and the `all` target) round-trips all three columns through the real API
-  and pins the view non-reissue as a test, not just a comment. Verified against real
-  PostgreSQL 16.13 in podman (`docker build --target dev`, stock `postgres:16` +
-  `apt-get install postgresql-16-pgtap`): `run-tests.sh all` (25 phases,
-  `SUITE_ALLOW_RESERVED_HOLES=1` for still-unwritten 0284/0285) ends `SUITE PASSED`. Next
-  unclaimed migration: 0287. Wave 5 remaining: 20's pieces (#133), then 02 (#86), then 18's
-  HA checks (#139).
-- **2026-09-18 — Wave 5 order set**: 05 A/C (0286 claimed, snapshot regenerates with it)
-  and 20's remaining pieces (#133) first because they change responses and deployment;
-  then 02 (#86); then 18's HA checks (#139). Found 14 piece 2 had landed 2026-09-17
-  (`fb97824`, `ContractTest.php`) with #83 still open and plan 14's status line stale —
-  closed and fixed. Next unclaimed migration (at the time): 0287, since claimed and landed
-  by the entry above.
 
 ## DOCTRINE (operator-locked decisions)
 
-- [Verification discipline](feedback_verification_discipline.md) — "it loads" is not
-  evidence; which suite answers which question; the parity suite is not a CI gate.
 
 ## REFERENCE PATTERNS
 

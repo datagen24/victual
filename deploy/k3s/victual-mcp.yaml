@@ -1,0 +1,120 @@
+# The read-only MCP sidecar (issue #86, docs/mcp-interface-spec.md): its own Deployment
+# and Service beside Victual's, not a container in Victual's pod.
+#
+#   kubectl apply -f deploy/k3s/victual.yaml -f deploy/k3s/victual-mcp.yaml
+#
+# "Sidecar" is the spec's word for the shape — one small service next to Victual speaking
+# MCP on one side and Victual's REST API on the other — not a pod layout. A separate
+# Deployment is what §2 and §9 ask for: it holds no state, no database credential and no
+# Victual API key (§8), so it can scale, restart and roll independently of the pod that
+# does, and two replicas behind the Service must be indistinguishable from one (§11.5 is
+# the soak that checks that, and why this starts at two).
+#
+# Exposure is cluster- or tailnet-only (§9, plan 02 Q4). There is deliberately no Ingress
+# here; the ingress is the operator's (ADR-0010), and publishing /mcp beyond the household
+# network is not a decision this manifest can make — the IdP future state owns that
+# boundary first (§4.1).
+#
+# Clients authenticate with `Authorization: Bearer <Victual API key>`; the sidecar forwards
+# the key to Victual on every call and stores nothing (§2, §4).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victual-mcp-config
+  labels:
+    app.kubernetes.io/name: victual-mcp
+data:
+  # Victual's own Service, from deploy/k3s/victual.yaml — in-cluster HTTP by design (§8:
+  # TLS is the ingress's job; the sidecar never disables verification, it just never
+  # leaves the cluster network).
+  VICTUAL_BASE_URL: "http://victual:8080"
+  # `all-read` is the six §5 tools. A comma-separated list narrows it; an unknown name
+  # stops the container at startup rather than being ignored.
+  MCP_ENABLED_TOOLS: "all-read"
+  MCP_REQUEST_TIMEOUT_MS: "10000"
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victual-mcp
+  labels:
+    app.kubernetes.io/name: victual-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: victual-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victual-mcp
+  labels:
+    app.kubernetes.io/name: victual-mcp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victual-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-mcp
+    spec:
+      # Nothing here talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+      containers:
+        - name: mcp
+          image: localhost/victual-mcp:4.6.0
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: victual-mcp-config
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # httpGet, unlike Victual's pod: this container listens on the pod IP, and it is
+          # not run under `podman kube play`, whose httpGet probes are what made Victual's
+          # exec-only. /healthz is unauthenticated and reveals nothing (§3). Liveness only:
+          # the sidecar has no dependency of its own to be "not ready" for — an unreachable
+          # Victual is a tool error the client can read (§7), not a reason to pull the pod.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 128Mi

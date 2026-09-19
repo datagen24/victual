@@ -19,7 +19,10 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | File | What it is |
 |---|---|
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
-| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. **Not applied to a cluster yet** — it passes `check_deploy_manifest.py` and `kubectl apply --dry-run=client`, and `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
+| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. Applied to kind on 2026-09-19 (see below). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
+| [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
+| [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The two workloads above as one kustomize base, for an operator's overlay to patch |
+| [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer (a CronJob) and the label worker (a Deployment); neither holds a database credential |
 
@@ -129,6 +132,27 @@ Concatenating the documents, as above, is the form that works. `VICTUAL_FILE_STO
 belongs in the ConfigMap rather than being optional: this pod mounts nothing writable, so
 the default `filesystem` backend would fail on the first upload.
 
+## Trying it on kind
+
+`deploy/kind/up.sh` is the Kubernetes counterpart of the podman walkthrough above. It
+needs a kind cluster (`KIND_CLUSTER`, default `kind-cluster`) and the four images in
+podman (`nix/build-in-podman.sh images`):
+
+```sh
+deploy/kind/up.sh
+kubectl -n victual port-forward svc/victual 8080:8080
+kubectl -n victual port-forward svc/victual-mcp 3000:3000
+deploy/kind/up.sh down      # the database goes with the namespace
+```
+
+Production mode means the default `admin`/`admin` login must change its password before
+any page renders, the API-key page included. Change it first, then create a key under
+*Manage API keys*. That key is what an MCP client presents as `Authorization: Bearer …`.
+
+The overlay is also the pattern for a real cluster. Put `deploy/k3s` (or this repository at
+a pinned ref) in `resources`, then patch the ConfigMap's database host and base URL, the
+two Secrets and the image references. Keep the Secrets out of anything committed.
+
 ## What a running instance needs
 
 **Configuration is environment variables.** `config-dist.php`'s `Setting()` resolves in
@@ -214,7 +238,10 @@ tier — "SIGQUIT is php-fpm's graceful stop" is what the documentation says and
 deployment showed for a request blocked on the database. A request not blocked on the database
 was not measured. `lifecycle.stopSignal` is alpha (Kubernetes 1.33, feature gate
 `ContainerStopSignals`) and needs `spec.os.name`; on a cluster without the gate the API server
-drops the field.
+drops the field. **Observed 2026-09-19 on kind v1.37 with default gates:** the applied
+Deployment came back with no `lifecycle` on either container, so SIGTERM is what this pod
+gets on a stock cluster. To get SIGQUIT, enable the gate on the API server and the kubelet.
+The manifest does not assume either way.
 
 **Migrations run before anything serves.** The `migrate` initContainer runs
 `bin/victual-migrate`, which is a no-op against an up-to-date database, takes a
@@ -242,9 +269,13 @@ readiness probe, which renders `/login` through Blade.
 
 Stated plainly because the gap is the point of tracking it:
 
-- **The k3s manifest has never been applied to a cluster.** It is `deploy/k3s/victual.yaml`,
-  it passes the structural checks, and the pod it describes is the one that serves under
-  podman. A K3S apply that reaches a printer is plan 25's verification 12, and it is what keeps
+- ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied to kind,
+  2026-09-19; not yet to k3s.** `deploy/kind/up.sh` loads the four images, applies
+  `deploy/k3s` through the `deploy/kind` overlay, and waits for every rollout. What it
+  established: the migrate initContainer, the credential split and all three probes behave
+  under a real kubelet as they did under podman; the MCP sidecar serves every tool from two
+  replicas; and `lifecycle.stopSignal` is dropped on v1.37 (see "Signals"). A K3S apply
+  that reaches a printer is still plan 25's verification 12, and it is what keeps
   [issue 93](https://github.com/datagen24/victual/issues/93) open.
 
 - ~~**One writable mount remains, and it is not the view cache.**~~ **Done, 2026-09-04.**
