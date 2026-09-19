@@ -692,8 +692,8 @@ const UI_ACCEPTED = [
 			difference.kind === 'console-only-upstream' &&
 			['Failed to load resource: the server responded with a status of 404 (Not Found)', 'XMLHttpRequest']
 				.includes(difference.detail) &&
-			Array.isArray(upstream.httpErrors) && upstream.httpErrors.length > 0 &&
-			upstream.httpErrors.every((r) => r === '404 GET /api/objects/equipment/undefined') &&
+			Array.isArray(upstream.httpErrors) && upstream.httpErrors.length === 1 &&
+			upstream.httpErrors[0] === '404 GET /api/objects/equipment/undefined' &&
 			!(victual.httpErrors || []).some((r) => r.endsWith('/api/objects/equipment/undefined'))
 	}
 ];
