@@ -75,6 +75,16 @@ class EntityReadPolicy
 		'userobjects' => null,
 	];
 
+	/**
+	 * Whether this policy knows the entity at all. Callers ask before Check(), so an entity
+	 * that does not exist is the 400 the generic entity routes document rather than the
+	 * exception below escaping HandleApiCall as a 500.
+	 */
+	public static function Covers(string $entity): bool
+	{
+		return str_starts_with($entity, 'userentity-') || array_key_exists($entity, self::PERMISSIONS);
+	}
+
 	public static function Check($request, string $entity): void
 	{
 		if (str_starts_with($entity, 'userentity-'))
