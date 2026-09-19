@@ -85,7 +85,6 @@ class DatabaseMigrationService extends BaseService
 		{
 			error_log(self::GeneratedAdminPasswordNotice($username, $password));
 		};
-		$this->GeneratedAdminUsername = null;
 
 		// The whole run, baseline and the always-run 8888 included, happens with the
 		// engine's migration lock held: everything below is check-then-apply, so two
@@ -449,16 +448,12 @@ class DatabaseMigrationService extends BaseService
 		// was generated and never shown is an installation nobody can log into.
 		if (isset($seeder) && $seeder->GetGeneratedAdminPassword() !== null)
 		{
-			$this->GeneratedAdminUsername = $seeder->GetAdminUsername();
 			($this->ReportGeneratedAdminPassword)($seeder->GetAdminUsername(), $seeder->GetGeneratedAdminPassword());
 		}
 	}
 
 	/** @var callable|null See MigrateDatabase() */
 	private $ReportGeneratedAdminPassword = null;
-
-	/** @var string|null Set when this run seeded an administrator with a generated password */
-	private $GeneratedAdminUsername = null;
 
 	/**
 	 * The text an operator reads in the migrate container's log after a first migration.
@@ -472,30 +467,61 @@ class DatabaseMigrationService extends BaseService
 	}
 
 	/**
-	 * Marks the administrator this run created with a generated password as having to
-	 * change it (users.must_change_password, migration 0265), so the copy in a log stops
-	 * being a credential after its first use.
+	 * Marks the administrator whose password the seeder generated as having to change it
+	 * (users.must_change_password, migration 0265), so the copy in a log stops being a
+	 * credential after its first use.
 	 *
-	 * Here rather than in InitialDataSeeder because the seeder runs with the baseline,
-	 * which stands in for migrations up to 0255, and the column arrives with 0265: at
-	 * seed time there is nothing to write to. By this point every migration has run.
+	 * Not in InitialDataSeeder, because the seeder runs with the baseline, which stands in
+	 * for migrations up to 0255, and the column arrives with 0265: at seed time there is
+	 * nothing to write to. So the seeder leaves a marker row
+	 * (InitialDataSeeder::PENDING_FORCED_CHANGE_KEY in user_settings) in the same
+	 * transaction as the account, and this - run at the end of every migration run, once
+	 * every migration has applied - turns it into the flag and removes it, in one
+	 * transaction.
 	 *
-	 * If a migration between the two fails, the forced change is lost for that
-	 * installation - the password itself was already reported, so it can still be logged
-	 * into, and changing it remains the first thing to do.
+	 * A row rather than something this object remembers, because the baseline commits
+	 * before the migrations after it run. If one of those fails, the retry finds the
+	 * baseline loaded, seeds nothing, and would have nothing in memory to act on - the
+	 * account would keep a password that has been printed to a log with no forced change.
+	 * Found by CodeRabbit in review of PR #213.
+	 *
+	 * A user setting is safe for the marker even though its owner can delete it through
+	 * the API (the reason 0265 is a column): nothing serves requests until a migration run
+	 * has completed - the boot check refuses a database missing any required migration -
+	 * and the run that completes is the one that consumes the marker.
 	 */
 	private function FlagGeneratedAdminPasswordForChange(): void
 	{
-		if ($this->GeneratedAdminUsername === null)
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$pending = $pdo->prepare('SELECT user_id FROM user_settings WHERE key = ?');
+		$pending->execute([InitialDataSeeder::PENDING_FORCED_CHANGE_KEY]);
+		$userIds = $pending->fetchAll(\PDO::FETCH_COLUMN);
+
+		if (empty($userIds))
 		{
 			return;
 		}
 
-		DatabaseService::GetInstance()->GetDbConnectionRaw()
-			->prepare('UPDATE users SET must_change_password = 1 WHERE username = ?')
-			->execute([$this->GeneratedAdminUsername]);
+		$pdo->beginTransaction();
 
-		$this->GeneratedAdminUsername = null;
+		try
+		{
+			$flag = $pdo->prepare('UPDATE users SET must_change_password = 1 WHERE id = ?');
+			$clear = $pdo->prepare('DELETE FROM user_settings WHERE user_id = ? AND key = ?');
+
+			foreach ($userIds as $userId)
+			{
+				$flag->execute([(int)$userId]);
+				$clear->execute([(int)$userId, InitialDataSeeder::PENDING_FORCED_CHANGE_KEY]);
+			}
+		}
+		catch (\Exception $ex)
+		{
+			$pdo->rollback();
+			throw $ex;
+		}
+
+		$pdo->commit();
 	}
 
 	/**

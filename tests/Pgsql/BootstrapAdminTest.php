@@ -183,6 +183,25 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 			self::assertTrue(password_verify($generated, $admin['password']), 'the reported password is the one stored');
 			self::assertFalse(password_verify('admin', $admin['password']), 'no fixed credential is left on this path');
 			self::assertSame(1, (int)$admin['must_change_password'], 'a password that has been printed to a log must be changed');
+			self::assertSame(0, (int)$pdo->query("SELECT COUNT(*) FROM user_settings WHERE key = '" . InitialDataSeeder::PENDING_FORCED_CHANGE_KEY . "'")->fetchColumn(), 'the marker is consumed by the run that set the flag');
+
+			// A run interrupted between the baseline commit and the end: the account exists,
+			// its marker is pending, and the flag was never set. The retry seeds nothing, so
+			// only the marker row can tell it what to do. (CodeRabbit, PR #213.)
+			$pdo->exec('UPDATE users SET must_change_password = 0 WHERE id = ' . (int)$admin['id']);
+			$pdo->prepare('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)')->execute([(int)$admin['id'], InitialDataSeeder::PENDING_FORCED_CHANGE_KEY, '1']);
+			self::pointDatabaseServiceAt($pdo);
+			try
+			{
+				DatabaseMigrationService::GetInstance()->MigrateDatabase(true, $capture);
+			}
+			finally
+			{
+				self::pointDatabaseServiceAt(self::$db);
+			}
+			self::assertSame(1, self::flag((int)$admin['id'], $schema), 'a retry after an interrupted first run still forces the change');
+			self::assertSame(0, (int)$pdo->query("SELECT COUNT(*) FROM user_settings WHERE key = '" . InitialDataSeeder::PENDING_FORCED_CHANGE_KEY . "'")->fetchColumn());
+			self::assertCount(1, $reports, 'and does not report a password again');
 
 			// Full stack: log in with it. The flag survives the login (login only raises it),
 			// and the session that login created is refused by the API.

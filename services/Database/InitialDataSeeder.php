@@ -143,6 +143,14 @@ class InitialDataSeeder
 	 */
 	const BOOTSTRAP_PASSWORD_ENV = 'VICTUAL_BOOTSTRAP_ADMIN_PASSWORD';
 
+	/**
+	 * The user_settings key that marks the administrator whose password was generated, until
+	 * DatabaseMigrationService has flagged it for a forced change. See
+	 * DatabaseMigrationService::FlagGeneratedAdminPasswordForChange() for why it is a row
+	 * rather than something held in memory, and why a user setting is safe for it here.
+	 */
+	const PENDING_FORCED_CHANGE_KEY = 'bootstrap_password_change_pending';
+
 	/** @var string|null The password SeedAdminUser() generated, when it had to generate one */
 	private $GeneratedAdminPassword = null;
 
@@ -190,6 +198,18 @@ class InitialDataSeeder
 			'username' => $username,
 			'password' => password_hash($password, PASSWORD_ARGON2ID)
 		]);
+
+		if ($this->GeneratedAdminPassword !== null)
+		{
+			$lookup = $this->Db->prepare('SELECT id FROM users WHERE username = ?');
+			$lookup->execute([$username]);
+
+			$this->Insert('user_settings', [
+				'user_id' => (int)$lookup->fetchColumn(),
+				'key' => self::PENDING_FORCED_CHANGE_KEY,
+				'value' => '1'
+			]);
+		}
 	}
 
 	/**
