@@ -2,7 +2,7 @@
   "name": "victual-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Read-only MCP sidecar for Victual — see docs/mcp-interface-spec.md",
+  "description": "Read-only MCP sidecar for Victual \u2014 see docs/mcp-interface-spec.md",
   "type": "module",
   "engines": {
     "node": ">=22.6.0"
@@ -15,13 +15,17 @@
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types tests/**/*.test.ts"
+    "test": "npm run build && node --test \"tests/**/*.test.mjs\"",
+    "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "hono": "^4.11.4",
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
