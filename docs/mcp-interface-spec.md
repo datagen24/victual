@@ -154,6 +154,27 @@ and it is small:
    own permission set. New endpoint rather than new fields on `GET /api/user`, per the
    roadmap's additive-API ground rule.
 
+> **Amended 2026-09-19, as built (issue #208).**
+>
+> 1. **`read_only` is migration `0287.pgsql.sql`**, a `SMALLINT` 0/1 column. It is
+>    PostgreSQL-only, not the "portable dual-engine" file item 3 describes: ADR-0008
+>    froze the SQLite line at 0265.
+> 2. **The 403 lives in `BaseAuthMiddleware`**, beside the cross-origin check.
+>    - It covers every method but GET, HEAD and OPTIONS.
+>    - It also covers the three upstream GET routes that write: the calendar sharing
+>      link, which creates a key; the external barcode lookup, which can create a
+>      product; and the thermal print.
+> 3. **A request header, `VICTUAL-API-KEY-TYPE`, can narrow the key lookup to one
+>    type.** The sidecar sends `mcp`. Without it, a regular key forwarded through the
+>    sidecar would work exactly as an MCP key does, and §11.3's "valid default-type key
+>    → rejected" row would have nothing to hold it. The header only narrows: a type
+>    outside regular and MCP matches nothing.
+> 4. **`GET /api/user/capabilities`** answers `key_type: null` and `read_only: false` for
+>    a session. Its `permissions` are the resolved `*_VIEW`-style names from
+>    `controllers/Users/User.php`, sorted.
+> 5. **MCP keys otherwise behave like regular keys:** hashed at rest, finite expiry,
+>    rotatable. Rotation keeps the type and the read-only flag.
+
 Scoping and revocation therefore live in exactly one place, the key row — no new
 `PERMISSION_*` constant, per 02-Q3.
 
