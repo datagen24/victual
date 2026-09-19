@@ -175,9 +175,23 @@ jobs:
           # The initContainer, as a one-shot run. Read-only from the start: if the
           # migration needed to write anything outside /tmp this fails here rather than
           # leaving a half-migrated database behind.
-          docker run --rm --name victual-migrate-run \
+          #
+          # No VICTUAL_BOOTSTRAP_ADMIN_PASSWORD, on purpose: this is the path a deployment
+          # that did not set one takes, so the administrator's password is generated and
+          # printed once on stderr, flagged for a forced change. The walk below logs in with
+          # it and has to get through that change over the API - which is the allowlist a
+          # flagged account is limited to, exercised against the images. Printing it here
+          # is fine: the database is thrown away with the runner.
+          migrate_log=$(docker run --rm --name victual-migrate-run \
             --network victual-ci --read-only --tmpfs /tmp:rw,mode=1777 \
-            "${env_args[@]}" "${migrate_env[@]}" victual-migrate:4.6.0
+            "${env_args[@]}" "${migrate_env[@]}" victual-migrate:4.6.0 2>&1)
+          printf '%s\n' "$migrate_log"
+          bootstrap_password=$(printf '%s\n' "$migrate_log" | sed -n 's/.*with the generated password \([0-9a-f]\{24\}\) .*/\1/p')
+          if [ -z "$bootstrap_password" ]; then
+            echo "the first migration did not report a generated administrator password" >&2
+            exit 1
+          fi
+          echo "BOOTSTRAP_ADMIN_PASSWORD=$bootstrap_password" >> "$GITHUB_ENV"
 
           # The two serving containers share a network namespace exactly as they do in the
           # pod, which is what makes 127.0.0.1:9000 mean the same thing here as in k3s.
@@ -280,6 +294,7 @@ jobs:
       - name: Walk every page and the API
         run: |
           python3 .devtools/nix/walk.py --base-url http://127.0.0.1:8080 \
+            --password "$BOOTSTRAP_ADMIN_PASSWORD" \
             --known /=500 --known /mealplan=500
 
       - name: Container logs, if anything went wrong

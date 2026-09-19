@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { VICTUAL_ADMIN_PASSWORD } = require('./lib/instance');
 
 const ROUTES_FILE = path.join(__dirname, '..', '..', 'frontend', 'routes.txt');
 
@@ -64,13 +65,13 @@ function staticRoutes() {
 // is a fallback chain rather than one id because upstream's template is the fork's
 // ancestor and need not have kept the same ids, and a login that breaks on the *upstream*
 // side would silently halve this walk.
-async function login(page, baseUrl) {
+async function login(page, baseUrl, adminPassword) {
 	await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
 	await page.fill('#username', 'admin');
 
 	const password = page.locator('#password_input, #password, input[type=password]').first();
 	await password.waitFor({ state: 'visible', timeout: 15000 });
-	await password.fill('admin');
+	await password.fill(adminPassword);
 
 	await Promise.all([
 		page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {}),
@@ -238,10 +239,10 @@ async function purchaseWorkflow(page, baseUrl, label) {
 	return result;
 }
 
-async function walk(browser, baseUrl, routes, name) {
+async function walk(browser, baseUrl, routes, name, adminPassword) {
 	const context = await browser.newContext({ ignoreHTTPSErrors: true });
 	const page = await context.newPage();
-	await login(page, baseUrl);
+	await login(page, baseUrl, adminPassword);
 
 	const visits = [];
 	for (const route of routes) {
@@ -266,8 +267,8 @@ async function main() {
 	let victualWalk;
 	let upstreamWalk;
 	try {
-		victualWalk = await walk(browser, args.victual, routes, 'victual ');
-		upstreamWalk = await walk(browser, args.upstream, routes, 'upstream');
+		victualWalk = await walk(browser, args.victual, routes, 'victual ', VICTUAL_ADMIN_PASSWORD);
+		upstreamWalk = await walk(browser, args.upstream, routes, 'upstream', 'admin');
 	} finally {
 		await browser.close();
 	}
