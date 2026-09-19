@@ -39,45 +39,34 @@ class LabelTemplatesApiController extends BaseApiController
             }
 
             try {
-                $db->beginTransaction();
-                $templates = new LabelTemplateService($db);
-                $user = defined('VICTUAL_USER_ID') ? (int)VICTUAL_USER_ID : null;
+                return $this->InRequestTransaction($request, function () use ($db, $response, $route, $args, $body) {
+                    $templates = new LabelTemplateService($db);
+                    $user = defined('VICTUAL_USER_ID') ? (int)VICTUAL_USER_ID : null;
 
-                $result = match ($route) {
-                    'label-templates-list' => $db->query('SELECT t.*, v.version AS default_version FROM label_templates t LEFT JOIN label_template_versions v ON v.id=t.default_version_id ORDER BY t.id')->fetchAll(\PDO::FETCH_ASSOC),
-                    'label-templates-create' => $templates->Create((string)($body['name'] ?? ''), $body['description'] ?? null, (string)($body['entity_kind'] ?? 'location'), $user),
-                    'label-templates-draft' => $templates->GetDraft((int)$args['templateId']),
-                    'label-templates-save-draft' => $templates->SaveDraft((int)$args['templateId'], (array)($body['document'] ?? []), (string)($body['revision_token'] ?? ''), $user),
-                    'label-templates-publish' => $templates->Publish((int)$args['templateId'], $user),
-                    'label-templates-versions' => $this->Versions($db, (int)$args['templateId']),
-                    'label-templates-default' => $templates->SetDefaultVersion((int)$args['templateId'], (int)($body['version_id'] ?? 0)),
-                    'label-templates-archive' => $templates->Archive((int)$args['templateId']),
-                    'label-assets-list' => $db->query('SELECT id,name,asset_kind,mime_type,byte_length,content_digest,width_px,height_px,font_family,font_style,licence,licence_notice,row_created_timestamp FROM label_assets ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC),
-                    'label-assets-create' => $this->StoreAsset($db, $body),
-                    'label-preview' => $this->Preview($db, (int)$args['templateId'], $body, $user),
-                    'label-render-status' => $this->RenderStatus($db, (int)$args['requestId']),
-                    'label-renderer-credential' => (new \Victual\Services\Labels\LabelWorkerCredentialService($db))->IssueRenderer((int)$args['workerId'], $user ?? 0),
-                    default => throw new \LogicException('Unknown label template route'),
-                };
+                    $result = match ($route) {
+                        'label-templates-list' => $db->query('SELECT t.*, v.version AS default_version FROM label_templates t LEFT JOIN label_template_versions v ON v.id=t.default_version_id ORDER BY t.id')->fetchAll(\PDO::FETCH_ASSOC),
+                        'label-templates-create' => $templates->Create((string)($body['name'] ?? ''), $body['description'] ?? null, (string)($body['entity_kind'] ?? 'location'), $user),
+                        'label-templates-draft' => $templates->GetDraft((int)$args['templateId']),
+                        'label-templates-save-draft' => $templates->SaveDraft((int)$args['templateId'], (array)($body['document'] ?? []), (string)($body['revision_token'] ?? ''), $user),
+                        'label-templates-publish' => $templates->Publish((int)$args['templateId'], $user),
+                        'label-templates-versions' => $this->Versions($db, (int)$args['templateId']),
+                        'label-templates-default' => $templates->SetDefaultVersion((int)$args['templateId'], (int)($body['version_id'] ?? 0)),
+                        'label-templates-archive' => $templates->Archive((int)$args['templateId']),
+                        'label-assets-list' => $db->query('SELECT id,name,asset_kind,mime_type,byte_length,content_digest,width_px,height_px,font_family,font_style,licence,licence_notice,row_created_timestamp FROM label_assets ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC),
+                        'label-assets-create' => $this->StoreAsset($db, $body),
+                        'label-preview' => $this->Preview($db, (int)$args['templateId'], $body, $user),
+                        'label-render-status' => $this->RenderStatus($db, (int)$args['requestId']),
+                        'label-renderer-credential' => (new \Victual\Services\Labels\LabelWorkerCredentialService($db))->IssueRenderer((int)$args['workerId'], $user ?? 0),
+                        default => throw new \LogicException('Unknown label template route'),
+                    };
 
-                $db->commit();
-                return $this->ApiResponse($response, $result);
+                    return $this->ApiResponse($response, $result);
+                });
             } catch (LabelValidationException $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
                 $status = in_array($error->errorCode, ['stale_revision', 'idempotency_conflict'], true) ? 409 : 422;
                 return $this->ApiResponse($response->withStatus($status), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
             } catch (\Victual\Helpers\ECanonicalizationFailed $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
                 return $this->ApiResponse($response->withStatus(422), ['field' => 'document', 'code' => 'not_canonicalizable', 'error_message' => $error->getMessage()]);
-            } catch (\Throwable $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
-                throw $error;
             }
         });
     }

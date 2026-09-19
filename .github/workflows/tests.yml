@@ -102,7 +102,7 @@ jobs:
       # Every CI job the documentation names has to exist. The `frontend-security` job
       # below was described in four documents for a day before it was written, and while
       # it did not exist nobody looked for the gate it claimed to be. See
-      # docs/plans/21-frontend-sink-discipline.md and the script's own header.
+      # docs/plans/landed/21-frontend-sink-discipline.md and the script's own header.
       - name: Every cited CI job exists
         run: php .devtools/check-cited-jobs.php
 
@@ -112,7 +112,7 @@ jobs:
       # a broken relative link or a page missing from the nav. No container runtime and
       # no PHP are needed: the staging script omits the API reference when it finds
       # neither, which is the same path a contributor without Docker takes. See
-      # docs/plans/26-documentation-site.md.
+      # docs/plans/landed/26-documentation-site.md.
       - name: Build the documentation site
         run: |
           pip install --quiet --requirement .devtools/docs/requirements.txt
@@ -351,11 +351,74 @@ jobs:
           path: clover.xml
           if-no-files-found: warn
 
+  # The oldest PostgreSQL the application starts on, tested rather than declared.
+  # PostgresDialect::MINIMUM_MAJOR_VERSION is the number this job runs; the `suite` job above
+  # runs the newest one. Raising the minimum means changing the image here in the same
+  # commit: the `serverversion` phase fails when the constant is raised past this job's
+  # server. Lowering it is not caught, so lower the image with it. The differential suite
+  # only: the coverage ratchet and the label worker steps are measured once, in `suite`.
+  suite-floor:
+    needs: changes
+    if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
+    runs-on: ubuntu-latest
+
+    env:
+      SUITE_SCRATCH: /tmp/victual-suite
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: victual
+          POSTGRES_PASSWORD: victual
+          POSTGRES_DB: victual
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U victual"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: packages
+          key: composer-${{ hashFiles('composer.lock') }}
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --no-scripts
+
+      - name: Install pg_prove
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libtap-parser-sourcehandler-pgtap-perl
+
+      - name: Install the pgtap extension into the postgres service
+        run: |
+          container=$(docker ps -q --filter ancestor=postgres:15)
+          docker exec "$container" bash -c 'apt-get update && apt-get install -y --no-install-recommends postgresql-15-pgtap'
+
+      - name: Run the differential test suite on the minimum PostgreSQL
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: .devtools/pgsql/run-tests.sh
+
   # The gate this repository has claimed to run since 2026-09-03 and did not: sweep S29's
   # payload probe, which asserts that no page executes a payload it is asked to display.
   # Three documents described this job before it existed, and in the gap two sinks of
   # exactly the class S29 closed reached master and stayed open until an external scanner
-  # reported them. See docs/plans/21-frontend-sink-discipline.md.
+  # reported them. See docs/plans/landed/21-frontend-sink-discipline.md.
   frontend-security:
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
@@ -548,7 +611,7 @@ jobs:
       # applied to a quantity unit name) are all things the PostgreSQL phase structurally
       # cannot see - it asserts the column, the coherence CHECK, the write path and the API,
       # and this asserts that a person can open a container, measure it and read the result
-      # back. docs/plans/28-open-container-measurement.md's own verification asks for this
+      # back. docs/plans/landed/28-open-container-measurement.md's own verification asks for this
       # probe by name, and for it to be invoked here rather than merely placed beside the
       # others - plan 08's Executed section records that exact distinction being missed once
       # already.

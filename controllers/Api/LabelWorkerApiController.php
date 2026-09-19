@@ -21,37 +21,33 @@ class LabelWorkerApiController extends BaseApiController
             }
             $worker = (int)$request->getAttribute('label_worker_id');
             $target = isset($args['attemptId']) ? (int)$args['attemptId'] : (isset($args['printerId']) ? (int)$args['printerId'] : 0);
-            $db->beginTransaction();
             try {
-                if ($route !== 'labels-pair') {
-                    (new LabelWorkerAuthorization($db))->Authorize($route, $worker, $target);
-                }
-                $credential = new LabelWorkerCredentialService($db);
-                $attempt = new PrintAttemptService($db);
-                $result = match($route) {
-                    'labels-pair' => $credential->Pair($this->StringField($body, 'material')),
-                    'labels-rotate' => $credential->Rotate($request->getHeaderLine($this->AppContainer->get('ApiKeyHeaderName')), $this->StringField($body, 'rotation_request_id'), $this->StringField($body, 'material')),
-                    'labels-register' => $this->Register($db, $worker, $body),
-                    'labels-claim' => $attempt->Claim($worker, $this->IntegerField($body, 'limit', 1)),
-                    'labels-heartbeat' => $attempt->Heartbeat($worker, $target),
-                    'labels-sent' => $attempt->Sent($worker, $target),
-                    'labels-result' => $attempt->Result($worker, $target, $this->StringField($body, 'outcome'), $this->ObjectField($body, 'detail')),
-                    'labels-evidence' => (new PrintEvidenceService($db))->Submit($worker, $target, $body),
-                    'labels-status' => (new PrinterStatusService($db))->Report($worker, $target, $body),
-                    default => throw new \LogicException('Unknown worker route')
-                };
-                $db->commit();
-                return $this->ApiResponse($response->withStatus(isset($result['revoked']) ? 401 : 200), $result);
+                // Claiming, heartbeats, registration and printer status are the worker
+                // polling; only a job's own progress is something a person is waiting on.
+                $changesData = in_array($route, ['labels-sent', 'labels-result', 'labels-evidence'], true);
+                return $this->InRequestTransaction($request, function () use ($db, $request, $response, $route, $body, $worker, $target) {
+                    if ($route !== 'labels-pair') {
+                        (new LabelWorkerAuthorization($db))->Authorize($route, $worker, $target);
+                    }
+                    $credential = new LabelWorkerCredentialService($db);
+                    $attempt = new PrintAttemptService($db);
+                    $result = match($route) {
+                        'labels-pair' => $credential->Pair($this->StringField($body, 'material')),
+                        'labels-rotate' => $credential->Rotate($request->getHeaderLine($this->AppContainer->get('ApiKeyHeaderName')), $this->StringField($body, 'rotation_request_id'), $this->StringField($body, 'material')),
+                        'labels-register' => $this->Register($db, $worker, $body),
+                        'labels-claim' => $attempt->Claim($worker, $this->IntegerField($body, 'limit', 1)),
+                        'labels-heartbeat' => $attempt->Heartbeat($worker, $target),
+                        'labels-sent' => $attempt->Sent($worker, $target),
+                        'labels-result' => $attempt->Result($worker, $target, $this->StringField($body, 'outcome'), $this->ObjectField($body, 'detail')),
+                        'labels-evidence' => (new PrintEvidenceService($db))->Submit($worker, $target, $body),
+                        'labels-status' => (new PrinterStatusService($db))->Report($worker, $target, $body),
+                        default => throw new \LogicException('Unknown worker route')
+                    };
+                    return $this->ApiResponse($response->withStatus(isset($result['revoked']) ? 401 : 200), $result);
+                }, $changesData);
             } catch (LabelValidationException $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
                 $status = in_array($error->errorCode, ['unauthorized','inactive_worker'], true) ? 401 : ($error->errorCode === 'forbidden' ? 403 : 422);
                 return $this->ApiResponse($response->withStatus($status), ['field' => $error->field,'code' => $error->errorCode,'error_message' => $error->getMessage()]);
-            } catch (\Throwable $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                } throw $error;
             }
         });
     }

@@ -64,11 +64,51 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
+	 * The oldest PostgreSQL major version this application runs on: the oldest the test
+	 * suite is run against. 14 is known not to work - migration 0273 declares
+	 * `UNIQUE NULLS NOT DISTINCT`, which PostgreSQL added in 15 - and CI covers this
+	 * version as well as the newest one, so the number does not drift from what is tested.
+	 * Raising it means changing the CI matrix in the same commit.
+	 */
+	public const MINIMUM_MAJOR_VERSION = 15;
+
+	/**
+	 * Refuses a server older than MINIMUM_MAJOR_VERSION.
+	 *
+	 * A version string this cannot read is let through: it is a server that is not
+	 * PostgreSQL by name (a compatible engine reports its own scheme), and refusing it on
+	 * a parse failure would turn a version check into a compatibility claim nobody made.
+	 *
+	 * @param string $serverVersion As PDO reports it, e.g. "16.13 (Debian 16.13-1.pgdg13+1)"
+	 * @throws \RuntimeException When the major version is below the minimum
+	 */
+	public static function AssertSupportedServerVersion(string $serverVersion): void
+	{
+		if (!preg_match('/^(\d+)/', trim($serverVersion), $matches))
+		{
+			return;
+		}
+
+		if ((int)$matches[1] < self::MINIMUM_MAJOR_VERSION)
+		{
+			throw new \RuntimeException('Victual needs PostgreSQL ' . self::MINIMUM_MAJOR_VERSION
+				. ' or newer, and the database server reports version ' . $serverVersion
+				. '. Upgrade the server, or point DB_HOST at one that is new enough.');
+		}
+	}
+
+	/**
 	 * Aligns the session time zone with PHP's and bootstraps the changed time table,
 	 * which must exist before the very first migration can run.
 	 */
 	public function OnConnected(\PDO $pdo): void
 	{
+		// Before anything is sent to the server: an unsupported version fails here, with
+		// the reason, rather than partway through a migration with a syntax error.
+		// PDO::ATTR_SERVER_VERSION is the server_version parameter libpq was told at
+		// connect time, so this costs no round trip on the per-request path.
+		self::AssertSupportedServerVersion((string)$pdo->getAttribute(\PDO::ATTR_SERVER_VERSION));
+
 		// SQLite's datetime('now', 'localtime') follows the process time zone - make
 		// LOCALTIMESTAMP agree with it so timestamps mean the same thing on both engines
 		$pdo->exec("SET TIME ZONE " . $pdo->quote(date_default_timezone_get()));

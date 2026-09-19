@@ -2,7 +2,7 @@
 
 PostgreSQL is the only engine Victual runs on, since
 [ADR-0008](../../docs/adr/0008-postgresql-only-runtime-engine.md)'s retirement landed
-([plan 24](../../docs/plans/24-sqlite-runtime-retirement.md)). This directory holds what an
+([plan 24](../../docs/plans/landed/24-sqlite-runtime-retirement.md)). This directory holds what an
 installation needs.
 
 SQLite is still all over the pages below, and deliberately so: this is where the porting
@@ -228,13 +228,17 @@ Authoritative reference for porting Victual's schema. Every rule below exists be
 breaking it changes what the REST API returns, which would break the iOS app and the
 Home Assistant integration. **API compatibility is the hard constraint.**
 
-Target: PostgreSQL 15+ (CI runs 16; tested on 17).
+Target: PostgreSQL 15+. CI runs the differential suite on 15, the minimum, and on 16; the
+maintainer has also run it on 17. The minimum is enforced: `PostgresDialect::OnConnected()`
+refuses an older server with a message naming its version, and `PostgresDialect::MINIMUM_MAJOR_VERSION`
+is the number the `suite-floor` CI job's image must match.
 
 The minimum was 13 until `migrations/0273.pgsql.sql` (plan 08), which spells the locations
 tree's uniqueness rule as `UNIQUE NULLS NOT DISTINCT (parent_location_id, name)` — a
 PostgreSQL 15 feature, and the only way to make the rule hold at the top of the tree as well
 as inside it. That migration's comment says why the rule needs it. Nothing else in the tree
-pinned 13: CI runs `postgres:16` and `deploy/README.md` documents 16.
+pinned 13. Version 14 was checked on 2026-09-19: the migration phase stops at 0273 with a syntax
+error at `NULLS`.
 
 ## The overriding rule: the JSON on the wire must not change
 
@@ -442,7 +446,7 @@ with `name LIKE '%milk%'`:
 
 No error, no log line, no failing view diff - the differential suite drives SQL at each
 engine and never enters `BaseApiController`, which is the blind spot
-[14](../../docs/plans/14-contract-and-regression-scaffolding.md)'s coverage section was
+[14](../../docs/plans/landed/14-contract-and-regression-scaffolding.md)'s coverage section was
 added to make visible.
 
 **Fixed.** The fix is the one `GetRegexpCondition()` already models:
@@ -561,7 +565,7 @@ landed. The `filter` phase of `run-tests.sh` asks each dialect for the condition
 runs both against their own engine and compares the rows, then compares the two engines'
 verdicts on every column of every shared table and view. It is the first phase that
 compares *application* behaviour rather than SQL, and it was checked the way
-[14](../../docs/plans/14-contract-and-regression-scaffolding.md) asks - by putting the
+[14](../../docs/plans/landed/14-contract-and-regression-scaffolding.md) asks - by putting the
 defect back and confirming the phase fails (three ASCII cases, `[1,2] vs [2]`). It earned
 its place immediately: it is what caught the untyped-view-column residual above, before
 that shipped as a silent divergence.

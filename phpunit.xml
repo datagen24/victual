@@ -46,5 +46,11 @@
 		<testsuite name="uploadclamp">
 			<file>tests/Pgsql/FileSizeLimitTest.php</file>
 		</testsuite>
+		<testsuite name="labeltracking">
+			<file>tests/Pgsql/LabelWriteTrackingTest.php</file>
+		</testsuite>
+		<testsuite name="serverversion">
+			<file>tests/Pgsql/ServerVersionTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

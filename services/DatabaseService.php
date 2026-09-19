@@ -480,6 +480,35 @@ class DatabaseService
 	}
 
 	/**
+	 * Advances the changed time (GET /api/system/db-changed-time) on behalf of a write that
+	 * did not pass through LessQL, so the query callback never saw it.
+	 *
+	 * Most writes reach the database through LessQL and are noticed by the callback in
+	 * GetDbConnection(). Code that prepares its own statements on the raw connection is
+	 * invisible to that callback, so a client polling the changed time would keep showing
+	 * stale data after it. Such code calls this once its transaction has committed.
+	 *
+	 * Deliberately narrower than the callback: it does not call MarkDataChanged(), because
+	 * that flag exists to trigger the request-end MQTT and Influx publications, and only
+	 * stock state is published. Under RunAsBookkeeping() it does nothing, exactly as the
+	 * callback does not.
+	 */
+	public function MarkDbChanged(): void
+	{
+		if ($this->IsBookkeeping())
+		{
+			return;
+		}
+
+		$dialect = $this->GetDialect();
+
+		if ($dialect->RequiresChangeTracking())
+		{
+			$dialect->MarkDbChanged($this->GetDbConnectionRaw());
+		}
+	}
+
+	/**
 	 * Records that this request wrote data, as opposed to having only read or having written
 	 * a bookkeeping row (see RunAsBookkeeping(), under which this is not reached at all, and
 	 * SetDbChangedTime(), which clears it again).
