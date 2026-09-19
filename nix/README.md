@@ -41,9 +41,23 @@ of the signal check (9), and the K3S apply.
 | `.#image-app` | php-fpm on loopback:9000 | PHP 8.5 + the extensions in `php.nix`, the application at `/app` |
 | `.#image-web` | nginx on :8080 | nginx, `public/` and the yarn-built `packages/`, no PHP at all |
 | `.#image-migrate` | `bin/victual-migrate`, a Job | PHP CLI, the application, and the `bin/` CLI entry points |
+| `.#image-label-renderer` | the label renderer, a Rust binary | pinned from `datagen24/victual-label-renderer` |
+| `.#image-label-worker` | the label delivery worker, a Rust binary | pinned from `datagen24/victual-label-worker` |
+| `.#image-mcp` | `victual-mcp`, the read-only MCP sidecar | a Node process built from `mcp/` in this repository — **unbuilt**, see below |
 
-All three run as uid 65532, contain no shell and no package manager, and are built from
+All run as uid 65532, contain no shell and no package manager, and are built from
 `scratch` — there is no base image and therefore no base image's CVEs.
+
+**`.#image-mcp` has never been built.** `mcp/` (issue #86) was scaffolded in a sandbox
+with no npm registry access and no Nix, so `mcp/package-lock.json` does not exist and
+`nix/hashes.nix`'s `mcpNpmDeps` is still the fakeHash placeholder. The first
+`nix build .#mcp` after that lockfile is committed fails on purpose and names the real
+hash — see "Bootstrapping the hashes" below, and `mcp/README.md` for what else the
+local session needs to do first. Unlike the label renderer and worker, whose source is
+pinned from its own repository (`flake.nix`'s `label-renderer`/`label-worker` inputs),
+the sidecar's TypeScript lives in this repository at `mcp/` — see
+`docs/mcp-interface-spec.md`'s Open Question 1 amendment (2026-09-19) for why that
+reverses the spec's original "new repository" answer.
 
 The split is not decoration. The web tier holds the document root and no credential; the
 app tier holds the credential and no document root; the migrate tier is the only one
@@ -153,6 +167,7 @@ nix/
   webroot.nix          the static tree the web tier serves
   healthcheck.nix      /opt/victual/healthcheck, the app tier's exec probe
   webcheck.nix         /opt/victual/webcheck, the web tier's — statically linked
+  mcp.nix              the MCP sidecar, buildNpmPackage over mcp/ — unbuilt, see above
   checks.nix           what `nix flake check` proves
   runtime/
     php-ini.nix        production php.ini, applied to every SAPI
@@ -161,7 +176,7 @@ nix/
     webcheck.c         the web tier's probe; see it for why podman forces an exec probe
   images/
     lib.nix            uid, labels, the shared half of the OCI config
-    app.nix / web.nix / migrate.nix
+    app.nix / web.nix / migrate.nix / label-renderer.nix / label-worker.nix / mcp.nix
     load.nix           `nix run .#load`
 ```
 

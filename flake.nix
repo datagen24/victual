@@ -89,6 +89,7 @@
             webcheckBin
             labelRenderer
             labelWorker
+            mcp
             ;
         }
         // lib.optionalAttrs (builtins.elem system linuxSystems) {
@@ -98,6 +99,7 @@
             image-migrate
             image-label-renderer
             image-label-worker
+            image-mcp
             ;
           # `nix build` with no attribute gives the thing most people want first.
           default = v.image-app;

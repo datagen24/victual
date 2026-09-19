@@ -59,6 +59,14 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-19 — Issue #86 framework scaffolded, in-repo, unbuilt** (branch
+  `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers
+  unimplemented) plus a fourth Nix image (`.#image-mcp`, `nix/mcp.nix`) — reversing the
+  interface spec's Open Question 1 ("new repo") per ADR-0013's precedent, after
+  `create_repository` for `datagen24/victual-mcp` hit `403` (no repo-creation scope on
+  the GitHub App). Nothing built or run — no Nix/npm in the sandbox. Full detail, why,
+  and the ordered next-steps list:
+  [[project_issue86_mcp_sidecar]].
 - **2026-09-18 — Plan 20 / issue #133** (branch `claude/issue-133-f49546`): credential split
   done — `deploy/postgres/roles.sql` (`victual_migrate` owns the schema, `victual_app` is DML
   only), a Secret per workload in both pod manifests. The first run of the restricted role could
@@ -135,12 +143,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   Full account: [plan 14's Executed section](../docs/plans/14-contract-and-regression-scaffolding.md#executed).
   Next: retiring the SQLite differential harness (unblocked by this landing, not performed by
   it), plan 22, issue 192's remaining items.
-- **2026-09-17 — ADR-0025 accepted** (bookkeeping PR after PR #194's spikes): status line
-  annotates each prerequisite with what met it and records three edges honestly — the
-  ported phase migrates its own schema (decision 3 addendum), the extension lives in the
-  compose PostgreSQL image not the dev image, and `check-pgtap-coverage.php` is proven but
-  not gating CI until the sixteen pre-pgTAP names are listed (issue 192's ratchet shape).
-  Next: #83 in PHPUnit, #192 items 1–2, the ratchet.
 ## DOCTRINE (operator-locked decisions)
 
 - [Verification discipline](feedback_verification_discipline.md) — "it loads" is not

@@ -95,6 +95,11 @@ in
     labelRenderer = self.callPackage ./label-renderer.nix { };
     labelWorker = self.callPackage ./label-worker.nix { };
 
+    # The MCP sidecar. Unlike the two above, its source lives in this repository
+    # (mcp/) — see nix/mcp.nix's header and docs/mcp-interface-spec.md's Open
+    # Question 1 amendment (2026-09-19).
+    mcp = self.callPackage ./mcp.nix { };
+
     imageLib = self.callPackage ./images/lib.nix { };
 
     image-app = self.callPackage ./images/app.nix { };
@@ -102,6 +107,7 @@ in
     image-migrate = self.callPackage ./images/migrate.nix { };
     image-label-renderer = self.callPackage ./images/label-renderer.nix { };
     image-label-worker = self.callPackage ./images/label-worker.nix { };
+    image-mcp = self.callPackage ./images/mcp.nix { };
 
     loadImages = self.callPackage ./images/load.nix { };
 
@@ -110,5 +116,7 @@ in
       # callPackage cannot resolve `runtime.nginxConf` on its own.
       runtimeNginxConf = self.runtime.nginxConf;
     };
+    # (mcp is resolved into checks.nix's `mcp` argument by name, the same way
+    # labelRenderer/labelWorker are.)
   });
 }

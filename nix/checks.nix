@@ -26,6 +26,7 @@
   webcheckBin,
   labelRenderer,
   labelWorker,
+  mcp,
   runtime,
   imageLib,
   version,
@@ -104,6 +105,37 @@ in
         fi
 
         echo "The label renderer and worker closures hold no shell and no interpreter."
+        wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
+        touch $out
+      '';
+
+  # The MCP sidecar is inherently a Node process, so Node itself is not forbidden here —
+  # only the shells and the *other* general-purpose scripting runtimes a stray
+  # native-module build step could otherwise drag in.
+  mcp-image-has-no-shell =
+    runCommand "victual-check-mcp-no-shell"
+      {
+        closure = closureInfo { rootPaths = [ mcp ]; };
+      }
+      ''
+        found=""
+        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
+          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
+            found="$found $forbidden"
+          fi
+        done
+
+        if [ -n "$found" ]; then
+          echo "The MCP sidecar closure contains:$found" >&2
+          echo >&2
+          echo "It is built on no base image and carries one Node process. A shell or an" >&2
+          echo "interpreter other than Node here means a dependency pulled one in - find" >&2
+          echo "it with:" >&2
+          echo "  nix why-depends .#mcp nixpkgs#bash" >&2
+          exit 1
+        fi
+
+        echo "The MCP sidecar closure holds no shell and no other scripting runtime."
         wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
         touch $out
       '';
