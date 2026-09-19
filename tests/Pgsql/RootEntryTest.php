@@ -92,7 +92,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		$answer = self::getRoot(null);
 
 		self::assertSame(302, $answer['status'], 'GET / with no session is a redirect, not a 500');
-		self::assertStringEndsWith('/stockoverview', $answer['location'], 'chosen by feature flag alone, as upstream does; /stockoverview then sends the caller to /login');
+		self::assertSame('http://localhost/stockoverview', $answer['location'], 'chosen by feature flag alone, as upstream does; /stockoverview then sends the caller to /login');
 	}
 
 	public function testUnknownSessionCookieIsTreatedAsAnonymous(): void
@@ -100,7 +100,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		$answer = self::getRoot('a-cookie-nobody-issued');
 
 		self::assertSame(302, $answer['status']);
-		self::assertStringEndsWith('/stockoverview', $answer['location']);
+		self::assertSame('http://localhost/stockoverview', $answer['location']);
 	}
 
 	public function testLoggedInCallerWhoMayViewStockLandsOnStock(): void
@@ -108,7 +108,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		$answer = self::getRoot('root-test-admin');
 
 		self::assertSame(302, $answer['status'], 'GET / for an authenticated caller is a redirect, not a 500');
-		self::assertStringEndsWith('/stockoverview', $answer['location']);
+		self::assertSame('http://localhost/stockoverview', $answer['location']);
 	}
 
 	public function testLoggedInCallerWhoMayNotViewStockFallsBackToAbout(): void
@@ -116,7 +116,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 		$answer = self::getRoot('root-test-tasks');
 
 		self::assertSame(302, $answer['status']);
-		self::assertStringEndsWith('/about', $answer['location'], 'the per-user check is live: a caller without STOCK_VIEW is not sent to a page that would refuse them');
+		self::assertSame('http://localhost/about', $answer['location'], 'the per-user check is live: a caller without STOCK_VIEW is not sent to a page that would refuse them');
 	}
 
 	/**
@@ -143,14 +143,14 @@ class RootEntryTest extends PgsqlSchemaTestCase
 	{
 		$anonymous = self::getRoot(null, $entryPage);
 		self::assertSame(302, $anonymous['status']);
-		self::assertStringEndsWith($target, $anonymous['location'], "$entryPage: an unidentified caller is redirected by flag alone");
+		self::assertSame('http://localhost' . $target, $anonymous['location'], "$entryPage: an unidentified caller is redirected by flag alone");
 
 		$granted = self::getRoot('root-test-admin', $entryPage);
 		self::assertSame(302, $granted['status']);
-		self::assertStringEndsWith($target, $granted['location'], "$entryPage: ADMIN holds the grant");
+		self::assertSame('http://localhost' . $target, $granted['location'], "$entryPage: ADMIN holds the grant");
 
 		$refused = self::getRoot('root-test-tasks', $entryPage);
 		self::assertSame(302, $refused['status']);
-		self::assertStringEndsWith('/about', $refused['location'], "$entryPage: a caller without the grant is not sent to a page that refuses them");
+		self::assertSame('http://localhost/about', $refused['location'], "$entryPage: a caller without the grant is not sent to a page that refuses them");
 	}
 }

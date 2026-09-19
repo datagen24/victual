@@ -28,6 +28,10 @@ require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 // authentication is the thing under test.
 define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 $_SERVER['REQUEST_URI'] = '/';
+// UrlManager builds every redirect from the request's host, which a CLI process does not
+// have; without this the Location header is "http:/stockoverview". The host the request
+// below is addressed to, so an exact redirect URL can be asserted.
+$_SERVER['HTTP_HOST'] = 'localhost';
 
 use DI\Container;
 use Slim\Factory\AppFactory;
