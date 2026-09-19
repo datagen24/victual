@@ -44,8 +44,12 @@
   memory_limit = 256M
   max_execution_time = 60
   max_input_time = 60
-  post_max_size = 32M
-  upload_max_filesize = 32M
+  ; Both at FILE_STORAGE_MAX_SIZE_MB's default (config-dist.php), which FileSizeLimit clamps
+  ; to the smaller of these two. At 32M every boot logged that the configured 64 MB was being
+  ; cut to 32, and every upload between the two sizes was refused. nginx's
+  ; client_max_body_size (nginx-conf.nix) has to move with them.
+  post_max_size = 64M
+  upload_max_filesize = 64M
   upload_tmp_dir = /tmp
   sys_temp_dir = /tmp
 

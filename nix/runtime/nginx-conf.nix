@@ -76,9 +76,10 @@ writeText "victual-nginx.conf" ''
     keepalive_timeout 65;
     server_tokens off;
 
-    # Matches php.ini's post_max_size. A mismatch here is the classic "the upload fails
+    # Matches php.ini's post_max_size and upload_max_filesize, which match
+    # FILE_STORAGE_MAX_SIZE_MB's default. A mismatch here is the classic "the upload fails
     # with an HTML error page instead of a JSON one".
-    client_max_body_size 32m;
+    client_max_body_size 64m;
 
     gzip on;
     gzip_types text/css text/javascript application/javascript application/json image/svg+xml;
