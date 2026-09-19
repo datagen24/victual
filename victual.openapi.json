@@ -3,7 +3,7 @@
 	"info": {
 		"title": "Victual REST API",
 		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).",
-		"version": "0.1.0-MVP",
+		"version": "0.1.1-MVP",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
 			"url": "https://github.com/datagen24/victual/blob/master/LICENSE.md"
@@ -2351,7 +2351,7 @@
 		"/stock/entry/{entryId}/measure": {
 			"post": {
 				"summary": "Records a new measurement of an already-open, single-unit stock entry",
-				"description": "Requires STOCK_EDIT. Records a reversible measurement (ADR-0022, docs/plans/28-open-container-measurement.md) rather than a consumption - stock.amount, the container count, never changes. The entry must already be a coherent single opened container (open, amount = 1); a fresh measurement on a container being opened for the first time is taken through the measurement field of POST /stock/products/{productId}/open instead.",
+				"description": "Requires STOCK_EDIT. Records a reversible measurement (ADR-0022, docs/plans/landed/28-open-container-measurement.md) rather than a consumption - stock.amount, the container count, never changes. The entry must already be a coherent single opened container (open, amount = 1); a fresh measurement on a container being opened for the first time is taken through the measurement field of POST /stock/products/{productId}/open instead.",
 				"tags": [
 					"Stock"
 				],
@@ -9093,7 +9093,7 @@
 					"enable_tare_weight_handling": {
 						"type": "integer",
 						"deprecated": true,
-						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/28-open-container-measurement.md."
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/landed/28-open-container-measurement.md."
 					},
 					"not_check_stock_fulfillment_for_recipes": {
 						"type": "integer"
@@ -9104,7 +9104,7 @@
 					"tare_weight": {
 						"type": "number",
 						"deprecated": true,
-						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/28-open-container-measurement.md) or the location (a vessel, docs/plans/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/landed/28-open-container-measurement.md) or the location (a vessel, docs/plans/landed/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
 					},
 					"min_stock_amount": {
 						"type": "number",
@@ -9230,7 +9230,7 @@
 					"enable_tare_weight_handling": {
 						"type": "integer",
 						"deprecated": true,
-						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/28-open-container-measurement.md."
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14): its arithmetic is removed and enabling it (0 -> 1) is refused with 400. Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze. See docs/plans/landed/28-open-container-measurement.md."
 					},
 					"not_check_stock_fulfillment_for_recipes": {
 						"type": "integer"
@@ -9241,7 +9241,7 @@
 					"tare_weight": {
 						"type": "number",
 						"deprecated": true,
-						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/28-open-container-measurement.md) or the location (a vessel, docs/plans/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
+						"description": "Retired as a mechanism under ADR-0022 (2026-09-14); tare now belongs to the stock entry (an opened purchased container, docs/plans/landed/28-open-container-measurement.md) or the location (a vessel, docs/plans/landed/29-working-container-replenishment.md). Stays on the wire at its current value per decision 7 until plan 14 piece 2's contract freeze."
 					},
 					"min_stock_amount": {
 						"type": "number",
@@ -9563,7 +9563,7 @@
 			},
 			"ProductSubstitutionResolved": {
 				"type": "object",
-				"description": "Candidates that will do where to_product_id is called for: one row per directed edge from product_substitutions plus one row per existing parent/child pair from products_resolved, unioned (a pair already covered by products_resolved is excluded from the directed rows, so a product is never listed twice for the same candidate). direction distinguishes the two sources; there is no transitive closure (a substitutes for b and b for c does not offer a for c), and no quantity factor - see docs/plans/31-directed-substitution.md's open questions 1 and 2.",
+				"description": "Candidates that will do where to_product_id is called for: one row per directed edge from product_substitutions plus one row per existing parent/child pair from products_resolved, unioned (a pair already covered by products_resolved is excluded from the directed rows, so a product is never listed twice for the same candidate). direction distinguishes the two sources; there is no transitive closure (a substitutes for b and b for c does not offer a for c), and no quantity factor - see docs/plans/landed/31-directed-substitution.md's open questions 1 and 2.",
 				"properties": {
 					"id": {
 						"type": "integer",
@@ -9719,7 +9719,7 @@
 							"number",
 							"null"
 						],
-						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. The measured remainder of this container, in opened_qu_id - always net contents, whatever the measurement's original input (see the gross/tare fields of the /open and /measure endpoints). Present only where open = 1 and amount = 1 (a measurement describes exactly one container); null otherwise"
+						"description": "ADR-0022, docs/plans/landed/28-open-container-measurement.md. The measured remainder of this container, in opened_qu_id - always net contents, whatever the measurement's original input (see the gross/tare fields of the /open and /measure endpoints). Present only where open = 1 and amount = 1 (a measurement describes exactly one container); null otherwise"
 					},
 					"opened_qu_id": {
 						"type": [
@@ -9842,7 +9842,7 @@
 					},
 					"stock_amount_measured": {
 						"type": "number",
-						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. The measured (not merely counted) contents across this product's opened, measured entries, in the stock unit - additive, kept separate from stock_amount and stock_amount_opened rather than folded into them"
+						"description": "ADR-0022, docs/plans/landed/28-open-container-measurement.md. The measured (not merely counted) contents across this product's opened, measured entries, in the stock unit - additive, kept separate from stock_amount and stock_amount_opened rather than folded into them"
 					},
 					"stock_value": {
 						"type": "number",
@@ -10544,7 +10544,7 @@
 							"number",
 							"null"
 						],
-						"description": "ADR-0022, docs/plans/28-open-container-measurement.md. Mirrors the stock entry's measurement at the time of this booking, so an undo can restore it after the entry itself is gone"
+						"description": "ADR-0022, docs/plans/landed/28-open-container-measurement.md. Mirrors the stock entry's measurement at the time of this booking, so an undo can restore it after the entry itself is gone"
 					},
 					"opened_qu_id": {
 						"type": [

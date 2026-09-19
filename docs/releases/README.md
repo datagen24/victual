@@ -16,4 +16,5 @@ These records are not published on the documentation site
 
 | Version | Date | Record |
 |---|---|---|
+| 0.1.1-MVP | 2026-09-19 | [0.1.1-MVP.md](0.1.1-MVP.md) |
 | 0.1.0-MVP | 2026-09-19 | [0.1.0-MVP.md](0.1.0-MVP.md) |
