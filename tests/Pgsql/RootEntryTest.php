@@ -55,7 +55,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 	}
 
 	/** @return array{status: int, location: string} */
-	private static function getRoot(?string $sessionKey): array
+	private static function getRoot(?string $sessionKey, ?string $entryPage = null): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -67,7 +67,7 @@ class RootEntryTest extends PgsqlSchemaTestCase
 			'PGUSER' => getenv('PGUSER'),
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
-		]);
+		], $entryPage === null ? [] : ['VICTUAL_ENTRY_PAGE' => $entryPage]);
 		$process = proc_open(
 			array_merge([PHP_BINARY, __DIR__ . '/root-subprocess-helper.php'], $sessionKey === null ? [] : [$sessionKey]),
 			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
@@ -117,5 +117,40 @@ class RootEntryTest extends PgsqlSchemaTestCase
 
 		self::assertSame(302, $answer['status']);
 		self::assertStringEndsWith('/about', $answer['location'], 'the per-user check is live: a caller without STOCK_VIEW is not sent to a page that would refuse them');
+	}
+
+	/**
+	 * The four entry pages that carry no *_VIEW leaf of their own: what each page's own
+	 * gate is (MealPlan() refuses without MEALPLAN_VIEW; the other three are the legacy
+	 * BATTERIES / EQUIPMENT / CALENDAR grants the sidebar disables an item for). Their
+	 * branches in GetEntryPageRelative() used to ask nobody, so a logged-in caller was sent
+	 * to a page that refused or greyed them out.
+	 *
+	 * @return array<string, array{string, string}>
+	 */
+	public static function ungatedEntryPages(): array
+	{
+		return [
+			'batteries' => ['batteries', '/batteriesoverview'],
+			'equipment' => ['equipment', '/equipment'],
+			'calendar' => ['calendar', '/calendar'],
+			'mealplan' => ['mealplan', '/mealplan'],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('ungatedEntryPages')]
+	public function testEntryPageWithItsOwnGrantIsHonouredAndWithoutItFallsBackToAbout(string $entryPage, string $target): void
+	{
+		$anonymous = self::getRoot(null, $entryPage);
+		self::assertSame(302, $anonymous['status']);
+		self::assertStringEndsWith($target, $anonymous['location'], "$entryPage: an unidentified caller is redirected by flag alone");
+
+		$granted = self::getRoot('root-test-admin', $entryPage);
+		self::assertSame(302, $granted['status']);
+		self::assertStringEndsWith($target, $granted['location'], "$entryPage: ADMIN holds the grant");
+
+		$refused = self::getRoot('root-test-tasks', $entryPage);
+		self::assertSame(302, $refused['status']);
+		self::assertStringEndsWith('/about', $refused['location'], "$entryPage: a caller without the grant is not sent to a page that refuses them");
 	}
 }

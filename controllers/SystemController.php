@@ -153,24 +153,25 @@ class SystemController extends BaseController
 		}
 
 		// Batteries
-		if ($entryPage === 'batteries' && constant('VICTUAL_FEATURE_FLAG_BATTERIES'))
+		if ($entryPage === 'batteries' && constant('VICTUAL_FEATURE_FLAG_BATTERIES') && $mayView(User::PERMISSION_BATTERIES))
 		{
 			return '/batteriesoverview';
 		}
 
-		if ($entryPage === 'equipment' && constant('VICTUAL_FEATURE_FLAG_EQUIPMENT'))
+		// Equipment
+		if ($entryPage === 'equipment' && constant('VICTUAL_FEATURE_FLAG_EQUIPMENT') && $mayView(User::PERMISSION_EQUIPMENT))
 		{
 			return '/equipment';
 		}
 
 		// Calendar
-		if ($entryPage === 'calendar' && constant('VICTUAL_FEATURE_FLAG_CALENDAR'))
+		if ($entryPage === 'calendar' && constant('VICTUAL_FEATURE_FLAG_CALENDAR') && $mayView(User::PERMISSION_CALENDAR))
 		{
 			return '/calendar';
 		}
 
 		// Meal Plan
-		if ($entryPage === 'mealplan' && constant('VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN'))
+		if ($entryPage === 'mealplan' && constant('VICTUAL_FEATURE_FLAG_RECIPES_MEALPLAN') && $mayView(User::PERMISSION_MEALPLAN_VIEW))
 		{
 			return '/mealplan';
 		}
