@@ -105,7 +105,7 @@ deployment that is the better default, since nothing then has to hold the passwo
 afterwards:
 
 ```sh
-kubectl logs deploy/victual -c migrate | grep 'generated password'   # Kubernetes
+kubectl logs deploy/victual -c migrate --all-pods=true | grep 'generated password'   # Kubernetes 1.30+
 podman logs victual-migrate 2>&1 | grep 'generated password'          # podman kube play
 ```
 
@@ -145,9 +145,23 @@ kubectl -n victual port-forward svc/victual-mcp 3000:3000
 deploy/kind/up.sh down      # the database goes with the namespace
 ```
 
-Production mode means the default `admin`/`admin` login must change its password before
-any page renders, the API-key page included. Change it first, then create a key under
-*Manage API keys*. That key is what an MCP client presents as `Authorization: Bearer …`.
+There is no `admin`/`admin`. `up.sh` generates `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` into
+`deploy/kind/.secrets/migrate.env` with the database passwords, and the migrate container
+seeds the `admin` account with it on the run that creates the database — log in as `admin`
+with that value, then create a key under *Manage API keys*. That key is what an MCP client
+presents as `Authorization: Bearer …`. The value is read once: a `.secrets/` older than the
+database it was generated beside, or one edited afterwards, does not change the account.
+
+A database first migrated without the key (before `up.sh` wrote it) has a generated password
+instead, printed once in the migrate container's log and forced to change at first login:
+
+```sh
+kubectl -n victual logs deploy/victual -c migrate --all-pods=true | grep 'generated password'
+```
+
+Only the pod that created the database has that line. Until the password is changed the
+account can open only the change-password form, and the API answers
+`403` to everything but its save — an API key included.
 
 The overlay is also the pattern for a real cluster. Put `deploy/k3s` (or this repository at
 a pinned ref) in `resources`, then patch the ConfigMap's database host and base URL, the

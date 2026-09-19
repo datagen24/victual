@@ -39,6 +39,12 @@ mkdir -p "$SECRETS"
 password() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32; }
 [ -f "$SECRETS/superuser.env" ] || printf 'password=%s\n' "$(password)" > "$SECRETS/superuser.env"
 [ -f "$SECRETS/migrate.env" ] || printf 'VICTUAL_DB_USER=victual_migrate\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/migrate.env"
+# The first administrator's password, in the migrate Secret because the migrate container
+# is the only one that seeds. Appended rather than only written with the file, so a
+# .secrets/ from before this line existed gains it too; it matters only on the run that
+# creates the database, and does nothing to an account that already exists.
+grep -q '^VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=' "$SECRETS/migrate.env" \
+	|| printf 'VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "$(password)" >> "$SECRETS/migrate.env"
 [ -f "$SECRETS/app.env" ] || printf 'VICTUAL_DB_USER=victual_app\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/app.env"
 chmod 600 "$SECRETS"/*.env
 
@@ -61,4 +67,7 @@ cat <<MSG
 Up. Reach it with:
   kubectl -n $NAMESPACE port-forward svc/victual 8080:8080
   kubectl -n $NAMESPACE port-forward svc/victual-mcp 3000:3000
+
+Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from $SECRETS/migrate.env
+(it applies to the database this script first created; see deploy/README.md).
 MSG
