@@ -59,6 +59,16 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-19 — First release freeze review** (branch `claude/first-release-freeze-e0318a`,
+  [PR 221](https://github.com/datagen24/victual/pull/221)): all nine open issues reviewed
+  against the tree. #219 closed (every decision landed in #220). #217's second half fixed:
+  `FileSizeLimit` no longer logs or memoizes, `ConfigurationValidator` announces the clamp
+  under `PHP_SAPI === 'cli'` only; new phase `uploadclamp` boots the validator under `php`
+  and `php-cgi` in a subprocess. What stays open is verification up a layer, not code:
+  #133/#93 (K3S apply, SIGTERM on a cluster), #139 (Home Assistant), #86 §11.4 (the real
+  client), plus backlogs #192, #209, #80. **Version identity is the freeze's one decision:**
+  `version.json` still says upstream's `4.6.0`, and `nix/overlay.nix`, every deploy manifest
+  and `deploy/kind/up.sh` derive the image tag from it. No git tag exists yet.
 - **2026-09-19 — First full-stack year run against the MVP** (branch
   `claude/full-stack-1yr-test-a49f77`): `parity year` PASS, 14/14 invariants, 0 clock
   violations, ~23 min, after retiring the year's tare product (ADR-0022 removed product-level
@@ -95,18 +105,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   real cluster for the first time via `deploy/kind/up.sh`. Found: `stopSignal` dropped on
   k8s 1.37. Next: #208 (capabilities endpoint, MCP key type, read_only). Detail and gotchas:
   [[project_issue86_mcp_sidecar]].
-- **2026-09-19 — Issue #86 framework merged, in-repo, unbuilt** (PR
-  [207](https://github.com/datagen24/victual/pull/207), branch
-  `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers
-  unimplemented) plus a fourth Nix image (`.#image-mcp`, `nix/mcp.nix`) — reversing the
-  interface spec's Open Question 1 ("new repo") per ADR-0013's precedent, after
-  `create_repository` for `datagen24/victual-mcp` hit `403` (no repo-creation scope on
-  the GitHub App). CodeRabbit's review found one real self-inflicted CI break (a
-  premature `checks.nix` entry forced `nix flake check` to build the still-unbuildable
-  `mcp` package) and one real Nix bug (`sourceRoot` missing), both fixed before merge;
-  an HTTPS-enforcement suggestion was declined in writing as contradicting spec §8/§9.
-  Nothing built or run — no Nix/npm in the sandbox. Full detail and the ordered
-  next-steps list: [[project_issue86_mcp_sidecar]].
 
 ## DOCTRINE (operator-locked decisions)
 
