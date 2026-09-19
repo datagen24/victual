@@ -37,5 +37,9 @@ export function resolveCredential(headers: HeaderSource): ResolvedCredential {
     throw new UnauthenticatedError("no bearer token or VICTUAL-API-KEY header");
   }
 
-  return { headers: { "VICTUAL-API-KEY": key } };
+  // VICTUAL-API-KEY-TYPE asks Victual to accept this key only if it is an MCP-type key
+  // (issue #208, spec §4.2): MCP access is then granted and revoked on its own, and a
+  // regular key handed to an assistant does not work through here. A Victual without
+  // #208 ignores the header, so this is safe to send to either.
+  return { headers: { "VICTUAL-API-KEY": key, "VICTUAL-API-KEY-TYPE": "mcp" } };
 }
