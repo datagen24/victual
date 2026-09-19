@@ -56,8 +56,12 @@ class ServerVersionTest extends TestCase
 	public function testOlderVersionIsRefusedAndNamed(string $version): void
 	{
 		$this->expectException(RuntimeException::class);
-		$this->expectExceptionMessage('PostgreSQL ' . PostgresDialect::MINIMUM_MAJOR_VERSION . ' or newer');
-		$this->expectExceptionMessage($version);
+		// PHPUnit keeps one expected message, so both parts go in one pattern: the minimum,
+		// then the version that was found.
+		$this->expectExceptionMessageMatches(
+			'/' . preg_quote('PostgreSQL ' . PostgresDialect::MINIMUM_MAJOR_VERSION . ' or newer', '/')
+			. '.*' . preg_quote($version, '/') . '/s'
+		);
 
 		PostgresDialect::AssertSupportedServerVersion($version);
 	}

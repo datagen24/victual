@@ -40,7 +40,7 @@ step. They render at 1100px or wider and scroll horizontally below that.
 |---|---|
 | [Data access · from request to engine](diagrams/orm-stack.html) | How a request reaches the database: controllers and services, LessQL, `DatabaseService`, the dialect, and the work deferred to commit. |
 | [Schema map](diagrams/schema-map.html) | All 71 tables as seven clusters, and the columns by which one cluster names another's rows. |
-| [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the eight tables around it, including `product_substitutions`. |
+| [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the seven tables around it, including `product_substitutions`. |
 | [Places](diagrams/erd-locations.html) | Locations and their tree, storage classes, stores, shopping lists, and per-location minimums. |
 | [Recipes & meal plan](diagrams/erd-recipes.html) | Recipes, their line items, recipe nesting, and the meal plan. |
 | [Identity](diagrams/erd-identity.html) | Users, sessions, API keys (type, read-only flag, rotation), and user settings. |
