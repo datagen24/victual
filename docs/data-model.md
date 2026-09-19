@@ -3,23 +3,25 @@
 Victual stores everything in one PostgreSQL database: tables defined in DDL, views layered
 on top of them, and triggers that stand in for the constraints the schema does not declare.
 
-**The counts and the inventory below are stale and were already stale before plan 08.** A
-database migrated from this tree on 2026-09-09 holds 69 base tables and 47 views, against
-the 46 and 44 this line used to claim; plans 25 and 27 added the difference and did not
-reconcile this document, and doing so is more than a plan about locations should take on.
-Reproduce with `psql -d <db> -Atc "SELECT count(*) FROM information_schema.tables WHERE
-table_schema='public' AND table_type='BASE TABLE'"` and the matching query over
-`information_schema.views`.
+The DDL files define 71 tables and 50 views, with 65 triggers. A migrated database holds two
+more base tables, which are created at run time and appear on no diagram: `migrations`
+(by `DatabaseMigrationService`) and `system_db_changed_time` (by `PostgresDialect`).
+Counted 2026-09-19 against PostgreSQL 16 after `bin/victual-migrate`; the query and the
+matching file-based count are in the [diagram generator's README](../.devtools/diagrams/README.md).
 
-This document names what is where; the six diagrams listed below show how the pieces
+This document names what is where; the ten diagrams listed below show how the pieces
 connect.
 
 Two facts shape every diagram below and are worth stating before the pictures:
 
-- **Only four foreign keys are declared in the whole schema**, all four in
-  [`db/pgsql/roles-schema.sql`](../db/pgsql/roles-schema.sql) — `role_permissions` to
-  `roles` and to `permission_hierarchy`, `user_roles` to `users` and to `roles`. Every
-  other `*_id` column is a reference by convention. Referential integrity is maintained by
+- **Few foreign keys are declared outside the label subsystem.** Of the 46 declared in
+  the schema, 36 belong to the label tables (plans [25](plans/25-label-infrastructure.md)
+  and [27](plans/landed/27-label-templates-and-rendering.md)). The other ten are
+  `api_keys.rotated_from_id`, `locations.storage_class_id`, `locations.tare_qu_id`,
+  `permission_fields.permission_name`, two on `product_location_min_stock`, and the four
+  role join keys in [`db/pgsql/roles-schema.sql`](../db/pgsql/roles-schema.sql) —
+  `role_permissions` to `roles` and to `permission_hierarchy`, `user_roles` to `users` and
+  to `roles`. Every other `*_id` column is a reference by convention. Referential integrity is maintained by
   the service layer and by triggers such as `remove_recipe_from_meal_plans` and
   `remove_items_from_deleted_shopping_list`, which delete dependents when a parent row
   goes. A `DELETE` issued outside those paths leaves orphans, and nothing in the engine
@@ -37,14 +39,18 @@ step. They render at 1100px or wider and scroll horizontally below that.
 | Diagram | Shows |
 |---|---|
 | [Data access · from request to engine](diagrams/orm-stack.html) | How a request reaches the database: controllers and services, LessQL, `DatabaseService`, the dialect, and the work deferred to commit. |
-| [Schema map](diagrams/schema-map.html) | All 46 tables as six clusters, and the columns by which one cluster names another's rows. |
-| [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the eight tables around it. |
+| [Schema map](diagrams/schema-map.html) | All 71 tables as seven clusters, and the columns by which one cluster names another's rows. |
+| [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the eight tables around it, including `product_substitutions`. |
+| [Places](diagrams/erd-locations.html) | Locations and their tree, storage classes, stores, shopping lists, and per-location minimums. |
 | [Recipes & meal plan](diagrams/erd-recipes.html) | Recipes, their line items, recipe nesting, and the meal plan. |
-| [Identity & access](diagrams/erd-identity.html) | Users, sessions, API keys, the permission tree, and the roles cluster — the only part with declared foreign keys. |
+| [Identity](diagrams/erd-identity.html) | Users, sessions, API keys (type, read-only flag, rotation), and user settings. |
+| [Access](diagrams/erd-access.html) | Roles, the permission tree, and `permission_fields` — the field-level policy behind price redaction. |
 | [Household](diagrams/erd-household.html) | Chores, tasks, batteries, and the userfields pair that can attach to any of them. |
+| [Labels](diagrams/erd-labels.html) | Label identity, templates and their versions, media profiles, captures, render requests and artifacts. |
+| [Printing](diagrams/erd-printing.html) | Workers, drivers, printers, print jobs, attempts, and evidence. |
 
 An entity-relationship diagram holds at most eight entities before it stops being
-readable, which is why the schema is split across four of them rather than drawn once.
+readable, which is why the schema is split across eight of them rather than drawn once.
 Where a diagram references an entity that another diagram owns, the field is marked `↗`.
 
 ## Data access
@@ -72,9 +78,16 @@ PDO connection underneath both.
 - **`PostgresDialect`** holds everything engine-specific: identifier quoting, advisory
   locks for migrations and publications, the `REGEXP`/`LIKE` rewrites, and the db-changed
   timestamp. It is reached only through `DatabaseService::GetDialect()`.
-- **After the outermost commit**, registered listeners run: the outbox drainer, MQTT state
-  publication, and the Influx booking-event writer. None of them writes inside the caller's
-  transaction, and all three are independently configurable.
+- **Around the outermost commit**, registered work runs. The outbox row is written inside
+  the transaction, just before it commits, so an event exists if and only if the change
+  does. MQTT state publication and the Influx booking-event writer run after the commit, at
+  the end of the request. All three are independently configurable.
+- **The label services** take the raw PDO connection and run hand-written SQL on it, which
+  LessQL's query callback never sees. Their controllers therefore open the transaction
+  through `DatabaseService::InTransaction()` (`BaseApiController::InRequestTransaction()`)
+  and call `DatabaseService::MarkDbChanged()` after a commit that wrote, so the db-changed
+  time advances. Worker polling — claims, heartbeats, registration, printer status —
+  deliberately does not.
 
 `services/Database/` also holds the pieces that operate on stored values rather than on
 queries: `StoredHtmlPurifier` (re-purifies rich text already in the database),
@@ -87,17 +100,22 @@ the API's generic filter validation), and `DatabaseImporter`.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
-**Stock & products (13)** — `products`, `product_groups`, `product_barcodes`,
-`quantity_units`, `quantity_unit_conversions`, `locations`, `storage_classes`,
-`shopping_locations`, `stock`, `stock_log`, `stock_entry_origins`, `shopping_list`,
-`shopping_lists`.
+**Stock & products (15)** — `products`, `product_groups`, `product_barcodes`,
+`product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
+`storage_classes`, `product_location_min_stock`, `shopping_locations`, `stock`, `stock_log`,
+`stock_entry_origins`, `shopping_list`, `shopping_lists`.
 
 `stock` holds current entries and `stock_log` is the append-only ledger; a consumed entry
 disappears from `stock` while its bookings stay in the ledger the views read.
+`shopping_lists.shopping_location_id`, `products.default_shopping_list_id` and
+`recipes.default_shopping_list_id` (migration 0286,
+[plan 05](plans/05-store-shopping-lists.md)) tie a list to a store and name the list a
+product or recipe adds to by default; like the other references they are by convention.
+
 `stock_entry_origins` (migration 0267) links an entry split off by a partial open back to
 the purchase it came from, because the split entry has no `stock_log` row of its own.
 
-`locations` is a tree since migration 0273 ([plan 08](plans/08-nested-locations.md)):
+`locations` is a tree since migration 0273 ([plan 08](plans/landed/08-nested-locations.md)):
 `parent_location_id` is a reference by convention like every other, and `locations_resolved`
 is the recursive view over it, one row per (ancestor, descendant) pair plus each location
 paired with itself at depth 0, carrying the descendant's display path. Its name is unique
@@ -106,7 +124,7 @@ the engine minimum is PostgreSQL 15. Three guards stand in for the constraints t
 would need: `check_location_parent` refuses a cycle and a chain past
 `hierarchy_depth_limit()`, and `guard_location_children` refuses deleting a parent.
 
-`storage_classes` (migration 0274, [plan 23](plans/23-storage-classes.md)) is how cold a
+`storage_classes` (migration 0274, [plan 23](plans/landed/23-storage-classes.md)) is how cold a
 location is kept — Deep freeze, Freezer, Fridge, Cooler, Ambient, seeded in PHP per
 [ADR-0003](adr/0003-seed-data-in-php.md) and user-extensible beyond those five.
 `locations.storage_class_id` references it and is nullable; NULL means unclassified, which
@@ -116,7 +134,7 @@ is every location's meaning before this migration and stays available afterwards
 rather than a trigger, because the importer never sets a class at all and there is nothing
 for a trigger to fire on; an unclassified location keeps the flag independently editable.
 
-`product_groups` is a tree since migration 0278 ([plan 30](plans/30-nested-product-groups.md),
+`product_groups` is a tree since migration 0278 ([plan 30](plans/landed/30-nested-product-groups.md),
 [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md)): the catalogue's
 taxonomy — Spices / Garlic / Fresh, Dairy / Cheese — lives in `parent_product_group_id`, the
 same shape and the same recursive `product_groups_resolved` view as `locations`, sharing
@@ -127,9 +145,9 @@ special case, since `product_group_id` and `parent_product_group_id` are indepen
 (ADR-0023 decision 6) — `Garlic` can be both a product's group and a subgroup's parent in the
 same row.
 
-**Identity & access (11)** — `users`, `user_settings`, `user_settings_defaults`,
-`sessions`, `api_keys`, `user_permissions`, `permission_hierarchy`, `roles`,
-`role_permissions`, `user_roles`, `login_attempts`.
+**Identity & access (12)** — `users`, `user_settings`, `user_settings_defaults`,
+`sessions`, `api_keys`, `user_permissions`, `permission_hierarchy`, `permission_fields`,
+`roles`, `role_permissions`, `user_roles`, `login_attempts`.
 
 `permission_hierarchy` is a self-referencing tree: holding a parent permission grants every
 child. `permission_tree` expands it and `user_permissions_resolved` unions direct grants
@@ -143,14 +161,23 @@ nothing, so it does not appear in the household diagram.
 `cache__products_last_purchased`, `cache__quantity_unit_conversions_resolved`, `files`,
 `outbox`, `mqtt_product_entities`, `mqtt_published_entities`.
 
-The three `cache__*` tables are maintained entirely by triggers — 30 of the 55 write to one
-of them — and are read by the views as if they were views themselves. `files` is database
-file storage ([plan 01](plans/01-file-storage.md)); `outbox` carries MQTT and InfluxDB
+The three `cache__*` tables are maintained entirely by triggers, and are read by the views as if they were views themselves. `files` is database
+file storage ([plan 01](plans/landed/01-file-storage.md)); `outbox` carries MQTT and InfluxDB
 events out of the request transaction ([plan 18](plans/18-mqtt-state-publication.md)).
 
 **Recipes & meal plan (5)** — `recipes`, `recipes_pos`, `recipes_nestings`, `meal_plan`,
-`meal_plan_sections`. `recipes_nestings` names a recipe twice; `prevent_self_nested_recipes`
-and `prevent_infinite_nested_recipes` are what keep it acyclic.
+`meal_plan_sections`. `recipes_nestings` names a recipe twice; the functions behind
+`prevent_self_nested_recipes` and `prevent_infinite_nested_recipes` (four triggers, insert
+and update each) are what keep it acyclic.
+
+**Labels & printing (21)** — identity and templates: `labels`, `label_import_state`,
+`label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`,
+`label_media_profiles`, `label_captures`, `label_render_requests`, `label_artifacts`,
+`label_idempotency_keys`; printing: `label_workers`, `label_drivers`,
+`label_worker_capabilities`, `label_printers`, `label_printer_status`,
+`label_worker_sessions`, `label_worker_credentials`, `print_jobs`, `print_attempts`,
+`print_evidence`. Plans [25](plans/25-label-infrastructure.md) and
+[27](plans/landed/27-label-templates-and-rendering.md) own them.
 
 **Extensibility (4)** — `userfields`, `userfield_values`, `userentities`, `userobjects`.
 `userfields.entity` is a table name held as text and `userfield_values.object_id` is an id

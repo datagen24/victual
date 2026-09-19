@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access · roles, permissions, field policy</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f2e7d3;
+      --color-ink:    #174b3a;
+      --color-muted:  #4a6459;
+      --color-accent: #c85a3d;
+      --font-sans:    'Geist', sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ER · VICTUAL</p>
+    <h1>Access · roles, permissions, field policy</h1>
+    <div class="scroll">
+    <svg viewBox="0 0 1200 830" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="erd-access-title erd-access-desc">
+      <title id="erd-access-title">Victual roles and permissions data model</title>
+      <desc id="erd-access-desc">A user holds permissions directly through user_permissions or through roles, and both routes end at the permission_hierarchy tree that user_permissions_resolved walks. Five foreign keys are declared here, on the two role join tables and on permission_fields, which names the columns a permission unlocks.</desc>
+      <rect width="100%" height="100%" fill="#f2e7d3"/>
+    <path d="M 300,150 H 420" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="308" y="130" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="316" y="140" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="396" y="130" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="404" y="140" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 860,150 H 740" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="836" y="130" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="140" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="748" y="130" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="140" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 1010,240 V 360" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="1018" y="252" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1026" y="262" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="1018" y="340" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1026" y="350" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 860,420 H 812 Q 804,420 804,428 V 604 Q 804,612 796,612 H 740" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="836" y="400" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="410" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="748" y="592" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="602" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 170,220 V 360" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="178" y="232" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="186" y="242" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="178" y="340" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="186" y="350" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <path d="M 170,484 V 602 Q 170,610 178,610 H 420" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="178" y="496" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="186" y="506" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="396" y="590" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="404" y="600" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <path d="M 500,560 V 544 Q 500,536 508,536 H 652 Q 660,536 660,544 V 560" fill="none" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="560" y="516" width="40" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="580" y="525" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">PARENT</text>
+    <path d="M 860,650 H 740" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="836" y="630" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="844" y="640" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="748" y="630" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="756" y="640" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="40" y="96" width="260" height="124" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="96" width="260" height="124" rx="6" fill="rgba(23,75,58,0.03)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="40" y="96" width="260" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="132" width="260" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="140" x2="300" y2="140" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="112" fill="#6b8579" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">REFERENCE</text>
+    <text x="56" y="130" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">users</text>
+    <text x="56" y="160" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="284" y="160" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="180" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">username</text>
+    <text x="284" y="180" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="56" y="200" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">…</text>
+    <text x="284" y="200" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">see erd-identity</text>
+    <rect x="40" y="360" width="260" height="124" rx="6" fill="#f2e7d3"/>
+    <rect x="40" y="360" width="260" height="124" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="40" y="360" width="260" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="40" y="396" width="260" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="40" y1="404" x2="300" y2="404" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="56" y="376" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">DIRECT GRANT</text>
+    <text x="56" y="394" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">user_permissions</text>
+    <text x="56" y="424" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="284" y="424" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ user_id</text>
+    <text x="284" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="56" y="464" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ permission_id</text>
+    <text x="284" y="464" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <rect x="420" y="96" width="320" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="420" y="96" width="320" height="104" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="420" y="96" width="320" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="420" y="132" width="320" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="420" y1="140" x2="740" y2="140" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="436" y="112" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">JOIN · FK</text>
+    <text x="436" y="130" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">user_roles</text>
+    <text x="436" y="160" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ user_id</text>
+    <text x="724" y="160" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int pk</text>
+    <text x="436" y="180" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ role_id</text>
+    <text x="724" y="180" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int pk</text>
+    <rect x="860" y="96" width="300" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="96" width="300" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="96" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="132" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="140" x2="1160" y2="140" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="112" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY · FK</text>
+    <text x="876" y="130" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">roles</text>
+    <text x="876" y="160" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="160" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="876" y="180" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">code</text>
+    <text x="1144" y="180" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="876" y="200" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="1144" y="200" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="876" y="220" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">builtin</text>
+    <text x="1144" y="220" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">0/1</text>
+    <rect x="860" y="360" width="300" height="104" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="360" width="300" height="104" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="360" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="396" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="404" x2="1160" y2="404" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="376" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">JOIN · FK</text>
+    <text x="876" y="394" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">role_permissions</text>
+    <text x="876" y="424" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ role_id</text>
+    <text x="1144" y="424" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int pk</text>
+    <text x="876" y="444" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ permission_id</text>
+    <text x="1144" y="444" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int pk</text>
+    <rect x="420" y="560" width="320" height="124" rx="6" fill="#f2e7d3"/>
+    <rect x="420" y="560" width="320" height="124" rx="6" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <rect x="420" y="560" width="320" height="44" rx="6" fill="rgba(200,90,61,0.10)" stroke="none"/>
+    <rect x="420" y="596" width="320" height="8" fill="rgba(200,90,61,0.10)"/>
+    <line x1="420" y1="604" x2="740" y2="604" stroke="rgba(200,90,61,0.40)" stroke-width="1"/>
+    <text x="436" y="576" fill="#c85a3d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ENTITY · HUB · TREE</text>
+    <text x="436" y="594" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">permission_hierarchy</text>
+    <text x="436" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="724" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <text x="436" y="644" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">name</text>
+    <text x="724" y="644" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text uq</text>
+    <text x="436" y="664" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ parent</text>
+    <text x="724" y="664" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+    <rect x="860" y="560" width="300" height="144" rx="6" fill="#f2e7d3"/>
+    <rect x="860" y="560" width="300" height="144" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="860" y="560" width="300" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="860" y="596" width="300" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="860" y1="604" x2="1160" y2="604" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="876" y="576" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">FIELD POLICY</text>
+    <text x="876" y="594" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">permission_fields</text>
+    <text x="876" y="624" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="624" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">smallint</text>
+    <text x="876" y="644" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ permission_name</text>
+    <text x="1144" y="644" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="876" y="664" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">entity</text>
+    <text x="1144" y="664" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="876" y="684" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">field</text>
+    <text x="1144" y="684" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <line x1="40" y1="752" x2="1160" y2="752" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
+    <text x="40" y="768" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="786" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
+    <text x="64" y="796" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Hub entity</text>
+    <rect x="146" y="786" width="16" height="12" rx="2" fill="rgba(23,75,58,0.03)" stroke="rgba(23,75,58,0.30)" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="170" y="796" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Entity owned by another diagram</text>
+    <line x1="348" y1="792" x2="372" y2="792" stroke="#4a6459" stroke-width="1"/>
+    <text x="380" y="796" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Declared FOREIGN KEY (five, all in this diagram)</text>
+    <line x1="636" y1="792" x2="660" y2="792" stroke="#4a6459" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="668" y="796" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Convention only — no constraint</text>
+    <text x="846" y="796" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace" font-weight="600">#</text>
+    <text x="866" y="796" fill="#4a6459" font-size="8" font-family="'Geist', sans-serif">Primary key</text>
+    </svg>
+    </div>
+  </div>
+</body>
+</html>

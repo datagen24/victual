@@ -4,7 +4,7 @@
 # this repository: the developer section draws from docs/, .github/, and READMEs that
 # sit beside the code they describe. Run the staging script before mkdocs.
 #
-# Design: docs/plans/26-documentation-site.md
+# Design: docs/plans/landed/26-documentation-site.md
 # What is published and why: docs/adr/0020-documentation-publication-boundary.md
 site_name: Victual
 site_description: A self-hosted groceries and household management application, forked from grocy.
@@ -102,9 +102,13 @@ nav:
           - Data access: development/diagrams/orm-stack.md
           - Schema map: development/diagrams/schema-map.md
           - ER · stock and products: development/diagrams/erd-stock.md
+          - ER · places: development/diagrams/erd-locations.md
           - ER · recipes and meal plan: development/diagrams/erd-recipes.md
-          - ER · identity and access: development/diagrams/erd-identity.md
+          - ER · identity: development/diagrams/erd-identity.md
+          - ER · access: development/diagrams/erd-access.md
           - ER · household: development/diagrams/erd-household.md
+          - ER · labels: development/diagrams/erd-labels.md
+          - ER · printing: development/diagrams/erd-printing.md
       - Decisions:
           - Index: development/adr/README.md
           - 0001 PostgreSQL alongside SQLite: development/adr/0001-postgresql-alongside-sqlite.md

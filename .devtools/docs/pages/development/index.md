@@ -15,17 +15,19 @@ Documentation for someone changing Victual. Read in this order: the
 
 ## The data model
 
-- **[Data model](data-model.md)** — 46 tables by cluster, and the path from a request to
+- **[Data model](data-model.md)** — 71 tables by cluster, and the path from a request to
   the engine.
 - **Diagrams** — [data access](diagrams/orm-stack.md), the
-  [schema map](diagrams/schema-map.md), and four entity-relationship models:
-  [stock](diagrams/erd-stock.md), [recipes](diagrams/erd-recipes.md),
-  [identity](diagrams/erd-identity.md), [household](diagrams/erd-household.md).
+  [schema map](diagrams/schema-map.md), and eight entity-relationship models:
+  [stock](diagrams/erd-stock.md), [places](diagrams/erd-locations.md),
+  [recipes](diagrams/erd-recipes.md), [identity](diagrams/erd-identity.md),
+  [access](diagrams/erd-access.md), [household](diagrams/erd-household.md),
+  [labels](diagrams/erd-labels.md), [printing](diagrams/erd-printing.md).
 - **[PostgreSQL](postgresql.md)** — the baseline schema, the two halves an installation
   needs, the porting rules, and eighteen hazards found while porting.
 
-Two facts the diagrams are built around: only four foreign keys are declared in the whole
-schema, all of them in the roles tables, and the 44 views are the read model.
+Two facts the diagrams are built around: outside the label subsystem only ten foreign keys
+are declared, and the 50 views are the read model.
 
 ## Decisions
 
@@ -48,7 +50,7 @@ are worth knowing, because none of them is defined on this site:
 | **Piece N** | One plan's own delivery stages, in order. A plan shipping in two pieces says which is which. | that plan |
 | **Question N**, **QN** | A plan's numbered open question. An answer is written under its question, so the two read together. | that plan |
 | **Verification check N** | One numbered check a plan requires before its work counts as delivered. | that plan |
-| **CN** | A cleanup item in [plan 15](https://github.com/datagen24/victual/blob/master/docs/plans/15-deliberate-cleanup.md). | that plan |
+| **CN** | A cleanup item in [plan 15](https://github.com/datagen24/victual/blob/master/docs/plans/landed/15-deliberate-cleanup.md). | that plan |
 | **SN** | A numbered finding in the [security sweep](https://github.com/datagen24/victual/blob/master/docs/security-sweep.md), which records its severity and remediation. | the sweep |
 
 ## Build and deployment
