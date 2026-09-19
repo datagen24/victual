@@ -1,0 +1,22 @@
+-- api_keys.read_only: the per-key boundary an MCP key's holder relies on (issue #208,
+-- docs/mcp-interface-spec.md §4.2 item 3).
+--
+-- A request authenticated by a read_only key that is not GET, HEAD or OPTIONS is answered
+-- 403 by BaseAuthMiddleware, before any controller runs. That is deliberately server-side:
+-- the MCP sidecar also hides write tools from such a key, but that is UX, and the boundary
+-- that has to hold when the sidecar is compromised or buggy is the one enforced where the
+-- key is validated.
+--
+-- SMALLINT 0/1 rather than BOOLEAN, like every other flag on the tables this fork inherits
+-- (products.active, users.must_change_password, ...), so the generic API and the views keep
+-- handing clients the integers they already parse. Defaults to 0: every existing key keeps
+-- exactly the authority it has today.
+--
+-- No constraint ties read_only to key_type. Only the MCP key type is offered the flag in
+-- the UI, but a read-only regular key is a coherent thing to want and nothing is gained by
+-- making the schema refuse it.
+--
+-- PostgreSQL only, above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, per
+-- ADR-0008's retirement.
+
+ALTER TABLE api_keys ADD COLUMN read_only SMALLINT NOT NULL DEFAULT 0 CHECK (read_only IN (0, 1));

@@ -517,7 +517,10 @@ function IsApiRoutePath($path)
  */
 function ApiKeyIsReadable($apiKey)
 {
-	return $apiKey->key_type !== \Victual\Services\ApiKeyService::API_KEY_TYPE_DEFAULT;
+	// The user-issued types (regular and MCP) are stored as a SHA-256 hash; "readable" was
+	// `!== default` until the MCP type arrived, which would have shown an MCP key's hash as
+	// though it were the key, and offered it as a QR code (issue #208).
+	return !in_array($apiKey->key_type, \Victual\Services\ApiKeyService::USER_ISSUED_KEY_TYPES, true);
 }
 
 /**

@@ -72,8 +72,14 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0284 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
 | 0285 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
 | 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in `master` |
-| 0287 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0288 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0287 | [issue #208](https://github.com/datagen24/victual/issues/208) (plan 02's Victual-side auth) — `api_keys.read_only` | in this tree |
+| 0288 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0289 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered 2026-09-19, the lowest-free-slot rule once more. Issue #208 was written saying
+"0289 as of 2026-09-19", counting plan 22's two claims as taken; but a written 0289 above
+unwritten 0287 and 0288 is the hole `check-migrations.php` refuses, and plan 22 is still
+unscheduled. So #208 takes 0287 and plan 22's claims move up one each, keeping their order.
 
 Renumbered 2026-09-14, the eighth application of the lowest-free-slot rule: plans 28, 29, 30 and 31 were all scheduled into wave 4 while plan 22 stays unscheduled, and a written 0277 above an unwritten 0275 is the hole the second check refuses. Nothing had run under any of these numbers. This move happened on `master` while plan 23's own migration was still landing on this branch; 0274 itself did not move — both branches agree it is plan 23's, and it already has a file on disk.
 

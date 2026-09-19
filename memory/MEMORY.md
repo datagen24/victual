@@ -59,6 +59,14 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-19 — Issue #208 Victual-side MCP auth** (branch `claude/issue-208-mcp-auth`):
+  `API_KEY_TYPE_MCP`, `api_keys.read_only` (**0287** — plan 22's unwritten claims moved to
+  0288–0289), the read-only 403 in `BaseAuthMiddleware` (plus a named list of upstream GET
+  routes that write), a `VICTUAL-API-KEY-TYPE` header that narrows the lookup, and
+  `GET /api/user/capabilities`. Also fixed `ApiKeyIsReadable()`, which would have shown an MCP
+  key's hash. New phase `mcpauth`; `tests/Pgsql/request-subprocess-helper.php` sends any
+  request through the full stack. Full suite green. Sidecar side (send the header) is on
+  #86's branch. See [[project_issue86_mcp_sidecar]].
 - **2026-09-19 — Issue #86 sidecar built, deployed to kind** (branch
   `claude/issue-86-kubernetes-deploy-cc575a`): six tools implemented on the real SDK v2
   (`@modelcontextprotocol/server`+`/node` 2.0.0 — the scaffold's `sdk ^2.0.0` did not

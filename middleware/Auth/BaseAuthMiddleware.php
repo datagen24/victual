@@ -3,6 +3,7 @@
 namespace Victual\Middleware\Auth;
 
 use Victual\Middleware\BaseMiddleware;
+use Victual\Services\ApiKeyService;
 use Victual\Services\DatabaseService;
 use Victual\Services\SessionService;
 use Victual\Services\UsersService;
@@ -155,6 +156,13 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 					return $crossOrigin;
 				}
 
+				$readOnly = $this->ReadOnlyKeyRefusal($request);
+
+				if ($readOnly !== null)
+				{
+					return $readOnly;
+				}
+
 				$forcedChange = $this->PasswordChangeRedirect($request, (int)$user->id);
 
 				if ($forcedChange !== null)
@@ -244,6 +252,76 @@ abstract class BaseAuthMiddleware extends BaseMiddleware
 		$response->getBody()->write(json_encode(['error_message' => 'Cross-origin request refused for a session-authenticated write - send an API key instead']));
 
 		return $response->withStatus(403);
+	}
+
+	/**
+	 * A 403 when the request was authenticated by a read-only API key and is not a GET,
+	 * HEAD or OPTIONS, and null otherwise (issue #208, docs/mcp-interface-spec.md §4.2
+	 * item 3).
+	 *
+	 * Here, where the key is validated, and before any controller runs, so that it holds
+	 * whatever the caller is: the MCP sidecar hides write tools from a read-only key, but a
+	 * compromised or buggy sidecar - or anyone holding the key and a copy of curl - must
+	 * still not be able to write with it. It is the method that decides, not the route,
+	 * because "a read-only key may not change anything" has to hold for routes that do not
+	 * exist yet too - with the exception of WRITING_GET_ROUTES, below.
+	 */
+	private function ReadOnlyKeyRefusal(Request $request): ?Response
+	{
+		if (!ApiKeyService::GetInstance()->ActingKeyIsReadOnly())
+		{
+			return null;
+		}
+
+		if (in_array($request->getMethod(), ['GET', 'HEAD', 'OPTIONS'], true) && !$this->IsWritingGetRoute($request))
+		{
+			return null;
+		}
+
+		$response = $this->ResponseFactory->createResponse();
+		$response->getBody()->write(json_encode(['error_message' => 'This API key is read-only']));
+
+		return $response->withStatus(403);
+	}
+
+	/**
+	 * GET routes, inherited from upstream, that change something - so "a read-only key may
+	 * GET" is not enough on its own (issue #208):
+	 *
+	 *   - the calendar sharing link creates the caller's calendar key the first time it is
+	 *     asked for (ApiKeyService::GetOrCreateApiKey);
+	 *   - the external barcode lookup creates a product when called with `add=true`, and
+	 *     reaches out to a configured external service either way;
+	 *   - the thermal shopping list print drives a printer.
+	 *
+	 * Matched on the route pattern's end, so a VICTUAL_BASE_PATH prefix does not matter. A
+	 * new GET that writes belongs here, and not being here is the failure mode worth
+	 * checking for in review of any route that does.
+	 */
+	private const WRITING_GET_ROUTES = [
+		'/api/calendar/ical/sharing-link',
+		'/api/stock/barcodes/external-lookup/{barcode}',
+		'/api/print/shoppinglist/thermal'
+	];
+
+	private function IsWritingGetRoute(Request $request): bool
+	{
+		$route = RouteContext::fromRequest($request)->getRoute();
+
+		if ($route === null)
+		{
+			return false;
+		}
+
+		foreach (self::WRITING_GET_ROUTES as $pattern)
+		{
+			if (str_ends_with($route->getPattern(), $pattern))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
