@@ -59,14 +59,18 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
-- **2026-09-19 — Issue #86 framework scaffolded, in-repo, unbuilt** (branch
+- **2026-09-19 — Issue #86 framework merged, in-repo, unbuilt** (PR
+  [207](https://github.com/datagen24/victual/pull/207), branch
   `claude/cool-faraday-mx372b`): `mcp/` (Zod schemas for all six §5 tools, handlers
   unimplemented) plus a fourth Nix image (`.#image-mcp`, `nix/mcp.nix`) — reversing the
   interface spec's Open Question 1 ("new repo") per ADR-0013's precedent, after
   `create_repository` for `datagen24/victual-mcp` hit `403` (no repo-creation scope on
-  the GitHub App). Nothing built or run — no Nix/npm in the sandbox. Full detail, why,
-  and the ordered next-steps list:
-  [[project_issue86_mcp_sidecar]].
+  the GitHub App). CodeRabbit's review found one real self-inflicted CI break (a
+  premature `checks.nix` entry forced `nix flake check` to build the still-unbuildable
+  `mcp` package) and one real Nix bug (`sourceRoot` missing), both fixed before merge;
+  an HTTPS-enforcement suggestion was declined in writing as contradicting spec §8/§9.
+  Nothing built or run — no Nix/npm in the sandbox. Full detail and the ordered
+  next-steps list: [[project_issue86_mcp_sidecar]].
 - **2026-09-18 — Plan 20 / issue #133** (branch `claude/issue-133-f49546`): credential split
   done — `deploy/postgres/roles.sql` (`victual_migrate` owns the schema, `victual_app` is DML
   only), a Secret per workload in both pod manifests. The first run of the restricted role could
