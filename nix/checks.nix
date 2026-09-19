@@ -26,6 +26,7 @@
   webcheckBin,
   labelRenderer,
   labelWorker,
+  mcp,
   runtime,
   imageLib,
   version,
@@ -108,15 +109,38 @@ in
         touch $out
       '';
 
-  # A `mcp-image-has-no-shell` check belongs here once nix/mcp.nix's `mcpNpmDeps` is a
-  # real hash. It is deliberately not added yet: `nix flake check` builds every
-  # `checks.<system>.*` derivation (see this file's header, and the comment on
-  # `checks` in nix/overlay.nix), so a check that closes over `mcp` would force a
-  # build of it on every pull request — including ones that never touch mcp/ — and
-  # that build fails on purpose today (nix/hashes.nix's `mcpNpmDeps` is still
-  # `fakeHash`, per mcp/README.md). Wiring this in before the hash is real is exactly
-  # what broke the `flake` CI job on PR #207; see nix/mcp.nix's own header for the
-  # rest of the bootstrap sequence.
+  # The MCP sidecar's runtime closure: the package and the Node that runs it. Node is
+  # the one interpreter this image inherently needs and is not on the forbidden list;
+  # a shell is. The first build had bash in here twice over (the bin wrapper, and npm
+  # via the full nodejs) — see nix/mcp.nix's header.
+  mcp-image-has-no-shell =
+    runCommand "victual-check-mcp-no-shell"
+      {
+        closure = closureInfo {
+          rootPaths = [
+            mcp
+            mcp.node
+          ];
+        };
+      }
+      ''
+        found=""
+        for forbidden in ${lib.escapeShellArgs forbiddenInRuntimeClosure}; do
+          if grep -qE "^/nix/store/[a-z0-9]{32}-$forbidden(-[0-9]|\$)" "$closure/store-paths"; then
+            found="$found $forbidden"
+          fi
+        done
+
+        if [ -n "$found" ]; then
+          echo "The MCP sidecar's runtime closure contains:$found" >&2
+          echo "Find the reference with: nix why-depends .#mcp nixpkgs#bash" >&2
+          exit 1
+        fi
+
+        echo "The MCP sidecar closure holds no shell and no interpreter other than Node."
+        wc -l < "$closure/store-paths" | sed 's/^/store paths: /'
+        touch $out
+      '';
 
   image-has-no-shell =
     runCommand "victual-check-no-shell"
