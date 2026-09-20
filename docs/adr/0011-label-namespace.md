@@ -38,6 +38,16 @@
   stands unchanged** — the `vctl:<uid>` payload, the mapping table, Grocycode as a read-only
   input symbology, and the retirement of `VICTUAL_LABEL_PRINTER_WEBHOOK`. Read 0021 before
   acting on items 4 or 5.
+- **Item 4's transport was decided by [ADR-0019](0019-label-printers-are-master-data.md),
+  accepted 2026-09-07**, and this pointer records that rather than editing the decision.
+  This record named a drainer but never said how it reaches the database, so item 4's
+  "renders and prints, marks done, retries on failure" reads as though the drainer writes
+  rows. ADR-0019 decision item 2 decided the transport the other way: **the worker holds no
+  database credential and makes no database connection**. It authenticates to Victual's
+  HTTP API, claims jobs over it and reports each attempt's outcome back, and the
+  application is what marks the job done — `services/Labels/PrintAttemptService.php`, when
+  that report arrives. Item 4's outbox stands: label creation still enqueues a print job
+  row. Read 0019 item 2 before acting on item 4's print path.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-08-31, which is when it was written; accepted 2026-09-04, which is

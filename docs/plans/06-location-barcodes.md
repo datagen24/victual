@@ -39,8 +39,11 @@ what the record took from it is marked here and in place rather than deleted.
   template document is Victual's, and a separate headless renderer, not the drainer, turns
   it into an artifact. Nothing changes for this plan's conclusion; the sentence would
   otherwise name a component that no longer does the job.
-- **The print path.** Label creation enqueues a row; a drainer renders, prints and
-  retries. The webhook this plan proposed to reuse is retired with it.
+- **The print path.** Label creation enqueues a row; a separate worker claims it over an
+  authenticated HTTP pull API, prints it and reports the outcome, which the application
+  records. The worker holds no database credential and marks nothing done itself —
+  [ADR-0019](../adr/0019-label-printers-are-master-data.md) decision item 2. The webhook
+  this plan proposed to reuse is retired with it.
 
 **Still this plan's, and owned by nobody else:**
 
