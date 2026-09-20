@@ -174,7 +174,11 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
    So there are **two supported topologies over one mechanism**, and every deployment picks one:
    - **Event-scaled**, where the orchestrator has a broker-aware scaler. Both binaries run
      unchanged and unaware, exactly as they do today; the scaler subscribes and starts them.
-     This keeps scale-to-zero, and it is what the maintainer's k3s deployment uses.
+     This keeps scale-to-zero. **No such scaler exists off the shelf today** — KEDA has no
+     MQTT trigger in core and the pull request adding one is unmerged, which open question 1
+     documents — so this branch is what the mechanism *permits*, not a shape any deployment
+     can adopt right now. It is written conditionally on purpose: nothing here requires it,
+     and the payload does not change if it later becomes available.
    - **Resident**, everywhere else. Both binaries gain an optional `--wait` mode with an
      optional MQTT subscription and a mandatory bounded fallback poll, so one long-lived process
      serves a Compose service, a Swarm task or a systemd unit with no orchestrator features
@@ -249,7 +253,8 @@ Each is a gate. The accepting pull request says how each was met.
 
 1. **Both topologies print, with no broker at all.** Event-scaled: the worker runs as a
    run-to-completion workload and several jobs print without the restart backoff the Deployment
-   produces today. Resident: `--wait` with MQTT unconfigured runs for an hour across several
+   produces today — this needs no scaler, only the corrected manifest, so it is unaffected by
+   open question 1. Resident: `--wait` with MQTT unconfigured runs for an hour across several
    jobs without the process ending and without a re-registration. This is a prerequisite rather
    than a consequence — it is the floor everything else is an optimisation over.
 2. **Killing the broker does not stop a print.** With the worker subscribed, stop the broker,
@@ -263,11 +268,16 @@ Each is a gate. The accepting pull request says how each was met.
    looked.
 4. **Latency is measured, not asserted.** Record the interval from enqueue to bytes leaving the
    worker, with and without the broker, on the same hardware, and put both numbers in plan 25.
-5. **Both topologies are demonstrated on something that is not Kubernetes.** The event-scaled
-   path on the maintainer's k3s cluster, with the images byte-identical to the ones the CronJob
-   runs and the CronJob still in place; and the resident path under Docker Compose, printing a
-   real label woken by the topic. A record that only works on the decider's own cluster has not
-   met this gate.
+5. **The resident path is demonstrated on something that is not Kubernetes.** A real label
+   printed under Docker Compose, woken by the topic, with the images byte-identical to the ones
+   k3s runs and the timer still in place. A record that only works on the decider's own cluster
+   has not met this gate.
+
+   **This gate was written to require the event-scaled path on k3s as well, and that half is
+   withdrawn** — open question 1 found there is no MQTT scaler to demonstrate it with. It
+   returns as a gate only if question 1 is answered by building or adopting one; until then,
+   demanding a demonstration of a component that does not exist would make this record
+   unacceptable rather than rigorous.
 6. **A claim is still exclusive, and the lease fence is unmoved.** Run two workers against one
    printer's queue with the subscription live and show that the
    `UNIQUE (outbox_id, attempt_number)` fence still admits exactly one attempt — that the hint
@@ -280,12 +290,40 @@ Each is a gate. The accepting pull request says how each was met.
 
 ## Open questions
 
-1. Which scaler, for the deployments that have one. KEDA's MQTT `ScaledJob` is the obvious
-   candidate for both workloads and makes the broker a dependency of *promptness* while the
-   timer keeps it off the critical path. It is also another cluster component, and this fork
-   does not ship the broker or PostgreSQL either — so the leaning is to document the
-   `ScaledJob` and let the operator install it, rather than to own a scaler. What the fork must
-   not do is depend on one existing, which decision 6 is written to prevent.
+1. Which scaler, for the deployments that have one — **and the honest answer today is that
+   there is not one.** An earlier revision of this record named KEDA's MQTT `ScaledJob` as the
+   obvious candidate. That was wrong, and checking it is what this question is for:
+
+   - [kedacore/keda#1282](https://github.com/kedacore/keda/issues/1282), asking for an MQTT
+     scaler, was opened in October 2020 and is **still open**, labelled "help wanted".
+   - [kedacore/keda#8189](https://github.com/kedacore/keda/pull/8189) would add one. It was
+     opened **2026-09-16, three days before this record**, and is **unmerged**, with review
+     concerns outstanding — among them credentials crossing the wire in plaintext when a
+     non-TLS scheme is configured, which is the exact hazard decision 9 exists to close.
+   - The example most search results reach,
+     [andschneider/keda-mqtt-example](https://github.com/andschneider/keda-mqtt-example),
+     demonstrates the gap rather than closing it: it builds a custom scaler from a personal
+     fork of KEDA and tells you to build and deploy KEDA by hand.
+
+   So the event-scaled topology has no off-the-shelf component behind it. Three ways forward,
+   and the recommendation is the third:
+
+   - **Wait for #8189.** Not something a design may depend on: it is unmerged, under review,
+     and its current security posture is one this record would have to overrule.
+   - **Own an external scaler.** KEDA's `External`/`ExternalPush` trigger is a supported
+     extension point — a gRPC service the fork would write, publishing the same
+     `pending` counter it already publishes. This is buildable today and would be a workload
+     [ADR-0010](0010-workload-standard.md) governs. It is also the fork owning a piece of
+     Kubernetes machinery to serve one deployment shape.
+   - **Recommended: make resident the only topology the fork supports, and leave event-scaled
+     to whoever builds a scaler.** Decision 6's second branch needs nothing that does not
+     exist, works identically on k3s and on Docker Compose, and costs the two workloads their
+     scale-to-zero in exchange for two small resident processes. If #8189 lands, or if someone
+     writes an external scaler, the event-scaled branch becomes available **without changing
+     the mechanism or the payload** — which is the property decision 6 was really buying.
+
+   **This needs deciding before acceptance, because prerequisite 5 cannot be met as written
+   while the answer is the third option.** See the note under it.
 2. Whether `pending` should be published on transitions to zero as well as on enqueue. Publishing
    the zero is what makes the retained value truthful for a late subscriber; not publishing it
    halves the traffic. Recommendation: publish it, because a retained topic that is only ever
