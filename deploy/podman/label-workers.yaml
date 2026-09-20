@@ -1,75 +1,66 @@
-# The two label workloads: the renderer that produces artifacts and the worker that prints
-# them.
+# The two label workloads for `podman kube play`: the renderer that produces artifacts and
+# the worker that prints them.
 #
-# **`podman kube play` cannot deploy this file, and does not say so.** This header gave
-# those two commands until 2026-09-20, when running one for the first time showed what they
-# actually do. Podman's supported kinds are "Pods, Deployments, DaemonSets, Jobs, and
-# PersistentVolumeClaims" (`podman kube play --help`, podman 6.0.2); CronJob is not among
-# them, and an unsupported kind inside a multi-document file is skipped rather than
-# refused. Measured 2026-09-20 against this file on podman 6.0.2, macOS: the Secret was
-# created, both CronJobs were silently dropped, and the command **exited 0**. An operator
-# following this header got a success code, no renderer, no worker and no printing.
-# Reproduce it with `podman kube play deploy/podman/label-workers.yaml; echo $?` and then
-# `podman pod ls`. This was true of the renderer from the day it was written and is not
-# something the worker's change to a CronJob introduced — it went unnoticed because the
-# status note at the bottom is accurate and nobody had run the command.
+#   podman kube play --replace deploy/podman/label-workers.yaml
+#   podman kube down deploy/podman/label-workers.yaml
 #
-# So the two workloads here are applied with kubectl:
+# **These are `Job`s, and the kind is the whole reason this file is separate from
+# [../k3s/label-workers.yaml](../k3s/label-workers.yaml).** Podman plays "Pods,
+# Deployments, DaemonSets, Jobs, and PersistentVolumeClaims" (`podman kube play --help`,
+# podman 6.0.2) — CronJob is not among them, and an unsupported kind inside a
+# multi-document file is **skipped rather than refused**. Measured 2026-09-20 on podman
+# 6.0.2, macOS, against the CronJob version of this file: the Secret was created, both
+# CronJobs were dropped, and the command **exited 0** — a success code, no renderer, no
+# worker, no printing. Reproduce it by putting a CronJob in a file and running
+# `podman kube play file.yaml; echo $?; podman pod ls`. That is why a Kubernetes manifest
+# cannot simply be pointed at podman, and why the three targets get three files.
 #
-#   kubectl apply -f deploy/podman/label-workers.yaml
-#   kubectl delete -f deploy/podman/label-workers.yaml
+# **A Job runs once, so something has to run it again.** `--replace` deletes and recreates
+# the pods each time, which is what makes re-running this file work at all — without it the
+# second invocation collides with the completed Job of the same name. Put it on a systemd
+# timer, one unit per workload or one for both:
 #
-# **The path is now wrong and is left wrong deliberately**, because moving it is a decision
-# about where the label workloads live rather than a fix to the worker's shape, and it would
-# move a file three other documents name. It is the maintainer's call whether these become
-# `Job`s driven by a timer so that `deploy/podman/` means what it says, or move to
-# `deploy/k3s/` beside the manifests kubectl already owns.
+#   # ~/.config/systemd/user/victual-labels.service
+#   [Unit]
+#   Description=Drain the Victual label queues
+#   [Service]
+#   Type=oneshot
+#   ExecStart=/usr/bin/podman kube play --replace %h/victual/deploy/podman/label-workers.yaml
 #
-# On a host that has only podman, run the two images directly from a systemd timer or a
-# cron entry — the same run-to-completion invocation each CronJob makes, once a minute,
-# with the security context restated because `podman run` inherits none of it from here:
+#   # ~/.config/systemd/user/victual-labels.timer
+#   [Unit]
+#   Description=Drain the Victual label queues every minute
+#   [Timer]
+#   OnBootSec=1min
+#   OnUnitActiveSec=1min
+#   [Install]
+#   WantedBy=timers.target
 #
-#   podman run --rm --user 65532:65532 --read-only --cap-drop=ALL \
-#     --security-opt=no-new-privileges --tmpfs /tmp:size=16m \
-#     -v "$KEYDIR":/run/secrets:ro,Z localhost/victual-label-worker:0.1.1-MVP \
-#     --api "$VICTUAL_API_BASE" --key-file /run/secrets/worker-key
+#   systemctl --user enable --now victual-labels.timer
 #
-# The renderer is the same line with its own image, its own key file and a trailing
-# `--drain`. A systemd `Type=oneshot` service under a timer will not start a second run
-# while one is going, which is what `concurrencyPolicy: Forbid` buys below; a bare cron
-# entry will, and two workers on one printer's queue is the ownership ambiguity ADR-0019
-# decision item 3 exists to remove. Use the timer.
+# `Type=oneshot` is load-bearing, not decoration: systemd will not start a second run of a
+# oneshot unit while one is still going, which is what `concurrencyPolicy: Forbid` buys on
+# the cluster. A bare cron entry has no such interlock, and two workers on one printer's
+# queue is the ownership ambiguity [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md)
+# decision item 3 exists to remove. If you use cron, wrap it in `flock`.
 #
-# Two workloads, and since 2026-09-19 one shape: both are **CronJobs**. Each exists only
-# when it has work, drains what is queued and exits, which is the scale-to-zero shape plan
-# 27 question 5 asks for and the reason `.devtools/ci/check_deploy_manifest.py` learned
-# about run-to-completion kinds. The worker was a `replicas: 1` Deployment until that date,
-# on the grounds that it holds a lease while a printer is thinking; that was wrong about the
-# code, and the comment on the worker below says what it cost.
-# [ADR-0026](../../docs/adr/0026-a-wake-signal-may-announce-label-work.md) describes the
-# same defect, but it is **Proposed** and is authority for nothing here: this manifest is
-# correct whether or not that record is ever accepted, and none of the rest of it — no MQTT,
-# no wake topic, no resident mode — is deployed by this file.
+# `podman kube play -w` is the other half worth knowing: it cleans up the objects when the
+# pods exit, which suits a foreground run and not a timer.
+#
+# **Two differences from the Kubernetes file, and both are podman's.** The API base is
+# `host.containers.internal` because deploy/podman/victual.yaml publishes 8080 to the host
+# rather than sitting behind a Service; and `imagePullPolicy: Never` because these images
+# are loaded locally by `nix run .#load` and there is no registry to reach.
+# `.devtools/ci/test_deploy_label_parity.py` allows exactly those two and compares
+# everything else against the other targets.
 #
 # Neither holds a database credential. Both authenticate to Victual's API with a typed key,
 # which is ADR-0019 decision item 2 and is why a remote worker does not need the database
 # reachable from wherever it sits.
 #
-# PostgreSQL and Victual itself are not in here, for the same reason deploy/podman/victual.yaml
-# does not carry the database: the fork declares what its workloads need and the operator
-# decides where they run.
-#
-# **Status: not applied.** The images build and the manifests pass the gate; nothing has been
-# deployed and no physical label has been printed through this path. See
+# **Status: not applied.** The images build and the manifests pass the gate; nothing has
+# been deployed and no physical label has been printed through this path. See
 # docs/plans/25-label-infrastructure.md's verification 12.
-#
-# **If a deployment did apply the worker while it was a Deployment, delete that object
-# before applying this file** — `kubectl delete deployment victual-label-worker`. The two
-# would otherwise run side by side: `concurrencyPolicy: Forbid` below scopes to this
-# CronJob's own invocations and cannot see a resident Deployment of the same name, so the
-# old pod and each new job would claim from one printer's queue at once. Nothing in this
-# repository has ever applied it, per the note above, so this is guidance for a tree that
-# went further than this one rather than a migration anybody here has to run.
 ---
 apiVersion: v1
 kind: Secret
@@ -94,180 +85,144 @@ kind: ConfigMap
 metadata:
   name: victual-label-config
 data:
-  VICTUAL_API_BASE: "http://victual:8080"
+  # host.containers.internal, not a Service name: deploy/podman/victual.yaml publishes
+  # 8080 to the host, and a second `podman kube play` is a separate pod with no cluster DNS
+  # to resolve `victual` against.
+  VICTUAL_API_BASE: "http://host.containers.internal:8080"
 ---
 apiVersion: batch/v1
-kind: CronJob
+kind: Job
 metadata:
   name: victual-label-renderer
   labels:
     app.kubernetes.io/name: victual-label-renderer
 spec:
-  # Every minute. The queue is durable, so a render that is queued between runs waits rather
-  # than being lost, and a household printing a shelf label does not notice a minute. The
-  # dispatcher is deliberately this dull: plan 27 piece 4 requires that no request depend on a
-  # live Victual process remembering to launch something, and a clock is the cheapest thing
-  # that satisfies it.
-  schedule: "* * * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
-  jobTemplate:
+  backoffLimit: 2
+  template:
     spec:
-      backoffLimit: 2
-      template:
-        spec:
-          restartPolicy: Never
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 65532
-            runAsGroup: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          volumes:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: credentials
+          secret:
+            secretName: victual-label-credentials
+      containers:
+        - name: renderer
+          image: localhost/victual-label-renderer:0.1.1-MVP
+          imagePullPolicy: Never
+          args:
+            - "--api"
+            - "$(VICTUAL_API_BASE)"
+            - "--key-file"
+            - "/run/secrets/renderer-key"
+            # Drains the queue rather than rendering one label per run. One invocation
+            # still does one job at a time; what this changes is that a backlog clears in
+            # one run instead of over the next hour.
+            - "--drain"
+          env:
+            - name: VICTUAL_API_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: victual-label-config
+                  key: VICTUAL_API_BASE
+          volumeMounts:
             - name: tmp
-              emptyDir:
-                medium: Memory
-                sizeLimit: 16Mi
+              mountPath: /tmp
             - name: credentials
-              secret:
-                secretName: victual-label-credentials
-          containers:
-            - name: renderer
-              image: localhost/victual-label-renderer:0.1.1-MVP
-              args:
-                - "--api"
-                - "$(VICTUAL_API_BASE)"
-                - "--key-file"
-                - "/run/secrets/renderer-key"
-                # Drains the queue rather than rendering one label per minute. One
-                # invocation still does one job at a time; what this changes is that a
-                # backlog clears in one run instead of over the next hour.
-                - "--drain"
-              env:
-                - name: VICTUAL_API_BASE
-                  valueFrom:
-                    configMapKeyRef:
-                      name: victual-label-config
-                      key: VICTUAL_API_BASE
-              volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-                - name: credentials
-                  mountPath: /run/secrets
-                  readOnly: true
-              resources:
-                limits:
-                  memory: 128Mi
-                  cpu: "1"
-                requests:
-                  memory: 32Mi
-                  cpu: "50m"
-              securityContext:
-                readOnlyRootFilesystem: true
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                    - ALL
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            limits:
+              memory: 128Mi
+              cpu: "1"
+            requests:
+              memory: 32Mi
+              cpu: "50m"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
 ---
 apiVersion: batch/v1
-kind: CronJob
+kind: Job
 metadata:
   name: victual-label-worker
   labels:
     app.kubernetes.io/name: victual-label-worker
 spec:
-  # Every minute, on the renderer's clock, because the worker is the renderer's shape. Its
-  # claim loop breaks on an empty queue and the process exits 0 — and it breaks only there,
-  # never mid-attempt, so it exits exactly when it holds no lease. That is a
-  # run-to-completion workload. Deploying it as a `replicas: 1` Deployment made the
-  # platform's restart backoff the effective poll interval instead: 10 s ramping to a
-  # five-minute cap, with a `POST /api/labels/register` on every restart, so a job enqueued
-  # just after an exit could wait five minutes on an idle printer. One invocation drains the
-  # whole queue, so a shopping trip's worth of labels prints in one run rather than one a
-  # minute, and the floor is one interval rather than one backoff.
+  # No probe and no replica count, because this is the same run-to-completion workload the
+  # Kubernetes file deploys as a CronJob: the claim loop breaks on an empty queue and the
+  # process exits 0, and it breaks only there, never mid-attempt, so it exits exactly when
+  # it holds no lease. Deployed as a resident workload it produced the platform's restart
+  # backoff as an effective poll interval — 10 s ramping to a five-minute cap, with a
+  # `POST /api/labels/register` on every restart. It is also the shape that cannot be
+  # stopped between claiming and reporting, which is ADR-0019 decision item 6's *uncertain*
+  # attempt.
   #
-  # The Deployment was also the worse shape on the safety argument the old comment here made
-  # for it. A workload killed mid-attempt is exactly what
-  # [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md) decision item 6 calls
-  # *uncertain* — bytes may already be at the printer and nothing in Victual can tell — and a
-  # Deployment scaled down or rolled between claim and report is the thing that produces it.
-  # A run-to-completion pod is not preempted there; it either finishes its attempt and
-  # reports, or it dies, which is the ordinary crash case that rule already covers.
-  schedule: "* * * * *"
-  # One worker at a time, deliberately. A printer has exactly one assigned worker under
-  # ADR-0019 decision item 3, and automatic failover between workers is the ownership
-  # ambiguity that decision exists to remove. `Forbid` keeps a slow attempt from being joined
-  # by the next minute's invocation; `parallelism: 1` is the default and is stated because it
-  # is load-bearing here rather than incidental. `replicas: 1` gave neither property during a
-  # rollout, when a Deployment briefly runs two pods on purpose. A spare worker that needs
-  # one admin edit is still the cheaper price than failover.
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
-  jobTemplate:
+  # One worker at a time is the timer's job here rather than the manifest's. `Type=oneshot`
+  # in the header gives what `concurrencyPolicy: Forbid` gives on a cluster; a `Job` object
+  # has no such field, and `parallelism: 1` only bounds this one invocation.
+  backoffLimit: 2
+  parallelism: 1
+  template:
     spec:
-      backoffLimit: 2
-      parallelism: 1
-      template:
-        spec:
-          restartPolicy: Never
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 65532
-            runAsGroup: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          volumes:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: credentials
+          secret:
+            secretName: victual-label-credentials
+      containers:
+        - name: worker
+          image: localhost/victual-label-worker:0.1.1-MVP
+          imagePullPolicy: Never
+          args:
+            - "--api"
+            - "$(VICTUAL_API_BASE)"
+            - "--key-file"
+            - "/run/secrets/worker-key"
+          env:
+            - name: VICTUAL_API_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: victual-label-config
+                  key: VICTUAL_API_BASE
+          volumeMounts:
             - name: tmp
-              emptyDir:
-                medium: Memory
-                sizeLimit: 16Mi
+              mountPath: /tmp
             - name: credentials
-              secret:
-                secretName: victual-label-credentials
-          containers:
-            - name: worker
-              image: localhost/victual-label-worker:0.1.1-MVP
-              args:
-                - "--api"
-                - "$(VICTUAL_API_BASE)"
-                - "--key-file"
-                - "/run/secrets/worker-key"
-              env:
-                - name: VICTUAL_API_BASE
-                  valueFrom:
-                    configMapKeyRef:
-                      name: victual-label-config
-                      key: VICTUAL_API_BASE
-              # No probe, and this is the departure from ADR-0010 property 4 that
-              # ADR-0021's prerequisite 6 already named for the renderer: a probe on a
-              # container that is *meant* to terminate either never fires inside a run that
-              # lasts a second or reports the normal end of the work as a failure.
-              # `check_deploy_manifest.py` exempts run-to-completion kinds for that reason,
-              # so the absence is the rule rather than a hole in it. The binary keeps
-              # `--health`, which is what a resident deployment would probe; there is
-              # nothing here for it to watch. The point the old `livenessProbe` comment made
-              # outlives the probe and is worth keeping: whatever ever watches this worker
-              # reports on this process and not on Victual, because a worker restarted for
-              # the API being down would be restarted for somebody else's outage, and it
-              # would abandon a lease doing it.
-              volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-                - name: credentials
-                  mountPath: /run/secrets
-                  readOnly: true
-              resources:
-                limits:
-                  memory: 128Mi
-                  cpu: "1"
-                requests:
-                  memory: 32Mi
-                  cpu: "50m"
-              securityContext:
-                readOnlyRootFilesystem: true
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                    - ALL
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            limits:
+              memory: 128Mi
+              cpu: "1"
+            requests:
+              memory: 32Mi
+              cpu: "50m"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
