@@ -23,6 +23,9 @@ dockerTools.streamLayeredImage (
     extraCommands = imageLib.scaffold "";
     config = imageLib.commonConfig // {
       Entrypoint = [ "${labelWorker}/bin/victual-label-worker" ];
+      # /tmp because it is the only directory this image contains, the same answer
+      # web.nix gives. scaffold creates it; nothing else exists to start in.
+      WorkingDir = "/tmp";
       Labels = imageLib.labels "label-worker";
     };
   }

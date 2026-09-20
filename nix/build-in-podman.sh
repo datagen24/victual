@@ -4,7 +4,7 @@
 #
 #   nix/build-in-podman.sh bootstrap    fill nix/hashes.nix and write flake.lock
 #   nix/build-in-podman.sh check        nix flake check
-#   nix/build-in-podman.sh images       build the four serving images and `podman load` them
+#   nix/build-in-podman.sh images       build the six images and `podman load` them
 #   nix/build-in-podman.sh shell        an interactive nix shell in the builder
 #   nix/build-in-podman.sh all          bootstrap, then check, then images
 #
@@ -209,7 +209,11 @@ cmd_check() {
 # reads it — which is what nix/README.md's second snippet does, once per image.
 cmd_images() {
 	ensure_store
-	for img in image-app image-web image-migrate image-mcp; do
+	# The two label images are here because they are deployment artifacts like the rest:
+	# they were missing until 2026-09-20, so `images` left the label workloads at whatever
+	# tag happened to be in podman already, and a manifest referencing the current tag found
+	# no image. deploy/README.md's label table is what they are for.
+	for img in image-app image-web image-migrate image-mcp image-label-renderer image-label-worker; do
 		log "building .#$img and loading it into $CONTAINER_ENGINE"
 		# The flags are spelled out rather than interpolated from NIX_FLAGS: `${NIX_FLAGS[*]}`
 		# flattens `--extra-experimental-features` and its single argument

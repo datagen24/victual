@@ -85,8 +85,10 @@ stringData:
 apiVersion: v1
 kind: Service
 metadata:
-  # `victual`, because deploy/podman/label-workers.yaml already points its workers at
-  # http://victual:8080.
+  # `victual`, because label-workers.yaml beside this file already points its workers at
+  # http://victual:8080. The podman and Compose copies reach a published host port and an
+  # external network instead, which is one of the differences
+  # .devtools/ci/test_deploy_label_parity.py allows.
   name: victual
   labels:
     app.kubernetes.io/name: victual

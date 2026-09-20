@@ -68,9 +68,17 @@ rec {
   };
 
   # The half of the OCI config that is the same everywhere.
+  #
+  # `WorkingDir` is deliberately **not** here, and was until 2026-09-20. It read
+  # `WorkingDir = "/app"`, which was never the same everywhere: app.nix and migrate.nix
+  # set their own `appRoot` and web.nix overrides it to /tmp, so the default applied to
+  # exactly the three images built from a single binary on no base image -- label-worker,
+  # label-renderer and mcp -- none of which contain an /app for it to name. Kubernetes
+  # creates a missing working directory and the defect stayed invisible; podman validates
+  # and refuses, with `starting container ...: workdir "/app" does not exist on
+  # container`, which is how it was found. Every image now states its own.
   commonConfig = {
     User = "${toString uid}:${toString gid}";
-    WorkingDir = "/app";
     # No PATH: every Entrypoint below names absolute store paths, and an image with no
     # shell has nothing to look up. TMPDIR is set because PHP and nginx both want
     # somewhere to put a temporary file and the answer must be the one writable mount.

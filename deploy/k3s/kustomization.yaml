@@ -7,3 +7,8 @@ kind: Kustomization
 resources:
   - victual.yaml
   - victual-mcp.yaml
+  # The label renderer and worker. Included here so `kubectl apply -k deploy/k3s` deploys a
+  # printer rather than leaving it to a second command nobody remembers; they were in
+  # deploy/podman/ until 2026-09-20, where `podman kube play` silently skipped them. An
+  # overlay that has no printer removes this entry rather than the file.
+  - label-workers.yaml

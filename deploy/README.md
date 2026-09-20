@@ -21,15 +21,69 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
 | [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. Applied to kind on 2026-09-19 (see below). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
-| [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The two workloads above as one kustomize base, for an operator's overlay to patch |
+| [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
-| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer (a CronJob) and the label worker (a Deployment); neither holds a database credential |
+| [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
+| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |
+| [`compose/label-workers.yml`](compose/label-workers.yml) | The same two workloads as profiled Compose services, for `docker compose run --rm` on a systemd timer |
 
 The pod manifest is a Kubernetes object rather than
 a compose file on purpose: `podman kube play` gives the two serving containers a shared
 network namespace exactly as Kubernetes does, so `127.0.0.1:9000` means the same thing on
 a laptop and in the cluster, and there is one manifest to keep true instead of two.
+
+## The label workloads: one pair, three deployment methods
+
+The renderer and the worker are the same two programs everywhere, and they are **three
+files** because the three targets do not offer the same kinds:
+
+| Method | File | Kind | What repeats the run |
+|---|---|---|---|
+| K3s / Kubernetes | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | `CronJob`, every minute | the cluster's scheduler |
+| Podman Kube | [`podman/label-workers.yaml`](podman/label-workers.yaml) | `Job` | a systemd timer running `podman kube play --replace` |
+| Docker Compose | [`compose/label-workers.yml`](compose/label-workers.yml) | a profiled service | a systemd timer running `docker compose run --rm` |
+
+Each file's header carries the timer unit for its own method. Two properties are constant
+across all three and are the reason the split is safe: the worker is **run to completion**
+on every target — its claim loop breaks on an empty queue and exits 0, never mid-attempt,
+so it exits exactly when it holds no lease — and **exactly one worker serves a printer at a
+time**, which is `concurrencyPolicy: Forbid` on Kubernetes and `Type=oneshot` on the other
+two. Losing the second property is the ownership ambiguity
+[ADR-0019](../docs/adr/0019-label-printers-are-master-data.md) decision item 3 removes, so
+if you drive either timer from cron instead, wrap it in `flock`.
+
+[`.devtools/ci/test_deploy_label_parity.py`](../.devtools/ci/test_deploy_label_parity.py)
+is what keeps three files from becoming three workloads. It compares image, arguments, key
+path, uid, read-only root, dropped capabilities, memory ceiling and tmpfs size across all
+three, and allows exactly two differences: the API base, and `imagePullPolicy: Never`.
+
+**Why podman is not simply handed the Kubernetes file.** Podman plays "Pods, Deployments,
+DaemonSets, Jobs, and PersistentVolumeClaims" (`podman kube play --help`, podman 6.0.2) —
+not CronJob — and it **skips** an unsupported kind in a multi-document file instead of
+refusing it. Measured 2026-09-20 on podman 6.0.2, macOS, against the CronJob version of the
+file when it still lived in `podman/`: the Secret was created, both CronJobs were dropped,
+and the command **exited 0**, leaving no renderer, no worker and a success code. The
+renderer had been a CronJob since it was written, so that file had never worked; it
+survived because nothing here had ever run the command.
+
+**Why Compose is not simply given `restart: always`.** A binary that exits when its queue
+drains, under a restart policy, is a tight restart loop with a
+`POST /api/labels/register` every cycle — the same defect that made deploying the worker as
+a `replicas: 1` Deployment wrong. Both Compose services therefore sit behind a `manual`
+profile so `docker compose up` does not start them.
+[ADR-0026](../docs/adr/0026-a-wake-signal-may-announce-label-work.md) decision 6 calls this
+the "resident" topology and would give the binaries a `--wait` mode that makes the host
+timer unnecessary; the maintainer intends to accept that record, but **no part of it is
+implemented** and the binaries have no `--wait` today. The timer is the interim answer, and
+it stays the floor under the record if it lands.
+
+**Upgrading a deployment that applied the worker as a `Deployment`:** delete that object
+first, with `kubectl delete deployment victual-label-worker`. `concurrencyPolicy: Forbid`
+scopes to the CronJob's own invocations and cannot see a resident Deployment, so the two
+would claim from one printer's queue together — the ownership ambiguity
+[ADR-0019](../docs/adr/0019-label-printers-are-master-data.md) decision item 3 removes.
+Nothing here has ever applied it, so no tree in this repository needs the step.
 
 ## Bootstrapping on a Mac with podman
 
@@ -282,6 +336,22 @@ readiness probe, which renders `/login` through Blade.
 ## What this deployment does not yet do
 
 Stated plainly because the gap is the point of tracking it:
+
+- ~~**The label images declare a working directory they do not contain.**~~ **Fixed
+  2026-09-20, in the change that found it.** `podman kube play` accepted the new `Job`
+  kinds and created both pods, and then both containers failed with
+  `starting container …: workdir "/app" does not exist on container`.
+  [`nix/images/lib.nix`](../nix/images/lib.nix)'s `commonConfig` set `WorkingDir = "/app"`
+  for every image while `scaffold` creates only `/tmp`; `app.nix` and `migrate.nix` set
+  their own `appRoot` and `web.nix` overrides it, so the default applied to exactly the
+  three images built from a single binary on no base image — the two label images and
+  **the MCP sidecar** — none of which contain an `/app`. It was invisible on Kubernetes,
+  where the CRI creates a missing working directory, which is why the sidecar had run on
+  kind since 2026-09-19 carrying it. `WorkingDir` is now out of `commonConfig` and stated
+  by each image; the three that inherited it say `/tmp`, the one directory they contain,
+  as `web.nix` already did. Rebuilt and verified: both containers start, and the binaries
+  reach `POST /api/labels/register` and `POST /api/labels/render/claim`, failing only on
+  connection refused because no Victual was running.
 
 - ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied to kind,
   2026-09-19; not yet to k3s.** `deploy/kind/up.sh` loads the four images, applies

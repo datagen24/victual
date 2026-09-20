@@ -32,6 +32,10 @@ dockerTools.streamLayeredImage (
         mcp.entrypoint
       ];
 
+      # /tmp because it is the only directory this image contains, the same answer
+      # web.nix gives. scaffold creates it; nothing else exists to start in.
+      WorkingDir = "/tmp";
+
       Env = imageLib.commonConfig.Env ++ [
         "MCP_PORT=${toString mcpPort}"
         "NODE_ENV=production"

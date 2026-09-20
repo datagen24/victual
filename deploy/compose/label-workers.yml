@@ -1,0 +1,149 @@
+# The two label workloads for Docker Compose: the renderer that produces artifacts and the
+# worker that prints them.
+#
+#   docker compose -f deploy/compose/label-workers.yml run --rm renderer
+#   docker compose -f deploy/compose/label-workers.yml run --rm worker
+#
+# **`.yml`, not `.yaml`, and that is deliberate.** `.devtools/ci/check_deploy_manifest.py`
+# globs `deploy/**/*.yaml` and understands Kubernetes objects; a Compose file has no `kind`
+# and would sail through it by having no container list the checker can find, which is a
+# pass that means nothing. The extension keeps it out of a check that cannot judge it, and
+# `.devtools/ci/test_deploy_label_parity.py` — which does understand Compose — is what
+# asserts the security context, the limits and the arguments here instead.
+#
+# **Compose has no scheduler, so the schedule is systemd's.** There is no `CronJob` here
+# and no `Job`: `docker compose up` would start these as long-running services, and a
+# binary that exits when its queue drains under `restart: always` is a tight restart loop —
+# the same defect that made the worker a `replicas: 1` Deployment wrong, with a
+# `POST /api/labels/register` on every cycle. Both services therefore sit behind a
+# `manual` profile so `up` does not start them, and a timer runs them one at a time:
+#
+#   # ~/.config/systemd/user/victual-labels.service
+#   [Unit]
+#   Description=Drain the Victual label queues
+#   [Service]
+#   Type=oneshot
+#   WorkingDirectory=%h/victual
+#   ExecStart=/usr/bin/docker compose -f deploy/compose/label-workers.yml run --rm renderer
+#   ExecStart=/usr/bin/docker compose -f deploy/compose/label-workers.yml run --rm worker
+#
+#   # ~/.config/systemd/user/victual-labels.timer
+#   [Unit]
+#   Description=Drain the Victual label queues every minute
+#   [Timer]
+#   OnBootSec=1min
+#   OnUnitActiveSec=1min
+#   [Install]
+#   WantedBy=timers.target
+#
+#   systemctl --user enable --now victual-labels.timer
+#
+# `Type=oneshot` with two `ExecStart=` lines runs them in order and will not start a second
+# activation while one is running, which is what `concurrencyPolicy: Forbid` gives on
+# Kubernetes. Two workers on one printer's queue is the ownership ambiguity
+# [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md) decision item 3 exists
+# to remove, so if you drive this from cron instead, wrap it in `flock`.
+#
+# **That interlock works here only because `docker compose run` stays in the foreground
+# until the container exits**, so the oneshot is not finished until the drain is. The
+# podman file next door needs a second command to get the same property — `podman kube
+# play` returns as soon as the pods are *started*, measured at 0 s for a Job that then ran
+# for 12 s — which is why its unit ends with `podman wait` and this one does not. Do not
+# copy one unit's shape onto the other; they differ because the two commands differ.
+# `OnUnitActiveSec=` is relative to the last **activation**, not the last completion — the
+# completion-relative setting is `OnUnitInactiveSec=`. Overlap is prevented by the unit
+# rather than by the interval: systemd.timer(5) says that if "the unit to activate is
+# already active at the time the timer elapses it is not restarted, but simply left
+# running. There is no concept of spawning new service instances in this case." An
+# overlapping tick is dropped, which is the per-minute-skip-if-busy behaviour the CronJob
+# next door gets from `concurrencyPolicy: Forbid`.
+#
+# **This is the interim shape, and the record that replaces it is on its way.**
+# [ADR-0026](../../docs/adr/0026-a-wake-signal-may-announce-label-work.md) decision 6 calls
+# this the "resident" topology and gives the binaries an optional `--wait` mode with a
+# bounded fallback poll, so one long-lived Compose service serves the printer with no host
+# timer at all. That record is **Proposed**; the maintainer has said they intend to accept
+# it, but no part of it is implemented — the binaries have no `--wait` today, which is why
+# the timer above exists. When it lands, these two services lose their profile, gain
+# `--wait` and `restart: unless-stopped`, and the systemd units are deleted. Nothing else
+# here changes.
+#
+# **Victual itself is not in this file**, for the same reason the Kubernetes manifests do
+# not carry PostgreSQL: the fork declares what its workloads need and the operator decides
+# where they run. Point `VICTUAL_API_BASE` at wherever Victual answers and join the network
+# it is on. Do not confuse this with the `docker-compose.yml` in the repository root, which
+# is the development and CI harness for the test suite and is not a deployment.
+#
+# **Status: not applied.** No physical label has been printed through this path. See
+# docs/plans/25-label-infrastructure.md's verification 12.
+
+name: victual-labels
+
+services:
+  renderer:
+    image: localhost/victual-label-renderer:0.1.1-MVP
+    profiles: ["manual"]
+    # Drains the queue rather than rendering one label per run, exactly as the CronJob's
+    # arguments do on Kubernetes.
+    command:
+      - "--api"
+      - "${VICTUAL_API_BASE:-http://victual:8080}"
+      - "--key-file"
+      - "/run/secrets/renderer-key"
+      - "--drain"
+    secrets:
+      - renderer-key
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - "no-new-privileges:true"
+    tmpfs:
+      - "/tmp:size=16m,mode=1777"
+    mem_limit: 128m
+    cpus: 1.0
+    networks: ["victual"]
+
+  worker:
+    image: localhost/victual-label-worker:0.1.1-MVP
+    profiles: ["manual"]
+    # No `restart:` key, and that is the point of this file. The claim loop breaks on an
+    # empty queue and the process exits 0 — and only there, never mid-attempt, so it exits
+    # exactly when it holds no lease. `restart: always` would turn that correct exit into a
+    # restart loop; `docker compose run --rm` from the timer treats it as what it is, a run
+    # that finished.
+    command:
+      - "--api"
+      - "${VICTUAL_API_BASE:-http://victual:8080}"
+      - "--key-file"
+      - "/run/secrets/worker-key"
+    secrets:
+      - worker-key
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - "no-new-privileges:true"
+    tmpfs:
+      - "/tmp:size=16m,mode=1777"
+    mem_limit: 128m
+    cpus: 1.0
+    networks: ["victual"]
+
+secrets:
+  # Files on the host rather than values in this file: a Compose secret's only source is a
+  # file or an external secret, and writing a key inline would put a live credential in the
+  # repository. Issue them with POST /api/labels/workers/{id}/credentials and
+  # POST /api/labels/workers/{id}/renderer-credentials, and keep the directory out of git.
+  renderer-key:
+    file: ./secrets/renderer-key
+  worker-key:
+    file: ./secrets/worker-key
+
+networks:
+  # External, because Victual is deployed by something else: create it once with
+  # `docker network create victual`, or point this at whatever network Victual already
+  # joins. A bridge Compose creates for this file alone would leave the workers unable to
+  # resolve the API.
+  victual:
+    external: true
