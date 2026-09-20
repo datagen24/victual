@@ -32,9 +32,13 @@ before relying on it for a household's data.
 
 ## Restoring
 
-Stop application and worker writes. Create an empty target database and configure Victual's
-`DB_*` settings to point to it. Do not run the migrator before restoring: the custom-format
-dump contains the schema, so pre-created tables cause "relation already exists" errors.
+Stop the application, and stop the label workers with it. A worker never writes to the
+database directly — it claims jobs and reports outcomes over Victual's HTTP API, and the
+application performs the writes — so stopping the application is what stops the writes,
+and stopping the workers is what stops them retrying against one that has gone away.
+Create an empty target database and configure Victual's `DB_*` settings to point to it.
+Do not run the migrator before restoring: the custom-format dump contains the schema, so
+pre-created tables cause "relation already exists" errors.
 
 ```
 pg_restore --exit-on-error -h <DB_HOST> -p <DB_PORT> -U <DB_USER> -d <DB_NAME> victual.dump
