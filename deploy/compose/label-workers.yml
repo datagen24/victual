@@ -50,8 +50,13 @@
 # play` returns as soon as the pods are *started*, measured at 0 s for a Job that then ran
 # for 12 s — which is why its unit ends with `podman wait` and this one does not. Do not
 # copy one unit's shape onto the other; they differ because the two commands differ.
-# `OnUnitActiveSec=` measures from the end of the last run, so a drain that overruns a
-# minute delays the next one rather than stacking on top of it.
+# `OnUnitActiveSec=` is relative to the last **activation**, not the last completion — the
+# completion-relative setting is `OnUnitInactiveSec=`. Overlap is prevented by the unit
+# rather than by the interval: systemd.timer(5) says that if "the unit to activate is
+# already active at the time the timer elapses it is not restarted, but simply left
+# running. There is no concept of spawning new service instances in this case." An
+# overlapping tick is dropped, which is the per-minute-skip-if-busy behaviour the CronJob
+# next door gets from `concurrencyPolicy: Forbid`.
 #
 # **This is the interim shape, and the record that replaces it is on its way.**
 # [ADR-0026](../../docs/adr/0026-a-wake-signal-may-announce-label-work.md) decision 6 calls

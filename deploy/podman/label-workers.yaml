@@ -37,12 +37,21 @@
 #   [Service]
 #   Type=oneshot
 #   ExecStart=/usr/bin/podman kube play --replace %h/victual/deploy/podman/label-workers.yaml
-#   # Blocks until both containers stop; `--ignore` so a container that is already gone is
-#   # not an error. These names are `<pod>-<container>`, which is how `podman kube play`
-#   # names them: pod `victual-label-worker-pod` from the Job's metadata, container `worker`
+#   # Blocks until both containers stop, and fails the unit if either did. The loop is not
+#   # ceremony: `podman wait` prints the container's exit code and **exits 0 regardless**
+#   # (measured 2026-09-20: a container that exited 7 gave `7` on stdout and rc=0), so a
+#   # bare `ExecStart=podman wait ...` would leave a failed drain looking like a clean run
+#   # and nothing would ever fire OnFailure=. `--ignore` yields `-1` for a container that
+#   # is not there, which is tolerated because the play above has already failed the unit
+#   # if it could not create them. The names are `<pod>-<container>`, as podman builds
+#   # them: pod `victual-label-worker-pod` from the Job's metadata, container `worker`
 #   # from the container's own name below.
-#   ExecStart=/usr/bin/podman wait --ignore \
-#       victual-label-renderer-pod-renderer victual-label-worker-pod-worker
+#   ExecStart=/bin/sh -c 'for c in victual-label-renderer-pod-renderer victual-label-worker-pod-worker; do \
+#       code=$(podman wait --ignore "$c"); \
+#       case "$code" in 0|-1) ;; *) echo "$c exited $code" >&2; exit 1 ;; esac; \
+#     done'
+#   # Then a failed drain is a failed unit, and this is where an alert belongs:
+#   #   OnFailure=victual-labels-failed.service
 #
 #   # ~/.config/systemd/user/victual-labels.timer
 #   [Unit]
@@ -55,13 +64,21 @@
 #
 #   systemctl --user enable --now victual-labels.timer
 #
-# `Type=oneshot` runs several `ExecStart=` lines in order and will not start a second
-# activation while one is still going, so the wait is what turns that interlock into the
-# thing `concurrencyPolicy: Forbid` gives on a cluster. `OnUnitActiveSec=` measures from the
-# end of the last run rather than the start, so a drain that overruns a minute simply delays
-# the next one instead of stacking. A bare cron entry has neither property, and two workers
-# on one printer's queue is the ownership ambiguity ADR-0019 decision item 3 removes — if
-# you use cron, wrap it in `flock`.
+# `Type=oneshot` runs several `ExecStart=` lines in order and is not done until the last of
+# them returns, so the wait is what turns the unit's own lifetime into the thing
+# `concurrencyPolicy: Forbid` gives on a cluster. systemd.timer(5) is explicit about the
+# overlap: "in case the unit to activate is already active at the time the timer elapses it
+# is not restarted, but simply left running. There is no concept of spawning new service
+# instances in this case." The elapsed event is dropped, not queued behind the running
+# drain.
+#
+# `OnUnitActiveSec=` is **relative to the last activation, not the last completion** — the
+# completion-relative one is `OnUnitInactiveSec=`. It is the right choice here anyway,
+# because a per-minute cadence that skips an overlapping tick is exactly what the CronJob
+# next door does; `OnUnitInactiveSec=1min` would instead insert a minute of idle after
+# every drain. A bare cron entry has neither property, and two workers on one printer's
+# queue is the ownership ambiguity ADR-0019 decision item 3 removes — if you use cron,
+# wrap it in `flock`.
 #
 # **Do not reach for `podman kube play -w` here.** Its help says it cleans up when the pods
 # exit, which sounds like exactly this, and on podman 6.0.2 it **panics on a `Job`**:
