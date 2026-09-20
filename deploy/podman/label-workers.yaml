@@ -1,8 +1,44 @@
 # The two label workloads: the renderer that produces artifacts and the worker that prints
 # them.
 #
-#   podman kube play deploy/podman/label-workers.yaml
-#   podman kube down deploy/podman/label-workers.yaml
+# **`podman kube play` cannot deploy this file, and does not say so.** This header gave
+# those two commands until 2026-09-20, when running one for the first time showed what they
+# actually do. Podman's supported kinds are "Pods, Deployments, DaemonSets, Jobs, and
+# PersistentVolumeClaims" (`podman kube play --help`, podman 6.0.2); CronJob is not among
+# them, and an unsupported kind inside a multi-document file is skipped rather than
+# refused. Measured 2026-09-20 against this file on podman 6.0.2, macOS: the Secret was
+# created, both CronJobs were silently dropped, and the command **exited 0**. An operator
+# following this header got a success code, no renderer, no worker and no printing.
+# Reproduce it with `podman kube play deploy/podman/label-workers.yaml; echo $?` and then
+# `podman pod ls`. This was true of the renderer from the day it was written and is not
+# something the worker's change to a CronJob introduced — it went unnoticed because the
+# status note at the bottom is accurate and nobody had run the command.
+#
+# So the two workloads here are applied with kubectl:
+#
+#   kubectl apply -f deploy/podman/label-workers.yaml
+#   kubectl delete -f deploy/podman/label-workers.yaml
+#
+# **The path is now wrong and is left wrong deliberately**, because moving it is a decision
+# about where the label workloads live rather than a fix to the worker's shape, and it would
+# move a file three other documents name. It is the maintainer's call whether these become
+# `Job`s driven by a timer so that `deploy/podman/` means what it says, or move to
+# `deploy/k3s/` beside the manifests kubectl already owns.
+#
+# On a host that has only podman, run the two images directly from a systemd timer or a
+# cron entry — the same run-to-completion invocation each CronJob makes, once a minute,
+# with the security context restated because `podman run` inherits none of it from here:
+#
+#   podman run --rm --user 65532:65532 --read-only --cap-drop=ALL \
+#     --security-opt=no-new-privileges --tmpfs /tmp:size=16m \
+#     -v "$KEYDIR":/run/secrets:ro,Z localhost/victual-label-worker:0.1.1-MVP \
+#     --api "$VICTUAL_API_BASE" --key-file /run/secrets/worker-key
+#
+# The renderer is the same line with its own image, its own key file and a trailing
+# `--drain`. A systemd `Type=oneshot` service under a timer will not start a second run
+# while one is going, which is what `concurrencyPolicy: Forbid` buys below; a bare cron
+# entry will, and two workers on one printer's queue is the ownership ambiguity ADR-0019
+# decision item 3 exists to remove. Use the timer.
 #
 # Two workloads, and since 2026-09-19 one shape: both are **CronJobs**. Each exists only
 # when it has work, drains what is queued and exits, which is the scale-to-zero shape plan
@@ -26,6 +62,14 @@
 # **Status: not applied.** The images build and the manifests pass the gate; nothing has been
 # deployed and no physical label has been printed through this path. See
 # docs/plans/25-label-infrastructure.md's verification 12.
+#
+# **If a deployment did apply the worker while it was a Deployment, delete that object
+# before applying this file** — `kubectl delete deployment victual-label-worker`. The two
+# would otherwise run side by side: `concurrencyPolicy: Forbid` below scopes to this
+# CronJob's own invocations and cannot see a resident Deployment of the same name, so the
+# old pod and each new job would claim from one printer's queue at once. Nothing in this
+# repository has ever applied it, per the note above, so this is guidance for a tree that
+# went further than this one rather than a migration anybody here has to run.
 ---
 apiVersion: v1
 kind: Secret

@@ -24,12 +24,31 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The two workloads above as one kustomize base, for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
-| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer and the label worker, both `CronJob`s: each drains its queue and exits, so neither is resident. Neither holds a database credential |
+| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer and the label worker, both `CronJob`s: each drains its queue and exits, so neither is resident. Neither holds a database credential. **Despite the directory, `podman kube play` cannot deploy it** — see below |
 
 The pod manifest is a Kubernetes object rather than
 a compose file on purpose: `podman kube play` gives the two serving containers a shared
 network namespace exactly as Kubernetes does, so `127.0.0.1:9000` means the same thing on
 a laptop and in the cluster, and there is one manifest to keep true instead of two.
+
+**`podman/label-workers.yaml` is the exception, and it is a defect rather than a design.**
+Podman plays "Pods, Deployments, DaemonSets, Jobs, and PersistentVolumeClaims"
+(`podman kube play --help`, podman 6.0.2) — not CronJob — and it skips an unsupported kind
+in a multi-document file instead of refusing it. Measured 2026-09-20 on podman 6.0.2,
+macOS: `podman kube play deploy/podman/label-workers.yaml` created the Secret, dropped both
+CronJobs and **exited 0**, leaving no renderer, no worker and a success code. Apply that
+file with `kubectl` instead, or run the two images from a systemd timer; the manifest's own
+header carries both recipes and the reproduction. The renderer has been a CronJob since it
+was written, so this predates the worker becoming one — it survived because nothing in this
+repository had ever run the command. Whether the file becomes `Job`s so the directory means
+what it says, or moves to `k3s/`, is open.
+
+**Upgrading a deployment that applied the worker as a `Deployment`:** delete that object
+first, with `kubectl delete deployment victual-label-worker`. `concurrencyPolicy: Forbid`
+scopes to the CronJob's own invocations and cannot see a resident Deployment, so the two
+would claim from one printer's queue together — the ownership ambiguity
+[ADR-0019](../docs/adr/0019-label-printers-are-master-data.md) decision item 3 removes.
+Nothing here has ever applied it, so no tree in this repository needs the step.
 
 ## Bootstrapping on a Mac with podman
 
