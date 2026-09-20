@@ -226,19 +226,22 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
 - Printing latency stops being a function of a clock. A job enqueued by a request is announced
   in the same shutdown seam that already publishes state, and a waiting worker claims it in the
   time it takes one HTTP round trip.
-- The restart loop that today re-registers capabilities every few minutes stops, under either
-  topology: event-scaled, because a finished job is not a crash to back off from; resident,
-  because the process no longer ends.
+- The restart loop that today re-registers capabilities every few minutes stops under either
+  shape: run-to-completion, because a finished job is not a crash to back off from; resident,
+  because the process no longer ends. Note this one is the manifest's doing, not the wake
+  signal's — it is fixed by decision 5 whatever happens to the rest of this record.
 - Victual still subscribes to nothing, so ADR-0007 is untouched and no always-on PHP workload is
   introduced.
 - A new dependency appears in **both** Cargo closures, used only in resident mode. It must be a
   synchronous client, per decision 7. An event-scaled deployment never executes that code path,
   so the k3s images carry a dependency they do not run — which is the price of one binary
   serving both topologies, and cheaper than two.
-- **Two supported topologies is two things to keep working.** The resident path is the one most
-  households will use and the event-scaled path is the one the maintainer runs, so neither is
-  the neglected branch by default. Both are exercised by the prerequisites below, and a change
-  to the claim loop has to be considered against both.
+- **Two topologies is two things to keep working — but only one of them runs anywhere today.**
+  An earlier revision said the resident path is what most households use and the event-scaled
+  path is what the maintainer runs, so neither would be neglected. That balance does not exist:
+  open question 1 found no scaler, so resident is the only path anything can take, and the
+  event-scaled branch is untested by construction. If it is ever built, it starts as the
+  neglected branch and needs a gate of its own rather than inheriting one.
 - Spurious wakes are harmless and expected. Each costs one `SKIP LOCKED` query that returns
   nothing.
 - Anything the broker admits learns when the household prints and how often. Decision 9 is the
@@ -251,12 +254,18 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
 
 Each is a gate. The accepting pull request says how each was met.
 
-1. **Both topologies print, with no broker at all.** Event-scaled: the worker runs as a
-   run-to-completion workload and several jobs print without the restart backoff the Deployment
-   produces today — this needs no scaler, only the corrected manifest, so it is unaffected by
-   open question 1. Resident: `--wait` with MQTT unconfigured runs for an hour across several
-   jobs without the process ending and without a re-registration. This is a prerequisite rather
-   than a consequence — it is the floor everything else is an optimisation over.
+1. **Both shapes print, with no broker at all.** Two things, and neither is the event-scaled
+   topology — that word is decision 6's, and it means scaler-driven:
+   - **Timer-driven run-to-completion.** With the corrected manifest and no scaler anywhere,
+     the worker runs to completion and several jobs print without the restart backoff the
+     `replicas: 1` Deployment produces today. This is the floor, it needs nothing that does not
+     exist, and it is unaffected by open question 1.
+   - **Resident.** `--wait` with MQTT unconfigured runs for an hour across several jobs without
+     the process ending and without a re-registration.
+
+   **Validating the event-scaled topology is deferred** until a scaler exists to drive it;
+   there is nothing to point at today. It returns as a gate with open question 1's answer, if
+   that answer is to build or adopt one.
 2. **Killing the broker does not stop a print.** With the worker subscribed, stop the broker,
    enqueue a job, and show it printed on the fallback poll. Then restart the broker and show the
    worker recovers without operator action.
@@ -322,8 +331,10 @@ Each is a gate. The accepting pull request says how each was met.
      writes an external scaler, the event-scaled branch becomes available **without changing
      the mechanism or the payload** — which is the property decision 6 was really buying.
 
-   **This needs deciding before acceptance, because prerequisite 5 cannot be met as written
-   while the answer is the third option.** See the note under it.
+   **This needs deciding before acceptance, because it decides what gets built** — whether the
+   fork carries a scaler, waits on one, or supports only the resident shape. It no longer
+   blocks any gate: prerequisites 1 and 5 were rewritten to test what exists, so every gate is
+   reachable under the recommendation.
 2. Whether `pending` should be published on transitions to zero as well as on enqueue. Publishing
    the zero is what makes the retained value truthful for a late subscriber; not publishing it
    halves the traffic. Recommendation: publish it, because a retained topic that is only ever
