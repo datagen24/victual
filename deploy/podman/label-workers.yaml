@@ -4,12 +4,16 @@
 #   podman kube play deploy/podman/label-workers.yaml
 #   podman kube down deploy/podman/label-workers.yaml
 #
-# Two objects rather than one, because they are two shapes. The renderer is a **CronJob**:
-# it exists only when it has work, does one job per invocation and exits, which is the
-# scale-to-zero shape plan 27 question 5 asks for and the reason
-# `.devtools/ci/check_deploy_manifest.py` learned about run-to-completion kinds. The worker
-# is a **Deployment**: it holds a lease while a printer is thinking, and a workload that can
-# be killed mid-attempt is a workload that produces uncertain outcomes for no reason.
+# Two workloads, and since 2026-09-19 one shape: both are **CronJobs**. Each exists only
+# when it has work, drains what is queued and exits, which is the scale-to-zero shape plan
+# 27 question 5 asks for and the reason `.devtools/ci/check_deploy_manifest.py` learned
+# about run-to-completion kinds. The worker was a `replicas: 1` Deployment until that date,
+# on the grounds that it holds a lease while a printer is thinking; that was wrong about the
+# code, and the comment on the worker below says what it cost.
+# [ADR-0026](../../docs/adr/0026-a-wake-signal-may-announce-label-work.md) describes the
+# same defect, but it is **Proposed** and is authority for nothing here: this manifest is
+# correct whether or not that record is ever accepted, and none of the rest of it — no MQTT,
+# no wake topic, no resident mode — is deployed by this file.
 #
 # Neither holds a database credential. Both authenticate to Victual's API with a typed key,
 # which is ADR-0019 decision item 2 and is why a remote worker does not need the database
@@ -122,82 +126,104 @@ spec:
                   drop:
                     - ALL
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: CronJob
 metadata:
   name: victual-label-worker
   labels:
     app.kubernetes.io/name: victual-label-worker
 spec:
-  # One replica, deliberately. A printer has exactly one assigned worker under ADR-0019
-  # decision item 3, and automatic failover between workers is the ownership ambiguity that
-  # decision exists to remove. A spare that needs one admin edit is the cheaper price.
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: victual-label-worker
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: victual-label-worker
+  # Every minute, on the renderer's clock, because the worker is the renderer's shape. Its
+  # claim loop breaks on an empty queue and the process exits 0 — and it breaks only there,
+  # never mid-attempt, so it exits exactly when it holds no lease. That is a
+  # run-to-completion workload. Deploying it as a `replicas: 1` Deployment made the
+  # platform's restart backoff the effective poll interval instead: 10 s ramping to a
+  # five-minute cap, with a `POST /api/labels/register` on every restart, so a job enqueued
+  # just after an exit could wait five minutes on an idle printer. One invocation drains the
+  # whole queue, so a shopping trip's worth of labels prints in one run rather than one a
+  # minute, and the floor is one interval rather than one backoff.
+  #
+  # The Deployment was also the worse shape on the safety argument the old comment here made
+  # for it. A workload killed mid-attempt is exactly what
+  # [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md) decision item 6 calls
+  # *uncertain* — bytes may already be at the printer and nothing in Victual can tell — and a
+  # Deployment scaled down or rolled between claim and report is the thing that produces it.
+  # A run-to-completion pod is not preempted there; it either finishes its attempt and
+  # reports, or it dies, which is the ordinary crash case that rule already covers.
+  schedule: "* * * * *"
+  # One worker at a time, deliberately. A printer has exactly one assigned worker under
+  # ADR-0019 decision item 3, and automatic failover between workers is the ownership
+  # ambiguity that decision exists to remove. `Forbid` keeps a slow attempt from being joined
+  # by the next minute's invocation; `parallelism: 1` is the default and is stated because it
+  # is load-bearing here rather than incidental. `replicas: 1` gave neither property during a
+  # rollout, when a Deployment briefly runs two pods on purpose. A spare worker that needs
+  # one admin edit is still the cheaper price than failover.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
     spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
-      volumes:
-        - name: tmp
-          emptyDir:
-            medium: Memory
-            sizeLimit: 16Mi
-        - name: credentials
-          secret:
-            secretName: victual-label-credentials
-      containers:
-        - name: worker
-          image: localhost/victual-label-worker:0.1.1-MVP
-          args:
-            - "--api"
-            - "$(VICTUAL_API_BASE)"
-            - "--key-file"
-            - "/run/secrets/worker-key"
-          env:
-            - name: VICTUAL_API_BASE
-              valueFrom:
-                configMapKeyRef:
-                  name: victual-label-config
-                  key: VICTUAL_API_BASE
-          # An exec probe on the binary itself, because the image has no shell to run
-          # anything else and ADR-0010 rule 4 requires a probe the deployment can actually
-          # execute. It deliberately reports on this process rather than on Victual: a worker
-          # restarted because the API is down would be restarted for somebody else's outage,
-          # and it would abandon a lease while doing it.
-          livenessProbe:
-            exec:
-              command:
-                - "/bin/victual-label-worker"
-                - "--health"
-            initialDelaySeconds: 5
-            periodSeconds: 30
-            timeoutSeconds: 5
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: credentials
-              mountPath: /run/secrets
-              readOnly: true
-          resources:
-            limits:
-              memory: 128Mi
-              cpu: "1"
-            requests:
-              memory: 32Mi
-              cpu: "50m"
+      backoffLimit: 2
+      parallelism: 1
+      template:
+        spec:
+          restartPolicy: Never
           securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
+            - name: credentials
+              secret:
+                secretName: victual-label-credentials
+          containers:
+            - name: worker
+              image: localhost/victual-label-worker:0.1.1-MVP
+              args:
+                - "--api"
+                - "$(VICTUAL_API_BASE)"
+                - "--key-file"
+                - "/run/secrets/worker-key"
+              env:
+                - name: VICTUAL_API_BASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: victual-label-config
+                      key: VICTUAL_API_BASE
+              # No probe, and this is the departure from ADR-0010 property 4 that
+              # ADR-0021's prerequisite 6 already named for the renderer: a probe on a
+              # container that is *meant* to terminate either never fires inside a run that
+              # lasts a second or reports the normal end of the work as a failure.
+              # `check_deploy_manifest.py` exempts run-to-completion kinds for that reason,
+              # so the absence is the rule rather than a hole in it. The binary keeps
+              # `--health`, which is what a resident deployment would probe; there is
+              # nothing here for it to watch. The point the old `livenessProbe` comment made
+              # outlives the probe and is worth keeping: whatever ever watches this worker
+              # reports on this process and not on Victual, because a worker restarted for
+              # the API being down would be restarted for somebody else's outage, and it
+              # would abandon a lease doing it.
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: credentials
+                  mountPath: /run/secrets
+                  readOnly: true
+              resources:
+                limits:
+                  memory: 128Mi
+                  cpu: "1"
+                requests:
+                  memory: 32Mi
+                  cpu: "50m"
+              securityContext:
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL

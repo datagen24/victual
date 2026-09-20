@@ -24,7 +24,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The two workloads above as one kustomize base, for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
-| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer (a CronJob) and the label worker (a Deployment); neither holds a database credential |
+| [`podman/label-workers.yaml`](podman/label-workers.yaml) | The label renderer and the label worker, both `CronJob`s: each drains its queue and exits, so neither is resident. Neither holds a database credential |
 
 The pod manifest is a Kubernetes object rather than
 a compose file on purpose: `podman kube play` gives the two serving containers a shared
