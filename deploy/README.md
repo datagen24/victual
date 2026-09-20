@@ -337,22 +337,21 @@ readiness probe, which renders `/login` through Blade.
 
 Stated plainly because the gap is the point of tracking it:
 
-- **The label images declare a working directory they do not contain, and podman refuses
-  to start them.** Found 2026-09-20 while checking that `podman kube play` accepts the new
-  `Job` kinds: it does — both pods were created — and then both containers failed with
+- ~~**The label images declare a working directory they do not contain.**~~ **Fixed
+  2026-09-20, in the change that found it.** `podman kube play` accepted the new `Job`
+  kinds and created both pods, and then both containers failed with
   `starting container …: workdir "/app" does not exist on container`.
-  [`nix/images/lib.nix`](../nix/images/lib.nix)'s `commonConfig` sets `WorkingDir = "/app"`
-  for every image, and `scaffold` creates only `/tmp`; `app.nix` and `migrate.nix` build an
-  `/app`, and `web.nix` overrides the field, but
-  [`label-worker.nix`](../nix/images/label-worker.nix),
-  [`label-renderer.nix`](../nix/images/label-renderer.nix) and
-  [`mcp.nix`](../nix/images/mcp.nix) take `commonConfig` unchanged on images built from no
-  base image. **It is invisible on Kubernetes**, where the CRI creates a missing working
-  directory, which is why the MCP sidecar has run on kind since 2026-09-19 with the same
-  defect in its config; podman validates and refuses. So the podman path deploys correctly
-  and cannot yet print. The fix is in the image definitions rather than in any manifest —
-  those three should not claim `/app` — and it needs a rebuild to verify, so it is not in
-  the change that found it.
+  [`nix/images/lib.nix`](../nix/images/lib.nix)'s `commonConfig` set `WorkingDir = "/app"`
+  for every image while `scaffold` creates only `/tmp`; `app.nix` and `migrate.nix` set
+  their own `appRoot` and `web.nix` overrides it, so the default applied to exactly the
+  three images built from a single binary on no base image — the two label images and
+  **the MCP sidecar** — none of which contain an `/app`. It was invisible on Kubernetes,
+  where the CRI creates a missing working directory, which is why the sidecar had run on
+  kind since 2026-09-19 carrying it. `WorkingDir` is now out of `commonConfig` and stated
+  by each image; the three that inherited it say `/tmp`, the one directory they contain,
+  as `web.nix` already did. Rebuilt and verified: both containers start, and the binaries
+  reach `POST /api/labels/register` and `POST /api/labels/render/claim`, failing only on
+  connection refused because no Victual was running.
 
 - ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied to kind,
   2026-09-19; not yet to k3s.** `deploy/kind/up.sh` loads the four images, applies

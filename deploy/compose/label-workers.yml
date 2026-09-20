@@ -39,10 +39,19 @@
 #   systemctl --user enable --now victual-labels.timer
 #
 # `Type=oneshot` with two `ExecStart=` lines runs them in order and will not start a second
-# pass while one is running, which is what `concurrencyPolicy: Forbid` gives on Kubernetes.
-# Two workers on one printer's queue is the ownership ambiguity
+# activation while one is running, which is what `concurrencyPolicy: Forbid` gives on
+# Kubernetes. Two workers on one printer's queue is the ownership ambiguity
 # [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md) decision item 3 exists
 # to remove, so if you drive this from cron instead, wrap it in `flock`.
+#
+# **That interlock works here only because `docker compose run` stays in the foreground
+# until the container exits**, so the oneshot is not finished until the drain is. The
+# podman file next door needs a second command to get the same property — `podman kube
+# play` returns as soon as the pods are *started*, measured at 0 s for a Job that then ran
+# for 12 s — which is why its unit ends with `podman wait` and this one does not. Do not
+# copy one unit's shape onto the other; they differ because the two commands differ.
+# `OnUnitActiveSec=` measures from the end of the last run, so a drain that overruns a
+# minute delays the next one rather than stacking on top of it.
 #
 # **This is the interim shape, and the record that replaces it is on its way.**
 # [ADR-0026](../../docs/adr/0026-a-wake-signal-may-announce-label-work.md) decision 6 calls

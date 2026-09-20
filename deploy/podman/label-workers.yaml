@@ -15,10 +15,21 @@
 # `podman kube play file.yaml; echo $?; podman pod ls`. That is why a Kubernetes manifest
 # cannot simply be pointed at podman, and why the three targets get three files.
 #
-# **A Job runs once, so something has to run it again.** `--replace` deletes and recreates
-# the pods each time, which is what makes re-running this file work at all — without it the
-# second invocation collides with the completed Job of the same name. Put it on a systemd
-# timer, one unit per workload or one for both:
+# **A Job runs once, so something has to run it again — and the unit has to wait for it.**
+# `--replace` deletes and recreates the pods each time, which is what makes re-running this
+# file work at all: without it the second invocation collides with the completed Job of the
+# same name. But `podman kube play` **returns as soon as the pods are started**, not when
+# they finish (measured 2026-09-20, podman 6.0.2: it returned in 0 s for a Job sleeping 12 s,
+# and the pod was still `Running`). A `Type=oneshot` unit whose `ExecStart` is only the play
+# is therefore finished immediately, the next minute's timer fires while the worker is still
+# printing, and `--replace` deletes the pod **mid-attempt** — bytes may already be at the
+# printer and nothing in Victual can tell, which is the *uncertain* attempt
+# [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md) decision item 6 exists to
+# avoid. The timer would be manufacturing exactly the failure this shape was chosen to
+# prevent.
+#
+# So the unit plays and then **blocks on the containers**, and the oneshot is not done until
+# they are:
 #
 #   # ~/.config/systemd/user/victual-labels.service
 #   [Unit]
@@ -26,6 +37,12 @@
 #   [Service]
 #   Type=oneshot
 #   ExecStart=/usr/bin/podman kube play --replace %h/victual/deploy/podman/label-workers.yaml
+#   # Blocks until both containers stop; `--ignore` so a container that is already gone is
+#   # not an error. These names are `<pod>-<container>`, which is how `podman kube play`
+#   # names them: pod `victual-label-worker-pod` from the Job's metadata, container `worker`
+#   # from the container's own name below.
+#   ExecStart=/usr/bin/podman wait --ignore \
+#       victual-label-renderer-pod-renderer victual-label-worker-pod-worker
 #
 #   # ~/.config/systemd/user/victual-labels.timer
 #   [Unit]
@@ -38,14 +55,20 @@
 #
 #   systemctl --user enable --now victual-labels.timer
 #
-# `Type=oneshot` is load-bearing, not decoration: systemd will not start a second run of a
-# oneshot unit while one is still going, which is what `concurrencyPolicy: Forbid` buys on
-# the cluster. A bare cron entry has no such interlock, and two workers on one printer's
-# queue is the ownership ambiguity [ADR-0019](../../docs/adr/0019-label-printers-are-master-data.md)
-# decision item 3 exists to remove. If you use cron, wrap it in `flock`.
+# `Type=oneshot` runs several `ExecStart=` lines in order and will not start a second
+# activation while one is still going, so the wait is what turns that interlock into the
+# thing `concurrencyPolicy: Forbid` gives on a cluster. `OnUnitActiveSec=` measures from the
+# end of the last run rather than the start, so a drain that overruns a minute simply delays
+# the next one instead of stacking. A bare cron entry has neither property, and two workers
+# on one printer's queue is the ownership ambiguity ADR-0019 decision item 3 removes — if
+# you use cron, wrap it in `flock`.
 #
-# `podman kube play -w` is the other half worth knowing: it cleans up the objects when the
-# pods exit, which suits a foreground run and not a timer.
+# **Do not reach for `podman kube play -w` here.** Its help says it cleans up when the pods
+# exit, which sounds like exactly this, and on podman 6.0.2 it **panics on a `Job`**:
+# `Error: runtime error: invalid memory address or nil pointer dereference`, exit 125, with
+# the pod left running. Reproduced twice on 2026-09-20; the same flag against a `kind: Pod`
+# behaves as documented and blocked for the pod's lifetime, so the bug is specific to this
+# file's kind. `podman wait` is the flag's job done by a command that works.
 #
 # **Two differences from the Kubernetes file, and both are podman's.** The API base is
 # `host.containers.internal` because deploy/podman/victual.yaml publishes 8080 to the host
