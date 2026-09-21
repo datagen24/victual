@@ -45,6 +45,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $key;
 
+	/** A caller with MASTER_DATA_EDIT and not ADMIN, for the one gate that tells them apart. */
+	private static string $masterDataKey;
+
 	/** A zone with a one-hour spring-forward gap, for the cases UTC structurally cannot reach. */
 	private const DST_ZONE = 'America/New_York';
 
@@ -70,7 +73,30 @@ class WireContractTest extends PgsqlSchemaTestCase
 			ApiKeyService::API_KEY_TYPE_DEFAULT
 		]);
 
+		// The ExposedEntityEditRequiresAdmin gate is the difference between MASTER_DATA_EDIT
+		// and ADMIN, so proving it is read needs a caller holding the first and not the second.
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9501, 'wire-contract-master-data', 'fixture')");
+		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) '
+			. "SELECT 9501, id FROM permission_hierarchy WHERE name = 'MASTER_DATA_EDIT'");
+		self::$masterDataKey = self::issueKey(9501);
+
 		self::seedFixtures();
+	}
+
+	/** Issues a default-type API key for the given user and returns its plaintext. */
+	private static function issueKey(int $userId): string
+	{
+		$key = bin2hex(random_bytes(25));
+		$statement = self::$db->prepare('INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) '
+			. "VALUES (?, ?, ?, now() + interval '30 days', ?)");
+		$statement->execute([
+			ApiKeyService::HashKey($key),
+			substr($key, -4),
+			$userId,
+			ApiKeyService::API_KEY_TYPE_DEFAULT
+		]);
+
+		return $key;
 	}
 
 	/**
@@ -108,6 +134,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::$db->exec('INSERT INTO userfields (id, entity, name, caption, type, show_as_column_in_tables, input_required) '
 			. "VALUES (9500, 'products', 'wire_field', 'Wire field', 'text', 1, 0)");
 
+		// A two-level product group, so product_groups_resolved has rows. The resolved view
+		// is empty until something is nested, and an empty relation is measured off its
+		// columns rather than off a response - which is the one thing
+		// testTheServedSchemasAreAnsweredByTheGenericEntityRoute() must not do.
+		self::$db->exec("INSERT INTO product_groups (id, name) VALUES (9500, 'WireSpices')");
+		self::$db->exec('INSERT INTO product_groups (id, name, parent_product_group_id) '
+			. "VALUES (9501, 'WireGarlic', 9500)");
+
 		// A recipe with one position, so that recipes_resolved and recipes_pos_resolved
 		// answer a row each - the two shapes WireBooleans converts that had no response
 		// assertion behind them, which CONVERSION_COVERAGE below requires of every shape.
@@ -131,9 +165,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "TIMESTAMPTZ '2026-03-04 05:06:07.891011-05', "
 			. '\'{"id": 9501, "name": "WireRetiredShelf"}\'::jsonb)');
 
-		// One battery for the charge route. Tasks are made per test (freshTask()) because
-		// "was this one marked done?" has no answer on a task an earlier test completed.
+		// One battery for the charge route. Tasks that a test *completes* are made per test
+		// (freshTask()), because "was this one marked done?" has no answer on a task an
+		// earlier test completed - but one standing task is seeded here so that a test
+		// merely *reading* tasks has a row of its own. Without it
+		// testTheServedSchemasAreAnsweredByTheGenericEntityRoute() passed only on rows the
+		// #229 cases happened to leave behind, and failed when run alone under --filter.
 		self::$db->exec("INSERT INTO batteries (id, name) VALUES (9500, 'WireBattery')");
+		self::$db->exec("INSERT INTO tasks (id, name, due_date) VALUES (9500, 'WireServedTask', DATE '2026-10-01')");
 	}
 
 	/** A task nothing else has touched. */
@@ -150,8 +189,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 	/** @return array{status: int, body: string} */
 	private static function send(string $method, string $path, array $headers = [], ?array $body = null, ?string $timezone = null): array
 	{
+		return self::sendAs(self::$key, $method, $path, $headers, $body, $timezone);
+	}
+
+	/** The same request, made by whoever holds $key. @return array{status: int, body: string} */
+	private static function sendAs(string $key, string $method, string $path, array $headers = [], ?array $body = null, ?string $timezone = null): array
+	{
 		$spec = array_filter(
-			['method' => $method, 'path' => $path, 'headers' => $headers + ['VICTUAL-API-KEY' => self::$key], 'body' => $body],
+			['method' => $method, 'path' => $path, 'headers' => $headers + ['VICTUAL-API-KEY' => $key], 'body' => $body],
 			fn ($v) => $v !== null
 		);
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -352,9 +397,12 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 *
 	 *   a shape name - the WireBooleans::COLUMNS key whose conversion serves it.
 	 *   'php'        - computed as a bool in PHP; never was a 0/1 column.
-	 *   'unrouted'   - the schema is declared but no path references it, so nothing renders
-	 *                  the property at all. testTheUnprovenShapesAreStillUnreachable()
-	 *                  is what keeps that claim honest.
+	 *
+	 * There is deliberately no third category for a property whose schema no path
+	 * references. `StockJournal.spoiled` was one, and the answer was to delete the schema
+	 * rather than to record the exemption: a documented boolean nothing can render is a
+	 * promise to nobody, and a category for it is a place for the next one to hide. See
+	 * testTheDeadJournalSchemasStayDeleted().
 	 *
 	 * Keyed by "Schema.property" rather than by property name, which is what makes
 	 * ADR-0027's regression guarantee for the booleans true. A flat name list is satisfied by
@@ -375,7 +423,6 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'RecipeFulfillmentResponse.need_fulfilled' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.need_fulfilled_with_shopping_list' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.prices_incomplete' => 'recipes_resolved',
-		'StockJournal.spoiled' => 'unrouted',
 		'StockLogEntry.spoiled' => 'stock_log',
 		'Userfield.input_required' => 'userfields',
 		'Userfield.show_as_column_in_tables' => 'userfields'
@@ -385,10 +432,16 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * The other direction: every (shape, property) WireBooleans converts, and the route
 	 * this class reads the converted value back from.
 	 *
-	 * `null` means no route reaches the shape at all, and the two that carry it are checked
-	 * rather than asserted by hand - see testTheUnprovenShapesAreStillUnreachable(). They
-	 * stay in WireBooleans::COLUMNS because the conversion is right if a route ever appears;
-	 * what is recorded here is that today nothing proves it.
+	 * `null` means no route reaches the shape at all, and the one that carries it is checked
+	 * rather than asserted by hand - see testTheUnprovenShapeIsStillUnreachable(). It stays
+	 * in WireBooleans::COLUMNS because `Userfield.show_as_column_in_tables` is still a
+	 * documented boolean and the conversion is right if a route ever answers the view's rows
+	 * whole; what is recorded here is that today nothing proves it.
+	 *
+	 * `uihelper_stock_journal.spoiled` used to be the other one. It was not kept: the
+	 * `StockJournal` schema that documented the property was deleted, so the conversion had
+	 * no promise left to serve. The difference between the two is whether some schema still
+	 * types the property `boolean` - see testTheDeadJournalSchemasStayDeleted().
 	 *
 	 * The point of the pairing is that a converted property with no response behind it is
 	 * indistinguishable, in a name list, from one converted on every read. "Something converts
@@ -411,7 +464,6 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'recipes_pos_resolved.need_fulfilled_with_shopping_list' => '/api/objects/recipes_pos_resolved',
 		'userfields.show_as_column_in_tables' => '/api/objects/userfields',
 		'userfields.input_required' => '/api/objects/userfields',
-		'uihelper_stock_journal.spoiled' => null,
 		'userfield_values_resolved.show_as_column_in_tables' => null
 	];
 
@@ -445,7 +497,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 		foreach (self::DOCUMENTED_BOOLEANS as $pair => $shape)
 		{
-			if ($shape === 'php' || $shape === 'unrouted')
+			if ($shape === 'php')
 			{
 				continue;
 			}
@@ -531,26 +583,55 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The two shapes CONVERSION_COVERAGE records as unproven are unproven because nothing
-	 * can reach them, not because nobody wrote the test. Both halves are checked, so this
-	 * fails the day a route makes one reachable and the coverage table has to grow.
+	 * `StockJournal` and `StockJournalSummary` described `uihelper_stock_journal` and
+	 * `uihelper_stock_journal_summary`, which `StockController::Journal()` and
+	 * `::JournalSummary()` read for the two Blade pages only. No path referenced either
+	 * schema and neither view is an `ExposedEntity`, so `StockJournal.spoiled` was a
+	 * documented boolean no response could ever carry. They were removed rather than routed:
+	 * exposing the journal is surface growth that plan 14 lists among the gaps it says are
+	 * "argued explicitly rather than slipped in", which a documented-boolean cleanup is not
+	 * the place to do.
+	 *
+	 * This pins the removal from both ends. Re-declaring either schema fails here, and so
+	 * does the thing that would make re-declaring it legitimate - a route that answers these
+	 * rows - because that route would have to name a schema and this test would be the one
+	 * to revisit. The Blade pages are untouched and stay the only reader.
 	 */
-	public function testTheUnprovenShapesAreStillUnreachable(): void
+	public function testTheDeadJournalSchemasStayDeleted(): void
+	{
+		$spec = self::spec();
+
+		foreach (['StockJournal', 'StockJournalSummary'] as $schema)
+		{
+			self::assertArrayNotHasKey(
+				$schema,
+				$spec['components']['schemas'],
+				"$schema is declared again. If a route now answers these rows, the schema belongs "
+					. 'to that route and DOCUMENTED_BOOLEANS/CONVERSION_COVERAGE have to grow with it.'
+			);
+		}
+
+		foreach (['uihelper_stock_journal', 'uihelper_stock_journal_summary'] as $entity)
+		{
+			self::assertNotContains($entity, $spec['components']['schemas']['ExposedEntity']['enum']);
+			self::assertSame(400, self::send('GET', "/api/objects/$entity")['status'], $entity);
+		}
+
+		// And nothing converts the view's spoiled any more, because no schema documents it.
+		self::assertSame([], WireBooleans::ColumnsOf('uihelper_stock_journal'));
+	}
+
+	/**
+	 * The shape CONVERSION_COVERAGE records as unproven is unproven because nothing can
+	 * reach it, not because nobody wrote the test. Both halves are checked, so this fails
+	 * the day a route makes it reachable and the coverage table has to grow.
+	 */
+	public function testTheUnprovenShapeIsStillUnreachable(): void
 	{
 		$spec = self::spec();
 		$exposed = $spec['components']['schemas']['ExposedEntity']['enum'];
 
-		// uihelper_stock_journal: not an exposed entity, so GET /objects/{entity} refuses
-		// it, and the StockJournal schema its rows would answer is referenced by no path.
-		self::assertNotContains('uihelper_stock_journal', $exposed);
-		self::assertStringNotContainsString(
-			'#/components/schemas/StockJournal"',
-			json_encode($spec['paths'], JSON_THROW_ON_ERROR),
-			'StockJournal is referenced by a path now, so uihelper_stock_journal.spoiled is provable'
-		);
-		self::assertSame(400, self::send('GET', '/api/objects/uihelper_stock_journal')['status']);
-
-		// userfield_values_resolved: also not exposed, and the one route that reads the view
+		// userfield_values_resolved: not exposed, and the one route that reads the view
 		// (GET /userfields/{entity}/{objectId}) reduces its rows to name => value pairs, so
 		// show_as_column_in_tables never reaches a response from it.
 		self::assertNotContains('userfield_values_resolved', $exposed);
@@ -1605,6 +1686,342 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertArrayHasKey(0, $body, 'the response is a JSON array, not an object');
 		self::assertSame(9500, $body[0]['id']);
 		self::assertArrayHasKey('username', $body[0]);
+	}
+
+	// --------------------------------------------- the schemas no path references
+
+	/**
+	 * Every schema in `components/schemas` that nothing outside `components/schemas`
+	 * references, and why each one is there.
+	 *
+	 * The measurement is reachability, seeded from the whole document except
+	 * `components/schemas` - `paths` alone is not the seed, because `components/parameters`
+	 * carries `$ref`s of its own and because the paths name *derived* enums
+	 * (`ExposedEntity_NotIncludingNotListable`) rather than the base vocabularies those are
+	 * computed from. testEveryUnreferencedSchemaIsClassified() runs that walk and requires
+	 * the answer to be exactly the keys below.
+	 *
+	 * A `$ref` is not the only way a schema can be load-bearing, which is the whole reason
+	 * this table exists rather than a rule that unreferenced means dead. There are three
+	 * honest ways to be here and one dishonest one, and the dishonest one - nothing renders
+	 * the rows and no vocabulary reads them - is not a category: `StockJournal` was that,
+	 * and it was deleted (testTheDeadJournalSchemasStayDeleted()), as were `ApiKey` and
+	 * `Session` (testTheCredentialSchemasStayDeleted()).
+	 *
+	 *   'runtime'   - PHP reads the schema out of the document at request time, so the
+	 *                 reference is a property lookup rather than a `$ref` and no walk over
+	 *                 the JSON can see it. Proven by
+	 *                 testTheRuntimeVocabulariesAreReadByTheApplication().
+	 *   'served:x'  - `GET /objects/x` answers rows of exactly this shape today. The schema
+	 *                 is simply not one of the ten members of that route's undiscriminated
+	 *                 union, which the union's own description states is deliberate: an
+	 *                 entity with no member is "undocumented rather than absent". Proven by
+	 *                 testTheServedSchemasAreAnsweredByTheGenericEntityRoute().
+	 *   'dev-only'  - the application renders this body, but only in `dev`. Proven by
+	 *                 testError500IsTheDevelopmentBodyOnly().
+	 *
+	 * Adding a row is not a way to keep a schema. Each value is a claim with a test behind
+	 * it, and a new schema that no path references has to make one of those claims true.
+	 */
+	private const UNREFERENCED_SCHEMAS = [
+		'Error500' => 'dev-only',
+		'ExposedEntity' => 'runtime',
+		'ExposedEntityEditRequiresAdmin' => 'runtime',
+		'ExposedEntityNoDelete' => 'runtime',
+		'ExposedEntityNoEdit' => 'runtime',
+		'ExposedEntityNoListing' => 'runtime',
+		'ProductGroupResolved' => 'served:product_groups_resolved',
+		'StorageClass' => 'served:storage_classes',
+		'StringEnumTemplate' => 'runtime',
+		'Task' => 'served:tasks'
+	];
+
+	/**
+	 * The walk itself, so the set cannot grow in silence. A schema that stops being
+	 * referenced fails here until someone says which of the three kinds it is, and a
+	 * classified schema that is deleted fails here too.
+	 */
+	public function testEveryUnreferencedSchemaIsClassified(): void
+	{
+		$spec = self::spec();
+		$schemas = $spec['components']['schemas'];
+
+		$seed = array_diff_key($spec, ['components' => null])
+			+ ['components' => array_diff_key($spec['components'], ['schemas' => null])];
+
+		$reached = [];
+		$pending = self::schemaRefsIn($seed);
+		while ($pending !== [])
+		{
+			$name = array_pop($pending);
+			if (isset($reached[$name]) || !isset($schemas[$name]))
+			{
+				continue;
+			}
+
+			$reached[$name] = true;
+			$pending = array_merge($pending, self::schemaRefsIn($schemas[$name]));
+		}
+
+		$unreferenced = array_values(array_diff(array_keys($schemas), array_keys($reached)));
+		sort($unreferenced);
+		$classified = array_keys(self::UNREFERENCED_SCHEMAS);
+		sort($classified);
+
+		self::assertSame(
+			$classified,
+			$unreferenced,
+			'the set of schemas no path references changed. A new one needs a row in '
+				. 'UNREFERENCED_SCHEMAS naming which kind it is, and a removed one needs its row gone.'
+		);
+	}
+
+	/**
+	 * Every "#/components/schemas/X" appearing anywhere in the given node.
+	 *
+	 * @param mixed $node
+	 * @return string[]
+	 */
+	private static function schemaRefsIn($node): array
+	{
+		$matches = [];
+		preg_match_all(
+			'~"#/components/schemas/([A-Za-z0-9_.-]+)"~',
+			json_encode($node, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+			$matches
+		);
+
+		return array_values(array_unique($matches[1]));
+	}
+
+	/**
+	 * The six vocabularies PHP reads out of the document at request time.
+	 *
+	 * Five of them - `StringEnumTemplate` and the four `ExposedEntity*` lists -
+	 * are read by `OpenApiController::DocumentationSpec()`, which derives the four
+	 * `ExposedEntity_*` enums the paths actually reference. Deriving them here from the
+	 * committed document and comparing against what the route serves is what makes the
+	 * reading observable: each derived enum subtracts a different one of the exclusion
+	 * lists, and all four start from the template's own single empty member, so a
+	 * vocabulary that had been deleted would show up as a wrong enum rather than as a
+	 * missing file.
+	 *
+	 * The sixth, `ExposedEntityEditRequiresAdmin`, is not part of that derivation. It is
+	 * read by `GenericEntityApiController::IsEntityWithEditRequiresAdmin()`, which gates
+	 * writes to the two entities it names behind ADMIN, so it is proven by a request that
+	 * the gate refuses - and by one beside it that it lets through, since a caller refused
+	 * everything would prove nothing about the enum.
+	 */
+	public function testTheRuntimeVocabulariesAreReadByTheApplication(): void
+	{
+		$committed = self::spec()['components']['schemas'];
+		$answer = self::send('GET', '/api/openapi/specification');
+		self::assertSame(200, $answer['status'], "the specification route answered {$answer['status']}");
+		$served = json_decode($answer['body'], true, flags: JSON_THROW_ON_ERROR)['components']['schemas'];
+
+		$template = $committed['StringEnumTemplate']['enum'];
+		self::assertSame([''], $template, 'the template is the empty seed every derived enum is cloned from');
+
+		foreach ([
+			'ExposedEntity_NotIncludingNotEditable' => 'ExposedEntityNoEdit',
+			'ExposedEntity_NotIncludingNotDeletable' => 'ExposedEntityNoDelete',
+			'ExposedEntity_NotIncludingNotListable' => 'ExposedEntityNoListing'
+		] as $derived => $excluded)
+		{
+			$expected = array_merge(
+				$template,
+				array_diff($committed['ExposedEntity']['enum'], $committed[$excluded]['enum'])
+			);
+			sort($expected);
+
+			self::assertSame($expected, $served[$derived]['enum'], "$derived is not $excluded subtracted from ExposedEntity");
+		}
+
+		// The user-entity variant reads the template and the userfields service rather than
+		// an exclusion list, so it is the one that would survive ExposedEntity going away.
+		self::assertSame(
+			$template,
+			array_values(array_intersect($template, $served['ExposedEntity_IncludingUserEntities']['enum'])),
+			'ExposedEntity_IncludingUserEntities was not cloned from StringEnumTemplate'
+		);
+
+		// And the sixth, by the gate it drives. The caller here has ADMIN, so the refusal
+		// has to come from a caller that does not.
+		$editRequiresAdmin = $committed['ExposedEntityEditRequiresAdmin']['enum'];
+		self::assertSame(['userfields', 'userentities'], $editRequiresAdmin);
+
+		$refused = self::sendAs(self::$masterDataKey, 'POST', '/api/objects/userfields', [], [
+			'entity' => 'products', 'name' => 'gate_probe', 'caption' => 'Gate probe', 'type' => 'text'
+		]);
+		self::assertSame(403, $refused['status'], "a non-admin writing userfields was answered {$refused['status']}: {$refused['body']}");
+
+		$allowed = self::sendAs(self::$masterDataKey, 'POST', '/api/objects/tasks', [], ['name' => 'GateProbeTask']);
+		self::assertSame(200, $allowed['status'], "the same caller writing an ungated entity was answered {$allowed['status']}: {$allowed['body']}");
+	}
+
+	/**
+	 * The three schemas that describe rows `GET /objects/{entity}` answers today and that
+	 * are simply not members of its union.
+	 *
+	 * Checked against a real response rather than against the relation's columns, and in
+	 * both directions: every property the schema declares is a key the row carries, and
+	 * every key the row carries is a property the schema declares. That is the claim a
+	 * reader of UNREFERENCED_SCHEMAS would otherwise have to take on trust, and it is the
+	 * one that would quietly stop being true if a column were added to one of these
+	 * relations without the schema following it.
+	 *
+	 * `userfields` is excused in both forms, for two different reasons. The generic list
+	 * does not attach the userfields map at all, so a schema that documents it - `Task` and
+	 * `StorageClass` do, being base tables - is not contradicted by a list row without it.
+	 * The single-object read attaches it to *every* entity, views included, so
+	 * `ProductGroupResolved` carries a key it does not document. That is the convention the
+	 * document already follows everywhere - `LocationResolved` and
+	 * `ProductSubstitutionResolved` omit `userfields` too, and both are union members - so
+	 * it is a question about the single read's shape rather than about this table, and
+	 * deciding it here would change two schemas issue #232 pinned.
+	 */
+	public function testTheServedSchemasAreAnsweredByTheGenericEntityRoute(): void
+	{
+		$schemas = self::spec()['components']['schemas'];
+
+		foreach (self::UNREFERENCED_SCHEMAS as $schema => $kind)
+		{
+			if (!str_starts_with($kind, 'served:'))
+			{
+				continue;
+			}
+
+			$entity = substr($kind, strlen('served:'));
+			$documented = array_keys($schemas[$schema]['properties']);
+
+			$answer = self::send('GET', "/api/objects/$entity");
+			self::assertSame(200, $answer['status'], "/api/objects/$entity answered {$answer['status']}");
+			$rows = json_decode($answer['body'], true, flags: JSON_THROW_ON_ERROR);
+			self::assertNotSame([], $rows, "the fixture leaves $entity empty, so nothing here is measured off a response");
+
+			$keys = array_keys($rows[0]);
+			self::assertSame([], array_values(array_diff($keys, $documented)), "$entity answered keys $schema does not document");
+			self::assertSame(
+				[],
+				array_values(array_diff($documented, $keys, ['userfields'])),
+				"$schema documents properties a row of $entity does not carry"
+			);
+
+			// The single-object read, where userfields is attached and the schema is exact.
+			$single = self::send('GET', "/api/objects/$entity/{$rows[0]['id']}");
+			self::assertSame(200, $single['status'], "/api/objects/$entity/{$rows[0]['id']} answered {$single['status']}");
+			$row = json_decode($single['body'], true, flags: JSON_THROW_ON_ERROR);
+
+			if (in_array('userfields', $documented, true))
+			{
+				self::assertArrayHasKey('userfields', $row, "$schema documents userfields and the single read does not carry it");
+			}
+
+			self::assertSame(
+				[],
+				array_values(array_diff(array_keys($row), $documented, ['userfields'])),
+				"$entity/{id} answered keys $schema does not document"
+			);
+		}
+	}
+
+	/**
+	 * `Error500` is the body the application renders on an uncaught exception when
+	 * `VICTUAL_MODE` is `dev`: `error_message` plus an `error_details` object carrying the
+	 * stack trace, file and line. It is unreferenced because production does not carry
+	 * `error_details` and because no route documents a 500 at all any more - an invalid
+	 * filter or sort has been a 400 since the previous release, and the nine list
+	 * operations that used to document one lost it along with the field.
+	 *
+	 * So the schema is kept, unlike the journal pair: the shape is rendered, just never by
+	 * the deployment the document describes. Both halves of that are checked, because the
+	 * claim is only worth keeping while both hold - a route that documented a 500 would
+	 * have to name a schema, and a production body that carried `error_details` would mean
+	 * the document is describing the wrong thing.
+	 */
+	public function testError500IsTheDevelopmentBodyOnly(): void
+	{
+		$spec = self::spec();
+
+		$documented = [];
+		foreach ($spec['paths'] as $path => $operations)
+		{
+			foreach ($operations as $method => $operation)
+			{
+				if (is_array($operation) && isset($operation['responses']['500']))
+				{
+					$documented[] = strtoupper($method) . " $path";
+				}
+			}
+		}
+
+		self::assertSame(
+			[],
+			$documented,
+			'a route documents a 500 now, so Error500 belongs to that route rather than to this table'
+		);
+
+		self::assertSame(
+			['error_message', 'error_details'],
+			array_keys($spec['components']['schemas']['Error500']['properties']),
+			'Error500 no longer describes the dev body'
+		);
+
+		// The request helper runs in production mode, which is the half that is observable
+		// from here: an error body carries error_message and nothing beside it, whichever
+		// end of the handler produced it. The 500 itself is exercised where it can be - the
+		// errors phase (.devtools/pgsql/error-path-tests.php) invokes ExceptionController
+		// directly, because an uncaught fault cannot be provoked through the stack.
+		foreach (['/api/objects/tasks/999999999', '/api/objects/not_an_entity'] as $path)
+		{
+			$failed = self::send('GET', $path);
+			self::assertGreaterThanOrEqual(400, $failed['status'], $path);
+			$body = json_decode($failed['body'], true, flags: JSON_THROW_ON_ERROR);
+			self::assertArrayHasKey('error_message', $body, $path);
+			self::assertArrayNotHasKey('error_details', $body, "$path carries error_details in production");
+		}
+	}
+
+	/**
+	 * `ApiKey` and `Session` described `api_keys` and `sessions`, and no route answers
+	 * either. `api_keys` is an `ExposedEntity` but is the sole member of
+	 * `ExposedEntityNoListing`, so `GenericEntityApiController` refuses both reads of it;
+	 * `sessions` is not an `ExposedEntity` at all. Both answer 400, which is what the
+	 * schemas were describing a response to.
+	 *
+	 * Deleted rather than routed, and here the deferral the journal pair got does not
+	 * apply: these two relations hold credentials - a key's SHA-256 hash and hint, a live
+	 * session key - and `ExposedEntityNoListing` exists to stop the generic route answering
+	 * the first of them. Exposing them is not a gap plan 14 lists among the reads it says
+	 * are "argued explicitly rather than slipped in"; it is something the design refuses.
+	 * The document claiming otherwise was the only thing saying it might happen.
+	 *
+	 * What still describes a key is `CurrentUserCapabilities`, which answers `key_type` and
+	 * `read_only` about the calling credential rather than any stored row - the shape
+	 * issue #208 actually gave a route to. `/manageapikeys` renders the rows themselves and
+	 * is untouched, as the journal's Blade pages were.
+	 */
+	public function testTheCredentialSchemasStayDeleted(): void
+	{
+		$spec = self::spec();
+
+		foreach (['ApiKey' => 'api_keys', 'Session' => 'sessions'] as $schema => $entity)
+		{
+			self::assertArrayNotHasKey(
+				$schema,
+				$spec['components']['schemas'],
+				"$schema is declared again. If a route now answers $entity rows, that is a widening "
+					. 'to argue rather than a schema to restore, and this test is where to record the argument.'
+			);
+
+			self::assertSame(400, self::send('GET', "/api/objects/$entity")['status'], $entity);
+			self::assertSame(400, self::send('GET', "/api/objects/$entity/1")['status'], "$entity/1");
+		}
+
+		// The two reasons those 400s hold, so the day either changes this test is the one
+		// that fails rather than the reachability walk above.
+		self::assertSame(['api_keys'], $spec['components']['schemas']['ExposedEntityNoListing']['enum']);
+		self::assertNotContains('sessions', $spec['components']['schemas']['ExposedEntity']['enum']);
 	}
 
 	// ----------------------------------------------------------------------- the document

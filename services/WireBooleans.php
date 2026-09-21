@@ -56,16 +56,22 @@ final class WireBooleans
 	 * never disagree about what a row is.
 	 *
 	 * `undone` is deliberately absent although it sits beside `spoiled` in every stock_log
-	 * row: `StockJournal.undone` is documented `type: integer`, as are `active`,
-	 * `no_own_stock` and the rest of the API's flags. The document decides, and here it
-	 * decides differently for two adjacent columns. That inconsistency is real and is worth
-	 * settling, but settling it means changing what the document promises, which is a
-	 * separate decision from making the server keep the promise it already made.
+	 * row and ships on the booking responses: no schema types it `boolean`, so nothing here
+	 * has a promise to keep for it and it stays the integer the rest of the API's flags are.
+	 * It is in fact documented by no schema at all - `StockLogEntry` omits it - which is a
+	 * gap in the document rather than in this map, and a separate question from making the
+	 * server keep the promises it has already made.
+	 *
+	 * `uihelper_stock_journal` was listed here until the `StockJournal` and
+	 * `StockJournalSummary` schemas were removed as dead declarations. The view is read only
+	 * by the Blade stock-journal pages (`StockController::Journal()`), is not an
+	 * `ExposedEntity`, and no schema documents its `spoiled` any more, so there is no
+	 * documented boolean left for a conversion to serve. See ADR-0027's `wirecontract`
+	 * consequence bullet.
 	 */
 	const COLUMNS = [
-		// StockLogEntry.spoiled / StockJournal.spoiled
+		// StockLogEntry.spoiled
 		'stock_log' => ['spoiled'],
-		'uihelper_stock_journal' => ['spoiled'],
 		// CurrentStockResponse.is_aggregated_amount
 		'stock_current' => ['is_aggregated_amount'],
 		// ProductDetailsResponse - see StockService::GetProductDetails(), whose has_childs
