@@ -116,9 +116,17 @@ so never grew one.
    promised anywhere — while the document's `(\.\d+)?` promised fractional seconds of any
    length that PHP's `u` will not parse past six digits, so `.NET`'s round-trip format
    (seven) and Go's `RFC3339Nano` (up to nine) were refused for carrying precision this
-   API discards. A sweep of 7,560 spellings found thirty-six such disagreements. Fractional
-   seconds are now taken off the value rather than parsed, and nothing the document refuses
-   is accepted.
+   API discards. Fractional seconds are now taken off the value rather than parsed.
+
+   **Every component of the pattern is range-bounded**, which is part of the decision and
+   not formatting. As plain `\d{2}` it matched `+99:99`, and `createFromFormat()` read that
+   as an offset of a hundred hours *without a warning* — so a booking the caller dated the
+   4th of March was stored on the 28th of February. An offset nobody wrote is the same
+   silent reinterpretation decision 1 exists to remove, one layer down, and it is worse
+   than the original defect: the original discarded the caller's value, this one keeps it
+   and means something else by it. `+24:00`, `05:60:07` and `2026-13-04` were in the same
+   family. Bounding hours, minutes, seconds, offset hours, offset minutes, months and days
+   in the pattern refuses all of them before anything is parsed.
 
 5. **The parse behind the gate is a fixed list of formats, not `new DateTimeImmutable($value)`.**
    `services/Labels/PrintEvidenceService.php:35` uses the constructor for `observed_at`, the
@@ -131,11 +139,17 @@ so never grew one.
 6. **The document says what is accepted, in the same commit.** Each of the three fields
    carries the pattern above and a description naming the refusal; the API-level "Dates and
    times" paragraph PR #234 added, which stated the silent ignore, says this instead. The
-   agreement is tested over the whole shape space rather than a sample: 7,560 generated
-   spellings, asserting that **nothing the document refuses is accepted** and that the only
-   values it accepts and the server refuses are the ones whose date or hour does not exist.
-   A pattern looser than the server puts a caller back where issue #231 left them; one
-   tighter refuses in a generated client what the server would have taken.
+   agreement is tested over the whole shape space rather than a sample: tens of thousands
+   of generated spellings, over boundary values for every component, asserting that
+   **nothing the document refuses is accepted** and that the only values it accepts and the
+   server refuses are those naming a day the month does not have — `2026-02-30`,
+   `2026-04-31` — which is the one thing a regular expression cannot decide. A pattern
+   looser than the server puts a caller back where issue #231 left them; one tighter
+   refuses in a generated client what the server would have taken.
+
+   The boundary values are load-bearing. The first version of this corpus carried no
+   impossible minute, second or offset, so it did not see `+99:99`; a reviewer did. A
+   property test is only as good as the edges it is given.
 
 ## Options considered
 

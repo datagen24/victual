@@ -800,15 +800,28 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'a Unix timestamp' => '1772600767',
 			'a truncated time' => '2026-03-04 05:06',
 			'basic-format ISO 8601' => '20260304T050607Z',
-			'a space separator with an offset, which this API never renders' => '2026-03-04 05:06:07+02:00'
+			'a space separator with an offset, which this API never renders' => '2026-03-04 05:06:07+02:00',
+			'an hour no day has' => '2026-03-04 25:06:07',
+			'a minute no hour has' => '2026-03-04T05:60:07Z',
+			'a second no minute has, leap seconds included' => '2026-03-04T05:06:60Z',
+			'an offset with sixty minutes in it' => '2026-03-04T05:06:07+02:60',
+			'an offset no zone has' => '2026-03-04T05:06:07+24:00',
+			// The one that was booking a date four days off the one it named: as plain
+			// \d{2} the pattern took it and createFromFormat() read it as a hundred-hour
+			// offset without a warning. CodeRabbit, pull request 235.
+			'an offset that is not a time at all' => '2026-03-04T05:06:07+99:99',
+			'a month there is no thirteenth of' => '2026-13-04 00:00:00',
+			'a thirty-second of the month' => '2026-03-32 00:00:00'
 		];
 	}
 
 	/**
 	 * Values the server refuses that the schema's `pattern` cannot, and is not expected to.
 	 *
-	 * A regular expression can say what a date *looks* like and not whether it exists; the
-	 * two cases below have the shape of an accepted rendering and are not points in time.
+	 * Every component of the pattern is range-bounded, so an impossible hour, minute, second
+	 * or offset is refused by the document as well. What a regular expression cannot say is
+	 * **how many days a month has** - and that is all that is left here.
+	 *
 	 * That is the one place the document is deliberately looser than the server, and
 	 * testNothingTheDocumentedPatternRefusesIsAccepted() proves it is the *only* one rather
 	 * than leaving it asserted here and hoped for elsewhere.
@@ -817,7 +830,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	{
 		return [
 			'a day February does not have' => '2026-02-30 00:00:00',
-			'an hour no day has' => '2026-03-04 25:06:07'
+			'a thirty-first of April' => '2026-04-31T00:00:00Z'
 		];
 	}
 
@@ -946,28 +959,41 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * expression cannot know February has 28 days - and the assertion is that it is the
 	 * *only* gap, rather than a sampled list hoping it is.
 	 *
-	 * Against ParseApiDateTime() directly rather than over HTTP: 7,560 requests would be
-	 * thirty minutes of subprocesses to test a pure function. The routes are covered by the
-	 * cases above, which do go through the whole stack.
+	 * The boundary values are the point of the corpus rather than decoration. The first
+	 * version of this test carried no impossible minute, second or offset, and so did not
+	 * see that `+99:99` was accepted and read as a hundred-hour offset.
+	 *
+	 * Against ParseApiDateTime() directly rather than over HTTP: tens of thousands of
+	 * requests would be hours of subprocesses to test a pure function. The routes are
+	 * covered by the cases above, which do go through the whole stack.
 	 */
 	public function testNothingTheDocumentedPatternRefusesIsAccepted(): void
 	{
 		$pattern = '/' . \API_DATE_TIME_PATTERN . '/D';
-		$impossible = '/(2026-02-30|2026-13-04|2026-03-32|[T ]25:)/';
+
+		// The only values the document accepts and the server does not: a day the month
+		// does not have. Every other component is range-bounded in the pattern itself.
+		$monthIsShorter = '/^(2026-02-30|2026-02-31|2026-04-31|2026-06-31|2026-09-31|2026-11-31)/';
 
 		$acceptedButUndocumented = [];
 		$refusedForAnotherReason = [];
 		$total = 0;
 
-		foreach (['2026-03-04', '2026-02-30', '2026-13-04', '2026-03-32'] as $date)
+		$dates = ['2026-03-04', '2026-12-31', '2026-02-30', '2026-04-31', '2026-13-04', '2026-03-32', '2026-00-04', '2026-03-00'];
+		$separators = ['', ' ', 'T', 't', '  '];
+		$times = ['05:06:07', '00:00:00', '23:59:59', '24:00:00', '05:60:07', '05:06:60', '05:06', '5:06:07', '050607'];
+		$fractions = ['', '.1', '.123456', '.1234567', '.123456789', '.', '.abc'];
+		$zones = ['', 'Z', 'z', '+00:00', '+02:00', '-05:30', '+23:59', '-23:59', '+24:00', '+02:60', '+99:99', '+0200', '+02', ' UTC', 'GMT'];
+
+		foreach ($dates as $date)
 		{
-			foreach (['', ' ', 'T', 't', '  '] as $separator)
+			foreach ($separators as $separator)
 			{
-				foreach (['05:06:07', '05:06', '5:06:07', '25:06:07', '05:06:07:08', '050607'] as $time)
+				foreach ($times as $time)
 				{
-					foreach (['', '.1', '.123456', '.1234567', '.123456789', '.', '.abc'] as $fraction)
+					foreach ($fractions as $fraction)
 					{
-						foreach (['', 'Z', 'z', '+02:00', '-05:30', '+0200', '+02', ' UTC', 'GMT'] as $zone)
+						foreach ($zones as $zone)
 						{
 							$value = $separator === '' ? $date : $date . $separator . $time . $fraction . $zone;
 							$total++;
@@ -980,7 +1006,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 								$acceptedButUndocumented[] = $value;
 							}
 
-							if ($documented && !$accepted && !preg_match($impossible, $value))
+							if ($documented && !$accepted && !preg_match($monthIsShorter, $value))
 							{
 								$refusedForAnotherReason[] = $value;
 							}
@@ -990,9 +1016,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 			}
 		}
 
-		self::assertGreaterThan(7000, $total, 'the corpus is the whole cross product, not a subset');
+		self::assertGreaterThan(30000, $total, 'the corpus is the whole cross product, not a subset');
 		self::assertSame([], $acceptedButUndocumented, 'accepted without being documented: ' . implode(', ', array_slice($acceptedButUndocumented, 0, 10)));
-		self::assertSame([], $refusedForAnotherReason, 'documented and refused for a reason other than an impossible date or hour: ' . implode(', ', array_slice($refusedForAnotherReason, 0, 10)));
+		self::assertSame([], $refusedForAnotherReason, 'documented and refused for a reason other than the month being shorter than the day given: ' . implode(', ', array_slice($refusedForAnotherReason, 0, 10)));
 	}
 
 	/** @return array<array{0: string, 1: string}> */

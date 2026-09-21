@@ -39,6 +39,16 @@ postgres service from `.devtools/pgtap/postgres.Dockerfile` (ADR-0025 decision 6
 pgTAP only where PostgreSQL runs for tests), so a hand-rolled container needs that image
 too — hence the second build above. Verified 2026-09-21.
 
+**Give the container and the network names of your own.** `victual-pg` and `victual-suite`
+are shared, and this checkout has around twenty worktrees whose sessions all follow this
+same recipe. On 2026-09-21 a run died two thirds through with `connection to server at
+"victual-pg" … Connection refused`, and a later one found the postgres log showing a fresh
+`initdb` and a pgtap install gone, while `docker inspect` reported `RestartCount=0` —
+another session had removed and recreated the container underneath it. Nothing in the
+failure says so, and the symptoms look exactly like flaky tests. Suffix both names
+(`victual-pg-<suffix>`, `victual-suite-<suffix>`) and pass the container name as `PGHOST`.
+The *image* is shared and that is fine; the container and the network are not.
+
 The `-v /app/packages` anonymous volume is the part that is easy to miss: without it the host
 mount shadows the image's composer output, which is gitignored and does not exist on the
 host, and every phase dies on a missing autoloader. Tear down afterwards

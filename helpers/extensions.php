@@ -195,11 +195,17 @@ function IsIsoDate($dateString)
  * a single-digit hour and a doubled separator space - none of which this API documents,
  * and all of which a sweep of the shape space on pull request 235 found it taking.
  *
- * The one thing it cannot say is whether a date exists: `2026-02-30 00:00:00` has this
- * shape and is not a point in time. That is left to the calendar check below, and it is
- * the only place the document is looser than the server.
+ * Every component is range-bounded, and that is not mere tidiness: as plain `\d{2}`,
+ * `+99:99` matched, and `createFromFormat()` normalised it to an offset of a hundred hours
+ * without a warning, so a booking the caller dated the 4th of March was stored on the 28th
+ * of February. An offset nobody wrote is the same silent reinterpretation this function
+ * exists to remove, one layer down. CodeRabbit found it on pull request 235.
+ *
+ * The one thing ranges cannot say is how many days a month has: `2026-02-30` and
+ * `2026-04-31` have this shape and are not dates. That is left to the calendar check
+ * below, and it is the only place the document is looser than the server.
  */
-const API_DATE_TIME_PATTERN = '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2}|T\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})?)?$';
+const API_DATE_TIME_PATTERN = '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])( ([01]\d|2[0-3]):[0-5]\d:[0-5]\d|T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?([Zz]|[+-]([01]\d|2[0-3]):[0-5]\d)?)?$';
 
 /**
  * A caller's date/time value in any rendering this API accepts, normalised to the one it

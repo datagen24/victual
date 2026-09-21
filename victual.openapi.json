@@ -5156,7 +5156,7 @@
 								"properties": {
 									"tracked_time": {
 										"type": "string",
-										"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2}:\\d{2}|T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})?)?$",
+										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
 										"description": "The time of when the chore was executed. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or RFC 3339 with a `T` separator and an optional fractional part and offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names an instant and is stored as that instant rendered in the server's time zone. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
 									},
 									"done_by": {
@@ -5520,7 +5520,7 @@
 								"properties": {
 									"tracked_time": {
 										"type": "string",
-										"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2}:\\d{2}|T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})?)?$",
+										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
 										"description": "The time of when the battery was charged. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or RFC 3339 with a `T` separator and an optional fractional part and offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names an instant and is stored as that instant rendered in the server's time zone. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
 									}
 								}
@@ -5700,7 +5700,7 @@
 								"properties": {
 									"done_time": {
 										"type": "string",
-										"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2}:\\d{2}|T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})?)?$",
+										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
 										"description": "The time of when the task was completed. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or RFC 3339 with a `T` separator and an optional fractional part and offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names an instant and is stored as that instant rendered in the server's time zone. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
 									}
 								}
