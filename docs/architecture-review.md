@@ -192,6 +192,14 @@ weak spot.**
   remove); API keys are accepted via query parameter (logs) and stored/compared in
   plaintext; keys' `last_used` is UPDATEd on every request.
 
+  *This bullet is the state on 2026-08-27 and is kept as the record of what was found.
+  [Plan 11](plans/11-api-error-handling.md) landed the whole list in wave 2 on
+  2026-09-04, with API-key expiry and rotation following on 2026-09-15; the plan
+  records each piece inline. On the enum specifically, 11-Q6 chose **populate**:
+  `ExposedEntityEditRequiresAdmin` now reads `["userfields", "userentities"]`, so
+  editing those two definition-level entities requires `ADMIN` and a non-admin holding
+  only `MASTER_DATA_EDIT` is answered 403.*
+
 ## Frontend (views, viewjs, shared JS)
 
 **Verdict: stable, convention-complete, no dead files — but the conventions are

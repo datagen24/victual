@@ -523,6 +523,23 @@ an allowlist per entity from the OpenAPI schemas is the thorough version and is 
 `ExposedEntityEditRequiresAdmin` gets populated or deleted — Q6. It cannot stay an empty
 enum with three live call sites.
 
+> **Landed, 2026-09-04, both — one of them only half.**
+>
+> - **The blocklist shipped.** `id` and `row_created_timestamp` are dropped from the body
+>   in `AddObject` and `EditObject`, as keys rather than as a refusal, so a client that
+>   reads an object, edits a field and `PUT`s the whole thing back keeps working. Q5's
+>   schema-derived allowlist is the half that did not ship and deliberately so: it waits
+>   on [14](landed/14-contract-and-regression-scaffolding.md) piece 2 making the entity
+>   schemas trustworthy enough to derive from.
+> - **The enum is populated, not deleted.** Q6 chose `userfields` and `userentities`;
+>   `ExposedEntityEditRequiresAdmin` reads `["userfields", "userentities"]` in
+>   `victual.openapi.json`, both are in `ExposedEntity` and in neither
+>   `ExposedEntityNoEdit` nor `ExposedEntityNoDelete`, and
+>   `GenericEntityApiController::IsEntityWithEditRequiresAdmin()` therefore fires at all
+>   three call sites (`:60` `POST`, `:175` `DELETE`, `:264` `PUT`). A caller holding
+>   `MASTER_DATA_EDIT` but not `ADMIN` is answered 403 — the new denial recorded in the
+>   breaking-changes table above, not a corrected status code.
+
 ### Error logging
 
 Wire a PSR-3 logger writing to `php://stderr` (the correct sink for a container; the
@@ -790,6 +807,12 @@ On this deployment, "keep it in memory" means "keep it until the pod next sleeps
    > table above and belongs in the changelog with the rest of the breaking batch.
    > If on reflection nobody should be admin-gated, delete the enum and its three
    > call sites the same day and drop the row.
+   >
+   > **Closed 2026-09-04 as populate.** The escape clause was not taken: the enum
+   > shipped with both entities in commit `7c4a60a0` and the gate has been live
+   > since. Nothing in this plan is still deciding between populate and delete, and
+   > the [rigor review](../architecture-rigor-review.md)'s A7, which pointed here for
+   > the decision, is closed against the same commit.
 7. **What is the retention story for the error log?** stderr and let the platform handle
    it is the k3s answer and needs no code. But a household instance with no log
    aggregation gets errors that scroll away. A file with rotation is more work and
