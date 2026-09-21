@@ -795,11 +795,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * says how far this one goes.
 	 *
 	 * The first ten are the intended pairings. The last three are the ones ADR-0027's
-	 * consequences name: unmodelled entities whose rows happen to carry
-	 * every property some member declares `required`, so exactly one member is a candidate
-	 * - the wrong one - and nothing else in the union's shape rules it out. Required
-	 * properties discriminate the ten from each other; they do not discriminate them from
-	 * every relation in the database.
+	 * consequences name: unmodelled entities whose rows happen to carry every property some
+	 * member declares `required`, so exactly one member is a candidate - the wrong one - and
+	 * nothing else in the union's shape rules it out. Whether that becomes a wrong decode is
+	 * the reader's: a strict JSON Schema validator rejects these rows on the member's
+	 * nullability rather than selecting the member, while swift-openapi-generator accepts an
+	 * explicit null for an optional property through decodeIfPresent, so for that client
+	 * candidacy decides it. Required properties discriminate the ten from each other; they
+	 * do not discriminate them from every relation in the database.
 	 *
 	 * uihelper_shopping_list is the one that cannot be fixed by requiring more: it is a
 	 * superset of shopping_list, so no property shopping_list has distinguishes them. That
@@ -879,7 +882,15 @@ class WireContractTest extends PgsqlSchemaTestCase
 			{
 				$keys = array_keys($rows[0]);
 				$fromResponse[] = $entity;
-				$rowsByEntity[$entity] = $rows[0];
+				$rowsByEntity[$entity] = $rows;
+
+				// Candidacy is read off the first row, so the others have to agree about
+				// what keys they carry - a generic read is SELECT *, and a row that
+				// disagreed would mean candidacy is a per-row question too.
+				foreach ($rows as $index => $other)
+				{
+					self::assertSame($keys, array_keys($other), "$entity row $index carries different keys");
+				}
 
 				// The fallback the empty entities use, checked against the real thing: a
 				// row's keys are its relation's columns, plus the userfields map where the
@@ -928,32 +939,45 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'an entity ADR-0027 states is ambiguous was measured off its columns rather than off a response'
 		);
 
-		// The second measurement, on the rows themselves. See UNION_FULLY_VALID.
+		// The second measurement, on the rows themselves - every row of every entity, not
+		// one representative: validity turns on values, so a later row with a non-null
+		// column can validate where the first row does not. See UNION_FULLY_VALID.
 		$fullyValid = [];
-		foreach ($rowsByEntity as $entity => $row)
+		foreach ($rowsByEntity as $entity => $rows)
 		{
 			foreach ($members as $member)
 			{
-				$reason = self::validateAgainstMember($row, $member);
-
-				if ($reason === null)
+				foreach ($rows as $index => $row)
 				{
-					$fullyValid[$entity][] = $member;
-					continue;
-				}
+					$reason = self::validateAgainstMember($row, $member);
 
-				if (!in_array($member, $measured[$entity] ?? [], true))
-				{
-					continue;
-				}
+					if ($reason === null)
+					{
+						// Recorded once per pairing however many rows reach it.
+						if (!in_array($member, $fullyValid[$entity] ?? [], true))
+						{
+							$fullyValid[$entity][] = $member;
+						}
 
-				// A candidate that does not validate: the reason has to be the nullability
-				// gap this class records, not something unexplained.
-				$property = self::UNION_NULLABILITY_FAILURES[$entity][$member] ?? null;
-				self::assertNotNull($property, "$entity is a candidate for $member and fails it unrecorded: $reason");
-				self::assertSame("$property: type", $reason, "$entity against $member");
-				self::assertArrayHasKey($property, $row, "$entity carries no $property");
-				self::assertNull($row[$property], "$entity.$property is not null, so 'type' is a different failure");
+						continue;
+					}
+
+					if (!in_array($member, $measured[$entity] ?? [], true))
+					{
+						continue;
+					}
+
+					// A candidate row that does not validate: the reason has to be the
+					// nullability gap this class records, not something unexplained.
+					$allowed = self::UNION_NULLABILITY_FAILURES[$entity][$member] ?? null;
+					self::assertNotNull($allowed, "$entity is a candidate for $member and row $index fails it unrecorded: $reason");
+
+					[$property, $keyword] = explode(': ', $reason, 2);
+					self::assertSame('type', $keyword, "$entity row $index against $member: $reason");
+					self::assertContains($property, $allowed, "$entity row $index against $member fails on an unrecorded property");
+					self::assertArrayHasKey($property, $row, "$entity carries no $property");
+					self::assertNull($row[$property], "$entity.$property is not null on row $index, so 'type' is a different failure");
+				}
 			}
 		}
 
@@ -1007,22 +1031,26 @@ class WireContractTest extends PgsqlSchemaTestCase
 	private const UNION_FULLY_VALID = ['locations_resolved' => ['LocationResolved']];
 
 	/**
-	 * Candidate pairings that a strict JSON Schema validator rejects, and the property each
-	 * dies on - every one a NULL against a declared scalar. Six of the ten are the union's
-	 * own intended pairings, which is why this is a gap in the members' nullability rather
-	 * than a defence against the three unintended ones.
+	 * Candidate pairings that a strict JSON Schema validator rejects, and the properties a
+	 * row is allowed to die on - every one a NULL against a declared scalar. A list per
+	 * pairing because the validator reports the first failure only and rows differ in which
+	 * of their nullable columns are set; the assertion also checks the reported value really
+	 * is null on that row, so the list cannot be used to wave a real failure through.
+	 *
+	 * Six of the ten are the union's own intended pairings, which is why this is a gap in
+	 * the members' nullability rather than a defence against the three unintended ones.
 	 */
 	private const UNION_NULLABILITY_FAILURES = [
-		'products' => ['Product' => 'description'],
-		'chores' => ['Chore' => 'description'],
-		'locations' => ['Location' => 'description'],
-		'quantity_units' => ['QuantityUnit' => 'description'],
-		'shopping_list' => ['ShoppingListItem' => 'note'],
-		'userfields' => ['Userfield' => 'config'],
-		'stock' => ['StockEntry' => 'shopping_location_id'],
-		'stock_log' => ['StockEntry' => 'shopping_location_id'],
-		'product_barcodes_view' => ['ProductBarcode' => 'shopping_location_id'],
-		'uihelper_shopping_list' => ['ShoppingListItem' => 'note']
+		'products' => ['Product' => ['description']],
+		'chores' => ['Chore' => ['description']],
+		'locations' => ['Location' => ['description']],
+		'quantity_units' => ['QuantityUnit' => ['description']],
+		'shopping_list' => ['ShoppingListItem' => ['note']],
+		'userfields' => ['Userfield' => ['config']],
+		'stock' => ['StockEntry' => ['shopping_location_id']],
+		'stock_log' => ['StockEntry' => ['shopping_location_id']],
+		'product_barcodes_view' => ['ProductBarcode' => ['shopping_location_id']],
+		'uihelper_shopping_list' => ['ShoppingListItem' => ['note']]
 	];
 
 	/**

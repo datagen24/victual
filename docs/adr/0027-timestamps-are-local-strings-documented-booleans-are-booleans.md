@@ -214,11 +214,16 @@ tenth of the scale, and is where this would be decided.
   everything `StockEntry` requires; a `product_barcodes_view` row carries `barcode` and
   `product_id`, which is everything `ProductBarcode` requires; and `uihelper_shopping_list`
   is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
-  `ShoppingListItem`. Each is a candidate for exactly one member, so `oneOf` selects that
-  member and nothing in the union's shape rules it out. Required properties make the ten
-  members mutually exclusive, which is what issue #232 asked for; they do not separate those
-  ten from every other relation this route can list, and nothing short of option E or D
-  would. `tests/Pgsql/WireContractTest.php` measures all fifty-seven listable entities
+  `ShoppingListItem`. Each is a candidate for exactly one member, and nothing else in the
+  union's shape rules it out. Whether candidacy becomes a wrong decode is the reader's to
+  decide, and the two readers differ: a strict JSON Schema validator rejects these rows on
+  the member's nullability rather than selecting it (the next bullet), while
+  `swift-openapi-generator` — the client this record was written for — accepts an explicit
+  `null` for an optional property through `decodeIfPresent`, so for that client candidacy is
+  the whole of the decision and the row is decoded under a schema that is not its own.
+  Required properties make the ten members mutually exclusive, which is what issue #232
+  asked for; they do not separate those ten from every other relation this route can list,
+  and nothing short of option E or D would. `tests/Pgsql/WireContractTest.php` measures all fifty-seven listable entities
   against all ten members — off real responses where the fixture gives an entity a row, and
   off the relation's columns where it does not, with the two checked against each other —
   and pins the result, so a fourth cannot appear unnoticed.
@@ -230,10 +235,10 @@ tenth of the scale, and is where this would be decided.
   `Product`, `Chore`, `Location` and `QuantityUnit`; `note` on `ShoppingListItem`; `config`
   on `Userfield`; `shopping_location_id` on `StockEntry` and `ProductBarcode`). Six of those
   ten are the union's *own* intended pairings, so this is a gap in the members' nullability
-  and not a defence against the three unintended ones. It is also not what the client this
-  record was written for does: `swift-openapi-generator` decodes an optional property
-  through `decodeIfPresent`, which accepts an explicit `null` where the validator rejects
-  it. Modelling the members' nullability is separate work and has no issue yet.
+  and not a defence against the three unintended ones — it fails the intended pairings first.
+  Modelling the members' nullability is separate work and has no issue yet. Every row of
+  every entity is validated, not one per entity: validity turns on values, so a row whose
+  nullable columns happen to be set could validate where another does not.
 - **`victual-kit` sheds three workarounds** — the middleware that strips the charset
   parameter, the date transcoder that accepts both renderings, and the boolean remapping in
   its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
