@@ -108,6 +108,10 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 ## DOCTRINE (operator-locked decisions)
 
+- [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues
+  #229-#233: the eleven documented booleans move the wire; the 54 non-RFC-3339 `date-time`
+  fields move the document. Measure from the contract snapshot before asking.
+
 
 ## REFERENCE PATTERNS
 
