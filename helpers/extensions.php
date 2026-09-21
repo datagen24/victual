@@ -184,14 +184,153 @@ function IsIsoDate($dateString)
 }
 
 /**
- * Returns true when $dateTimeString is a valid date/time in ISO format (Y-m-d H:i:s).
+ * The shape of every date/time a write route accepts, anchored, and byte for byte the
+ * string the three fields carry as their `pattern` in victual.openapi.json.
  *
- * @return bool
+ * It is here rather than inline so that the document and the parser cannot describe
+ * different sets. ParseApiDateTime() refuses anything this does not match *before* it
+ * reaches DateTimeImmutable::createFromFormat(), which is what makes the agreement
+ * structural instead of sampled: createFromFormat() is considerably more forgiving than
+ * its format strings suggest, and would otherwise have accepted `+0200`, `+02`, `GMT`,
+ * a single-digit hour and a doubled separator space - none of which this API documents,
+ * and all of which a sweep of the shape space on pull request 235 found it taking.
+ *
+ * Every component is range-bounded, and that is not mere tidiness: as plain `\d{2}`,
+ * `+99:99` matched, and `createFromFormat()` normalised it to an offset of a hundred hours
+ * without a warning, so a booking the caller dated the 4th of March was stored on the 28th
+ * of February. An offset nobody wrote is the same silent reinterpretation this function
+ * exists to remove, one layer down. CodeRabbit found it on pull request 235.
+ *
+ * The one thing ranges cannot say is how many days a month has: `2026-02-30` and
+ * `2026-04-31` have this shape and are not dates. That is left to the calendar check
+ * below, and it is the only place the document is looser than the server.
  */
-function IsIsoDateTime($dateTimeString)
+const API_DATE_TIME_PATTERN = '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])( ([01]\d|2[0-3]):[0-5]\d:[0-5]\d|T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?([Zz]|[+-]([01]\d|2[0-3]):[0-5]\d)?)?$';
+
+/**
+ * A caller's date/time value in any rendering this API accepts, normalised to the one it
+ * stores ('Y-m-d H:i:s', local wall clock in the server's configured zone), or null when
+ * the value is not a point in time at all.
+ *
+ * This replaced IsIsoDateTime(), whose whole job was the first row below and which had no
+ * caller left once the three write routes stopped using it. ADR-0028.
+ *
+ * | Sent | Read as |
+ * |---|---|
+ * | `2026-09-21 14:30:00` | itself - the storage rendering, unchanged |
+ * | `2026-09-21` | `2026-09-21 00:00:00` - a bare date is its midnight |
+ * | `2026-09-21T14:30:00` | `2026-09-21 14:30:00` - no offset means the server's zone |
+ * | `2026-09-21T14:30:00Z` / `...+02:00` | the same instant, rendered in the server's zone |
+ * | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded |
+ *
+ * The `T` rows are RFC 3339 *shaped*, and the set is not that grammar - in both
+ * directions. RFC 3339 requires an offset and this accepts a value without one, because a
+ * wall clock in the server's zone is what the rest of this API speaks. RFC 3339 permits a
+ * leap second `:60` and this refuses it: `createFromFormat()` reads `2016-12-31T23:59:60Z`
+ * as `2017-01-01 00:00:00`, a different day, and a booking moved to a different day
+ * without a word is the failure this function exists to remove. Calling the accepted set
+ * "RFC 3339" would be wrong on both counts - a small version of the defect that started
+ * all this, a document promising something the server does not do.
+ *
+ * `new DateTimeImmutable()` - what PrintEvidenceService::Submit() uses for `observed_at`,
+ * the one genuinely RFC 3339 field in this API - would accept all of those and also
+ * `now`, `tomorrow`, `+1 week` and `@1600000000`. That is right for worker-submitted
+ * telemetry and wrong for these three fields, which book a row a person is expected to be
+ * able to trust and undo: a relative expression is a value the caller almost certainly did
+ * not mean, and accepting it without a word is the same failure this function exists to
+ * remove, only with a different wrong answer. A fixed list also rejects `2026-02-30`,
+ * which `DateTimeImmutable` silently rolls over to the 2nd of March.
+ *
+ * The `!` prefix resets every field the format does not name, so a bare date is midnight
+ * rather than today's clock time carried over from the current instant. The warning and
+ * error counts are what catch the rollover: createFromFormat() returns an object for
+ * `2026-02-30` and reports a warning about it.
+ *
+ * @param mixed $value The value as it arrived in the request body
+ * @return string|null The value as 'Y-m-d H:i:s', or null when it cannot be read as a time
+ */
+function ParseApiDateTime($value)
 {
-	$d = DateTime::createFromFormat('Y-m-d H:i:s', $dateTimeString);
-	return $d && $d->format('Y-m-d H:i:s') === $dateTimeString;
+	// No delimiter escaping: the expression contains no "/". "D" makes "$" mean the end of
+	// the string rather than "before an optional trailing newline", which is what the
+	// schema's "$" means.
+	if (!is_string($value) || preg_match('/' . API_DATE_TIME_PATTERN . '/D', $value) !== 1)
+	{
+		return null;
+	}
+
+	// Fractional seconds are discarded whatever happens, so they are taken off the value
+	// rather than parsed: PHP's "u" accepts at most six digits, and a client that writes
+	// more is not unusual - .NET's round-trip format writes seven, Go's RFC3339Nano up to
+	// nine. Parsing them would refuse such a value for carrying precision this function
+	// throws away, and would do it while the OpenAPI pattern said it was fine. The
+	// expression is anchored on the whole prefix RFC 3339 puts a fraction after, so it
+	// cannot match anywhere else in the string. Found by CodeRabbit on pull request 235.
+	$value = preg_replace('/^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})\\.\\d+/', '$1', $value);
+
+	// The flag is whether the rendering carries an offset, which decides whether the wall
+	// clock below has to survive the round trip.
+	$formats = [
+		'Y-m-d H:i:s' => false,
+		'Y-m-d' => false,
+		'Y-m-d\\TH:i:s' => false,
+		'Y-m-d\\TH:i:sP' => true
+	];
+
+	foreach ($formats as $format => $carriesAnOffset)
+	{
+		$parsed = DateTimeImmutable::createFromFormat('!' . $format, $value);
+		$errors = DateTimeImmutable::getLastErrors();
+
+		if ($parsed === false || !($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)))
+		{
+			continue;
+		}
+
+		$local = $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+
+		// A value with no offset names a wall clock, and a wall clock that this zone skipped
+		// is not a time here. PHP moves it forward instead of saying so and reports no
+		// warning for it, so `2026-03-08 02:30:00` on America/New_York comes back as
+		// `03:30:00` - a booking an hour from the one the caller wrote, answered 200. That is
+		// the defect ADR-0028 exists to remove, arriving by a different door, and it reaches
+		// the bare date too: on America/Santiago the clock jumps at midnight, so
+		// `2026-09-06` means 01:00 and not the midnight it asks for. Refusing is the only
+		// answer available, because there is no hour there to book.
+		//
+		// A value *with* an offset names an instant, and every instant has a wall clock in
+		// every zone, so there is nothing to check: `2026-03-08T02:30:00Z` is a real moment
+		// and 21:30 the previous evening in New York is where it falls.
+		//
+		// The repeated hour at the other end of the year is deliberately left alone.
+		// `2026-11-01 01:30:00` on America/New_York happens twice; PHP picks the first and
+		// the wall clock survives unchanged, which is all this API stores. Which of the two
+		// instants was meant is a question a wall-clock string cannot ask (ADR-0027
+		// decision 2), and refusing the value would lose a booking that is perfectly
+		// expressible. Found in review of pull request 235.
+		if (!$carriesAnOffset && $local !== ApiDateTimeWallClock($value))
+		{
+			return null;
+		}
+
+		return $local;
+	}
+
+	return null;
+}
+
+/**
+ * The wall clock an offset-free value asks for, as 'Y-m-d H:i:s'.
+ *
+ * Only ever called on a value that matched API_DATE_TIME_PATTERN and has had any fractional
+ * part removed, so it is either a bare date or a full time with one of the two separators.
+ *
+ * @param string $value
+ * @return string
+ */
+function ApiDateTimeWallClock($value)
+{
+	return strlen($value) === 10 ? $value . ' 00:00:00' : strtr($value, ['T' => ' ']);
 }
 
 /**

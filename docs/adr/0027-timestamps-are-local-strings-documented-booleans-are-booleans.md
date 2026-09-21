@@ -121,12 +121,25 @@ keyword nobody deliberately chose.
      retyping it is not what this record is for.
 
    The three write fields in this family — `tracked_time` on chore execution and battery
-   charge, `done_time` on task completion — are documented the same way, and their
-   description says what the server does: `helpers/extensions.php`'s `IsIsoDateTime()`
-   demands exactly `Y-m-d H:i:s`, and the controllers' `if` **silently ignores** a value in
-   any other rendering and books the current time instead. Documenting them as
-   `format: date-time` was worse than inaccurate there: it invited a generated client to
-   send RFC 3339 and have its timestamp discarded without a word.
+   charge, `done_time` on task completion — are documented the same way. Documenting them
+   as `format: date-time` was worse than inaccurate there: it invited a generated client to
+   send RFC 3339 and have its timestamp discarded without a word, because
+   `helpers/extensions.php`'s `IsIsoDateTime()` demanded exactly `Y-m-d H:i:s` and the
+   controllers' `if` **silently ignored** a value in any other rendering and booked the
+   current time instead.
+
+   **That last sentence described the tree when this record was written and no longer
+   does.** [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) decided the
+   question this record deliberately left open — whether to refuse such a value or to widen
+   what is accepted — and did both: the three fields now accept a bare date and the RFC 3339
+   renderings, normalised to the rendering above, and refuse with 400 anything they cannot
+   read. Their `pattern` and description in the document say so. Nothing else in this
+   decision changes; in particular they are still not `format: date-time`, because what they
+   *store* is still a local wall-clock string on the legacy surface this decision is stated
+   over. Widening what they *accept* to include RFC 3339 does not move them out of that
+   surface, and does not make them a fourth exception beside the three named above: an
+   offset a caller sends is resolved to the server's zone and discarded, never stored and
+   never rendered back.
 
 3. **The three document-only defects are fixed in the document.** `GET /user` is an array of
    `UserDto`, which is what `GetUsersAsDto()->where(...)` serialises to. The

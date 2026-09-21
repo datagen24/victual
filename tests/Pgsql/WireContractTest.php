@@ -29,6 +29,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *        match a member that is not theirs are pinned rather than claimed away.
  *   #233 GET /user's 200 is an array of UserDto, which is what it returns.
  *
+ * And, from the same family, ADR-0028: the three write routes that take a timestamp
+ * (tracked_time on chore execution and battery charge, done_time on task completion)
+ * accept the renderings their schema documents, refuse what they cannot read, and never
+ * answer a value they could not use by booking the current time instead.
+ *
  * Every request is its own process (tests/Pgsql/request-subprocess-helper.php): the
  * authentication middleware define()s the acting user, and PHP cannot redefine a constant.
  */
@@ -39,6 +44,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	private static PDO $db;
 	private static string $key;
+
+	/** A zone with a one-hour spring-forward gap, for the cases UTC structurally cannot reach. */
+	private const DST_ZONE = 'America/New_York';
 
 	/** @var array<string,mixed>|null victual.openapi.json, decoded once */
 	private static ?array $spec = null;
@@ -91,7 +99,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "(9501, 9500, -1, 0, 'wire-stock-1', 'consume', 'wire-transaction', 9500)");
 
 		self::$db->exec('INSERT INTO chores (id, name, period_type, period_days, start_date, track_date_only, rollover) '
-			. "VALUES (9500, 'WireChore', 'daily', 1, '2026-01-01 08:00:00', 1, 0)");
+			. "VALUES (9500, 'WireChore', 'daily', 1, '2026-01-01 08:00:00', 1, 0), "
+			// 9500 is track_date_only, and ChoresService::TrackChore() truncates an execution
+			// of one of those to midnight - so the ADR-0028 cases, which are about what the
+			// route did with the caller's time of day, need a chore that keeps one.
+			. "(9501, 'WireChoreTimed', 'daily', 1, '2026-01-01 08:00:00', 0, 0)");
 
 		self::$db->exec('INSERT INTO userfields (id, entity, name, caption, type, show_as_column_in_tables, input_required) '
 			. "VALUES (9500, 'products', 'wire_field', 'Wire field', 'text', 1, 0)");
@@ -118,12 +130,25 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "VALUES ('" . self::RETIRED_LABEL_UID . "', 'location', NULL, "
 			. "TIMESTAMPTZ '2026-03-04 05:06:07.891011-05', "
 			. '\'{"id": 9501, "name": "WireRetiredShelf"}\'::jsonb)');
+
+		// One battery for the charge route. Tasks are made per test (freshTask()) because
+		// "was this one marked done?" has no answer on a task an earlier test completed.
+		self::$db->exec("INSERT INTO batteries (id, name) VALUES (9500, 'WireBattery')");
+	}
+
+	/** A task nothing else has touched. */
+	private static function freshTask(string $name): int
+	{
+		$statement = self::$db->prepare('INSERT INTO tasks (name) VALUES (?) RETURNING id');
+		$statement->execute([$name]);
+
+		return (int)$statement->fetchColumn();
 	}
 
 	// ------------------------------------------------------------------ the request half
 
 	/** @return array{status: int, body: string} */
-	private static function send(string $method, string $path, array $headers = [], ?array $body = null): array
+	private static function send(string $method, string $path, array $headers = [], ?array $body = null, ?string $timezone = null): array
 	{
 		$spec = array_filter(
 			['method' => $method, 'path' => $path, 'headers' => $headers + ['VICTUAL-API-KEY' => self::$key], 'body' => $body],
@@ -138,7 +163,10 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'PGPORT' => getenv('PGPORT'),
 			'PGUSER' => getenv('PGUSER'),
 			'PGPASSWORD' => getenv('PGPASSWORD'),
-			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			// '' rather than absent: the inherited environment is merged in above, so a
+			// request that asked for no zone has to overwrite one an earlier one set.
+			'VICTUAL_TEST_TIMEZONE' => $timezone ?? ''
 		]);
 		$process = proc_open(
 			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
@@ -712,6 +740,469 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	// ------------------------------------------------- ADR-0028, the three write times
+
+	/**
+	 * The renderings the three fields accept, and what each one has to be stored as.
+	 *
+	 * The offset-bearing expectations are written as the *instant* rather than as a string,
+	 * because what they render to depends on the server's zone and the suite does not fix
+	 * one. inServerZone() asks PostgreSQL, which is an oracle independent of the PHP the
+	 * code under test uses - and the question "do the application and its database agree
+	 * about the zone?" is one this happens to answer too.
+	 *
+	 * @return array<string, array{0: string, 1: string|null}> value => [literal, instant]
+	 */
+	private static function acceptedRenderings(): array
+	{
+		return [
+			'the storage rendering' => ['2026-03-04 05:06:07', null],
+			'a bare date' => ['2026-03-04', null],
+			// "RFC 3339 shaped", not RFC 3339: that grammar requires the offset the first of
+			// these omits, and permits a leap second wrongShape() refuses. ADR-0028 decision 2.
+			'the T form without an offset, which RFC 3339 does not allow' => ['2026-03-04T05:06:07', null],
+			'the T form in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
+			'the T form with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
+			'the T form with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z'],
+			// Seven digits is .NET's round-trip format and nine is Go's RFC3339Nano; PHP's
+			// "u" parses at most six, so both were refused while the document said they were
+			// fine. CodeRabbit found the seven-digit case on pull request 235 and a sweep of
+			// the shape space found the rest.
+			'more fractional digits than PHP parses' => ['2026-03-04T05:06:07.1234567Z', '2026-03-04T05:06:07Z'],
+			'fractional nanoseconds' => ['2026-03-04T05:06:07.123456789+02:00', '2026-03-04T05:06:07+02:00']
+		];
+	}
+
+	/** What each accepted rendering must be stored as. */
+	private static function expectedFor(string $literal, ?string $instant): string
+	{
+		if ($instant !== null)
+		{
+			return self::inServerZone($instant);
+		}
+
+		// No offset in the value, so it names a wall clock and the wall clock is kept. A
+		// bare date is its midnight.
+		return strlen($literal) === 10 ? $literal . ' 00:00:00' : str_replace('T', ' ', $literal);
+	}
+
+	/** $instant rendered in the time zone the application's own connection is set to. */
+	private static function inServerZone(string $instant): string
+	{
+		$statement = self::$db->prepare("SELECT to_char(?::timestamptz AT TIME ZONE current_setting('TimeZone'), 'YYYY-MM-DD HH24:MI:SS')");
+		$statement->execute([$instant]);
+
+		return (string)$statement->fetchColumn();
+	}
+
+	/**
+	 * Values in none of the accepted renderings, so the schema's `pattern` refuses them too.
+	 */
+	private static function wrongShape(): array
+	{
+		return [
+			'an empty string' => '',
+			'prose' => 'yesterday afternoon',
+			'a relative expression new DateTimeImmutable() would have taken' => 'tomorrow',
+			'the word now, likewise' => 'now',
+			'a Unix timestamp' => '1772600767',
+			'a truncated time' => '2026-03-04 05:06',
+			'basic-format ISO 8601' => '20260304T050607Z',
+			'a space separator with an offset, which this API never renders' => '2026-03-04 05:06:07+02:00',
+			'an hour no day has' => '2026-03-04 25:06:07',
+			'a minute no hour has' => '2026-03-04T05:60:07Z',
+			'a second no minute has, leap seconds included' => '2026-03-04T05:06:60Z',
+			'an offset with sixty minutes in it' => '2026-03-04T05:06:07+02:60',
+			'an offset no zone has' => '2026-03-04T05:06:07+24:00',
+			// The one that was booking a date four days off the one it named: as plain
+			// \d{2} the pattern took it and createFromFormat() read it as a hundred-hour
+			// offset without a warning. CodeRabbit, pull request 235.
+			'an offset that is not a time at all' => '2026-03-04T05:06:07+99:99',
+			// Valid RFC 3339 and refused on purpose: createFromFormat() reads it as
+			// 2017-01-01 00:00:00, so taking it would book a different day without a word,
+			// and a TIMESTAMP column cannot hold a leap second anyway. ADR-0028 decision 2.
+			'a leap second, which RFC 3339 allows and nothing here can hold' => '2016-12-31T23:59:60Z',
+			'a month there is no thirteenth of' => '2026-13-04 00:00:00',
+			'a thirty-second of the month' => '2026-03-32 00:00:00'
+		];
+	}
+
+	/**
+	 * Values the server refuses that the schema's `pattern` cannot, and is not expected to.
+	 *
+	 * Every component of the pattern is range-bounded, so an impossible hour, minute, second
+	 * or offset is refused by the document as well. What a regular expression cannot say is
+	 * **how many days a month has** - and that is all that is left here.
+	 *
+	 * That is the one place the document is deliberately looser than the server, and
+	 * testNothingTheDocumentedPatternRefusesIsAccepted() proves it is the *only* one rather
+	 * than leaving it asserted here and hoped for elsewhere.
+	 */
+	private static function rightShapeNotATime(): array
+	{
+		return [
+			'a day February does not have' => '2026-02-30 00:00:00',
+			'a thirty-first of April' => '2026-04-31T00:00:00Z'
+		];
+	}
+
+	/** Values none of the three routes may read as a time, by any route. */
+	private static function unreadableValues(): array
+	{
+		return self::wrongShape() + self::rightShapeNotATime() + [
+			'null' => null,
+			'a number' => 1772600767,
+			'an object' => ['at' => '2026-03-04 05:06:07']
+		];
+	}
+
+	public function testAnAbsentTimestampBooksTheCurrentTime(): void
+	{
+		$before = date('Y-m-d H:i:s');
+
+		$chore = self::send('POST', '/api/chores/9501/execute', [], []);
+		self::assertSame(200, $chore['status'], $chore['body']);
+		$choreRow = json_decode($chore['body'], true, flags: JSON_THROW_ON_ERROR);
+		self::assertGreaterThanOrEqual($before, $choreRow['tracked_time'], 'chores_log.tracked_time');
+
+		$battery = self::send('POST', '/api/batteries/9500/charge', [], []);
+		self::assertSame(200, $battery['status'], $battery['body']);
+		$batteryRow = json_decode($battery['body'], true, flags: JSON_THROW_ON_ERROR);
+		self::assertGreaterThanOrEqual($before, $batteryRow['tracked_time'], 'battery_charge_cycles.tracked_time');
+
+		$taskId = self::freshTask('WireTaskDefaultNow');
+		$task = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], []);
+		self::assertSame(204, $task['status'], $task['body']);
+		self::assertGreaterThanOrEqual($before, self::taskDoneTimestamp($taskId), 'tasks.done_timestamp');
+	}
+
+	public function testAnAcceptedRenderingIsStoredAsTheDocumentedOne(): void
+	{
+		foreach (self::acceptedRenderings() as $what => [$literal, $instant])
+		{
+			$expected = self::expectedFor($literal, $instant);
+
+			$chore = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $literal]);
+			self::assertSame(200, $chore['status'], "chore execution, $what: {$chore['body']}");
+			self::assertSame(
+				$expected,
+				json_decode($chore['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"chore execution, $what ($literal)"
+			);
+
+			$battery = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $literal]);
+			self::assertSame(200, $battery['status'], "battery charge, $what: {$battery['body']}");
+			self::assertSame(
+				$expected,
+				json_decode($battery['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"battery charge, $what ($literal)"
+			);
+
+			$taskId = self::freshTask('WireTaskAccepts ' . $literal);
+			$task = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $literal]);
+			self::assertSame(204, $task['status'], "task completion, $what: {$task['body']}");
+			self::assertSame($expected, self::taskDoneTimestamp($taskId), "task completion, $what ($literal)");
+		}
+	}
+
+	/**
+	 * The regression this whole section exists for. Every one of these used to be answered
+	 * 200 with the current time booked in place of the caller's value, so an assertion on
+	 * the status alone would have passed against the defect; what makes it a test of the
+	 * defect is that nothing was written at all.
+	 */
+	public function testAValueTheServerCannotUseIsRefusedAndNothingIsBooked(): void
+	{
+		foreach (self::unreadableValues() as $what => $value)
+		{
+			$chores = self::rowCount('chores_log');
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $value]);
+			self::assertSame(400, $response['status'], "chore execution, $what: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body'], "chore execution, $what");
+			self::assertSame($chores, self::rowCount('chores_log'), "chore execution, $what: nothing was booked");
+
+			$cycles = self::rowCount('battery_charge_cycles');
+			$response = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $value]);
+			self::assertSame(400, $response['status'], "battery charge, $what: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body'], "battery charge, $what");
+			self::assertSame($cycles, self::rowCount('battery_charge_cycles'), "battery charge, $what: nothing was booked");
+
+			$taskId = self::freshTask('WireTaskRefuses: ' . $what);
+			$response = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $value]);
+			self::assertSame(400, $response['status'], "task completion, $what: {$response['body']}");
+			self::assertStringContainsString('done_time', $response['body'], "task completion, $what");
+			self::assertNull(self::taskDoneTimestamp($taskId), "task completion, $what: the task was not completed");
+		}
+	}
+
+	/**
+	 * A wall clock the server's zone skipped is refused, on all three routes.
+	 *
+	 * `2026-03-08 02:30:00` does not happen in `America/New_York`: the clock goes from
+	 * 01:59:59 to 03:00:00. PHP moves such a value forward to 03:30 and reports no warning
+	 * for it, so before this the routes answered 200 and booked an hour later than the one
+	 * the caller wrote - the defect ADR-0028 exists to remove, arriving by a different door.
+	 * Found in review of pull request 235.
+	 *
+	 * The suite runs on UTC, which has no skipped hour, so this is the one case that has to
+	 * say which zone the server is in (VICTUAL_TEST_TIMEZONE, read by
+	 * tests/Pgsql/request-subprocess-helper.php).
+	 */
+	public function testAWallClockTheServersZoneSkippedIsRefused(): void
+	{
+		foreach (['2026-03-08 02:30:00', '2026-03-08T02:30:00'] as $skipped)
+		{
+			$chores = self::rowCount('chores_log');
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "chore execution, $skipped: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body']);
+			self::assertStringContainsString('daylight saving', $response['body'], 'the refusal says why, rather than reciting the shape the value already has');
+			self::assertSame($chores, self::rowCount('chores_log'), "chore execution, $skipped: nothing was booked");
+
+			$cycles = self::rowCount('battery_charge_cycles');
+			$response = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "battery charge, $skipped: {$response['body']}");
+			self::assertSame($cycles, self::rowCount('battery_charge_cycles'), "battery charge, $skipped: nothing was booked");
+
+			$taskId = self::freshTask('WireTaskSkippedHour ' . $skipped);
+			$response = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "task completion, $skipped: {$response['body']}");
+			self::assertNull(self::taskDoneTimestamp($taskId), "task completion, $skipped: the task was not completed");
+		}
+	}
+
+	/**
+	 * What the refusal above must not swallow. The hour either side of the gap is ordinary,
+	 * the repeated hour at the other end of the year is expressible as a wall clock and is
+	 * kept, and a value carrying an offset names an instant - every instant has a wall clock
+	 * in every zone, including one inside the gap window.
+	 */
+	public function testOnlyTheSkippedHourIsRefusedInADstZone(): void
+	{
+		$cases = [
+			'the hour before the gap' => ['2026-03-08 01:30:00', '2026-03-08 01:30:00'],
+			'the hour after it' => ['2026-03-08 03:30:00', '2026-03-08 03:30:00'],
+			// 01:30 happens twice on this date. PHP takes the first and the wall clock
+			// survives, which is all this API stores; which instant was meant is a question
+			// a wall-clock string cannot ask (ADR-0027 decision 2), and refusing it would
+			// lose a booking that is perfectly expressible.
+			'the hour that happens twice' => ['2026-11-01 01:30:00', '2026-11-01 01:30:00'],
+			// 02:30 UTC is 21:30 the previous evening in New York - a real moment, named as
+			// one, so the gap never enters into it.
+			'an instant whose UTC rendering sits in the gap' => ['2026-03-08T02:30:00Z', '2026-03-07 21:30:00']
+		];
+
+		foreach ($cases as $what => [$sent, $stored])
+		{
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $sent], self::DST_ZONE);
+			self::assertSame(200, $response['status'], "$what ($sent): {$response['body']}");
+			self::assertSame(
+				$stored,
+				json_decode($response['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"$what ($sent)"
+			);
+		}
+	}
+
+	/**
+	 * The same rule across zones, against the function rather than over HTTP, because the
+	 * interesting zones are more numerous than the routes and every one of them would
+	 * otherwise be three subprocesses.
+	 *
+	 * `America/Santiago` is here because its clock jumps at **midnight**, which the HTTP
+	 * cases above cannot reach: it makes a *bare date* unbookable, a third rendering the
+	 * original report did not name.
+	 */
+	public function testTheSkippedWallClockRuleHoldsAcrossZones(): void
+	{
+		$zone = date_default_timezone_get();
+
+		try
+		{
+			$cases = [
+				// zone, value, expected ('' = refused)
+				['America/New_York', '2026-03-08 02:30:00', ''],
+				['America/New_York', '2026-03-08T02:30:00', ''],
+				['America/New_York', '2026-03-08T02:30:00Z', '2026-03-07 21:30:00'],
+				['America/New_York', '2026-03-08 01:30:00', '2026-03-08 01:30:00'],
+				['America/New_York', '2026-11-01 01:30:00', '2026-11-01 01:30:00'],
+				// Midnight does not exist on this date here, so neither does the bare date.
+				['America/Santiago', '2026-09-06', ''],
+				['America/Santiago', '2026-09-06 00:00:00', ''],
+				['America/Santiago', '2026-09-06 01:00:00', '2026-09-06 01:00:00'],
+				// Australia/Lord_Howe shifts by thirty minutes rather than an hour.
+				['Australia/Lord_Howe', '2026-10-04 02:15:00', ''],
+				// UTC never skips anything, which is why the suite's own zone could not have
+				// found this.
+				['UTC', '2026-03-08 02:30:00', '2026-03-08 02:30:00'],
+				['UTC', '2026-09-06', '2026-09-06 00:00:00']
+			];
+
+			foreach ($cases as [$in, $value, $expected])
+			{
+				date_default_timezone_set($in);
+				$actual = ParseApiDateTime($value) ?? '';
+				self::assertSame($expected, $actual, "$in: $value");
+			}
+		}
+		finally
+		{
+			// Every later test in this process reads the clock through this.
+			date_default_timezone_set($zone);
+		}
+	}
+
+	/**
+	 * All three fields document the same `pattern`, and it is the very string the parser
+	 * gates on - `API_DATE_TIME_PATTERN` in helpers/extensions.php, which ParseApiDateTime()
+	 * matches a value against before DateTimeImmutable ever sees it.
+	 *
+	 * That identity is the point. Written as two independent expressions they drift, and
+	 * they did: before this was structural, `createFromFormat()` quietly accepted `+0200`,
+	 * `+02`, `GMT`, a single-digit hour and a doubled separator space, none of which the
+	 * document promised, while the document promised fractional seconds of any length that
+	 * PHP's `u` would not parse past six digits.
+	 */
+	public function testTheDocumentedPatternIsTheOneTheParserGatesOn(): void
+	{
+		$spec = self::spec();
+
+		foreach (self::timestampFields() as [$path, $field])
+		{
+			$documented = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties'][$field];
+
+			self::assertSame('string', $documented['type'], "$path $field");
+			self::assertArrayNotHasKey('format', $documented, "$path $field is not RFC 3339, so it carries no format");
+			self::assertSame(\API_DATE_TIME_PATTERN, $documented['pattern'] ?? null, "$path $field");
+		}
+	}
+
+	/**
+	 * Over every shape the parts below can spell, **nothing the document refuses is
+	 * accepted**, and everything it accepts is accepted unless the date or the hour does not
+	 * exist.
+	 *
+	 * The first half is the direction that hurts a caller: a value the server takes but the
+	 * document does not describe is a promise nobody made, and a generated client will never
+	 * send it. The second half is the gap named in `rightShapeNotATime()` - a regular
+	 * expression cannot know February has 28 days - and the assertion is that it is the
+	 * *only* gap, rather than a sampled list hoping it is.
+	 *
+	 * The boundary values are the point of the corpus rather than decoration. The first
+	 * version of this test carried no impossible minute, second or offset, and so did not
+	 * see that `+99:99` was accepted and read as a hundred-hour offset.
+	 *
+	 * Against ParseApiDateTime() directly rather than over HTTP: tens of thousands of
+	 * requests would be hours of subprocesses to test a pure function. The routes are
+	 * covered by the cases above, which do go through the whole stack.
+	 */
+	public function testNothingTheDocumentedPatternRefusesIsAccepted(): void
+	{
+		$pattern = '/' . \API_DATE_TIME_PATTERN . '/D';
+
+		// The only values the document accepts and the server does not: a day the month
+		// does not have. Every other component is range-bounded in the pattern itself.
+		$monthIsShorter = '/^(2026-02-30|2026-02-31|2026-04-31|2026-06-31|2026-09-31|2026-11-31)/';
+
+		$acceptedButUndocumented = [];
+		$refusedForAnotherReason = [];
+		$total = 0;
+
+		$dates = ['2026-03-04', '2026-12-31', '2026-02-30', '2026-04-31', '2026-13-04', '2026-03-32', '2026-00-04', '2026-03-00'];
+		$separators = ['', ' ', 'T', 't', '  '];
+		$times = ['05:06:07', '00:00:00', '23:59:59', '24:00:00', '05:60:07', '05:06:60', '05:06', '5:06:07', '050607'];
+		$fractions = ['', '.1', '.123456', '.1234567', '.123456789', '.', '.abc'];
+		$zones = ['', 'Z', 'z', '+00:00', '+02:00', '-05:30', '+23:59', '-23:59', '+24:00', '+02:60', '+99:99', '+0200', '+02', ' UTC', 'GMT'];
+
+		foreach ($dates as $date)
+		{
+			foreach ($separators as $separator)
+			{
+				foreach ($times as $time)
+				{
+					foreach ($fractions as $fraction)
+					{
+						foreach ($zones as $zone)
+						{
+							$value = $separator === '' ? $date : $date . $separator . $time . $fraction . $zone;
+							$total++;
+
+							$documented = preg_match($pattern, $value) === 1;
+							$accepted = ParseApiDateTime($value) !== null;
+
+							if ($accepted && !$documented)
+							{
+								$acceptedButUndocumented[] = $value;
+							}
+
+							if ($documented && !$accepted && !preg_match($monthIsShorter, $value))
+							{
+								$refusedForAnotherReason[] = $value;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		self::assertGreaterThan(30000, $total, 'the corpus is the whole cross product, not a subset');
+		self::assertSame([], $acceptedButUndocumented, 'accepted without being documented: ' . implode(', ', array_slice($acceptedButUndocumented, 0, 10)));
+		self::assertSame([], $refusedForAnotherReason, 'documented and refused for a reason other than the month being shorter than the day given: ' . implode(', ', array_slice($refusedForAnotherReason, 0, 10)));
+	}
+
+	/** @return array<array{0: string, 1: string}> */
+	private static function timestampFields(): array
+	{
+		return [
+			['/chores/{choreId}/execute', 'tracked_time'],
+			['/batteries/{batteryId}/charge', 'tracked_time'],
+			['/tasks/{taskId}/complete', 'done_time']
+		];
+	}
+
+	/**
+	 * The browser is unaffected, and this is the half of that claim a test can hold.
+	 *
+	 * `choretracking.js` and `choresoverview.js` send a bare `YYYY-MM-DD` for a chore whose
+	 * track_date_only is set, which is why ChoresApiController accepted IsIsoDate() as well
+	 * as IsIsoDateTime() and why refusing everything but the storage rendering was not an
+	 * option. The other four senders - `batterytracking.js`, `batteriesoverview.js`,
+	 * `tasks.js` and the non-date-only branch of the two chore files - send
+	 * moment().format('YYYY-MM-DD HH:mm:ss'). Both are here.
+	 */
+	public function testTheTwoRenderingsTheBrowserSendsAreAccepted(): void
+	{
+		$dateOnly = self::send('POST', '/api/chores/9500/execute', [], ['tracked_time' => '2026-03-04', 'skipped' => false]);
+		self::assertSame(200, $dateOnly['status'], $dateOnly['body']);
+		self::assertSame(
+			'2026-03-04 00:00:00',
+			json_decode($dateOnly['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'the rendering choretracking.js sends for a track_date_only chore'
+		);
+
+		$full = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => '2026-03-04 05:06:07']);
+		self::assertSame(200, $full['status'], $full['body']);
+		self::assertSame(
+			'2026-03-04 05:06:07',
+			json_decode($full['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'the rendering every other sender in public/viewjs uses'
+		);
+	}
+
+	private static function rowCount(string $table): int
+	{
+		return (int)self::$db->query('SELECT count(*) FROM ' . $table)->fetchColumn();
+	}
+
+	private static function taskDoneTimestamp(int $taskId): ?string
+	{
+		$statement = self::$db->prepare('SELECT done_timestamp FROM tasks WHERE id = ?');
+		$statement->execute([$taskId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false || $value === null ? null : (string)$value;
+	}
+
 	// --------------------------------------------------------------------- issue #232
 
 	public function testTheGenericEntityUnionMembersAreMutuallyExclusive(): void
@@ -1042,6 +1533,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 */
 	private const UNION_NULLABILITY_FAILURES = [
 		'products' => ['Product' => ['description']],
+		// batteries had no row until ADR-0028's cases needed one to charge, so this pairing
+		// was measured off the relation's columns only. The row behaves exactly like its
+		// five siblings above and below: a NULL description against a member that declares
+		// it a non-nullable scalar. It does not join UNION_FULLY_VALID.
+		'batteries' => ['Battery' => ['description']],
 		'chores' => ['Chore' => ['description']],
 		'locations' => ['Location' => ['description']],
 		'quantity_units' => ['QuantityUnit' => ['description']],

@@ -24,7 +24,9 @@ class TasksApiController extends BaseApiController
 
 	/**
 	 * POST /api/tasks/{taskId}/complete - marks the given task as completed.
-	 * The optional body field done_time (ISO datetime) defaults to now.
+	 * The optional body field done_time defaults to now when omitted, and otherwise takes a
+	 * date or date/time in any rendering ParseApiDateTime() accepts. A value it cannot read
+	 * is refused with 400 - see BaseApiController::RequestedTimestamp().
 	 * Requires the TASKS_MARK_COMPLETED permission (403 otherwise).
 	 * Returns 204 on success or a 400 error response.
 	 */
@@ -34,14 +36,9 @@ class TasksApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $requestBody, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
-			$doneTime = date('Y-m-d H:i:s');
-
-			if (array_key_exists('done_time', $requestBody) && IsIsoDateTime($requestBody['done_time']))
-			{
-				$doneTime = $requestBody['done_time'];
-			}
+			$doneTime = $this->RequestedTimestamp($request, $requestBody, 'done_time');
 
 			TasksService::GetInstance()->MarkTaskAsCompleted($args['taskId'], $doneTime);
 			return $this->EmptyApiResponse($response);

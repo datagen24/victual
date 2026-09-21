@@ -600,6 +600,81 @@ class BaseApiController extends BaseController
 	}
 
 	/**
+	 * The instant a booking route was asked to record: $field read out of $requestBody and
+	 * normalised to the rendering this API stores, or the current time when the field was
+	 * not sent at all.
+	 *
+	 * The three routes that take one - POST /chores/{id}/execute and
+	 * POST /batteries/{id}/charge (tracked_time), POST /tasks/{id}/complete (done_time) -
+	 * each used to inline
+	 *
+	 *     if (array_key_exists('tracked_time', $requestBody) && IsIsoDateTime($value)) { ... }
+	 *
+	 * where IsIsoDateTime() accepted exactly `Y-m-d H:i:s`. A value in any other rendering
+	 * fell through the `if` and the route booked
+	 * the current time instead, answering 200 with nothing said about the timestamp being
+	 * discarded. An RFC 3339 string - what a client generated from this API's own document
+	 * naturally sends, and what victual.openapi.json invited by typing these fields
+	 * `format: date-time` until issue #231 - was exactly such a value. See ADR-0028.
+	 *
+	 * Two rules, and the boundary between them is the presence of the key rather than the
+	 * usefulness of the value:
+	 *
+	 * - **The field is absent**: the current time. This is the documented default and what
+	 *   the browser relies on for every "do this now" button.
+	 * - **The field is present**: it must parse (ParseApiDateTime names the accepted
+	 *   renderings), or the request is refused with 400 naming the field. `null` and the
+	 *   empty string are values that are present, so they are refused too - "I sent you
+	 *   something you could not use" is never answered by booking a different time.
+	 *
+	 * @param array $requestBody The parsed request body
+	 * @param string $field The body field to read - 'tracked_time' or 'done_time'
+	 * @return string The instant to book, as 'Y-m-d H:i:s'
+	 */
+	protected function RequestedTimestamp(Request $request, array $requestBody, string $field): string
+	{
+		if (!array_key_exists($field, $requestBody))
+		{
+			return date('Y-m-d H:i:s');
+		}
+
+		$parsed = ParseApiDateTime($requestBody[$field]);
+
+		if ($parsed === null)
+		{
+			throw new HttpException($request, $this->WhyNotATimestamp($field, $requestBody[$field]), 400);
+		}
+
+		return $parsed;
+	}
+
+	/**
+	 * Why a value was refused, in terms a caller can act on.
+	 *
+	 * Two refusals reach here and they want different answers. A value of the wrong shape
+	 * needs the accepted shapes listed. A value of the *right* shape that is still not a
+	 * time - the 30th of February, or an hour the server's zone skipped when daylight saving
+	 * began - would be told "expected YYYY-MM-DD HH:MM:SS" about a value that is already
+	 * exactly that, which reads as the server being broken rather than as the value being
+	 * impossible. API_DATE_TIME_PATTERN is what tells the two apart, and it is the same
+	 * expression ParseApiDateTime() gates on and the schemas document.
+	 */
+	private function WhyNotATimestamp(string $field, $value): string
+	{
+		if (is_string($value) && preg_match('/' . API_DATE_TIME_PATTERN . '/D', $value) === 1)
+		{
+			return 'Invalid ' . $field . ': "' . $value . '" has an accepted shape but is not a time in the server\'s '
+				. 'time zone - either that date does not exist, or the clock skipped that hour when daylight saving began. '
+				. 'Send an instant instead ("2026-09-21T14:30:00Z") to say which moment you mean, or omit the field '
+				. 'entirely to record the current time.';
+		}
+
+		return 'Invalid ' . $field . ': expected "YYYY-MM-DD HH:MM:SS" (the rendering this API stores, in the server\'s time zone), '
+			. '"YYYY-MM-DD" for midnight of that date, or an RFC 3339-shaped date and time such as "2026-09-21T14:30:00Z". '
+			. 'Omit the field entirely to record the current time.';
+	}
+
+	/**
 	 * Returns the parsed JSON request body with all scalar string values run through HTMLPurifier.
 	 * Throws a Slim HttpException (status 400) when the Content-Type is not application/json.
 	 *
@@ -621,7 +696,11 @@ class BaseApiController extends BaseController
 			self::$htmlPurifierInstance = self::CreateHtmlPurifier();
 		}
 
-		$htmlColumns = self::HTML_RENDERED_COLUMNS[$entity] ?? [];
+		// Indexed only when the caller named an entity: PHP 8.1 deprecates a null array
+		// offset, and every controller other than the generic entity one passes null. The
+		// notice reached a response body rather than a log the first time a write route
+		// taking no entity was driven through tests/Pgsql/request-subprocess-helper.php.
+		$htmlColumns = $entity === null ? [] : (self::HTML_RENDERED_COLUMNS[$entity] ?? []);
 
 		$requestBody = $request->getParsedBody();
 		foreach ($requestBody as $key => &$value)
