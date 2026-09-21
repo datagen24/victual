@@ -68,6 +68,30 @@ named at 0% — 140 files across the five scoped directories and three top-level
 classes shown. `report.php` now passes `showUncoveredFiles: true`, so every file the filter
 names appears, at 0% where nothing reached it.
 
+## The denominator moves, and it is not a bug
+
+An executable-line count is not a fixed property of a file here. For a file the run
+actually loaded, the count comes from the driver; for one it never loaded, it comes from
+php-code-coverage's static analysis, and the two disagree by a line or two on some files.
+Measured on 2026-09-21, six of the 140 disagree:
+
+| File | Loaded | Never loaded |
+|---|---:|---:|
+| `controllers/StockController.php` | 457 | 461 |
+| `controllers/RecipesController.php` | 157 | 159 |
+| `controllers/ChoresController.php` | 80 | 82 |
+| `services/Labels/MediaProfileService.php` | 54 | 56 |
+| `services/Mqtt/StateSnapshotAssembler.php` | 151 | 152 |
+| `helpers/ConfigurationValidator.php` | 96 | 97 |
+
+So covering a file for the first time raises the numerator **and** lowers the denominator,
+and the total moves slightly more than the new lines alone explain. The direction is the
+harmless one - the ratchet still only goes up - but two things follow. A pull request whose
+total moved by more than its own lines is not necessarily measuring something odd; check
+whether it loaded a file nothing loaded before. And a per-file count quoted from a run that
+did not load that file is the static one, which is why `inventory.php` reports covered and
+executable rather than only a percentage.
+
 ## What the label phases add
 
 `tests.yml` also runs the label subsystem's own PHP test scripts as separate steps —
