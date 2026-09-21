@@ -165,9 +165,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "TIMESTAMPTZ '2026-03-04 05:06:07.891011-05', "
 			. '\'{"id": 9501, "name": "WireRetiredShelf"}\'::jsonb)');
 
-		// One battery for the charge route. Tasks are made per test (freshTask()) because
-		// "was this one marked done?" has no answer on a task an earlier test completed.
+		// One battery for the charge route. Tasks that a test *completes* are made per test
+		// (freshTask()), because "was this one marked done?" has no answer on a task an
+		// earlier test completed - but one standing task is seeded here so that a test
+		// merely *reading* tasks has a row of its own. Without it
+		// testTheServedSchemasAreAnsweredByTheGenericEntityRoute() passed only on rows the
+		// #229 cases happened to leave behind, and failed when run alone under --filter.
 		self::$db->exec("INSERT INTO batteries (id, name) VALUES (9500, 'WireBattery')");
+		self::$db->exec("INSERT INTO tasks (id, name, due_date) VALUES (9500, 'WireServedTask', DATE '2026-10-01')");
 	}
 
 	/** A task nothing else has touched. */
