@@ -73,8 +73,13 @@ final class WireBooleans
 		'product_details' => ['is_aggregated_amount'],
 		// Chore.track_date_only / Chore.rollover
 		'chores' => ['track_date_only', 'rollover'],
-		// CurrentChoreResponse.track_date_only / is_rescheduled / is_reassigned
-		'chores_current' => ['track_date_only', 'rollover', 'is_rescheduled', 'is_reassigned'],
+		// CurrentChoreResponse.track_date_only / is_rescheduled / is_reassigned.
+		// `rollover` is deliberately absent although `chores` above lists it: the view reads
+		// chores.rollover to compute next_estimated_execution_time and does not project it
+		// (db/pgsql/baseline/05_views_l2.sql:25), so no chores_current row carries the key and
+		// CurrentChoreResponse does not document it. Naming it here converted nothing and made
+		// WireContractTest's coverage check unprovable, since no response can show it converted.
+		'chores_current' => ['track_date_only', 'is_rescheduled', 'is_reassigned'],
 		// RecipeFulfillmentResponse.need_fulfilled / need_fulfilled_with_shopping_list /
 		// prices_incomplete
 		'recipes_resolved' => ['need_fulfilled', 'need_fulfilled_with_shopping_list', 'prices_incomplete'],

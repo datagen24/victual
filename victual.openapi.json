@@ -171,7 +171,8 @@
 													}
 												},
 												"retired_at": {
-													"type": "string"
+													"type": "string",
+													"description": "When the label was retired, as PostgreSQL renders the `labels.retired_at` `TIMESTAMPTZ` it is read straight out of: \"YYYY-MM-DD HH:MM:SS[.ffffff]\u00b1HH\" - a UTC offset, and fractional seconds when the column holds them. Neither the local rendering the rest of this document describes nor RFC 3339, so it carries no `pattern` and no `format`. One of the exceptions ADR-0027 decision 2 enumerates; a strict client should read it as an opaque string."
 												}
 											},
 											"additionalProperties": false
@@ -11021,7 +11022,7 @@
 					"time_utc": {
 						"type": "string",
 						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"description": "The same instant as `time_local`, in **UTC** rather than in the server's configured zone - `ApplicationService::GetSystemTime()` renders it through `new \\DateTimeZone('UTC')`. The zone is carried by the property name and not by the value: rendered as \"YYYY-MM-DD HH:MM:SS\", deliberately not `format: date-time`, because there is no `T` separator and no `Z`, and a strict RFC 3339 reader cannot decode it. This is one of the exceptions ADR-0027 decision 2 enumerates. Issue #231."
 					},
 					"timestamp": {
 						"type": "integer"
