@@ -91,7 +91,9 @@ class ChoresApiController extends BaseApiController
 
 	/**
 	 * POST /api/chores/{choreId}/execute - tracks an execution of the given chore.
-	 * Optional body fields: tracked_time (ISO date or datetime, defaults to now),
+	 * Optional body fields: tracked_time (a date or date/time in any rendering
+	 * ParseApiDateTime() accepts; omit it to use the current time, send one it cannot read
+	 * and the request is refused with 400 - see BaseApiController::RequestedTimestamp()),
 	 * skipped (boolean, defaults to false), done_by (user id, defaults to the current user).
 	 * Requires the CHORE_TRACK_EXECUTION permission (403 otherwise).
 	 * Returns the created chores_log row (200) or a 400 error response.
@@ -104,11 +106,7 @@ class ChoresApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
-			$trackedTime = date('Y-m-d H:i:s');
-			if (array_key_exists('tracked_time', $requestBody) && (IsIsoDateTime($requestBody['tracked_time']) || IsIsoDate($requestBody['tracked_time'])))
-			{
-				$trackedTime = $requestBody['tracked_time'];
-			}
+			$trackedTime = $this->RequestedTimestamp($request, $requestBody, 'tracked_time');
 
 			$skipped = false;
 			if (array_key_exists('skipped', $requestBody) && filter_var($requestBody['skipped'], FILTER_VALIDATE_BOOLEAN) !== false)

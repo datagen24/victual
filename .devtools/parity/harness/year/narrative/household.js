@@ -98,8 +98,11 @@ function chargeBatteries({ ctx, day, ops }) {
 		const hour = intBetween(rng, 8, 19);
 		ops.push(call({
 			method: 'POST', path: `/batteries/{battery:${battery.key}}/charge`,
-			// A bare date is rejected here — BatteriesApiController:244-248 validates with
-			// IsIsoDateTime only, unlike the chore route which accepts either.
+			// A full timestamp, which both applications accept. This fork also accepts a
+			// bare date and the RFC 3339 renderings here since ADR-0028, and refuses
+			// anything else with a 400; upstream ignores a bare date and books the current
+			// time, so sending one would be a difference in the ledger rather than in a
+			// response, which this suite cannot see.
 			body: { tracked_time: cal.at(day, hour) },
 			expect: { status: 200, kind: 'object', shape: ['id', 'battery_id', 'tracked_time'] },
 			window: cal.hourWindow(day, hour),

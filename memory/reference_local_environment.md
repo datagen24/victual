@@ -22,15 +22,32 @@ own header is the authority on the count, not this file.
 
 ```bash
 docker build --target dev -t victual:dev .
+docker build -f .devtools/pgtap/postgres.Dockerfile -t victual-pg:pgtap .
 docker network create victual-suite
 docker run -d --name victual-pg --network victual-suite \
   -e POSTGRES_USER=victual -e POSTGRES_PASSWORD=victual -e POSTGRES_DB=victual \
-  --tmpfs /var/lib/postgresql/data postgres:16
+  --tmpfs /var/lib/postgresql/data victual-pg:pgtap
 docker run --rm --network victual-suite -v "$PWD":/app -v /app/packages -w /app \
   -e VICTUAL_ROOT=/app -e PGHOST=victual-pg -e PGPORT=5432 \
   -e PGUSER=victual -e PGPASSWORD=victual -e SUITE_SCRATCH=/tmp/victual-suite \
   victual:dev .devtools/pgsql/run-tests.sh [phase]
 ```
+
+**Plain `postgres:16` fails the `pgtap` phase** — `run-tests.sh all` dies on
+`extension "pgtap" is not available`, several minutes in. `docker-compose.yml` builds its
+postgres service from `.devtools/pgtap/postgres.Dockerfile` (ADR-0025 decision 6 installs
+pgTAP only where PostgreSQL runs for tests), so a hand-rolled container needs that image
+too — hence the second build above. Verified 2026-09-21.
+
+**Give the container and the network names of your own.** `victual-pg` and `victual-suite`
+are shared, and this checkout has around twenty worktrees whose sessions all follow this
+same recipe. On 2026-09-21 a run died two thirds through with `connection to server at
+"victual-pg" … Connection refused`, and a later one found the postgres log showing a fresh
+`initdb` and a pgtap install gone, while `docker inspect` reported `RestartCount=0` —
+another session had removed and recreated the container underneath it. Nothing in the
+failure says so, and the symptoms look exactly like flaky tests. Suffix both names
+(`victual-pg-<suffix>`, `victual-suite-<suffix>`) and pass the container name as `PGHOST`.
+The *image* is shared and that is fine; the container and the network are not.
 
 The `-v /app/packages` anonymous volume is the part that is easy to miss: without it the host
 mount shadows the image's composer output, which is gitignored and does not exist on the

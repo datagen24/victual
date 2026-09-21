@@ -22,6 +22,16 @@ require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
 require_once VICTUAL_DATAPATH . '/config.php';
 require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 
+// The server's configured zone, for the one thing that cannot be tested in the suite's own:
+// a wall clock a zone skipped at a daylight-saving boundary. The suite runs on UTC, which
+// has no such hour, so nothing here could reach that path without saying which zone to be
+// in. Read from the environment rather than from config so it stays a property of the
+// request under test and not of the installation.
+if (getenv('VICTUAL_TEST_TIMEZONE'))
+{
+	date_default_timezone_set(getenv('VICTUAL_TEST_TIMEZONE'));
+}
+
 $spec = json_decode(base64_decode($argv[1] ?? ''), true, flags: JSON_THROW_ON_ERROR);
 
 define('VICTUAL_IS_EMBEDDED_INSTALL', false);
