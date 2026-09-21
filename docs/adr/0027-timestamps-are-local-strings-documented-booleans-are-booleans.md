@@ -259,6 +259,31 @@ tenth of the scale, and is where this would be decided.
   it says are "argued explicitly rather than slipped in", and that argument is surface
   growth, not the documented-boolean cleanup this record is. `WireContractTest` pins the
   deletion from both ends, so re-declaring either schema fails until that argument is made.
+- **The journal pair was not the only unreferenced schema, and the rest are classified
+  rather than swept.** Measuring the document's reachability properly — seeded from
+  everything outside `components/schemas`, because `components/parameters` carries `$ref`s
+  too and the paths name *derived* enums rather than the base vocabularies they are computed
+  from — leaves twelve schemas no path references, and they are four different things.
+  **Six are read by PHP at request time**, so the reference is a property lookup no walk over
+  the JSON can see: `OpenApiController::DocumentationSpec()` derives the four `ExposedEntity_*`
+  enums from `StringEnumTemplate` and the `ExposedEntity`/`NoEdit`/`NoDelete`/`NoListing`
+  lists, and `GenericEntityApiController` reads `ExposedEntityEditRequiresAdmin` to gate
+  userfield writes behind `ADMIN`. **Three describe rows `GET /objects/{entity}` answers
+  today** — `Task`, `StorageClass` and `ProductGroupResolved` — and are simply not members of
+  that route's union, which that route's own description already states is deliberate.
+  **`Error500` is the `dev` error body**, rendered by `ExceptionController` when
+  `displayErrorDetails` is on and by nothing in production, where no route documents a 500 at
+  all. **`ApiKey` and `Session` were the fourth kind and went the way of the journal pair**:
+  `api_keys` is the sole member of `ExposedEntityNoListing` and `sessions` is not an
+  `ExposedEntity`, so both reads answer 400. Here the journal's deferral does not apply —
+  these relations hold a key's hash and a live session key, and `ExposedEntityNoListing`
+  exists to stop the generic route answering the first of them, so exposure is not a gap plan
+  14 lists but something the design refuses. What still describes a key is
+  `CurrentUserCapabilities`, which answers `key_type` and `read_only` about the calling
+  credential. The classification itself is the pin: `WireContractTest` re-runs the walk and
+  requires the answer to be exactly the ten classified names, and each of the three kinds has
+  a test behind its claim, so a new unreferenced schema cannot arrive without making one of
+  them true.
 
 ## Acceptance prerequisites
 

@@ -10178,32 +10178,6 @@
 					"next_estimated_charge_time": "2999-12-31 23:59:59"
 				}
 			},
-			"Session": {
-				"type": "object",
-				"properties": {
-					"id": {
-						"type": "integer"
-					},
-					"session_key": {
-						"type": "string"
-					},
-					"expires": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
-					},
-					"last_used": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
-					},
-					"row_created_timestamp": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
-					}
-				}
-			},
 			"User": {
 				"type": "object",
 				"properties": {
@@ -10281,45 +10255,6 @@
 					},
 					"picture_file_name": {
 						"type": "string"
-					},
-					"row_created_timestamp": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
-					}
-				}
-			},
-			"ApiKey": {
-				"type": "object",
-				"properties": {
-					"id": {
-						"type": "integer"
-					},
-					"api_key": {
-						"type": "string",
-						"description": "The SHA-256 hash of the key, not the key itself. A regular key is only ever readable at the moment it is created; a special-purpose calendar key is stored as issued, because the sharing link has to be reproducible."
-					},
-					"key_hint": {
-						"type": "string",
-						"description": "The last four characters of the key, kept so that two keys can be told apart once neither can be read."
-					},
-					"key_type": {
-						"type": "string",
-						"description": "\"default\" for a regular key, \"mcp\" for a key issued for the MCP sidecar, or a special-purpose type (calendar sharing, label worker/verifier/renderer)."
-					},
-					"read_only": {
-						"type": "integer",
-						"description": "1 when the key may only make GET, HEAD and OPTIONS requests; anything else is answered 403, as are the three GET routes that change something (/calendar/ical/sharing-link, /stock/barcodes/external-lookup/{barcode} and /print/shoppinglist/thermal)."
-					},
-					"expires": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
-					},
-					"last_used": {
-						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"row_created_timestamp": {
 						"type": "string",
