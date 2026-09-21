@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|demodata|dialectpolicy|httpboot]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|demodata|dialectpolicy|httpboot|mqttcoverage]
 #
-# Forty-six kinds of check. Views are compared by what they return, because
+# Forty-seven kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -2286,6 +2286,46 @@ run_httpboot_tests() {
 	rm -rf "$datapath"
 }
 
+# --- mqttcoverage -----------------------------------------------------------------
+#
+# The failure half of plan 18's publication, which .devtools/mqtt/'s probes do not reach:
+# publication switched off, a broker that refuses the connection, one that hangs up after
+# CONNACK, a snapshot that cannot be assembled, and what --retract actually clears. The
+# load-bearing assertion in most of them is the one about the ledger - a publish the broker
+# never received must not be recorded as delivered, because the ledger is what decides
+# whether the next run bothers to send it again.
+#
+# Against a stand-in broker the test starts itself on a port the OS assigns, so the phase
+# needs no broker, no network and no configuration of its own.
+
+run_mqttcoverage_tests() {
+	local dbname="victual_mqttcoverage"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/mqttcoverage-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite mqttcoverage; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
 case "$WHICH" in
 	rbac) run_rbac_tests ;;
 	pricevisibility) run_price_visibility_tests ;;
@@ -2333,8 +2373,9 @@ case "$WHICH" in
 	demodata) run_demodata_tests ;;
 	dialectpolicy) run_dialectpolicy_tests ;;
 	httpboot) run_httpboot_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, demodata, dialectpolicy, httpboot or all)" ;;
+	mqttcoverage) run_mqttcoverage_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, demodata, dialectpolicy, httpboot, mqttcoverage or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

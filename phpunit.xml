@@ -91,5 +91,8 @@
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
 		</testsuite>
+		<testsuite name="mqttcoverage">
+			<file>tests/Pgsql/MqttCoverageTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>
