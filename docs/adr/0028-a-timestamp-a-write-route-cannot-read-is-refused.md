@@ -5,8 +5,11 @@
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-21.
 - **Relationship:** [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)
-  decision 2 decided that this API's timestamps are local wall-clock strings and that the
-  document says so. **Nothing of that decision is superseded here**, and it could not be:
+  decision 2 decided that the legacy surface's timestamps are local wall-clock strings and
+  that the document says so — and, since the revision of 2026-09-21, names the three
+  renderings that sit outside that rule (`TimeResponse.time_utc`, `observed_at`, and the
+  label surface's `TIMESTAMPTZ` columns). The three write fields this record is about are
+  inside it: what they store is a local wall-clock string, whatever rendering it arrived in. **Nothing of that decision is superseded here**, and it could not be:
   0027 is Proposed, so there is no accepted decision to supersede. Decision 2 also
   *describes* what the server does with the three write fields — "silently ignores a value
   in any other rendering and books the current time instead" — and this record is what stops

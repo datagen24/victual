@@ -1404,6 +1404,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 */
 	private const UNION_NULLABILITY_FAILURES = [
 		'products' => ['Product' => ['description']],
+		// batteries had no row until ADR-0028's cases needed one to charge, so this pairing
+		// was measured off the relation's columns only. The row behaves exactly like its
+		// five siblings above and below: a NULL description against a member that declares
+		// it a non-nullable scalar. It does not join UNION_FULLY_VALID.
+		'batteries' => ['Battery' => ['description']],
 		'chores' => ['Chore' => ['description']],
 		'locations' => ['Location' => ['description']],
 		'quantity_units' => ['QuantityUnit' => ['description']],

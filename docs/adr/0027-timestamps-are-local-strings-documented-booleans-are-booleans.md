@@ -135,8 +135,11 @@ keyword nobody deliberately chose.
    renderings, normalised to the rendering above, and refuse with 400 anything they cannot
    read. Their `pattern` and description in the document say so. Nothing else in this
    decision changes; in particular they are still not `format: date-time`, because what they
-   *store*, and what every other timestamp field renders, is still a local wall-clock
-   string.
+   *store* is still a local wall-clock string on the legacy surface this decision is stated
+   over. Widening what they *accept* to include RFC 3339 does not move them out of that
+   surface, and does not make them a fourth exception beside the three named above: an
+   offset a caller sends is resolved to the server's zone and discarded, never stored and
+   never rendered back.
 
 3. **The three document-only defects are fixed in the document.** `GET /user` is an array of
    `UserDto`, which is what `GetUsersAsDto()->where(...)` serialises to. The
