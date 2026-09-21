@@ -45,6 +45,9 @@ class WireContractTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static string $key;
 
+	/** A zone with a one-hour spring-forward gap, for the cases UTC structurally cannot reach. */
+	private const DST_ZONE = 'America/New_York';
+
 	/** @var array<string,mixed>|null victual.openapi.json, decoded once */
 	private static ?array $spec = null;
 
@@ -145,7 +148,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------------------------ the request half
 
 	/** @return array{status: int, body: string} */
-	private static function send(string $method, string $path, array $headers = [], ?array $body = null): array
+	private static function send(string $method, string $path, array $headers = [], ?array $body = null, ?string $timezone = null): array
 	{
 		$spec = array_filter(
 			['method' => $method, 'path' => $path, 'headers' => $headers + ['VICTUAL-API-KEY' => self::$key], 'body' => $body],
@@ -160,7 +163,10 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'PGPORT' => getenv('PGPORT'),
 			'PGUSER' => getenv('PGUSER'),
 			'PGPASSWORD' => getenv('PGPASSWORD'),
-			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			// '' rather than absent: the inherited environment is merged in above, so a
+			// request that asked for no zone has to overwrite one an earlier one set.
+			'VICTUAL_TEST_TIMEZONE' => $timezone ?? ''
 		]);
 		$process = proc_open(
 			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
@@ -926,6 +932,123 @@ class WireContractTest extends PgsqlSchemaTestCase
 			self::assertSame(400, $response['status'], "task completion, $what: {$response['body']}");
 			self::assertStringContainsString('done_time', $response['body'], "task completion, $what");
 			self::assertNull(self::taskDoneTimestamp($taskId), "task completion, $what: the task was not completed");
+		}
+	}
+
+	/**
+	 * A wall clock the server's zone skipped is refused, on all three routes.
+	 *
+	 * `2026-03-08 02:30:00` does not happen in `America/New_York`: the clock goes from
+	 * 01:59:59 to 03:00:00. PHP moves such a value forward to 03:30 and reports no warning
+	 * for it, so before this the routes answered 200 and booked an hour later than the one
+	 * the caller wrote - the defect ADR-0028 exists to remove, arriving by a different door.
+	 * Found in review of pull request 235.
+	 *
+	 * The suite runs on UTC, which has no skipped hour, so this is the one case that has to
+	 * say which zone the server is in (VICTUAL_TEST_TIMEZONE, read by
+	 * tests/Pgsql/request-subprocess-helper.php).
+	 */
+	public function testAWallClockTheServersZoneSkippedIsRefused(): void
+	{
+		foreach (['2026-03-08 02:30:00', '2026-03-08T02:30:00'] as $skipped)
+		{
+			$chores = self::rowCount('chores_log');
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "chore execution, $skipped: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body']);
+			self::assertStringContainsString('daylight saving', $response['body'], 'the refusal says why, rather than reciting the shape the value already has');
+			self::assertSame($chores, self::rowCount('chores_log'), "chore execution, $skipped: nothing was booked");
+
+			$cycles = self::rowCount('battery_charge_cycles');
+			$response = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "battery charge, $skipped: {$response['body']}");
+			self::assertSame($cycles, self::rowCount('battery_charge_cycles'), "battery charge, $skipped: nothing was booked");
+
+			$taskId = self::freshTask('WireTaskSkippedHour ' . $skipped);
+			$response = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $skipped], self::DST_ZONE);
+			self::assertSame(400, $response['status'], "task completion, $skipped: {$response['body']}");
+			self::assertNull(self::taskDoneTimestamp($taskId), "task completion, $skipped: the task was not completed");
+		}
+	}
+
+	/**
+	 * What the refusal above must not swallow. The hour either side of the gap is ordinary,
+	 * the repeated hour at the other end of the year is expressible as a wall clock and is
+	 * kept, and a value carrying an offset names an instant - every instant has a wall clock
+	 * in every zone, including one inside the gap window.
+	 */
+	public function testOnlyTheSkippedHourIsRefusedInADstZone(): void
+	{
+		$cases = [
+			'the hour before the gap' => ['2026-03-08 01:30:00', '2026-03-08 01:30:00'],
+			'the hour after it' => ['2026-03-08 03:30:00', '2026-03-08 03:30:00'],
+			// 01:30 happens twice on this date. PHP takes the first and the wall clock
+			// survives, which is all this API stores; which instant was meant is a question
+			// a wall-clock string cannot ask (ADR-0027 decision 2), and refusing it would
+			// lose a booking that is perfectly expressible.
+			'the hour that happens twice' => ['2026-11-01 01:30:00', '2026-11-01 01:30:00'],
+			// 02:30 UTC is 21:30 the previous evening in New York - a real moment, named as
+			// one, so the gap never enters into it.
+			'an instant whose UTC rendering sits in the gap' => ['2026-03-08T02:30:00Z', '2026-03-07 21:30:00']
+		];
+
+		foreach ($cases as $what => [$sent, $stored])
+		{
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $sent], self::DST_ZONE);
+			self::assertSame(200, $response['status'], "$what ($sent): {$response['body']}");
+			self::assertSame(
+				$stored,
+				json_decode($response['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"$what ($sent)"
+			);
+		}
+	}
+
+	/**
+	 * The same rule across zones, against the function rather than over HTTP, because the
+	 * interesting zones are more numerous than the routes and every one of them would
+	 * otherwise be three subprocesses.
+	 *
+	 * `America/Santiago` is here because its clock jumps at **midnight**, which the HTTP
+	 * cases above cannot reach: it makes a *bare date* unbookable, a third rendering the
+	 * original report did not name.
+	 */
+	public function testTheSkippedWallClockRuleHoldsAcrossZones(): void
+	{
+		$zone = date_default_timezone_get();
+
+		try
+		{
+			$cases = [
+				// zone, value, expected ('' = refused)
+				['America/New_York', '2026-03-08 02:30:00', ''],
+				['America/New_York', '2026-03-08T02:30:00', ''],
+				['America/New_York', '2026-03-08T02:30:00Z', '2026-03-07 21:30:00'],
+				['America/New_York', '2026-03-08 01:30:00', '2026-03-08 01:30:00'],
+				['America/New_York', '2026-11-01 01:30:00', '2026-11-01 01:30:00'],
+				// Midnight does not exist on this date here, so neither does the bare date.
+				['America/Santiago', '2026-09-06', ''],
+				['America/Santiago', '2026-09-06 00:00:00', ''],
+				['America/Santiago', '2026-09-06 01:00:00', '2026-09-06 01:00:00'],
+				// Australia/Lord_Howe shifts by thirty minutes rather than an hour.
+				['Australia/Lord_Howe', '2026-10-04 02:15:00', ''],
+				// UTC never skips anything, which is why the suite's own zone could not have
+				// found this.
+				['UTC', '2026-03-08 02:30:00', '2026-03-08 02:30:00'],
+				['UTC', '2026-09-06', '2026-09-06 00:00:00']
+			];
+
+			foreach ($cases as [$in, $value, $expected])
+			{
+				date_default_timezone_set($in);
+				$actual = ParseApiDateTime($value) ?? '';
+				self::assertSame($expected, $actual, "$in: $value");
+			}
+		}
+		finally
+		{
+			// Every later test in this process reads the clock through this.
+			date_default_timezone_set($zone);
 		}
 	}
 

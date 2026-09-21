@@ -1,4 +1,4 @@
-# ADR-0028: A timestamp a write route cannot read is refused, and the readable set is widened to RFC 3339
+# ADR-0028: A timestamp a write route cannot read is refused, and the readable set is widened
 
 - **Status:** Proposed.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
@@ -106,6 +106,26 @@ so never grew one.
    `2017-01-01 00:00:00`, so accepting it would book a different day without a word, which
    is decision 1's whole subject. Nothing behind this API can hold a leap second either —
    the columns are `TIMESTAMP`.
+
+   **An offset-free value has to survive the round trip, or it is refused.** It names a wall
+   clock, and a wall clock the server's zone skipped is not a time there:
+   `2026-03-08 02:30:00` does not happen on `America/New_York`, where the clock goes from
+   01:59:59 to 03:00:00. PHP moves such a value forward to 03:30 and reports no warning for
+   it, so the routes answered 200 and booked an hour later than the caller wrote — decision
+   1's defect, arriving by a different door. It reaches the bare date too: on
+   `America/Santiago` the clock jumps at midnight, so `2026-09-06` asks for an hour that
+   does not exist. Refusal is the only answer available, because there is no hour there to
+   book, and the 400 says so rather than reciting the shape the value already has.
+
+   Two things this deliberately leaves alone. **A value carrying an offset names an
+   instant**, and every instant has a wall clock in every zone, so there is nothing to
+   check — `2026-03-08T02:30:00Z` is a real moment and 21:30 the previous evening in New
+   York is where it falls. And **the repeated hour is kept**: `2026-11-01 01:30:00` happens
+   twice there, PHP takes the first, and the wall clock survives unchanged, which is all
+   this API stores. Which of the two instants was meant is a question a wall-clock string
+   cannot ask — that is ADR-0027 decision 2's premise, not a defect here — and refusing the
+   value would lose a booking that is perfectly expressible. A client that needs to say
+   which one sends the offset.
 
    All three routes accept all of it. The chore route's bare date stops being a local
    exception and becomes the rule, which is what it should have been: three fields with one
@@ -215,6 +235,12 @@ decided.
 - **`IsIsoDateTime()` is deleted.** `ParseApiDateTime()` subsumes it and it had no caller
   left. `IsIsoDate()` stays — five stock and recipe routes use it for `best_before_date` and
   `purchased_date`, which are SQL `DATE` columns and a different question.
+- **A booking is never moved to an hour the caller did not write.** On a server in a
+  daylight-saving zone, the three routes now refuse the skipped hour instead of silently
+  advancing it. A caller that was sending one was already not getting the time it asked for.
+  This is invisible on a UTC server, which is why the suite could not have found it and why
+  `tests/Pgsql/request-subprocess-helper.php` gained a way to say which zone the server is
+  in for the one test that needs it.
 - **A client may send fractional seconds of any length.** They are discarded, so refusing a
   value for carrying more of them than PHP parses would have been a refusal over precision
   this API throws away.

@@ -268,25 +268,69 @@ function ParseApiDateTime($value)
 	// cannot match anywhere else in the string. Found by CodeRabbit on pull request 235.
 	$value = preg_replace('/^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})\\.\\d+/', '$1', $value);
 
+	// The flag is whether the rendering carries an offset, which decides whether the wall
+	// clock below has to survive the round trip.
 	$formats = [
-		'Y-m-d H:i:s',
-		'Y-m-d',
-		'Y-m-d\\TH:i:s',
-		'Y-m-d\\TH:i:sP'
+		'Y-m-d H:i:s' => false,
+		'Y-m-d' => false,
+		'Y-m-d\\TH:i:s' => false,
+		'Y-m-d\\TH:i:sP' => true
 	];
 
-	foreach ($formats as $format)
+	foreach ($formats as $format => $carriesAnOffset)
 	{
 		$parsed = DateTimeImmutable::createFromFormat('!' . $format, $value);
 		$errors = DateTimeImmutable::getLastErrors();
 
-		if ($parsed !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)))
+		if ($parsed === false || !($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)))
 		{
-			return $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+			continue;
 		}
+
+		$local = $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+
+		// A value with no offset names a wall clock, and a wall clock that this zone skipped
+		// is not a time here. PHP moves it forward instead of saying so and reports no
+		// warning for it, so `2026-03-08 02:30:00` on America/New_York comes back as
+		// `03:30:00` - a booking an hour from the one the caller wrote, answered 200. That is
+		// the defect ADR-0028 exists to remove, arriving by a different door, and it reaches
+		// the bare date too: on America/Santiago the clock jumps at midnight, so
+		// `2026-09-06` means 01:00 and not the midnight it asks for. Refusing is the only
+		// answer available, because there is no hour there to book.
+		//
+		// A value *with* an offset names an instant, and every instant has a wall clock in
+		// every zone, so there is nothing to check: `2026-03-08T02:30:00Z` is a real moment
+		// and 21:30 the previous evening in New York is where it falls.
+		//
+		// The repeated hour at the other end of the year is deliberately left alone.
+		// `2026-11-01 01:30:00` on America/New_York happens twice; PHP picks the first and
+		// the wall clock survives unchanged, which is all this API stores. Which of the two
+		// instants was meant is a question a wall-clock string cannot ask (ADR-0027
+		// decision 2), and refusing the value would lose a booking that is perfectly
+		// expressible. Found in review of pull request 235.
+		if (!$carriesAnOffset && $local !== ApiDateTimeWallClock($value))
+		{
+			return null;
+		}
+
+		return $local;
 	}
 
 	return null;
+}
+
+/**
+ * The wall clock an offset-free value asks for, as 'Y-m-d H:i:s'.
+ *
+ * Only ever called on a value that matched API_DATE_TIME_PATTERN and has had any fractional
+ * part removed, so it is either a bare date or a full time with one of the two separators.
+ *
+ * @param string $value
+ * @return string
+ */
+function ApiDateTimeWallClock($value)
+{
+	return strlen($value) === 10 ? $value . ' 00:00:00' : strtr($value, ['T' => ' ']);
 }
 
 /**

@@ -642,16 +642,36 @@ class BaseApiController extends BaseController
 
 		if ($parsed === null)
 		{
-			throw new HttpException(
-				$request,
-				'Invalid ' . $field . ': expected "YYYY-MM-DD HH:MM:SS" (the rendering this API stores, in the server\'s time zone), '
-					. '"YYYY-MM-DD" for midnight of that date, or an RFC 3339 date-time such as "2026-09-21T14:30:00Z". '
-					. 'Omit the field entirely to record the current time.',
-				400
-			);
+			throw new HttpException($request, $this->WhyNotATimestamp($field, $requestBody[$field]), 400);
 		}
 
 		return $parsed;
+	}
+
+	/**
+	 * Why a value was refused, in terms a caller can act on.
+	 *
+	 * Two refusals reach here and they want different answers. A value of the wrong shape
+	 * needs the accepted shapes listed. A value of the *right* shape that is still not a
+	 * time - the 30th of February, or an hour the server's zone skipped when daylight saving
+	 * began - would be told "expected YYYY-MM-DD HH:MM:SS" about a value that is already
+	 * exactly that, which reads as the server being broken rather than as the value being
+	 * impossible. API_DATE_TIME_PATTERN is what tells the two apart, and it is the same
+	 * expression ParseApiDateTime() gates on and the schemas document.
+	 */
+	private function WhyNotATimestamp(string $field, $value): string
+	{
+		if (is_string($value) && preg_match('/' . API_DATE_TIME_PATTERN . '/D', $value) === 1)
+		{
+			return 'Invalid ' . $field . ': "' . $value . '" has an accepted shape but is not a time in the server\'s '
+				. 'time zone - either that date does not exist, or the clock skipped that hour when daylight saving began. '
+				. 'Send an instant instead ("2026-09-21T14:30:00Z") to say which moment you mean, or omit the field '
+				. 'entirely to record the current time.';
+		}
+
+		return 'Invalid ' . $field . ': expected "YYYY-MM-DD HH:MM:SS" (the rendering this API stores, in the server\'s time zone), '
+			. '"YYYY-MM-DD" for midnight of that date, or an RFC 3339-shaped date and time such as "2026-09-21T14:30:00Z". '
+			. 'Omit the field entirely to record the current time.';
 	}
 
 	/**
