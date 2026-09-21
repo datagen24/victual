@@ -59,6 +59,14 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-21 — Three write routes stop discarding a caller's timestamp** (branch
+  `claude/elegant-burnell-24f169`, [PR 235](https://github.com/datagen24/victual/pull/235),
+  merged): `tracked_time` on chore execution and battery charge, `done_time` on task
+  completion, all booked **now** whenever the value was not exactly `Y-m-d H:i:s`, answering
+  200. [ADR-0028](../docs/adr/0028-a-timestamp-a-write-route-cannot-read-is-refused.md)
+  (**Proposed**) refuses *and* widens. Five defects found in review, all from two mistakes:
+  the accepted set written twice, and a test comparing the two by sampling. The durable
+  part is [[feedback_one_definition_of_an_accepted_set]].
 - **2026-09-19 — First release freeze review** (branch `claude/first-release-freeze-e0318a`,
   [PR 221](https://github.com/datagen24/victual/pull/221)): all nine open issues reviewed
   against the tree. #219 closed (every decision landed in #220). #217's second half fixed:
@@ -98,14 +106,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   key's hash. New phase `mcpauth`; `tests/Pgsql/request-subprocess-helper.php` sends any
   request through the full stack. Full suite green. Sidecar side (send the header) is on
   #86's branch. See [[project_issue86_mcp_sidecar]].
-- **2026-09-19 — Issue #86 sidecar built, deployed to kind** (branch
-  `claude/issue-86-kubernetes-deploy-cc575a`): six tools implemented on the real SDK v2
-  (`@modelcontextprotocol/server`+`/node` 2.0.0 — the scaffold's `sdk ^2.0.0` did not
-  exist), 15 node:test tests, `.#image-mcp` built shell-free, and `deploy/k3s` applied to a
-  real cluster for the first time via `deploy/kind/up.sh`. Found: `stopSignal` dropped on
-  k8s 1.37. Next: #208 (capabilities endpoint, MCP key type, read_only). Detail and gotchas:
-  [[project_issue86_mcp_sidecar]].
-
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues
