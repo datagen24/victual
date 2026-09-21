@@ -58,13 +58,13 @@
                 "chore_id": "integer",
                 "chore_name": "string",
                 "id": "integer",
-                "is_reassigned": "integer",
-                "is_rescheduled": "integer",
+                "is_reassigned": "boolean",
+                "is_rescheduled": "boolean",
                 "last_tracked_time": "string",
                 "next_estimated_execution_time": "null",
                 "next_execution_assigned_to_user_id": "null",
                 "next_execution_assigned_user": "null",
-                "track_date_only": "integer"
+                "track_date_only": "boolean"
             }
         ]
     },
@@ -90,10 +90,10 @@
                 "product_id": "null",
                 "rescheduled_date": "null",
                 "rescheduled_next_execution_assigned_to_user_id": "null",
-                "rollover": "integer",
+                "rollover": "boolean",
                 "row_created_timestamp": "string",
                 "start_date": "string",
-                "track_date_only": "integer"
+                "track_date_only": "boolean"
             },
             "last_done_by": {
                 "display_name": "string",
@@ -165,10 +165,10 @@
                 "product_id": "null",
                 "rescheduled_date": "null",
                 "rescheduled_next_execution_assigned_to_user_id": "null",
-                "rollover": "integer",
+                "rollover": "boolean",
                 "row_created_timestamp": "string",
                 "start_date": "string",
-                "track_date_only": "integer"
+                "track_date_only": "boolean"
             }
         ]
     },
@@ -522,8 +522,8 @@
                 "ingredient_group": "null",
                 "is_nested_recipe_pos": "integer",
                 "missing_amount": "integer",
-                "need_fulfilled": "integer",
-                "need_fulfilled_with_shopping_list": "integer",
+                "need_fulfilled": "boolean",
+                "need_fulfilled_with_shopping_list": "boolean",
                 "note": "null",
                 "only_check_single_unit_in_stock": "integer",
                 "product_active": "integer",
@@ -634,7 +634,7 @@
                 "recipe_id": "integer|null",
                 "row_created_timestamp": "string",
                 "shopping_location_id": "null",
-                "spoiled": "integer",
+                "spoiled": "boolean",
                 "stock_id": "string",
                 "stock_row_id": "null",
                 "transaction_id": "string",
@@ -747,10 +747,10 @@
             "product_id": "null",
             "rescheduled_date": "null",
             "rescheduled_next_execution_assigned_to_user_id": "null",
-            "rollover": "integer",
+            "rollover": "boolean",
             "row_created_timestamp": "string",
             "start_date": "string",
-            "track_date_only": "integer",
+            "track_date_only": "boolean",
             "userfields": "null"
         }
     },
@@ -921,8 +921,8 @@
             "ingredient_group": "null",
             "is_nested_recipe_pos": "integer",
             "missing_amount": "integer",
-            "need_fulfilled": "integer",
-            "need_fulfilled_with_shopping_list": "integer",
+            "need_fulfilled": "boolean",
+            "need_fulfilled_with_shopping_list": "boolean",
             "note": "null",
             "only_check_single_unit_in_stock": "integer",
             "product_active": "integer",
@@ -1003,8 +1003,8 @@
                 "due_score": "integer",
                 "id": "integer",
                 "missing_products_count": "integer",
-                "need_fulfilled": "integer",
-                "need_fulfilled_with_shopping_list": "integer",
+                "need_fulfilled": "boolean",
+                "need_fulfilled_with_shopping_list": "boolean",
                 "product_names_comma_separated": "string",
                 "recipe_id": "integer"
             }
@@ -1017,8 +1017,8 @@
             "due_score": "integer",
             "id": "integer",
             "missing_products_count": "integer",
-            "need_fulfilled": "integer",
-            "need_fulfilled_with_shopping_list": "integer",
+            "need_fulfilled": "boolean",
+            "need_fulfilled_with_shopping_list": "boolean",
             "product_names_comma_separated": "string",
             "recipe_id": "integer"
         }
@@ -1046,7 +1046,7 @@
                 "amount_opened_aggregated": "integer",
                 "best_before_date": "string",
                 "due_type": "integer",
-                "is_aggregated_amount": "integer",
+                "is_aggregated_amount": "boolean",
                 "product": {
                     "active": "integer",
                     "auto_reprint_stock_label": "integer",
@@ -1114,7 +1114,7 @@
             "recipe_id": "null",
             "row_created_timestamp": "string",
             "shopping_location_id": "null",
-            "spoiled": "integer",
+            "spoiled": "boolean",
             "stock_id": "string",
             "stock_row_id": "null",
             "transaction_id": "string",
@@ -1178,7 +1178,7 @@
             },
             "default_shopping_location_id": "null",
             "has_childs": "boolean",
-            "is_aggregated_amount": "integer",
+            "is_aggregated_amount": "boolean",
             "last_purchased": "string",
             "last_shopping_location_id": "null",
             "last_used": "string",
@@ -1303,7 +1303,7 @@
             },
             "default_shopping_location_id": "null",
             "has_childs": "boolean",
-            "is_aggregated_amount": "integer",
+            "is_aggregated_amount": "boolean",
             "last_purchased": "string",
             "last_shopping_location_id": "null",
             "last_used": "string",
@@ -1466,7 +1466,7 @@
                 "recipe_id": "null",
                 "row_created_timestamp": "string",
                 "shopping_location_id": "null",
-                "spoiled": "integer",
+                "spoiled": "boolean",
                 "stock_id": "string",
                 "stock_row_id": "null",
                 "transaction_id": "string",

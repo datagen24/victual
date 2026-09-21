@@ -12,6 +12,7 @@
 //
 // The description is {"method": "GET", "path": "/api/user", "headers": {...},
 // "cookie": "<session key>", "body": {...}}; everything but method and path is optional.
+// A body is sent as "application/json" unless "headers" already types the request.
 // Output: {"status": <int>, "body": "<response body>"}. Attaches to the schema the calling
 // test class migrated (RBAC_TEST_SCHEMA / PHPUNIT_DB_NAME), like the root helper.
 
@@ -87,9 +88,15 @@ if (isset($spec['cookie']))
 
 if (isset($spec['body']))
 {
-	$request = $request
-		->withHeader('Content-Type', 'application/json')
-		->withBody((new StreamFactory())->createStream(json_encode($spec['body'])));
+	$request = $request->withBody((new StreamFactory())->createStream(json_encode($spec['body'])));
+
+	// Only when the caller did not type the request itself. WireContractTest sends
+	// "application/json; charset=utf-8" and a few deliberately wrong types (issue #229),
+	// and this used to overwrite whatever it asked for.
+	if (!$request->hasHeader('Content-Type'))
+	{
+		$request = $request->withHeader('Content-Type', 'application/json');
+	}
 }
 
 $response = $app->handle($request);

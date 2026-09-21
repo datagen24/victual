@@ -52,5 +52,8 @@
 		<testsuite name="serverversion">
 			<file>tests/Pgsql/ServerVersionTest.php</file>
 		</testsuite>
+		<testsuite name="wirecontract">
+			<file>tests/Pgsql/WireContractTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

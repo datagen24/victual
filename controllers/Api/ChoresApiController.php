@@ -4,6 +4,7 @@ namespace Victual\Controllers\Api;
 
 use Victual\Controllers\Users\User;
 use Victual\Services\ChoresService;
+use Victual\Services\WireBooleans;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -68,7 +69,13 @@ class ChoresApiController extends BaseApiController
 		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			return $this->ApiResponse($response, ChoresService::GetInstance()->GetChoreDetails($args['choreId']));
+			$details = ChoresService::GetInstance()->GetChoreDetails($args['choreId']);
+			// The nested chore row carries Chore.track_date_only and Chore.rollover, both
+			// documented boolean (issue #230). Coerced by the shape the nested row actually
+			// is rather than by the response's own name - see WireBooleans::Coerce().
+			$details['chore'] = WireBooleans::Coerce('chores', $details['chore']);
+
+			return $this->ApiResponse($response, $details);
 		});
 	}
 

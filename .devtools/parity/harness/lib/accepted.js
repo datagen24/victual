@@ -474,8 +474,47 @@ const ACCEPTED = [
 		match: ({ step, difference }) =>
 			difference.kind === 'extra-field' &&
 			isAddedFieldOnItsRoute(step, difference.pointer)
+	},
+
+	{
+		id: 'issue-230-documented-booleans',
+		reference: 'https://github.com/datagen24/victual/issues/230, docs/adr/0005-wire-contract-is-the-invariant.md',
+		reason:
+			'Eleven properties the OpenAPI document types `boolean` are true/false here and 0/1 upstream. ' +
+			'Upstream stores every flag as an integer and renders it unconverted, so upstream is the side ' +
+			'that does not keep the document\'s promise; ADR-0005\'s rule is that the spec decides and the ' +
+			'wrong side moves, and the fork is the side that moved. services/WireBooleans.php is the ' +
+			'conversion and names the eleven. The flags the document types `integer` - `undone` in the ' +
+			'same stock_log row, `active`, `no_own_stock` - are untouched and still differ from nothing.\n\n' +
+			'The matcher demands that the two sides *agree about the value*: upstream 1 against true, ' +
+			'upstream 0 against false. A flag that is genuinely set differently on the two sides is still ' +
+			'reported, which is what this entry must not hide.',
+		match: ({ difference }) =>
+			difference.kind === 'type' &&
+			DOCUMENTED_BOOLEANS.has(lastSegment(difference.pointer)) &&
+			typeof difference.victual === 'boolean' &&
+			isNumericish(difference.upstream) &&
+			Number(difference.upstream) === (difference.victual ? 1 : 0)
 	}
 ];
+
+// The eleven properties victual.openapi.json types `boolean`, which services/WireBooleans.php
+// converts on the way out (issue #230). Kept in step with WireBooleans::COLUMNS - the PHP side
+// has a test asserting the document and the constant agree (tests/Pgsql/WireContractTest.php);
+// this list is the same set spelled for the harness, which cannot read PHP.
+const DOCUMENTED_BOOLEANS = new Set([
+	'spoiled',
+	'is_aggregated_amount',
+	'track_date_only',
+	'rollover',
+	'is_rescheduled',
+	'is_reassigned',
+	'need_fulfilled',
+	'need_fulfilled_with_shopping_list',
+	'prices_incomplete',
+	'show_as_column_in_tables',
+	'input_required'
+]);
 
 // Fields this fork adds and upstream does not have. Each names the plan that added it, so
 // that a field arriving here without a plan is visible as an unexplained addition.
