@@ -324,9 +324,12 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 *
 	 *   a shape name - the WireBooleans::COLUMNS key whose conversion serves it.
 	 *   'php'        - computed as a bool in PHP; never was a 0/1 column.
-	 *   'unrouted'   - the schema is declared but no path references it, so nothing renders
-	 *                  the property at all. testTheUnprovenShapesAreStillUnreachable()
-	 *                  is what keeps that claim honest.
+	 *
+	 * There is deliberately no third category for a property whose schema no path
+	 * references. `StockJournal.spoiled` was one, and the answer was to delete the schema
+	 * rather than to record the exemption: a documented boolean nothing can render is a
+	 * promise to nobody, and a category for it is a place for the next one to hide. See
+	 * testTheDeadJournalSchemasStayDeleted().
 	 *
 	 * Keyed by "Schema.property" rather than by property name, which is what makes
 	 * ADR-0027's regression guarantee for the booleans true. A flat name list is satisfied by
@@ -347,7 +350,6 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'RecipeFulfillmentResponse.need_fulfilled' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.need_fulfilled_with_shopping_list' => 'recipes_resolved',
 		'RecipeFulfillmentResponse.prices_incomplete' => 'recipes_resolved',
-		'StockJournal.spoiled' => 'unrouted',
 		'StockLogEntry.spoiled' => 'stock_log',
 		'Userfield.input_required' => 'userfields',
 		'Userfield.show_as_column_in_tables' => 'userfields'
@@ -357,10 +359,16 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * The other direction: every (shape, property) WireBooleans converts, and the route
 	 * this class reads the converted value back from.
 	 *
-	 * `null` means no route reaches the shape at all, and the two that carry it are checked
-	 * rather than asserted by hand - see testTheUnprovenShapesAreStillUnreachable(). They
-	 * stay in WireBooleans::COLUMNS because the conversion is right if a route ever appears;
-	 * what is recorded here is that today nothing proves it.
+	 * `null` means no route reaches the shape at all, and the one that carries it is checked
+	 * rather than asserted by hand - see testTheUnprovenShapeIsStillUnreachable(). It stays
+	 * in WireBooleans::COLUMNS because `Userfield.show_as_column_in_tables` is still a
+	 * documented boolean and the conversion is right if a route ever answers the view's rows
+	 * whole; what is recorded here is that today nothing proves it.
+	 *
+	 * `uihelper_stock_journal.spoiled` used to be the other one. It was not kept: the
+	 * `StockJournal` schema that documented the property was deleted, so the conversion had
+	 * no promise left to serve. The difference between the two is whether some schema still
+	 * types the property `boolean` - see testTheDeadJournalSchemasStayDeleted().
 	 *
 	 * The point of the pairing is that a converted property with no response behind it is
 	 * indistinguishable, in a name list, from one converted on every read. "Something converts
@@ -383,7 +391,6 @@ class WireContractTest extends PgsqlSchemaTestCase
 		'recipes_pos_resolved.need_fulfilled_with_shopping_list' => '/api/objects/recipes_pos_resolved',
 		'userfields.show_as_column_in_tables' => '/api/objects/userfields',
 		'userfields.input_required' => '/api/objects/userfields',
-		'uihelper_stock_journal.spoiled' => null,
 		'userfield_values_resolved.show_as_column_in_tables' => null
 	];
 
@@ -417,7 +424,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 		foreach (self::DOCUMENTED_BOOLEANS as $pair => $shape)
 		{
-			if ($shape === 'php' || $shape === 'unrouted')
+			if ($shape === 'php')
 			{
 				continue;
 			}
@@ -503,26 +510,55 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The two shapes CONVERSION_COVERAGE records as unproven are unproven because nothing
-	 * can reach them, not because nobody wrote the test. Both halves are checked, so this
-	 * fails the day a route makes one reachable and the coverage table has to grow.
+	 * `StockJournal` and `StockJournalSummary` described `uihelper_stock_journal` and
+	 * `uihelper_stock_journal_summary`, which `StockController::Journal()` and
+	 * `::JournalSummary()` read for the two Blade pages only. No path referenced either
+	 * schema and neither view is an `ExposedEntity`, so `StockJournal.spoiled` was a
+	 * documented boolean no response could ever carry. They were removed rather than routed:
+	 * exposing the journal is surface growth that plan 14 lists among the gaps it says are
+	 * "argued explicitly rather than slipped in", which a documented-boolean cleanup is not
+	 * the place to do.
+	 *
+	 * This pins the removal from both ends. Re-declaring either schema fails here, and so
+	 * does the thing that would make re-declaring it legitimate - a route that answers these
+	 * rows - because that route would have to name a schema and this test would be the one
+	 * to revisit. The Blade pages are untouched and stay the only reader.
 	 */
-	public function testTheUnprovenShapesAreStillUnreachable(): void
+	public function testTheDeadJournalSchemasStayDeleted(): void
+	{
+		$spec = self::spec();
+
+		foreach (['StockJournal', 'StockJournalSummary'] as $schema)
+		{
+			self::assertArrayNotHasKey(
+				$schema,
+				$spec['components']['schemas'],
+				"$schema is declared again. If a route now answers these rows, the schema belongs "
+					. 'to that route and DOCUMENTED_BOOLEANS/CONVERSION_COVERAGE have to grow with it.'
+			);
+		}
+
+		foreach (['uihelper_stock_journal', 'uihelper_stock_journal_summary'] as $entity)
+		{
+			self::assertNotContains($entity, $spec['components']['schemas']['ExposedEntity']['enum']);
+			self::assertSame(400, self::send('GET', "/api/objects/$entity")['status'], $entity);
+		}
+
+		// And nothing converts the view's spoiled any more, because no schema documents it.
+		self::assertSame([], WireBooleans::ColumnsOf('uihelper_stock_journal'));
+	}
+
+	/**
+	 * The shape CONVERSION_COVERAGE records as unproven is unproven because nothing can
+	 * reach it, not because nobody wrote the test. Both halves are checked, so this fails
+	 * the day a route makes it reachable and the coverage table has to grow.
+	 */
+	public function testTheUnprovenShapeIsStillUnreachable(): void
 	{
 		$spec = self::spec();
 		$exposed = $spec['components']['schemas']['ExposedEntity']['enum'];
 
-		// uihelper_stock_journal: not an exposed entity, so GET /objects/{entity} refuses
-		// it, and the StockJournal schema its rows would answer is referenced by no path.
-		self::assertNotContains('uihelper_stock_journal', $exposed);
-		self::assertStringNotContainsString(
-			'#/components/schemas/StockJournal"',
-			json_encode($spec['paths'], JSON_THROW_ON_ERROR),
-			'StockJournal is referenced by a path now, so uihelper_stock_journal.spoiled is provable'
-		);
-		self::assertSame(400, self::send('GET', '/api/objects/uihelper_stock_journal')['status']);
-
-		// userfield_values_resolved: also not exposed, and the one route that reads the view
+		// userfield_values_resolved: not exposed, and the one route that reads the view
 		// (GET /userfields/{entity}/{objectId}) reduces its rows to name => value pairs, so
 		// show_as_column_in_tables never reaches a response from it.
 		self::assertNotContains('userfield_values_resolved', $exposed);

@@ -240,11 +240,25 @@ tenth of the scale, and is where this would be decided.
   nothing — would have passed. Pairing them also found three entries in the conversion map
   that convert nothing. `chores_current.rollover` is removed: the view reads
   `chores.rollover` to compute the next execution and does not project it, so no row carries
-  the key. `uihelper_stock_journal` and `userfield_values_resolved` are kept and recorded as
-  unproven, because no route reaches either — no path references the `StockJournal` schema,
-  and the one reader of `userfield_values_resolved` reduces its rows to key/value pairs. The
-  test asserts both are still unreachable, so the day a route makes one reachable this has
-  to be revisited rather than quietly becoming untrue.
+  the key. `userfield_values_resolved` is kept and recorded as unproven, because no route
+  reaches it — the one reader reduces its rows to key/value pairs — while
+  `Userfield.show_as_column_in_tables` still documents the property, so the conversion has a
+  promise to serve if a route ever answers those rows whole. The test asserts it is still
+  unreachable, so the day a route makes it reachable this has to be revisited rather than
+  quietly becoming untrue.
+- **`uihelper_stock_journal` was the third, and was removed rather than kept.** It was
+  recorded as unproven for the same reason at first, but its case was not the same: the only
+  schemas that documented the property, `StockJournal` and `StockJournalSummary`, were
+  referenced by no path at all. `StockJournal.spoiled` was therefore a documented boolean no
+  response could carry — a promise to nobody — and the pair of dead schemas was deleted from
+  the document, which took the conversion's reason to exist with it. The two views they
+  described are untouched and still feed the Blade journal pages
+  (`StockController::Journal()` and `::JournalSummary()`); what is gone is the claim that the
+  API answers them. **Exposing the journal over the API was the alternative and was
+  deliberately not taken here**: plan 14 already lists "a stock journal read" among the gaps
+  it says are "argued explicitly rather than slipped in", and that argument is surface
+  growth, not the documented-boolean cleanup this record is. `WireContractTest` pins the
+  deletion from both ends, so re-declaring either schema fails until that argument is made.
 
 ## Acceptance prerequisites
 
