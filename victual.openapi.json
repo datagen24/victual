@@ -2,7 +2,7 @@
 	"openapi": "3.1.0",
 	"info": {
 		"title": "Victual REST API",
-		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).",
+		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).<br><br>**Dates and times.** Except for *observed_at* on the label evidence endpoint, every date and time this API renders or accepts is a local wall-clock value in the server's configured time zone, written as `YYYY-MM-DD HH:MM:SS` - no `T` separator and no UTC offset, because it is what PostgreSQL renders for a TIMESTAMP column. It is therefore **not** RFC 3339, and these fields are deliberately not typed *format: date-time*: they were, and a generated client decoding them with a strict RFC 3339 reader failed on the whole response. Fields whose column is a SQL DATE carry *format: date* and are plain `YYYY-MM-DD`, which is valid RFC 3339. The three write fields in this family (*tracked_time*, *done_time*) are validated against that exact format and **silently ignored** when they do not match. Issue #231.",
 		"version": "0.1.1-MVP",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
@@ -618,11 +618,12 @@
 				],
 				"responses": {
 					"200": {
-						"description": "An entity object",
+						"description": "An array of objects of the requested entity",
 						"content": {
 							"application/json": {
 								"schema": {
 									"type": "array",
+									"description": "One element per row of the requested entity. The union is **undiscriminated** - the entity is in the path, not in the payload - so a generated client decodes it by trying each member and keeping the first that validates. Each member therefore declares `required` properties that no other member has. Before that, `Product` had no required properties and so matched any JSON object, and every row of every entity decoded as a Product: `quantity_units` lost `name_plural`, `locations` lost `parent_location_id`. Issue #232.\n\n**A row of a listable entity that has no schema here matches no member and will not decode.** That is deliberate - a loud failure in place of the silent wrong answer it replaces. `ExposedEntity_NotIncludingNotListable` names every entity this route serves and only the ten below are described; the rest are undocumented rather than absent, and a client that needs one should read this route outside its generated code until a schema exists.",
 									"items": {
 										"oneOf": [
 											{
@@ -636,6 +637,9 @@
 											},
 											{
 												"$ref": "#/components/schemas/Location"
+											},
+											{
+												"$ref": "#/components/schemas/LocationResolved"
 											},
 											{
 												"$ref": "#/components/schemas/QuantityUnit"
@@ -703,35 +707,7 @@
 					"content": {
 						"application/json": {
 							"schema": {
-								"oneOf": [
-									{
-										"$ref": "#/components/schemas/Product"
-									},
-									{
-										"$ref": "#/components/schemas/Chore"
-									},
-									{
-										"$ref": "#/components/schemas/Battery"
-									},
-									{
-										"$ref": "#/components/schemas/Location"
-									},
-									{
-										"$ref": "#/components/schemas/QuantityUnit"
-									},
-									{
-										"$ref": "#/components/schemas/ShoppingListItem"
-									},
-									{
-										"$ref": "#/components/schemas/StockEntry"
-									},
-									{
-										"$ref": "#/components/schemas/ProductBarcode"
-									},
-									{
-										"$ref": "#/components/schemas/Userfield"
-									}
-								]
+								"$ref": "#/components/schemas/GenericEntityWrite"
 							}
 						}
 					}
@@ -915,35 +891,7 @@
 					"content": {
 						"application/json": {
 							"schema": {
-								"oneOf": [
-									{
-										"$ref": "#/components/schemas/Product"
-									},
-									{
-										"$ref": "#/components/schemas/Chore"
-									},
-									{
-										"$ref": "#/components/schemas/Battery"
-									},
-									{
-										"$ref": "#/components/schemas/Location"
-									},
-									{
-										"$ref": "#/components/schemas/QuantityUnit"
-									},
-									{
-										"$ref": "#/components/schemas/ShoppingListItem"
-									},
-									{
-										"$ref": "#/components/schemas/StockEntry"
-									},
-									{
-										"$ref": "#/components/schemas/ProductBarcode"
-									},
-									{
-										"$ref": "#/components/schemas/Userfield"
-									}
-								]
+								"$ref": "#/components/schemas/GenericEntityWrite"
 							}
 						}
 					}
@@ -1886,11 +1834,12 @@
 				],
 				"responses": {
 					"200": {
-						"description": "A user object",
+						"description": "An array holding the one user the request authenticated as",
 						"content": {
 							"application/json": {
 								"schema": {
-									"type": "object",
+									"type": "array",
+									"description": "Exactly one UserDto - the user the request authenticated as. The array is what this route has always returned: it answers with the LessQL result of GetUsersAsDto()->where('id', VICTUAL_USER_ID), and a LessQL Result serialises as its rows. It was documented as {\"type\": \"object\", \"items\": {...}}, which is not a schema - `items` is the array keyword and means nothing on an object - so a generator saw no properties and emitted an untyped container. Issue #233.",
 									"items": {
 										"$ref": "#/components/schemas/UserDto"
 									}
@@ -5206,7 +5155,7 @@
 								"properties": {
 									"tracked_time": {
 										"type": "string",
-										"format": "date-time",
+										"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 										"description": "The time of when the chore was executed, when omitted, the current time is used"
 									},
 									"done_by": {
@@ -5570,7 +5519,7 @@
 								"properties": {
 									"tracked_time": {
 										"type": "string",
-										"format": "date-time",
+										"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 										"description": "The time of when the battery was charged, when omitted, the current time is used"
 									}
 								}
@@ -5750,7 +5699,7 @@
 								"properties": {
 									"done_time": {
 										"type": "string",
-										"format": "date-time",
+										"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 										"description": "The time of when the task was completed, when omitted, the current time is used"
 									}
 								}
@@ -7102,7 +7051,8 @@
 									},
 									"observed_at": {
 										"type": "string",
-										"format": "date-time"
+										"format": "date-time",
+										"description": "When the worker observed this evidence. The one genuine `format: date-time` in this document: the column behind it is a TIMESTAMPTZ and the value is parsed with `new DateTimeImmutable()`, so RFC 3339 is accepted. Every other date and time field renders and accepts \"YYYY-MM-DD HH:MM:SS\" - see this API's description. Issue #231."
 									},
 									"detail": {
 										"type": "object"
@@ -9071,6 +9021,11 @@
 		"schemas": {
 			"Product": {
 				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"qu_id_stock"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -9126,7 +9081,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"shopping_location_id": {
 						"type": "integer"
@@ -9263,7 +9219,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"shopping_location_id": {
 						"type": "integer"
@@ -9341,6 +9298,11 @@
 			},
 			"QuantityUnit": {
 				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"name_plural"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -9356,7 +9318,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"plural_forms": {
 						"type": "string"
@@ -9378,6 +9341,11 @@
 			},
 			"Location": {
 				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"parent_location_id"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -9390,7 +9358,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"parent_location_id": {
 						"type": [
@@ -9473,7 +9442,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"active": {
 						"type": "integer",
@@ -9502,6 +9472,13 @@
 			"LocationResolved": {
 				"type": "object",
 				"description": "One row per (ancestor, descendant) pair of the location tree, including every location paired with itself at depth 0. A location's level is the largest depth its id appears at as a descendant.",
+				"required": [
+					"id",
+					"ancestor_location_id",
+					"descendant_location_id",
+					"depth",
+					"path"
+				],
 				"properties": {
 					"id": {
 						"type": "integer",
@@ -9621,7 +9598,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"userfields": {
 						"type": "object",
@@ -9668,6 +9646,11 @@
 			},
 			"StockEntry": {
 				"type": "object",
+				"required": [
+					"id",
+					"stock_id",
+					"product_id"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -9712,7 +9695,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"opened_amount": {
 						"type": [
@@ -9740,7 +9724,7 @@
 							"string",
 							"null"
 						],
-						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						"description": "When opened_amount was recorded, so a stale figure is visible as stale. Present exactly where opened_amount is"
 					}
 				},
@@ -9890,6 +9874,10 @@
 						"type": "boolean",
 						"description": "True when the product is a parent product of others"
 					},
+					"is_aggregated_amount": {
+						"type": "boolean",
+						"description": "True when `stock_amount` counts sub products as well as this product's own stock. Undocumented until issue #230, which is also where it stopped being the integer 0/1 StockService::GetProductDetails() assigned and became the boolean CurrentStockResponse already documented."
+					},
 					"default_location": {
 						"$ref": "#/components/schemas/Location"
 					},
@@ -9989,7 +9977,8 @@
 				"properties": {
 					"date": {
 						"type": "string",
-						"format": "date-time"
+						"format": "date",
+						"description": "Calendar date as \"YYYY-MM-DD\". The column behind it is a SQL `DATE`, so the value carries no time and `format: date` is what it actually is. Issue #231."
 					},
 					"price": {
 						"type": "number"
@@ -10001,6 +9990,10 @@
 			},
 			"ProductBarcode": {
 				"type": "object",
+				"required": [
+					"barcode",
+					"product_id"
+				],
 				"properties": {
 					"product_id": {
 						"type": "integer"
@@ -10028,6 +10021,11 @@
 			},
 			"Userfield": {
 				"type": "object",
+				"required": [
+					"name",
+					"entity",
+					"type"
+				],
 				"properties": {
 					"entity": {
 						"type": "string"
@@ -10058,7 +10056,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10098,7 +10097,7 @@
 					},
 					"last_tracked": {
 						"type": "string",
-						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						"description": "When this chore was last tracked"
 					},
 					"track_count": {
@@ -10110,7 +10109,8 @@
 					},
 					"next_estimated_execution_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"next_execution_assigned_user": {
 						"$ref": "#/components/schemas/UserDto"
@@ -10150,7 +10150,7 @@
 					},
 					"last_charged": {
 						"type": "string",
-						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						"description": "When this battery was last charged"
 					},
 					"charge_cycles_count": {
@@ -10159,7 +10159,8 @@
 					},
 					"next_estimated_charge_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				},
 				"example": {
@@ -10187,15 +10188,18 @@
 					},
 					"expires": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"last_used": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10222,7 +10226,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10278,7 +10283,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10306,20 +10312,27 @@
 					},
 					"expires": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"last_used": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
 			"ShoppingListItem": {
 				"type": "object",
+				"required": [
+					"id",
+					"shopping_list_id"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -10341,7 +10354,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"userfields": {
 						"type": "object",
@@ -10351,6 +10365,11 @@
 			},
 			"Battery": {
 				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"charge_interval_days"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -10371,7 +10390,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"userfields": {
 						"type": "object",
@@ -10390,16 +10410,23 @@
 					},
 					"tracked_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
 			"Chore": {
 				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"period_type"
+				],
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -10449,18 +10476,21 @@
 					},
 					"start_date": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"rescheduled_date": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"rescheduled_next_execution_assigned_to_user_id": {
 						"type": "integer"
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"userfields": {
 						"type": "object",
@@ -10479,11 +10509,13 @@
 					},
 					"tracked_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10537,7 +10569,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"opened_amount": {
 						"type": [
@@ -10563,7 +10596,8 @@
 							"string",
 							"null"
 						],
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10578,7 +10612,8 @@
 					},
 					"undone_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"amount": {
 						"type": "number"
@@ -10610,7 +10645,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				},
 				"example": {
@@ -10766,14 +10802,15 @@
 					},
 					"last_tracked_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"track_date_only": {
 						"type": "boolean"
 					},
 					"next_estimated_execution_time": {
 						"type": "string",
-						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						"description": "The next estimated execution time of this chore, 2999-12-31 23:59:59 when the given chore has a period_type of manually"
 					},
 					"next_execution_assigned_to_user_id": {
@@ -10798,11 +10835,12 @@
 					},
 					"last_tracked_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"next_estimated_charge_time": {
 						"type": "string",
-						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						"description": "The next estimated charge time of this battery, 2999-12-31 23:59:59 when the given battery has no charge_interval_days defined"
 					}
 				}
@@ -10863,14 +10901,16 @@
 					},
 					"due_date": {
 						"type": "string",
-						"format": "date-time"
+						"format": "date",
+						"description": "Calendar date as \"YYYY-MM-DD\". The column behind it is a SQL `DATE`, so the value carries no time and `format: date` is what it actually is. Issue #231."
 					},
 					"done": {
 						"type": "integer"
 					},
 					"done_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"category_id": {
 						"type": "integer"
@@ -10880,7 +10920,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"userfields": {
 						"type": "object",
@@ -10902,7 +10943,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10920,14 +10962,16 @@
 					},
 					"due_date": {
 						"type": "string",
-						"format": "date-time"
+						"format": "date",
+						"description": "Calendar date as \"YYYY-MM-DD\". The column behind it is a SQL `DATE`, so the value carries no time and `format: date` is what it actually is. Issue #231."
 					},
 					"done": {
 						"type": "integer"
 					},
 					"done_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"category_id": {
 						"type": "integer"
@@ -10937,7 +10981,8 @@
 					},
 					"row_created_timestamp": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"assigned_to_user": {
 						"$ref": "#/components/schemas/UserDto"
@@ -10952,7 +10997,8 @@
 				"properties": {
 					"changed_time": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					}
 				}
 			},
@@ -10964,15 +11010,18 @@
 					},
 					"time_local": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"time_local_sqlite3": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^$|^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "The same local rendering as `time_local`, as SQLite's own client library computes it - or the empty string, which is what every serving image reports since ADR-0008 retired SQLite as a runtime engine and pdo_sqlite stopped being installed. Deliberately not `format: date-time`; see `time_local`. Issue #231."
 					},
 					"time_utc": {
 						"type": "string",
-						"format": "date-time"
+						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
 					},
 					"timestamp": {
 						"type": "integer"
@@ -11493,6 +11542,11 @@
 						}
 					}
 				}
+			},
+			"GenericEntityWrite": {
+				"type": "object",
+				"additionalProperties": true,
+				"description": "A map of the entity's writable columns. Deliberately untyped, because that is what the server implements: `POST /objects/{entity}` and `PUT /objects/{entity}/{objectId}` take whatever keys the body carries, drop the two the server owns (`id` and `row_created_timestamp` - see GenericEntityApiController::WithoutServerOwnedColumns), and `PUT` writes only the keys present, so a partial body is a partial update. Nothing validates the body against a schema.\n\nThese two bodies used to be documented as the same undiscriminated `oneOf` the read response used. That was never accurate - the union was matched by declaration order so every entity's body was really a `Product`, and both of `Product`'s server-owned properties were documented as settable. Once the read union's members gained `required` properties for issue #232, continuing to share them would have meant documenting `id` as mandatory on a create and forcing a read-modify-write for every partial update. The column vocabulary to use here is the schema of the entity being written - Product, Chore, Battery, Location, QuantityUnit, ShoppingListItem, StockEntry, ProductBarcode, Userfield - minus `id` and `row_created_timestamp`."
 			}
 		},
 		"securitySchemes": {

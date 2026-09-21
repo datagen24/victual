@@ -6,6 +6,9 @@
 - **Referenced by:** [14](../plans/landed/14-contract-and-regression-scaffolding.md),
   [17](../plans/17-ecosystem-clients.md), and every porting hazard in
   [db/pgsql/README.md](../../db/pgsql/README.md).
+- **Extended by:** [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)
+  (Proposed), which answers the question this record does not — which side moves when both
+  engines agree and the *document* is what is wrong. Nothing here is superseded by it.
 
 ## Context
 
@@ -38,6 +41,17 @@ Two differences are known, deliberate, judged harmless, and **must not be "fixed
   `"2025-01-01 00:00:00"` is the more conformant rendering of the documented
   `format: date-time` anyway. Only a date-only string differs, and
   `trigdifftest.php` confirmed this is the only such column across all 37 tables.
+
+  **"The more conformant rendering" was too generous, and a client author reading this
+  exception would reasonably conclude it is narrower than it is.** Neither rendering is
+  RFC 3339: `"2025-01-01 00:00:00"` has no `T` separator and no offset either, and that is
+  true of every one of the fifty-four fields the document typed `format: date-time`, not
+  just this column. What is specific to `chores.start_date` is only the engine
+  *disagreement*, which is what this exception is about and which stands. The type itself
+  is [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)'s
+  (Proposed), which drops `format: date-time` wherever the server does not send RFC 3339 -
+  this field included - and documents the rendering instead.
+  [Issue 231](https://github.com/datagen24/victual/issues/231) is where it was found.
 
   **This exception has one consequence beyond the column itself**, found by the parity
   suite in 2026-09 and recorded here rather than as a third exception because it is not

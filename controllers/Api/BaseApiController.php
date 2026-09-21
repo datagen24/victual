@@ -7,6 +7,7 @@ use Victual\Controllers\BaseController;
 use Victual\Services\DatabaseService;
 use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\FieldPolicy;
+use Victual\Services\WireBooleans;
 use Victual\Services\Storage\FileTooLargeException;
 use LessQL\Result;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -194,7 +195,9 @@ class BaseApiController extends BaseController
 	/**
 	 * Applies the generic list query parameters (see QueryData) to $data and returns the
 	 * result JSON-encoded, with every field the current user may not see (FieldPolicy,
-	 * docs/plans/19-rbac.md piece 2) removed from each row first.
+	 * docs/plans/19-rbac.md piece 2) removed from each row first and every property the
+	 * OpenAPI document types `boolean` converted from its 0/1 column value (WireBooleans,
+	 * issue #230).
 	 *
 	 * The entity name is read off $data before QueryData()/MaterialiseFiltered() run - a
 	 * LessQL Result still names its own table after where()/limit()/orderBy() are chained
@@ -208,6 +211,7 @@ class BaseApiController extends BaseController
 		$data = $this->QueryData($request, $data, $query);
 		$rows = $this->MaterialiseFiltered($request, $data, $query);
 		$rows = FieldPolicy::GetInstance()->RedactRows($entity, $rows);
+		$rows = WireBooleans::CoerceRows($entity, $rows);
 		return $this->ApiResponse($response, $rows);
 	}
 
@@ -573,6 +577,29 @@ class BaseApiController extends BaseController
 	];
 
 	/**
+	 * The media type of a request's Content-Type, lowercased and without its parameters, or
+	 * the empty string when the header is absent.
+	 *
+	 * RFC 9110 section 8.3 defines Content-Type as a media type *with optional parameters*,
+	 * so "application/json" and "application/json; charset=utf-8" name the same type and a
+	 * recipient is expected to parse the field rather than compare it as a string. This
+	 * compared it as a string, which refused every write from any client whose HTTP stack
+	 * appends a charset - Apple's swift-openapi-runtime does, and cannot be told not to per
+	 * request, so the first-party Swift client (ADR-0024) could not book stock at all.
+	 * Issue #229.
+	 *
+	 * The parse is deliberately the same one Slim's own BodyParsingMiddleware does
+	 * (getMediaType(): explode on ';', trim, strtolower), because that middleware is what
+	 * decides whether the body was parsed as JSON in the first place. Two different answers
+	 * to "what type is this?" in one request is how a body arrives parsed and is then
+	 * refused for the type it was parsed as.
+	 */
+	public static function MediaTypeOf(Request $request): string
+	{
+		return strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'))[0]));
+	}
+
+	/**
 	 * Returns the parsed JSON request body with all scalar string values run through HTMLPurifier.
 	 * Throws a Slim HttpException (status 400) when the Content-Type is not application/json.
 	 *
@@ -584,7 +611,7 @@ class BaseApiController extends BaseController
 	 */
 	protected function GetParsedAndFilteredRequestBody($request, ?string $entity = null)
 	{
-		if ($request->getHeaderLine('Content-Type') != 'application/json')
+		if (self::MediaTypeOf($request) !== 'application/json')
 		{
 			throw new HttpException($request, 'Bad Content-Type', 400);
 		}

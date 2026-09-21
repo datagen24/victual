@@ -161,7 +161,8 @@ function conversionProbe({ ctx, ops }) {
 			equals: {
 				stock_amount: 0,                                 // none of its own
 				stock_amount_aggregated: STOCKED / FACTOR,       // its children's, in packs
-				is_aggregated_amount: 1
+				// Boolean since issue #230; the document always typed it that way.
+				is_aggregated_amount: true
 			}
 		},
 		window: cal.dayWindow(day),

@@ -137,6 +137,7 @@ nav:
           - 0024 The fork writes its own clients: development/adr/0024-the-fork-writes-its-own-clients.md
           - 0025 Three test tiers: development/adr/0025-three-test-tiers.md
           - 0026 A wake signal may announce label work: development/adr/0026-a-wake-signal-may-announce-label-work.md
+          - 0027 Local timestamps, documented booleans: development/adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md

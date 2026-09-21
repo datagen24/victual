@@ -6,6 +6,7 @@ use Victual\Controllers\Users\User;
 use Victual\Helpers\Grocycode;
 use Victual\Services\DatabaseService;
 use Victual\Services\FieldPolicy;
+use Victual\Services\WireBooleans;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\LocalizationService;
 use Victual\Services\StockService;
@@ -393,6 +394,7 @@ class StockApiController extends BaseApiController
 		// built and redacted here, by the same 'stock_current' entity name permission_fields
 		// carries the price-visibility row under.
 		$currentStock = FieldPolicy::GetInstance()->RedactRows('stock_current', StockService::GetInstance()->GetCurrentStock());
+		$currentStock = WireBooleans::CoerceRows('stock_current', $currentStock);
 		return $this->ApiResponse($response, $currentStock);
 	}
 
@@ -416,9 +418,9 @@ class StockApiController extends BaseApiController
 		// same 'value' field. GetMissingProducts() reads stock_missing_products, which has
 		// no price-bearing column, so it is returned as-is.
 		$fieldPolicy = FieldPolicy::GetInstance();
-		$dueProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts($nextXDays, true));
-		$overdueProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts(-1));
-		$expiredProducts = $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetExpiredProducts());
+		$dueProducts = WireBooleans::CoerceRows('stock_current', $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts($nextXDays, true)));
+		$overdueProducts = WireBooleans::CoerceRows('stock_current', $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetDueProducts(-1)));
+		$expiredProducts = WireBooleans::CoerceRows('stock_current', $fieldPolicy->RedactRows('stock_current', StockService::GetInstance()->GetExpiredProducts()));
 		$missingProducts = StockService::GetInstance()->GetMissingProducts();
 		return $this->ApiResponse($response, [
 			'due_products' => $dueProducts,
@@ -747,6 +749,7 @@ class StockApiController extends BaseApiController
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($args['productId']));
+			$details = WireBooleans::Coerce('product_details', $details);
 			$details['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $details['product_barcodes']);
 			return $this->ApiResponse($response, $details);
 		});
@@ -764,6 +767,7 @@ class StockApiController extends BaseApiController
 		{
 			$productId = StockService::GetInstance()->GetProductIdFromBarcode($args['barcode']);
 			$details = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($productId));
+			$details = WireBooleans::Coerce('product_details', $details);
 			$details['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $details['product_barcodes']);
 			return $this->ApiResponse($response, $details);
 		});
@@ -901,6 +905,7 @@ class StockApiController extends BaseApiController
 			// returns a transaction's worth of them, and a caller who may not see
 			// stock_log.price may not see it one row at a time either. Issue #176 item 2.
 			$stockLogRow = FieldPolicy::GetInstance()->RedactRow('stock_log', $stockLogRow);
+			$stockLogRow = WireBooleans::Coerce('stock_log', $stockLogRow);
 
 			return $this->ApiResponse($response, $stockLogRow);
 		});
@@ -935,6 +940,7 @@ class StockApiController extends BaseApiController
 			}
 
 			$transactionRows = FieldPolicy::GetInstance()->RedactRows('stock_log', $transactionRows);
+			$transactionRows = WireBooleans::CoerceRows('stock_log', $transactionRows);
 
 			return $this->ApiResponse($response, $transactionRows);
 		});
