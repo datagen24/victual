@@ -49,6 +49,13 @@ The two type mismatches were measured rather than guessed, against
   throughout. The one genuine case is `observed_at` on the label evidence endpoint, whose
   column is a `TIMESTAMPTZ` and whose value is parsed with `new DateTimeImmutable()`.
 
+  All fifty-four are on the pre-label schema. The label surface added by migrations 0269 to
+  0272 keeps absolute instants in `TIMESTAMPTZ` and renders them with an offset, and
+  `TimeResponse.time_utc` is UTC rather than the configured zone, so the rendering this
+  fork sends is not uniform and a rule written as though it were would not survive contact
+  with the label routes. Decision 2 states the rule over the surface it was measured on and
+  names the three renderings outside it.
+
 The consequences differ in kind, which is why the two are decided differently below. An
 integer where a boolean was promised fails a strict decoder on that field; for `spoiled`
 the failing response is a booking's own result, so the stock has already moved when the
@@ -84,13 +91,34 @@ keyword nobody deliberately chose.
    attached under a `userfields` key, so a household with a userfield named `spoiled` would
    otherwise have its value answered as `true`.
 
-2. **Timestamps are local wall-clock strings and the document says so.** Every date and time
-   this API renders or accepts is `YYYY-MM-DD HH:MM:SS` in the server's configured zone,
-   documented as a `string` with that `pattern` and no `format`. `format: date-time` is
-   reserved for a field that really is RFC 3339, of which there is one. A field whose column
-   is a SQL `DATE` carries `format: date`, which it already satisfies — `Task.due_date`,
+2. **The legacy surface's timestamps are local wall-clock strings and the document says so.**
+   Every date and time rendered or accepted by the routes over the pre-label schema — whose
+   date columns are SQL `TIMESTAMP`, and which is where all fifty-four mistyped properties
+   are — is `YYYY-MM-DD HH:MM:SS` in the server's configured zone, documented as a `string`
+   with that `pattern` and no `format`. A field whose column is a SQL `DATE` carries
+   `format: date`, which it already satisfies — `Task.due_date`,
    `CurrentTaskResponse.due_date` and `ProductPriceHistory.date` were typed `date-time` and
    are dates.
+
+   Three renderings sit outside that rule and are named, because the same rule stated over
+   *every* timestamp this API sends would be false on the day it was accepted:
+
+   - **`TimeResponse.time_utc` is UTC**, not the configured zone:
+     `ApplicationService::GetSystemTime()` renders it through `new DateTimeZone('UTC')`. It
+     keeps the local *shape*, and therefore the `pattern`, with the zone carried by the
+     property name rather than by the value. The document described it as local time —
+     `time_local`'s description, verbatim — which this record corrects.
+   - **`observed_at` on the label evidence endpoint is RFC 3339** and keeps
+     `format: date-time`. It is the only property in the document carrying that keyword.
+   - **The label surface keeps its own clocks.** Migrations 0269 to 0272 store absolute
+     instants as `TIMESTAMPTZ`, deliberately, and what PostgreSQL renders for one carries a
+     UTC offset and fractional seconds: `2026-03-04 05:06:07.891011-05`. `labels.retired_at`
+     on `GET /labels/resolve/{code}` is the one such value in a response body this document
+     describes, and it is documented as an opaque `string` with neither the `pattern` nor a
+     `format`. `expires_at` on the two worker-credential routes is rendered with
+     `->format('c')`, which is RFC 3339, inside responses the document types only as
+     `object`. That surface is a newer schema with a different rule about absolute time, and
+     retyping it is not what this record is for.
 
    The three write fields in this family — `tracked_time` on chore execution and battery
    charge, `done_time` on task completion — are documented the same way, and their
@@ -104,7 +132,10 @@ keyword nobody deliberately chose.
    `UserDto`, which is what `GetUsersAsDto()->where(...)` serialises to. The
    `GET /objects/{entity}` union's members each declare `required` properties no other
    member has, and `LocationResolved` joins it, so `Product` — which required nothing and
-   therefore matched every JSON object — stops swallowing every entity's rows. And a
+   therefore matched every JSON object — stops swallowing every entity's rows. What that
+   buys is bounded and the consequences below state the bound: the ten members become
+   mutually exclusive, forty-four of the forty-seven entities with no member stop matching
+   anything, and three keep matching one. And a
    `Content-Type` carrying a `charset` parameter is a media type with a parameter (RFC 9110
    §8.3), parsed rather than string-compared, which is the same parse Slim's own
    `BodyParsingMiddleware` already does to decide the body was JSON.
@@ -152,6 +183,15 @@ types for all fifty-seven listable entities. Rejected here as disproportionate t
 defect: it is a new route surface, and it contradicts the generic-entity design the route
 exists to provide. Its own record is where that would be decided.
 
+**E. Close the union's members with `additionalProperties: false`.** The only thing that
+would separate `uihelper_shopping_list` from `shopping_list`, which no required property can
+do because the first is a superset of the second. Rejected as unavailable rather than as
+wrong: nine of the ten members declare fewer properties than their entity's rows carry —
+`Product` leaves sixteen of `products`' forty-two columns undeclared, `ShoppingListItem` two
+of `shopping_list`'s eight — so closing them today would stop the ten *intended* entities
+decoding as well. Completing the ten schemas first is the same work option D describes at a
+tenth of the scale, and is where this would be decided.
+
 ## Consequences
 
 - **Eleven fields change value type on the wire**, on about twenty routes. The browser is
@@ -164,11 +204,41 @@ exists to provide. Its own record is where that would be decided.
   `issue-230-documented-booleans` in `.devtools/parity/harness/lib/accepted.js`. Its matcher
   demands that the two sides agree about the value — upstream `1` against `true`, upstream
   `0` against `false` — so a flag genuinely set differently is still reported.
-- **A listable entity with no schema in the `GET /objects/{entity}` union no longer
-  decodes** in a strict client, where before it decoded as a `Product` with most of its
-  fields discarded. That is deliberate, and it is the improvement: a loud failure in place
-  of a silent wrong answer. Forty-seven of the fifty-seven listable entities are in that
-  position, and writing their schemas is separate work.
+- **Forty-four of the forty-seven listable entities with no schema in the
+  `GET /objects/{entity}` union stop decoding at all** in a strict client, where before
+  every one of them decoded as a `Product` with most of its fields discarded. That is
+  deliberate and it is the improvement: a loud failure in place of a silent wrong answer.
+  Writing their schemas is separate work.
+- **Three are still a candidate for a member that is not theirs, and this record does not
+  claim otherwise.** A `stock_log` row carries `id`, `stock_id` and `product_id`, which is
+  everything `StockEntry` requires; a `product_barcodes_view` row carries `barcode` and
+  `product_id`, which is everything `ProductBarcode` requires; and `uihelper_shopping_list`
+  is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
+  `ShoppingListItem`. Each is a candidate for exactly one member, and nothing else in the
+  union's shape rules it out. Whether candidacy becomes a wrong decode is the reader's to
+  decide, and the two readers differ: a strict JSON Schema validator rejects these rows on
+  the member's nullability rather than selecting it (the next bullet), while
+  `swift-openapi-generator` — the client this record was written for — accepts an explicit
+  `null` for an optional property through `decodeIfPresent`, so for that client candidacy is
+  the whole of the decision and the row is decoded under a schema that is not its own.
+  Required properties make the ten members mutually exclusive, which is what issue #232
+  asked for; they do not separate those ten from every other relation this route can list,
+  and nothing short of option E or D would. `tests/Pgsql/WireContractTest.php` measures all fifty-seven listable entities
+  against all ten members — off real responses where the fixture gives an entity a row, and
+  off the relation's columns where it does not, with the two checked against each other —
+  and pins the result, so a fourth cannot appear unnoticed.
+- **Candidacy is what is measured, and it is not the same as a successful decode.** The
+  same test validates each real row against every member with a JSON Schema validator, and
+  exactly one pairing survives: `locations_resolved` against `LocationResolved`. Every other
+  candidate fails, and the failure is the same in all ten cases — a column that is NULL in
+  the row against a member that declares it a non-nullable scalar (`description` on
+  `Product`, `Chore`, `Location` and `QuantityUnit`; `note` on `ShoppingListItem`; `config`
+  on `Userfield`; `shopping_location_id` on `StockEntry` and `ProductBarcode`). Six of those
+  ten are the union's *own* intended pairings, so this is a gap in the members' nullability
+  and not a defence against the three unintended ones — it fails the intended pairings first.
+  Modelling the members' nullability is separate work and has no issue yet. Every row of
+  every entity is validated, not one per entity: validity turns on values, so a row whose
+  nullable columns happen to be set could validate where another does not.
 - **`victual-kit` sheds three workarounds** — the middleware that strips the charset
   parameter, the date transcoder that accepts both renderings, and the boolean remapping in
   its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
@@ -178,8 +248,20 @@ exists to provide. Its own record is where that would be decided.
   entity's create body was already a `Product`, and two of `Product`'s properties were
   documented as settable when the server drops them.
 - **A new phase, `wirecontract`**, holds the regression tests
-  (`tests/Pgsql/WireContractTest.php`), including one that fails when a property is added to
-  the document as `boolean` without anything converting it.
+  (`tests/Pgsql/WireContractTest.php`). What it checks about the booleans is a *pair*, not a
+  name: every `(schema, property)` the document types `boolean` is declared against the
+  `WireBooleans` shape responsible for it, and every `(shape, property)` `WireBooleans`
+  converts is read back off a named route and asserted to be a boolean on a row that carries
+  it. A name alone would have been satisfied by `spoiled` appearing anywhere in the
+  conversion map, so documenting `spoiled` on a second schema — one whose response converts
+  nothing — would have passed. Pairing them also found three entries in the conversion map
+  that convert nothing. `chores_current.rollover` is removed: the view reads
+  `chores.rollover` to compute the next execution and does not project it, so no row carries
+  the key. `uihelper_stock_journal` and `userfield_values_resolved` are kept and recorded as
+  unproven, because no route reaches either — no path references the `StockJournal` schema,
+  and the one reader of `userfield_values_resolved` reduces its rows to key/value pairs. The
+  test asserts both are still unreachable, so the day a route makes one reachable this has
+  to be revisited rather than quietly becoming untrue.
 
 ## Acceptance prerequisites
 
@@ -187,8 +269,14 @@ This record changes a wire contract, so accepting it requires:
 
 1. The decider confirms decisions 1 and 2 as written — in particular that the eleven
    booleans move the wire and the fifty-four timestamps move the document, which are
-   opposite answers to superficially similar questions.
+   opposite answers to superficially similar questions, and that decision 2's rule is stated
+   over the legacy surface with `time_utc`, `observed_at` and the label surface's
+   `TIMESTAMPTZ` renderings named as sitting outside it.
 2. The decider confirms decision 4, the one change here that no issue asked for.
-3. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
+3. The decider accepts that `stock_log`, `product_barcodes_view` and `uihelper_shopping_list`
+   are still candidates for a member that is not theirs, and that closing that needs option E
+   or option D rather than more `required` properties; and that the members' nullability gap
+   the consequences record is left for separate work.
+4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.

@@ -22,15 +22,22 @@ own header is the authority on the count, not this file.
 
 ```bash
 docker build --target dev -t victual:dev .
+docker build -f .devtools/pgtap/postgres.Dockerfile -t victual-pg:pgtap .
 docker network create victual-suite
 docker run -d --name victual-pg --network victual-suite \
   -e POSTGRES_USER=victual -e POSTGRES_PASSWORD=victual -e POSTGRES_DB=victual \
-  --tmpfs /var/lib/postgresql/data postgres:16
+  --tmpfs /var/lib/postgresql/data victual-pg:pgtap
 docker run --rm --network victual-suite -v "$PWD":/app -v /app/packages -w /app \
   -e VICTUAL_ROOT=/app -e PGHOST=victual-pg -e PGPORT=5432 \
   -e PGUSER=victual -e PGPASSWORD=victual -e SUITE_SCRATCH=/tmp/victual-suite \
   victual:dev .devtools/pgsql/run-tests.sh [phase]
 ```
+
+**Plain `postgres:16` fails the `pgtap` phase** — `run-tests.sh all` dies on
+`extension "pgtap" is not available`, several minutes in. `docker-compose.yml` builds its
+postgres service from `.devtools/pgtap/postgres.Dockerfile` (ADR-0025 decision 6 installs
+pgTAP only where PostgreSQL runs for tests), so a hand-rolled container needs that image
+too — hence the second build above. Verified 2026-09-21.
 
 The `-v /app/packages` anonymous volume is the part that is easy to miss: without it the host
 mount shadows the image's composer output, which is gitignored and does not exist on the
