@@ -88,5 +88,8 @@
 		<testsuite name="dialectpolicy">
 			<file>tests/Pgsql/DialectPolicyTest.php</file>
 		</testsuite>
+		<testsuite name="httpboot">
+			<file>tests/Pgsql/HttpBootTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>
