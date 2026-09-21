@@ -785,16 +785,21 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Which members of the GET /objects/{entity} union each listable entity's rows validate
-	 * against - measured, not intended. Every entity absent from this map validates against
-	 * none, which is the loud failure ADR-0027 decision 3 is for.
+	 * Which members of the GET /objects/{entity} union each listable entity's rows are a
+	 * *candidate* for - that is, whose `required` properties the row carries, which is what
+	 * decides the member `oneOf` can select. Measured, not intended. Every entity absent
+	 * from this map is a candidate for none, which is the loud failure ADR-0027 decision 3
+	 * is for.
+	 *
+	 * Candidacy is not a decode: UNION_FULLY_VALID below is the second measurement, and it
+	 * says how far this one goes.
 	 *
 	 * The first ten are the intended pairings. The last three are the ones ADR-0027's
 	 * consequences name: unmodelled entities whose rows happen to carry
-	 * every property some member declares `required`, so `oneOf` matches exactly one member
-	 * - the wrong one - and a strict client decodes the row silently under that schema
-	 * rather than failing. Required properties discriminate the ten from each other; they do
-	 * not discriminate them from every relation in the database.
+	 * every property some member declares `required`, so exactly one member is a candidate
+	 * - the wrong one - and nothing else in the union's shape rules it out. Required
+	 * properties discriminate the ten from each other; they do not discriminate them from
+	 * every relation in the database.
 	 *
 	 * uihelper_shopping_list is the one that cannot be fixed by requiring more: it is a
 	 * superset of shopping_list, so no property shopping_list has distinguishes them. That
@@ -819,7 +824,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	];
 
 	/**
-	 * The three above, proven the only way that counts: a real row off a real response,
+	 * The three above, measured the only way that counts: a real row off a real response,
 	 * carrying every property the wrong member requires.
 	 *
 	 * testEveryListableEntityIsMeasuredAgainstTheUnion() below is exhaustive but falls back
@@ -855,6 +860,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$noListing = $spec['components']['schemas']['ExposedEntityNoListing']['enum'];
 		$measured = [];
 		$fromResponse = [];
+		$rowsByEntity = [];
 
 		foreach ($spec['components']['schemas']['ExposedEntity']['enum'] as $entity)
 		{
@@ -873,6 +879,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 			{
 				$keys = array_keys($rows[0]);
 				$fromResponse[] = $entity;
+				$rowsByEntity[$entity] = $rows[0];
 
 				// The fallback the empty entities use, checked against the real thing: a
 				// row's keys are its relation's columns, plus the userfields map where the
@@ -920,6 +927,40 @@ class WireContractTest extends PgsqlSchemaTestCase
 			array_values(array_diff(self::AMBIGUOUS_ON_REAL_ROWS, $fromResponse)),
 			'an entity ADR-0027 states is ambiguous was measured off its columns rather than off a response'
 		);
+
+		// The second measurement, on the rows themselves. See UNION_FULLY_VALID.
+		$fullyValid = [];
+		foreach ($rowsByEntity as $entity => $row)
+		{
+			foreach ($members as $member)
+			{
+				$reason = self::validateAgainstMember($row, $member);
+
+				if ($reason === null)
+				{
+					$fullyValid[$entity][] = $member;
+					continue;
+				}
+
+				if (!in_array($member, $measured[$entity] ?? [], true))
+				{
+					continue;
+				}
+
+				// A candidate that does not validate: the reason has to be the nullability
+				// gap this class records, not something unexplained.
+				$property = self::UNION_NULLABILITY_FAILURES[$entity][$member] ?? null;
+				self::assertNotNull($property, "$entity is a candidate for $member and fails it unrecorded: $reason");
+				self::assertSame("$property: type", $reason, "$entity against $member");
+				self::assertArrayHasKey($property, $row, "$entity carries no $property");
+				self::assertNull($row[$property], "$entity.$property is not null, so 'type' is a different failure");
+			}
+		}
+
+		ksort($fullyValid);
+		$expectedValid = self::UNION_FULLY_VALID;
+		ksort($expectedValid);
+		self::assertSame($expectedValid, $fullyValid, 'the set of rows that fully validate against a member changed');
 	}
 
 	/**
@@ -943,6 +984,87 @@ class WireContractTest extends PgsqlSchemaTestCase
 		}
 
 		return $columns;
+	}
+
+	/**
+	 * The second measurement, and the one that says how far the first one goes. A member's
+	 * `required` decides which member `oneOf` can select; it does not decide that the row
+	 * then satisfies the rest of that member's schema. This validates each entity's real row
+	 * against every member with a JSON Schema validator, and records what survives.
+	 *
+	 * Exactly one pairing does. Every other candidate - intended and unintended alike -
+	 * fails on the same defect, and it is not discrimination: a column that is NULL in the
+	 * row is declared as a non-nullable scalar by the member. UNION_NULLABILITY_FAILURES
+	 * names the property each one dies on.
+	 *
+	 * This does not make the union safe. The client ADR-0027 was written for is
+	 * `swift-openapi-generator`, whose optional properties decode through
+	 * `decodeIfPresent`, which accepts an explicit `null` where this validator rejects it -
+	 * so the nullability failures below do not stop that client selecting the wrong member,
+	 * and the required-property measurement above remains the operative one. What this
+	 * bounds is the word: a candidate is a candidate, not a proven decode.
+	 */
+	private const UNION_FULLY_VALID = ['locations_resolved' => ['LocationResolved']];
+
+	/**
+	 * Candidate pairings that a strict JSON Schema validator rejects, and the property each
+	 * dies on - every one a NULL against a declared scalar. Six of the ten are the union's
+	 * own intended pairings, which is why this is a gap in the members' nullability rather
+	 * than a defence against the three unintended ones.
+	 */
+	private const UNION_NULLABILITY_FAILURES = [
+		'products' => ['Product' => 'description'],
+		'chores' => ['Chore' => 'description'],
+		'locations' => ['Location' => 'description'],
+		'quantity_units' => ['QuantityUnit' => 'description'],
+		'shopping_list' => ['ShoppingListItem' => 'note'],
+		'userfields' => ['Userfield' => 'config'],
+		'stock' => ['StockEntry' => 'shopping_location_id'],
+		'stock_log' => ['StockEntry' => 'shopping_location_id'],
+		'product_barcodes_view' => ['ProductBarcode' => 'shopping_location_id'],
+		'uihelper_shopping_list' => ['ShoppingListItem' => 'note']
+	];
+
+	/**
+	 * Validates $row against the member schema $member, returning null when it is valid and
+	 * "property: keyword" for the first failure otherwise.
+	 *
+	 * `allowDefaults` is turned off deliberately. Opis, left alone, drops a property from
+	 * `required` when that property declares a `default` and then writes the default into
+	 * the caller's data - so `Battery.charge_interval_days` would be treated as optional and
+	 * a row without it would validate. A generated client does neither, and a measurement
+	 * that models the client has to say so.
+	 */
+	private static function validateAgainstMember(array $row, string $member): ?string
+	{
+		static $document = null;
+		if ($document === null)
+		{
+			$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
+		}
+
+		$validator = new \Opis\JsonSchema\Validator();
+		$validator->parser()->setOption('allowDefaults', false);
+
+		// Both sides re-encoded per call: Opis mutates neither with defaults off, but the
+		// schema objects are shared across members and the data is ours to keep clean.
+		$result = $validator->validate(
+			json_decode(json_encode($row), false),
+			json_decode(json_encode($document->components->schemas->$member), false)
+		);
+
+		if ($result->isValid())
+		{
+			return null;
+		}
+
+		$error = $result->error();
+		while ($error->subErrors())
+		{
+			$error = $error->subErrors()[0];
+		}
+
+		return (implode('/', $error->data()->fullPath()) ?: '<root>') . ': ' . $error->keyword();
 	}
 
 	// --------------------------------------------------------------------- issue #233

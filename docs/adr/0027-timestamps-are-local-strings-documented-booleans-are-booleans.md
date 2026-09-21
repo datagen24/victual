@@ -209,19 +209,31 @@ tenth of the scale, and is where this would be decided.
   every one of them decoded as a `Product` with most of its fields discarded. That is
   deliberate and it is the improvement: a loud failure in place of a silent wrong answer.
   Writing their schemas is separate work.
-- **Three still decode under the wrong member, and this record does not claim otherwise.**
-  A `stock_log` row carries `id`, `stock_id` and `product_id`, which is everything
-  `StockEntry` requires; a `product_barcodes_view` row carries `barcode` and `product_id`,
-  which is everything `ProductBarcode` requires; and `uihelper_shopping_list` is a superset
-  of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
-  `ShoppingListItem`. Each matches exactly one member, so `oneOf` is satisfied and the row
-  is decoded silently under a schema that is not its own. Required properties make the ten
+- **Three are still a candidate for a member that is not theirs, and this record does not
+  claim otherwise.** A `stock_log` row carries `id`, `stock_id` and `product_id`, which is
+  everything `StockEntry` requires; a `product_barcodes_view` row carries `barcode` and
+  `product_id`, which is everything `ProductBarcode` requires; and `uihelper_shopping_list`
+  is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
+  `ShoppingListItem`. Each is a candidate for exactly one member, so `oneOf` selects that
+  member and nothing in the union's shape rules it out. Required properties make the ten
   members mutually exclusive, which is what issue #232 asked for; they do not separate those
   ten from every other relation this route can list, and nothing short of option E or D
   would. `tests/Pgsql/WireContractTest.php` measures all fifty-seven listable entities
   against all ten members — off real responses where the fixture gives an entity a row, and
   off the relation's columns where it does not, with the two checked against each other —
   and pins the result, so a fourth cannot appear unnoticed.
+- **Candidacy is what is measured, and it is not the same as a successful decode.** The
+  same test validates each real row against every member with a JSON Schema validator, and
+  exactly one pairing survives: `locations_resolved` against `LocationResolved`. Every other
+  candidate fails, and the failure is the same in all ten cases — a column that is NULL in
+  the row against a member that declares it a non-nullable scalar (`description` on
+  `Product`, `Chore`, `Location` and `QuantityUnit`; `note` on `ShoppingListItem`; `config`
+  on `Userfield`; `shopping_location_id` on `StockEntry` and `ProductBarcode`). Six of those
+  ten are the union's *own* intended pairings, so this is a gap in the members' nullability
+  and not a defence against the three unintended ones. It is also not what the client this
+  record was written for does: `swift-openapi-generator` decodes an optional property
+  through `decodeIfPresent`, which accepts an explicit `null` where the validator rejects
+  it. Modelling the members' nullability is separate work and has no issue yet.
 - **`victual-kit` sheds three workarounds** — the middleware that strips the charset
   parameter, the date transcoder that accepts both renderings, and the boolean remapping in
   its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
@@ -257,8 +269,9 @@ This record changes a wire contract, so accepting it requires:
    `TIMESTAMPTZ` renderings named as sitting outside it.
 2. The decider confirms decision 4, the one change here that no issue asked for.
 3. The decider accepts that `stock_log`, `product_barcodes_view` and `uihelper_shopping_list`
-   still decode under a member that is not theirs, and that closing that needs option E or
-   option D rather than more `required` properties.
+   are still candidates for a member that is not theirs, and that closing that needs option E
+   or option D rather than more `required` properties; and that the members' nullability gap
+   the consequences record is left for separate work.
 4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.
