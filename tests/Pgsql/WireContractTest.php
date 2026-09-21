@@ -739,7 +739,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	/**
 	 * The renderings the three fields accept, and what each one has to be stored as.
 	 *
-	 * The RFC 3339 expectations are written as the *instant* rather than as a string,
+	 * The offset-bearing expectations are written as the *instant* rather than as a string,
 	 * because what they render to depends on the server's zone and the suite does not fix
 	 * one. inServerZone() asks PostgreSQL, which is an oracle independent of the PHP the
 	 * code under test uses - and the question "do the application and its database agree
@@ -752,10 +752,12 @@ class WireContractTest extends PgsqlSchemaTestCase
 		return [
 			'the storage rendering' => ['2026-03-04 05:06:07', null],
 			'a bare date' => ['2026-03-04', null],
-			'RFC 3339 without an offset' => ['2026-03-04T05:06:07', null],
-			'RFC 3339 in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
-			'RFC 3339 with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
-			'RFC 3339 with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z'],
+			// "RFC 3339 shaped", not RFC 3339: that grammar requires the offset the first of
+			// these omits, and permits a leap second wrongShape() refuses. ADR-0028 decision 2.
+			'the T form without an offset, which RFC 3339 does not allow' => ['2026-03-04T05:06:07', null],
+			'the T form in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
+			'the T form with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
+			'the T form with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z'],
 			// Seven digits is .NET's round-trip format and nine is Go's RFC3339Nano; PHP's
 			// "u" parses at most six, so both were refused while the document said they were
 			// fine. CodeRabbit found the seven-digit case on pull request 235 and a sweep of
@@ -810,6 +812,10 @@ class WireContractTest extends PgsqlSchemaTestCase
 			// \d{2} the pattern took it and createFromFormat() read it as a hundred-hour
 			// offset without a warning. CodeRabbit, pull request 235.
 			'an offset that is not a time at all' => '2026-03-04T05:06:07+99:99',
+			// Valid RFC 3339 and refused on purpose: createFromFormat() reads it as
+			// 2017-01-01 00:00:00, so taking it would book a different day without a word,
+			// and a TIMESTAMP column cannot hold a leap second anyway. ADR-0028 decision 2.
+			'a leap second, which RFC 3339 allows and nothing here can hold' => '2016-12-31T23:59:60Z',
 			'a month there is no thirteenth of' => '2026-13-04 00:00:00',
 			'a thirty-second of the month' => '2026-03-32 00:00:00'
 		];

@@ -223,6 +223,15 @@ const API_DATE_TIME_PATTERN = '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])( ([0
  * | `2026-09-21T14:30:00Z` / `...+02:00` | the same instant, rendered in the server's zone |
  * | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded |
  *
+ * The `T` rows are RFC 3339 *shaped*, and the set is not that grammar - in both
+ * directions. RFC 3339 requires an offset and this accepts a value without one, because a
+ * wall clock in the server's zone is what the rest of this API speaks. RFC 3339 permits a
+ * leap second `:60` and this refuses it: `createFromFormat()` reads `2016-12-31T23:59:60Z`
+ * as `2017-01-01 00:00:00`, a different day, and a booking moved to a different day
+ * without a word is the failure this function exists to remove. Calling the accepted set
+ * "RFC 3339" would be wrong on both counts - a small version of the defect that started
+ * all this, a document promising something the server does not do.
+ *
  * `new DateTimeImmutable()` - what PrintEvidenceService::Submit() uses for `observed_at`,
  * the one genuinely RFC 3339 field in this API - would accept all of those and also
  * `now`, `tomorrow`, `+1 week` and `@1600000000`. That is right for worker-submitted

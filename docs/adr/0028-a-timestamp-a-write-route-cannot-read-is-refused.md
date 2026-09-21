@@ -96,6 +96,17 @@ so never grew one.
    | `2026-09-21T14:30:00Z`, `…+02:00` | that instant, rendered in the server's zone |
    | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded, however many |
 
+   **The `T` forms are RFC 3339 *shaped* and this is deliberately not that grammar**, in
+   both directions, which is worth naming because calling the set "RFC 3339" would repeat
+   the defect this record is about — a document promising something the server does not do.
+   RFC 3339 requires an offset and this accepts a value without one, because a wall clock in
+   the server's configured zone is what the rest of the API speaks and there is no reason to
+   make a client invent an offset to say what it means. RFC 3339 permits a leap second `:60`
+   and this refuses it: `createFromFormat()` reads `2016-12-31T23:59:60Z` as
+   `2017-01-01 00:00:00`, so accepting it would book a different day without a word, which
+   is decision 1's whole subject. Nothing behind this API can hold a leap second either —
+   the columns are `TIMESTAMP`.
+
    All three routes accept all of it. The chore route's bare date stops being a local
    exception and becomes the rule, which is what it should have been: three fields with one
    name and three accepted sets is how the next caller discovers the same defect again.
