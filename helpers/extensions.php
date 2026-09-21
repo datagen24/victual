@@ -184,14 +184,66 @@ function IsIsoDate($dateString)
 }
 
 /**
- * Returns true when $dateTimeString is a valid date/time in ISO format (Y-m-d H:i:s).
+ * A caller's date/time value in any rendering this API accepts, normalised to the one it
+ * stores ('Y-m-d H:i:s', local wall clock in the server's configured zone), or null when
+ * the value is not a point in time at all.
  *
- * @return bool
+ * This replaced IsIsoDateTime(), whose whole job was the first row below and which had no
+ * caller left once the three write routes stopped using it. ADR-0028.
+ *
+ * | Sent | Read as |
+ * |---|---|
+ * | `2026-09-21 14:30:00` | itself - the storage rendering, unchanged |
+ * | `2026-09-21` | `2026-09-21 00:00:00` - a bare date is its midnight |
+ * | `2026-09-21T14:30:00` | `2026-09-21 14:30:00` - no offset means the server's zone |
+ * | `2026-09-21T14:30:00Z` / `...+02:00` | the same instant, rendered in the server's zone |
+ * | `2026-09-21T14:30:00.123Z` | the same, fractional seconds discarded |
+ *
+ * `new DateTimeImmutable()` - what PrintEvidenceService::Submit() uses for `observed_at`,
+ * the one genuinely RFC 3339 field in this API - would accept all of those and also
+ * `now`, `tomorrow`, `+1 week` and `@1600000000`. That is right for worker-submitted
+ * telemetry and wrong for these three fields, which book a row a person is expected to be
+ * able to trust and undo: a relative expression is a value the caller almost certainly did
+ * not mean, and accepting it without a word is the same failure this function exists to
+ * remove, only with a different wrong answer. A fixed list also rejects `2026-02-30`,
+ * which `DateTimeImmutable` silently rolls over to the 2nd of March.
+ *
+ * The `!` prefix resets every field the format does not name, so a bare date is midnight
+ * rather than today's clock time carried over from the current instant. The warning and
+ * error counts are what catch the rollover: createFromFormat() returns an object for
+ * `2026-02-30` and reports a warning about it.
+ *
+ * @param mixed $value The value as it arrived in the request body
+ * @return string|null The value as 'Y-m-d H:i:s', or null when it cannot be read as a time
  */
-function IsIsoDateTime($dateTimeString)
+function ParseApiDateTime($value)
 {
-	$d = DateTime::createFromFormat('Y-m-d H:i:s', $dateTimeString);
-	return $d && $d->format('Y-m-d H:i:s') === $dateTimeString;
+	if (!is_string($value))
+	{
+		return null;
+	}
+
+	$formats = [
+		'Y-m-d H:i:s',
+		'Y-m-d',
+		'Y-m-d\\TH:i:s',
+		'Y-m-d\\TH:i:sP',
+		'Y-m-d\\TH:i:s.u',
+		'Y-m-d\\TH:i:s.uP'
+	];
+
+	foreach ($formats as $format)
+	{
+		$parsed = DateTimeImmutable::createFromFormat('!' . $format, $value);
+		$errors = DateTimeImmutable::getLastErrors();
+
+		if ($parsed !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)))
+		{
+			return $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+		}
+	}
+
+	return null;
 }
 
 /**

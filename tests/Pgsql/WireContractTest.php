@@ -29,6 +29,11 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *        match a member that is not theirs are pinned rather than claimed away.
  *   #233 GET /user's 200 is an array of UserDto, which is what it returns.
  *
+ * And, from the same family, ADR-0028: the three write routes that take a timestamp
+ * (tracked_time on chore execution and battery charge, done_time on task completion)
+ * accept the renderings their schema documents, refuse what they cannot read, and never
+ * answer a value they could not use by booking the current time instead.
+ *
  * Every request is its own process (tests/Pgsql/request-subprocess-helper.php): the
  * authentication middleware define()s the acting user, and PHP cannot redefine a constant.
  */
@@ -91,7 +96,11 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "(9501, 9500, -1, 0, 'wire-stock-1', 'consume', 'wire-transaction', 9500)");
 
 		self::$db->exec('INSERT INTO chores (id, name, period_type, period_days, start_date, track_date_only, rollover) '
-			. "VALUES (9500, 'WireChore', 'daily', 1, '2026-01-01 08:00:00', 1, 0)");
+			. "VALUES (9500, 'WireChore', 'daily', 1, '2026-01-01 08:00:00', 1, 0), "
+			// 9500 is track_date_only, and ChoresService::TrackChore() truncates an execution
+			// of one of those to midnight - so the ADR-0028 cases, which are about what the
+			// route did with the caller's time of day, need a chore that keeps one.
+			. "(9501, 'WireChoreTimed', 'daily', 1, '2026-01-01 08:00:00', 0, 0)");
 
 		self::$db->exec('INSERT INTO userfields (id, entity, name, caption, type, show_as_column_in_tables, input_required) '
 			. "VALUES (9500, 'products', 'wire_field', 'Wire field', 'text', 1, 0)");
@@ -118,6 +127,19 @@ class WireContractTest extends PgsqlSchemaTestCase
 			. "VALUES ('" . self::RETIRED_LABEL_UID . "', 'location', NULL, "
 			. "TIMESTAMPTZ '2026-03-04 05:06:07.891011-05', "
 			. '\'{"id": 9501, "name": "WireRetiredShelf"}\'::jsonb)');
+
+		// One battery for the charge route. Tasks are made per test (freshTask()) because
+		// "was this one marked done?" has no answer on a task an earlier test completed.
+		self::$db->exec("INSERT INTO batteries (id, name) VALUES (9500, 'WireBattery')");
+	}
+
+	/** A task nothing else has touched. */
+	private static function freshTask(string $name): int
+	{
+		$statement = self::$db->prepare('INSERT INTO tasks (name) VALUES (?) RETURNING id');
+		$statement->execute([$name]);
+
+		return (int)$statement->fetchColumn();
 	}
 
 	// ------------------------------------------------------------------ the request half
@@ -710,6 +732,264 @@ class WireContractTest extends PgsqlSchemaTestCase
 				self::collectFormat($child, $format, $path . '/' . $key, $into);
 			}
 		}
+	}
+
+	// ------------------------------------------------- ADR-0028, the three write times
+
+	/**
+	 * The renderings the three fields accept, and what each one has to be stored as.
+	 *
+	 * The RFC 3339 expectations are written as the *instant* rather than as a string,
+	 * because what they render to depends on the server's zone and the suite does not fix
+	 * one. inServerZone() asks PostgreSQL, which is an oracle independent of the PHP the
+	 * code under test uses - and the question "do the application and its database agree
+	 * about the zone?" is one this happens to answer too.
+	 *
+	 * @return array<string, array{0: string, 1: string|null}> value => [literal, instant]
+	 */
+	private static function acceptedRenderings(): array
+	{
+		return [
+			'the storage rendering' => ['2026-03-04 05:06:07', null],
+			'a bare date' => ['2026-03-04', null],
+			'RFC 3339 without an offset' => ['2026-03-04T05:06:07', null],
+			'RFC 3339 in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
+			'RFC 3339 with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
+			'RFC 3339 with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z']
+		];
+	}
+
+	/** What each accepted rendering must be stored as. */
+	private static function expectedFor(string $literal, ?string $instant): string
+	{
+		if ($instant !== null)
+		{
+			return self::inServerZone($instant);
+		}
+
+		// No offset in the value, so it names a wall clock and the wall clock is kept. A
+		// bare date is its midnight.
+		return strlen($literal) === 10 ? $literal . ' 00:00:00' : str_replace('T', ' ', $literal);
+	}
+
+	/** $instant rendered in the time zone the application's own connection is set to. */
+	private static function inServerZone(string $instant): string
+	{
+		$statement = self::$db->prepare("SELECT to_char(?::timestamptz AT TIME ZONE current_setting('TimeZone'), 'YYYY-MM-DD HH24:MI:SS')");
+		$statement->execute([$instant]);
+
+		return (string)$statement->fetchColumn();
+	}
+
+	/**
+	 * Values in none of the accepted renderings, so the schema's `pattern` refuses them too.
+	 */
+	private static function wrongShape(): array
+	{
+		return [
+			'an empty string' => '',
+			'prose' => 'yesterday afternoon',
+			'a relative expression new DateTimeImmutable() would have taken' => 'tomorrow',
+			'the word now, likewise' => 'now',
+			'a Unix timestamp' => '1772600767',
+			'a truncated time' => '2026-03-04 05:06',
+			'basic-format ISO 8601' => '20260304T050607Z',
+			'a space separator with an offset, which this API never renders' => '2026-03-04 05:06:07+02:00'
+		];
+	}
+
+	/**
+	 * Values the server refuses that the schema's `pattern` cannot, and is not expected to.
+	 *
+	 * A regular expression can say what a date *looks* like and not whether it exists; the
+	 * two calendar cases below have the shape of an accepted rendering and are not points in
+	 * time. That is the one place the document is deliberately looser than the server, and
+	 * naming it here is what keeps it deliberate - the pattern test below reads wrongShape()
+	 * only, for exactly this reason.
+	 */
+	private static function rightShapeNotATime(): array
+	{
+		return [
+			'a day February does not have' => '2026-02-30 00:00:00',
+			'an hour no day has' => '2026-03-04 25:06:07'
+		];
+	}
+
+	/** Values none of the three routes may read as a time, by any route. */
+	private static function unreadableValues(): array
+	{
+		return self::wrongShape() + self::rightShapeNotATime() + [
+			'null' => null,
+			'a number' => 1772600767,
+			'an object' => ['at' => '2026-03-04 05:06:07']
+		];
+	}
+
+	public function testAnAbsentTimestampBooksTheCurrentTime(): void
+	{
+		$before = date('Y-m-d H:i:s');
+
+		$chore = self::send('POST', '/api/chores/9501/execute', [], []);
+		self::assertSame(200, $chore['status'], $chore['body']);
+		$choreRow = json_decode($chore['body'], true, flags: JSON_THROW_ON_ERROR);
+		self::assertGreaterThanOrEqual($before, $choreRow['tracked_time'], 'chores_log.tracked_time');
+
+		$battery = self::send('POST', '/api/batteries/9500/charge', [], []);
+		self::assertSame(200, $battery['status'], $battery['body']);
+		$batteryRow = json_decode($battery['body'], true, flags: JSON_THROW_ON_ERROR);
+		self::assertGreaterThanOrEqual($before, $batteryRow['tracked_time'], 'battery_charge_cycles.tracked_time');
+
+		$taskId = self::freshTask('WireTaskDefaultNow');
+		$task = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], []);
+		self::assertSame(204, $task['status'], $task['body']);
+		self::assertGreaterThanOrEqual($before, self::taskDoneTimestamp($taskId), 'tasks.done_timestamp');
+	}
+
+	public function testAnAcceptedRenderingIsStoredAsTheDocumentedOne(): void
+	{
+		foreach (self::acceptedRenderings() as $what => [$literal, $instant])
+		{
+			$expected = self::expectedFor($literal, $instant);
+
+			$chore = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $literal]);
+			self::assertSame(200, $chore['status'], "chore execution, $what: {$chore['body']}");
+			self::assertSame(
+				$expected,
+				json_decode($chore['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"chore execution, $what ($literal)"
+			);
+
+			$battery = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $literal]);
+			self::assertSame(200, $battery['status'], "battery charge, $what: {$battery['body']}");
+			self::assertSame(
+				$expected,
+				json_decode($battery['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+				"battery charge, $what ($literal)"
+			);
+
+			$taskId = self::freshTask('WireTaskAccepts ' . $literal);
+			$task = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $literal]);
+			self::assertSame(204, $task['status'], "task completion, $what: {$task['body']}");
+			self::assertSame($expected, self::taskDoneTimestamp($taskId), "task completion, $what ($literal)");
+		}
+	}
+
+	/**
+	 * The regression this whole section exists for. Every one of these used to be answered
+	 * 200 with the current time booked in place of the caller's value, so an assertion on
+	 * the status alone would have passed against the defect; what makes it a test of the
+	 * defect is that nothing was written at all.
+	 */
+	public function testAValueTheServerCannotUseIsRefusedAndNothingIsBooked(): void
+	{
+		foreach (self::unreadableValues() as $what => $value)
+		{
+			$chores = self::rowCount('chores_log');
+			$response = self::send('POST', '/api/chores/9501/execute', [], ['tracked_time' => $value]);
+			self::assertSame(400, $response['status'], "chore execution, $what: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body'], "chore execution, $what");
+			self::assertSame($chores, self::rowCount('chores_log'), "chore execution, $what: nothing was booked");
+
+			$cycles = self::rowCount('battery_charge_cycles');
+			$response = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => $value]);
+			self::assertSame(400, $response['status'], "battery charge, $what: {$response['body']}");
+			self::assertStringContainsString('tracked_time', $response['body'], "battery charge, $what");
+			self::assertSame($cycles, self::rowCount('battery_charge_cycles'), "battery charge, $what: nothing was booked");
+
+			$taskId = self::freshTask('WireTaskRefuses: ' . $what);
+			$response = self::send('POST', '/api/tasks/' . $taskId . '/complete', [], ['done_time' => $value]);
+			self::assertSame(400, $response['status'], "task completion, $what: {$response['body']}");
+			self::assertStringContainsString('done_time', $response['body'], "task completion, $what");
+			self::assertNull(self::taskDoneTimestamp($taskId), "task completion, $what: the task was not completed");
+		}
+	}
+
+	/**
+	 * The schema's `pattern` and the server agree about every rendering above, in both
+	 * directions. A pattern looser than the server puts a caller back where issue #231 left
+	 * them - the document says a value is fine and the route will not take it - and one
+	 * tighter refuses in a generated client what the server would have accepted.
+	 *
+	 * Only the string cases: a `pattern` says nothing about a value that is not a string,
+	 * and `type: string` is what refuses those.
+	 */
+	public function testTheDocumentedPatternDescribesExactlyWhatIsAccepted(): void
+	{
+		$spec = self::spec();
+		$fields = [
+			['/chores/{choreId}/execute', 'tracked_time'],
+			['/batteries/{batteryId}/charge', 'tracked_time'],
+			['/tasks/{taskId}/complete', 'done_time']
+		];
+
+		$accepted = array_map(fn (array $case) => $case[0], self::acceptedRenderings());
+		$refused = self::wrongShape();
+
+		foreach ($fields as [$path, $field])
+		{
+			$documented = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties'][$field];
+
+			self::assertSame('string', $documented['type'], "$path $field");
+			self::assertArrayNotHasKey('format', $documented, "$path $field is not RFC 3339, so it carries no format");
+			self::assertArrayHasKey('pattern', $documented, "$path $field");
+
+			// The D modifier is what makes PHP's "$" mean the end of the string rather than
+			// "before an optional trailing newline", which is what the schema's "$" means.
+			$pattern = '/' . str_replace('/', '\\/', $documented['pattern']) . '/D';
+
+			foreach ($accepted as $what => $value)
+			{
+				self::assertMatchesRegularExpression($pattern, $value, "$path $field: the server accepts $what ($value)");
+			}
+
+			foreach ($refused as $what => $value)
+			{
+				self::assertDoesNotMatchRegularExpression($pattern, $value, "$path $field: the server refuses $what ($value)");
+			}
+		}
+	}
+
+	/**
+	 * The browser is unaffected, and this is the half of that claim a test can hold.
+	 *
+	 * `choretracking.js` and `choresoverview.js` send a bare `YYYY-MM-DD` for a chore whose
+	 * track_date_only is set, which is why ChoresApiController accepted IsIsoDate() as well
+	 * as IsIsoDateTime() and why refusing everything but the storage rendering was not an
+	 * option. The other four senders - `batterytracking.js`, `batteriesoverview.js`,
+	 * `tasks.js` and the non-date-only branch of the two chore files - send
+	 * moment().format('YYYY-MM-DD HH:mm:ss'). Both are here.
+	 */
+	public function testTheTwoRenderingsTheBrowserSendsAreAccepted(): void
+	{
+		$dateOnly = self::send('POST', '/api/chores/9500/execute', [], ['tracked_time' => '2026-03-04', 'skipped' => false]);
+		self::assertSame(200, $dateOnly['status'], $dateOnly['body']);
+		self::assertSame(
+			'2026-03-04 00:00:00',
+			json_decode($dateOnly['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'the rendering choretracking.js sends for a track_date_only chore'
+		);
+
+		$full = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => '2026-03-04 05:06:07']);
+		self::assertSame(200, $full['status'], $full['body']);
+		self::assertSame(
+			'2026-03-04 05:06:07',
+			json_decode($full['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'the rendering every other sender in public/viewjs uses'
+		);
+	}
+
+	private static function rowCount(string $table): int
+	{
+		return (int)self::$db->query('SELECT count(*) FROM ' . $table)->fetchColumn();
+	}
+
+	private static function taskDoneTimestamp(int $taskId): ?string
+	{
+		$statement = self::$db->prepare('SELECT done_timestamp FROM tasks WHERE id = ?');
+		$statement->execute([$taskId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false || $value === null ? null : (string)$value;
 	}
 
 	// --------------------------------------------------------------------- issue #232

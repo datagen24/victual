@@ -37,7 +37,9 @@ class BatteriesApiController extends BaseApiController
 	/**
 	 * POST /api/batteries/{batteryId}/charge - tracks a charge cycle for the given battery.
 	 * Requires the BATTERIES_TRACK_CHARGE_CYCLE permission (403 otherwise).
-	 * Body field tracked_time (ISO datetime) is optional and defaults to now.
+	 * Body field tracked_time is optional: omit it to use the current time, or send a date
+	 * or date/time in any rendering ParseApiDateTime() accepts. A value it cannot read is
+	 * refused with 400 - see BaseApiController::RequestedTimestamp().
 	 * Returns the created battery_charge_cycles row (200) or a 400 error response.
 	 */
 	public function TrackChargeCycle(Request $request, Response $response, array $args)
@@ -46,13 +48,9 @@ class BatteriesApiController extends BaseApiController
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $requestBody, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
-			$trackedTime = date('Y-m-d H:i:s');
-			if (array_key_exists('tracked_time', $requestBody) && IsIsoDateTime($requestBody['tracked_time']))
-			{
-				$trackedTime = $requestBody['tracked_time'];
-			}
+			$trackedTime = $this->RequestedTimestamp($request, $requestBody, 'tracked_time');
 
 			$chargeCycleId = BatteriesService::GetInstance()->TrackChargeCycle($args['batteryId'], $trackedTime);
 			return $this->ApiResponse($response, $this->DB->battery_charge_cycles($chargeCycleId));
