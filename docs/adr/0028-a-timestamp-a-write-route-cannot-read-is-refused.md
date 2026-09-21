@@ -91,7 +91,7 @@ so never grew one.
    | `2026-09-21` | `2026-09-21 00:00:00` — a bare date is its midnight |
    | `2026-09-21T14:30:00` | `2026-09-21 14:30:00` — no offset means the server's zone |
    | `2026-09-21T14:30:00Z`, `…+02:00` | that instant, rendered in the server's zone |
-   | `2026-09-21T14:30:00.123Z` | the same, fractional seconds discarded |
+   | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded, however many |
 
    All three routes accept all of it. The chore route's bare date stops being a local
    exception and becomes the rule, which is what it should have been: three fields with one
@@ -103,7 +103,24 @@ so never grew one.
    values that are present, so they are refused: "I sent you something you could not use" is
    never answered by booking a different time, whatever the something was.
 
-4. **Parsing is a fixed list of formats, not `new DateTimeImmutable($value)`.**
+4. **The documented `pattern` is the gate, and it is one string.**
+   `helpers/extensions.php`'s `API_DATE_TIME_PATTERN` is what `ParseApiDateTime()` matches a
+   value against before any parsing happens, and it is byte for byte what the three fields
+   carry as their `pattern` in `victual.openapi.json`; a test asserts that identity. The
+   parse that follows decides one further question only — whether the date and time exist.
+
+   This is structural rather than tidy. Written as two independent expressions they drift,
+   and on the first review of this record they had: `DateTimeImmutable::createFromFormat()`
+   is considerably more forgiving than its format strings suggest, and was accepting
+   `+0200`, `+02`, `GMT`, a single-digit hour and a doubled separator space — none of them
+   promised anywhere — while the document's `(\.\d+)?` promised fractional seconds of any
+   length that PHP's `u` will not parse past six digits, so `.NET`'s round-trip format
+   (seven) and Go's `RFC3339Nano` (up to nine) were refused for carrying precision this
+   API discards. A sweep of 7,560 spellings found thirty-six such disagreements. Fractional
+   seconds are now taken off the value rather than parsed, and nothing the document refuses
+   is accepted.
+
+5. **The parse behind the gate is a fixed list of formats, not `new DateTimeImmutable($value)`.**
    `services/Labels/PrintEvidenceService.php:35` uses the constructor for `observed_at`, the
    one genuinely RFC 3339 field in this API, and that is right there: it is worker-submitted
    telemetry on a `TIMESTAMPTZ` column. It is wrong here. The constructor also accepts `now`,
@@ -111,13 +128,14 @@ so never grew one.
    2nd of March — which would replace one silent wrong answer with a smaller family of them
    on exactly the rows this record exists to make trustworthy.
 
-5. **The document says what is accepted, in the same commit.** Each of the three fields
-   carries a `pattern` covering the whole accepted shape and a description naming the
-   refusal; the API-level "Dates and times" paragraph PR #234 added, which stated the silent
-   ignore, says this instead. A test asserts that the documented pattern and the server agree
-   about every rendering in both directions, because a pattern looser than the server puts a
-   caller back where issue #231 left them and one tighter refuses in a generated client what
-   the server would have taken.
+6. **The document says what is accepted, in the same commit.** Each of the three fields
+   carries the pattern above and a description naming the refusal; the API-level "Dates and
+   times" paragraph PR #234 added, which stated the silent ignore, says this instead. The
+   agreement is tested over the whole shape space rather than a sample: 7,560 generated
+   spellings, asserting that **nothing the document refuses is accepted** and that the only
+   values it accepts and the server refuses are the ones whose date or hour does not exist.
+   A pattern looser than the server puts a caller back where issue #231 left them; one
+   tighter refuses in a generated client what the server would have taken.
 
 ## Options considered
 
@@ -169,6 +187,9 @@ decided.
 - **`IsIsoDateTime()` is deleted.** `ParseApiDateTime()` subsumes it and it had no caller
   left. `IsIsoDate()` stays — five stock and recipe routes use it for `best_before_date` and
   `purchased_date`, which are SQL `DATE` columns and a different question.
+- **A client may send fractional seconds of any length.** They are discarded, so refusing a
+  value for carrying more of them than PHP parses would have been a refusal over precision
+  this API throws away.
 - **Two `format: date-time` write fields' worth of Swift client workaround goes away**, and
   `victual-kit` can send whatever its date encoder produces for these three fields.
 - **Nothing else that takes a date changes.** `best_before_date`, `purchased_date` and

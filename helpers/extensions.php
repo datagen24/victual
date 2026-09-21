@@ -184,6 +184,24 @@ function IsIsoDate($dateString)
 }
 
 /**
+ * The shape of every date/time a write route accepts, anchored, and byte for byte the
+ * string the three fields carry as their `pattern` in victual.openapi.json.
+ *
+ * It is here rather than inline so that the document and the parser cannot describe
+ * different sets. ParseApiDateTime() refuses anything this does not match *before* it
+ * reaches DateTimeImmutable::createFromFormat(), which is what makes the agreement
+ * structural instead of sampled: createFromFormat() is considerably more forgiving than
+ * its format strings suggest, and would otherwise have accepted `+0200`, `+02`, `GMT`,
+ * a single-digit hour and a doubled separator space - none of which this API documents,
+ * and all of which a sweep of the shape space on pull request 235 found it taking.
+ *
+ * The one thing it cannot say is whether a date exists: `2026-02-30 00:00:00` has this
+ * shape and is not a point in time. That is left to the calendar check below, and it is
+ * the only place the document is looser than the server.
+ */
+const API_DATE_TIME_PATTERN = '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2}|T\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})?)?$';
+
+/**
  * A caller's date/time value in any rendering this API accepts, normalised to the one it
  * stores ('Y-m-d H:i:s', local wall clock in the server's configured zone), or null when
  * the value is not a point in time at all.
@@ -197,7 +215,7 @@ function IsIsoDate($dateString)
  * | `2026-09-21` | `2026-09-21 00:00:00` - a bare date is its midnight |
  * | `2026-09-21T14:30:00` | `2026-09-21 14:30:00` - no offset means the server's zone |
  * | `2026-09-21T14:30:00Z` / `...+02:00` | the same instant, rendered in the server's zone |
- * | `2026-09-21T14:30:00.123Z` | the same, fractional seconds discarded |
+ * | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded |
  *
  * `new DateTimeImmutable()` - what PrintEvidenceService::Submit() uses for `observed_at`,
  * the one genuinely RFC 3339 field in this API - would accept all of those and also
@@ -218,18 +236,28 @@ function IsIsoDate($dateString)
  */
 function ParseApiDateTime($value)
 {
-	if (!is_string($value))
+	// No delimiter escaping: the expression contains no "/". "D" makes "$" mean the end of
+	// the string rather than "before an optional trailing newline", which is what the
+	// schema's "$" means.
+	if (!is_string($value) || preg_match('/' . API_DATE_TIME_PATTERN . '/D', $value) !== 1)
 	{
 		return null;
 	}
+
+	// Fractional seconds are discarded whatever happens, so they are taken off the value
+	// rather than parsed: PHP's "u" accepts at most six digits, and a client that writes
+	// more is not unusual - .NET's round-trip format writes seven, Go's RFC3339Nano up to
+	// nine. Parsing them would refuse such a value for carrying precision this function
+	// throws away, and would do it while the OpenAPI pattern said it was fine. The
+	// expression is anchored on the whole prefix RFC 3339 puts a fraction after, so it
+	// cannot match anywhere else in the string. Found by CodeRabbit on pull request 235.
+	$value = preg_replace('/^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})\\.\\d+/', '$1', $value);
 
 	$formats = [
 		'Y-m-d H:i:s',
 		'Y-m-d',
 		'Y-m-d\\TH:i:s',
-		'Y-m-d\\TH:i:sP',
-		'Y-m-d\\TH:i:s.u',
-		'Y-m-d\\TH:i:s.uP'
+		'Y-m-d\\TH:i:sP'
 	];
 
 	foreach ($formats as $format)

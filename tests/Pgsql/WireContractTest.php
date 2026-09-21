@@ -755,7 +755,13 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'RFC 3339 without an offset' => ['2026-03-04T05:06:07', null],
 			'RFC 3339 in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
 			'RFC 3339 with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
-			'RFC 3339 with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z']
+			'RFC 3339 with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z'],
+			// Seven digits is .NET's round-trip format and nine is Go's RFC3339Nano; PHP's
+			// "u" parses at most six, so both were refused while the document said they were
+			// fine. CodeRabbit found the seven-digit case on pull request 235 and a sweep of
+			// the shape space found the rest.
+			'more fractional digits than PHP parses' => ['2026-03-04T05:06:07.1234567Z', '2026-03-04T05:06:07Z'],
+			'fractional nanoseconds' => ['2026-03-04T05:06:07.123456789+02:00', '2026-03-04T05:06:07+02:00']
 		];
 	}
 
@@ -802,10 +808,10 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * Values the server refuses that the schema's `pattern` cannot, and is not expected to.
 	 *
 	 * A regular expression can say what a date *looks* like and not whether it exists; the
-	 * two calendar cases below have the shape of an accepted rendering and are not points in
-	 * time. That is the one place the document is deliberately looser than the server, and
-	 * naming it here is what keeps it deliberate - the pattern test below reads wrongShape()
-	 * only, for exactly this reason.
+	 * two cases below have the shape of an accepted rendering and are not points in time.
+	 * That is the one place the document is deliberately looser than the server, and
+	 * testNothingTheDocumentedPatternRefusesIsAccepted() proves it is the *only* one rather
+	 * than leaving it asserted here and hoped for elsewhere.
 	 */
 	private static function rightShapeNotATime(): array
 	{
@@ -905,48 +911,98 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The schema's `pattern` and the server agree about every rendering above, in both
-	 * directions. A pattern looser than the server puts a caller back where issue #231 left
-	 * them - the document says a value is fine and the route will not take it - and one
-	 * tighter refuses in a generated client what the server would have accepted.
+	 * All three fields document the same `pattern`, and it is the very string the parser
+	 * gates on - `API_DATE_TIME_PATTERN` in helpers/extensions.php, which ParseApiDateTime()
+	 * matches a value against before DateTimeImmutable ever sees it.
 	 *
-	 * Only the string cases: a `pattern` says nothing about a value that is not a string,
-	 * and `type: string` is what refuses those.
+	 * That identity is the point. Written as two independent expressions they drift, and
+	 * they did: before this was structural, `createFromFormat()` quietly accepted `+0200`,
+	 * `+02`, `GMT`, a single-digit hour and a doubled separator space, none of which the
+	 * document promised, while the document promised fractional seconds of any length that
+	 * PHP's `u` would not parse past six digits.
 	 */
-	public function testTheDocumentedPatternDescribesExactlyWhatIsAccepted(): void
+	public function testTheDocumentedPatternIsTheOneTheParserGatesOn(): void
 	{
 		$spec = self::spec();
-		$fields = [
-			['/chores/{choreId}/execute', 'tracked_time'],
-			['/batteries/{batteryId}/charge', 'tracked_time'],
-			['/tasks/{taskId}/complete', 'done_time']
-		];
 
-		$accepted = array_map(fn (array $case) => $case[0], self::acceptedRenderings());
-		$refused = self::wrongShape();
-
-		foreach ($fields as [$path, $field])
+		foreach (self::timestampFields() as [$path, $field])
 		{
 			$documented = $spec['paths'][$path]['post']['requestBody']['content']['application/json']['schema']['properties'][$field];
 
 			self::assertSame('string', $documented['type'], "$path $field");
 			self::assertArrayNotHasKey('format', $documented, "$path $field is not RFC 3339, so it carries no format");
-			self::assertArrayHasKey('pattern', $documented, "$path $field");
+			self::assertSame(\API_DATE_TIME_PATTERN, $documented['pattern'] ?? null, "$path $field");
+		}
+	}
 
-			// The D modifier is what makes PHP's "$" mean the end of the string rather than
-			// "before an optional trailing newline", which is what the schema's "$" means.
-			$pattern = '/' . str_replace('/', '\\/', $documented['pattern']) . '/D';
+	/**
+	 * Over every shape the parts below can spell, **nothing the document refuses is
+	 * accepted**, and everything it accepts is accepted unless the date or the hour does not
+	 * exist.
+	 *
+	 * The first half is the direction that hurts a caller: a value the server takes but the
+	 * document does not describe is a promise nobody made, and a generated client will never
+	 * send it. The second half is the gap named in `rightShapeNotATime()` - a regular
+	 * expression cannot know February has 28 days - and the assertion is that it is the
+	 * *only* gap, rather than a sampled list hoping it is.
+	 *
+	 * Against ParseApiDateTime() directly rather than over HTTP: 7,560 requests would be
+	 * thirty minutes of subprocesses to test a pure function. The routes are covered by the
+	 * cases above, which do go through the whole stack.
+	 */
+	public function testNothingTheDocumentedPatternRefusesIsAccepted(): void
+	{
+		$pattern = '/' . \API_DATE_TIME_PATTERN . '/D';
+		$impossible = '/(2026-02-30|2026-13-04|2026-03-32|[T ]25:)/';
 
-			foreach ($accepted as $what => $value)
+		$acceptedButUndocumented = [];
+		$refusedForAnotherReason = [];
+		$total = 0;
+
+		foreach (['2026-03-04', '2026-02-30', '2026-13-04', '2026-03-32'] as $date)
+		{
+			foreach (['', ' ', 'T', 't', '  '] as $separator)
 			{
-				self::assertMatchesRegularExpression($pattern, $value, "$path $field: the server accepts $what ($value)");
-			}
+				foreach (['05:06:07', '05:06', '5:06:07', '25:06:07', '05:06:07:08', '050607'] as $time)
+				{
+					foreach (['', '.1', '.123456', '.1234567', '.123456789', '.', '.abc'] as $fraction)
+					{
+						foreach (['', 'Z', 'z', '+02:00', '-05:30', '+0200', '+02', ' UTC', 'GMT'] as $zone)
+						{
+							$value = $separator === '' ? $date : $date . $separator . $time . $fraction . $zone;
+							$total++;
 
-			foreach ($refused as $what => $value)
-			{
-				self::assertDoesNotMatchRegularExpression($pattern, $value, "$path $field: the server refuses $what ($value)");
+							$documented = preg_match($pattern, $value) === 1;
+							$accepted = ParseApiDateTime($value) !== null;
+
+							if ($accepted && !$documented)
+							{
+								$acceptedButUndocumented[] = $value;
+							}
+
+							if ($documented && !$accepted && !preg_match($impossible, $value))
+							{
+								$refusedForAnotherReason[] = $value;
+							}
+						}
+					}
+				}
 			}
 		}
+
+		self::assertGreaterThan(7000, $total, 'the corpus is the whole cross product, not a subset');
+		self::assertSame([], $acceptedButUndocumented, 'accepted without being documented: ' . implode(', ', array_slice($acceptedButUndocumented, 0, 10)));
+		self::assertSame([], $refusedForAnotherReason, 'documented and refused for a reason other than an impossible date or hour: ' . implode(', ', array_slice($refusedForAnotherReason, 0, 10)));
+	}
+
+	/** @return array<array{0: string, 1: string}> */
+	private static function timestampFields(): array
+	{
+		return [
+			['/chores/{choreId}/execute', 'tracked_time'],
+			['/batteries/{batteryId}/charge', 'tracked_time'],
+			['/tasks/{taskId}/complete', 'done_time']
+		];
 	}
 
 	/**
