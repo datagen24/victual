@@ -87,12 +87,14 @@ request through it (every controller test calls the controller method directly).
 throwaway app whose one route is registered with the same FastRoute-constrained pattern
 `routes.php` uses for the generic label routes.
 
-Two things named in issue 192's mechanics section are still outside the number, and stay
-that way for now rather than being folded in without saying so:
+`canonical-json-tests.php` and `renderer-agreement-tests.php` were the last two named in
+issue 192's mechanics item 2, and they are measured now too (plan 33's M2). The first is
+2068 documents' worth of `Helpers\CanonicalJson`, run against an ECMAScript oracle; the
+second is the only check that feeds the real renderer's bytes to the verifier that will
+accept or refuse them in production. Both are exercise the number never saw.
 
-- **`canonical-json-tests.php` and `renderer-agreement-tests.php`.** Both are label-related
-  PHP processes in the same job, and could be wired the same way; they are not yet, so the
-  ratchet below does not yet count what they reach.
+One thing named there stays outside it:
+
 - **The frontend Playwright probes** (`.devtools/frontend/*.js`, the `frontend-security`
   job). These drive a running `php -S` server over HTTP from a separate job on a separate
   runner, so counting them means the server process loading `prepend.php` and a
@@ -101,6 +103,48 @@ that way for now rather than being folded in without saying so:
   session and CORS middleware) is real application code no PHP-process phase here drives at
   all, so folding them in later would raise the number, not just add more of what is
   already measured.
+
+## A step that stopped being measured
+
+Adding a step to the directory is easy; noticing that one quietly left is not, because the
+symptom is a number that stopped rising, which is also what an honest run with nothing new
+to reach looks like. A lost `PHP_INI_SCAN_DIR`, a driver that failed to load, a step whose
+`env:` block was dropped in a rebase — none of them fails anything on its own.
+
+So each separately measured step sets **`VICTUAL_COVERAGE_LABEL`**, `prepend.php` makes that
+the `.cov` filename's prefix, and the ratchet step passes **`report.php --expect=`** with
+every label named. A label that left no file exits 2 — the same code as "no `.cov` files at
+all", because both are setup failures rather than a coverage shortfall — and says which step
+went missing. Matching is on that step's own prefix, so a file another step left behind
+cannot stand in for it.
+
+`.devtools/coverage/expectation-tests.php` is the control, and runs in CI just before the
+ratchet. Fourteen checks: one positive (a wired process writes exactly one file named for
+its label, and `--expect` accepts it) and the rest negative — the prepend path disabled, the
+driver absent, and a label that is only a prefix of a real one. Each negative runs against a
+directory that already holds the positive control's file, because a stale file concealing a
+missing step is the specific way this mechanism could be useless.
+
+## Which files are below the floor
+
+`report.php` prints a per-**class** summary. The floor is stated per **file**
+(`docs/constitution.md`), and those are not the same list: a file can hold more than one
+class, and a file holding none at all is a class row nowhere.
+
+```sh
+php .devtools/coverage/inventory.php clover.xml [--floor=75] [--format=markdown|csv]
+```
+
+reads the Clover report and prints the files below the floor, worst first by **shortfall** —
+`max(0, ceil(floor * executable) - covered)`, the number of lines that actually have to be
+covered to reach it, not the file's whole uncovered count. Issue 192's backlog table quotes
+the second, which overstates the work by about a quarter of every file's line count and puts
+the wrong files at the top. Files with no executable lines are listed separately rather than
+given a percentage: 0/0 is neither 0% nor 100%, and printing either invents a measurement.
+
+The `suite` job runs it after the ratchet, with `if: always()`, so what a pull request left
+below the floor is in the log whether the gate passed or not. It is not itself a gate —
+plan 33's M3 leaves automated per-file enforcement optional.
 
 ## How it is wired
 

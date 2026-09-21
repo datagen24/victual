@@ -217,7 +217,16 @@ jobs:
       # Node is on the runner, and the differential half of this needs it: the ECMAScript
       # oracle is correct by construction and a PHP reimplementation of it would only be a
       # second thing to be wrong.
+      # Issue 192 mechanics item 2's first remaining process. The differential half of this
+      # needs Node, and the ECMAScript oracle is correct by construction — a PHP
+      # reimplementation of it would only be a second thing to be wrong. What changed here is
+      # only that it now measures into the same directory as everything else: CanonicalJson
+      # is 2068 documents' worth of exercise that the number never saw.
       - name: RFC 8785 canonicalization
+        env:
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: canonical-json
         run: php .devtools/labels/canonical-json-tests.php
 
       # PathParameterMiddleware needs no database (see its constructor's own docblock),
@@ -232,6 +241,7 @@ jobs:
         env:
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: path-parameter
         run: php .devtools/middleware/path-parameter-tests.php
 
       # Issue 192 mechanics item 2: this phase drives Services\Labels\LabelIdentityService
@@ -246,6 +256,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-identity
         run: php .devtools/labels/identity-tests.php
 
       # Same reason as the identity phase above: this is most of TemplateDocument and
@@ -257,6 +268,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-artifacts
         run: php .devtools/labels/artifact-tests.php
 
       - name: Label print jobs and fences
@@ -266,6 +278,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-print-jobs
         run: php .devtools/labels/print-job-tests.php
 
       - name: Label kinds (plan 32 - product, stock_entry, recipe, chore, battery)
@@ -275,6 +288,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-kinds
         run: php .devtools/labels/kinds-tests.php
 
       # The check neither repository can make alone: the real renderer's output, fed to the
@@ -302,6 +316,9 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_RENDERER_BIN: .agreement/target/release/victual-label-renderer
           VICTUAL_RENDERER_FONT: .agreement/tests/fixtures/NotoSans-Regular.ttf
+          VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
+          PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: renderer-agreement
         run: php .devtools/labels/renderer-agreement-tests.php
 
       - name: Label worker API and credentials
@@ -311,6 +328,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-worker-api
         run: php .devtools/labels/worker-api-tests.php
 
       - name: Label registry and configuration
@@ -320,6 +338,7 @@ jobs:
           PGPASSWORD: victual
           VICTUAL_COVERAGE_DIR: ${{ env.SUITE_SCRATCH }}/coverage
           PHP_INI_SCAN_DIR: ':${{ env.SUITE_SCRATCH }}/coverage-ini'
+          VICTUAL_COVERAGE_LABEL: label-registry
         run: php .devtools/labels/registry-tests.php
 
       # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
@@ -336,10 +355,44 @@ jobs:
       # caught in review on this PR). Only the exact figure closes that gap. A pull request
       # that lowers the true number fails here; the hard floor of 75% is issue 192's last
       # step, once the backlog in it is retired.
+      # The instrument's own controls, ahead of the step that reads it. A directory whose
+      # expected steps are all present proves nothing unless a missing one would have been
+      # caught, so this runs both negatives — the prepend path disabled and the driver
+      # absent — against a directory that already holds another step's file. It needs no
+      # database and no fixtures; it is about the measurement, not about what is measured.
+      - name: The coverage instrument notices a step it lost
+        run: php .devtools/coverage/expectation-tests.php
+
+      # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
+      # an interim report before the label phases above ran; this is the one that counts,
+      # over every .cov file the whole job left behind, including theirs. --min is raised by
+      # hand as the number climbs, and is the exact figure rather than a rounded one: a bare
+      # 64 lets a one-line regression through in either direction, and even a three-decimal
+      # figure admits a regression that moves both counts together (deleting a two-line,
+      # one-covered file lowers the numerator and the denominator at once). Only the full
+      # figure, matched against what report.php computes at runtime from the same counts,
+      # closes that gap. A pull request that lowers the true number fails here; the hard
+      # floor of 75% is issue 192's last step, once the backlog in it is retired.
+      #
+      # --expect names every step that measures into this directory outside run-tests.sh.
+      # Without it a step that silently stopped being measured — a lost PHP_INI_SCAN_DIR, a
+      # driver that failed to load — reads as an honest zero gain and fails nothing, which
+      # is the specific failure issue 192 mechanics item 2 asks to be made visible.
       - name: Enforce the coverage ratchet
         run: |
           env -u VICTUAL_COVERAGE_DIR php .devtools/coverage/report.php \
-            "$SUITE_SCRATCH/coverage" --clover=clover.xml --min=47.29875477988038
+            "$SUITE_SCRATCH/coverage" --clover=clover.xml \
+            --expect=canonical-json,renderer-agreement,path-parameter,label-identity,label-artifacts,label-print-jobs,label-kinds,label-worker-api,label-registry \
+            --min=RATCHET_PLACEHOLDER
+
+      # The per-file half of the same evidence. Aggregate --min cannot see a file that fell
+      # while another rose, and the floor is stated per file as well as in total
+      # (docs/constitution.md). Printed rather than gated: plan 33's M3 leaves automated
+      # per-file enforcement optional, so this is what a reviewer reads in the log, and what
+      # a pull request's Verification section quotes.
+      - name: Which files are below the floor
+        if: always()
+        run: php .devtools/coverage/inventory.php clover.xml
 
       # Uploaded even when the suite fails: which code a failing run did and did not
       # reach is part of reading the failure.

@@ -96,7 +96,16 @@ if (getenv('VICTUAL_COVERAGE_DIR') === false)
 
 		// Named for the process, so concurrent or repeated invocations cannot overwrite
 		// each other. report.php merges whatever it finds.
-		$path = $outputDir . '/' . getmypid() . '-' . uniqid() . '.cov';
+		//
+		// VICTUAL_COVERAGE_LABEL, when a caller sets one, becomes the filename's prefix so
+		// report.php --expect can tell "this step contributed nothing" from "this step never
+		// ran under the driver at all" — issue 192 mechanics item 2 asks for exactly that
+		// distinction, because a step that silently stops being measured reads as an honest
+		// zero and nothing fails. Unset, the name is what it always was.
+		$label = (string)(getenv('VICTUAL_COVERAGE_LABEL') ?: '');
+		$prefix = $label === '' ? '' : preg_replace('/[^A-Za-z0-9_-]/', '-', $label) . '.';
+
+		$path = $outputDir . '/' . $prefix . getmypid() . '-' . uniqid() . '.cov';
 
 		try
 		{

@@ -2,7 +2,7 @@
 
 // Merges the per-process coverage files the suite left behind and reports on them.
 //
-//   php report.php <coverage-dir> [--clover=path] [--min=NN]
+//   php report.php <coverage-dir> [--clover=path] [--min=NN] [--expect=label,label]
 //
 // prepend.php writes one .cov per PHP process, because no process can know it is the last
 // one. This is the other half: it loads all of them into a single CodeCoverage object,
@@ -17,6 +17,13 @@
 //
 // --min exists for CI. It is deliberately not set by default: a threshold nobody chose is
 // a threshold that gets raised until it fails, then deleted.
+//
+// --expect exists because a step that quietly stops being measured is indistinguishable,
+// in the number alone, from a step that honestly reached nothing new — and the first is a
+// setup failure while the second is a fact. Each separately measured step in the CI job
+// sets VICTUAL_COVERAGE_LABEL, prepend.php makes that the filename's prefix, and this asks
+// that every named label actually left a file behind. A stale file from another step
+// cannot satisfy a label that is missing, because the match is on that step's own prefix.
 
 require_once dirname(__DIR__, 2) . '/packages/autoload.php';
 
@@ -29,6 +36,7 @@ $args = array_slice($argv, 1);
 $directory = null;
 $clover = null;
 $minimum = null;
+$expected = [];
 
 foreach ($args as $arg)
 {
@@ -40,13 +48,25 @@ foreach ($args as $arg)
 	{
 		$minimum = (float)substr($arg, strlen('--min='));
 	}
+	elseif (str_starts_with($arg, '--expect='))
+	{
+		foreach (explode(',', substr($arg, strlen('--expect='))) as $label)
+		{
+			$label = trim($label);
+
+			if ($label !== '')
+			{
+				$expected[] = $label;
+			}
+		}
+	}
 	elseif ($directory === null)
 	{
 		$directory = $arg;
 	}
 	else
 	{
-		fwrite(STDERR, "usage: report.php <coverage-dir> [--clover=path] [--min=NN]\n");
+		fwrite(STDERR, "usage: report.php <coverage-dir> [--clover=path] [--min=NN] [--expect=label,label]\n");
 		exit(2);
 	}
 }
@@ -69,6 +89,42 @@ if (empty($files))
 	// Not an error to distinguish from a low number: it means the suite ran without the
 	// driver loaded, which is a setup problem and worth saying so plainly.
 	fwrite(STDERR, "no .cov files in " . $directory . " — did the suite run with SUITE_COVERAGE=1?\n");
+	exit(2);
+}
+
+// Checked before the merge, so a job that lost a step is told which step rather than being
+// left to read a percentage and guess. Exit 2, the same code the "no .cov files" case above
+// uses, because both are setup failures rather than a coverage shortfall (which is exit 1).
+$missing = [];
+
+foreach ($expected as $label)
+{
+	$prefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $label) . '.';
+
+	$found = false;
+
+	foreach ($files as $file)
+	{
+		if (str_starts_with(basename($file), $prefix))
+		{
+			$found = true;
+
+			break;
+		}
+	}
+
+	if (!$found)
+	{
+		$missing[] = $label;
+	}
+}
+
+if ($missing !== [])
+{
+	fwrite(STDERR, "no coverage data from: " . implode(', ', $missing) . "\n");
+	fwrite(STDERR, "each of those steps should have set VICTUAL_COVERAGE_LABEL and run under\n");
+	fwrite(STDERR, "prepend.php (PHP_INI_SCAN_DIR), with a coverage driver loaded. A step that\n");
+	fwrite(STDERR, "measured nothing is not the same as a step that was not measured.\n");
 	exit(2);
 }
 
