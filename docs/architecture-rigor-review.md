@@ -75,12 +75,20 @@ seventeen, **nine are closed by the branch that added this table**, one (D5) bec
 stated rule rather than a sweep, and **seven carry an owning plan** because they are code
 or config changes and this branch is scoped to `docs/`.
 
-Every row below was re-checked against the tree on 2026-08-30, at `4fa97e8`. "Closed"
-means the finding was verified gone, not that a commit claimed it — a distinction this
-document has more reason than most to insist on, since two of its rows are exactly the
-case where a commit claimed it and it was not so. Rows marked "closed 2026-08-30" were
-closed by the same branch that added this table; rows marked "closed" without a date were
-already fixed before it.
+Every row below was re-checked against the tree on 2026-08-30, at `4fa97e8`, and **the
+table has gone on being a tracker since**: a row whose finding is closed later is updated
+in place and carries the date it was closed, so the heading above names when this snapshot
+was first taken rather than the last time any row moved. "Closed" means the finding was
+verified gone, not that a commit claimed it — a distinction this document has more reason
+than most to insist on, since two of its rows are exactly the case where a commit claimed
+it and it was not so. Rows marked "closed 2026-08-30" were closed by the same branch that
+added this table; rows marked "closed" without a date were already fixed before it; a row
+carrying any other date was closed after it, by the work that date names.
+
+A finding's own entry in sections A–H below is **not** rewritten when its row closes. Those
+sections are the review as it was written and are left standing, so several of them describe
+a tree that has since moved — A4's body points at a method that did not exist then and does
+now, A7's says plan 11 has not started. The row is where the current state is.
 
 | # | State | Evidence, or where it now lives |
 |---|---|---|
