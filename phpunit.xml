@@ -85,5 +85,8 @@
 		<testsuite name="demodata">
 			<file>tests/Pgsql/DemoDataTest.php</file>
 		</testsuite>
+		<testsuite name="dialectpolicy">
+			<file>tests/Pgsql/DialectPolicyTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>
