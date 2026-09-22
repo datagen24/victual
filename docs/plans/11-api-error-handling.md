@@ -21,8 +21,9 @@ here, that the totals agreed at 86 apiece with two mismatches hidden inside them
 in both halves: it dropped one route on the way in and invented one spec-only path.
 
 The `ExposedEntity` allow-lists are read from the spec at runtime, so entity drift is
-impossible by construction, and every controller returns the same `{ "error_message": … }`
-body. The structure is sound. What is not uniform is *which status code* that body arrives
+impossible by construction, and every controller's error body carries `error_message` —
+`{ "error_message": … }` for `Error400`, with `error_details` alongside it in `Error500`.
+The structure is sound. What is not uniform is *which status code* that body arrives
 with, and it is not uniform in four separate ways.
 
 **Permission checks land inside or outside a `try` at random.** `User::CheckPermission`
