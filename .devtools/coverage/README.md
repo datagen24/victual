@@ -13,10 +13,12 @@ artifact.
 ## What the number means
 
 It is line coverage of `services/`, `controllers/`, `helpers/`, `middleware/`, `plugins/`
-and the three top-level PHP files, by a suite that is not a unit test suite. Three phases
-drive SQL straight at each engine and barely enter PHP application code at all; the fourth
-goes through `StockService`. So most controllers are at zero by design, and the total is
-low for a reason that is not a quality judgement.
+and the three top-level PHP files. The differential phases that gave this suite its name
+drive SQL straight at each engine and barely enter PHP application code at all — that is
+why most controllers used to read zero, and it was a fact about the suite's shape rather
+than a quality judgement. Since plan 33 the tier-1 PHPUnit phases (ADR-0025) reach them
+directly, so the number is now a statement about the application rather than about which
+phases happen to enter it.
 
 Read it as a map first: `StockService` sitting around two thirds means the stock write
 paths are exercised, and that figure falling means a phase stopped reaching something it
@@ -24,34 +26,50 @@ used to, which is the failure this exists to make visible.
 
 It is also a score, since 2026-09-17. The maintainer set a **floor of 75%** line coverage
 of application code, a **target of 85% or better** and **90% as the ideal**
-(`docs/constitution.md`, standing invariants). The tree is below the floor —
-37.81% on master at `6133e15`, with the backlog and the plan to close it in
-[issue 192](https://github.com/datagen24/victual/issues/192).
-A threshold nobody chose gets lowered until it stops failing; this one was chosen, which
-is the difference. `report.php` takes `--min=NN`, and a pull request that lowers the
-number, or leaves a file it touched below 75%, has not met the verification bar.
+(`docs/constitution.md`, standing invariants). A threshold nobody chose gets lowered until
+it stops failing; this one was chosen, which is the difference. `report.php` takes
+`--min=NN`, and a pull request that lowers the number, or leaves a file it touched below
+75%, has not met the verification bar.
+
+**The tree is above all three, as of 2026-09-22: 10002 of 10385 executable lines,
+96.31%, with every one of the 140 files in scope at or above the floor.** That is plan
+33's domain work, done against the backlog [issue
+192](https://github.com/datagen24/victual/issues/192) carries — which measured 37.81% at
+`6133e15` on 2026-09-17, from a table that listed 69 classes because a file the suite
+never loaded did not appear in it at all (see below). Four files have no executable lines
+and are listed apart rather than counted either way.
 
 The ratchet issue 192 asks for as its first step is wired: `tests.yml`'s `suite` job gates
-on `report.php --min=47.29875477988038` in its "Enforce the coverage ratchet" step, near
+on `report.php --min=96.31198844487241217394` in its "Enforce the coverage ratchet" step, near
 the end rather than inside `run-tests.sh`, because it has to see everything the job
 measured — including the label phases below — not just the differential suite's share of
-it. Not the 37.81 `6133e15` measured, because that figure predates both fixes below: the
-pull request that wired this ratchet ([#196](https://github.com/datagen24/victual/pull/196))
-had its own `suite` job report 4824 of 10199 executable lines covered, 47.29875477988038%
-exactly, from 216 processes, at `f6e7225` (2026-09-17) — with never-loaded files shown and
-the label suites measured, the real total turned out well above the last recorded one, not
-below it, which is what adding coverage rather than hiding or losing it should do.
+it. The figure has been raised three times: 47.29875477988038% when the ratchet was wired
+([#196](https://github.com/datagen24/victual/pull/196), `f6e7225`, 2026-09-17, 216
+processes), and twice by plan 33's own work, ending at 10002 of 10385 from 1165 processes.
+
+Each of those is a full figure rather than a rounded one, and one of them was not a figure
+at all for a while: a placeholder was committed in its place, `report.php` cast it with
+`(float)`, and `(float)'RATCHET_PLACEHOLDER'` is `0.0` — a threshold every run clears. The
+gate ran, compared against zero and reported green. `report.php` now refuses a `--min` it
+cannot read (exit 2, the setup-failure code) rather than casting it, and
+`expectation-tests.php` carries the control that would have caught it.
 
 `--min` is that full figure, not a rounded one — a shorter number is not a ratchet at the
-current total, it is a ratchet at a nearby one. A bare `47` passes a run that lost one
-covered line (47.28895%) or added one uncovered executable line (47.29412%). Even `47.298`
-still passes a regression that moves both counts together: deleting a two-line,
-one-covered file — one line lost from each of the numerator and the denominator — reads
-4823/10197 = 47.298225%, below the true baseline but still ≥ `47.298`. Both gaps were
-caught in review on this same PR before merge (see the PR discussion for the arithmetic);
-only the exact figure, matched bit-for-bit against what `report.php` computes at runtime
-from the same 4824/10199, closes them. `--min` is raised by hand as the number climbs; the
-hard floor of 75% is issue 192's last step, once the backlog in it is retired.
+current total, it is a ratchet at a nearby one. The arithmetic that settled this was done
+against the original 4824/10199 and still reads the same way at any total: a bare `47`
+passed a run that had lost one covered line (47.28895%) or gained one uncovered executable
+line (47.29412%), and even `47.298` passed a regression that moved both counts together —
+deleting a two-line, one-covered file loses one line from each of the numerator and the
+denominator and reads 4823/10197 = 47.298225%, below the true baseline but still ≥
+`47.298`. Both gaps were caught in review before that merge. Only the exact figure,
+parsing back to bit-identically the double `report.php` computes at runtime from the same
+two counts, closes them — which is checked rather than assumed each time the number is
+raised.
+
+The ratchet stays at the measured figure rather than dropping to 75% now that the number
+clears it. A gate set to the floor would admit a twenty-point fall, and the floor is a
+statement about the worst acceptable state, not about this one. The per-file half of the
+floor is the inventory below.
 
 ## Every file in scope, not just the ones a table happened to list
 

@@ -353,9 +353,9 @@ jobs:
       # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
       # an interim report before the label phases above ran; this is the one that counts,
       # over every .cov file the whole job left behind, including theirs. --min is raised by
-      # hand as the number climbs. The figure is 9927 of 10385 executable lines, measured
-      # 2026-09-21 on this branch by a run of everything this job runs, and it is the full
-      # figure rather than a rounded one: a bare 95 lets a one-line regression through in
+      # hand as the number climbs. The figure is 10002 of 10385 executable lines, measured
+      # 2026-09-22 on this branch by a run of everything this job runs, and it is the full
+      # figure rather than a rounded one: a bare 96 lets a one-line regression through in
       # either direction, and even a three-decimal figure admits a regression that moves
       # both counts together (deleting a two-line, one-covered file lowers the numerator and
       # the denominator at once). Only the full figure, which parses back to bit-identically
@@ -380,7 +380,7 @@ jobs:
           env -u VICTUAL_COVERAGE_DIR php .devtools/coverage/report.php \
             "$SUITE_SCRATCH/coverage" --clover=clover.xml \
             --expect=canonical-json,renderer-agreement,path-parameter,label-identity,label-artifacts,label-print-jobs,label-kinds,label-worker-api,label-registry \
-            --min=95.58979297063071101093
+            --min=96.31198844487241217394
 
       # The per-file half of the same evidence. Aggregate --min cannot see a file that fell
       # while another rose, and the floor is stated per file as well as in total
