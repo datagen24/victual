@@ -12,12 +12,13 @@ change to it is a change to how the project is governed, reviewed accordingly.
 The maintainer (datagen24) decides. That is a statement about how this project is
 governed — one maintainer, accountable for the tree — and not about how many people are
 expected to run it: anyone is welcome to, and the records here are written to be read by
-someone who does. Proposals are argued on their merits and records are written to be
-argued with — but "who decides" is never implicit, and nothing is adopted by momentum. An
-ADR is accepted in its own pull request,
-carrying bookkeeping only; a record is not accepted by a plan that assumes it, a PR that
-implements it, or by not being argued with. Acceptance prerequisites are gates, not
-suggestions.
+someone who does.
+
+Proposals are argued on their merits and records are written to be argued with — but
+"who decides" is never implicit, and nothing is adopted by momentum. An ADR is accepted
+in its own pull request, carrying bookkeeping only; a record is not accepted by a plan
+that assumes it, a PR that implements it, or by not being argued with. Acceptance
+prerequisites are gates, not suggestions.
 
 ## Standing invariants
 
@@ -39,6 +40,7 @@ household member is a finding, not a curiosity.
 executable lines; **85% or better** is the target and **90%** the ideal. New code arrives
 covered, a change never lowers a file or the total below the floor, and the number is
 measured by the suite CI runs, not by a separate unit-test tier this fork does not have.
+
 The floor was chosen by the maintainer on 2026-09-17; the tree is below it, and
 [issue 192](https://github.com/datagen24/victual/issues/192) holds the backlog: its first step —
 a CI ratchet that only rises — is wired; its last turns on the floor itself. A threshold
@@ -78,10 +80,12 @@ of intent it will formalize.)
 **The stock ledger is exact history.** Every booking is a fact a human can trust and
 undo. Probabilistic observations — vision inference, sensor fusion, anything with a
 confidence attached — never write the ledger directly; they write proposals, and a person
-confirms them. [ADR-0012](adr/0012-observations-are-proposals.md), accepted 2026-09-04,
-makes that a decision rather than a description, and draws it narrower than this paragraph
-did: confirming a proposal — or rejecting one — requires exactly the permission the booking
-it proposes requires, and **there is no auto-confirm path**. The threshold this paragraph
+confirms them.
+
+[ADR-0012](adr/0012-observations-are-proposals.md), accepted 2026-09-04, makes that a
+decision rather than a description, and draws it narrower than this paragraph did:
+confirming a proposal — or rejecting one — requires exactly the permission the booking it
+proposes requires, and **there is no auto-confirm path**. The threshold this paragraph
 used to admit as a second kind of confirmer is deferred until there is precision data to
 set it from.
 
@@ -104,8 +108,8 @@ done is kept, because it is what future readers most need and least often have.
 
 This fork's contract is its own OpenAPI specification. Upstream grocy compatibility is an
 *import capability*, not a behavioral obligation: grocy SQLite is an input format for
-`bin/victual-db-import`, grocycode is an input symbology for barcode resolution
-([ADR-0011](adr/0011-label-namespace.md), accepted 2026-09-04, makes that a decision rather
-than a description: parsed forever, emitted never), and both are kept honest by pinned
+`bin/victual-db-import`, and grocycode is an input symbology for barcode resolution
+([ADR-0011](adr/0011-label-namespace.md), accepted 2026-09-04, makes that a decision
+rather than a description: parsed forever, emitted never). Both are kept honest by pinned
 fixtures at stated supported versions. The fork accepts drift in exchange for the ceiling
 coming off.

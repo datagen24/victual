@@ -7,9 +7,8 @@
   forced — the rotation derivation mechanism, `artifact_forms`, `provenance`, the mandatory
   combination validation at enqueue and again before device I/O, and the scoping of
   `completion_evidence` and `artifact_forms` to the `(driver, connection_type, combination)`
-  triple — landed before it, in the pull requests that ran the gates. That is the point of
-  gates: a key the exercise showed was missing amended the contract before acceptance rather
-  than after.
+  triple — landed before it, in the pull requests that ran the gates. A key the exercise showed
+  was missing amended the contract before acceptance rather than after.
 - **Accepted after [ADR-0021](0021-label-templates-are-application-data.md), 2026-09-07**, and
   that order was not a preference. This record's ownership model is the one 0021 decides, and
   until 0021 was accepted, still-Accepted [ADR-0011](0011-label-namespace.md) assigned templates
@@ -38,15 +37,15 @@
   **Nothing else about this record changes**: the pull transport, the driver registry and
   capability contract, claiming, fencing, leases, the four delivery facts and the
   no-automatic-redispatch rule are untouched. Each record was accepted on its own pull request,
-  and **not in either order**: 0021 first, because the ownership model above is the one it
-  decides and it contradicted then-unqualified [ADR-0011](0011-label-namespace.md), whose
+  and **the order was deliberate**: 0021 first. The ownership model above is the one 0021 decides,
+  and it contradicted then-unqualified [ADR-0011](0011-label-namespace.md), whose
   decision item 4 assigned templates to the drainer and whose Consequences put the label's
   appearance outside this repository. Accepting this record while that stood would have left two
   accepted records contradicting each other with no answer to who owns a template. 0021
   superseded those boundaries first, and only then did the text above rest on an uncontradicted
   footing. The two format-dependent details this record once owed — what the artifact adds to
-  the job payload, and what the claim precondition compares — are written into items 4 and 5,
-  and neither depended on the format after all: 0021's prerequisite 2 confirmed them rather than
+  the job payload, and what the claim precondition compares — are written into items 4 and 5.
+  Neither depended on the format after all: 0021's prerequisite 2 confirmed them rather than
   supplying them.
 - **Would affect:** [06](../plans/06-location-barcodes.md),
   [17](../plans/17-ecosystem-clients.md), [20](../plans/20-container-infrastructure.md),
@@ -85,7 +84,7 @@ worker have no owning plan today.
 
 **The outbox already exists, and it already states the rule this record must follow.**
 `migrations/0259.{pgsql,sqlite}.sql` created a generic `outbox` table —
-`event_type`/`payload`/`delivered_at`/`dead_lettered_at`/`attempts`/`last_error` — and its
+`event_type`/`payload`/`delivered_at`/`dead_lettered_at`/`attempts`/`last_error`. Its
 comment is explicit that it "is deliberately not an InfluxDB table: the point of the
 contract is that consumers may multiply while contracts may not, so a second consumer
 attaches by reading its own `event_type` rather than by minting a table of its own."
@@ -114,16 +113,16 @@ reach the printer.
 
 **The worker carries no interpreter** (2026-09-07). Its language is not this record's to fix
 in general, but the decision behind the current one belongs here because it changes what
-"packages as an image on no base image" costs: a Python worker cannot satisfy
+"packages as an image on no base image" costs. A Python worker cannot satisfy
 [ADR-0013](0013-nix-built-container-images.md)'s no-shell property without rebuilding the
-Python package set under an interpreter that breaks their test suites, and a Rust one satisfies
+Python package set under an interpreter that breaks their test suites; a Rust one satisfies
 it with nothing removed. The Brother driver is reimplemented against the published constants
 rather than depended on — the part a QL needs is the raster command stream and a socket.
 
 | Owned by this repository | Owned by the worker repository |
 |---|---|
 | The printer inventory: persisted instances, the configuration UI, and validation | Driver implementations, and the settings schema and capability document each advertises |
-| The registry of driver definitions, and the capability contract they are written against | Nothing about a label's appearance — templates and rendering are owned elsewhere, see below |
+| The registry of driver definitions, and the capability contract they are written against | Nothing about a label's appearance — templates and rendering are owned elsewhere, see *Rendering is a third component* below |
 | The print job event and its payload contract, the pinned template identity, and the artifact the job carries | Verifying an artifact against the printer's resolved configuration before device I/O |
 | The claim/acknowledge/register API and its OpenAPI contract | Device transport (TCP, USB, whatever a driver needs) |
 | The attempt, evidence and observed-status records | The worker's own tests, including geometry assertions |
@@ -138,11 +137,15 @@ application data and puts font shaping, layout, QR generation and rasterization 
 renderer that reads it. The split is three ways rather than two: Victual owns the template
 document, its versions, assets and media profiles; the renderer turns one of those plus
 captured fields into an immutable artifact; the worker turns an artifact into device
-instructions and reports what happened. The renderer and the worker may share a repository or
+instructions and reports what happened.
+
+The renderer and the worker may share a repository or
 a deployment, and their **contracts stay separate** — a render may be retried automatically
 precisely because it cannot touch a printer, and no rendering retry may become a second
 physical attempt. [Plan 27](../plans/landed/27-label-templates-and-rendering.md) owns the renderer
-and the document; this record's worker keeps the device. This preserves ADR-0011's consequence that rendering leaves
+and the document; this record's worker keeps the device.
+
+This preserves ADR-0011's consequence that rendering leaves
 this repository: driver quirks and imaging bugs move on their own schedule, and neither is a
 reason to cut a Victual release. Template *semantics* no longer travel with them — ADR-0021
 moved the document into this repository precisely because a household editing a label's
@@ -201,7 +204,7 @@ screen shows for the same reason it shows a worker that cannot drive a printer.
 alongside the two existing constants (`services/ApiKeyService.php:15-16`) and the `mcp` type
 the [MCP interface spec](../mcp-interface-spec.md) proposes. Keys are already stored as a
 SHA-256 hash with a `key_hint` (migration 0264), already carry `key_type` on the `api_keys`
-table, and are already validated per route — so a label-worker key is granted and revoked
+table, and are already validated per route. So a label-worker key is granted and revoked
 independently of general API keys, and `ApiKeyAuthenticator` gains one type in its accepted
 set for these nine routes only. No new authentication machinery.
 
@@ -224,8 +227,9 @@ credential and a session. One value to transfer rather than an address and a key
 **Environment credentials are not prohibited; the two modes differ in provisioning and
 recovery.** A declared worker's credential is injected from a Secret and lives in its
 environment for the life of the pod — that is the platform's own mechanism, the operator
-rotates it, and a host that can read that environment is already a cluster compromise. A
-paired worker sits on a device the operator does not otherwise manage, where the value is
+rotates it, and a host that can read that environment is already a cluster compromise.
+
+A paired worker sits on a device the operator does not otherwise manage, where the value is
 placed by a person or a script and where nobody will notice it sitting in a shell history or
 a unit file. Single-use expiring material is what makes that exposure worth little, and it
 makes recovery a re-pair rather than a hunt for where a long-lived key was copied to. Same
@@ -281,7 +285,9 @@ naively — into a revocation of the honest party.
 **Replay against hashed storage: the successor is derived, not stored.** API keys are stored
 as a SHA-256 hash with a `key_hint` (migration 0264), which is the property that makes a
 database disclosure not a credential disclosure — so Victual cannot hand back a successor it
-kept, because it keeps none. This record earlier listed three options and declined to pick one
+kept, because it keeps none.
+
+This record earlier listed three options and declined to pick one
 on paper. **The rotation acceptance spike ran on 2026-09-07 and the second is chosen**: the
 successor is derivable from material the worker supplies, so a replay reproduces it **without
 Victual durably storing it**. Victual does compute the successor and return it in the response;
@@ -332,7 +338,7 @@ These are different events and conflating them revokes honest workers:
 The third row is the only suspicious pattern, and it is suspicious because a worker that
 already obtained a successor has no reason to rotate its predecessor again under a new id.
 The honest case that lands there is a worker restored from an older backup of its store,
-which presents a credential the live chain has moved past — and that worker *is* a second
+which presents a credential the live chain has moved past. That worker *is* a second
 holder of a credential, so revoke-and-re-pair is the right outcome for it too.
 
 **A worker never discards an unreported outcome because a credential was refused.** A 401 on
@@ -341,7 +347,7 @@ attempt's outcome is lost. `result` is idempotent per attempt and evidence per
 `(source, submission_id)`, so a report held across a re-pairing lands exactly once when it
 finally arrives.
 
-**That rule is about refusal, not about crashes, and the difference is load-bearing.** An
+**That rule is about refusal, not about crashes.** An
 unreported outcome survives a 401 because the worker still holds it in the process that
 produced it. Whether it survives the *process* is a separate question with a different answer
 per mode, and stating it as one unconditional promise would be wrong:
@@ -476,7 +482,7 @@ The rules on those rows:
 
 **Enqueue validation no longer depends on a worker having registered a template.** Victual
 pins one of its own published template versions into every job and refuses a job whose
-template requires a capability the target printer's driver does not offer — it holds both
+template requires a capability the target printer's driver does not offer. It holds both
 sides of that comparison now, which is the half of this rule ADR-0021 makes simpler rather
 than removes.
 
@@ -499,10 +505,10 @@ Version 1 carries:
 |---|---|---|
 | `connection_types` | The transports the driver accepts: `tcp`, `usb`, `cups`, `ipp` | The driver |
 | `models` | The device models this driver supports | The driver |
-| `combinations` | The authoritative list of what actually works — see below | Each entry names its own `connection_type`, model, media, resolution and colour mode |
-| `artifact_forms` | The input formats **this driver implementation accepts**, versioned — see below | The combinations each form applies to |
+| `combinations` | The authoritative list of what actually works — see *combinations is a list, not a product of several lists* below | Each entry names its own `connection_type`, model, media, resolution and colour mode |
+| `artifact_forms` | The input formats **this driver implementation accepts**, versioned — see *artifact_forms says what the driver accepts* below | The combinations each form applies to |
 | `completion_evidence` | What can be reported on that path: `none`, `transport`, or `device_reported` | The `(driver, connection_type, combination)` triple |
-| `provenance` | `demonstrated` or `advertised` — see below | Required on every `combinations`, `artifact_forms` and `completion_evidence` entry |
+| `provenance` | `demonstrated` or `advertised` — see *Every row says where its claim comes from* below | Required on every `combinations`, `artifact_forms` and `completion_evidence` entry |
 
 **`combinations` is a list, not the product of several lists.** Independent lists of media,
 resolutions and colour modes claim every crossing of them works, which is false of every
@@ -511,14 +517,16 @@ printer family: a Brother QL supports red only on `62red` tape, and not at every
 **Demonstrated on hardware, 2026-09-07.** A job declaring two-colour *and* 600 dpi was refused
 by a QL-820NWBc with "Communications Command Error", while the same content at two-colour and
 300 dpi printed correctly. The capability document written for gate 5 has `62red` at 300 × 300
-and no 600 dpi row, so it had already said that combination does not exist — the job simply
+and no 600 dpi row, so it had already said that combination does not exist — the job
 never consulted it.
 
-**So the combination is validated twice, and both are required.** Once **at enqueue**, against
-the driver's `combinations`, so an impossible job is refused where the person asking can see
-it; and again **against the printer's resolved configuration immediately before device I/O**,
-because a printer's media or driver version may have changed between the two moments. The
-proof obligation is specific: an unsupported two-colour-at-600-dpi request must result in
+**So the combination is validated twice, and both are required.** The first is **at enqueue**,
+against the driver's `combinations`, so an impossible job is refused where the person asking
+can see it. The second is **against the printer's resolved configuration immediately before
+device I/O**, because a printer's media or driver version may have changed between the two
+moments.
+
+The proof obligation is specific: an unsupported two-colour-at-600-dpi request must result in
 **zero bytes reaching the device**, asserted rather than assumed.
 Each entry names a `model`, a `media`, a `resolution_x` and `resolution_y` in dpi, and a
 `color_mode` — and carries the geometry for that entry alone:
@@ -534,8 +542,9 @@ caller to assume they are equal.
 
 **`artifact_forms` says what the driver accepts, which is not what the printer speaks.**
 Added 2026-09-07, after the capability-contract acceptance spike wrote two families out and
-found every version 1 key describing the *device* and none describing its *input*. A Brother QL
-adapter takes a raster and converts it to Brother's raster commands; a Zebra adapter may take
+found every version 1 key describing the *device* and none describing its *input*.
+
+A Brother QL adapter takes a raster and converts it to Brother's raster commands. A Zebra adapter may take
 ZPL, or may equally take a raster and encode it into `^GF` itself — that is a property of the
 adapter, not of the printer, and two workers advertising `zebra.zpl` may differ. Without the
 key Victual cannot refuse a job whose artifact is the wrong form, so the mismatch surfaces as a
@@ -576,7 +585,7 @@ combination that printer resolves to. This is also what makes
 question expressible rather than a fork in the road — a deployment may carry both, and the
 capability document says which printers take which over which transport.
 
-Explicit units are load-bearing: issue [#90](https://github.com/datagen24/victual/issues/90)
+Explicit units prevent a specific defect: issue [#90](https://github.com/datagen24/victual/issues/90)
 is a geometry defect produced by two components disagreeing about which dot count a
 dimension meant, and a contract that says "width: 696" repeats it. A record of an endless
 label's length as a range rather than a number is the same defect's other half.
@@ -595,7 +604,9 @@ precondition, and no configuration setting is needed.** Verified 2026-09-07 on a
 the identical byte stream printed correctly with the printer set to Raster and again with it
 set to P-touch Template, because the stream establishes raster mode itself. **The leading
 `ESC i a 01` is preserved** — every stream that printed had it before the invalidate as well as
-after the initialize, and whether a trailing-only switch would suffice is **unverified**. So nothing about command
+after the initialize, and whether a trailing-only switch would suffice is **unverified**.
+
+So nothing about command
 mode belongs in `label_printers` or in a deployment step — Victual drives a QL as it finds it.
 Recorded because it was wrongly suspected first: a "Wrong Roll Type" refusal was read as an
 emulation problem when it was a media mismatch, and the printer's own status page reports
@@ -657,7 +668,7 @@ failure rather than a configuration error.
 
 **Namespaced extensions are allowed**, as `x-<driver_id>.<key>`, and generic templates
 ignore them. **A template declares the capabilities it requires** — in Victual's published
-template version under ADR-0021, rather than in a worker registration — and a job is refused
+template version under ADR-0021, rather than in a worker registration. A job is refused
 at enqueue when the target printer's driver does not support the combination, not at print
 time, where the person who asked for the label is no longer watching.
 
@@ -671,12 +682,15 @@ Version 1 accepts an object whose properties are strings, booleans, integers, nu
 enums, with `required`, numeric and length bounds, `pattern`, `title` and `description`.
 **Measured 2026-09-07** against `opis/json-schema` 2.6.0 and `json-editor` 2.15.2, by rendering
 and validating the Brother model/media case rather than by reading feature lists: the validator
-handled everything including `allOf` and `if`/`then`; the renderer **ignored the conditional
+handled everything including `allOf` and `if`/`then`. The renderer **ignored the conditional
 entirely** — a document the validator rejects produced no form errors — and additionally
-rendered the `allOf` branches as phantom controls beside the real fields. So **conditionals are
+rendered the `allOf` branches as phantom controls beside the real fields.
+
+So **conditionals are
 outside the subset**, which is what the per-combination mechanism below already assumed. The
 renderer does drop unknown properties, so `additionalProperties: false` cannot be violated from
 the form; that is a convenience, not the enforcement.
+
 Unknown properties in a settings document are rejected. External `$ref` is rejected
 outright — resolving one would be a fetch of a schema named by a registration, which is the
 class of outbound call this record removes. **Registration rejects a schema using anything
@@ -691,7 +705,9 @@ body**.
 What that demonstrates, stated precisely: the **response contract** failed — a refusal was
 reported as a success. It does **not** demonstrate that an invalid settings document was
 stored, because the endpoint under test persisted nothing; no write was attempted and none can
-be claimed. The reason it still matters is that a caller cannot distinguish that 200 from a real
+be claimed.
+
+The reason it still matters is that a caller cannot distinguish that 200 from a real
 one, and a client that treats 200 as "stored and valid" proceeds on a false premise. Two rules
 follow, and both are cheap: a registration is accepted only if every combination's schema is
 **structurally valid against the supported subset**, checked rather than assumed; and **a
@@ -702,7 +718,9 @@ an unevaluable schema as a refusal.
 **Flat scalars cannot express which combinations of model, media, resolution and colour are
 valid**, and that is the constraint the subset has to answer. Under a pull-only transport
 Victual cannot ask a worker to resolve a schema for a selection the admin just made, so any
-mechanism has to be registered ahead of time. The registration therefore declares its
+mechanism has to be registered ahead of time.
+
+The registration therefore declares its
 **discriminator properties** — typically model and media — and supplies **one resolved
 schema per supported combination**. Selecting a model and media selects a schema; no
 conditional evaluation is needed in either the validator or the renderer, which is what
@@ -720,7 +738,9 @@ the refusal reached the form correctly and landed in the wrong place.
 
 **The generated form is an editor, not a gate, and combination validation is mandatory on the
 server.** The measurement above is why this is a requirement rather than a reassurance: the
-renderer will submit a configuration it cannot see is invalid. Two server-side checks are
+renderer will submit a configuration it cannot see is invalid.
+
+Two server-side checks are
 therefore compulsory on every write, whatever path it arrives by — the settings document against
 the schema registered for that `(driver_id, schema_version)`, **and** the resulting
 `(model, media, resolution, colour_mode)` selection against the driver's `combinations`. A
@@ -770,11 +790,15 @@ A job is offered to a claiming worker when all three hold:
    **Failing this check is a visible blocked outcome, not a silent pass-over.** Conditions 1
    and 2 mean the job was never this caller's to take. Condition 3 is different: the caller
    *is* the printer's assigned worker and the printer *is* active, and because a printer has
-   exactly one assigned worker there is nobody else who could ever claim it. So the claim opens
+   exactly one assigned worker there is nobody else who could ever claim it.
+
+   So the claim opens
    an attempt that immediately records `blocked`, naming the form or profile version no longer
    accepted, and ends — the same treatment item 4 gives an unavailable version, and provably
    zero bytes sent. Restoring the advertisement makes another attempt possible; a person
-   authorizes it. The enqueue-time check exists to make this rare rather than to make it
+   authorizes it.
+
+   The enqueue-time check exists to make this rare rather than to make it
    impossible: it refuses a job the assigned worker cannot consume at the moment somebody asks
    for the label, and reaching this precondition and failing it means the advertisement changed
    after that.
@@ -837,7 +861,7 @@ days ago" and "reported healthy three seconds ago" must not render identically, 
   decision item 4's deleted-printer case.
 - **A printer whose assigned worker cannot drive it is a visible state.** When that worker
   does not advertise the printer's exact driver version, or the artifact and profile contract
-  versions a job needs, the job is never offered — and the configuration screen says which of the two
+  versions a job needs, the job is never offered. The configuration screen says which of the two
   is missing rather than leaving a queue that grows for no visible reason.
 
 #### Where the three kinds of setting live
@@ -968,8 +992,8 @@ job say which rendering it meant. Three rules follow:
   pinned *template* version; now it is the artifact and profile contract, because that is what
   it is handed. The rule is unchanged in substance: an upgrade may not silently strand work
   that was already queued against it.
-- **An unavailable version is a visible blocked outcome, never a fallback to the latest** —
-  and after ADR-0021 that covers a missing artifact as much as a missing contract version: a
+- **An unavailable version is a visible blocked outcome, never a fallback to the latest.**
+  After ADR-0021 that covers a missing artifact as much as a missing contract version: a
   job whose artifact has not been validated and attached is not claimable, and one whose bytes
   are gone is refused rather than rerendered.
   The attempt records `blocked` naming the missing version and ends there. Like every other
@@ -999,7 +1023,9 @@ below give a job an authorization count, a current attempt and an outcome, and n
 can live where the first draft of this record implied. They cannot go on `outbox`: that table
 is shared with [plan 18](../plans/18-mqtt-state-publication.md)'s event type under the "one
 outbox schema discriminated by event type" rule this record relies on, and columns meaningful
-to one consumer are exactly what that rule exists to prevent. They cannot be derived from
+to one consumer are exactly what that rule exists to prevent.
+
+They cannot be derived from
 `print_attempts` either — `current_attempt_id` could be, as the highest `attempt_number` for
 the job, but `attempts_authorized` is a counter a person increments and an authorization
 granted but not yet consumed leaves no attempt row to derive it from. That state is precisely
@@ -1052,15 +1078,21 @@ means.
   the set of work this consumer will do. Anything reporting backlog for
   `label.print_requested` reads the authorization state, not `delivered_at` alone.
 - **A late result is recorded; only a current attempt's result completes the job.** These
-  are two rules and conflating them loses one of them. **Recording:** an authenticated
-  owner may submit `sent` or `result` for its own attempt at any time, including after that
-  attempt expired or was superseded, and the value lands on that attempt's row. Refusing it
-  would discard the only account of what the worker actually did, which is the evidence a
-  person needs to decide whether a label exists. **Completing:** only the job's
+  are two rules, and conflating them loses one of them.
+
+  **Recording:** an authenticated
+  owner may submit `sent` or `result` for its own attempt at any time. This holds even after
+  that attempt expired or was superseded, and the value lands on that attempt's row. Refusing
+  it would discard the only account of what the worker actually did — the evidence a
+  person needs to decide whether a label exists.
+
+  **Completing:** only the job's
   `current_attempt_id` can acknowledge the outbox row or set the job's outcome. A result
   arriving for a superseded attempt is marked as such on its own row and touches nothing
-  else — not the newer attempt's outcome, not the job. `heartbeat` is the exception to the
-  recording rule, because it is not a report of what happened but a claim on the future: it
+  else — not the newer attempt's outcome, not the job.
+
+  `heartbeat` is the exception to the
+  recording rule, because it is not a report of what happened but a claim on the future. It
   is refused for an attempt that is not current, has expired, or has ended, so no late
   heartbeat can revive an attempt or extend a lease that has already passed to another.
 - **Bookkeeping is idempotent, so a network retry never prints.** `sent`, `result`,
@@ -1074,8 +1106,8 @@ means.
   it. None of these routes can enqueue work or authorize an attempt, so retrying bookkeeping
   cannot produce a physical print under any ordering.
 - **Authorizing an attempt names the attempt being reviewed, and cannot be banked.** The
-  request identifies the failed, blocked or uncertain attempt the operator looked at, and
-  one transaction under the job row lock verifies three things: that attempt is still the
+  request identifies the failed, blocked or uncertain attempt the operator looked at. One
+  transaction under the job row lock verifies three things: that attempt is still the
   job's `current_attempt_id`, it has ended — a terminal outcome, an expiry, or abandonment
   — and `attempts_authorized` equals the number of attempts already made, so no unused
   authorization is outstanding. Only then is the count incremented.
@@ -1083,9 +1115,10 @@ means.
   Each condition removes a distinct failure. Naming the attempt means an operator authorizes
   a retry of the failure they were shown rather than of whatever has happened since. The
   ended check stops B being authorized while A is still printing, which is the case that
-  produces two labels from one job with no fault anywhere in the worker. The
-  no-unused-authorization check stops authorizations accumulating into a job that can be
-  claimed several times over, and it is also what makes the action idempotent: a
+  produces two labels from one job with no fault anywhere in the worker.
+
+  The no-unused-authorization check stops authorizations accumulating into a job that can be
+  claimed several times over, and it is also what makes the action idempotent. A
   double-click or a retried request finds the authorization it just created still unused,
   changes nothing, and is answered with the current state rather than an error.
 
@@ -1169,10 +1202,10 @@ sent nothing. Whether bytes left the worker is not the test, because the state w
 knows is precisely the state this rule exists for.
 
 **Automatic retry is deferred, not rejected.** Deciding it needs three things this record
-does not have: printer-specific knowledge of what a device does with a truncated job,
+does not have: printer-specific knowledge of what a device does with a truncated job, and
 validation that delivery reporting is trustworthy enough to distinguish "not sent" from
-"sent and unacknowledged", and an explicit policy decision about who bears the cost of a
-duplicate. It is outside wave 3b.
+"sent and unacknowledged". It also needs an explicit policy decision about who bears the
+cost of a duplicate. It is outside wave 3b.
 
 **The verifier correlates its observation with an attempt; Victual does not infer the
 correlation.** `attempt_id` is required on every evidence row. A uid is stable by
@@ -1190,9 +1223,10 @@ of a retired uid.
 **Print evidence never books inventory, and it is not automatically an ADR-0012 proposal.**
 [ADR-0012](0012-observations-are-proposals.md) governs confidence-bearing claims about
 *bookings* — writes to the stock ledger — and "a label came out of the printer" is not one.
+
 The two are separable in the case that mixes them: a camera that reads a shelf and reports
 both "this label exists" and "there are three of these here" submits the first as print
-evidence and the second as a proposal, and the proposal is ADR-0012's to govern. Should
+evidence and the second as a proposal. The proposal is ADR-0012's to govern. Should
 confidence-based print confirmation ever be wanted, the rule is here rather than borrowed: a
 person confirms it, there is no auto-confirm threshold, and confirming a print confirms a
 print — it writes no stock.
@@ -1207,7 +1241,7 @@ the label call sites and the class stays.)*
 
 1. **Location labels first, in wave 3b.** [Plan 06](../plans/06-location-barcodes.md) is
    wave 3b in the [plans index](../plans/README.md) and locations have no `/printlabel`
-   endpoint today, so this is purely additive: the new entities and their event type, the
+   endpoint today. This is purely additive: the new entities and their event type, the
    nine worker routes of decision item 2, the printer and worker administration routes, and
    a print action on the locations pages. **No existing response changes.**
 2. **The five existing endpoints migrate afterwards** — products, stock entries, recipes,
@@ -1234,12 +1268,16 @@ merged with `VICTUAL_LABEL_PRINTER_PARAMS`
 (`controllers/Api/StockApiController.php::ProductPrintLabel` and `::StockEntryPrintLabel`,
 and the same shape in `RecipesApiController`, `ChoresApiController`,
 `BatteriesApiController`). `GET /api/system/config` additionally loses four keys.
+
 A no-change option does not exist for step 2, because ADR-0011 decision item 3 already
-forbids the `grocycode` field's current value: the choices are to keep emitting `grcy:`
-from `/printlabel` alone, which contradicts an accepted record; to return `vctl:<uid>`
-under the key `grocycode`, which keeps the key and changes what it means, so a client
-rendering that value itself would print a DataMatrix of a `vctl:` payload and produce a
-physical artifact in the wrong symbology; or to change the response.
+forbids the `grocycode` field's current value. The choices are:
+
+- Keep emitting `grcy:` from `/printlabel` alone, which contradicts an accepted record.
+- Return `vctl:<uid>` under the key `grocycode`, which keeps the key and changes what it
+  means, so a client rendering that value itself would print a DataMatrix of a `vctl:`
+  payload and produce a physical artifact in the wrong symbology.
+- Change the response.
+
 [ADR-0005](0005-wire-contract-is-the-invariant.md)'s two accepted exceptions and its one
 withdrawn exception are all cases where the engines disagreed and one side was named
 conforming. This is a fork-initiated redesign of a response, so it belongs in a record of
@@ -1336,11 +1374,12 @@ surface appears in a workload whose network policy is a reviewed manifest. The s
 note recording that, not a waiver.
 
 **Late binding is a narrow departure from migration 0259's self-contained-payload rule.**
-That comment argues a consumer re-reading the ledger at delivery time "would compute a
-different timestamp on every retry and give a drained backlog the latest stock snapshot
-rather than each transaction's own, which is the difference between at-least-once delivery
-being safe and being lossy in a new way." That argument is about facts. Printer
-configuration is not a fact about the past; it is the current description of a device, and
+That comment gives the reason a consumer must not re-read the ledger at delivery time. It
+"would compute a different timestamp on every retry and give a drained backlog the latest
+stock snapshot rather than each transaction's own, which is the difference between
+at-least-once delivery being safe and being lossy in a new way." That argument is about facts.
+
+Printer configuration is not a fact about the past; it is the current description of a device, and
 the failure modes point opposite ways. Re-reading the ledger at delivery loses information.
 Embedding the connection at enqueue loses the fix: a queue of jobs enqueued against the
 wrong media would print against the wrong media whenever it drained, and correcting it would
@@ -1379,7 +1418,9 @@ across a crash.
 
 **Its stored credential is not protected in the sense the word usually carries.** **Encryption whose key lives on the same storage protects against
 nothing that copies that storage:** a pulled SD card carries the ciphertext and the key
-together, and is readable wherever it is taken. Encryption at rest protects only when the
+together, and is readable wherever it is taken.
+
+Encryption at rest protects only when the
 decryption key stays outside what was copied — hardware-backed storage such as a TPM or a
 secure element, or a passphrase supplied at start — and the worker should use one where the
 platform offers it. File permissions keep another local user out; they stop nothing that has
@@ -1397,14 +1438,15 @@ evidence are bookkeeping about work it did. A driver definition is different: a 
 identity supplies a document that governs what an admin may later store. Decision item 3
 bounds it structurally — a definition is append-only and a registration contradicting a stored
 one is refused, so a compromised or buggy worker can publish a driver nobody uses, but cannot
-rewrite a definition that existing printer rows were validated against. Template definitions
-were the second kind until ADR-0021 moved them out of a worker's reach entirely, which is a
+rewrite a definition that existing printer rows were validated against.
+
+Template definitions were the second kind until ADR-0021 moved them out of a worker's reach entirely, which is a
 smaller machine-writable surface rather than a differently bounded one.
 
 **A JSON Schema validator becomes a dependency.** `composer.json`'s eighteen
 requirements include none. Two consequences beyond the package: it is the second addition
 this fork has made after `php-mqtt/client`, which plan 18's security notes route to the
-sweep's dependency review; and a `composer.lock` change moves the fixed-output hash in
+sweep's dependency review. A `composer.lock` change also moves the fixed-output hash in
 `nix/hashes.nix`, one of the two ADR-0013 records as maintained by hand. The alternative is
 hand-rolled validation of an arbitrary driver-supplied schema.
 
@@ -1417,10 +1459,12 @@ registration that exceeds it.
 
 **The render/print seam has two kinds of defect and needs two kinds of check.**
 [Issue #90](https://github.com/datagen24/victual/issues/90) records both against the
-prototype whose imaging code the worker reuses. The resize defect — the renderer authors
+prototype whose imaging code the worker reuses.
+
+The resize defect — the renderer authors
 its canvas against `dots_total` while `brother_ql` compares against `dots_printable`, so
-every endless print is silently resampled and at 600 dpi comes out roughly 1.9× too long —
-is measured, reproducible, and catchable by an assertion spying on `Image.Image.resize`
+every endless print is silently resampled and at 600 dpi comes out roughly 1.9× too long.
+It is measured, reproducible, and catchable by an assertion spying on `Image.Image.resize`
 across `convert()` and requiring zero resize calls, which runs in the worker repository's
 CI. The rotation *sign* is not catchable that way: no library default competes with the
 prototype's hardcoded `-90`, so the issue states it needs one physical print against the
@@ -1469,13 +1513,13 @@ the reason each reliance was defensible without 0010 is the reason it is still d
 Both reliances were written as arguments for accepting 0010 rather than as claims that it was
 accepted, and **0010 was accepted on 2026-09-07**, so they are now reliance on a binding
 record. What that changes is smaller than it looks: the independent grounding above still
-holds, so a future record superseding 0010 does not by itself unseat decision items 2 and 5 —
-they would fall back to the constitution, which is a weaker but not empty basis. Neither was
-ever load-bearing for decision item 3: whether printers are master data does not depend on
+holds, so a future record superseding 0010 does not by itself unseat decision items 2 and 5.
+They would fall back to the constitution, which is a weaker but not empty basis. Neither
+reliance affects decision item 3: whether printers are master data does not depend on
 0010 at all.
 
 Two of 0010's properties bind this record rather than merely supporting it, and both are
-already discharged in the decision above: the worker is unprivileged with its own identity
+already discharged in the decision above. The worker is unprivileged with its own identity
 (a typed API key over nine routes), and it is declared — an image in this flake with probes
 and limits, per decision item 1. The paired mode's departure from property 1 is named as an
 exception in *Consequences*, which is the form 0010 now requires an exception to take.
@@ -1484,28 +1528,33 @@ exception in *Consequences*, which is the form 0010 now requires an exception to
 each other.** Its decision item 3 said "its own database role" without qualification,
 which this worker cannot satisfy — it makes no database connection at all — and its
 property 1 said "stateless" the same way, which the paired configuration mode above
-cannot satisfy either. 0010 now scopes the first to workloads that hold a database
-connection (a worker with none is outside the property's scope, not a violation of it)
-and states the second as departable by name in the record proposing the exception, citing
+cannot satisfy either.
+
+0010 now scopes the first to workloads that hold a database
+connection (a worker with none is outside the property's scope, not a violation of it).
+It states the second as departable by name in the record proposing the exception, citing
 the paired worker above as that instance.
 
 **One discrepancy survives that crossing and is this record's to carry, not 0010's.** 0010's
 accepted text describes the paired worker as keeping "one durable value, its own credential".
-That was true of this record when 0010 was written and is no longer true of it: an acceptance
+That was true of this record when 0010 was written and is no longer true of it. An acceptance
 review on 2026-09-07 found that a recoverable rotation cannot be built on a single stored
 value, so the paired worker persists **two** — its credential, and a pending-rotation record
-while an exchange is in flight. This record was corrected; 0010 is Accepted and is not edited
+while an exchange is in flight.
+
+This record was corrected; 0010 is Accepted and is not edited
 here, and it does not need to be for its decision to hold. What 0010 decides is that a
 departure from property 1 is stated by name in the record proposing the workload, with the
-value held, why no operator mechanism covers it, and what recovery looks like. That is
-satisfied by two values exactly as it was by one, and *What a worker actually persists* above
+value held, why no operator mechanism covers it, and what recovery looks like.
+
+That is satisfied by two values exactly as it was by one, and *What a worker actually persists* above
 is where the count is authoritative. If 0010's illustration is ever restated, it is a
 superseding record's business.
 
-Neither amendment weakens 0010's reliance value
-here: it is the same standard, stated so that this record's two departures are the
-argued exceptions they were always written to be, rather than a silent conflict between
-two Proposed records each assuming the other would give way.
+Neither amendment weakens 0010's reliance value here. It is the same standard, stated so
+that this record's two departures are the argued exceptions they were always written to
+be, rather than a silent conflict between two Proposed records each assuming the other
+would give way.
 
 ## Acceptance prerequisites
 
@@ -1525,9 +1574,9 @@ subsystem to be built before the architecture authorizing it is accepted.
    *interpreter* was not: nixpkgs' CPython references bash from `subprocess.py`,
    `python3-config` and `ctypes/macholib/fetch_macholib`, so a Python image ships an executable
    shell and this check fails, correctly. Removing the reference is possible and was
-   demonstrated, at a price: `self = pythonNoShell` rebinds the package set, the set is then
-   rebuilt by an interpreter that cannot run a shell, and every dependency whose test suite
-   shells out fails — cffi first, then six through `subprocess.getstatusoutput`, a stdlib
+   demonstrated, at a price. `self = pythonNoShell` rebinds the package set, and the set is
+   then rebuilt by an interpreter that cannot run a shell. Every dependency whose test suite
+   shells out then fails — cffi first, then six through `subprocess.getstatusoutput`, a stdlib
    function that is `shell=True` by definition.
 
    **So the worker is written in Rust and carries no interpreter** (maintainer, 2026-09-07).
@@ -1560,43 +1609,60 @@ subsystem to be built before the architecture authorizing it is accepted.
    satisfying [ADR-0013](0013-nix-built-container-images.md) and being excused from it.
 2. **Claiming, fencing, pairing and crash-after-send behave as decision items 2, 5 and 6
    specify.**
-   Against a fake device, in throwaway code: a heartbeat extends a lease and the bound ends
-   it; a failed or expired attempt leaves the job unclaimable until an attempt is
-   authorized; authorization is refused while an attempt is still running, and refused again
-   while an authorization it already granted is unused, so authorizations cannot accumulate;
-   two concurrent claims against one authorization produce one attempt, with the loser
-   refused rather than queued behind it; a late result from a superseded attempt is
-   **accepted and recorded on its own row** while completing nothing, and a late heartbeat
-   for the same attempt is refused; repeated deliveries of `sent`, `result` and `evidence`
-   change nothing after the first; **a worker killed between `bytes_sent_at` and its
-   terminal result leaves a visible uncertain job and produces no second print**; and
-   pairing material is consumed by its first use, and a rotated credential stops working.
+
+   Against a fake device, in throwaway code:
+
+   - A heartbeat extends a lease and the bound ends it.
+   - A failed or expired attempt leaves the job unclaimable until an attempt is authorized.
+   - Authorization is refused while an attempt is still running, and refused again while an
+     authorization it already granted is unused, so authorizations cannot accumulate.
+   - Two concurrent claims against one authorization produce one attempt, with the loser
+     refused rather than queued behind it.
+   - A late result from a superseded attempt is **accepted and recorded on its own row**
+     while completing nothing, and a late heartbeat for the same attempt is refused.
+   - Repeated deliveries of `sent`, `result` and `evidence` change nothing after the first.
+   - **A worker killed between `bytes_sent_at` and its terminal result leaves a visible
+     uncertain job and produces no second print.**
+   - Pairing material is consumed by its first use, and a rotated credential stops working.
 3. **Rotation survives its failure modes, and stale traffic is not treated as theft.**
    **The replay mechanism was chosen and written into this record on 2026-09-07** — the
    successor is derived from worker-supplied material rather than stored, and the storage did
-   not have to change. **The gate is not closed.** The spike ran the credential cases in
-   isolation and therefore created no print attempts, which means it did **not** establish the
+   not have to change. **The gate is not closed.**
+
+   The spike ran the credential cases in
+   isolation and therefore created no print attempts. That means it did **not** establish the
    promise this gate actually makes: that no path loses an attempt's outcome *to a credential
    refusal*. **An integrated case is required before this gate closes** — a worker that claims,
-   sends bytes, rotates mid-attempt, and then reports its result, showing the report is accepted
-   for the attempt it belongs to and that no credential state discards it.
+   sends bytes, rotates mid-attempt, and then reports its result. It shows the report is
+   accepted for the attempt it belongs to and that no credential state discards it.
+
    **Run 2026-09-07, and re-run against the amended implementation.** Claim → send → rotate →
-   report passes: rotating mid-attempt leaves the attempt open with its bytes recorded and its
-   lease live; the superseded credential is refused with a 401 that discards nothing, the
-   attempt staying reportable and the job open; the successor reports **that same attempt** and
-   completes it; one attempt exists throughout; and the crash variant recovers the same
-   successor by replay and reports on the same attempt. It also found the late-report defect
+   report passes:
+
+   - Rotating mid-attempt leaves the attempt open with its bytes recorded and its lease live.
+   - The superseded credential is refused with a 401 that discards nothing, the attempt
+     staying reportable and the job open.
+   - The successor reports **that same attempt** and completes it.
+   - One attempt exists throughout.
+   - The crash variant recovers the same successor by replay and reports on the same attempt.
+
+   It also found the late-report defect
    amended into decision item 5 above, which is the argument for running this case rather than
    the credential cases alone — and the re-run is against the amended behaviour, not the one
    that produced the defect. **On that evidence this gate is discharged**: the integrated case
    closes the one it was missing.
-   The earlier cases, also run: a lost rotation response retried with the same
-   `rotation_request_id` recovers under whichever mechanism was chosen, without issuing a
-   second successor; a worker killed before storing the
-   successor recovers to exactly one credential on restart; an old heartbeat or result
-   arriving after a rotation is refused with a 401 and revokes nothing; a consumed credential
-   presented under a different `rotation_request_id` revokes the session; and no path through
-   any of these produces another print.
+
+   The earlier cases, also run:
+
+   - A lost rotation response retried with the same `rotation_request_id` recovers under
+     whichever mechanism was chosen, without issuing a second successor.
+   - A worker killed before storing the successor recovers to exactly one credential on
+     restart.
+   - An old heartbeat or result arriving after a rotation is refused with a 401 and revokes
+     nothing.
+   - A consumed credential presented under a different `rotation_request_id` revokes the
+     session.
+   - No path through any of these produces another print.
 
    Note the last clause is deliberately not "loses an attempt's outcome". A declared worker
    holds nothing durable, so a crash before it reports can lose that report — leaving an
@@ -1619,8 +1685,8 @@ subsystem to be built before the architecture authorizing it is accepted.
    and this gate is met.**
    - **Structural validation against the subset**, by walking the schema against the version 1
      keyword set rather than asking whether a validator threw. `allOf` is refused as outside the
-     subset though it would evaluate perfectly, and a non-schema value under `properties` is
-     caught structurally as well as by evaluation, so neither layer is load-bearing alone.
+     subset though it would evaluate perfectly — a case only structural validation catches —
+     and a non-schema value under `properties` is caught both structurally and by evaluation.
    - **Deterministic combination selection.** Two combinations sharing a discriminator tuple are
      refused at registration — "selecting a schema by it would not be deterministic" — so
      selection can never be a first-match race.
@@ -1629,8 +1695,8 @@ subsystem to be built before the architecture authorizing it is accepted.
      a value outside an enum, an unknown property, an unsupported combination, and an
      unevaluable stored schema. A valid write is the control, and it does store.
    - **The lifted property pointer is exercised, including its display where no control exists.**
-     `field=darkness` with a code distinguishing a forbidden property from a forbidden value;
-     rendered, a refusal naming a field the form has a control for attaches to that control,
+     `field=darkness` with a code distinguishing a forbidden property from a forbidden value.
+     Rendered, a refusal naming a field the form has a control for attaches to that control,
      and one naming a field it does not appears in its own region saying so — which is the case
      lifting the pointer creates.
 5. **The capability contract version 1 expresses two real driver families.** Brother QL and
@@ -1669,7 +1735,7 @@ subsystem to be built before the architecture authorizing it is accepted.
    **The second family is the networked laser, not Zebra.** The deployment has a Brother
    QL-820NWBc and a networked laser, and **no ZPL device** — so a Zebra document could only ever
    be written from datasheets and nothing in it would be falsifiable here. Zebra is neither a
-   requirement nor a backlog item of this record; it is simply not the second family.
+   requirement nor a backlog item of this record; it is not the second family.
 
    **Re-exercised 2026-09-07 against both families under the amended contract, and this gate's
    requirement is met.** Both documents now carry `artifact_forms`, and they make the
@@ -1680,7 +1746,7 @@ subsystem to be built before the architecture authorizing it is accepted.
    The laser's document was written from `ipptool` Get-Printer-Attributes rather than a
    datasheet, and every claim in it that could be tested was: `application/pdf` is advertised
    **and** a job sent in it was accepted and reached `job-state = completed` with
-   `job-impressions-completed = 1`, and on the printed page the 100 mm ruler and the
+   `job-impressions-completed = 1`. On the printed page the 100 mm ruler and the
    50.0 × 30.0 mm box measure true with the QR scanning off paper. An advertised format, a job
    accepted in it, a device-reported completion, correct dimensions and a readable code — none
    of it taken on trust.
@@ -1733,16 +1799,19 @@ implementation plan rather than to this record.
 
 ## Research
 
-- Tree facts measured on the working copy of 2026-09-06: the four `LABEL_PRINTER_*`
-  settings (`config-dist.php:226-229`) and their reach into
-  `SystemApiController::EXPOSED_SETTINGS`; the five `*/printlabel` routes
-  (`routes.php:239-240,256,265,276`) and the payload each builds; `Setting()` in
-  `helpers/extensions.php`; `shopping_locations` (`db/pgsql/baseline/01_tables.sql:308`) as
-  the master-data shape; `EntityReadPolicy::PERMISSIONS` and its fail-closed default;
-  `GenericEntityApiController`'s use of the `ExposedEntity*` enums; `api_keys.key_type` and
-  `ApiKeyService`'s two type constants with hashed storage and `key_hint` since migration
-  0264; the `outbox` table and `OutboxService`'s event-type and payload-version discipline;
-  `bin/victual-publish-state` as the existing in-repository consumer.
+- Tree facts measured on the working copy of 2026-09-06:
+  - The four `LABEL_PRINTER_*` settings (`config-dist.php:226-229`) and their reach into
+    `SystemApiController::EXPOSED_SETTINGS`.
+  - The five `*/printlabel` routes (`routes.php:239-240,256,265,276`) and the payload each
+    builds.
+  - `Setting()` in `helpers/extensions.php`.
+  - `shopping_locations` (`db/pgsql/baseline/01_tables.sql:308`) as the master-data shape.
+  - `EntityReadPolicy::PERMISSIONS` and its fail-closed default.
+  - `GenericEntityApiController`'s use of the `ExposedEntity*` enums.
+  - `api_keys.key_type` and `ApiKeyService`'s two type constants with hashed storage and
+    `key_hint` since migration 0264.
+  - The `outbox` table and `OutboxService`'s event-type and payload-version discipline.
+  - `bin/victual-publish-state` as the existing in-repository consumer.
 - **No JSON Schema validator is in `composer.json`**, whose `require` block holds eighteen
   packages, the most recent additions being `ramsey/uuid` and `php-mqtt/client`. Checked
   2026-09-06.

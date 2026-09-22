@@ -6,6 +6,7 @@ without a separate bridge process.
 **Depends on:** per the README's Wave 5 — [11](11-api-error-handling.md),
 [13](landed/13-write-path-transactions.md) and [15](landed/15-deliberate-cleanup.md) C1, plus
 [14](landed/14-contract-and-regression-scaffolding.md)'s snapshot — all of which gate this plan.
+
 **Status:** superseded in part — the Open-question responses below are settled and now
 carried by the full [MCP interface specification](../mcp-interface-spec.md)
 (2026-08-29), which fixes the protocol baseline (`2026-07-28`, TypeScript SDK v2), the
@@ -58,11 +59,12 @@ middleware change at all. MCP does not care what the path is.~~
 The sidecar has no mount point in this application at all. It is a separate service that
 speaks HTTP to the same API any other client uses, which is what makes "two replicas
 indistinguishable" achievable — there is no per-connection state in the server to make
-them differ. The cost the superseded version avoided, and the sidecar pays, is that the
-sidecar authenticates *as* a user over the network rather than inheriting a session; that
-is the credential→user seam Q1 settles, and sweep **S11** constrains it — the seam does
-not accept a key from the query string, and sidecar→server trust follows S4's
-trusted-proxy pattern rather than a shared header alone.
+them differ.
+
+The sidecar pays a cost the superseded version avoided: it authenticates *as* a user over
+the network instead of inheriting a session. That is the credential→user seam Q1 settles,
+and sweep **S11** constrains it — the seam does not accept a key from the query string, and
+sidecar→server trust follows S4's trusted-proxy pattern rather than a shared header alone.
 
 ### Authentication
 
@@ -86,18 +88,22 @@ knowledge has a cutoff. **Before building, confirm against the current spec revi
 against the specific client you intend to use.** See Q1.
 
 **Future state, recorded 2026-08-27: the household IdP will eventually front this.**
-The longer term direction is to put the existing IdP in front of Victual — forward-auth at
-the k3s ingress for the web UI (which is exactly what `ReverseProxyAuthMiddleware`
-already supports), and for MCP the IdP plays the authorization server role the MCP auth
-spec actually wants: the MCP endpoint validates the IdP's tokens and maps the subject to
-a Victual user, and never issues tokens itself. That is a much better fit than Victual
-growing its own OAuth. Consequence for v1: **build the identity seam, not the auth** —
-keep "credential → Victual user" as one small replaceable resolver (bearer API key today,
-IdP token subject later) and have everything downstream (permissions, tool gating) work
-off the resolved user. If that seam exists, the IdP migration is a resolver swap plus
-ingress config, not a redesign. Caveat when the time comes: clients and IdPs vary in
-what they support of the auth spec (resource metadata discovery, dynamic client
-registration), so verify against the actual client and IdP then, not from memory.
+The longer term direction is to put the existing IdP in front of Victual: forward-auth at
+the k3s ingress for the web UI, which is exactly what `ReverseProxyAuthMiddleware` already
+supports. For MCP, the IdP plays the authorization server role the MCP auth spec actually
+wants — the MCP endpoint validates the IdP's tokens, maps the subject to a Victual user,
+and never issues tokens itself. That is a much better fit than Victual growing its own
+OAuth.
+
+Consequence for v1: **build the identity seam, not the auth** — keep "credential →
+Victual user" as one small replaceable resolver (bearer API key today, IdP token subject
+later) and have everything downstream (permissions, tool gating) work off the resolved
+user. If that seam exists, the IdP migration is a resolver swap plus ingress config, not a
+redesign.
+
+Caveat when the time comes: clients and IdPs vary in what they support of the auth spec
+(resource metadata discovery, dynamic client registration), so verify against the actual
+client and IdP then, not from memory.
 
 ### Transport
 
@@ -122,7 +128,7 @@ Then a small, deliberately boring set of writes:
 
 | Tool | Notes |
 |---|---|
-| `add_to_shopping_list` | Lowest risk write — easy to undo, hard to get badly wrong |
+| `add_to_shopping_list` | Lowest risk write — removing the added entry undoes it |
 | `consume_product` | Mutates stock. Gate behind a permission |
 | `purchase_product` | Same, plus prices |
 
@@ -138,14 +144,16 @@ and `prices_incomplete`; and `shopping_list` reads `uihelper_shopping_list`, whi
 three carry none — `products_volatile_status` and `stock_missing_products` have no price
 column, and `products_view`'s `qu_factor_price_to_stock` is a unit factor rather than a
 price.
+
 Question 5's answer keeps them out of the payload by construction — hand-built
 name/amount/due-date responses rather than raw view rows — which is protection by accident
 rather than by policy. 19 makes it policy: the tool registry declares its response fields,
 and the ones annotated `x-visibility` drop for a key whose user lacks the leaf. Since the
 sidecar resolves its key to a user and every REST call is permission-checked as that user
-(question 6's response), redaction is inherited and needs no MCP-specific mechanism. The
-residual is a key-management question rather than a permissions one, and it is this plan's:
-**one shared MCP key means one user's price visibility for every household member the
+(question 6's response), redaction is inherited and needs no MCP-specific mechanism.
+
+The residual is a key-management question rather than a permissions one, and it is this
+plan's: **one shared MCP key means one user's price visibility for every household member the
 assistant talks to.** Either the key is per person, or its user holds no
 `STOCK_PRICES_VIEW`.
 
