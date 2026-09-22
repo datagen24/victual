@@ -43,6 +43,7 @@ PHPDOC_PHAR_SHA256 = "fe1e7c23ba3329aa6f19ac3c807446159a431a195ec5d9163b0c281a15
 PAGES = {
     "docs/constitution.md": "development/constitution.md",
     "docs/documentation.md": "development/documentation-conventions.md",
+    "docs/style-guide.md": "development/writing-style.md",
     "docs/data-model.md": "development/data-model.md",
     "docs/grocycode.md": "development/grocycode.md",
     ".github/CONTRIBUTING.md": "development/contributing.md",

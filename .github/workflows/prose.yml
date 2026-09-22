@@ -1,0 +1,32 @@
+name: prose
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Vale
+        run: python3 .devtools/vale/install.py --directory "$RUNNER_TEMP/vale"
+      - name: Verify rules and baseline comparison
+        env:
+          VALE: ${{ runner.temp }}/vale/vale
+        run: python3 -m unittest discover -s .devtools/vale -p 'test_*.py'
+      - name: Reject new prose findings
+        env:
+          VALE: ${{ runner.temp }}/vale/vale
+        run: python3 .devtools/vale/audit.py --check --output "$RUNNER_TEMP/prose-audit.json"
+      - name: Upload complete report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prose-audit
+          path: ${{ runner.temp }}/prose-audit.json
+          if-no-files-found: warn

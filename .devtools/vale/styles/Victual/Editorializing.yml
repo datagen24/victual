@@ -1,0 +1,16 @@
+extends: existence
+message: "Replace '%s' with the concrete requirement, failure, or evidence; remove commentary that only evaluates the work."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - honest accounting
+  - the right fix
+  - load-bearing
+  - worth stating plainly
+  - which is the point
+  - that is the point
+  - the lesson (?:is|here)
+  - proves the discipline
+  - keeps? (?:it|them|the record|the number) honest
+  - the interesting (?:part|question|thing)

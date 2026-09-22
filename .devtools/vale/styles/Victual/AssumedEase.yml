@@ -1,0 +1,10 @@
+extends: existence
+message: "Review '%s': explain the step or evidence instead of assuming it is easy or obvious. Retain it if it has a precise technical meaning."
+level: suggestion
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - '(?<!not )obviously'
+  - trivially
+  - 'easy to(?!\s+(?:get wrong|miss|underestimate|assume|implement wrong|leave out)\b)'
+  - simply

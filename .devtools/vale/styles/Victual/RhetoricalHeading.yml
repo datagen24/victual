@@ -1,0 +1,12 @@
+extends: existence
+message: "Replace '%s' with a heading that names the topic, requirement, or result."
+level: warning
+scope: heading & ~frontmatter
+ignorecase: true
+tokens:
+  - why this exists
+  - what this really means
+  - the lesson (?:we learned|here)
+  - the number that matters
+  - what (?:actually|really) (?:happened|changed)
+  - the (?:honest|real) (?:answer|question|problem)

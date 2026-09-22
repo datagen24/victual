@@ -1,0 +1,13 @@
+extends: existence
+message: "Replace '%s' with the resulting fact and its evidence. Keep material review history in the owning record."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - (?:this|the) (?:paragraph|sentence|section) (?:used to|previously) (?:say|said|claim|describe)
+  - review caught
+  - caught in review
+  - listed here so
+  - so the reader is not left
+  - (?:we|I) (?:then )?realized
+  - (?:we|I) (?:then )?realised
