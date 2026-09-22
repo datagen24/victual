@@ -10,7 +10,7 @@
 // and fails nothing. The distinction is VICTUAL_COVERAGE_LABEL — prepend.php makes it the
 // filename's prefix — and report.php --expect, which asks that each named label left a file.
 //
-// Three cases, and the two negative ones are the point: a check that only demonstrates its
+// Four groups, and the negatives are the point: a check that only demonstrates its
 // happy path does not establish that anything would have failed. Each negative runs against
 // a directory that already holds the positive control's file, because a stale file from some
 // other step concealing a missing one is the specific way this mechanism could be useless.
@@ -150,6 +150,27 @@ check(str_contains($stderr, 'control-driverless'), 'and names it');
 
 [$code] = run([$report, $directory, '--expect=control-pres'], []);
 check($code === 2, 'a label that is only a prefix of a real one does not match it');
+
+// 5. --min has the same failure shape as --expect and had no control until it bit. (float)
+//    reads anything unparseable as 0.0, which is a threshold every run clears, so a typo or
+//    an unexpanded placeholder disables the gate and leaves the step green. The three cases
+//    below are the three ways that happens.
+
+foreach (['RATCHET_PLACEHOLDER', '', 'ninety'] as $bad)
+{
+	[$code, , $stderr] = run([$report, $directory, '--min=' . $bad], []);
+	check($code === 2, 'report.php refuses --min=' . ($bad === '' ? '<empty>' : $bad) . ' rather than reading it as zero');
+	check(str_contains($stderr, 'needs a number'), 'and says so');
+}
+
+// And the control: a real figure still gates, in both directions.
+
+[$code] = run([$report, $directory, '--min=0'], []);
+check($code === 0, 'a run at or above its minimum passes');
+
+[$code, $stdout] = run([$report, $directory, '--min=100'], []);
+check($code === 1, 'a run below it fails with exit 1, which is not the setup failure exit 2');
+check(str_contains($stdout, 'below the requested minimum'), 'and says by how much');
 
 echo "\n";
 

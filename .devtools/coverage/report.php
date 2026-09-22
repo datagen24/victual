@@ -46,7 +46,22 @@ foreach ($args as $arg)
 	}
 	elseif (str_starts_with($arg, '--min='))
 	{
-		$minimum = (float)substr($arg, strlen('--min='));
+		$value = substr($arg, strlen('--min='));
+
+		// Checked rather than cast. (float) turns anything unparseable into 0.0, and 0.0 is
+		// a threshold every run passes - so a --min that is a typo, an unexpanded template
+		// variable or an empty shell expansion disables the gate while the step still
+		// reports green. That happened here: a placeholder committed in place of the figure
+		// left CI comparing against zero for the length of a branch, with the workflow's own
+		// fourteen-line comment above it arguing that a rounded number is too loose.
+		if (!is_numeric($value))
+		{
+			fwrite(STDERR, '--min needs a number, got "' . $value . "\"\n");
+			fwrite(STDERR, "a threshold that cannot be read is not a threshold of zero.\n");
+			exit(2);
+		}
+
+		$minimum = (float)$value;
 	}
 	elseif (str_starts_with($arg, '--expect='))
 	{

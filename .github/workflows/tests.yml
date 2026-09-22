@@ -341,38 +341,35 @@ jobs:
           VICTUAL_COVERAGE_LABEL: label-registry
         run: php .devtools/labels/registry-tests.php
 
-      # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
-      # an interim report before the label phases above ran; this is the one that counts,
-      # over every .cov file the whole job left behind, including theirs. --min is raised by
-      # hand as the number climbs — this PR's own run of this job (f6e7225, 2026-09-17)
-      # reported 4824 of 10199 executable lines, 47.29875477988038% exactly, with both
-      # fixes above in place, up from the 37.81% master measured at 6133e15 before them.
-      # --min is that full figure, not a rounded one: a bare 47 lets a one-line regression
-      # through in either direction (losing a covered line reads 47.28895%, adding an
-      # uncovered one reads 47.29412%), and even 47.298 still admits a regression that
-      # changes both counts together — deleting a two-line, one-covered file reads
-      # 4823/10197 = 47.298225%, which is below the true baseline but still ≥ 47.298 (both
-      # caught in review on this PR). Only the exact figure closes that gap. A pull request
-      # that lowers the true number fails here; the hard floor of 75% is issue 192's last
-      # step, once the backlog in it is retired.
       # The instrument's own controls, ahead of the step that reads it. A directory whose
       # expected steps are all present proves nothing unless a missing one would have been
       # caught, so this runs both negatives — the prepend path disabled and the driver
-      # absent — against a directory that already holds another step's file. It needs no
-      # database and no fixtures; it is about the measurement, not about what is measured.
+      # absent — against a directory that already holds another step's file, and the three
+      # ways --min stops being a threshold. It needs no database and no fixtures; it is
+      # about the measurement, not about what is measured.
       - name: The coverage instrument notices a step it lost
         run: php .devtools/coverage/expectation-tests.php
 
       # Issue 192's first gate: a ratchet, not the 75% floor. run-tests.sh already printed
       # an interim report before the label phases above ran; this is the one that counts,
       # over every .cov file the whole job left behind, including theirs. --min is raised by
-      # hand as the number climbs, and is the exact figure rather than a rounded one: a bare
-      # 64 lets a one-line regression through in either direction, and even a three-decimal
-      # figure admits a regression that moves both counts together (deleting a two-line,
-      # one-covered file lowers the numerator and the denominator at once). Only the full
-      # figure, matched against what report.php computes at runtime from the same counts,
-      # closes that gap. A pull request that lowers the true number fails here; the hard
-      # floor of 75% is issue 192's last step, once the backlog in it is retired.
+      # hand as the number climbs. The figure is 9927 of 10385 executable lines, measured
+      # 2026-09-21 on this branch by a run of everything this job runs, and it is the full
+      # figure rather than a rounded one: a bare 95 lets a one-line regression through in
+      # either direction, and even a three-decimal figure admits a regression that moves
+      # both counts together (deleting a two-line, one-covered file lowers the numerator and
+      # the denominator at once). Only the full figure, which parses back to bit-identically
+      # the double report.php computes at runtime from the same two counts, closes that gap.
+      #
+      # report.php refuses a --min it cannot read rather than casting it, because (float)
+      # turns anything unparseable into 0.0 and 0.0 is a threshold every run clears. A
+      # placeholder committed here in place of the figure disabled this gate for the length
+      # of a branch while the step still reported green; expectation-tests.php now has the
+      # control that would have caught it.
+      #
+      # A pull request that lowers the true number fails here. The hard floor of 75% is
+      # issue 192's last step, and the number is above it — but the ratchet stays the
+      # measured figure, because a gate set to 75 would admit a twenty-point fall.
       #
       # --expect names every step that measures into this directory outside run-tests.sh.
       # Without it a step that silently stopped being measured — a lost PHP_INI_SCAN_DIR, a
@@ -383,7 +380,7 @@ jobs:
           env -u VICTUAL_COVERAGE_DIR php .devtools/coverage/report.php \
             "$SUITE_SCRATCH/coverage" --clover=clover.xml \
             --expect=canonical-json,renderer-agreement,path-parameter,label-identity,label-artifacts,label-print-jobs,label-kinds,label-worker-api,label-registry \
-            --min=RATCHET_PLACEHOLDER
+            --min=95.58979297063071101093
 
       # The per-file half of the same evidence. Aggregate --min cannot see a file that fell
       # while another rose, and the floor is stated per file as well as in total
