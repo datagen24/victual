@@ -287,30 +287,57 @@ review-round fixes included. PHP lint (`php -l`) is clean on every changed file,
 `victual.openapi.json` parses as valid JSON, the workflow YAML parses, and `php
 .devtools/check-cited-jobs.php` reports every cited job exists.
 
-**The browser probe (`.devtools/frontend/product-substitutions.js`) itself carried a race the
-same review round found**: its post-delete assertions were made immediately after clicking the
-confirm button, rather than waiting for the delete-then-`PUT`-then-`reload()` chain that click
-starts to actually finish — `page.waitForLoadState('load')` called after an already-settled
-page can resolve at once without ever having waited for the reload a moment later, and the
-follow-on API check's bare `.catch(() => false)` could not tell a genuine 404 (edge gone) apart
-from "execution context destroyed" (asked while the page was mid-navigation), so a torn-down
-context would have read as a pass either way. Fixed by arming the `load` waiter in a
-`Promise.all` around the confirm click - before the chain starts, not after - and moving the
-API check to strictly after that resolves.
+**The browser probe (`.devtools/frontend/product-substitutions.js`) carried a race the same
+review round found, and the fix that round applied did not close it.** The race: the
+post-delete assertions ran immediately after the confirm click, rather than waiting for the
+delete-then-`PUT`-then-`reload()` chain that click starts.
 
-**The browser probe could not be run end to end in this session**, for the same reason plan
-30's could not: this sandbox's PHP is 8.4.19 and the app refuses to boot below 8.5.0 on every
-route — confirmed by reproduction (booting the
-demo instance under PHP 8.4 returns HTTP 200 with the literal refusal text), not assumed. Wired
-into the `frontend-security` job (`.github/workflows/tests.yml`) after plan 30's own probe,
-where it will run for real the way plan 30's did. Learning from that session's own retrospective
-— a speculative check written without a way to see a widget's actual behaviour was added blind
-and had to be removed after CI found it wrong — this probe deliberately does not drive the
-"Add" dialog's product picker (a bootstrap-combobox typeahead nothing in this tree yet
-scripts), which no probe here has exercised and which this sandbox cannot be used to learn
-first. The edge itself is created through the API as fixture data instead, and the probe
-asserts only what it can be confident about without seeing the app run: the table renders the
-right direction sentence and a link to the other product from each endpoint's own page, and
-the delete-confirm-then-reload flow (proven to work in real CI by plan 30's own case 6) removes
-it. The create path is already fully exercised at the API layer by the PostgreSQL suite's case
-8.
+The follow-on API check compounded it. Its bare `.catch(() => false)` could not tell a
+genuine 404 (edge gone) apart from "execution context destroyed" (asked while the page was
+mid-navigation), so a torn-down context read as a pass either way. Sequencing that check
+strictly after the waiter was the right repair and it stands.
+
+The waiter itself was wrong. `page.waitForLoadState('load')` reports the state of the
+document that is current when it is called. That document reached `load` at the
+`page.goto()` above, and the confirm click only opens a bootbox modal, so the waiter
+resolved at once whether it was armed before the click or after. Arming position matters
+only for a waiter that listens for the *next* event, which `waitForLoadState` is not. The
+probe now arms `page.waitForEvent('load', { timeout: 15000 })` in the same `Promise.all`.
+
+**The probe has since been run end to end, which the session that wrote it could not do.**
+Running it found two defects that reasoning had not. The first is the one above, and the
+measurement is blunt: run three times against a live instance, the pre-fix probe printed
+`PRODUCT SUBSTITUTION BROWSER CHECKS PASSED` every time, while the reload it claims to wait
+for never happened at all.
+
+The second defect explains why no reload happened. The probe created its two fixture
+products with `location_id: 1`, and no instance this job boots has a location with that id.
+`InitialDataSeeder`'s `DEFAULT_LOCATION_ID` is 2, and `migrations/8888.php` mints id 1 only
+when `FEATURE_FLAG_STOCK_LOCATION_TRACKING` is off.
+
+The API accepts the dangling id, so the fixture looks sound until the product form renders
+it. The location `<select>` then carries no matching option and the form is invalid, so the
+delete handler's `$('#save-product-button').click()` does nothing: no `PUT`, no
+`window.location.reload()`. The probe now reads the location the way `group-min-stock.js`
+and `open-container-measurement.js` do, `(await api('objects/locations'))[0].id`.
+
+**Verification of both**, on 2026-09-22 against this working copy. The demo instance was
+booted from the `localhost/victual:dev` image (PHP 8.5.10) against `postgres:16`, by the
+commands the `frontend-security` job runs: `php bin/victual-migrate --quiet`, then `php -S`
+on port 8085 over `public/` under `VICTUAL_MODE=demo`, then a `GET /` to generate the demo
+data before the probe seeds through the API. The Playwright harness ran from the host.
+
+`node product-substitutions.js http://127.0.0.1:8085` prints `PRODUCT SUBSTITUTION BROWSER
+CHECKS PASSED`, three runs out of three. An instrumented copy of the same steps records what
+the waiter now waits for: `DELETE /api/objects/product_substitutions/8` answering 204, `PUT
+/api/objects/products/51` answering 204, then the load event. The waiter resolved 1283 ms
+after the confirm click rather than immediately.
+
+The probe stays out of the "Add" dialog's product picker, a bootstrap-combobox typeahead
+nothing in this tree scripts. That is plan 30's retrospective applied: a speculative check
+written without seeing the widget behave was added blind there, and CI found it wrong.
+
+The edge is created through the API as fixture data instead. The probe asserts the table's
+direction sentence and its link to the other product, from each endpoint's own page, and
+that the delete-confirm-then-reload flow removes the edge. The create path is already fully
+exercised at the API layer by the PostgreSQL suite's case 8.
