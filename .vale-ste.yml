@@ -1,0 +1,37 @@
+# Victual technical names for stuffbucket/vale v0.15.0.
+# This supplements OpenSTE; .vale.ini remains the CI configuration.
+# Entries are case-insensitive. Inflections need separate entries.
+vocabulary:
+  builtinTechnicalTerms: true
+  allow:
+    # Household inventory entities and interface controls.
+    - victual
+    - grocy
+    - grocycode
+    - label
+    - labels
+    - product
+    - products
+    - form
+    - forms
+    - userfield
+    - userfields
+    # Database and API concepts. State and view retain their software meanings.
+    - state
+    - view
+    - views
+    - boolean
+    - booleans
+    - true
+    - false
+    - timestamp
+    - timestamps
+    # Deployment names. Ambiguous verbs remain subject to review.
+    - podman
+    - kustomize
+    - deployment
+    - deployments
+    - sidecar
+    - outbox
+    - drainer
+    - drainers
