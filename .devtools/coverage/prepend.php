@@ -102,8 +102,28 @@ if (getenv('VICTUAL_COVERAGE_DIR') === false)
 		// ran under the driver at all" — issue 192 mechanics item 2 asks for exactly that
 		// distinction, because a step that silently stops being measured reads as an honest
 		// zero and nothing fails. Unset, the name is what it always was.
+		//
+		// The label is used as given, or not at all. Rewriting the characters it does not
+		// like would map two different labels onto one prefix - "phase/a" and "phase-a"
+		// both becoming "phase-a." - and then one step's file satisfies the other step's
+		// expectation, which is the exact failure --expect exists to catch.
 		$label = (string)(getenv('VICTUAL_COVERAGE_LABEL') ?: '');
-		$prefix = $label === '' ? '' : preg_replace('/[^A-Za-z0-9_-]/', '-', $label) . '.';
+		$prefix = '';
+
+		if ($label !== '')
+		{
+			if (preg_match('/^[A-Za-z0-9_-]+$/', $label) === 1)
+			{
+				$prefix = $label . '.';
+			}
+			else
+			{
+				// No prefix rather than a mangled one, so it cannot be mistaken for a
+				// valid label's file. report.php refuses the same label outright.
+				fwrite(STDERR, 'ignoring VICTUAL_COVERAGE_LABEL "' . $label
+					. '": a label is one or more of A-Z a-z 0-9 _ -' . "\n");
+			}
+		}
 
 		$path = $outputDir . '/' . $prefix . getmypid() . '-' . uniqid() . '.cov';
 

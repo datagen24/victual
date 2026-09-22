@@ -10,7 +10,7 @@
 // and fails nothing. The distinction is VICTUAL_COVERAGE_LABEL — prepend.php makes it the
 // filename's prefix — and report.php --expect, which asks that each named label left a file.
 //
-// Four groups, and the negatives are the point: a check that only demonstrates its
+// Six groups, and the negatives are the point: a check that only demonstrates its
 // happy path does not establish that anything would have failed. Each negative runs against
 // a directory that already holds the positive control's file, because a stale file from some
 // other step concealing a missing one is the specific way this mechanism could be useless.
@@ -20,6 +20,7 @@
 $root = dirname(__DIR__, 2);
 $prepend = $root . '/.devtools/coverage/prepend.php';
 $report = $root . '/.devtools/coverage/report.php';
+$inventory = $root . '/.devtools/coverage/inventory.php';
 
 $checks = 0;
 $failures = 0;
@@ -171,6 +172,45 @@ check($code === 0, 'a run at or above its minimum passes');
 [$code, $stdout] = run([$report, $directory, '--min=100'], []);
 check($code === 1, 'a run below it fails with exit 1, which is not the setup failure exit 2');
 check(str_contains($stdout, 'below the requested minimum'), 'and says by how much');
+
+// 6. The two refusals CodeRabbit found on PR #256, which are the same shape as the --min
+//    one above: a value cast instead of checked, and a rewrite that is not injective.
+
+[$code, , $stderr] = run([$report, $directory, '--expect=not/a/label'], []);
+check($code === 2, 'report.php refuses a label outside its own character rule');
+check(str_contains($stderr, 'not a usable label'), 'and says what a label is');
+
+// The collision itself: a process labelled "control/present" must not leave a file that
+// satisfies an expectation for "control-present", which a sanitising rewrite would have
+// made indistinguishable.
+[$code, , $stderr] = run(
+	['-d', 'auto_prepend_file=' . $prepend, '-d', 'pcov.enabled=1', $child],
+	['VICTUAL_COVERAGE_DIR' => $directory, 'VICTUAL_COVERAGE_LABEL' => 'control/present', 'VICTUAL_ROOT' => $root]
+);
+
+check($code === 0, 'a process carrying an unusable label still runs');
+check(str_contains($stderr, 'ignoring VICTUAL_COVERAGE_LABEL'), 'and prepend.php says it ignored the label');
+check(count(labelled($directory, 'control-present')) === 1,
+	'and left no second file under the label it would have been rewritten to');
+
+// inventory.php takes a floor the same way report.php takes a minimum, and had the same
+// gap: a cast turns an unreadable value into 0, and a floor of zero passes every file.
+$clover = $directory . '/inventory.xml';
+file_put_contents($clover, '<?xml version="1.0" encoding="UTF-8"?><coverage><project>'
+	. '<file name="a.php"><metrics statements="10" coveredstatements="1"/></file>'
+	. '</project></coverage>');
+
+foreach (['RATCHET_PLACEHOLDER', '', '-1', '101'] as $bad)
+{
+	[$code, , $stderr] = run([$inventory, $clover, '--floor=' . $bad], []);
+	check($code === 2, 'inventory.php refuses --floor=' . ($bad === '' ? '<empty>' : $bad));
+	check(str_contains($stderr, 'needs a number from 0 through 100'), 'and says what it needs');
+}
+
+[$code, $stdout] = run([$inventory, $clover, '--floor=75'], []);
+check($code === 0, 'and accepts a real floor');
+check(str_contains($stdout, 'Files below the 75% floor: 1 of 1'),
+	'reporting the file that is under it, which a floor of zero would not have');
 
 echo "\n";
 

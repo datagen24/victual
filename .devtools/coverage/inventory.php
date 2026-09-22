@@ -28,7 +28,19 @@ foreach ($args as $arg)
 {
 	if (str_starts_with($arg, '--floor='))
 	{
-		$floor = ((float)substr($arg, strlen('--floor='))) / 100;
+		$value = substr($arg, strlen('--floor='));
+
+		// Checked rather than cast, for the reason report.php --min is: (float) turns
+		// anything unparseable into 0.0, and a floor of zero reports every file as meeting
+		// it - which is the same false green the ratchet placeholder produced, in the one
+		// report a reviewer reads to check the per-file half of the policy.
+		if (!is_numeric($value) || (float)$value < 0 || (float)$value > 100)
+		{
+			fwrite(STDERR, '--floor needs a number from 0 through 100, got "' . $value . "\"\n");
+			exit(2);
+		}
+
+		$floor = ((float)$value) / 100;
 	}
 	elseif (str_starts_with($arg, '--format='))
 	{

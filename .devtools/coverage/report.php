@@ -114,7 +114,17 @@ $missing = [];
 
 foreach ($expected as $label)
 {
-	$prefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $label) . '.';
+	// The same rule prepend.php writes by, and refused rather than rewritten for the same
+	// reason: a sanitising rewrite is not injective, so an expectation for "phase/a" would
+	// be satisfied by the file "phase-a" left behind by a different step.
+	if (preg_match('/^[A-Za-z0-9_-]+$/', $label) !== 1)
+	{
+		fwrite(STDERR, 'not a usable label: "' . $label . "\"\n");
+		fwrite(STDERR, "a label is one or more of A-Z a-z 0-9 _ -\n");
+		exit(2);
+	}
+
+	$prefix = $label . '.';
 
 	$found = false;
 
