@@ -28,13 +28,25 @@ member would ask for the week after the module ships.
 
 Three facts make the aggregate a bad idea:
 
-1. **It is regulated.** Software that analyses patient-specific data and produces a
-   treatment-directed recommendation is a medical device under the FDA's device-software
-   framing and under EU MDR Rule 11. The exemptions for low-risk clinical decision support
-   turn on the clinician being able to independently review the basis of the recommendation.
-   A household inventory app cannot meet that condition for a lay user. This project does not want
-   to be in that conversation, and "it is only for my house" is not a position that survives
-   the software being published.
+1. **Clinical advice can bring medical-device obligations.** The FDA's Non-Device CDS
+   exclusion requires all four criteria in section 520(o)(1)(E) of the FD&C Act.
+   These include intended use by a health care professional and enabling that professional
+   to independently review the basis for recommendations without relying primarily on them.
+   Victual is a household inventory app intended for lay users. Clinical recommendations
+   directed to those users do not meet these FDA conditions. See the
+   [FDA's Non-Device CDS criteria](https://www.fda.gov/medical-devices/digital-health-center-excellence/step-6-software-function-intended-provide-clinical-decision-support).
+
+   In the EU, [MDR Annex VIII, Rule 11](https://eur-lex.europa.eu/eli/reg/2017/745/oj?locale=en)
+   provides a risk-based classification framework for software that qualifies as a medical
+   device. Software supplying information for diagnostic or therapeutic decisions is
+   Class IIa by default. It is Class IIb when those decisions could cause serious health
+   deterioration or require surgery, and Class III when they could cause death or
+   irreversible health deterioration. Rule 11 does not supply the FDA's clinician-use
+   and independent-review exclusion.
+
+   The project excludes clinical recommendations to keep its intended purpose within
+   household inventory and recording. Describing a recommendation feature as household
+   use does not establish an exclusion from medical-device requirements.
 2. **The knowledge cannot be maintained here.** An interaction table is only useful if it is
    current, and this fork has one maintainer whose interest is inventory. A stale warning is
    worse than no warning, because a warning that has ever appeared teaches the reader that
