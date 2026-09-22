@@ -7,10 +7,9 @@ gamble.
 the other half of the writable data directory.
 **Status:** **landed in the codebase** (2026-09-02), except Q7's `dialect` column, which
 [ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)'s acceptance made unnecessary
-before it was built. See [Executed](#executed) for what landed, for the two defects the
-verification found that the plan did not predict, and for the one check this environment
-could not run. Everything from here down is the plan as written and reviewed, kept
-because the reasoning is what the code has to keep being judged against.
+before it was built. [Executed](#executed) covers what landed, two unpredicted defects
+verification found, and one check this environment could not run. The plan below is kept
+as written and reviewed; the code is still judged against its reasoning.
 
 ## Today
 
@@ -56,8 +55,8 @@ redirect is gone: every `POST`/`PUT` through the generic CRUD API touches it.
 No template under `views/` references either constant; URLs are built by the `$U`
 closure injected at render time (`controllers/BaseController.php:78`). Compiled Blade
 output is therefore a pure function of the source tree, which is what makes baking it
-into the image possible at all. The two URL terms in the hash appear to be defensive
-rather than load-bearing — see Q1.
+into the image possible at all. The two URL terms in the hash appear to be defensive:
+rendering does not depend on them — see Q1.
 
 **PrerequisiteChecker runs on every request** and requires `pdo_sqlite` plus SQLite
 ≥ 3.40, opening `sqlite::memory:` to read the version, regardless of `DB_DRIVER`. On a
@@ -100,9 +99,11 @@ change except the lock.
 produce one from a command line today: `bin/victual-db-import` returns early when
 `DB_DRIVER` is `sqlite` (`bin/victual-db-import:68`), and migrations otherwise only run
 from `GET /`. So 14's suite cannot run at all until this exists, which inverts the
-roadmap's ordering. Pulling just the CLI forward is the smallest cut that fixes it; the
-lock, the cache work and everything else below stay here in wave 1. When this plan's
-turn comes, `bin/victual-migrate` already exists and gains the lock.
+roadmap's ordering.
+
+Pulling just the CLI forward is the smallest cut that fixes it; the lock, the cache work
+and everything else below stay here in wave 1. When this plan's turn comes,
+`bin/victual-migrate` already exists and gains the lock.
 
 `SystemController::Root` then stops calling `MigrateDatabase()`. Q4 covers whether a
 web-triggered fallback should remain for people running this fork from a stock
@@ -149,19 +150,22 @@ dialog; that one is cosmetic and is handled in [15](15-deliberate-cleanup.md).
 The `Dockerfile` runs as root and does `COPY . /app` with no `.dockerignore`, so `.git`
 and `data/` go into the layer; compose and CI use `victual`/`victual` for PostgreSQL. All
 of that is correct for what it is today — a dev and CI image, tmpfs database, no published
-ports — and the sweep rates it Info for exactly that reason. It stops being correct at the
-moment this plan bakes a production image from the same file, which is the step "Bake the
-cache at image build time" above describes. So: a `.dockerignore`, a non-root `USER`, and
-credentials that are not the compose defaults, landing in the same change that publishes
-the image rather than after it.
+ports — and the sweep rates it Info for exactly that reason.
+
+It stops being correct at the moment this plan bakes a production image from the same
+file, which is the step "Bake the cache at image build time" above describes. So: a
+`.dockerignore`, a non-root `USER`, and credentials that are not the compose defaults,
+landing in the same change that publishes the image rather than after it.
 
 **This item had two claimed owners and therefore none.** The roadmap assigned it here ("10
 is the first plan to publish an image from the Dockerfile, so sweep S25 ... is 10's") while
 the sweep's own roadmap section assigned it to [15](15-deliberate-cleanup.md)'s
-non-breaking table, and neither plan carried a row for it. It is settled here, on the
-roadmap's reasoning: 15's table is for cleanup that can land whenever a PR opens the file,
-and this cannot — it is meaningless before the production image exists and mandatory in
-the same commit as it. The rigor review's H3 records the general shape of the mistake.
+non-breaking table, and neither plan carried a row for it.
+
+It is settled here, on the roadmap's reasoning: 15's table is for cleanup that can land
+whenever a PR opens the file, and this cannot — it is meaningless before the production
+image exists and mandatory in the same commit as it. The rigor review's H3 records the
+general shape of the mistake.
 
 ### Explicitly not in scope
 
@@ -177,8 +181,8 @@ plan of its own is that the boot check below has to be dialect-aware anyway, so 
 the one moment someone is already holding this code with that distinction in mind.
 
 It is diagnostic only. Nothing may start *requiring* it, because a database migrated
-before the column existed cannot supply it, and making it load-bearing would turn an
-older database into an unimportable one.
+before the column existed cannot supply it, and letting anything depend on it would turn
+an older database into an unimportable one.
 
 ### Schema
 
@@ -193,7 +197,7 @@ No endpoint gains, loses or changes a field. Two behavioural changes are worth s
 plainly because they are visible to clients:
 
 - **A cold-start request is no longer answered with a 302 to `/`.** This is a fix, but
-  any client that learned to follow that redirect will simply stop seeing it.
+  any client that learned to follow that redirect no longer encounters it.
 - **`GET /` no longer migrates the schema.** Anyone pulling this fork into a container
   that has no init step, and relying on "hit the page once after an update", loses that
   behaviour unless Q4 says otherwise. This is the one item in this plan that can break
@@ -223,8 +227,8 @@ Lint proves nothing here; every check below wants a booted instance.
    row this plan's race is about is inserted by `migrations/8888.php` *inside* an
    `if (!VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)` guard, and `config-dist.php:167`
    defaults that flag to **true**. On a default install the guard never runs, and the
-   only row in `locations` is the id **2** "Fridge" that `migrations/0006.sql` inserts —
-   so the assertion "exactly one row with id 1" fails for a reason that has nothing to
+   only row in `locations` is the id **2** "Fridge" that `migrations/0006.sql` inserts.
+   So the assertion "exactly one row with id 1" fails for a reason that has nothing to
    do with concurrency, and the race the plan exists to close is never exercised at all.
    With the flag off, assert both the `migrations` uniqueness and the id-1 row.
 3. **Racing pods against an already-migrated database.** Five concurrent
@@ -268,9 +272,9 @@ The second seam is with [13](13-write-path-transactions.md), and **13 has landed
 is now a resolved worry rather than a live constraint.** `DatabaseMigrationService` opens
 raw transactions of its own, and this plan wraps the whole migration run in a lock; 13
 converted seven service entrypoints to an `InTransaction` helper and deliberately left
-those alone. This paragraph used to say that was fine "as long as the helper counts depth
-rather than assuming it opens the outermost transaction", and that a depth-blind helper
-would mis-nest if a PHP migration ever called a service through it.
+those alone. That is compatible with this plan's lock only if the helper counts depth
+rather than assumes it opens the outermost transaction; a depth-blind helper would
+mis-nest if a PHP migration ever called a service through it.
 
 The helper that shipped does something better than counting: it asks
 `PDO::inTransaction()`. A counter would only know about transactions opened through the
@@ -287,7 +291,7 @@ resolves, or the docblock is reworded first — 15-C12 carries it as the cheaper
 
 ## Open questions
 
-1. **Are `VICTUAL_BASE_URL` / `VICTUAL_BASE_PATH` still load-bearing in the cache hash?**
+1. **Are `VICTUAL_BASE_URL` / `VICTUAL_BASE_PATH` still required in the cache hash?**
    Nothing under `views/` reads either constant and `$U` resolves at render time, which
    says no. But the hash was written for a reason, and the honest check is to compile the
    cache under one base path, serve under another, and diff the rendered HTML — not to
@@ -391,7 +395,7 @@ resolves, or the docblock is reworded first — 15-C12 carries it as the cheaper
    A `dialect` column (nullable, or the literal `generic`) answers it, and it is a
    small migration. The cost is not the column, it is the callers: this plan's
    boot check, `DatabaseImporter`'s two version assertions, and anything else
-   reading `MAX(migration)` would all want to consider it, and the column has to be
+   reading `MAX(migration)` would all want to consider it. The column also has to be
    backfilled for existing rows — where the honest backfill is "unknown", because
    the information was never recorded.
 
@@ -484,13 +488,14 @@ suite, `run-app`, demo mode — and nothing below breaks it.
   **Where it lives, and the ordering problem it has to avoid.** It is app-level
   middleware added after `addRoutingMiddleware()` and before `addErrorMiddleware()`, so it
   runs inside error handling and *outside* routing and authentication — an unmigrated
-  database should not be asked to resolve a route or identify a user first. That places it
-  before `RouteContext` exists, so the one route it must not run in front of — `/`, when
-  `MIGRATE_ON_ROOT_REQUEST` is on and the migrations table legitimately does not exist yet
-  — is matched on the request path with the base path stripped. Every other route is
-  checked even then, which is what keeps the fallback from being a hole: the API still
-  refuses to answer from an unmigrated database. An empty database reads as migration 0 and
-  gets the same 503 with "(nothing migrated yet)".
+  database should not be asked to resolve a route or identify a user first.
+
+  That places it before `RouteContext` exists, so the one route it must not run in front
+  of — `/`, when `MIGRATE_ON_ROOT_REQUEST` is on and the migrations table legitimately
+  does not exist yet — is matched on the request path with the base path stripped. Every
+  other route is checked even then, which is what keeps the fallback from being a hole:
+  the API still refuses to answer from an unmigrated database. An empty database reads as
+  migration 0 and gets the same 503 with "(nothing migrated yet)".
 
   `update.sh` runs `bin/victual-warm-cache` after updating, and `.agents/skills/run-app`
   migrates before booting — both replacing something the redirect used to do implicitly.
@@ -509,12 +514,13 @@ suite, `run-app`, demo mode — and nothing below breaks it.
   not by reading the diff, which is the entire argument for check 4.
 - **`5a3ab76` — the image (sweep S25).** `.dockerignore` (`.git`, `data/`, the composer
   and yarn output, coverage), a named `dev` target for the existing image, and a
-  `production` target: Apache with mod_php on 8080, `USER www-data`, the view cache baked
-  by the warmer into `/app/viewcache` owned by root so the serving user cannot write it,
-  front end packages from a node stage, composer removed after use. Nothing under `/app` is
-  written at runtime; a read-only root filesystem needs `/var/run/apache2` and the data
-  directory writable, which the Dockerfile says. CI builds both targets and asserts
-  non-root, cache baked and unwritable, and no `.git` or `data/` inside.
+  `production` target: Apache with mod_php on 8080 and `USER www-data`. The view cache is
+  baked by the warmer into `/app/viewcache`, owned by root so the serving user cannot
+  write it; front-end packages come from a node stage, and composer is removed after use.
+  Nothing under `/app` is written at runtime; a read-only root filesystem needs
+  `/var/run/apache2` and the data directory writable, which the Dockerfile says. CI builds
+  both targets and asserts non-root, cache baked and unwritable, and no `.git` or `data/`
+  inside.
 
   **`pdo_sqlite` stays in the production image** (0008: "Gone"), because
   `bin/victual-db-import` still reads SQLite as an import format — the one thing 0008 keeps
@@ -540,7 +546,7 @@ Every check ran against a booted instance or real concurrent processes. The scri
 throwaway rather than committed fixtures, so each is described in the form that
 reproduces it.
 
-1. **Q1 — are `BASE_URL` / `BASE_PATH` load-bearing in the compiled templates? No.**
+1. **Q1 — are `BASE_URL` / `BASE_PATH` required in the compiled templates? No.**
    Warmed one cache under `VICTUAL_BASE_PATH=/elsewhere` and
    `VICTUAL_BASE_URL=https://elsewhere.example/app`, another under the serving
    configuration, served 17 pages against each and diffed the HTML: **identical, byte for
@@ -549,12 +555,14 @@ reproduces it.
 
    Two things the check turned up on the way. Compiled Blade output is **not**
    byte-reproducible — two warmings of the same tree under the same configuration differ in
-   47 of 96 files, because `@once` embeds a fresh UUID per compilation — so a byte
-   comparison of caches proves nothing and the rendered-HTML comparison is the only honest
-   form of this check. And the *route* cache genuinely does depend on the base path, which
-   is why it is named after it; served with a base path the baked cache was not warmed for,
-   a read-only image fails at boot with `RuntimeException: Route collector cache file
-   directory ... is not writable` rather than 404ing every route. Verified by doing it.
+   47 of 96 files, because `@once` embeds a fresh UUID per compilation. So a byte
+   comparison of caches proves nothing; the rendered-HTML comparison is the only honest
+   form of this check.
+
+   The *route* cache also genuinely depends on the base path, which is why it is named
+   after it; served with a base path the baked cache was not warmed for, a read-only image
+   fails at boot with `RuntimeException: Route collector cache file directory ... is not
+   writable` rather than 404ing every route. Verified by doing it.
 2. **Check 1 — first request is an API call.** Fresh data directory, empty database,
    migrated by `php bin/victual-migrate`, then `curl -H 'VICTUAL-API-KEY: ...' /api/stock`
    as the very first request: **200 with a JSON body, no `Location` header**, on both
@@ -614,6 +622,7 @@ implemented as `save()` to a `tempnam(sys_get_temp_dir(), '')` followed by
 `file_get_contents` and `unlink`. On a read-only root filesystem with no temporary
 directory provisioned, the first request for a thumbnail fails — not at boot, where it
 would be obvious, but on whichever page first shows a picture.
+
 [01](01-file-storage.md)'s `DatabaseStorage` reaches the same place from the other
 direction: it streams through `php://temp/maxmemory:2097152`, which spills to the
 temporary directory for anything over 2 MiB.
@@ -646,10 +655,12 @@ Two things the fix turned up on the way:
 **The finding was reproduced before it was fixed**, without Docker, because the failure
 does not need a container: a booted instance served as `ubuntu` against a baked read-only
 cache, with `php -d sys_temp_dir=<a mode 555 directory>`, which is what a read-only root
-filesystem looks like to `tempnam()`. Uploading a 200×200 PNG succeeds (**204**) and the
-next request for it — `?force_serve_as=picture&best_fit_width=64` — is a **500**. Pointed
-at a writable directory instead, the same request is **200** and the served image really
-is 64×64. Nothing wrote into the read-only cache directory in either run. The same host
+filesystem looks like to `tempnam()`.
+
+Uploading a 200×200 PNG succeeds (**204**) and the next request for it —
+`?force_serve_as=picture&best_fit_width=64` — is a **500**. Pointed at a writable
+directory instead, the same request is **200** and the served image really is 64×64.
+Nothing wrote into the read-only cache directory in either run. The same host
 also printed `FileSizeLimit`'s own clamp on startup — *"FILE_STORAGE_MAX_SIZE_MB is 64 MB,
 but PHP's upload_max_filesize (2M) is smaller, so uploads are limited to 2 MB"* — which is
 the second item above, measured rather than reasoned about.
@@ -657,15 +668,17 @@ the second item above, measured rather than reasoned about.
 **Verification 4 now runs in CI**, in the `images` job, as the step *"The production image
 serves with a read-only root filesystem"*. It runs the production image with `--read-only`
 and tmpfs mounts for exactly the three paths above and nothing else, migrates through
-`bin/victual-migrate` (nothing migrates inside a request any more), waits for
-`/stockoverview`, and then exercises the two paths the finding names: a 200×200 PNG
+`bin/victual-migrate` (nothing migrates inside a request any more), and waits for
+`/stockoverview`. It then exercises the two paths the finding names: a 200×200 PNG
 uploaded and re-fetched with `best_fit_width=64`, which is the `tempnam` path, and a
-3 MiB body through the upload API, which is over the old clamp. The `php://temp` spill is
-exercised directly in the container rather than through an upload, because the database
-backend only exists on PostgreSQL — `ConfigurationValidator` refuses it on SQLite — while
-the spill is a property of the filesystem the container is running on. Finally
-`docker diff` must be empty: every write above landed on a tmpfs, and a tmpfs is not part
-of the container layer, so anything the image wrote to itself shows up there.
+3 MiB body through the upload API, which is over the old clamp.
+
+The `php://temp` spill is exercised directly in the container rather than through an
+upload, because the database backend only exists on PostgreSQL —
+`ConfigurationValidator` refuses it on SQLite — while the spill is a property of the
+filesystem the container is running on. Finally `docker diff` must be empty: every write
+above landed on a tmpfs, and a tmpfs is not part of the container layer, so anything the
+image wrote to itself shows up there.
 
 ### Review fix: the gate compares sets, and stops calling every failure an empty database
 
@@ -679,9 +692,11 @@ Migrations reach `master` in the order their pull requests merge, not in numeric
 the split of this wave's work makes the hole reachable rather than hypothetical: #36
 applies 0257 and 0259, #34 then introduces 0258. After both have landed the database holds
 {…, 257, 259}, `MAX(migration)` is 259, the code's latest is 259 — and the gate reports the
-schema current although the table 0258 creates was never made. Worse, it reports it
-current *forever*: nothing about the maximum ever changes again, so the check cannot
-notice, and cannot prompt anyone to repair a database that already reached that state.
+schema current although the table 0258 creates was never made.
+
+Worse, it reports it current *forever*: nothing about the maximum ever changes again, so
+the check cannot notice, and cannot prompt anyone to repair a database that already
+reached that state.
 
 The check now compares the required set with the applied set.
 `DatabaseMigrationService::GetRequiredMigrationNumbers($dialect)` reads the migration files
@@ -689,7 +704,9 @@ the way `GetLatestMigrationNumber()` already did — dialect-aware, always-run 8
 excluded, per ADR-0004 — and `GetAppliedMigrationNumbers()` reads the whole `migrations`
 column instead of its maximum. `GetMissingMigrationNumbers()` and
 `GetUnknownMigrationNumbers()` are the two directions, and a request is served only when
-both are empty. It is still one memoized query per request, so Q6's cost argument stands
+both are empty.
+
+It is still one memoized query per request, so Q6's cost argument stands
 unchanged; what it retracts is Q6's `SELECT MAX(migration)`, which cannot answer the
 question it was asked. The 503 names the migrations rather than only the numbers around
 them — *"Missing from the database: 258"*, or *"1-256"* for a database nobody has migrated,
@@ -699,12 +716,14 @@ consecutive runs collapsed into ranges so that "every migration there is" is rea
 caught `\Exception` and answered 0, memoized. That catch is as wide as the database: an
 unreachable server, a role without `SELECT` on `migrations`, a statement timeout and a
 malformed query all became "this database is empty", and the operator was told to run
-migrations at a database that was not the problem. Only the specific condition maps to
-zero now — `DatabaseDialect::IsMissingTableError()`, per engine because the engines say it
-differently. PostgreSQL has a SQLSTATE for it (42P01) and nothing else qualifies; SQLite
-reports a missing table, a missing column and a syntax error alike as `HY000` with driver
-code 1, so its implementation checks the SQLSTATE and then the message, which is the only
-thing that separates them. Everything else propagates, unmemoized, and
+migrations at a database that was not the problem.
+
+Only the specific condition maps to zero now — `DatabaseDialect::IsMissingTableError()`,
+per engine because the engines say it differently. PostgreSQL has a SQLSTATE for it
+(42P01) and nothing else qualifies. SQLite reports a missing table, a missing column and
+a syntax error alike as `HY000` with driver code 1, so its implementation checks the
+SQLSTATE and then the message, which is the only thing that separates them. Everything
+else propagates, unmemoized, and
 `SchemaVersionMiddleware` turns it into a **distinct** 503 that says the schema version
 could not be read at all and does not mention migrating.
 
@@ -720,36 +739,47 @@ the deployment.
 **Neither is an engine question, and both had to be proved on both engines**, so the
 verification is a sixth phase of the differential suite rather than a throwaway script:
 `.devtools/pgsql/schemagatetest.php`, run by `run-tests.sh schema` against SQLite and then
-PostgreSQL. It digs the hole the finding describes (deletes the second-highest applied
-migration, so the maximum does not move), asserts the set-based check finds it *and* that
-the maximum-based check would not have, renames the `migrations` table away and asserts
-that alone reads as an empty database, renames the `migration` column away and asserts that
-propagates instead, and asks each dialect directly whether it can tell a missing table from
-a missing column and from a syntax error. Measured rather than assumed: SQLite answers
-`HY000` to all three, PostgreSQL answers `42P01`, `42703` and `42601`.
+PostgreSQL.
+
+It digs the hole the finding describes (deletes the second-highest applied migration, so
+the maximum does not move) and asserts the set-based check finds it while the
+maximum-based check would not. It renames the `migrations` table away and asserts that
+alone reads as an empty database, then renames the `migration` column away and asserts
+that propagates instead. It also asks each dialect directly whether it can tell a missing
+table from a missing column and from a syntax error. Measured rather than assumed: SQLite
+answers `HY000` to all three, PostgreSQL answers `42P01`, `42703` and `42601`.
 
 **What was run, 2026-09-03, in the repository's own dev image against `postgres:16`:**
 the full suite (`.devtools/pgsql/run-tests.sh`) — **SUITE PASSED**, all six phases,
 `MIGRATION NUMBERING OK`, `MIGRATED STATE IDENTICAL`, both `SCHEMA GATE OK` — and the CI
-syntax sweep. Over HTTP, on a booted instance: a migrated database serves (401 from
-authentication, so the gate let it through); with row 255 deleted and `MAX(migration)`
-still 256 the same request is **503** naming *"Missing from the database: 255"*; with the
-row restored it is 401 again; an unmigrated database is 503 naming *"1-256"*; and a
-PostgreSQL database whose `migration` column was renamed while the server was running is
-**503** with the database-unavailable body and `SQLSTATE: 42703`, with
-`SQLSTATE[42703]: Undefined column …` in the server log and in the dev-mode body.
+syntax sweep.
+
+Over HTTP, on a booted instance:
+
+- A migrated database serves (401 from authentication, so the gate let it through).
+- With row 255 deleted and `MAX(migration)` still 256, the same request is **503** naming
+  *"Missing from the database: 255"*.
+- With the row restored, it is 401 again.
+- An unmigrated database is 503 naming *"1-256"*.
+- A PostgreSQL database whose `migration` column was renamed while the server was
+  running is **503** with the database-unavailable body and `SQLSTATE: 42703`, with
+  `SQLSTATE[42703]: Undefined column …` in the server log and in the dev-mode body.
 
 **One thing this fix does not reach, found while verifying it.** A database that is
 unreachable *at bootstrap* never gets as far as this middleware: `app.php` constructs
 `ExceptionController` while building the error middleware, `BaseController::__construct`
 opens the database, and the request dies with an uncaught `PDOException` rendered as a raw
-PHP fatal error — with a **200** status, on the built-in server. That is the same defect
-`f4d1769b` fixed one line above for middlewares (constructing a service opens the database),
-it predates this plan, and fixing it means making `BaseController` acquire its connection
-lazily, which is a wider change than a review fix should carry. The database-unavailable
-response above is reachable for every failure after the connection is open — a server that
-goes away mid-process, a revoked grant, a timeout — which is what the finding is about; the
-bootstrap case is recorded here rather than quietly left as though it were covered.
+PHP fatal error — with a **200** status, on the built-in server.
+
+That is the same defect `f4d1769b` fixed one line above for middlewares (constructing a
+service opens the database); it predates this plan, and fixing it means making
+`BaseController` acquire its connection lazily, which is a wider change than a review fix
+should carry.
+
+The database-unavailable response above is reachable for every failure after the
+connection is open — a server that goes away mid-process, a revoked grant, a timeout —
+which is what the finding is about. The bootstrap case is recorded here rather than
+quietly left as though it were covered.
 
 ### What this turned up
 
@@ -770,9 +800,9 @@ retirement lands.
 
 ## Effort
 
-Medium. The individual pieces are all small — the cache warmer is an afternoon, the lock
-is a dialect method, deleting the redirect is a deletion — but the verification is the
-real cost: several of the checks above want two engines and genuinely concurrent
+Medium. The individual pieces are all small: the cache warmer is an afternoon, the lock is
+a dialect method, and deleting the redirect is a deletion. The verification is the real
+cost, though: several of the checks above want two engines and genuinely concurrent
 processes, which is fixture work that does not exist yet. Doing
 [14](14-contract-and-regression-scaffolding.md) first would give this plan somewhere to
 put its cold-start tests, but it is not a hard dependency and this one is more urgent.
