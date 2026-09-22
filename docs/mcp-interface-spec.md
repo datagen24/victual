@@ -139,7 +139,9 @@ and it is small:
    **This is smaller than it was when the spec was written, and one part of it is now
    decided rather than free.** Wave 2's 15-C1 replaced `ApiKeyAuthMiddleware` with
    `ApiKeyAuthenticator`, a plain object with one method, so the change is to one class
-   that does one job. But wave 2 also made regular keys **stored as a SHA-256 hash**
+   that does one job.
+
+   But wave 2 also made regular keys **stored as a SHA-256 hash**
    (plan 11, question 4): an MCP key is a regular key in that sense, so
    `ApiKeyService::StoredValueOf()` decides what the lookup compares, and the key is
    readable exactly once — at creation. A sidecar that expects to read its key back out
@@ -208,7 +210,7 @@ Six tools, the plan's table made concrete. Shared conventions first:
 - **`tools/list` reflects what the key can actually do** (Open question 2, adopted).
   Serving the list, the sidecar calls `GET /api/user/capabilities` (§4.2 item 5) with
   the request's credential and filters the config-enabled tools by a static tool →
-  permission map: a tool is listed only when the key's user holds its permission, and
+  permission map. A tool is listed only when the key's user holds its permission, and
   write tools (§6) additionally require the key not be `read_only`. The map for this
   spec's nine tools: `STOCK` for `stock_overview`/`expiring_soon`/`missing_products`/
   `find_product`, `SHOPPINGLIST` for `shopping_list`, `RECIPES` for
@@ -307,7 +309,7 @@ candidate later if substring proves insufficient in use — recorded, not built)
 
 `can_cook` = `need_fulfilled`; `missing_little` = `need_fulfilled_with_shopping_list`
 minus the first set. Only `type = normal` recipes (not meal-plan shadow recipes — see
-Appendix A for why that internal naming convention must never be load-bearing again).
+Appendix A for why nothing may depend on that internal naming convention again).
 
 ## 6. Tools — deferred writes (specified now, built later)
 
@@ -328,6 +330,7 @@ anyway.** Earlier drafts of this table said `store_id`, and the household vocabu
 `shopping_locations` → `stores` and both declined: it is an `ExposedEntity` name, a table,
 a column on `stock`, `stock_log` and `shopping_list`, several views, and ~250 references
 across 63 files — the largest compatibility break available in the fork, for a nicer noun.
+
 A sidecar parameter named `store_id` mapping to a REST field named `shopping_location_id`
 is precisely the two-names-forever cost that decision refused, paid in a second place
 where nobody would look for it. The tool takes the field's real name. If 15-B3 is ever
@@ -389,14 +392,16 @@ nothing here is complex enough for a config file:
 | `MCP_REQUEST_TIMEOUT_MS` | per-REST-call timeout | `10000` |
 | `LOG_LEVEL` | `error`/`warn`/`info`/`debug`, to stderr/stdout | `info` |
 
-Notably absent, on purpose: `VICTUAL_API_KEY` (credentials pass through, §2 — a stored
-key would make every unauthenticated LAN caller into that user), TLS settings (TLS is
-the ingress's job; the sidecar speaks plain HTTP inside the cluster and never disables
-certificate verification), and the prior art's per-tool YAML with `ack_token`s and
-routing defaults (v1 has no per-tool options; if a future smart-workflow layer needs
-instance-specific routing maps, that is the one thing that would justify a config
-file, and Appendix A records the requirement that it be *validated and read*, not
-silently discarded).
+Notably absent, on purpose:
+
+- `VICTUAL_API_KEY` — credentials pass through (§2); a stored key would make every
+  unauthenticated LAN caller into that user.
+- TLS settings — TLS is the ingress's job. The sidecar speaks plain HTTP inside the
+  cluster and never disables certificate verification.
+- The prior art's per-tool YAML with `ack_token`s and routing defaults — v1 has no
+  per-tool options. If a future smart-workflow layer needs instance-specific routing
+  maps, that is the one thing that would justify a config file, and Appendix A records
+  the requirement that it be *validated and read*, not silently discarded.
 
 Startup validates the whole environment and exits non-zero with a message on any
 unknown `MCP_ENABLED_TOOLS` entry or missing required variable.
@@ -416,12 +421,15 @@ unknown `MCP_ENABLED_TOOLS` entry or missing required variable.
 
 ## 10. Non-goals for v1
 
-Recorded so their absence reads as decided, not forgotten: prompts and resources
-(nothing here needs them; the prior art's `prompts` capability bug in Appendix A shows
-the cost of declaring what you don't serve), sampling/roots/logging (deprecated in the
-current spec), tasks and MRTR, `subscriptions/listen`, response streaming beyond what
-the SDK does natively, OAuth (§4.1), fuzzy search (§5.4), localization of names and
-`text` blocks (English v1), and any write beyond §6's three.
+Recorded so their absence reads as decided, not forgotten:
+
+- Prompts and resources — nothing here needs them, and the prior art's `prompts`
+  capability bug in Appendix A shows the cost of declaring what you don't serve.
+- Sampling, roots, and logging (deprecated in the current spec), tasks and MRTR, and
+  `subscriptions/listen`.
+- Response streaming beyond what the SDK does natively, and OAuth (§4.1).
+- Fuzzy search (§5.4) and localization of names and `text` blocks (English v1).
+- Any write beyond §6's three.
 
 ## 11. Verification
 
@@ -472,7 +480,7 @@ Per the roadmap's standard — booted-instance checks, not lint:
 4. **The actual client** (02-Q1's standing instruction): connect the Claude client in
    real use with the bearer header, ask the two motivating questions — "what is
    expiring this week", "what can I cook tonight" — and read the transcripts for
-   token cost of the responses; §5's `limit` defaults are tuned from this, not
+   token cost of the responses. §5's `limit` defaults are tuned from this, not
    guessed.
 5. **Two-replica soak**: run two sidecar pods behind round-robin with no affinity and
    repeat (2) — any failure means state crept in.
@@ -639,14 +647,14 @@ architecture at every layer that matters.
   config) that bypasses tool gating entirely and embeds the live base URL in a tool
   description.
 - The user's smart-workflow commit (`16a3e6c`) is the most interesting part — "I
-  bought X / used X" resolution is a real UX win — but its implementation hardcodes
+  bought X / used X" resolution is a real UX win. But its implementation hardcodes
   one specific instance: numeric location/unit/group ids
   (`src/tools/inventory/handlers.ts:172-187`), consumption preference orders
   (`:437-456`), English keyword regexes with at least two matching bugs
   (`/stock|sauce|…/` misclassifies "chicken stock"-adjacent names; the `prescription`
   branch is unreachable). The `grocy.defaults` YAML block written to configure all
   this is silently stripped by the config schema and read by nothing.
-- Load-bearing Victual internals: meal-plan shadow-recipe lookup by the
+- Couples to a Victual internal: meal-plan shadow-recipe lookup by the
   `YYYY-MM-DD#id` *name* convention, hard-failing when absent — precisely the
   coupling a REST-consuming sidecar must not have against a fork whose internals
   drift.
@@ -665,6 +673,6 @@ architecture at every layer that matters.
 3. **Ideas, re-specified before reuse**: config-gated tool exposure (became §8's
    allowlist), fuzzy product search (§5.4, deferred), smart workflows (deferred until
    they can be config-driven — the `grocy.defaults` block is the germ of that config,
-   and the lesson is that config must be schema-validated and provably read).
+   which must be schema-validated and provably read).
 4. **The endpoint census** (§3 of the survey): its dedup'd list of Victual REST calls is
    a ready-made map of what a fuller tool surface eventually touches.
