@@ -55,5 +55,50 @@
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
 		</testsuite>
+		<testsuite name="stockpages">
+			<file>tests/Pgsql/StockPagesTest.php</file>
+		</testsuite>
+		<testsuite name="householdpages">
+			<file>tests/Pgsql/HouseholdPagesTest.php</file>
+		</testsuite>
+		<testsuite name="labelapi">
+			<file>tests/Pgsql/LabelApiTest.php</file>
+		</testsuite>
+		<testsuite name="labelservices">
+			<file>tests/Pgsql/LabelServicesTest.php</file>
+		</testsuite>
+		<testsuite name="authstack">
+			<file>tests/Pgsql/AuthStackTest.php</file>
+		</testsuite>
+		<testsuite name="helperunits">
+			<file>tests/Pgsql/HelperUnitsTest.php</file>
+		</testsuite>
+		<testsuite name="barcodelookup">
+			<file>tests/Pgsql/BarcodeLookupTest.php</file>
+		</testsuite>
+		<testsuite name="storagefiles">
+			<file>tests/Pgsql/StorageFilesTest.php</file>
+		</testsuite>
+		<testsuite name="stockcoverage">
+			<file>tests/Pgsql/StockCoverageTest.php</file>
+		</testsuite>
+		<testsuite name="demodata">
+			<file>tests/Pgsql/DemoDataTest.php</file>
+		</testsuite>
+		<testsuite name="dialectpolicy">
+			<file>tests/Pgsql/DialectPolicyTest.php</file>
+		</testsuite>
+		<testsuite name="httpboot">
+			<file>tests/Pgsql/HttpBootTest.php</file>
+		</testsuite>
+		<testsuite name="mqttcoverage">
+			<file>tests/Pgsql/MqttCoverageTest.php</file>
+		</testsuite>
+		<testsuite name="genericquery">
+			<file>tests/Pgsql/GenericQueryTest.php</file>
+		</testsuite>
+		<testsuite name="recipeoperations">
+			<file>tests/Pgsql/RecipeOperationsTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

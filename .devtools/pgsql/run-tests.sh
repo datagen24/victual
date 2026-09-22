@@ -9,9 +9,9 @@
 # So the suite still builds a SQLite side, through an escape hatch no installation has (see
 # DIFFTEST_SQLITE_RUNTIME below), and everything here goes when that snapshot lands.
 #
-#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract]
+#   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|demodata|dialectpolicy|httpboot|mqttcoverage|genericquery|recipeoperations]
 #
-# Thirty-four kinds of check. Views are compared by what they return, because
+# Forty-nine kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
@@ -1834,6 +1834,575 @@ say ""
 say "building the pristine SQLite database"
 build_pristine
 
+# --- stockpages -----------------------------------------------------------------------
+#
+# The stock and recipe Blade pages: what a page controller puts in front of a person,
+# and what it refuses to. Called directly, the way MealPlanRedactionTest calls one, so the
+# subject is the controller's own page data rather than Slim's routing.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_stockpages_tests() {
+	local dbname="victual_stockpages"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/stockpages-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite stockpages; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- householdpages -----------------------------------------------------------------------
+#
+# The rest of the Blade page controllers - chores, tasks, batteries, equipment, calendar,
+# the generic entity pages, the system and user pages, and the Grocycode trait they share.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_householdpages_tests() {
+	local dbname="victual_householdpages"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/householdpages-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite householdpages; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- labelapi -----------------------------------------------------------------------
+#
+# The label subsystem's HTTP surface. The label phases under .devtools/labels/ drive the
+# services directly; these five controllers are what a client actually reaches, and with them
+# the permission checks and the request validation that live above the services.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_labelapi_tests() {
+	local dbname="victual_labelapi"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/labelapi-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite labelapi; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- labelservices -----------------------------------------------------------------------
+#
+# Label services the artifact and identity phases do not reach: assets, render requests,
+# printer status, worker authorization, template documents and print evidence.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_labelservices_tests() {
+	local dbname="victual_labelservices"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/labelservices-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite labelservices; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- authstack -----------------------------------------------------------------------
+#
+# Authentication and the middleware above it: the schema-version refusal, the reverse-proxy
+# authenticator, the session cookie, the API key authenticator, password login and CORS.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_authstack_tests() {
+	local dbname="victual_authstack"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/authstack-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite authstack; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- helperunits -----------------------------------------------------------------------
+#
+# The helpers and small services nothing else enters: the date and string helpers in
+# extensions.php, the prerequisite checker, Grocycode parsing, the configuration validator,
+# the logger, the cache paths, the URL manager, calendar rendering and localization.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_helperunits_tests() {
+	local dbname="victual_helperunits"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/helperunits-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite helperunits; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- barcodelookup -----------------------------------------------------------------------
+#
+# The barcode lookup plugin base and the two plugins that extend it. No outbound request is
+# made: the base class's fetch seam is the boundary, and the plugins are asked what they do
+# with a payload rather than whether they can reach a third party.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_barcodelookup_tests() {
+	local dbname="victual_barcodelookup"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/barcodelookup-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite barcodelookup; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- storagefiles -----------------------------------------------------------------------
+#
+# Files and the three storage backends. A round trip through each backend, the authorization
+# the file API applies above them, and the refusals - missing data, a name that escapes its
+# directory, a size over the clamp.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_storagefiles_tests() {
+	local dbname="victual_storagefiles"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/storagefiles-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite storagefiles; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- stockcoverage -----------------------------------------------------------------------
+#
+# The stock write and read paths the differential suite's rollback and contract phases do not
+# reach: the booking variants, the corrections, the reports, and the refusals each one owes.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_stockcoverage_tests() {
+	local dbname="victual_stockcoverage"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/stockcoverage-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite stockcoverage; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- demodata ---------------------------------------------------------------------
+#
+# The demo database, built by the code that builds it. DemoDataGeneratorService is 360
+# executable lines and the suite reached none of them: it is the one thing in this tree
+# that constructs a whole coherent household from nothing, and what it produces is what a
+# person sees the first time they open a demo or dev instance. It went unmeasured because
+# it used to be SQLite-only and the demo ran on SQLite alone - ADR-0008's retirement made
+# it portable (defect 13 in docs/architecture-review.md) and left the generator with no
+# test on either engine.
+#
+# No network: the twelve demo resources are fetched only when the destination file does
+# not already exist, so the phase puts sentinel files there first. That is also the
+# assertion - a run that reached out anyway would overwrite them.
+
+run_demodata_tests() {
+	local dbname="victual_demodata"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/demodata-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite demodata; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- dialectpolicy ----------------------------------------------------------------
+#
+# Two refusals nothing else asks for. EntityReadPolicy's table is fail-closed - an entity
+# absent from it throws rather than reading - and ADR-0008's retirement is only real if a
+# configuration naming SQLite is refused with the command that moves the database across.
+# Both were a line or two below the floor, and in both cases the uncovered lines were the
+# refusal. The driver cases run in their own processes: Create() reads a constant.
+
+run_dialectpolicy_tests() {
+	local dbname="victual_dialectpolicy"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/dialectpolicy-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite dialectpolicy; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- httpboot ---------------------------------------------------------------------
+#
+# The one phase that serves real HTTP. app.php ends in $app->run(), so nothing can include
+# it, and the suite's request helper reproduces its middleware stack instead
+# (tests/Pgsql/request-subprocess-helper.php:66-112) - which means the file that decides
+# what this application actually is had never been executed under test, and a drift between
+# it and the helper imitating it would have been invisible. This phase runs the file itself,
+# behind `php -S public/index.php`.
+#
+# Not the frontend probes' situation: that job runs its server on a separate runner, which
+# is why .devtools/coverage/README.md excludes it. A server started and stopped inside this
+# job is an ordinary PHP process and loads prepend.php through the same auto_prepend_file
+# wiring, so no cross-job merge is involved. The test class starts and stops the server
+# itself and reaches this class's migrated schema through PGOPTIONS, which libpq applies to
+# every connection the application opens - rather than a router script that would have had
+# to re-do app.php's wiring, which is the duplication the phase exists to remove.
+
+run_httpboot_tests() {
+	local dbname="victual_httpboot"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/httpboot-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite httpboot; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- mqttcoverage -----------------------------------------------------------------
+#
+# The failure half of plan 18's publication, which .devtools/mqtt/'s probes do not reach:
+# publication switched off, a broker that refuses the connection, one that hangs up after
+# CONNACK, a snapshot that cannot be assembled, and what --retract actually clears. The
+# load-bearing assertion in most of them is the one about the ledger - a publish the broker
+# never received must not be recorded as delivered, because the ledger is what decides
+# whether the next run bothers to send it again.
+#
+# Against a stand-in broker the test starts itself on a port the OS assigns, so the phase
+# needs no broker, no network and no configuration of its own.
+
+run_mqttcoverage_tests() {
+	local dbname="victual_mqttcoverage"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/mqttcoverage-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite mqttcoverage; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- genericquery ----------------------------------------------------------------------
+#
+# The generic list query layer - query[], limit, offset and order on
+# GET /api/objects/{entity}. It is most of what BaseApiController still had uncovered, and
+# what it refuses is the interesting half: a field that does not exist and a field the
+# caller may not see are both 400, deliberately indistinguishable, and the substring and
+# regex operators are refused on a non-text field on both engines rather than left to
+# disagree (hazard 16).
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_genericquery_tests() {
+	local dbname="victual_genericquery"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/genericquery-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite genericquery; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
+# --- recipeoperations ----------------------------------------------------------------------
+#
+# The two recipe operations nothing entered: adding a recipe's
+# unfulfilled ingredients to the shopping list, and consuming a recipe in one transaction.
+# Both go through StockService, so what they owe is an exact ledger.
+#
+# Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
+# itself, per class, into its own schema.
+
+run_recipeoperations_tests() {
+	local dbname="victual_recipeoperations"
+	dropdb --if-exists "$dbname" || fail "could not drop $dbname"
+	createdb "$dbname" || fail "could not create $dbname"
+
+	local datapath="$SUITE_SCRATCH/recipeoperations-data"
+	rm -rf "$datapath"
+	mkdir -p "$datapath"
+	mkdir -p "$datapath/viewcache"
+	cat > "$datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$datapath" PHPUNIT_DB_NAME="$dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite recipeoperations; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$datapath"
+}
+
 case "$WHICH" in
 	rbac) run_rbac_tests ;;
 	pricevisibility) run_price_visibility_tests ;;
@@ -1869,8 +2438,23 @@ case "$WHICH" in
 	labeltracking) run_labeltracking_tests ;;
 	serverversion) run_serverversion_tests ;;
 	wirecontract) run_wirecontract_tests ;;
-	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_wirecontract_tests ;;
-	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, wirecontract or all)" ;;
+	stockpages) run_stockpages_tests ;;
+	householdpages) run_householdpages_tests ;;
+	labelapi) run_labelapi_tests ;;
+	labelservices) run_labelservices_tests ;;
+	authstack) run_authstack_tests ;;
+	helperunits) run_helperunits_tests ;;
+	barcodelookup) run_barcodelookup_tests ;;
+	storagefiles) run_storagefiles_tests ;;
+	stockcoverage) run_stockcoverage_tests ;;
+	demodata) run_demodata_tests ;;
+	dialectpolicy) run_dialectpolicy_tests ;;
+	httpboot) run_httpboot_tests ;;
+	mqttcoverage) run_mqttcoverage_tests ;;
+	genericquery) run_genericquery_tests ;;
+	recipeoperations) run_recipeoperations_tests ;;
+	all) run_migration_tests; run_view_tests; run_trigger_tests; run_rollback_tests; run_filter_tests; run_schema_tests; run_richtext_tests; run_files_import_tests; run_mqtt_tests; run_import_tests; run_rbac_tests; run_price_visibility_tests; run_chores_assignment_tests; run_error_path_tests; run_average_price_tests; run_group_min_stock_tests; run_nested_locations_tests; run_nested_product_groups_tests; run_product_substitutions_tests; run_open_container_measurement_tests; run_working_container_tests; run_apikey_tests; run_pgtap_tests; run_contract_tests; run_shopliststores_tests; run_credentialsplit_tests; run_mealplan_tests; run_rootentry_tests; run_mcpauth_tests; run_bootstrapadmin_tests; run_uploadclamp_tests; run_labeltracking_tests; run_serverversion_tests; run_wirecontract_tests; run_stockpages_tests; run_householdpages_tests; run_labelapi_tests; run_labelservices_tests; run_authstack_tests; run_helperunits_tests; run_barcodelookup_tests; run_storagefiles_tests; run_stockcoverage_tests; run_demodata_tests; run_dialectpolicy_tests; run_httpboot_tests; run_mqttcoverage_tests; run_genericquery_tests; run_recipeoperations_tests ;;
+	*) fail "unknown target: $WHICH (expected migrate, views, triggers, rollback, filter, schema, richtext, files, mqtt, import, rbac, pricevisibility, chores, errors, average, groupminstock, locations, productgroups, substitutions, openmeasure, workingcontainer, apikeys, pgtap, contract, shopliststores, credentialsplit, mealplan, rootentry, mcpauth, bootstrapadmin, uploadclamp, labeltracking, serverversion, wirecontract, stockpages, householdpages, labelapi, labelservices, authstack, helperunits, barcodelookup, storagefiles, stockcoverage, demodata, dialectpolicy, httpboot, mqttcoverage, genericquery, recipeoperations or all)" ;;
 esac
 
 if [ -n "$COVERAGE_DIR" ]; then

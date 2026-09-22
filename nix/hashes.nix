@@ -2,10 +2,10 @@
 # in and a single-file edit is a smaller ceremony than hunting them through the tree.
 #
 # Both start as `lib.fakeHash`. The first build of each fails with a "hash mismatch"
-# naming the real value; paste it here and build again. They change only when
-# composer.lock or yarn.lock changes, and a changed lockfile with an unchanged hash here
-# is a build failure rather than a silently stale dependency set — which is the property
-# we are buying.
+# naming the real value; paste it here and build again. Each follows the files its
+# derivation is built from — for the Composer one that is composer.json as well as
+# composer.lock — and a changed input with an unchanged hash here is a build failure
+# rather than a silently stale dependency set, which is the property we are buying.
 #
 #   nix build .#app       -> gives you composerVendor
 #   nix build .#frontend  -> gives you yarnOfflineCache
@@ -16,8 +16,17 @@
   #
   # Re-bootstrapped 2026-09-19 for the first release: the tree records the root package's
   # version, which used to follow version.json (4.6.0) and is now pinned in nix/app.nix so
-  # that this hash really does depend on the lockfile alone.
-  composerVendor = "sha256-DUsfnMwcbbb9MNH/NrTLfK/1lZfiotH3X9+CG0gC0kU=";
+  # that this hash no longer moves on a release.
+  #
+  # Moved 2026-09-22 for the `autoload-dev.exclude-from-classmap` entry composer.json
+  # gained. composer.lock did not change - its content hash does not cover autoload-dev -
+  # and the `--no-dev` autoloader this derivation dumps is byte-identical with and without
+  # that entry, so what moved the hash is composer.json, not anything it changed about the
+  # dependency set. The note at the top of this file is narrower than the truth on that
+  # point: the vendor hash follows both Composer files, not the lockfile alone. Taken from
+  # the `flake` job's fixed-output failure on 74d3b1a and 4c85722, which reported the same
+  # value, per nix/README.md's "Bootstrapping the hashes"; this sandbox has no nix.
+  composerVendor = "sha256-SqYieyz5FkCNx/WRiBnMKlv/2ItNIRhMgKH4iDZVnQA=";
 
   # Hash of the yarn offline mirror built from yarn.lock.
   #

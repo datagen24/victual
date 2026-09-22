@@ -1,33 +1,43 @@
 # 33 — Coverage floor
 
-[Issue 192](https://github.com/datagen24/victual/issues/192) owns the backlog.
-Delivery status belongs in the [plan index](README.md). This is a proposed breakdown of
-remaining work, implementing the existing coverage policy and
-[ADR-0025](../adr/0025-three-test-tiers.md), not a new testing architecture.
+This plan brings application PHP line coverage to at least **75% per file and overall**.
+Before closing [issue 192](https://github.com/datagen24/victual/issues/192), overall
+coverage must reach **85%**, or the remaining work must have named owners. **90%** remains
+the ideal.
+
+The plan implements the existing [coverage policy](../constitution.md#standing-invariants)
+and [ADR-0025's three test tiers](../adr/0025-three-test-tiers.md). It does not introduce
+a new testing architecture. Issue 192 tracks the backlog; the [plan index](README.md)
+tracks delivery. The baseline and proposed work below describe the plan as prepared on
+2026-09-20, not the current implementation status.
 
 ## Outcome and scope
 
-Reach and enforce 75% application line coverage, with every in-scope file at least 75%
-or a documented, reviewed exclusion. Reach 85% overall or record the remaining gap with
-named owners before closing issue 192; 90% remains the ideal. Tests must assert observable
-behavior, including refusals and unchanged state after failed writes. Executing a line
-without checking its result does not complete a backlog item.
+Tests must assert observable behavior: expected results, refused operations, and unchanged
+state after failed writes. Executing a line without checking its result does not complete
+a backlog item. Any file excluded from the 75% requirement needs a documented, reviewed
+reason.
 
-Deliver this through independently mergeable changes. Each coverage change owns one
-behavior family, its fixtures, and the assertions needed to detect a regression. Large
-classes can take several changes; they do not become one oversized pull request merely
-because the report groups their lines together.
+Each change should cover a manageable group of related behaviors, including fixtures and
+assertions that detect regressions. A large class may need several independently mergeable
+changes. The report's class grouping does not determine pull request size.
 
-This plan includes measurement gaps, application characterization, and final aggregate
-floor enforcement. Automated per-file reporting and enforcement are optional follow-up
-work, not delivery gates. The standing per-file coverage policy remains a review criterion.
-SQL completeness remains a required check; browser tests are assessed by pass/fail only
-and contribute nothing to the coverage measurement. It excludes feature development, wholesale test
-rewrites, database abstraction changes, and retirement of the differential harness or
-historical migrations. Those retirements require separate coverage-preservation evidence.
-No client contract, production schema, endpoint, or deployment behavior should change.
+The plan covers:
 
-## Evidence and current behavior
+- Gaps in coverage collection and reporting.
+- Tests that establish application behavior and detect regressions.
+- Enforcement of the overall coverage minimum.
+
+Automated per-file reporting and enforcement are optional follow-up work. Reviewers must
+still check per-file compliance. SQL completeness remains a required check; browser tests
+are assessed by pass/fail and do not contribute to coverage.
+
+Feature development, wholesale test rewrites, and database abstraction changes are out of
+scope. Retiring the differential harness or historical migrations requires separate
+evidence that coverage is preserved. This work must not change client contracts,
+production schemas, endpoints, or deployment behavior.
+
+## Baseline at planning time (2026-09-20)
 
 Repository inspection on 2026-09-20 used clean working copy
 `9c5485ef9fe9b4269b3ee2f1a4afc76578abd25e`. Reproduce the inspection from
@@ -60,81 +70,91 @@ no percentage target under ADR-0025. Do not silently expand or shrink the denomi
 
 ## Measurement and enforcement pieces
 
-These are separate reviewable pieces, followed by the domain backlog. Their acceptance
-criteria define boundaries; they are not instructions to implement all pieces at once.
+M1 establishes the baseline and identifies gaps. M2 completes collection from the separate
+PHP test processes. M3 is optional. Each piece has its own acceptance criteria so it can
+be reviewed separately from the application tests.
 
 ### M1 — Current baseline and complete inventory
 
-Produce a dated per-file inventory from one successful run equivalent to the complete
-CI `suite` job, including its separately measured PHP steps. Running `run-tests.sh` alone
-produces an interim report and cannot establish the final CI baseline. Record commit,
-PHP and PostgreSQL versions, driver, exact covered/executable counts, invocation, and
-artifact location. Start with an empty coverage directory so old processes cannot inflate
-results. Keep credentials out of artifacts.
+Measure one successful run equivalent to the complete CI `suite` job, including its
+separate PHP steps. `run-tests.sh` alone produces an interim report and cannot establish
+the final CI baseline. Start with an empty coverage directory to prevent stale results
+from inflating coverage. Keep credentials out of artifacts.
 
-Reconcile the filter against Clover: every executable file must appear, including
-never-loaded files; zero-executable-line files are identified separately rather than
-assigned a misleading percentage. For each below-floor file record covered and executable
-lines, shortfall to 75%, behavior gaps, owning slice, and status. The shortfall is
-`max(0, ceil(0.75 * executable) - covered)`, not the entire uncovered-line count.
-Reconcile every row in issue 192 with this inventory, explicitly identifying renamed,
-removed, already-covered, and newly discovered files.
+Record the following evidence:
 
-Acceptance: counts reconcile with the final aggregate; a never-loaded executable file
-appears at zero; all below-floor files have an owner in the proposed backlog. Refresh the
-inventory through periodic updates to issue 192 as new measurements become available.
-Each update identifies the measured commit, counts, remaining gaps, and next slices; an
-issue edit is not required for every pull request. No percentage gain is promised before
-this measurement.
+- Date, commit, PHP and PostgreSQL versions, and coverage driver.
+- Invocation, artifact location, and exact covered/executable line counts.
+- For every file below 75%: covered and executable lines, additional lines needed,
+  untested behaviors, the group of changes responsible for them, and status.
+
+Compare the Clover inventory with the coverage filter. Every executable file must appear,
+including files the tests never load. List files with no executable lines separately,
+without assigning a percentage. Calculate the additional lines needed as:
+
+```text
+shortfall = max(0, ceil(0.75 * executable) - covered)
+```
+
+The shortfall counts only the lines needed to reach 75%. Reconcile every row in issue 192
+with the inventory, identifying renamed, removed, already-covered, and newly found files.
+
+M1 is complete when the file counts reconcile with the aggregate, never-loaded executable
+files appear at zero, and every below-floor file has an assigned owner in the backlog.
+Refresh issue 192 periodically with the measured commit, counts, remaining gaps, and next
+priorities. An update is not required for every pull request. Measure the baseline before
+promising a percentage gain.
 
 ### M2 — Remaining PHP process measurement
 
-Instrument `canonical-json-tests.php` and `renderer-agreement-tests.php` with the existing
-prepend mechanism and shared output directory. Preserve the pinned real renderer and
-its existing assertions. Verify that both processes contribute readable coverage files
-and that final aggregation occurs after they finish. Raise the exact aggregate ratchet
-from the resulting complete run without changing the filter.
+Include `canonical-json-tests.php` and `renderer-agreement-tests.php` in coverage using
+the existing prepend mechanism and shared output directory. Preserve the pinned real
+renderer and its assertions. Both processes must produce readable coverage files, and
+the final report must merge them after they finish. Raise the aggregate threshold from
+the complete run, using its full precision and the unchanged coverage filter.
 
-Missing expected process output must be distinguishable from an honest zero gain. Include
-a negative control for a missing driver or disabled prepend path; an old coverage file
-must not conceal it. Any required hardening of collection is a separately scoped change
-if it exceeds these two call sites.
+A missing measurement must be distinguishable from a test that ran but added no newly
+covered lines. Include a negative control for a missing driver or disabled prepend path,
+with an old coverage file present to verify that it cannot hide the failure. Scope any
+collection hardening beyond these two call sites as a separate change.
 
 ### M3 — Optional per-file automation
 
-Per-file CI comparison is a nice-to-have whose complexity must justify its cost. It is
-not required before domain work, aggregate floor enforcement, or issue closure. Existing
-Clover reports support review of the standing policy: new files reach 75%, existing files
-below 75% improve or reach it, and files already above the floor remain at least 75%.
-The aggregate must not regress, and its exact ratchet rises when coverage rises.
+Automated per-file comparison is optional. Its complexity must justify its cost; it does
+not block application tests, aggregate enforcement, or issue closure. Reviewers can use
+Clover reports to check the existing policy:
 
-When a comparison needs base evidence, rerunning the base is acceptable. Use matched
-tooling and scope, record both commits, and account for renames and deletions. An
-instrumentation change requires a comparable base run under that instrumentation. A
-smaller denominator alone is not evidence of stronger tests. There is no requirement to
-build a retained-artifact lookup or cross-workflow comparison system.
+- New files reach at least 75%.
+- Touched files below 75% improve or reach the floor.
+- Files already at or above 75% remain at or above it.
+- Aggregate coverage does not regress. Raise its threshold as coverage improves.
 
-If automation is taken up later, scope it separately and verify that it detects uncovered
-new files and regressions, handles renames, and identifies missing or incomparable data.
-Until then, targeted file counts belong in the pull request's verification evidence.
+Rerunning the base commit is acceptable when comparison evidence is needed. Use matching
+tooling and scope, identify both commits, and account for renames and deletions. If
+collection changes, rerun the base with comparable collection. A smaller executable-line
+count alone does not demonstrate stronger tests. This plan does not require stored base
+artifacts or a comparison system spanning multiple workflows.
+
+Any later automation must detect uncovered new files and regressions, handle renames,
+and identify missing or incomparable data. Until then, include the targeted file counts
+in each pull request's verification evidence.
 
 ### Browser measurement boundary — resolved
 
-Browser-driven tests are outside coverage. Their success or failure remains relevant when
-running the applicable browser, parity, and longer-duration suites, without additional
-coverage tracking. No browser coverage collection, server instrumentation, or cross-job
-coverage merge is part of this plan.
+Browser-driven tests remain outside coverage. Their pass/fail results still matter in the
+applicable browser, parity, and longer-duration suites. This plan adds no browser coverage
+collection, server instrumentation, or cross-job merge.
 
-Filtered application PHP remains in the denominator even if a browser test exercises it.
-Uncovered behavior can receive tier-1 request tests where needed to meet the application
-floor. Document this boundary in the coverage README when updating measurement wiring.
+Application PHP in the coverage filter remains in the denominator even when browser
+tests exercise it. Add tier-1 request tests where needed to cover those behaviors.
+Document this boundary in the coverage README when updating collection.
 
 ## Application backlog and chunk boundaries
 
-The following order is provisional, based on risk and issue 192's historical gaps.
-M1 determines the remaining methods and per-file targets; existing tests may already
-satisfy some entries. Each semicolon-separated slice below is a candidate independent
-change, not a requirement to combine a whole row into a pull request.
+The order below is provisional, based on risk and issue 192's historical gaps. M1 identifies
+the methods and files that still need tests; existing tests may already satisfy some
+entries. Each semicolon-separated group is a candidate independent change. A table row
+does not need to become a single pull request.
 
 | Family | Small slices | Required behavioral evidence |
 |---|---|---|
@@ -150,53 +170,65 @@ change, not a requirement to combine a whole row into a pull request.
 | Shared API and bootstrap | Generic entity writes; base API errors; OpenAPI/print endpoints; app and middleware | Real dispatch where required, stable errors, forbidden entities, CORS and startup failures |
 | Remaining helpers and services | One measured behavior family at a time in configuration, localization, userfields, MQTT, canonical JSON, URL/barcode helpers, and database code | Boundary inputs, failure recovery and externally observable outputs, using existing local integration fixtures |
 
-The last row is not an unbounded catch-all implementation change: M1 must expand it into
-named files and separate slices, including newly discovered zero-covered files. Do not
-remove `SqliteDialect` or exclude it to satisfy its historical row while the differential
-harness still uses it. External integrations use controlled existing fixtures and local
-services; this plan introduces no configurable outbound production URL.
+Expand the final row into named files and separate changes during M1, including newly
+found files with zero coverage. Keep `SqliteDialect` in scope while the differential
+harness uses it. External integrations use controlled fixtures and local services; this
+plan adds no configurable outbound production URL.
 
-Prefer tests through a public service or request path, asserting both response and durable
-state for writes. Use [PgsqlSchemaTestCase](../../tests/Support/PgsqlSchemaTestCase.php)
-with real migrated PostgreSQL schemas. It isolates classes, not each test automatically:
-slices must define fixture reset and singleton cleanup, and use isolated processes where
-configuration constants require them. Existing request helpers and contract tests are
-examples to reuse, not an instruction to build a new universal test framework.
+### Test design
 
-A bespoke phase port preserves its assertion inventory and failure cases. Runner migration
-and adding new scenarios should be separate changes when either is substantial. No existing
-phase disappears as a side effect. If characterization finds a defect, preserve a focused
-reproducer and scope its fix separately; do not encode a security defect as desired behavior
-or regenerate contract snapshots merely to make the new test pass.
+Prefer public service methods or request paths. For writes, assert both the response and
+the persisted state. Use [PgsqlSchemaTestCase](../../tests/Support/PgsqlSchemaTestCase.php)
+with real migrated PostgreSQL schemas. It isolates test classes, not individual tests:
+each group of tests must define fixture resets and singleton cleanup. Use isolated
+processes where configuration constants require them. Reuse existing request helpers and
+contract tests where appropriate; a new universal test framework is not required.
+
+When porting a custom test phase, preserve its assertions and failure cases. Separate the
+runner migration from new scenarios when either change is substantial. Do not remove an
+existing phase as a side effect.
+
+If a test exposes a defect, retain a focused reproducer and handle the fix separately.
+Do not treat a security defect as intended behavior or regenerate contract snapshots
+solely to make a new test pass.
 
 ## Delivery gates and verification
 
-M1 establishes the queue; M2 establishes the remaining process contributions. M3 is
-optional and does not block domain work or closure. Browser coverage collection is out
-of scope. Start domain work with one stock booking slice, then reassess
-the measured gaps and review cost before expanding to the next family.
+M1 establishes the backlog; M2 completes collection from the remaining PHP processes.
+M3 does not block application work or closure. The proposed starting point is one stock
+booking group, followed by reassessment of the measured gaps and review effort before
+expanding to another family. Browser coverage remains out of scope.
 
-Each slice records the base and candidate commits, targeted behavior, relevant test results,
-per-file counts, final aggregate counts, and exact ratchet value. A test-only slice must
-increase coverage of its target or establish a specifically missing behavioral assertion;
-a phase port must preserve coverage and assertions. Evidence includes a focused negative
-control showing that an important incorrect result is detected, not merely a successful
-HTTP status or a mock expectation. Relevant PostgreSQL 15 and 16 checks remain required.
-The final CI-equivalent coverage run, rather than the focused phase alone, establishes the
-ratchet update. Explain any coverage movement outside the targeted files.
+### Evidence for each change
 
-The final enforcement change is small: set the aggregate gate to at least 75% once the
-complete run satisfies it, preserving a higher ratchet if one has already been achieved.
-It must demonstrate failure below the floor. Automated per-file enforcement is not a
-closure condition; review of the inventory establishes the per-file requirement. Closure
-also requires every inventory row at 75% or a reasoned, reviewed exclusion documented in
-the coverage README, and 85% overall or a named-owner backlog for the remaining gap.
-Any exclusion changes the measurement boundary and must be reviewed explicitly, with
-before/after counts; it is never a substitute for testing hard-to-reach code.
+Record the base and candidate commits, targeted behavior, relevant test results, per-file
+counts, final aggregate counts, and exact threshold. A test-only change must either
+increase coverage of its target or add a specifically missing behavioral assertion.
+Porting a phase must preserve both coverage and assertions.
 
-Application coverage cannot demonstrate SQL completeness or browser correctness. Existing
-pgTAP checks and frontend probes must still pass. Documentation-only planning changes do
-not claim those runtime checks have been executed.
+Include a focused negative control that demonstrates detection of an important incorrect
+result. A successful HTTP status or mock expectation alone is insufficient. Relevant
+PostgreSQL 15 and 16 checks remain required.
+
+Use the final CI-equivalent coverage run to establish a threshold update; a focused test
+phase is insufficient. Explain any coverage movement outside the targeted files.
+
+### Closure requirements
+
+The final aggregate gate must enforce at least 75%. Preserve any higher threshold already
+achieved, and demonstrate that the gate fails below the floor. To close issue 192:
+
+- Every inventory row reaches 75%, or has a reasoned, reviewed exclusion documented in
+  the coverage README.
+- Overall coverage reaches 85%, or the remaining gap has a backlog with named owners.
+- Existing pgTAP completeness checks and frontend probes pass.
+
+Automated per-file enforcement is not required for closure; reviewers assess the
+inventory. An exclusion changes the measurement scope and needs explicit review with
+before/after counts. Difficulty testing a file is not sufficient reason to exclude it.
+
+Application line coverage does not establish SQL completeness or browser correctness.
+Documentation-only planning changes do not claim that runtime checks have been run.
 
 ## Open questions
 
@@ -220,3 +252,25 @@ question 3 remains M1's deliverable, rather than an unresolved policy decision.
    > **Response:** Maintainer, 2026-09-20: Update issue 192 periodically with new data.
    > M1 establishes the current inventory; subsequent measurements refresh the issue's
    > remaining gaps and slice priorities without requiring an update on every change.
+
+## Executed
+
+[PR #256](https://github.com/datagen24/victual/pull/256), at
+`6ce5bf496a97370154cea801a46b68fdd2cef06c`, records implementation of M1, M2, and the
+application backlog on 2026-09-22. The PR is open at the time of this entry; the
+[plan index](README.md) retains the delivery status recorded by the implementation.
+
+The implementation adds a Clover-based file inventory, measures the canonical JSON and
+renderer agreement processes, and adds fifteen tier-1 test phases. Coverage labels and
+`report.php --expect` detect missing output from separately measured steps. The aggregate
+threshold remains at the measured result rather than being reduced to 75%.
+
+The implementation records 10,002 of 10,385 executable lines covered (96.31%), with all
+140 executable files at or above 75%. This meets issue 192's numerical requirement of
+85% overall or a remaining backlog with named owners. See the
+[coverage results](../../.devtools/coverage/README.md#recorded-results) for the recorded
+baseline, process count, and reproduction method.
+
+The implementation's plan-index entry at the revision above records 28 defects found
+and filed, with their fixes kept outside this work; several require contract decisions. Per-file CI enforcement (M3) was not taken up
+and remains optional. Browser tests remain outside coverage.
