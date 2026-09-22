@@ -1,0 +1,45 @@
+name: prose-baseline-prune
+
+# The Vale baseline is derived data. Page cleanups used to prune it in their own
+# branch, which made .devtools/vale/baseline.json a conflict between every
+# concurrent cleanup: the file is one sorted fingerprint per line, so two
+# branches deleting different nearby keys collide textually even though the
+# intended result is unambiguous. `audit.py --check` now reports stale entries
+# without failing, and this job removes them on master instead.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: master
+      - name: Install pinned Vale
+        run: python3 .devtools/vale/install.py --directory "$RUNNER_TEMP/vale"
+      - name: Prune resolved baseline entries
+        env:
+          VALE: ${{ runner.temp }}/vale/vale
+        run: python3 .devtools/vale/prune_baseline.py
+      - name: Confirm the pruned baseline still rejects new findings
+        env:
+          VALE: ${{ runner.temp }}/vale/vale
+        run: python3 .devtools/vale/audit.py --check
+      - name: Commit if the baseline changed
+        run: |
+          if git diff --quiet -- .devtools/vale/baseline.json; then
+            echo "No resolved entries to prune."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .devtools/vale/baseline.json
+          git commit -m "chore: prune resolved Vale baseline entries"
+          git push origin master
