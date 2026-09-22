@@ -159,9 +159,14 @@ def main() -> int:
             stale = stale_fingerprints(report, baseline) if not args.paths else Counter()
             print(f'{len(added)} new findings; existing findings remain in the cleanup backlog.')
             if stale:
-                print(f'{sum(stale.values())} resolved or changed baseline entries must be removed. '
-                      'Review the findings, then regenerate the full baseline; do not accept new findings silently.')
-            return int(bool(added or stale))
+                # Reported, never fatal. A stale entry is an allowance for a finding that
+                # no longer exists, so it cannot hide a new one: an unrecognised fingerprint
+                # still fails above. Failing on staleness instead forced every page cleanup
+                # to edit .devtools/vale/baseline.json, which made that one file a conflict
+                # between every concurrent branch. The scheduled prune on master clears them.
+                print(f'{sum(stale.values())} resolved or changed baseline entries are stale; '
+                      'the scheduled prune on master removes them. Not treated as a failure.')
+            return int(bool(added))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print(f'Documentation audit failed: {exc}', file=sys.stderr)
