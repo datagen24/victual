@@ -646,12 +646,12 @@ Same request, 200 on one engine and 500 on the other. The frontend never sends `
 this is reachable only by an API client - which is to say by both of the clients
 [17](../../docs/plans/17-ecosystem-clients.md) tracks.
 
-The `query[]` filter is *not* affected, for an accidental reason: `FilterData` interpolates
+The `query[]` filter was *not* affected, for an accidental reason: `FilterData` interpolates
 the field into a raw condition string (`$matches['field'] . ' = ?'`) rather than passing it
-as an identifier. LessQL therefore never quotes it, and PostgreSQL folds it to lower case
+as an identifier. LessQL therefore never quoted it, and PostgreSQL folded it to lower case
 like any other bare identifier.
-`?query[]=Name=Milk` works on both engines. One code path is safe because it builds SQL by
-string concatenation and the other is broken because it does the tidier thing.
+`?query[]=Name=Milk` worked on both engines. One code path was safe because it built SQL by
+string concatenation and the other was broken because it did the tidier thing.
 
 **Fixed, by rejecting rather than by widening the quoting.** The field named in `order` is
 checked against the entity's real columns before it reaches LessQL, so `?order=Name` is now
@@ -665,7 +665,9 @@ either case-folding field names into the schema's spelling - which is the identi
 equivalent of the cast rejected under hazard 16 - or leaving the two engines disagreeing.
 
 The same check covers `query[]`, so an unknown field is a `400` there too rather than a
-`no such column` 500 on SQLite. Both are `400 Invalid query`, which is the status
+`no such column` 500 on SQLite. `?query[]=Name=Milk` is now that same `400`, because
+`AssertFieldExists` matches the schema's spelling exactly. Both are `400 Invalid query`,
+which is the status
 [11](../../docs/plans/11-api-error-handling.md) wanted for this surface.
 
 ## What was checked and found clean
