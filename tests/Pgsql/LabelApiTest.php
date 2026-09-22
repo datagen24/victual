@@ -32,6 +32,14 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	private const ADMIN_USER = 9600;
 	private const OPERATOR_USER = 9601;
 
+	/**
+	 * What the operator holds for every test. A permission refusal narrows it and never puts
+	 * it back: setUp() does that, so a failure inside such a test cannot leave the identity
+	 * every later test authenticates with stripped of its grants.
+	 */
+	private const OPERATOR_GRANTS = [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
+		User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES];
+
 	/** Fixture dates are pinned: an unpinned best-before flips a JSON type with the calendar. */
 	private const BEST_BEFORE = '2099-12-31';
 	private const PURCHASED = '2026-01-01';
@@ -76,8 +84,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (" . self::OPERATOR_USER . ", 'labelapi-operator', 'fixture')");
 
 		self::Grant(self::ADMIN_USER, [User::PERMISSION_ADMIN]);
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
+		self::Grant(self::OPERATOR_USER, self::OPERATOR_GRANTS);
 
 		self::$adminKey = self::IssueUserKey(self::ADMIN_USER);
 		self::$operatorKey = self::IssueUserKey(self::OPERATOR_USER);
@@ -105,6 +112,18 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		$statement->execute([ApiKeyService::HashKey($key), substr($key, -4), $userId, ApiKeyService::API_KEY_TYPE_DEFAULT]);
 
 		return $key;
+	}
+
+	/**
+	 * The operator starts every test holding its whole grant set. Restoring here rather than
+	 * at the end of the test that narrowed it is what keeps a failure inside one refusal test
+	 * from turning every later test that authenticates as the operator into a 403.
+	 */
+	protected function setUp(): void
+	{
+		parent::setUp();
+
+		self::Grant(self::OPERATOR_USER, self::OPERATOR_GRANTS);
 	}
 
 	/**
@@ -639,17 +658,22 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		$request = bin2hex(random_bytes(32));
 		$material = bin2hex(random_bytes(32));
 
+		$predecessor = self::$pairedKey;
+
 		$rotated = self::Send('POST', '/api/labels/credentials/rotate',
-			['rotation_request_id' => $request, 'material' => $material], self::$pairedKey);
+			['rotation_request_id' => $request, 'material' => $material], $predecessor);
 		self::assertSame(200, $rotated['status'], $rotated['body']);
-		self::assertNotSame(self::$pairedKey, $rotated['json']['credential']);
+		self::assertNotSame($predecessor, $rotated['json']['credential']);
+
+		// Adopted the moment it exists rather than at the end of the test: a failure below
+		// must not leave the class holding a credential this rotation has already replaced,
+		// which would turn every later paired-worker test into a 401.
+		self::$pairedKey = $rotated['json']['credential'];
 
 		$replayed = self::Send('POST', '/api/labels/credentials/rotate',
-			['rotation_request_id' => $request, 'material' => $material], self::$pairedKey);
+			['rotation_request_id' => $request, 'material' => $material], $predecessor);
 		self::assertSame(200, $replayed['status'], $replayed['body']);
 		self::assertSame($rotated['json']['credential'], $replayed['json']['credential'], 'an identical rotation rederives the successor rather than minting a second one');
-
-		self::$pairedKey = $rotated['json']['credential'];
 	}
 
 	#[Depends('testRotationIssuesASuccessorAndReplayRederivesTheSameOne')]
@@ -1116,9 +1140,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(403, $response['status'], $response['body']);
 		self::assertSame($before['labels'], self::Counts()['labels']);
 		self::assertSame($before['print_requests'], self::Counts()['print_requests']);
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	#[Depends('testPrintingRefusesACallerWithoutTheDomainReadGrant')]
@@ -1321,14 +1342,20 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
+	#[Depends('testAdminIssuesADeclaredWorkerCredential')]
 	public function testAWorkerKeyIsRefusedOnTheRendererRoutes(): void
 	{
 		self::assertSame(401, self::Send('POST', '/api/labels/render/claim', [], self::$workerKey)['status']);
 		self::assertSame(401, self::Send('POST', '/api/labels/render/claim', [], self::$adminKey)['status']);
 	}
 
+	// The two claim-limit tests take whatever job is claimable, so they are declared here
+	// rather than left to the order of the file: once this test attaches an artifact there
+	// is a claimable job, and a claim made after that point would take it.
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
 	#[Depends('testTheRendererCredentialIsItsOwnTypeAndIsRefusedOnWorkerRoutes')]
+	#[Depends('testAnExpiredWorkerCredentialIsRefused')]
+	#[Depends('testClaimLimitOutsideOneThroughFiftyIsRefused')]
 	public function testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob(): void
 	{
 		$claim = self::Send('POST', '/api/labels/render/claim', [], self::$rendererKey);
@@ -1468,7 +1495,10 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ the worker protocol
 
+	// Declared on the test above as well: that one asserts the artifact is unreachable while
+	// no attempt carries it, which is only true until this claim creates the attempt.
 	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
+	#[Depends('testAnArtifactIsReachableByItsOwnerAndNotByADisinterestedWorker')]
 	public function testTheWorkerClaimsTheJobWhoseArtifactIsReady(): void
 	{
 		$response = self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1], self::$workerKey);
@@ -1495,6 +1525,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testTheWorkerClaimsTheJobWhoseArtifactIsReady')]
+	#[Depends('testAPairedWorkerPairsOverThePublicRouteExactlyOnce')]
 	public function testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute(): void
 	{
 		foreach (['heartbeat', 'sent', 'evidence'] as $step)
@@ -1551,6 +1582,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	}
 
 	#[Depends('testTheWorkerHeartbeatsAndReportsTheBytesSent')]
+	#[Depends('testAPairedWorkerPairsOverThePublicRouteExactlyOnce')]
 	public function testThePrinterStatusRouteRefusesAPrinterThisWorkerDoesNotHold(): void
 	{
 		$reported = self::Send('POST', '/api/labels/printers/' . self::$printerId . '/status',
@@ -1578,7 +1610,11 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			422, 'detail', 'value_out_of_range');
 	}
 
+	// Reporting the outcome ends the attempt, so the two tests that read it while it is live
+	// - the foreign worker's refusal, and the owner's fetch of the bytes - are declared here.
 	#[Depends('testAResultOutcomeIsPrintedOrFailedAndNothingElse')]
+	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
+	#[Depends('testTheClaimingWorkerCanNowFetchTheArtifactBytes')]
 	public function testTheWorkerReportsAPrintAndTheJobIsCompleted(): void
 	{
 		$response = self::Send('POST', '/api/labels/attempts/' . self::$attemptId . '/result',
@@ -1653,9 +1689,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(403, self::Send('POST', '/api/labels/jobs/' . self::$locationJobId . '/reprint', [], self::$operatorKey)['status']);
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs']);
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	#[Depends('testPrintingEachKindCreatesTheLabelAndTheOutboxEventTogether')]
@@ -1696,7 +1729,11 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::AssertRefusal(self::Send('POST', '/api/labels/jobs/999999/cancel', [], self::$operatorKey), 422, 'job_id', 'not_found');
 	}
 
+	// The three states this view is read for are each put there by a different test: the
+	// cancellation, the printed outcome, and the name the printer was given.
 	#[Depends('testCancellingAnUnclaimedJobDeadLettersItsOutboxRow')]
+	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
+	#[Depends('testPrinterUpdateRenamesTheSameRow')]
 	public function testTheJobMonitorReportsEveryJobWithItsPrinterAndState(): void
 	{
 		$response = self::Send('GET', '/api/labels/jobs', null, self::$adminKey);
@@ -1748,8 +1785,14 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	// ============================================================ previews
 
+	// RenderUpTo() drains the queue ahead of the preview it is waiting for, which empties it
+	// of the production renders the print tests left pending. Every test that needs one of
+	// those - the claim, and the two that report on a claimed request - runs first, so the
+	// whole preview chain is declared on the last of them.
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
 	#[Depends('testAdminCreatesAPrinter')]
+	#[Depends('testTheRendererClaimsRendersAndAttachesAnArtifactToTheWaitingJob')]
+	#[Depends('testTheRendererReportsInfrastructureFailureAndTheRequestGoesBackToPending')]
 	public function testASamplePreviewInventsItsValuesAndCannotBePromoted(): void
 	{
 		$templateId = self::$templates['location'];
@@ -1844,9 +1887,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(403, $response['status'], $response['body']);
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs']);
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	// ============================================================ request bodies
@@ -2056,7 +2096,11 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(['status' => 'unknown'], $response['json']);
 	}
 
+	// The battery fixture does not survive this test, so the two tests that print one are
+	// declared here rather than left to the order of the file.
 	#[Depends('testResolvingALiveLabelNamesItsKindAndTarget')]
+	#[Depends('testAnIdempotencyKeyReplaysTheFirstJobAndRefusesAChangedRequest')]
+	#[Depends('testAMalformedIdempotencyKeyIsRefused')]
 	public function testARetiredLabelResolvesToItsSnapshotRatherThanToNothing(): void
 	{
 		// Retirement is what deleting the target does; a retired label seen in the world is
@@ -2099,9 +2143,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::Grant(self::OPERATOR_USER, [User::PERMISSION_SHOPPINGLIST_VIEW]);
 		$denied = self::Send('GET', "/api/labels/resolve/$recipeUid", null, self::$operatorKey);
 		self::assertSame(['status' => 'unknown'], $denied['json'], $denied['body']);
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	// ============================================================ grocycode
@@ -2136,8 +2177,13 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			self::assertStringNotContainsStringIgnoringCase('grcy:', $response['body'], "response $index emitted a grocycode");
 		}
 
-		// Every job payload the outbox carries names a vctl uid and no grocycode either.
-		foreach (self::$db->query("SELECT payload FROM outbox WHERE event_type = 'label.print_requested'")->fetchAll(PDO::FETCH_COLUMN) as $payload)
+		// Every job payload the outbox carries names a vctl uid and no grocycode either. The
+		// print above put one there, so an empty list is the control failing rather than the
+		// subsystem passing.
+		$payloads = self::$db->query("SELECT payload FROM outbox WHERE event_type = 'label.print_requested'")->fetchAll(PDO::FETCH_COLUMN);
+		self::assertNotEmpty($payloads, 'the outbox holds a print_requested payload, or the loop below asserts nothing');
+
+		foreach ($payloads as $payload)
 		{
 			self::assertStringNotContainsStringIgnoringCase('grcy:', $payload);
 			self::assertMatchesRegularExpression('/"label_uid":"[0-9A-HJKMNP-TV-Z]{13}"/', $payload);
@@ -2155,9 +2201,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		self::assertSame(200, $response['status'], $response['body']);
 		self::assertSame(self::$targets['product'], (int)$response['json']['product']['id'], 'the grocycode still names the product it encodes');
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	// ============================================================ context
@@ -2214,9 +2257,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::Grant(self::OPERATOR_USER, [User::PERMISSION_CHORES_VIEW]);
 		self::assertSame(403, self::Send('GET', '/api/labels/locations/' . self::$targets['location'] . '/context', null, self::$operatorKey)['status']);
 		self::assertSame(200, self::Send('GET', '/api/labels/chore/' . self::$targets['chore'] . '/context', null, self::$operatorKey)['status']);
-
-		self::Grant(self::OPERATOR_USER, [User::PERMISSION_MASTER_DATA_EDIT, User::PERMISSION_STOCK_VIEW,
-			User::PERMISSION_RECIPES_VIEW, User::PERMISSION_CHORES_VIEW, User::PERMISSION_BATTERIES]);
 	}
 
 	// ============================================================ teardown paths
@@ -2248,21 +2288,51 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertFalse($again['json']['deleted'], 'deleting a printer that is gone reports that nothing was deleted');
 	}
 
-	#[Depends('testTheWorkerReportsAPrintAndTheJobIsCompleted')]
+	/**
+	 * Revocation takes every credential the worker holds - the worker's and the renderer's
+	 * alike - and nothing reissues one into `$workerKey`. So this test builds the worker it
+	 * revokes: doing it to the shared one ends the narrative for whichever test the run
+	 * order happens to put next, and reports the 401 as that test's own failure.
+	 */
+	#[Depends('testWorkerRegistersItsDriverVersions')]
 	public function testRevokingAWorkerCredentialRefusesTheKeyAndKeepsThePrinterAssignment(): void
 	{
-		$response = self::Send('DELETE', '/api/labels/workers/' . self::$workerId . '/credentials', null, self::$adminKey);
+		$worker = self::Send('POST', '/api/labels/workers',
+			['name' => 'Labelapi revoked worker', 'configuration_mode' => 'declared'], self::$adminKey);
+		self::assertSame(200, $worker['status'], $worker['body']);
+		$workerId = (int)$worker['json']['id'];
+
+		$issued = self::Send('POST', "/api/labels/workers/$workerId/credentials", [], self::$adminKey);
+		self::assertSame(200, $issued['status'], $issued['body']);
+		$credential = $issued['json']['credential'];
+
+		// Registering is what the credential is for, and it is done here so that the 401
+		// below is a credential that was working being refused rather than one that never did.
+		$registered = self::Send('POST', '/api/labels/register', ['drivers' => [self::Driver()]], $credential);
+		self::assertSame(200, $registered['status'], $registered['body']);
+
+		$printer = self::Send('POST', '/api/labels/printers',
+			self::PrinterBody($workerId, ['name' => 'Labelapi revoked worker printer']), self::$adminKey);
+		self::assertSame(200, $printer['status'], $printer['body']);
+		$printerId = (int)$printer['json']['id'];
+
+		$response = self::Send('DELETE', "/api/labels/workers/$workerId/credentials", null, self::$adminKey);
 
 		self::assertSame(200, $response['status'], $response['body']);
 		self::assertTrue($response['json']['revoked']);
 
-		self::assertSame(401, self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1], self::$workerKey)['status'],
+		self::assertSame(401, self::Send('POST', '/api/labels/jobs/claim', ['limit' => 1], $credential)['status'],
 			'a revoked credential is refused at the door');
-		self::assertSame(self::$workerId, (int)self::Row('SELECT worker_id FROM label_printers WHERE id = ?', [self::$printerId])['worker_id'],
+		self::assertSame($workerId, (int)self::Row('SELECT worker_id FROM label_printers WHERE id = ?', [$printerId])['worker_id'],
 			'revocation is about the credential, not about the printer it was assigned');
 	}
 
+	// The same for the paired worker: deactivating it revokes `$pairedKey`, so the three
+	// tests that authenticate with it are declared rather than merely written above.
 	#[Depends('testRevokingAWorkerCredentialRefusesTheKeyAndKeepsThePrinterAssignment')]
+	#[Depends('testRotationRefusesAMalformedRequestIdentifier')]
+	#[Depends('testAnotherWorkersAttemptIsForbiddenOnEveryAttemptRoute')]
+	#[Depends('testThePrinterStatusRouteRefusesAPrinterThisWorkerDoesNotHold')]
 	public function testDeactivatingAWorkerRevokesItsSessionsToo(): void
 	{
 		$response = self::Send('PUT', '/api/labels/workers/' . self::$pairedWorkerId,

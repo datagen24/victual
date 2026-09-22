@@ -634,8 +634,19 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 
 		$row = self::$db->query('SELECT * FROM label_assets WHERE id = ' . (int)$stored['id'])->fetch(PDO::FETCH_ASSOC);
 		self::assertSame('labelassets', $row['file_group'], 'The bytes live under the label asset group');
-		self::assertSame(LabelByteStore::NameFor('asset', $stored['content_digest'], 'png'), $row['file_name'],
-			'The storage name carries the digest and nothing about the household');
+		// Spelled out rather than compared against NameFor(): an expectation the code under
+		// test computes for itself would accept a naming scheme that had begun to leak the
+		// household's own words into the file store.
+		self::assertStringContainsString($stored['content_digest'], $row['file_name'], 'The storage name carries the digest');
+		self::assertSame('asset-.png', str_replace($stored['content_digest'], '', $row['file_name']),
+			'and beside the digest only the kind of bytes it is and the extension');
+
+		foreach (['Fixture Mark', 'CC0-1.0', 'Public domain'] as $supplied)
+		{
+			self::assertStringNotContainsStringIgnoringCase($supplied, $row['file_name'],
+				"The storage name repeats nothing the household supplied: $supplied");
+		}
+
 		self::assertSame('CC0-1.0', $row['licence'], 'The licence the asset is used under is recorded beside the bytes');
 
 		self::assertSame($bytes, (new LabelAssetService(self::$db))->Bytes((int)$stored['id']),
