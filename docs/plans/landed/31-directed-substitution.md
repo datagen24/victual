@@ -327,6 +327,13 @@ torn-down context would have read as a pass either way. The fix arms the `load` 
 `Promise.all` around the confirm click — before the chain starts, not after — and moves the
 API check to strictly after that resolves.
 
+**That arming does not close the race, and the probe still carries it.**
+`page.waitForLoadState` reports the *current* document's state and returns at once when it
+already holds, so arming it earlier changes nothing: the product page reached `load` at its
+own `goto`, and the reload the confirm click starts is never awaited. Only a waiter for the
+next event — `page.waitForEvent('load')`, or `page.waitForNavigation()` — is sensitive to
+where it is armed. The ordering was corrected; the API was not.
+
 **The browser probe could not be run end to end in this session**, for the same reason plan
 30's could not. This sandbox's PHP is 8.4.19, and the app refuses to boot below 8.5.0 on every
 route. This was confirmed by reproduction — booting the demo instance under PHP 8.4 returns
