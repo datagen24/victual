@@ -6,10 +6,10 @@ PostgreSQL is the only engine Victual runs on, since
 installation needs.
 
 SQLite is still all over the pages below, and deliberately so: this is where the porting
-work is written down, and the two things that keep needing it are `bin/victual-db-import`,
-which reads SQLite as an input format, and the differential suite, which still builds a
-SQLite side to prove the port did not change behaviour. Both are read-only uses of an engine
-nothing here serves from.
+work is written down. Two things keep needing it: `bin/victual-db-import`, which reads
+SQLite as an input format, and the differential suite, which still builds a SQLite side to
+prove the port did not change behaviour. Both are read-only uses of an engine nothing here
+serves from.
 
 ## Layout
 
@@ -41,7 +41,7 @@ migrates successfully, reports itself up to date, and has nobody who can log int
 
 It also degrades quietly rather than loudly. With no rows in `quantity_units`, the final
 join in `quantity_unit_conversions_resolved` matches nothing, so the view is empty for
-every product, so `products_ins` copies nothing into
+every product. `products_ins` then copies nothing into
 `cache__quantity_unit_conversions_resolved`, and anything resolving a quantity unit fails
 somewhere far from the cause - the report that led here was `recipes_pos` rejecting an
 ingredient with "Provided qu_id doesn't have a related conversion for that product". The
@@ -108,7 +108,9 @@ apart.
 tells `check-migrations.php` that the missing counterpart is deliberate, but it says
 nothing to the differential suite, whose `migratedifftest.php` compares the two engines'
 table sets and treats a table only one side has as the loudest possible defect — which is
-what that phase is for. So a table that exists on one engine on purpose has to be named in
+what that phase is for.
+
+So a table that exists on one engine on purpose has to be named in
 `ENGINE_EXCLUSIVE_TABLES` at the top of `migratedifftest.php`, with the reason, or the
 suite fails on it. Naming it is the point: an exemption the suite does not know about is a
 missing table wearing a different hat.
@@ -118,7 +120,7 @@ change, so this case had not come up). It holds uploaded files as `BYTEA` when
 `FILE_STORAGE` is `database`, and `ConfigurationValidator` refuses that setting on any
 driver but `pgsql` — so a SQLite counterpart would be a table nothing could ever read.
 Note that this is a *different* list from `DatabaseImporter::TARGET_ONLY_TABLES`, which is
-about tables the PostgreSQL baseline owns outright; `bin/victual-db-import` deliberately
+about tables the PostgreSQL baseline owns outright. `bin/victual-db-import` deliberately
 still reports `files` as a target table with no source counterpart that stays empty, since
 a household importing a SQLite installation wants to be told that its pictures have not
 come across with it.
@@ -129,11 +131,12 @@ numbered above it creates its table on PostgreSQL and nowhere else — not becau
 engine needs no change, but because there is no longer a file that could give it one. Every
 new table from now on therefore has to be named in `ENGINE_EXCLUSIVE_TABLES` too, and the
 name of that list is doing less work than it looks like: what it means for these entries is
-"SQLite is frozen", not "SQLite is deliberately different". `migrations/0267.pgsql.sql`'s
-`stock_entry_origins` is the first of them, and its entry says so rather than borrowing the
-`files` reasoning it does not share. These migrations carry no `@engine-exclusive` marker —
-`check-migrations.php` asks for one only below the freeze, where a lone engine-specific file
-really could be a missing counterpart.
+"SQLite is frozen", not "SQLite is deliberately different".
+
+`migrations/0267.pgsql.sql`'s `stock_entry_origins` is the first of them, and its entry says
+so rather than borrowing the `files` reasoning it does not share. These migrations carry no
+`@engine-exclusive` marker — `check-migrations.php` asks for one only below the freeze,
+where a lone engine-specific file really could be a missing counterpart.
 
 Where a phase runs the *application* against SQLite the table still has to exist, and it
 comes from `.devtools/pgsql/fixtures/00_base.sql` instead: the rollback phase drives
@@ -159,9 +162,10 @@ reason; use it rather than assuming the highest file in `migrations/` applies ev
 
 **Claim the number before you write the file**, in
 [migrations/RESERVATIONS.md](../../migrations/RESERVATIONS.md). Plans are worked in parallel
-branches and each needs a number before any of them merges, so numbers handed out on a branch
-collide or leave holes — and a hole is the worse of the two, because nothing complains. A
-tree carrying 0257 and 0259 but not 0258 migrates a database that records `MAX(migration) =
+branches, and each needs a number before any of them merges. Numbers handed out this way
+collide or leave holes — and a hole is the worse of the two, because nothing complains.
+
+A tree carrying 0257 and 0259 but not 0258 migrates a database that records `MAX(migration) =
 259` and never ran 0258, which satisfies every check built on the maximum
 (`GetLatestMigrationNumber()`, `DatabaseImporter`'s two-sided comparison, plan 10's boot
 check) while the schema is missing a table. The runner itself is not fooled — it asks per
@@ -182,11 +186,12 @@ Loading cleanly proves very little. The suite is one command:
 
     .devtools/pgsql/run-tests.sh [phase]
 
-The runner's own header says what each phase asks and why, and names every one of them; that
-list has been wrong here three times now by being maintained separately from it (most
-recently at four phases, when there were five), so it is deliberately not repeated - not even
-as an abbreviated example, which is what the previous version of this line was and is exactly
-how it went stale again.
+The runner's own header says what each phase asks and why, and names every one of them.
+That list has been wrong here three times now by being maintained separately from it (most
+recently at four phases, when there were five). It is deliberately not repeated here - not
+even as an abbreviated example, which is what the previous version of this line was and is
+exactly how it went stale again.
+
 `migratedifftest.php` is the one to know about at this point: it migrates a database on each
 engine, touches neither afterwards, and compares every table - that is the equivalence claim
 above, written as a test, and it is the phase the missing seed data would have failed. The
@@ -197,16 +202,18 @@ One thing about the `mqtt` phase does belong here, because it is a claim about c
 rather than a description of a phase: **it runs against stand-ins, not against the real
 systems.** InfluxDB is a PHP built-in server whose control file flips it between accepting,
 rejecting, redirecting and answering with a page; the broker is a PHP stream socket speaking
-the little of MQTT 3.1.1 `MqttPublisher` uses and recording what was published. That is what
-keeps the phase free of a broker, a node install and an InfluxDB, and it is also the limit
-of what a green run means: a real Mosquitto retaining the payload across a restart, Home
-Assistant creating the entity, and InfluxDB accepting the line protocol are hand
-verifications and stay so. Eight of the phase's probes run **twice, once per engine**, from
-one SQLite database imported into PostgreSQL through `bin/victual-db-import`, because the
-outbox is where this feature turns on transaction semantics - what a rolled back INSERT
-leaves behind, how a driver reports a failure mid-transaction - and asserting that only on
-the development engine would leave the deployment engine untested for the properties the
-mechanism exists to provide.
+the little of MQTT 3.1.1 `MqttPublisher` uses and recording what was published.
+
+That is what keeps the phase free of a broker, a node install and an InfluxDB. It is also
+the limit of what a green run means: a real Mosquitto retaining the payload across a
+restart, Home Assistant creating the entity, and InfluxDB accepting the line protocol are
+hand verifications and stay so.
+
+Eight of the phase's probes run **twice, once per engine**, from one SQLite database
+imported into PostgreSQL through `bin/victual-db-import`. The outbox is where this feature
+turns on transaction semantics - what a rolled back INSERT leaves behind, how a driver
+reports a failure mid-transaction. Asserting that only on the development engine would leave
+the deployment engine untested for the properties the mechanism exists to provide.
 
 `.devtools/pgsql/difftest.php` puts both engines into an identical table state and
 compares what their views actually return:
@@ -467,7 +474,7 @@ real SQLite and a real PostgreSQL 16, on the fixture above plus a `NULL` row:
 The `!~` row is the one worth having checked rather than assumed: `NOT ILIKE` leaves the
 `NULL` name out on both engines, so negation did not quietly become three-valued on one side.
 
-**The agreement is ASCII only, and that is the interesting part of this hazard.** SQLite's
+**The agreement is ASCII only; past ASCII the two engines still disagree.** SQLite's
 `LIKE` folds `A-Z` and nothing else; `ILIKE` folds according to the database collation, so
 the two still part company past ASCII:
 
@@ -481,6 +488,7 @@ is a great deal of machinery for a case no fixture in this repository contains. 
 closed, so it is measured: the `filter` phase of `run-tests.sh` prints both engines' answers
 and the database collation on every run, and asserts the invariant that actually holds -
 identical on ASCII, and beyond ASCII PostgreSQL may fold *more* than SQLite but never less.
+
 An exact non-ASCII assertion would be wrong to write, because which characters fold is a
 property of the database's collation rather than of this code: the same test would fail on a
 `C`-locale database for something that is not a defect.
@@ -531,7 +539,7 @@ unfixed.
 `ColumnTypeManifest` holds the answer for them: 13 entries, semantic types (`text`, not
 `TEXT` or `character varying`) so that neither engine's vocabulary becomes the contract by
 default, applied to both engines identically by
-`DatabaseDialect::GetValidationColumnTypes()`. Three rules keep it honest, and the `filter`
+`DatabaseDialect::GetValidationColumnTypes()`. Three rules constrain it, and the `filter`
 phase enforces all three against the real schema on both engines:
 
 1. **It fills gaps and never overrides.** An entry applies only where the catalogue has
@@ -555,7 +563,7 @@ leave) but was still 13 engine-dependent answers, on the most useful columns.
 
 **Catalogue failure is not silent.** If the columns of an entity cannot be read at all, a
 request that named a field in `query[]` or `order` is answered `500` and the failure is
-logged, rather than being run unvalidated: failing open there would restore the very
+logged, rather than being run unvalidated. Failing open there would restore the very
 200-on-one-engine / 500-on-the-other divergence this exists to remove, intermittently and
 with nothing saying so. A request that named no field needs no validation and is served
 normally, so a catalogue problem costs filtering rather than availability.
@@ -563,8 +571,10 @@ normally, so a catalogue problem costs filtering rather than availability.
 **The suite can see all of this**, which was not true when the first half of the fix
 landed. The `filter` phase of `run-tests.sh` asks each dialect for the condition it emits,
 runs both against their own engine and compares the rows, then compares the two engines'
-verdicts on every column of every shared table and view. It is the first phase that
-compares *application* behaviour rather than SQL, and it was checked the way
+verdicts on every column of every shared table and view.
+
+It is the first phase that compares *application* behaviour rather than SQL, and it was
+checked the way
 [14](../../docs/plans/landed/14-contract-and-regression-scaffolding.md) asks - by putting the
 defect back and confirming the phase fails (three ASCII cases, `[1,2] vs [2]`). It earned
 its place immediately: it is what caught the untyped-view-column residual above, before
@@ -636,10 +646,10 @@ Same request, 200 on one engine and 500 on the other. The frontend never sends `
 this is reachable only by an API client - which is to say by both of the clients
 [17](../../docs/plans/17-ecosystem-clients.md) tracks.
 
-The `query[]` filter is *not* affected, and the reason is worth knowing because it is
-accidental: `FilterData` interpolates the field into a raw condition string
-(`$matches['field'] . ' = ?'`) rather than passing it as an identifier, so LessQL never
-quotes it and PostgreSQL folds it to lower case like any other bare identifier.
+The `query[]` filter is *not* affected, for an accidental reason: `FilterData` interpolates
+the field into a raw condition string (`$matches['field'] . ' = ?'`) rather than passing it
+as an identifier. LessQL therefore never quotes it, and PostgreSQL folds it to lower case
+like any other bare identifier.
 `?query[]=Name=Milk` works on both engines. One code path is safe because it builds SQL by
 string concatenation and the other is broken because it does the tidier thing.
 
@@ -650,8 +660,8 @@ on the other. `?order=nope` was a 500 on *both* engines and is now the same 400 
 
 Note what this costs on SQLite: `?order=Name` used to work there, because backtick quoting
 resolves case-insensitively. It does not any more. Accepting a field name in a case the
-entity does not actually use was never a documented behaviour, and keeping it would have
-meant either case-folding field names into the schema's spelling - which is the identifier
+entity does not actually use was never a documented behaviour. Keeping it would have meant
+either case-folding field names into the schema's spelling - which is the identifier
 equivalent of the cast rejected under hazard 16 - or leaving the two engines disagreeing.
 
 The same check covers `query[]`, so an unknown field is a `400` there too rather than a
@@ -795,11 +805,11 @@ Triggers are disabled for the duration of the copy. The rows being copied were a
 shaped by the source's triggers, so letting the target's fire again would cascade deletes
 and recompute derived values a second time.
 
-Two details that are easy to get wrong and are handled here: values are read with
+Two details are easy to get wrong and are handled here. Values are read with
 `PDO::NULL_NATURAL`, because the application's usual `NULL_EMPTY_STRING` would turn every
 empty string into NULL on the way through (Victual stores an empty name for the internal
-meal plan section, which is enough to violate a NOT NULL column); and the generated id
-counters are resynced afterwards, since every row arrives with an explicit id.
+meal plan section, which is enough to violate a NOT NULL column). The generated id counters
+are resynced afterwards, since every row arrives with an explicit id.
 
 ## Testing triggers
 
