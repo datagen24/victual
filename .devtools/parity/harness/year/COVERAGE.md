@@ -49,19 +49,23 @@ best-before, purchased date)` with no total tie-break. A transfer splits one lot
 sharing all four, differing only by location — and location enters the ordering only through
 the default-consume-location term, which is equal for both unless one of them sits at the
 product's default consume location. So the next consume's choice between them is arbitrary
-and two engines may differ. Day 169 of a year run is what found it: butter, transferred
-fridge to freezer, then consumed from the half the model had not picked.
+and two engines may differ.
 
-The first response was to stop asserting lots for that product entirely, which was too
-broad — a tie leaves the amount removed, the product total, the tied group's own total and
-the set of locations that group may occupy all exactly determined, and withdrawing the whole
-assertion gave up every one of them to accommodate the single thing that is open. So the
-**expectation is narrowed instead**: lots outside the tie are compared exactly, and each tied
-group is compared against the outcomes the application permits (its total, its allowed
-locations, its allowed prices). The model carries the ambiguity rather than resolving it — it
-never publishes its own guess at the split and never reads the application's choice back to
-adopt it, because either would introduce the deterministic tie-break the application does not
-have and make every later assertion agree with whatever the build under test happened to do.
+Day 169 of a year run is what found it: butter, transferred fridge to freezer, then consumed
+from the half the model had not picked.
+
+The first response was to stop asserting lots for that product entirely. That was too broad:
+a tie leaves the amount removed, the product total, the tied group's own total, and the set of
+locations that group may occupy all exactly determined. Withdrawing the whole assertion gave
+up every one of them to accommodate the single thing that is open.
+
+So the **expectation is narrowed instead**: lots outside the tie are compared exactly, and
+each tied group is compared against the outcomes the application permits (its total, its
+allowed locations, its allowed prices). The model carries the ambiguity rather than resolving
+it. It never publishes its own guess at the split and never reads the application's choice
+back to adopt it, because either would introduce the deterministic tie-break the application
+does not have. Doing so would also make every later assertion agree with whatever the build
+under test happened to do.
 
 **"No price" has three representations and they are not interchangeable.** An entry created
 with an omitted price, an explicit `null`, or an explicit `0` reads back from
@@ -77,8 +81,10 @@ than folded away. The smoke year reports two, both on Bread.
 That mattered on the first run of the fixture built to test it. `price_paid` gates on
 `price === null` (`services/Influx/BookingEventPublisher.php:795`), not on `> 0`, and the
 publisher says why at `:191` — "a booking with no price is not a booking at a price of
-nothing". So an explicitly-zero-priced purchase publishes a `price_paid` point of 0.0000 and
-an unpriced one publishes none, while `products_average_price` excludes both. The suite's
+nothing".
+
+So an explicitly-zero-priced purchase publishes a `price_paid` point of 0.0000 and an
+unpriced one publishes none, while `products_average_price` excludes both. The suite's
 delivery oracle had borrowed the view's rule and counted one point too few; the fixture
 surfaced it as an unexpected `butter|0.0000|5` point. **The two surfaces genuinely disagree
 about whether unknown and zero are the same thing**, which is exactly why the equivalence
@@ -119,9 +125,9 @@ zero.
 ### The price-representation fixture
 
 `narrative/prices.js` runs after the year, on a product with no default consume location, and
-buys the same thing three ways — price omitted, price `null`, price `0` — then does to those
-lots what the year does to everything else: a partial consume, a partial transfer, a consume
-that has to choose, and an edit.
+buys the same thing three ways — price omitted, price `null`, price `0`. It then does to
+those lots what the year does to everything else: a partial consume, a partial transfer, a
+consume that has to choose, and an edit.
 
 | What it asserts | Why |
 |---|---|
@@ -156,12 +162,12 @@ addresses it.
 
 **Modelling the join makes a compatibility oracle, not a correctness one.** The average-price
 oracle now requires an origin booking before counting an edit, exactly as the join does, so it
-establishes that behaviour has not *changed* — it cannot establish that the behaviour is
-right, and it must not be the only record of a defect it was taught to accept.
+establishes that behaviour has not *changed*. It cannot establish that the behaviour is right,
+and it must not be the only record of a defect it was taught to accept.
 
 So the property is asserted separately, without reference to the join, and kept executable.
 `narrative/splitedit.js` buys two products identically — 500 at 2.00 and 500 at 1.00 — and
-brings both to 400 dear units by different routes: the control edits its whole 500 entry down
+brings both to 400 dear units by different routes. The control edits its whole 500 entry down
 to 400; the subject opens 100 (splitting the lot) and edits the 400 remainder to 300. Both end
 holding 400 at 2.00 and 500 at 1.00. Nothing about the difference is visible in the resulting
 stock, so the average must agree. It does not:
@@ -171,7 +177,7 @@ stock, so the average must agree. It does not:
            known: split-entry edits are invisible to products_average_price
 
 That assertion was registered as **known-failing**: it ran every time, reported every time,
-and did not turn the run red — but it **failed the run if it ever passed**, because at that
+and did not turn the run red. But it **failed the run if it ever passed**, because at that
 point either the defect was fixed and the marker is a false statement about the application,
 or the assertion stopped testing what it claims.
 
@@ -205,7 +211,7 @@ its own.
 | Property | Why it is tested | Demonstrated |
 |---|---|---|
 | A stalled response body aborts within the configured timeout | `fetch()` resolves when the headers arrive, so clearing the abort timer there left `response.text()` unbounded — a server that sends headers and then goes silent hung the harness. One did: a fixture-stage `POST /users` sat for **286 seconds** against a 180-second timeout. | Against the unfixed code: `FAIL — the request was still waiting after 6000ms with a 1500ms timeout`. Against the fixed code: `PASS`. |
-| A complete response is still read in full | so the fix above did not simply break the ordinary path | `PASS` |
+| A complete response is still read in full | confirming the fix above did not also break the ordinary path | `PASS` |
 | An exact length assertion rejects the wrong number of rows | `length` was accepted, **counted in the assertion tally**, and never enforced — so `length: 1` passed on two rows, and the fixtures using it to establish an entry is uniquely identified before binding `[0].id` were binding the first of however many came back | `PASS` after the fix; before it, nothing threw |
 | A non-numeric amount fails the booking-sum assertion | `Math.abs(NaN - want) > tol` is *false*, so a booking row carrying `amount: "garbage"` summed to NaN and satisfied whatever `rowsSum` it was given | `PASS` after; before, `rowsSum: 5` was satisfied by garbage |
 | A stalled Influx response body aborts within its timeout | `queryFlux()` cleared its abort timer once the headers arrived, then read the body — and these queries run at the *end* of a year | `PASS` after; before, a 500ms-delayed body beat a 100ms timeout |
@@ -282,11 +288,13 @@ log line — the escalation is gone, the hang is not.
 **Ruled out: contention on the clock file.** libfaketime re-reads the timestamp file on every
 cache lapse in every preloaded process — four php-fpm children and every PostgreSQL backend,
 which are forked per connection — so rewriting that file in place 365 times looked like a
-plausible source of blocked readers. Swapping it atomically with `rename()` instead **breaks
-the clock outright**: `/clk` is a read-only virtiofs mount, the container goes on resolving
-the old inode after a host-side rename, and libfaketime finds nothing and falls back to real
-time (`delta: +84465916`, about 2.7 years). In-place rewriting is what makes the update
-visible through that mount, so it is not the cause and cannot be changed. Reverted.
+plausible source of blocked readers.
+
+Swapping it atomically with `rename()` instead **breaks the clock outright**: `/clk` is a
+read-only virtiofs mount, the container goes on resolving the old inode after a host-side
+rename, and libfaketime finds nothing and falls back to real time (`delta: +84465916`, about
+2.7 years). In-place rewriting is what makes the update visible through that mount, so it is
+not the cause and cannot be changed. Reverted.
 
 ### Two failures, kept apart
 
@@ -303,8 +311,8 @@ the similarity:
 
 The second weakens any account that attributes every hang to repeated day jumps, because
 there had been none. **The same `SQLSTATE[08006]` and the same `09:00:00` do not establish the
-same cause** — `09:00:00` is simply the hour every simulated day begins, so it is also the
-hour of the *first* one.
+same cause** — `09:00:00` is the hour every simulated day begins, so it is also the hour of
+the *first* one.
 
 The monotonic-clock account recorded in `stack/faketime.sh` therefore stays a **hypothesis**
 here. It was arrived at by observing that PostgreSQL logged `write=172800.002 s` for a
@@ -329,7 +337,7 @@ assertion fires.
 |---|---|---|
 | Every booking moved its intended amount | every stock operation | `rowsSum` — the signed total, from the response itself |
 | A recipe consumed its ingredients, nested ones included | every `cook` | `POST /recipes/{id}/consume` answers 204, so the evidence is the state it left: a stock read **and** a lot read per affected product, named by the recipe. `requirements()` resolves nesting, so the model knows what a nested recipe should have drawn and by how much. |
-| An edit carried its prior consumption | 11 edits/year | the average-price oracle's `edited_origin_amount` term — the edited amount plus what had already been drawn from that entry. The generator now chooses both the product and the entry so that term is non-zero: all 11 edits in a year land on an entry already consumed from, where previously 1 landed and it was untouched. The entry is also named by its own dates with a uniqueness assertion, rather than taken as the lowest id while the model meant the FIFO-first one. |
+| An edit carried its prior consumption | 11 edits/year | the average-price oracle's `edited_origin_amount` term — the edited amount plus what had already been drawn from that entry |
 | A transfer moved stock to the right place, at the step | every transfer | the lot assertion, whose `LOT_FIELDS` include `location_id` and which is emitted after every transfer. This was listed as a gap until the lot work closed it: per-operation checks previously asserted only the product total, which a transfer never changes. |
 | Each operation left the intended state | ~275/year sampled, always after open/transfer/inventory/undo/edit/spoil/self-production | a read asserting `stock_amount` against the ledger |
 | Partial opening | ~52 opens | `stock_amount` unchanged **and** `stock_amount_opened` up by the opened quantity |
@@ -340,6 +348,12 @@ assertion fires.
 | The broker holds current state | year end | retained `victual/state/stock` agrees with the ledger's product count |
 | Purchase dates are real dates | 532 purchases | `price-history` covers every day the plan bought on |
 | The clock actually moved | 365 steps | the pool must agree on the new time before any operation; failure is INCOMPLETE |
+
+The **edit carried its prior consumption** row depends on two generator changes. The
+generator now chooses both the product and the entry so that the `edited_origin_amount` term
+is non-zero: all 11 edits in a year land on an entry already consumed from, where previously 1
+landed and it was untouched. The entry is also named by its own dates with a uniqueness
+assertion, rather than taken as the lowest id while the model meant the FIFO-first one.
 
 ## Gaps — operations without a distinguishing assertion
 
