@@ -1,30 +1,29 @@
 # 11. API error handling, auth surface and error logging
 
 **Goal:** Make the whole API behave like its best controller — real status codes, one
-error shape, permission failures that say 403 — and close the API-key and middleware
-gaps found alongside them.
+error shape, 403 for permission failures — and close the API-key and middleware gaps
+found alongside them.
 **Depends on:** nothing hard, but land
 [14 contract and regression scaffolding](landed/14-contract-and-regression-scaffolding.md)
-first if both are being done, so the status-code changes here show up as a diff rather
-than as an assertion.
-**Status:** landed in wave 2, 2026-09-04, recorded inline under each section rather than in an
-Executed section. Its one follow-up, API key expiry and rotation
-([issue 130](https://github.com/datagen24/victual/issues/130)), landed 2026-09-15 -
-recorded below, in the same place the rest of the API-key hygiene work is. Contains the
-only deliberate response-shape changes in the hardening set.
+first if both land together, so the status-code changes show as a diff, not an assertion.
+**Status:** landed in wave 2, 2026-09-04; recorded inline per section, not in an Executed
+section. The one follow-up — API key expiry and rotation
+([issue 130](https://github.com/datagen24/victual/issues/130)) — landed 2026-09-15,
+recorded below with the API-key hygiene work. Contains the hardening set's only
+deliberate response-shape changes.
 
 ## Today
 
 The `/api` route group registers 87 operations across 74 paths and `victual.openapi.json`
 documents 86 across 73 — one mismatch, `GET /openapi/specification`, which is routed and
 undocumented (see [14](landed/14-contract-and-regression-scaffolding.md)). The earlier reading
-here, that the totals agreed at 86 apiece with two mismatches hidden inside them, was
-wrong in both halves: it dropped one route on the way in and invented one spec-only path.
-The
-`ExposedEntity` allow-lists are read from the spec at runtime so entity drift is
-impossible by construction, and every controller returns the same
-`{ "error_message": … }` body. The structure is sound. What is not uniform is *which
-status code* that body arrives with, and it is not uniform in four separate ways.
+here, that the totals agreed at 86 apiece with two mismatches hidden inside them, was wrong
+in both halves: it dropped one route on the way in and invented one spec-only path.
+
+The `ExposedEntity` allow-lists are read from the spec at runtime, so entity drift is
+impossible by construction, and every controller returns the same `{ "error_message": … }`
+body. The structure is sound. What is not uniform is *which status code* that body arrives
+with, and it is not uniform in four separate ways.
 
 **Permission checks land inside or outside a `try` at random.** `User::CheckPermission`
 throws a Slim `HttpForbiddenException`. Where the call sits above the `try`
@@ -204,10 +203,12 @@ answered 500.
 been fixed** — noted here because it is the reason `FilterData` no longer spells its own
 operators. `FilterData`'s `~` and `!~` emitted `LIKE`, which is case-insensitive on SQLite
 and case-sensitive on PostgreSQL, so the same filter returned different rows on the two
-engines with no error at all (hazard 16). It now calls `GetLikeCondition()` on the dialect,
-mirroring `GetRegexpCondition()`, and PostgreSQL gets `ILIKE`. SQLite's behaviour was taken
-as the reference, so no client pointed at a SQLite instance sees any change; a client
-pointed at PostgreSQL now gets the rows the API always documented.
+engines with no error at all (hazard 16).
+
+It now calls `GetLikeCondition()` on the dialect, mirroring `GetRegexpCondition()`, and
+PostgreSQL gets `ILIKE`. SQLite's behaviour was taken as the reference, so no client
+pointed at a SQLite instance sees any change; a client pointed at PostgreSQL now gets the
+rows the API always documented.
 
 **A create that creates nothing answers 200.** `POST /api/objects/{entity}` with a body
 that sets no column reaches `GenericEntityApiController::AddObject`, where LessQL skips the
@@ -378,10 +379,10 @@ short-circuited by `CorsMiddleware` before authentication is attempted.
 
 That move must also settle the `$app->any('/api/{routes:.+}', …)` catch-all at
 `routes.php:271-275`. Once `CorsMiddleware` runs app-level ahead of auth, the catch-all's
-stated reason to exist is gone and it should be deleted — but deleting it changes what an
-unmatched `/api/*` path returns (today: 200 with an empty body from the catch-all;
-after: a 404 from Slim through `ExceptionController`), so it is a behaviour change to
-make deliberately rather than as a side effect. Leaving it in place alongside an
+stated reason to exist is gone and it should be deleted. Deleting it changes what an
+unmatched `/api/*` path returns: today, 200 with an empty body from the catch-all; after,
+a 404 from Slim through `ExceptionController`. That is a behaviour change to make
+deliberately rather than as a side effect. Leaving it in place alongside an
 app-level `CorsMiddleware` means two code paths adding the same headers, which is the
 worse option of the two.
 
@@ -555,18 +556,18 @@ it:
 
 - a per-engine `NNNN.sqlite.sql` / `NNNN.pgsql.sql` pair adding the `api_keys.key_hint`
   column. Adding a column is DDL and DDL is where the two engines diverge, so a pair is
-  the right one of the three shapes here — the "portable single file" reading only held
-  while the change was a pure `UPDATE`, and the third shape does not apply because both
-  engines genuinely need the column, which is what would have to be true to write
+  the right one of the three shapes here. The "portable single file" reading only held
+  while the change was a pure `UPDATE`. The third shape does not apply either, because
+  both engines genuinely need the column — which is what would have to be true to write
   `@engine-exclusive` and mean it;
 - a `NNNN.php` migration doing the hashing itself: read each row, hash `api_key` in
   place, populate `key_hint` from its last four characters. This half genuinely is
   engine-agnostic — it runs through `ExecutePhpMigrationWhenNeeded` on both — and it must
   be numbered after the DDL pair so the column exists when it runs.
 
-`api_keys.api_key` changes meaning from plaintext to hash. Note that it is irreversible
-by construction, which is the point, and that both files must run under the lock from
-[10](landed/10-cold-start-statelessness.md) like everything else.
+`api_keys.api_key` changes meaning from plaintext to hash. That migration is irreversible
+by construction — a deliberate one-way change, not an oversight — and both files must run
+under the lock from [10](landed/10-cold-start-statelessness.md) like everything else.
 
 ### API
 
@@ -592,32 +593,35 @@ codes, and that needs to be explicit rather than slipped in:
 The **final** row is added by [19](19-rbac.md) rather than by this plan, and is recorded
 here because this is where the status-code contract lives. It is the only shape in the
 list that goes from 200 to 400; the other rows that used to succeed now deny, with 401 or
-403. Mechanically it is one call site:
-`AssertFieldExists()` already refuses a field the entity does not have, from both the
-`query[]` and the `order` path, and it gains the caller's field policy alongside the column
-list. Note that a filter on a redacted field and a filter on a nonexistent one deliberately
-share the 400 and differ only in message — a distinct code would confirm the field exists,
-which is the hole the redaction closes. Nothing else in 19 needs a slot in the taxonomy
-above: a redacted field is a 200 with a shorter body, and a refused call is this plan's
-403, so the two are distinguishable without a new error kind.
+403. Mechanically it is one call site: `AssertFieldExists()` already refuses a field the
+entity does not have, from both the `query[]` and the `order` path, and it gains the
+caller's field policy alongside the column list.
+
+A filter on a redacted field and a filter on a nonexistent one deliberately share the 400
+and differ only in message — a distinct code would confirm the field exists, which is the
+hole the redaction closes. Nothing else in 19 needs a slot in the taxonomy above: a
+redacted field is a 200 with a shorter body, and a refused call is this plan's 403, so the
+two are distinguishable without a new error kind.
 
 **Client impact: the largest on the roadmap after [16](16-project-rename.md), and unlike
 16's it is knowable in advance.** Every row above is a client-visible change, and the ones
-that bite are the ones where a client's *success* path moves: a client treating any
+that bite are the ones where a client's *success* path moves. A client treating any
 non-2xx as "retry" now retries a 403 forever, and one that read a bodyless 401 by status
-alone now parses a JSON body it did not expect. The wildcard CORS removal is the one that
-breaks silently in a browser and not in a test. This is why the roadmap puts
-[14](landed/14-contract-and-regression-scaffolding.md) before this plan — ~74 routes are better
-shown as a diff than asserted by hand — and why [17](17-ecosystem-clients.md)'s manifests
-want to cover status codes and response keys, not just paths.
+alone now parses a JSON body it did not expect.
+
+The wildcard CORS removal is the one that breaks silently in a browser and not in a test.
+This is why the roadmap puts [14](landed/14-contract-and-regression-scaffolding.md) before
+this plan — ~74 routes are better shown as a diff than asserted by hand — and why
+[17](17-ecosystem-clients.md)'s manifests want to cover status codes and response keys, not
+just paths.
 
 The `userfields`/`userentities` row, second from the end, is Q6's answer and is a
-deliberate behaviour change, not a code correction: populating
-`ExposedEntityEditRequiresAdmin` turns a gate that can never fire
-into one that does, and a non-admin who can edit master data today can create user fields
-today. Accepted — definition-level entities reshape the data model — but it is the one
-row here that denies something that currently succeeds, so it belongs on the
-breaking-changes list with the rest rather than being read as a bug fix.
+deliberate behaviour change, not a code correction. Populating
+`ExposedEntityEditRequiresAdmin` turns a gate that can never fire into one that does, and
+a non-admin who can edit master data today can create user fields today. Accepted —
+definition-level entities reshape the data model — but it is the one row here that denies
+something that currently succeeds, so it belongs on the breaking-changes list with the
+rest rather than being read as a bug fix.
 
 **One of these rows is a response-shape change, and the ground rule says to say so.**
 The malformed-`?query[]=`/`?order=` row is not only a status code. The nine list
@@ -626,13 +630,15 @@ operations that document a `500` today — `GET /objects/{entity}`, `/users`,
 `/stock/locations/{locationId}/entries`, `/recipes/fulfillment`, `/chores`,
 `/batteries`, `/tasks` — document it as the `Error500` schema, which carries
 `error_details` (`stack_trace`, `file`, `line`) alongside `error_message`. `Error400`
-carries `error_message` only. So a client that hits an invalid filter parameter moves
-from a documented body with an optional `error_details` object to one without it. That
-is a narrowing, the additive-API rule in the [README](README.md) is about exactly this,
-and it needs two things rather than a shrug: a spec edit removing the `500`/`Error500`
-response from those nine operations as part of this plan (not left for
-[14](landed/14-contract-and-regression-scaffolding.md) to notice), and a changelog entry naming
-the nine.
+carries `error_message` only.
+
+So a client that hits an invalid filter parameter moves from a documented body with an
+optional `error_details` object to one without it. That is a narrowing, and the
+additive-API rule in the [README](README.md) is about exactly this. It needs two things
+rather than a shrug: a spec edit removing the `500`/`Error500` response from those nine
+operations as part of this plan (not left for
+[14](landed/14-contract-and-regression-scaffolding.md) to notice), and a changelog entry
+naming the nine.
 
 Response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
 Success responses are untouched.
@@ -647,13 +653,15 @@ it — no operation documents a `403`, a `404` or a `401` anywhere. So the work 
 adding error responses to a spec that has none; it is adding the codes this plan makes
 real to operations that currently claim `400` is the only way to fail. Each converted
 endpoint gets its real `4xx` responses added, which also makes the spec the place the
-contract test in [14](landed/14-contract-and-regression-scaffolding.md) reads from. There is one
-route/spec mismatch, not the two this plan previously listed — `/api/openapi/specification`
-is in the route table and not the spec, and is fixed in 14 alongside the parity check that
-would have caught it. `/api/recipes/{recipeId}/copy` was *not* the second: **corrected
-2026-08-29**, the route exists at `routes.php:237`, written `$group->Post(` with a capital
-`P` that a case-sensitive grep for `$group->post(` steps straight over. See 14's Today
-section for the corrected counts and for what it means for the parity assertion.
+contract test in [14](landed/14-contract-and-regression-scaffolding.md) reads from.
+
+There is one route/spec mismatch, not the two this plan previously listed —
+`/api/openapi/specification` is in the route table and not the spec, and is fixed in 14
+alongside the parity check that would have caught it. `/api/recipes/{recipeId}/copy` was
+*not* the second: **corrected 2026-08-29**, the route exists at `routes.php:237`, written
+`$group->Post(` with a capital `P` that a case-sensitive grep for `$group->post(` steps
+straight over. See 14's Today section for the corrected counts and for what it means for
+the parity assertion.
 
 ## Verification
 
@@ -713,11 +721,12 @@ every new endpoint written before it is another one to convert afterwards.
 easy to implement wrong and easy to miss: sweep S12's login throttle lands in this
 plan's wave, and **its state cannot live in the process.** The target is a pod that
 scales to zero and, per [17](17-ecosystem-clients.md)'s Q2, actually will — idle
-windows of a night or longer are the normal case rather than the edge one. An in-memory
-or APCu counter is therefore reset for free by an attacker who waits, which is the same
-as having no throttle at all while looking like having one. Redis is always-on in the
-cluster and is the obvious home; a table is the alternative and costs a write per
-attempt. Either is fine. Neither is optional.
+windows of a night or longer are the normal case rather than the edge one.
+
+An in-memory or APCu counter is therefore reset for free by an attacker who waits, which
+is the same as having no throttle at all while looking like having one. Redis is
+always-on in the cluster and is the obvious home; a table is the alternative and costs a
+write per attempt. Either is fine. Neither is optional.
 
 The same reasoning applies to anything else this plan might keep between requests —
 error-rate counters, log sampling state, an `Origin` nonce if S8's check ever needs one.
@@ -825,9 +834,9 @@ On this deployment, "keep it in memory" means "keep it until the pod next sleeps
 
 ## Effort
 
-Medium, and it splits cleanly into three sessions that can land separately: the shared
-helper plus the mechanical per-controller conversion (the bulk, and the boring part); the
-middleware ordering, CORS setting and error logging (small, self-contained, could go
-first); the API-key and mass-assignment work (small, but Q4 gates it). The verification
+Medium, and it splits cleanly into three sessions that can land separately. The shared
+helper plus the mechanical per-controller conversion is the bulk, and the boring part. The
+middleware ordering, CORS setting and error logging is small and self-contained, and could
+go first. The API-key and mass-assignment work is small, but Q4 gates it. The verification
 is the part that is easy to underestimate — checks 1 and 2 across 87 operations on two
 engines is not something to do by hand more than once.
