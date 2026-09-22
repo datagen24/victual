@@ -19,7 +19,7 @@ it is inference, and the negative results are kept because each one cost a run t
 | Runtime | Why it needs faking | How |
 |---|---|---|
 | `victual-app`, `victual-migrate` | PHP's `date()`/`time()` | Library **mounted**, `LD_PRELOAD` in env. The image is not rebuilt. |
-| `parity-postgres` | `LOCALTIMESTAMP` — the `row_created_timestamp` default lives here, not in PHP | Derived image, preload **on the binaries** (see below) |
+| `parity-postgres` | `LOCALTIMESTAMP` — the `row_created_timestamp` default lives here, not in PHP | Derived image, preload **on the binaries** (see [Four things that do not work](#four-things-that-do-not-work-and-cost-a-run-each)) |
 | `parity-upstream` | PHP `date()`, and SQLite `CURRENT_TIMESTAMP` in the same process | Derived image, `LD_PRELOAD` in env |
 
 `victual-web` (nginx) and mosquitto read no clock the suite asserts on.
@@ -103,7 +103,7 @@ sent the first run looking in the wrong place.
 ```
 
 Boots both stacks at an anchor, steps the clock three times, and asks every runtime what time
-it is through the surfaces the application itself uses — there is no `podman exec … date`
+it is through the surfaces the application itself uses. There is no `podman exec … date`
 option, because the fork's images are built from scratch and carry no shell and no PATH. The
 matrix is checked **after three steps**, not only at T0: a worker spawned after a step could
 re-derive its own origin. It does not, but that is a result and this is what keeps it one.
