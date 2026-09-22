@@ -48,14 +48,18 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 ## Completeness
 
 Every function and trigger the fork's migrations create above the SQLite baseline now
-has a row above, and `check-pgtap-coverage.php` passes against this tree - the sixteen
+has a row above, and `check-pgtap-coverage.php` passes against this tree. The sixteen
 names ADR-0025 spike 4 left as future work (issue 192's ratchet-then-gate shape) are
-covered by files `011` through `016`, ported the same way spike 4's own file was: a
-fully migrated database, no reduced fixture, and at least one assertion that fails when
-the behaviour it names is reverted. `012` and `013` in particular reproduce the exact
-defects their migrations fixed (an `UPDATE` through `stock_next_use` that silently wrote
-nothing before migration 0275; a nesting check that only ever inspected one direction
-before migration 0277) rather than merely asserting the migration's own comment.
+covered by files `011` through `016`.
+
+Files `011` through `016` were ported the same way spike 4's own file was: a fully
+migrated database, no reduced fixture, and at least one assertion that fails when the
+behaviour it names is reverted.
+
+Files `012` and `013` in particular reproduce the exact defects their migrations fixed
+rather than merely asserting the migration's own comment. File `012` tests an `UPDATE`
+through `stock_next_use` that silently wrote nothing before migration 0275; file `013`
+tests a nesting check that only ever inspected one direction before migration 0277.
 `check-pgtap-coverage.php` is wired into `run-tests.sh`'s `pgtap` phase as a hard gate
 (see "Running the checker directly" below) now that the list has nothing left unnamed.
 
