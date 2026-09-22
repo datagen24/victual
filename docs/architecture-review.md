@@ -13,9 +13,10 @@ open questions (`> **Response:**` blocks in `docs/plans/*.md`).
 ## Executive summary
 
 The codebase is **architecturally stable and unusually uniform** for a
-convention-driven app of this vintage: one controller shape, one middleware base, one
+convention-driven app of this vintage. One controller shape, one middleware base, one
 view/viewjs naming convention honored by all 73 views, a service layer with a single
-access idiom, and an API whose route table and OpenAPI spec agree almost perfectly.
+access idiom, and an API whose route table and OpenAPI spec agree almost perfectly
+demonstrate it.
 The fork's dual-engine database work is careful where it is deliberate (typed baseline
 schema, CASE-wrapped booleans, a NOCASE collation, differential view/trigger tests).
 
@@ -48,7 +49,7 @@ of what was found and what was decided.
 | 2 | `/api/system/config` leaks `DB_PASSWORD`, `DB_USER`, `DB_HOST`, `LDAP_BIND_PW` to any authenticated API key — the DB leak is fork-introduced (the new `DB_*` settings joined an endpoint that filters by blocklist) | `controllers/Api/SystemApiController.php:13-38` | ✅ Allowlist of the settings the web UI itself is given (`MODE`, `CURRENCY`, `ENERGY_UNIT`, `DEFAULT_LOCALE`, the two calendar settings, `MEAL_PLAN_FIRST_DAY_OF_WEEK`, `ENTRY_PAGE`, `BASE_PATH`, `BASE_URL`, `DISABLE_URL_REWRITING`, `GROCYCODE_TYPE`, the four `LABEL_PRINTER_*`) plus every `FEATURE_FLAG_*` by prefix. OpenAPI summary no longer promises "all config settings" |
 | 3 | Raw SQLite-only date SQL (`DATE('now', ...)`, `STRFTIME`) bypasses the dialect layer and crashes on PostgreSQL — five page routes **and** the due/expired-products API | `StockController.php:67,72`, `ChoresController.php:74,79`, `BatteriesController.php:87,92`, `StockReportsController.php:24`, `RecipesController.php:30,62`, `services/StockService.php:954,958,970` | ✅ Cutoffs computed in PHP and bound as parameters. **No dialect primitive was added** — every site turned out to be a per-request constant, not a row-correlated expression, so there was nothing for a primitive to do (see the note below) |
 | 4 | Any authenticated user can delete any API key by ID (sequential IDs, no ownership check, `api_keys` not in `ExposedEntityNoDelete`) | `controllers/Api/GenericEntityApiController.php:96-99` | ✅ Own keys only unless admin; another user's key answers the same "Object not found" as a missing one, so IDs can't be enumerated. `ExposedEntityNoDelete` deliberately left alone — the manage-API-keys page deletes through this route |
-| 5 | Session/API keys generated with non-crypto `rand()` | `helpers/extensions.php` (`RandomString`), used by `SessionService.php:79`, `ApiKeyService.php:152` | ✅ `random_int()`. Signature and alphabet kept — API keys travel in the iCal `?secret=` query string and session keys are cookie values, so the alphanumeric alphabet is load-bearing and existing keys stay valid |
+| 5 | Session/API keys generated with non-crypto `rand()` | `helpers/extensions.php` (`RandomString`), used by `SessionService.php:79`, `ApiKeyService.php:152` | ✅ `random_int()`. Signature and alphabet kept — API keys travel in the iCal `?secret=` query string and session keys are cookie values, so the alphanumeric alphabet cannot change without breaking those existing values, and existing keys stay valid |
 | 6 | `WebhookRunner` catches nonexistent `Victual\Helpers\RequestException`, so a printer webhook failure 500s the user action instead of being handled | `helpers/WebhookRunner.php` | ✅ Catches `GuzzleHttp\Exception\GuzzleException`, **not** `RequestException` as originally suggested: `ConnectException` extends `TransferException`, so timeouts and DNS failures — the likeliest printer failures given the 2 s timeout — would still have escaped |
 | 7 | `/recipes` 500s on a fresh install: unguarded `$selectedRecipe->id` when no recipes exist | `controllers/RecipesController.php:113` | ✅ `recipePositionsResolved` resolved inside the existing guard; the `FindObjectInArrayByPropertyValue` lookup, which can also return null, is guarded too |
 | 8 | LDAP filter injection: raw POST username interpolated into the search filter | `middleware/Auth/LdapAuthMiddleware.php:35` | ✅ `ldap_escape(..., LDAP_ESCAPE_FILTER)`, plus an exact-one-result check before `$result[0]` is dereferenced |
@@ -181,11 +182,12 @@ weak spot.**
   emit the standard error JSON on 401 — or, given the deployment, consider making
   CORS config-driven and default-off.
 - The deeper "additive API" risk: nearly every response is a raw LessQL row/view
-  serialized as-is, so the DB schema *is* the wire contract, with no tripwire when a
-  migration changes it. The differential tests already check JSON value types across
-  engines; extending that idea one layer up — a snapshot test of JSON key sets and
-  scalar types per endpoint against the OpenAPI schemas — is the single best
-  investment before building the MCP endpoint (plan 02) on top of this API.
+  serialized as-is. The DB schema *is* the wire contract as a result, with no
+  tripwire when a migration changes it. The differential tests already check JSON
+  value types across engines. Extending that idea one layer up — a snapshot test of
+  JSON key sets and scalar types per endpoint against the OpenAPI schemas — is the
+  single best investment before building the MCP endpoint (plan 02) on top of this
+  API.
 - Smaller items: `ChoresApiController::CalculateNextExecutionAssignments` has no
   permission check; generic CRUD allows mass assignment of `id`/timestamps and the
   `ExposedEntityEditRequiresAdmin` gate is an empty enum (dead code — populate or
@@ -214,10 +216,10 @@ enforced by copying, and the copies are drifting.**
   is central, not 148-fold: make `Victual.Api`'s error parameter default to
   `Victual.FrontendHelpers.ShowGenericError`.
 - **Clone families:** ~14 master-data list scripts and ~15 entity-form scripts are
-  byte-identical modulo entity name (~2,300 lines total); the delete-confirm dialog
-  appears 31 times; `Victual.Api` itself repeats its 30-line XHR handler six times (and
-  has no timeout/`onerror` handling — a dropped connection during save leaves the UI
-  busy-locked forever); `datetimepicker2` is a full 344-line clone of
+  byte-identical modulo entity name (~2,300 lines total). The delete-confirm dialog
+  appears 31 times. `Victual.Api` itself repeats its 30-line XHR handler six times,
+  and has no timeout/`onerror` handling — a dropped connection during save leaves
+  the UI busy-locked forever. `datetimepicker2` is a full 344-line clone of
   `datetimepicker` existing only so two pickers can share a page. Drift is already
   observable: sibling lists disagree about the embedded-dialog reload convention,
   `userobjectform.js` lost the Enter-to-submit handler its siblings have,
@@ -239,12 +241,14 @@ enforced by copying, and the copies are drifting.**
 plumbing (`DatabaseService`, migrations, the API's `§` regex operator) — but not yet
 fully honored by its consumers.** `StockService` reached for raw SQLite date SQL
 (defect 3), and `DemoDataGeneratorService` is SQLite-only yet ran whenever
-`VICTUAL_MODE` is dev/demo/prerelease (defect 13). Both are now fixed — but not the way
-this section proposed. The review assumed the missing piece was a dialect primitive
-for "today"/"N days from now"; in practice every consumer wanted a *per-request
-constant*, not a per-row expression, so the fix was to compute the cutoff in PHP and
-bind it. No primitive was added, and none is needed until something genuinely has to
-do date arithmetic per row inside a query.
+`VICTUAL_MODE` is dev/demo/prerelease (defect 13). Both are now fixed, but not the
+way this section proposed.
+
+The review assumed the missing piece was a dialect primitive for "today"/"N days
+from now"; in practice every consumer wanted a *per-request constant*, not a per-row
+expression, so the fix was to compute the cutoff in PHP and bind it. No primitive was
+added, and none is needed until something genuinely has to do date arithmetic per row
+inside a query.
 
 The observation underneath still holds: no service calls `GetNowExpression()` and only
 `BaseApiController` calls `GetRegexpCondition()`. The dialect's real consumers are the
@@ -299,20 +303,24 @@ have engine-specific SQL to hide.
 ## Uniformity: the short list of deviants
 
 Files that break their area's dominant pattern (details in sections above):
-`StockReportsController` (raw SQL in controller), `ExceptionController` (API base
-class for HTML errors, manual construction), `UsersApiController` (the only
-correct-status API controller — make its pattern the base), `RecipesApiController::
-AddNotFulfilledProductsToShoppingList` (no try/catch), `FilesApiController` (throws
-404 for input errors), `CalendarApiController::Ical` (non-JSON, fine),
-`userobjectform.js`, `userpermissions.js`, `stockjournal.js`,
-`quantityunitconversionsresolved.js`, `productgroups.js` (frontend drift markers),
-`purchase.js` (dual-role script), `LoginController` (superglobals + static dispatch),
-`DemoDataGeneratorService`.
+
+- `StockReportsController` — raw SQL in controller.
+- `ExceptionController` — API base class used for HTML errors, built manually.
+- `UsersApiController` — the only correct-status API controller; make its pattern
+  the base.
+- `RecipesApiController::AddNotFulfilledProductsToShoppingList` — no try/catch.
+- `FilesApiController` — throws 404 for input errors.
+- `CalendarApiController::Ical` — non-JSON, fine.
+- `userobjectform.js`, `userpermissions.js`, `stockjournal.js`,
+  `quantityunitconversionsresolved.js`, `productgroups.js` — frontend drift markers.
+- `purchase.js` — dual-role script.
+- `LoginController` — superglobals and static dispatch.
+- `DemoDataGeneratorService`.
 
 ## Suggested order of remedial work
 
-1. ~~**Defects table** — one sitting; items 1–3 before anything else (3 blocks the
-   PostgreSQL story; 1 and 2 are one-liners with real impact).~~ **Done** (`36650cd`).
+1. ~~**Defects table** — items 1–3 before anything else (3 blocks the PostgreSQL
+   story; 1 and 2 are one-liners with real impact).~~ **Done** (`36650cd`).
 2. **Cold-start rework** (viewcache/route-cache into the image, migrations to an
    init step, advisory lock) — this is the scale-to-zero enabler and should precede
    serious k3s work.
