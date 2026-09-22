@@ -40,5 +40,5 @@ Three rules enforce it:
 - `DatabaseImporter` checks each side against the latest migration for *its own* engine.
 - Guards 1 and 2 reason about the repository; neither can answer what a running database
   actually ran. That gap is [plan 10](../plans/landed/10-cold-start-statelessness.md) Q7's
-  `dialect` column, which is deliberately diagnostic and must never become load-bearing —
+  `dialect` column. The column is deliberately diagnostic and nothing may depend on it:
   a database migrated before the column existed cannot supply it.
