@@ -1,8 +1,10 @@
 # 07. Deeply nested products
 
 **Goal:** Support product hierarchies more than one level deep.
+
 **Depends on:** nothing, but do [08 nested locations](../landed/08-nested-locations.md) first — same
 pattern, far fewer call sites.
+
 **Status: retired 2026-09-14.** Question 6 was answered on 2026-09-13 — **taxonomy** — and
 [ADR-0023](../../adr/0023-taxonomy-is-groups-packaging-is-parent-product.md) accepted that answer on
 2026-09-14 with all four prerequisites met
@@ -10,9 +12,10 @@ pattern, far fewer call sites.
 the record's lifecycle table called for, after the acceptance and not as part of it: the tree
 of kinds lives in nested `product_groups`, owned by [30](../landed/30-nested-product-groups.md), and the
 relation between forms that are separate products is [31](../landed/31-directed-substitution.md)'s
-directed substitution. Both are scheduled into wave 4 with this retirement. The body below is
-kept in its original tense as the record of the packaging reading the sampling did not
-support; the *Retired* section at the end says what survives and where.
+directed substitution. Both are scheduled into wave 4 with this retirement.
+
+The body below is kept in its original tense as the record of the packaging reading the
+sampling did not support; the *Retired* section at the end says what survives and where.
 
 Nothing below is scheduled. The body stays in its original present tense, as this
 repository's convention requires: it is the research that made the question answerable, and
@@ -96,7 +99,7 @@ tree — see Q3.
 `hierarchy_depth_limit()` in `migrations/0273.pgsql.sql` — an `IMMUTABLE` SQL function
 returning 6, which is what question 3's shared constant asked for. This plan's guard calls
 it rather than writing a second number, and 08's `check_location_parent` trigger is the
-shape to copy: it refuses a cycle, and it compares the *parent's level plus one plus the
+shape to copy. It refuses a cycle, and it compares the *parent's level plus one plus the
 height of the moved row's own subtree* against the limit, so re-parenting a deep branch
 under a deep node is caught rather than only adding a leaf.
 
