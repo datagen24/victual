@@ -33,10 +33,12 @@ the same link text keeps working when the file is read on GitHub.
 `git ls-files`, and fails the run naming the page and the link if the path is not tracked.
 This is not redundant with `mkdocs build --strict`: strict mode does not resolve an absolute
 URL, so without this check a mistyped plan link would publish as a 404 with nothing in the
-build to say so. The two see complementary halves — a rewrite that fires and names nothing
-is caught here, and a rewrite that does not fire leaves a relative link, which strict mode
-reports. Tracking is the test rather than existence on disk, because a gitignored path that
-exists locally is still a 404 on GitHub.
+build to say so.
+
+The two see complementary halves — a rewrite that fires and names nothing is caught here,
+and a rewrite that does not fire leaves a relative link, which strict mode reports. Tracking
+is the test rather than existence on disk, because a gitignored path that exists locally is
+still a 404 on GitHub.
 
 `check_settings_reference()` checks every `Setting('NAME', …)` declaration in
 `config-dist.php` against the backticked names in `docs/manual/configuration.md`.
@@ -49,8 +51,8 @@ coverage; it does not verify the descriptions, defaults or allowed values.
 directory.
 
 - **The marks**, from `branding/`. Both are drawn in the brand's deep green, which is also
-  the header colour, so the script writes a cream variant of each by swapping that one fill;
-  both values come from the brand palette, so this is a recolour within it rather than an
+  the header colour, so the script writes a cream variant of each by swapping that one fill.
+  Both values come from the brand palette, so this is a recolour within it rather than an
   invented colour. `assets/extra.css` uses the cream mark in the header and switches the
   home page's wordmark by colour scheme.
 - **The generated diagrams**, as pages. Each `docs/diagrams/*.html` is self-contained, and
@@ -68,7 +70,8 @@ values through that attribute, and an attribute selector outranks `:root`.
 
 `PAGES` and `TREES` at the top of the script are the whole map. Adding a page to the site
 means adding a line there and a `nav` entry in `mkdocs.yml`; a page in one and not the other
-fails `mkdocs build --strict`, which is the point.
+fails `mkdocs build --strict`, which catches the mismatch before it reaches the published
+site.
 
 ## The PHP API reference
 
@@ -101,10 +104,10 @@ so it resolves on both arm64 and amd64.
 
 The `lint` job in `tests.yml` runs `stage.py --no-api` and `mkdocs build --strict`. The
 staging run fails on an untracked rewritten repository link or a setting missing from the
-configuration reference; strict mode
-turns a broken relative link, a page missing from the nav, and an anchor that does not
-resolve into a failed pull request rather than a defect on the published site. `lint` is the
-job that runs on Markdown-only changes, which is what both checks exist for.
+configuration reference. Strict mode turns a broken relative link, a page missing from the
+nav, and an anchor that does not resolve into a failed pull request rather than a defect on
+the published site. `lint` is the job that runs on Markdown-only changes, which is what both
+checks exist for.
 
 Read the Docs builds on push independently of that, using `.readthedocs.yaml` at the
 repository root.
