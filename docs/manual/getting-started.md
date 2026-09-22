@@ -114,11 +114,13 @@ php bin/victual-db-import /path/to/victual.db --force
 
 `bin/victual-db-import` preserves row ids exactly. It accepts a grocy or Victual SQLite
 database whose schema is between migrations 0255 and 0265 inclusive, and refuses anything
-outside that span by naming both numbers — 0255 is where upstream grocy 4.x stops, and 0265
-is the last migration the SQLite line will ever have. During the import (not during a
-migration, because the target is already migrated when the rows arrive) it also runs the
-HTML sanitizer over the five rich-text columns and replaces any plaintext API key with its
-hash; calendar sharing keys stay readable, as they do in an in-place grocy upgrade.
+outside that span by naming both numbers. 0255 is where upstream grocy 4.x stops, and 0265
+is the last migration the SQLite line will ever have.
+
+During the import — not during a migration, because the target is already migrated when the
+rows arrive — it also runs the HTML sanitizer over the five rich-text columns and replaces
+any plaintext API key with its hash. Calendar sharing keys stay readable, as they do in an
+in-place grocy upgrade.
 
 See [db/pgsql/README.md](../../db/pgsql/README.md)
 for the porting rules and the accepted behavioural differences between the two engines.

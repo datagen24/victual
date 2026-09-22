@@ -3,10 +3,12 @@
 **Goal:** Three production images built by Nix and a deploy tree that describes how to run
 them, so that what ships is the transitive closure of what the process needs and nothing
 else.
+
 **Depends on:** [ADR-0013](../adr/0013-nix-built-container-images.md) for the decision
 (accepted 2026-09-04; piece 1 was its acceptance gate). Remaining pieces are tracked in
 [issue 133](https://github.com/datagen24/victual/issues/133). [10](landed/10-cold-start-statelessness.md) has landed and supplies most of what this
 plan used to have to work around.
+
 **Status:** **piece 1 complete, 2026-09-04; pieces 2, 3 and the credential split done and
 piece 4 written but not applied, 2026-09-18.** The flake under [`nix/`](../../nix/README.md)
 builds and the manifest under [`deploy/`](../../deploy/README.md) serves; the Executed
@@ -23,12 +25,16 @@ read-only container serving a page. That image landed with
 [10](landed/10-cold-start-statelessness.md) while this plan's first draft was in review, and it
 is a genuinely good artifact.
 
-What it does not do is what ADR-0013 argues for and this plan builds: a dependency graph
-pinned by hash rather than by `apt-get update`, an image with no shell and no package
-manager, an allowlisted source rather than a `.dockerignore` denylist, credential-separated
-workloads, and an answer for the non-PHP workloads coming — the MCP sidecar,
-[18](18-mqtt-state-publication.md)'s publisher, [ADR-0011](../adr/0011-label-namespace.md)'s
-drainer — none of which inherits a Debian-and-Apache answer.
+What it does not do is what ADR-0013 argues for and this plan builds:
+
+- a dependency graph pinned by hash rather than by `apt-get update`
+- an image with no shell and no package manager
+- an allowlisted source rather than a `.dockerignore` denylist
+- credential-separated workloads
+- an answer for the non-PHP workloads coming — the MCP sidecar,
+  [18](18-mqtt-state-publication.md)'s publisher, and
+  [ADR-0011](../adr/0011-label-namespace.md)'s drainer — none of which inherits a
+  Debian-and-Apache answer
 
 The two images are not meant to coexist indefinitely. ADR-0013's decision item 3 retires
 the `Dockerfile`'s `production` target when the record is accepted, and its open question 5
@@ -52,12 +58,14 @@ workarounds for three things that no longer exist:
   migration has not finished is not ready, instead of serving errors.
 
 It also set one constraint that decided the layout. `bin/victual-warm-cache`'s own comment
-says compiled Blade file names hash the **absolute path** of the views directory, and calls
-that load-bearing. Warm at one path and serve from another and every page is a 500 against
-a read-only cache. So the application is served from its store path rather than copied to
-`/app`, and the cache is baked inside the derivation that owns the tree — the two paths are
-then the same by construction rather than by anyone keeping them in step. The `/app` copy
-the first draft used would have produced exactly that failure.
+says compiled Blade file names hash the **absolute path** of the views directory: warming
+at one path and serving from another turns every page into a 500 against a read-only
+cache.
+
+So the application is served from its store path rather than copied to `/app`, and the
+cache is baked inside the derivation that owns the tree — the two paths are then the same
+by construction rather than by anyone keeping them in step. The `/app` copy the first
+draft used would have produced exactly that failure.
 
 ## What landed with this plan
 
@@ -83,13 +91,17 @@ initContainer, then php-fpm and nginx — with probes, limits, a security contex
 signal. A Kubernetes object rather than a compose file so that `podman kube play` on a
 laptop and k3s in the cluster agree about what loopback means.
 
-**Assertions instead of greps.** `nix flake check` asserts a non-root uid, no shell or
-foreign interpreter in the runtime closure, no PHP in the web tier's document root, that
-every file the request path opens by `__DIR__`-relative path is present, that the view
-cache is actually warm, that `app.php` does not require a `config.php` that may not exist,
-that the web tier's closure does not contain the application, and that the image tag
-matches `version.json`. (That sixth assertion read "the entrypoint's seed path is
-installed" until the entrypoint was deleted — see the second Executed section.)
+**Assertions instead of greps.** `nix flake check` asserts:
+
+- a non-root uid
+- no shell or foreign interpreter in the runtime closure
+- no PHP in the web tier's document root
+- every file the request path opens by `__DIR__`-relative path is present
+- the view cache is actually warm
+- `app.php` does not require a `config.php` that may not exist
+- the web tier's closure does not contain the application
+- the image tag matches `version.json` (that sixth assertion read "the entrypoint's seed
+  path is installed" until the entrypoint was deleted — see the second Executed section)
 
 ## What the first review corrected
 
@@ -125,11 +137,12 @@ the pod serving. On a Mac this needs a Linux builder; `nix/README.md` documents 
 podman-hosted one, which needs nothing installed on the host.
 
 Expect this to be where reading-not-running shows. Likeliest failures, in descending order:
-an extension attribute named wrongly in `nix/php.nix` (fails at evaluation, with the name);
-`composer validate` or the vendor fetch tripping on the two VCS forks; `fetchYarnDeps` and
-the one git-resolved entry in `yarn.lock`; `fixup-yarn-lock` having been folded into
-`yarnConfigHook` in the pinned nixpkgs; and the view-cache warmer needing something in the
-build sandbox it does not have.
+
+- an extension attribute named wrongly in `nix/php.nix` (fails at evaluation, with the name)
+- `composer validate` or the vendor fetch tripping on the two VCS forks
+- `fetchYarnDeps` and the one git-resolved entry in `yarn.lock`
+- `fixup-yarn-lock` having been folded into `yarnConfigHook` in the pinned nixpkgs
+- the view-cache warmer needing something in the build sandbox it does not have
 
 ### Piece 2 — measure, then trim
 
@@ -189,7 +202,9 @@ here, and `images/lib.nix` carries more weight than piece 5 assumed when it was 
   and the `pcntl` extension together, exactly as predicted.
 - **CI and production still build different images.** The differential suite runs in the
   Debian `dev` image. Piece 2 narrows the gap; only pieces 3 and the tag build close it.
-  Piece 3's first half is now done — see below — but the suite still runs in `dev`.
+  Piece 3's first half is now done — see
+  [Executed — piece 3, first half](#executed-piece-3-first-half-the-production-target-is-retired-2026-09-04) —
+  but the suite still runs in `dev`.
 
 ## Verification
 
@@ -325,16 +340,17 @@ They are the same defect wearing different clothes, and neither is visible in th
    1 MB on the web image, 205 → 206 MB.
 
 **A third defect, and the worst of the three, which neither #49 nor any check could have
-found.** `/about` answered 500: `ApplicationService::GetSystemInfo()` opened
-`new PDO('sqlite::memory:')` unconditionally to report a SQLite version, and since plan 10
-the serving images carry no `pdo_sqlite`. `ExceptionController` calls the same method to
-build the 500 page, so **every error page on these images was a fatal error instead of an
-error page**. It is fixed by asking `PDO::getAvailableDrivers()` first and reporting `""`
-where the driver is absent — the key stays, per
-[ADR-0005](../adr/0005-wire-contract-is-the-invariant.md), and under
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) the field is vestigial anyway.
-This is what verification check 4 is *for*: it is not reachable by building, by
-`nix flake check`, or by loading a page that works.
+found.** `/about` answered 500: `ApplicationService::GetSystemInfo()` opened `new
+PDO('sqlite::memory:')` unconditionally to report a SQLite version, and since plan 10 the
+serving images carry no `pdo_sqlite`. `ExceptionController` calls the same method to build
+the 500 page, so **every error page on these images was a fatal error instead of an error
+page**.
+
+It is fixed by asking `PDO::getAvailableDrivers()` first and reporting `""` where the driver
+is absent — the key stays, per [ADR-0005](../adr/0005-wire-contract-is-the-invariant.md),
+and under [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) the field is vestigial
+anyway. This is what verification check 4 is *for*: it is not reachable by building, by `nix
+flake check`, or by loading a page that works.
 
 ### What the verification section now says
 
@@ -360,11 +376,12 @@ cluster too old for `lifecycle.stopSignal` costs. Neither is an
 sentence anyway.** A `PUT` to `/api/files/{group}/{name}` whose `Content-Type` is
 `application/x-www-form-urlencoded` — curl's default, and so the first thing this
 verification accidentally sent — stores a **zero-byte file and answers 204**. PHP has
-consumed the body by then and `php://input` is empty. The web UI sends a real type and
-upstream behaves the same way, so nothing here is broken; but "success" for a write that
-stored nothing is the same shape as the two findings review caught in
-[01](landed/01-file-storage.md)'s importer, and it belongs in [11](11-api-error-handling.md)'s
-sweep rather than being lost with this session.
+consumed the body by then and `php://input` is empty.
+
+The web UI sends a real type and upstream behaves the same way, so nothing here is broken.
+But "success" for a write that stored nothing is the same shape as the two findings
+recorded in [01](landed/01-file-storage.md)'s importer, and it belongs in
+[11](11-api-error-handling.md)'s sweep rather than being lost with this session.
 
 ## Executed — piece 3, first half: the `production` target is retired, 2026-09-04
 
@@ -544,13 +561,14 @@ signal was sent to one container, and the client's view recorded. Control with n
 So on a cluster too old for `lifecycle.stopSignal`, the cost at the web tier is a dropped
 in-flight response. **The measurement also contradicts the manifest's premise for the app
 tier:** php-fpm answered `SIGQUIT` by exiting within about a second and resetting a request
-blocked on the database, exactly as it did for `SIGTERM`. A request that is not blocked in a
-database call was not measured, so this is not proof that php-fpm never drains — it is proof
-that "SIGQUIT is php-fpm's graceful stop" is not something this deployment has shown. That is
-open and is the reason the cluster half of check 9 stays open; nothing here changes the
-manifests' stop signal. `lifecycle.stopSignal` is alpha (feature gate `ContainerStopSignals`,
-Kubernetes 1.33) and needs `spec.os.name`, which the Deployment sets; on a cluster without
-the gate the API server drops the field.
+blocked on the database, exactly as it did for `SIGTERM`.
+
+A request that is not blocked in a database call was not measured, so this is not proof that
+php-fpm never drains — it is proof that "SIGQUIT is php-fpm's graceful stop" is not
+something this deployment has shown. That is open and is the reason the cluster half of
+check 9 stays open; nothing here changes the manifests' stop signal. `lifecycle.stopSignal`
+is alpha (feature gate `ContainerStopSignals`, Kubernetes 1.33) and needs `spec.os.name`,
+which the Deployment sets; on a cluster without the gate the API server drops the field.
 
 ### Piece 5 — nothing to build
 

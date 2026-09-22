@@ -130,10 +130,12 @@ locations UI question and therefore this plan's.
 whole reason this can be added without reopening that decision.** What was deferred is a
 *session* concept: scan the shelf, and subsequent scans of items are booked against it. That
 touches the stock forms, it holds state between requests, and it still gets its own plan after
-[08](landed/08-nested-locations.md). What is added here is **stateless**: a `vctl:` code entered or
-scanned resolves to one location and shows it. Nothing is remembered, no stock form changes,
-and no booking targets it. If an implementation of this starts holding a selected location
-across requests, it has crossed into the deferred plan and should stop.
+[08](landed/08-nested-locations.md).
+
+What is added here is **stateless**: a `vctl:` code entered or scanned resolves to one
+location and shows it. Nothing is remembered, no stock form changes, and no booking targets
+it. If an implementation of this starts holding a selected location across requests, it has
+crossed into the deferred plan and should stop.
 
 Resolution stays authorized by the permission that reads a location, per 25 piece 1. An
 authorized user sees three outcomes — resolved, retired with what the label was, and unknown.
@@ -177,7 +179,7 @@ producing codes like `grcy:p:42`, with `Validate()`, `GetType()`, `GetId()` and 
 extra data already implemented. Label printing exists for products, and
 `GROCYCODE_TYPE` config selects Code128 or DataMatrix.
 
-Locations are simply not one of the supported types.
+Locations are not one of the supported types.
 
 ## Proposed change
 
@@ -363,12 +365,14 @@ for a reader with `STOCK_VIEW`; callers without that permission receive unknown.
 
 The location list now links to `/locationlabels`, a stateless scan-and-show page over that
 API. The page requires `STOCK_VIEW`, like the locations list; the API independently returns
-unknown to callers without that grant. Keyboard scanners submit with Enter; the existing camera component can supply a code.
-Live labels display the location name, retired labels display the retained former name,
-and unknown or unauthorized labels display the same unknown result. Names are rendered as
-text. Failed requests have a retryable error; an older response cannot replace a newer scan.
-Editing the input clears the result. This page neither persists a selected location nor
-changes any booking form. It does not issue labels.
+unknown to callers without that grant. Keyboard scanners submit with Enter; the existing
+camera component can supply a code.
+
+Live labels display the location name, retired labels display the retained former name, and
+unknown or unauthorized labels display the same unknown result. Names are rendered as text.
+Failed requests have a retryable error; an older response cannot replace a newer scan. Editing
+the input clears the result. This page neither persists a selected location nor changes any
+booking form. It does not issue labels.
 
 This implements the scan surface ahead of physical delivery, using group A's available API.
 It does not satisfy the physical scan-back acceptance check: that still requires a label
@@ -399,24 +403,29 @@ The print action is on the locations list and on the location form
 ([PR 113](https://github.com/datagen24/victual/pull/113), commit `d954838`), over plan 25's
 job path and plan 27's artifact path rather than a placeholder. It reads the import epoch
 immediately before each request rather than rendering it into the page, so a page left open
-across an import fails loudly. It carries one idempotency key per intended action, kept across
-a retry and spent when the action happens, so a double-click returns the first job and a second
-deliberate print gets a key of its own. It is gated on `FEATURE_FLAG_LABELS`, on
-`MASTER_DATA_EDIT` plus `STOCK_VIEW`, and on a printer being configured. It extends neither the
-webhook nor Grocycode and encodes only `vctl:<uid>`; the five entity types that already print
-keep the webhook, which is ADR-0019 item 7 step 1 and only step 1.
+across an import fails loudly. It carries one idempotency key per intended action, kept
+across a retry and spent when the action happens, so a double-click returns the first job
+and a second deliberate print gets a key of its own.
+
+It is gated on `FEATURE_FLAG_LABELS`, on `MASTER_DATA_EDIT` plus `STOCK_VIEW`, and on a
+printer being configured. It extends neither the webhook nor Grocycode and encodes only
+`vctl:<uid>`; the five entity types that already print keep the webhook, which is ADR-0019
+item 7 step 1 and only step 1.
 
 ### Physical acceptance, 2026-09-09
 
-[Issue 79](https://github.com/datagen24/victual/issues/79) closed on this evidence, against the
-QL-820NWBc at `10.130.30.94` with DK-22251 tape. All four closing conditions were met: a label
-was requested from the locations list (uid `EPRWM5YJFEX3N`, job queued `awaiting_artifact`),
-printed over IPP with the device reporting `job-state = 9` and `job-impressions-completed = 1`,
-and scanned back to `Pantry top shelf` by an authorized user. The failure-and-reprint cycle ran
-end to end: the printer's address was pointed at a closed port, the attempt failed visibly with
-its error, the next claim was offered nothing, a person authorized a second attempt naming the
-first, and the label printed when the address was restored. Plan 25's Executed section carries
-the full record, including the two worker defects the first attempt found.
+[Issue 79](https://github.com/datagen24/victual/issues/79) closed on this evidence, against
+the QL-820NWBc at `10.130.30.94` with DK-22251 tape. All four closing conditions were met. A
+label was requested from the locations list (uid `EPRWM5YJFEX3N`, job queued
+`awaiting_artifact`) and printed over IPP, with the device reporting `job-state = 9` and
+`job-impressions-completed = 1`. An authorized user then scanned it back to `Pantry top
+shelf`.
+
+The failure-and-reprint cycle ran end to end. The printer's address was pointed at a closed
+port, the attempt failed visibly with its error, and the next claim was offered nothing. A
+person authorized a second attempt naming the first, and the label printed when the address
+was restored. Plan 25's Executed section carries the full record, including the two worker
+defects the first attempt found.
 
 What this plan still owed at that point: question 5's tree path on the human-readable line,
 now that [08](landed/08-nested-locations.md) has landed ([issue 137](https://github.com/datagen24/victual/issues/137)),
@@ -432,92 +441,106 @@ the human-readable line shows the location's path, from `locations_resolved`
 above remains open and is not code.
 
 **Not the webhook.** The dispatch that raised this issue described locations as still printing
-through `VICTUAL_LABEL_PRINTER_WEBHOOK`, carried over from this plan's own body above. That was
-true when the body was written and is no longer true of the tree: PR 113 (2026-09-08) already
-moved location printing onto plan 25/27's job path — `FieldCatalogue`, `LabelCaptureService`,
-`LabelOperationsService` — ahead of this issue, and the webhook survives only for the five
-`*/printlabel` routes ADR-0019 item 7 step 1 names: products and stock entries
-(`StockApiController`), recipes, chores and batteries. This work extends the job path, not the
-webhook, and mints no new Grocycode or `vctl:` mechanism — both stay exactly as ADR-0011 and
-25/27 left them.
+through `VICTUAL_LABEL_PRINTER_WEBHOOK`, carried over from this plan's own body above. That
+was true when the body was written and is no longer true of the tree.
+
+PR 113 (2026-09-08) already moved location printing onto plan 25/27's job path —
+`FieldCatalogue`, `LabelCaptureService`, `LabelOperationsService` — ahead of this issue. The
+webhook survives only for the five `*/printlabel` routes ADR-0019 item 7 step 1 names:
+products and stock entries (`StockApiController`), recipes, chores and batteries. This work
+extends the job path, not the webhook, and mints no new Grocycode or `vctl:` mechanism — both
+stay exactly as ADR-0011 and 25/27 left them.
 
 **Reused plan 08's own path helper**, per its own precedent for plan 30: `StockService` never
-gained a *third* `Get…WithPaths()`. Both new call sites read `locations_resolved` directly,
-the same view `GetLocationsWithPaths()` and `GetLocationAncestorIds()` already read, because
-one wants a single row's path (the print capture) and the other reads it inline off `labels`/
-`locations` in one query (the scan resolve) — reusing the shared full-tree PHP helper would have
-meant walking its whole-table pre-order result down to one row instead.
+gained a *third* `Get…WithPaths()`. Both new call sites read `locations_resolved` directly, the
+same view `GetLocationsWithPaths()` and `GetLocationAncestorIds()` already read. One wants a
+single row's path (the print capture) and the other reads it inline off `labels`/`locations`
+in one query (the scan resolve). Reusing the shared full-tree PHP helper would have meant
+walking its whole-table pre-order result down to one row instead.
 
-**`FieldCatalogue::For('location')` gained `location.path`.** Its `column` is `path` but its
-value comes from a new `select` key — a correlated subquery against `locations_resolved`'s self
-row (`ancestor_location_id = descendant_location_id = locations.id`) — because the value is not
-a stored column the way `name`, `description` and `id` are.
+**`FieldCatalogue::For('location')` gained `location.path`.** Its `column` is `path`, but its
+value comes from a new `select` key: a correlated subquery against `locations_resolved`'s self
+row (`ancestor_location_id = descendant_location_id = locations.id`). The value is not a
+stored column the way `name`, `description` and `id` are.
+
 `LabelCaptureService::Capture()` now builds its `SELECT` list keyed by column name rather than
-as a plain deduplicated list, substituting a definition's `select` expression when one is
-present and its bare `column` otherwise; every existing field is unaffected. `null => 'error'`
-on the new field means a location with no self row in `locations_resolved` — unreachable through
-the app (the depth guard refuses nesting that deep before insert) but possible from data older
-than migration 0273, or a restore that bypassed its triggers — refuses the capture rather than
-printing a blank line, which is the "renderer refuses rather than resamples" the issue asks for,
-enforced earlier than the renderer: at capture time, in the same transaction that would have
-created the print job. `max_length` is 750: `hierarchy_depth_limit()`'s 6 nodes at a name
-comfortably longer than `location.name`'s own 120-character cap, plus " / " separators. Existing
-templates that only draw `location.name` are unaffected — this is one new optional field, not a
-default added to `LabelOperationsService::FieldsOf()`, which still captures only the name plus
-whatever a document's own elements reference.
+as a plain deduplicated list. It substitutes a definition's `select` expression when one is
+present, and its bare `column` otherwise; every existing field is unaffected.
+
+`null => 'error'` on the new field means a location with no self row in `locations_resolved`.
+That state is unreachable through the app — the depth guard refuses nesting that deep before
+insert — but possible from data older than migration 0273, or from a restore that bypassed
+its triggers. The capture refuses rather than printing a blank line, which is the "renderer
+refuses rather than resamples" the issue asks for, enforced earlier than the renderer: at
+capture time, in the same transaction that would have created the print job.
+
+`max_length` is 750: `hierarchy_depth_limit()`'s 6 nodes at a name comfortably longer than
+`location.name`'s own 120-character cap, plus " / " separators. Existing templates that only
+draw `location.name` are unaffected. This is one new optional field, not a default added to
+`LabelOperationsService::FieldsOf()`, which still captures only the name plus whatever a
+document's own elements reference.
 
 **`/locationlabels` shows the path for a live label, the name for a retired one — unchanged.**
 `LabelIdentityService::Resolve()` gained the same `locations_resolved` self-row join on its
-existing query, and returns `path` inside `target` for a `resolved` result (falling back to the
-bare name if a self row is somehow missing, since this is a read-only display rather than a
-print and a stale label deserves *something* rather than a failed lookup — a real difference
-from the field catalogue's refusal, and one worth being honest about: it is defense in depth
-that was not exercised against real data, since the app cannot create a location that deep).
-The path here is read live on every scan, not pinned the way a label's `captured_fields` are —
-a location renamed or re-parented after printing shows its current path immediately, which is
+existing query, and returns `path` inside `target` for a `resolved` result.
+
+It falls back to the bare name if a self row is somehow missing, since this is a read-only
+display rather than a print, and a stale label deserves *something* rather than a failed
+lookup. That is a real difference from the field catalogue's refusal, and one worth being
+honest about: it is defense in depth that was not exercised against real data, since the app
+cannot create a location that deep.
+
+The path here is read live on every scan, not pinned the way a label's `captured_fields` are.
+A location renamed or re-parented after printing shows its current path immediately, which is
 correct for a scan and would be wrong for a reprint. A `retired` result is untouched: its
-`retirement_snapshot` carries only the name it always did, per the issue's own instruction that
-"the snapshot is what it was at retirement" — no path is added there, and none should be, since
-migration 0269's retirement trigger fixes the snapshot at delete time and a path computed later
-would not be that.
+`retirement_snapshot` carries only the name it always did, per the issue's own instruction
+that "the snapshot is what it was at retirement". No path is added there, and none should be,
+since migration 0269's retirement trigger fixes the snapshot at delete time and a path
+computed later would not be that.
 
 **Verification, 2026-09-15, against PostgreSQL 16.13 in this session's own sandbox** (started
-the local cluster and ran everything directly): `php .devtools/labels/artifact-tests.php` (53
-assertions, extended with a real nested-location capture — `Basement / Shelf` — and a check that
-`TemplateDocument::Validate()` accepts a `location.path` text element); `php
-.devtools/labels/identity-tests.php` (10047 assertions, one new: a live resolution's `path`
-matches its `name` for a root location); `registry-tests.php` (23), `print-job-tests.php` (36),
-`worker-api-tests.php` (25) and `canonical-json-tests.php` unaffected by the widened fixture;
-`php .devtools/pgsql/check-migrations.php` clean (no migration was added — this is
-application-level, reusing 0273's view). `node .devtools/frontend/location-labels.js` extended
-with a `nested` case asserting a four-level path renders, run against a live demo instance
-booted per `.agents/skills/run-app/SKILL.md` (migrated to 279, PHP 8.4 with the documented
-`REQUIRED_PHP_VERSION` override, reverted before anything was committed) — passed. Beyond the
-test suites, a disposable script ran the real capture and resolve paths directly against that
-demo database's actual schema and triggers rather than a fixture: created `Pantry / Top shelf
-(verify)` through plain SQL (so migration 0273's real guard triggers, not a test double, accept
-it), captured `location.path` through `LabelCaptureService` and read it back through
-`LabelIdentityService::Resolve()`, both returning `Pantry / Top shelf (verify)`; deleting the
-location retired the label and the retirement snapshot carried the name alone, matching the
-paragraph above. Output and the script are not committed; the assertions above and the demo
-run are what they showed.
+the local cluster and ran everything directly). `php .devtools/labels/artifact-tests.php` ran
+53 assertions, extended with a real nested-location capture — `Basement / Shelf` — and a check
+that `TemplateDocument::Validate()` accepts a `location.path` text element. `php
+.devtools/labels/identity-tests.php` ran 10047 assertions, one new: a live resolution's `path`
+matches its `name` for a root location. `registry-tests.php` (23), `print-job-tests.php` (36),
+`worker-api-tests.php` (25) and `canonical-json-tests.php` were unaffected by the widened
+fixture. `php .devtools/pgsql/check-migrations.php` ran clean — no migration was added, since
+this is application-level, reusing 0273's view.
+
+`node .devtools/frontend/location-labels.js` extended with a `nested` case asserting a
+four-level path renders, run against a live demo instance booted per
+`.agents/skills/run-app/SKILL.md` (migrated to 279, PHP 8.4 with the documented
+`REQUIRED_PHP_VERSION` override, reverted before anything was committed) — passed.
+
+Beyond the test suites, a disposable script ran the real capture and resolve paths directly
+against that demo database's actual schema and triggers rather than a fixture. It created
+`Pantry / Top shelf (verify)` through plain SQL, so migration 0273's real guard triggers, not
+a test double, accepted it. It then captured `location.path` through `LabelCaptureService` and
+read it back through `LabelIdentityService::Resolve()`, both returning `Pantry / Top shelf
+(verify)`. Deleting the location retired the label, and the retirement snapshot carried the
+name alone, matching the paragraph above. Output and the script are not committed; the
+assertions above and the demo run are what they showed.
 
 **Two test fixtures needed widening, and one could not be widened the same way — the same shape
 plan 08's own Executed section names for `.devtools/labels/identity-tests.php`'s `locations`
 stub.** `.devtools/labels/test-support.php`'s `fixture()` now loads migration `0273.pgsql.sql`
 unmodified alongside the others it already loads, so `artifact-tests.php`'s capture tests run
-against the real view and the real triggers — the stub's `locations.name` gained `UNIQUE` so
+against the real view and the real triggers. The stub's `locations.name` gained `UNIQUE` so
 0273's `DROP CONSTRAINT locations_name_key` finds what it expects, matching the baseline's own
-naming. `identity-tests.php` could not take 0273 as-is: it builds `locations` by hand across
-several stages, already adds `parent_location_id` partway through for its own HTTP-controller
-section, and never declares the name-uniqueness constraint 0273 tries to drop. Loading it
-verbatim would have failed on both counts. Its fixture instead declares `parent_location_id`
-from the start and carries a copy of 0273's `hierarchy_depth_limit()` function and
-`locations_resolved` view — not its triggers or its constraint changes, which that file's
-concurrency scenarios do not exercise — added early enough that `Resolve()`'s new join has
-something to read from the file's first assertion onward. Whoever next widens
-`locations_resolved` has both copies to update, same as plan 08 found for the `/objects/locations`
-stub in the other labels test file.
+naming.
+
+`identity-tests.php` could not take 0273 as-is: it builds `locations` by hand across several
+stages, already adds `parent_location_id` partway through for its own HTTP-controller section,
+and never declares the name-uniqueness constraint 0273 tries to drop. Loading it verbatim
+would have failed on both counts.
+
+Its fixture instead declares `parent_location_id` from the start and carries a copy of 0273's
+`hierarchy_depth_limit()` function and `locations_resolved` view, not its triggers or its
+constraint changes, which that file's concurrency scenarios do not exercise. That is added
+early enough that `Resolve()`'s new join has something to read from the file's first assertion
+onward. Whoever next widens `locations_resolved` has both copies to update, same as plan 08
+found for the `/objects/locations` stub in the other labels test file.
 
 **What was not verified.** No physical label printed and no artifact went through the real Rust
 renderer — this sandbox has neither a paired printer nor the pinned renderer, the same gap prior
