@@ -14,26 +14,26 @@
   having "read the maintainer's direction backwards". That is accurate but too gentle: the
   rejection was **an agent's hallucination of a decision the maintainer never made**, not
   a decision later reconsidered. It is recorded here rather than left in the git history
-  because a reader who finds that commit deserves to know it carried no authority — and
-  because "the maintainer rejected this once" is exactly the kind of false provenance a
-  corpus of records exists to prevent. Numbers are permanent and reasons are preserved;
-  so are non-reasons.
+  because a reader who finds that commit deserves to know it carried no authority. It is
+  also recorded because "the maintainer rejected this once" is exactly the kind of false
+  provenance a corpus of records exists to prevent. Numbers are permanent and reasons are
+  preserved; so are non-reasons.
 - **Recorded:** 2026-09-03, and revised the same day when
   [plan 10](../plans/landed/10-cold-start-statelessness.md) landed a production image from the
   `Dockerfile` while this was in review. The revision is in *Context*; the decision did
   not change, but half of what it was arguing against did.
 - **Relationship:** supplies the *how* for [ADR-0010](0010-workload-standard.md)'s fourth
   property — a workload "exists in the repository's deploy tree with health probes and
-  resource limits, or it does not exist" — and makes its third, non-root with a read-only
-  root filesystem, a structural property of the artifact rather than a line somebody
-  remembers to add. 0010 is Proposed and this record does not assume otherwise: what
-  follows stands on the build-system argument alone.
+  resource limits, or it does not exist." It also makes 0010's third property — non-root
+  with a read-only root filesystem — a structural property of the artifact rather than a
+  line somebody remembers to add. 0010 is Proposed and this record does not assume
+  otherwise: what follows stands on the build-system argument alone.
 - **Supersedes:** the `Dockerfile`'s `production` target, which
   [10](../plans/landed/10-cold-start-statelessness.md) landed on 2026-08-31. **Not** its `dev` target,
   which is a different artifact for a different job and stays — and which this acceptance
   makes the `Dockerfile`'s *only* job. Retiring the production stage is scheduled rather
-  than done here, as [plan 20](../plans/20-container-infrastructure.md)'s piece 3: it
-  carries the `images` CI job's assertions across, and the one that has no
+  than done here, as [plan 20](../plans/20-container-infrastructure.md)'s piece 3. That
+  piece carries the `images` CI job's assertions across; the one with no
   `nix flake check` equivalent — booting a container and fetching a URL — is now covered
   by that plan's verification instead. See *Consequences*.
 - **Would affect:** [01](../plans/landed/01-file-storage.md),
@@ -66,15 +66,15 @@ applies it to migration behaviour, to view compilation and to security findings;
 artifact those all ship inside is the one place it does not currently reach.
 
 **The attack surface that matters is what is in the image at all.** The fork takes
-authenticated issues seriously ([ADR-0006](0006-authenticated-issues-in-scope.md)) and the
+authenticated issues seriously ([ADR-0006](0006-authenticated-issues-in-scope.md)), and the
 security sweep's findings are about what an attacker can reach once inside. The production
 image is Debian: a process that reaches code execution finds a shell, `apt`, `curl`, and
 the PHP CLI. None of those is a vulnerability; all of them are capability.
+
 `readOnlyRootFilesystem` and dropped capabilities do not remove them — they make them
 harder to persist with, which is a different property. Removing them is not achievable by
-editing the current file, because multi-stage-copying a PHP install and its shared
-libraries out of a Debian builder by hand is a job people do badly and then stop
-maintaining.
+editing the current file: multi-stage-copying a PHP install and its shared libraries out
+of a Debian builder by hand is a job people do badly and then stop maintaining.
 
 **The source is a denylist.** `COPY . /app` plus a `.dockerignore` means a new directory
 in the repository is in the production image until somebody notices. That is how `docs/`
@@ -215,11 +215,12 @@ dropped; each carries what met it.
 
 **An amendment was available and was not taken.** While #49 was open, gates 1 and 5 both
 reduced to "a pod serves", and the thing blocking that was a manifest defect rather than a
-build-system one — so splitting gate 1 into "the images build" and "the pod serves" would
-have made this acceptable earlier, the way
-[ADR-0008](0008-postgresql-only-runtime-engine.md) amended one of its own gates in the
-open. The maintainer chose to fix #49 first and accept with every gate met as written.
-Recorded because the road not taken is part of what a gate is worth: fixing it turned up
+build-system one. Splitting gate 1 into "the images build" and "the pod serves" would have
+made this acceptable earlier, the way [ADR-0008](0008-postgresql-only-runtime-engine.md)
+amended one of its own gates in the open. The maintainer chose to fix #49 first and accept
+with every gate met as written.
+
+Recorded because the road not taken is part of what a gate is worth. Fixing #49 turned up
 two further defects that no amendment would have found, one of which — every error page on
 these images being a fatal error — had been shipped and unnoticed since plan 10.
 
@@ -238,14 +239,14 @@ these images being a fatal error — had been shipped and unnoticed since plan 1
 4. **One architecture or two?** *Lean: build for the cluster's architecture and treat
    "runs on the laptop" as a property of the podman bootstrap.*
 5. ~~**When does the `production` stage actually go?**~~ **Answered 2026-09-04: it is
-   gone**, and the lean is what happened — the stage removed, the `images` job's boot test
-   moved onto the Nix images in the `nix` workflow, the `assets` stage that existed only to
-   feed production removed with it, and the four assertions with `nix flake check`
-   equivalents left to those. `docker build .` now builds the dev image, which is the
-   `Dockerfile`'s only stage.
+   gone**, and the lean is what happened. The stage was removed; the `images` job's boot
+   test moved onto the Nix images in the `nix` workflow; the `assets` stage that existed
+   only to feed production was removed with it; and the four assertions with
+   `nix flake check` equivalents were left to those. `docker build .` now builds the dev
+   image, which is the `Dockerfile`'s only stage.
 
-   The lean said "in the same commit" as the acceptance and it was one commit later, for a
-   reason the lean could not have known: it was written 2026-09-03, and the parity suite
+   The lean said "in the same commit" as the acceptance, and it was one commit later, for
+   a reason the lean could not have known. It was written 2026-09-03, and the parity suite
    arrived on 2026-09-04 building `--target production` because that was the only image in
    this tree that served HTTP. Porting that suite onto the Nix images was a real piece of
    work — two serving containers sharing a network namespace where it expected one — so it
@@ -267,10 +268,10 @@ these images being a fatal error — had been shipped and unnoticed since plan 1
 not a bad artifact — it is non-root, read-only-capable and CI-asserted. It does not
 address reproducibility, image contents, or the non-PHP workloads coming.
 
-**A distroless base.** Solves the shell and the package manager; does not solve
-reproducibility (the base tag moves), does not solve PHP (there is no distroless PHP, so
-the interpreter and every extension still come from a Debian builder stage), and adds a
-dependency on a base image somebody else versions.
+**A distroless base.** It solves the shell and the package manager, but not
+reproducibility, since the base tag moves, and not PHP, since there is no distroless PHP:
+the interpreter and every extension still come from a Debian builder stage. It also adds
+a dependency on a base image somebody else versions.
 
 **Buildpacks / `ko` / `jib`.** Language-ecosystem tools with no PHP story worth having.
 
@@ -284,25 +285,25 @@ describes it, and the same conventions for every future workload in the family.
   PR #33 landed**, which is what invalidated the first three. The transferable lesson is
   not about Nix: "measured, not assumed" does not protect a measurement from going stale
   between taking it and acting on it.
-- nixpkgs interfaces read against `nixos-unstable` on 2026-09-03: `php85` exists at
-  8.5.10, satisfying `PrerequisiteChecker::REQUIRED_PHP_VERSION`; `php.buildEnv` replaces
-  rather than extends the default extension set; `buildComposerProject2` splits the fetch
-  into a hashed fixed-output derivation and honours `composer.json`'s `vendor-dir`;
-  `fetchYarnDeps` handles the one git-resolved entry in `yarn.lock`; `streamLayeredImage`
+- nixpkgs interfaces read against `nixos-unstable` on 2026-09-03. `php85` exists at
+  8.5.10, satisfying `PrerequisiteChecker::REQUIRED_PHP_VERSION`. `php.buildEnv` replaces
+  rather than extends the default extension set. `buildComposerProject2` splits the fetch
+  into a hashed fixed-output derivation and honours `composer.json`'s `vendor-dir`.
+  `fetchYarnDeps` handles the one git-resolved entry in `yarn.lock`. `streamLayeredImage`
   takes its closure roots from both `contents` and the image config, so a store path named
   only in `Env` is still in the image. Read, not run.
 - **The scaffolding's first review found six defects, and they are the best available
   evidence for what prerequisite 1 is worth.** Five were packaging or configuration errors
-  that reading could in principle have caught and did not — an omitted
+  that reading could in principle have caught and did not. They were an omitted
   `victual.openapi.json`, a stripped `migrations/`, a config stub declared but never
   installed in an image, nginx temporary paths whose parent no volume creates, and a
   document root with no index file behind a `try_files` that needs one. The sixth was a
   Kubernetes semantics error: a `tcpSocket` probe cannot reach a loopback-bound php-fpm,
   because the kubelet resolves the target to the pod IP. All six are fixed. Five of six
   were invisible until something ran.
-- Plan 10's landing supplied three things this record's images now depend on:
-  `VICTUAL_VIEWCACHE_PATH` and `bin/victual-warm-cache` (so the cache is a layer rather
-  than state), a driver-aware `checkDatabaseRequirements()` (so the serving images drop
-  `pdo_sqlite`), and `SchemaVersionMiddleware` (so a pod whose migration has not finished
-  answers 503 and is correctly not ready). The Blade absolute-path hash, which the warmer
+- Plan 10's landing supplied three things this record's images now depend on.
+  `VICTUAL_VIEWCACHE_PATH` and `bin/victual-warm-cache` make the cache a layer rather than
+  state. A driver-aware `checkDatabaseRequirements()` makes the serving images drop
+  `pdo_sqlite`. And `SchemaVersionMiddleware` makes a pod whose migration has not finished
+  answer 503 and be correctly not ready. The Blade absolute-path hash, which the warmer
   documents, is what decided the store-path layout.

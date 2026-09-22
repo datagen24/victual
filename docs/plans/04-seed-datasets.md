@@ -32,11 +32,12 @@ engineering, and it is where the effort really goes.
 JSON, one file per dataset, covering the master data entities only — `quantity_units`,
 `quantity_unit_conversions`, `product_groups`, `locations`, `shopping_locations`,
 `products`, `product_barcodes` — and, from [19](19-rbac.md), `roles` and
-`role_permissions`. Deliberately not stock, chores, recipes or user *accounts*: roles are
-in because they are name-keyed master data like everything else here, and because 19's
-three built-in roles want to be re-shippable rather than migration-only. `role_permissions`
-comes with them not as master data in its own right but as the role's content — a role
-without its grants is an empty name — and it is the one place this format's
+`role_permissions`. Deliberately not stock, chores, recipes, or user *accounts*.
+
+Roles are in because they are name-keyed master data like everything else here, and
+because 19's three built-in roles want to be re-shippable rather than migration-only.
+`role_permissions` comes with them not as master data in its own right but as the role's
+content — a role without its grants is an empty name. It is the one place this format's
 reference-by-name rule does real work, since permission names are stable and their ids are
 not. Users stay out: a user is an identity rather than a row.
 
@@ -46,8 +47,8 @@ installs and merges into an existing one. The importer resolves names to ids as 
 **Roles are the one exception and key on `code` instead**, because a role's `name` is an
 editable display label ([19](19-rbac.md)'s schema) and its `code` — `ADMIN`, `ADULT`,
 `CHILD` — is immutable. Matching a role by name would mean that a household which renamed
-"Child" to "Kids" gets a second role on the next import, or has its rename overwritten;
-matching on `code` is the same stability argument this format already makes for permission
+"Child" to "Kids" gets a second role on the next import, or has its rename overwritten.
+Matching on `code` is the same stability argument this format already makes for permission
 names, applied to the column that actually has it.
 
 ### Import path
@@ -64,19 +65,22 @@ and keeps it usable during first setup.
 
 **It mirrors `bin/victual-db-import` in shape and takes the opposite trigger stance, which
 is deliberate.** That tool disables triggers for the duration of its copy; this one needs
-them to fire. Both are right, because they are importing different things. `db-import`
-replays rows that are *already shaped* — they came out of a migrated database with every
-derived table already consistent — so letting triggers run would recompute the same values
-from data that already reflects them, and on the change-tracking tables it would be worse
-than redundant. A seed dataset is the opposite case: it is raw master data with no derived
-rows behind it, so the triggers are exactly what produces the state a hand-written fixture
-would otherwise have to fake. Recorded because the two tools sit next to each other in
-`bin/` and read as an inconsistency, and the next person to notice should not "fix" either
-one to match the other. `db/pgsql/README.md` documents the importer's side.
+them to fire. Both are right, because they are importing different things.
+
+`db-import` replays rows that are *already shaped* — they came out of a migrated database
+with every derived table already consistent — so letting triggers run would recompute the
+same values from data that already reflects them, and on the change-tracking tables it
+would be worse than redundant. A seed dataset is the opposite case: it is raw master data
+with no derived rows behind it, so the triggers are exactly what produces the state a
+hand-written fixture would otherwise have to fake.
+
+Recorded because the two tools sit next to each other in `bin/` and read as an
+inconsistency, and the next person to notice should not "fix" either one to match the
+other. `db/pgsql/README.md` documents the importer's side.
 
 ### Datasets shipped
 
-Start with one small, obviously useful set rather than an ambitious library:
+Start with one small, useful set rather than an ambitious library:
 `datasets/household-staples-en.json` — a few dozen products across a handful of groups,
 sensible quantity units, no barcodes.
 
@@ -142,8 +146,8 @@ My recommendation is to ship **no** barcodes here and fix lookup instead — see
 
 6. **Who is the caller when a seed grants permissions?** [19](19-rbac.md)'s rule, inherited
    from sweep S5/S6, is that nobody may assign a role whose grants exceed their own
-   effective permissions — and this importer is a CLI with no caller to compare against, so
-   a dataset file carrying `roles` is a grant path with no subject. Three answers: refuse
+   effective permissions. This importer is a CLI with no caller to compare against, so a
+   dataset file carrying `roles` is a grant path with no subject. Three answers: refuse
    `roles` blocks unless the database has no users yet (first-setup only, which is what the
    importer is for); require a `--as-user` whose permissions bound the import; or accept
    that filesystem access to the dataset already implies database access, and record that
@@ -159,9 +163,9 @@ My recommendation is to ship **no** barcodes here and fix lookup instead — see
   `roles` are in scope that validation covers permission *names* against
   `permission_hierarchy` — which is sweep S27 (an unvalidated id that silently grants
   nothing) arriving on a second path, and it should not be re-derived here.
-- Plans [03](landed/03-category-min-stock.md) and [05](05-store-shopping-lists.md) make
-  `product_groups` load-bearing (a minimum, a per-store position) — the shipped
-  dataset should include a sane default group set.
+- Plans [03](landed/03-category-min-stock.md) and [05](05-store-shopping-lists.md) require
+  `product_groups` rows to exist, each with a minimum and a per-store position — the
+  shipped dataset should include a sane default group set.
 
 ## Effort
 

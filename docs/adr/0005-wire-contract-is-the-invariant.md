@@ -47,8 +47,10 @@ Two differences are known, deliberate, judged harmless, and **must not be "fixed
   RFC 3339: `"2025-01-01 00:00:00"` has no `T` separator and no offset either, and that is
   true of every one of the fifty-four fields the document typed `format: date-time`, not
   just this column. What is specific to `chores.start_date` is only the engine
-  *disagreement*, which is what this exception is about and which stands. The type itself
-  is [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)'s
+  *disagreement*, which is what this exception is about and which stands.
+
+  The type itself is
+  [ADR-0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)'s
   (Proposed), which drops `format: date-time` wherever the server does not send RFC 3339 -
   this field included - and documents the rendering instead.
   [Issue 231](https://github.com/datagen24/victual/issues/231) is where it was found.
@@ -62,12 +64,16 @@ Two differences are known, deliberate, judged harmless, and **must not be "fixed
   `NULL` and `next_estimated_execution_time` collapses for the whole chore. The port
   reads the same time semantically, with `to_char(h.start_date, 'HH24:MI:SS')`
   (`db/pgsql/baseline/05_views_l2.sql:63`), which a `TIMESTAMP` column cannot make
-  malformed. So a chore given a date-only `start_date` and then executed answers
+  malformed.
+
+  So a chore given a date-only `start_date` and then executed answers
   `"2026-02-04 23:59:59"` here and `null` upstream, on `GET /api/chores` and
   `GET /api/chores/{id}`. **This fork is the conforming side** — the spec documents the
   field as a non-nullable `format: date-time` string — so matching upstream would mean
   reproducing a string-slicing bug in typed SQL, which is what this ADR exists to
-  prevent. `chores` is an `ExposedEntity` and the value also reaches
+  prevent.
+
+  `chores` is an `ExposedEntity` and the value also reaches
   `chores_log.scheduled_execution_time`, the chores overview, `CalendarService` and
   [18](../plans/18-mqtt-state-publication.md)'s MQTT payloads. `.devtools/pgsql/`
   structurally cannot see it: every chore it seeds carries a full timestamp, and with a
@@ -77,8 +83,8 @@ A third was recorded as accepted and then withdrawn, which is worth keeping visi
 `qu_factor_*` `TEXT`-versus-number difference was excused on the grounds that no affected
 view was an `ExposedEntity`. **That reasoning was too generous** — PostgreSQL was already
 the conforming side, and a sibling view had always cast correctly, so one view conformed
-and two did not for no reason anyone had chosen. `0256.sqlite.sql` fixed it. The lesson is
-that "not on a public endpoint" is not by itself grounds for accepting a difference.
+and two did not for no reason anyone had chosen. `0256.sqlite.sql` fixed it. "Not on a
+public endpoint" is not by itself grounds for accepting a difference.
 
 ## Consequences
 

@@ -28,7 +28,7 @@ halves, or the database is not usable — see [ADR-0003](0003-seed-data-in-php.m
 - The two engines are equivalent in end state and different in history. This is what makes
   [ADR-0004](0004-engine-specific-migrations.md) necessary.
 - **Some ids are historical accidents, reproduced deliberately.** The gap at id 1 in
-  `locations` is load-bearing: `migrations/8888.php` inserts a location with the literal id
+  `locations` is required: `migrations/8888.php` inserts a location with the literal id
   1 when `FEATURE_FLAG_STOCK_LOCATION_TRACKING` is off, and would collide if PostgreSQL had
   numbered "Fridge" from 1. The baseline reproduces the accident on purpose.
 - `migratedifftest.php` exists to hold this decision honest: it migrates on each engine,
