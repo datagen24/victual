@@ -37,7 +37,8 @@ python3 .devtools/vale/audit.py docs/manual/getting-started.md --check
 ```
 
 The audit command exits 0 after producing a report, even when it finds prose problems.
-`--check` exits 1 for new findings or stale baseline entries, and 2 for setup failures. The JSON report
+`--check` exits 1 for new findings and 2 for setup failures. Stale baseline entries are reported
+but do not fail the check; the scheduled prune on `master` removes them. The JSON report
 contains every selected page, including pages with no findings, and the excluded-file list.
 
 ## Rules
@@ -147,16 +148,30 @@ The workflow runs the rule tests and the complete audit with `--check`. It uploa
 the full report even when the baseline comparison fails. New warnings and suggestions
 must be fixed or receive a justified rule-specific exception.
 
-After fixing findings, regenerate a candidate baseline with the complete audit:
+**A page cleanup does not edit `baseline.json`.** Fix the findings and leave the baseline
+alone. `--check` reports the entries your fix stranded, and the `prose-baseline-prune`
+workflow removes them from `master` on a schedule. `prune_baseline.py` does the same thing
+locally if you want to see the result:
+
+```sh
+python3 .devtools/vale/prune_baseline.py
+```
+
+This keeps the baseline out of page branches on purpose. The file is one sorted fingerprint
+per line, so two cleanups that delete different nearby keys collide textually even though the
+intended result is unambiguous, and a single merge to `master` can re-conflict every open
+cleanup at once. Leaving the file untouched removes that contention entirely.
+
+Tolerating a stale entry is safe: it is an allowance for a finding that no longer exists, so
+it cannot hide a new one. An unrecognised fingerprint still fails the check.
+
+Adding an entry is a different matter and is never automatic. `prune_baseline.py` only ever
+removes; it cannot absorb a new finding. Additions require explicit review, a named issue,
+and a documented reason, via:
 
 ```sh
 python3 .devtools/vale/audit.py --write-baseline .devtools/vale/baseline.json
 ```
-
-Review the baseline diff with the prose diff. Cleanup should remove entries. Do not accept
-new entries to make a build pass; additions require explicit review, a named issue, and
-a documented reason. The complete CI check rejects stale entries, so resolved findings cannot remain allowed
-and permit a later reintroduction.
 Keep each page's issue open until its findings are fixed or individually justified.
 
 Do not weaken rules to clear the initial backlog. Rule or Vale-version changes need the
