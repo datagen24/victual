@@ -10,10 +10,10 @@
 - **Answers** [plan 07 question 6](https://github.com/datagen24/victual/issues/82), which
   blocked wave 4's product half.
 - **Referenced by:** [30 — Nested product groups](../plans/landed/30-nested-product-groups.md) and
-  [31 — Directed substitution](../plans/landed/31-directed-substitution.md), which own the work;
-  [07 — Deeply nested products](../plans/retired/07-nested-products.md), which is retired **after**
+  [31 — Directed substitution](../plans/landed/31-directed-substitution.md), which own the work.
+  [07 — Deeply nested products](../plans/retired/07-nested-products.md) is retired **after**
   this record is accepted, by a separate pull request and never by the acceptance itself —
-  that plan stays blocked meanwhile;
+  that plan stays blocked meanwhile.
   [03 — Category minimum stock](../plans/landed/03-category-min-stock.md), whose table gains the
   parent column.
 
@@ -70,9 +70,9 @@ It means the same product in different packagings. The one-level limit stays; th
 recursive, and no depth cap is introduced for products.
 
 Its surviving use is container sizes of one SKU family — an 8 oz can, a 12 oz can and a 2 L
-bottle of one soda under a parent that supplies the combined total, which
-[plan 28](../plans/landed/28-open-container-measurement.md) records as forced by per-unit labelling
-rather than chosen.
+bottle of one soda under a parent that supplies the combined total.
+[Plan 28](../plans/landed/28-open-container-measurement.md) records this as forced by per-unit
+labelling rather than chosen.
 
 ### 3. A relation that is a taxonomy does not go in `parent_product_id`
 
@@ -226,9 +226,9 @@ flour, and as answering a question about *counting* with a fact about *labelling
    holds.
 
    **Prerequisite 3.** Three cases against the new constraint: two groups named `Dried`
-   under different parents (`Parsley`, `Garlic`) both insert cleanly; a second `Dried` under
-   the same parent (`Parsley` again) is refused
-   (`duplicate key value violates unique constraint "product_groups_parent_name_key"`); and a
+   under different parents (`Parsley`, `Garlic`) both insert cleanly, and a second `Dried`
+   under the same parent (`Parsley` again) is refused
+   (`duplicate key value violates unique constraint "product_groups_parent_name_key"`). A
    second root group named `Spices` (`parent_product_group_id IS NULL`) is refused the same
    way — the case a plain `UNIQUE` would miss, since PostgreSQL treats every `NULL` as
    distinct from every other by default and `NULLS NOT DISTINCT` is exactly the clause that
@@ -241,9 +241,9 @@ flour, and as answering a question about *counting* with a fact about *labelling
 
    **Met 2026-09-14.** This fork has no production catalogue of its own yet, so the
    inspection is of the maintainer's most recent pre-fork upstream Grocy backup — SQLite,
-   `grocy_backup/a0d7b954_grocy/data/grocy/grocy.db`, 257 migrations applied, 66 products —
-   which is the closest thing to "the live catalogue" that currently exists and is real
-   multi-year household usage rather than demo data.
+   `grocy_backup/a0d7b954_grocy/data/grocy/grocy.db`, 257 migrations applied, 66 products.
+   That backup is the closest thing to "the live catalogue" that currently exists, and it
+   reflects real multi-year household usage rather than demo data.
 
    **22 of 66 products (33%) carry `parent_product_id`.** Every one of the 22 is a taxonomy
    label, not packaging: seven cuts (`Beef Roast`, `Beef Steak`, `Ground Beef`, `Whole Packer

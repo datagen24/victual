@@ -8,8 +8,9 @@ section that matches what you are trying to do.
   images, PostgreSQL, and the first login.
 - **[Configuration](configuration.md)** — every setting in `config-dist.php`, grouped by
   what it affects.
-- **Using Victual** — what each part of the application does and how the household tasks
-  behind it work: [stock](using-victual/stock.md), [shopping lists](using-victual/shopping-lists.md),
+- **Using Victual** — what each part of the application does. Each page also explains how
+  the household tasks behind it work: [stock](using-victual/stock.md),
+  [shopping lists](using-victual/shopping-lists.md),
   [recipes and meal plan](using-victual/recipes-and-meal-plan.md), [chores](using-victual/chores.md),
   [batteries](using-victual/batteries.md), [tasks](using-victual/tasks.md),
   [equipment](using-victual/equipment.md), [the calendar](using-victual/calendar.md),

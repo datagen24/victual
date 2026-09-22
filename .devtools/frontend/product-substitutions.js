@@ -11,12 +11,10 @@
 // deliberately not driven here. Plan 30's own probe found, in CI rather than locally, that a
 // speculative interaction written without a way to see the widget actually behave is worse
 // than no coverage - the payload-rendering check that session added blind was removed rather
-// than debugged blind a second time. No probe in this tree yet drives that combobox, and this
-// sandbox cannot boot the app to learn its behaviour first (PHP 8.5.0 is required; this
-// environment carries 8.4.19), so the edge here is created through the API as fixture data,
-// the same way nested-product-groups.js treats its own tree as setup for the parts of the
-// page it does assert against. The create path itself is already fully exercised at the API
-// layer by the PostgreSQL suite's case 8.
+// than debugged blind a second time. No probe in this tree drives that combobox, so the edge
+// here is created through the API as fixture data, the same way nested-product-groups.js
+// treats its own tree as setup for the parts of the page it does assert against. The create
+// path itself is already fully exercised at the API layer by the PostgreSQL suite's case 8.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
@@ -46,8 +44,16 @@ const assert = require('node:assert/strict');
 		// move - a fresh browser context carries no session cookie until something sets one.
 		await page.goto(base + '/stockoverview');
 
-		const wholeBeans = await api('objects/products', 'POST', { name: wholeBeansName, location_id: 1, qu_id_purchase: 2, qu_id_stock: 2, min_stock_amount: 0, default_best_before_days: 0 });
-		const groundCoffee = await api('objects/products', 'POST', { name: groundCoffeeName, location_id: 1, qu_id_purchase: 2, qu_id_stock: 2, min_stock_amount: 0, default_best_before_days: 0 });
+		// The location is read rather than hard-coded, the idiom group-min-stock.js and
+		// open-container-measurement.js already use. There is no location with id 1 in an
+		// instance this job boots: InitialDataSeeder::DEFAULT_LOCATION_ID is 2, and
+		// migrations/8888.php only mints id 1 when FEATURE_FLAG_STOCK_LOCATION_TRACKING is off.
+		// The API accepts the dangling id, so the fixture looks fine until the product form is
+		// rendered: the location <select> has no option to match, the form is invalid, and the
+		// delete flow's save step below silently does nothing.
+		const locationId = (await api('objects/locations'))[0].id;
+		const wholeBeans = await api('objects/products', 'POST', { name: wholeBeansName, location_id: locationId, qu_id_purchase: 2, qu_id_stock: 2, min_stock_amount: 0, default_best_before_days: 0 });
+		const groundCoffee = await api('objects/products', 'POST', { name: groundCoffeeName, location_id: locationId, qu_id_purchase: 2, qu_id_stock: 2, min_stock_amount: 0, default_best_before_days: 0 });
 		const edge = await api('objects/product_substitutions', 'POST', { from_product_id: wholeBeans.created_object_id, to_product_id: groundCoffee.created_object_id });
 
 		// THE TABLE RENDERS THE EDGE, from each endpoint's own page, worded for which side of
@@ -67,15 +73,21 @@ const assert = require('node:assert/strict');
 		// THE DELETE, from Whole Beans' page - the same confirm-then-reload flow the barcode
 		// and QU-conversion tables already use: a DELETE against the edge, then a PUT against
 		// the product itself (to save any other pending field), then window.location.reload().
-		// The 'load' waiter is armed before the confirm click that starts that chain, not
-		// after - armed after, on an already-idle page, it can resolve immediately without
-		// ever having waited for the real reload the delete triggers a moment later, and any
-		// assertion made against that stale page would be worthless.
+		// The waiter has to be one that listens for the *next* load event, which is why this
+		// is waitForEvent('load') and not waitForLoadState('load'): waitForLoadState reports
+		// the state of the document that is current when it is called, and this one reached
+		// 'load' back at the page.goto() above. The delete button is an <a href="#">, so its
+		// click moves the fragment and opens a bootbox modal without loading a new document,
+		// which leaves waitForLoadState resolving at once, having waited for nothing, and
+		// every assertion below running against the stale pre-delete page. Arming the waiter
+		// before the confirm click, rather than after, is then what keeps the reload from
+		// firing in the gap between the click and the wait. (product-nullable-pickers.js
+		// makes the same distinction for waitForURL, which has the same trap.)
 		const deleteButton = page.locator('.product-substitution-delete-button[data-product-substitution-id="' + edge.created_object_id + '"]');
 		await deleteButton.waitFor();
 		await deleteButton.click();
 		await Promise.all([
-			page.waitForLoadState('load', { timeout: 15000 }),
+			page.waitForEvent('load', { timeout: 15000 }),
 			page.locator('.bootbox .btn-success').click()
 		]);
 

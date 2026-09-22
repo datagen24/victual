@@ -19,7 +19,7 @@
   at-least-once and idempotency rules are what make a lossy hint safe.
   [ADR-0009](0009-database-as-the-logic-layer.md) — **Proposed** — describes the shape this
   record instantiates ("the durable pattern is a table drained with `SELECT … FOR UPDATE SKIP
-  LOCKED`, with `NOTIFY` used only to wake the drainer"); this record does not depend on 0009
+  LOCKED`, with `NOTIFY` used only to wake the drainer"). This record does not depend on 0009
   being accepted, because the durable half already exists in
   `services/Labels/PrintAttemptService.php` and only the waking half is new.
   [ADR-0007](0007-auth-state-outlives-the-process.md) forbids state in process memory between
@@ -69,13 +69,13 @@ enumerates the payload exhaustively instead of describing it.
 > Victual makes no outbound connection for printing, at any point. Not to a printer, not to a
 > worker.
 
-This is the sentence that has to be replaced rather than narrowed, and it is worth being exact
-about what it was protecting. It was protecting the worker's placement: a USB-attached worker on
-a bench outside the cluster must stay possible, which fails the moment Victual has to reach the
-worker to give it something. Publishing to a broker does not reach the worker. The worker
-reaches the broker, from wherever it sits, with its own credential, exactly as it already
-reaches the API. The replacement property is stated in decision 8 and keeps the constraint the
-original sentence existed for.
+This is the sentence that has to be replaced rather than narrowed. It protected the worker's
+placement: a USB-attached worker on a bench outside the cluster must stay possible, which fails
+the moment Victual has to reach the worker to give it something.
+
+Publishing to a broker does not reach the worker; the worker reaches the broker, from wherever
+it sits, with its own credential, exactly as it already reaches the API. The replacement property
+is stated in decision 8 and keeps the constraint the original sentence existed for.
 
 ### What changed since 2026-09-07
 
@@ -131,7 +131,8 @@ costs Victual nothing, because the worker waits on the broker rather than on Vic
    id, no job id, no template, no capture field, no entity name, no address. A consumer that
    wants to know what will print has to authenticate to Victual. The
    `/price|cost|value/i` guard that `StateSnapshotAssembler::AssertNoForbiddenKeys()` applies to
-   state topics is satisfied trivially and stays in force for anything added later.
+   state topics matches neither `pending` nor `at`, so it is satisfied here and stays in force
+   for anything added later.
 
 2. **One retained topic per worker:** `victual/labels/workers/{worker_id}/pending`, under the
    configured `MQTT_TOPIC_PREFIX`. Per worker rather than global because
@@ -292,8 +293,8 @@ Each is a gate. The accepting pull request says how each was met.
    `UNIQUE (outbox_id, attempt_number)` fence still admits exactly one attempt — that the hint
    changed nothing about exclusivity. The neighbouring property, that a report arriving after
    the lease expired is **recorded rather than refused** and leaves the attempt uncertain, is
-   [plan 25](../plans/25-label-infrastructure.md)'s verification 8 and is not re-tested here:
-   this record changes nothing about leasing, and a gate that restated someone else's would
+   [plan 25](../plans/25-label-infrastructure.md)'s verification 8 and is not re-tested here.
+   This record changes nothing about leasing, and a gate that restated someone else's would
    drift from it. What is this record's is that waking more often does not reach that fence more
    often than polling did.
 

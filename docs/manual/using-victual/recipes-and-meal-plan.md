@@ -5,7 +5,7 @@ Requires `FEATURE_FLAG_RECIPES`; the meal plan additionally requires `FEATURE_FL
 ## Recipes
 
 **`/recipes`** is the recipe browser and editor in one page: the `recipe` query parameter
-selects which recipe is shown (the first one alphabetically if none is given), and the page
+selects which recipe is shown (the first one alphabetically if none is given). The page
 displays that recipe's resolved ingredient positions — including any sub-recipe used as an
 ingredient — with its total cost and calories rolled up. **`/recipe/{id}`** is the plain
 edit form for the recipe's own fields; **`/recipe/{id}/pos/{posId}`** edits one ingredient

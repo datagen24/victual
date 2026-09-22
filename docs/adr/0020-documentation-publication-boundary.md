@@ -2,12 +2,12 @@
 
 - **Status: Accepted, 2026-09-14.** **The site publishes the manual, the developer reference
   and the ADRs; the plans, the two architecture reviews, the security sweep and the MCP
-  interface specification stay in the repository.** All four acceptance prerequisites below
-  are met, each annotated in place with what met it and how to reproduce it. **Nothing in
-  the decision was revised by this acceptance.** One consequence is restated here because it
-  binds every author from here on rather than describing anything already written: **an ADR
-  is now a published document**, read by people who have not read the repository and have no
-  access to the plan a record came out of.
+  interface specification stay in the repository.** All four acceptance prerequisites below are
+  met, each annotated in place with what met it and how to reproduce it. **Nothing in the
+  decision was revised by this acceptance.** One consequence is restated here because it binds
+  every author from here on rather than describing anything already written. **An ADR is now a
+  published document**, read by people who have not read the repository and have no access to
+  the plan a record came out of.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-07
 - **Referenced by:** [26](../plans/landed/26-documentation-site.md)
@@ -22,13 +22,15 @@ researched publishing it and found two separate problems wearing one name.
 **The first problem is that there is no user manual, and upstream does not supply one.**
 [grocy.info/links](https://grocy.info/links), checked 2026-09-07, is two sections of
 community-contributed articles and videos. That has held up for upstream because its
-installation has been stable. It does not hold up here: Victual runs on PostgreSQL alone
+installation has been stable.
+
+It does not hold up here: Victual runs on PostgreSQL alone
 ([0008](0008-postgresql-only-runtime-engine.md)), ships images built by Nix from `scratch`
-([0013](0013-nix-built-container-images.md)), and runs without a persistent application
-volume ([10](../plans/landed/10-cold-start-statelessness.md)). A community article about SQLite and
-nginx on a Raspberry Pi does not merely date for Victual; it describes a system this one is
-not compatible with. The fork has made the available installation documentation wrong for
-it and has published nothing of its own aimed at a user.
+([0013](0013-nix-built-container-images.md)), and runs without a persistent application volume
+([10](../plans/landed/10-cold-start-statelessness.md)). A community article about SQLite and
+nginx on a Raspberry Pi does not merely date for Victual; it describes a system this one is not
+compatible with. The fork has made the available installation documentation wrong for it and
+has published nothing of its own aimed at a user.
 
 **The second problem is that the developer documentation has no shape.** `docs/` mixes
 standing principles, decisions, in-flight research, review findings, a security sweep, and
@@ -125,28 +127,33 @@ assumes the reader has just come from a plan will not carry.
 **The plan/ADR boundary acquires a second meaning, and must not drift into it.** Today the
 boundary is decision against research. It now also separates published from unpublished, and
 that is a hazard: an author with an uncomfortable decision to record has a reason to write it
-as a plan instead. A decision that constrains later work is an ADR whether or not it is
-comfortable to publish, and if that becomes untrue the correct response is to stop publishing
-ADRs, not to stop writing them. Anyone reviewing an ADR should test it against
-`.github/CONTRIBUTING.md`'s criterion and not against how it will read on the site.
+as a plan instead.
+
+A decision that constrains later work is an ADR whether or not it is comfortable to publish,
+and if that becomes untrue the correct response is to stop publishing ADRs, not to stop writing
+them. Anyone reviewing an ADR should test it against `.github/CONTRIBUTING.md`'s criterion and
+not against how it will read on the site.
 
 **173 links from the ADRs into the plans leave the site.** This is the largest cost of the
-boundary and it is not avoidable while the boundary holds, because the ADRs genuinely depend
-on the plans: [0011](0011-label-namespace.md) is narrowed by plan 06,
-[0019](0019-label-printers-are-master-data.md) supplies what plan 20 piece 5 left open, and
-the index's Source column names a plan for most records. Plan 26 must rewrite them to
-absolute GitHub URLs at build time so they resolve rather than break, which means a reader
-following a citation from an ADR leaves the site for the repository. That is the honest
-outcome: the reasoning behind a decision is on the site, and the research behind the
-reasoning is one click away in the repository.
+boundary and it is not avoidable while the boundary holds, because the ADRs genuinely depend on
+the plans. [0011](0011-label-namespace.md) is narrowed by plan 06,
+[0019](0019-label-printers-are-master-data.md) supplies what plan 20 piece 5 left open, and the
+index's Source column names a plan for most records.
+
+Plan 26 must rewrite them to absolute GitHub URLs at build time so they resolve rather than
+break, which means a reader following a citation from an ADR leaves the site for the
+repository. That is the honest outcome: the reasoning behind a decision is on the site, and the
+research behind the reasoning is one click away in the repository.
 
 **Delivery status stays off the site, but decision status does not.** The plan index is the
 authority on what has shipped and it is not published, so the site never presents a stale
-delivery status as current. The ADR index is published and carries Proposed and Accepted
-states plus a review-notes table, which are stable by construction — a Proposed record is
-accurately Proposed until a lifecycle pull request changes it. The one thing to watch is
-that the ADR index's "Review and implementation notes" table records delivery-adjacent facts
-("Images build and serve; production Docker target retired"), and those do go stale.
+delivery status as current.
+
+The ADR index is published and carries Proposed and Accepted states plus a review-notes table,
+which are stable by construction — a Proposed record is accurately Proposed until a lifecycle
+pull request changes it. The one thing to watch is that the ADR index's "Review and
+implementation notes" table records delivery-adjacent facts ("Images build and serve;
+production Docker target retired"), and those do go stale.
 
 **The staging step plan 26 had removed comes back.** The Development section carries
 `db/pgsql/README.md`, `nix/README.md`, `deploy/README.md`, `.github/CONTRIBUTING.md` and the
@@ -277,12 +284,14 @@ documentation that would substitute describes a different system.
    **The third sentence of this gate was the one that was not met, and it is why acceptance
    waited.** `mkdocs build --strict` cannot fail on a broken rewritten link, because
    `stage.py` turns a link into an unpublished document into an absolute URL and strict mode
-   does not resolve absolute URLs — pointing this record's own **Referenced by** line at a
+   does not resolve absolute URLs. Pointing this record's own **Referenced by** line at a
    plan that does not exist produced a clean build, exit 0 and no warnings, with the 404 in
-   the staged page. `check_offsite_links()` now resolves every rewritten link against
-   `git ls-files` and fails the staging run naming the page, the link and the path, which the
-   `lint` job runs on every pull request. Reproduce the evidence with
-   `python3 .devtools/docs/stage.py --no-api`, which prints the number of links it checked.
+   the staged page.
+
+   `check_offsite_links()` now resolves every rewritten link against `git ls-files` and fails
+   the staging run naming the page, the link and the path, which the `lint` job runs on every
+   pull request. Reproduce the evidence with `python3 .devtools/docs/stage.py --no-api`,
+   which prints the number of links it checked.
 3. **Met 2026-09-07.** Open questions 2 and 4 are answered, and `phpdoc.dist.xml`'s premise
    comment is corrected to match what this record does. Both answers were recorded on
    2026-09-07 and the edit landed the same day: the comment now reads "Private members are
@@ -297,9 +306,10 @@ documentation that would substitute describes a different system.
    All 46 staged pages were inspected against the build of that date, and no page failed.
    What the inspection did find is that the records cite working documents by the labels
    those documents number their contents with — wave 3b, piece 2, Q6, verification check 8,
-   C10, S14 — and no such label is defined on the site. Most are glossed where they are used,
-   which is why no page fails; **"wave N" is the exception, appearing across eight published
-   pages and never glossed**, so a reader meeting "outside wave 3b" cannot place it. The
-   Development overview page now carries a table defining the six label forms and naming the
-   unpublished document each lives in, which keeps this record's boundary rather than
-   publishing the plans index to fix the vocabulary.
+   C10, S14 — and no such label is defined on the site.
+
+   Most are glossed where they are used, which is why no page fails. **"wave N" is the
+   exception, appearing across eight published pages and never glossed**, so a reader meeting
+   "outside wave 3b" cannot place it. The Development overview page now carries a table
+   defining the six label forms and naming the unpublished document each lives in, which
+   keeps this record's boundary rather than publishing the plans index to fix the vocabulary.

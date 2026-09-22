@@ -51,10 +51,10 @@ The two type mismatches were measured rather than guessed, against
 
   All fifty-four are on the pre-label schema. The label surface added by migrations 0269 to
   0272 keeps absolute instants in `TIMESTAMPTZ` and renders them with an offset, and
-  `TimeResponse.time_utc` is UTC rather than the configured zone, so the rendering this
-  fork sends is not uniform and a rule written as though it were would not survive contact
-  with the label routes. Decision 2 states the rule over the surface it was measured on and
-  names the three renderings outside it.
+  `TimeResponse.time_utc` is UTC rather than the configured zone. The rendering this fork
+  sends is therefore not uniform, and a rule written as though it were would not survive
+  contact with the label routes. Decision 2 states the rule over the surface it was
+  measured on and names the three renderings outside it.
 
 The consequences differ in kind, which is why the two are decided differently below. An
 integer where a boolean was promised fails a strict decoder on that field; for `spoiled`
@@ -78,18 +78,21 @@ keyword nobody deliberately chose.
    name. This is ADR-0005's rule applied, not an exception to it: the document said boolean
    and the server was wrong.
 
-   Three things it deliberately does not do. It does not touch the flags the document types
-   `integer` — `undone` sits in the same `stock_log` row as `spoiled` and stays an integer,
-   as do `active`, `no_own_stock` and the rest. That inconsistency is real; settling it
-   means changing what the document promises, which is a different decision from making the
-   server keep the promise it already made. It does not convert in SQL: `CAST(x AS BOOLEAN)`
-   in a view would work through pdo_pgsql — that is the hazard
-   `db/pgsql/baseline/05_views_l2.sql:346` and `05_views_l3.sql:40` already describe — but
-   the differential suite's `views` phase compares against the frozen SQLite line, SQLite
-   has no boolean type, and six of the eleven come from views that phase reads. And it does
-   not convert by column name alone: userfields are household-defined key/value pairs
-   attached under a `userfields` key, so a household with a userfield named `spoiled` would
-   otherwise have its value answered as `true`.
+   Three things it deliberately does not do:
+
+   - **It does not touch the flags the document types `integer`.** `undone` sits in the
+     same `stock_log` row as `spoiled` and stays an integer, as do `active`,
+     `no_own_stock` and the rest. That inconsistency is real; settling it means changing
+     what the document promises, which is a different decision from making the server
+     keep the promise it already made.
+   - **It does not convert in SQL.** `CAST(x AS BOOLEAN)` in a view would work through
+     pdo_pgsql — that is the hazard `db/pgsql/baseline/05_views_l2.sql:346` and
+     `05_views_l3.sql:40` already describe — but the differential suite's `views` phase
+     compares against the frozen SQLite line, SQLite has no boolean type, and six of the
+     eleven come from views that phase reads.
+   - **It does not convert by column name alone.** Userfields are household-defined
+     key/value pairs attached under a `userfields` key, so a household with a userfield
+     named `spoiled` would otherwise have its value answered as `true`.
 
 2. **The legacy surface's timestamps are local wall-clock strings and the document says so.**
    Every date and time rendered or accepted by the routes over the pre-label schema — whose
@@ -123,23 +126,24 @@ keyword nobody deliberately chose.
    The three write fields in this family — `tracked_time` on chore execution and battery
    charge, `done_time` on task completion — are documented the same way. Documenting them
    as `format: date-time` was worse than inaccurate there: it invited a generated client to
-   send RFC 3339 and have its timestamp discarded without a word, because
-   `helpers/extensions.php`'s `IsIsoDateTime()` demanded exactly `Y-m-d H:i:s` and the
+   send RFC 3339 and have its timestamp discarded without a word.
+   `helpers/extensions.php`'s `IsIsoDateTime()` demanded exactly `Y-m-d H:i:s`, and the
    controllers' `if` **silently ignored** a value in any other rendering and booked the
    current time instead.
 
    **That last sentence described the tree when this record was written and no longer
    does.** [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) decided the
    question this record deliberately left open — whether to refuse such a value or to widen
-   what is accepted — and did both: the three fields now accept a bare date and the RFC 3339
+   what is accepted — and did both. The three fields now accept a bare date and the RFC 3339
    renderings, normalised to the rendering above, and refuse with 400 anything they cannot
-   read. Their `pattern` and description in the document say so. Nothing else in this
-   decision changes; in particular they are still not `format: date-time`, because what they
-   *store* is still a local wall-clock string on the legacy surface this decision is stated
-   over. Widening what they *accept* to include RFC 3339 does not move them out of that
-   surface, and does not make them a fourth exception beside the three named above: an
-   offset a caller sends is resolved to the server's zone and discarded, never stored and
-   never rendered back.
+   read. Their `pattern` and description in the document say so.
+
+   Nothing else in this decision changes; in particular they are still not `format:
+   date-time`, because what they *store* is still a local wall-clock string on the legacy
+   surface this decision is stated over. Widening what they *accept* to include RFC 3339
+   does not move them out of that surface, and does not make them a fourth exception beside
+   the three named above. An offset a caller sends is resolved to the server's zone and
+   discarded, never stored and never rendered back.
 
 3. **The three document-only defects are fixed in the document.** `GET /user` is an array of
    `UserDto`, which is what `GetUsersAsDto()->where(...)` serialises to. The
@@ -157,19 +161,23 @@ keyword nobody deliberately chose.
    and `PUT /objects/{entity}/{objectId}` document a `GenericEntityWrite` object rather than
    the nine entity schemas. This follows from decision 3 and from what the server
    implements: it takes whatever keys the body carries, drops the two it owns (`id` and
-   `row_created_timestamp`), and `PUT` writes only the keys present, so a partial body is a
-   partial update and nothing validates the body against a schema. Sharing the schemas would
-   now mean documenting `id` as mandatory on a create and forcing a read-modify-write for
-   every partial update.
+   `row_created_timestamp`), and `PUT` writes only the keys present. A partial body is
+   therefore a partial update, and nothing validates the body against a schema. Sharing the
+   schemas would now mean documenting `id` as mandatory on a create and forcing a
+   read-modify-write for every partial update.
 
-5. **Moving the rendering to RFC 3339 stays available, and is not done here.** What it would
-   take is named so a later record can cost it: a response normaliser keyed by field name
-   (nothing else knows which strings are timestamps — the values come from base tables
-   through LessQL, from the SQL views, and from service-built arrays), an offset resolved
-   per instant rather than from the current zone so it survives a DST boundary, and
-   coordinated updates to plan 18's MQTT payloads, the iCal feed, the browser code that
-   reads these strings, and every Victual-owned client. A superseding ADR is how that
-   happens, not a patch.
+5. **Moving the rendering to RFC 3339 stays available, and is not done here.** What it
+   would take is named so a later record can cost it:
+
+   - a response normaliser keyed by field name (nothing else knows which strings are
+     timestamps — the values come from base tables through LessQL, from the SQL views, and
+     from service-built arrays)
+   - an offset resolved per instant rather than from the current zone so it survives a DST
+     boundary
+   - coordinated updates to plan 18's MQTT payloads, the iCal feed, the browser code that
+     reads these strings, and every Victual-owned client
+
+   A superseding ADR is how that happens, not a patch.
 
 ## Options considered
 
@@ -177,7 +185,7 @@ keyword nobody deliberately chose.
 values would be correct for any consumer. Rejected for now, under decision 5: it is a
 wire change on fifty-four fields whose cheapest implementation is a name-keyed response
 normaliser — a second, weaker copy of the schema, sitting where a bug in it silently
-rewrites data — and it needs a timezone rule this project has never had to state.
+rewrites data. It also needs a timezone rule this project has never had to state.
 
 **B. Document what is sent.** The decision. It costs a generated client the convenience of a
 date type and gains it a response that decodes, which is the trade the issue was raised
@@ -229,17 +237,17 @@ tenth of the scale, and is where this would be decided.
   is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
   `ShoppingListItem`. Each is a candidate for exactly one member, and nothing else in the
   union's shape rules it out. Whether candidacy becomes a wrong decode is the reader's to
-  decide, and the two readers differ: a strict JSON Schema validator rejects these rows on
-  the member's nullability rather than selecting it (the next bullet), while
+  decide, and the two readers differ. A strict JSON Schema validator rejects these rows on
+  the member's nullability rather than selecting it (the next bullet). By contrast,
   `swift-openapi-generator` — the client this record was written for — accepts an explicit
   `null` for an optional property through `decodeIfPresent`, so for that client candidacy is
   the whole of the decision and the row is decoded under a schema that is not its own.
   Required properties make the ten members mutually exclusive, which is what issue #232
   asked for; they do not separate those ten from every other relation this route can list,
-  and nothing short of option E or D would. `tests/Pgsql/WireContractTest.php` measures all fifty-seven listable entities
-  against all ten members — off real responses where the fixture gives an entity a row, and
-  off the relation's columns where it does not, with the two checked against each other —
-  and pins the result, so a fourth cannot appear unnoticed.
+  and nothing short of option E or D would. `tests/Pgsql/WireContractTest.php` measures
+  all fifty-seven listable entities against all ten members — off real responses where the
+  fixture gives an entity a row, and off the relation's columns where it does not, with the
+  two checked against each other. It pins the result, so a fourth cannot appear unnoticed.
 - **Candidacy is what is measured, and it is not the same as a successful decode.** The
   same test validates each real row against every member with a JSON Schema validator, and
   exactly one pairing survives: `locations_resolved` against `LocationResolved`. Every other
@@ -285,7 +293,7 @@ tenth of the scale, and is where this would be decided.
   described are untouched and still feed the Blade journal pages
   (`StockController::Journal()` and `::JournalSummary()`); what is gone is the claim that the
   API answers them. **Exposing the journal over the API was the alternative and was
-  deliberately not taken here**: plan 14 already lists "a stock journal read" among the gaps
+  deliberately not taken here.** Plan 14 already lists "a stock journal read" among the gaps
   it says are "argued explicitly rather than slipped in", and that argument is surface
   growth, not the documented-boolean cleanup this record is. `WireContractTest` pins the
   deletion from both ends, so re-declaring either schema fails until that argument is made.
@@ -299,16 +307,16 @@ tenth of the scale, and is where this would be decided.
   enums from `StringEnumTemplate` and the `ExposedEntity`/`NoEdit`/`NoDelete`/`NoListing`
   lists, and `GenericEntityApiController` reads `ExposedEntityEditRequiresAdmin` to gate
   userfield writes behind `ADMIN`. **Three describe rows `GET /objects/{entity}` answers
-  today** — `Task`, `StorageClass` and `ProductGroupResolved` — and are simply not members of
-  that route's union, which that route's own description already states is deliberate.
+  today** — `Task`, `StorageClass` and `ProductGroupResolved` — and are not members of that
+  route's union, which that route's own description already states is deliberate.
   **`Error500` is the `dev` error body**, rendered by `ExceptionController` when
   `displayErrorDetails` is on and by nothing in production, where no route documents a 500 at
   all. **`ApiKey` and `Session` were the fourth kind and went the way of the journal pair**:
   `api_keys` is the sole member of `ExposedEntityNoListing` and `sessions` is not an
-  `ExposedEntity`, so both reads answer 400. Here the journal's deferral does not apply —
+  `ExposedEntity`, so both reads answer 400. Here the journal's deferral does not apply:
   these relations hold a key's hash and a live session key, and `ExposedEntityNoListing`
-  exists to stop the generic route answering the first of them, so exposure is not a gap plan
-  14 lists but something the design refuses. What still describes a key is
+  exists to stop the generic route answering the first of them. Exposure is therefore not
+  a gap plan 14 lists but something the design refuses. What still describes a key is
   `CurrentUserCapabilities`, which answers `key_type` and `read_only` about the calling
   credential. The classification itself is the pin: `WireContractTest` re-runs the walk and
   requires the answer to be exactly the ten classified names, and each of the three kinds has
@@ -321,9 +329,9 @@ This record changes a wire contract, so accepting it requires:
 
 1. The decider confirms decisions 1 and 2 as written — in particular that the eleven
    booleans move the wire and the fifty-four timestamps move the document, which are
-   opposite answers to superficially similar questions, and that decision 2's rule is stated
-   over the legacy surface with `time_utc`, `observed_at` and the label surface's
-   `TIMESTAMPTZ` renderings named as sitting outside it.
+   opposite answers to superficially similar questions. It also confirms that decision 2's
+   rule is stated over the legacy surface with `time_utc`, `observed_at` and the label
+   surface's `TIMESTAMPTZ` renderings named as sitting outside it.
 2. The decider confirms decision 4, the one change here that no issue asked for.
 3. The decider accepts that `stock_log`, `product_barcodes_view` and `uihelper_shopping_list`
    are still candidates for a member that is not theirs, and that closing that needs option E

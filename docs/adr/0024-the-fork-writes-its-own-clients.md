@@ -3,12 +3,13 @@
 - **Status: Accepted, 2026-09-15.** **The fork writes its own clients; the five
   `/printlabel` endpoints are removed and their kinds join the label subsystem.** The single
   acceptance prerequisite is met: the decider confirmed decisions 1, 3, 4 and 5 as written
-  on 2026-09-15, after the review corrections of [PR #184](https://github.com/datagen24/victual/pull/184)
-  (decision 1 narrowed to the upstream obligation, plan 32 Q4 answered, decision 5 named in
-  the prerequisite, the plan 25 reference corrected). No spike was required because the
-  record removes a compatibility obligation; plan 32's verification owns the replacement
-  mechanism. **Nothing in the decision was revised by this acceptance.** Records a decision
-  the maintainer took on 2026-09-15 and the consequence it has for one accepted record: it
+  on 2026-09-15. That confirmation followed the review corrections of
+  [PR #184](https://github.com/datagen24/victual/pull/184): decision 1 narrowed to the
+  upstream obligation, plan 32 Q4 answered, decision 5 named in the prerequisite, and the
+  plan 25 reference corrected. No spike was required because the record removes a
+  compatibility obligation; plan 32's verification owns the replacement mechanism.
+  **Nothing in the decision was revised by this acceptance.** Records a decision the
+  maintainer took on 2026-09-15 and the consequence it has for one accepted record: it
   dissolves the gate [ADR-0019](0019-label-printers-are-master-data.md) decision item 7
   placed on its step 2, and corrects that record's statement that step 3 takes
   `WebhookRunner`'s last caller.
@@ -31,10 +32,11 @@
 ## Context
 
 When the fork was planned, keeping upstream Grocy's clients working was a goal. Plan 17
-catalogued the couplings, ADR-0005 made the JSON on the wire the invariant of the engine
-port, and ADR-0019 sequenced the label retirement so that the five existing `/printlabel`
-endpoints — products, stock entries, recipes, chores, batteries — would migrate only after a
-wire-contract record decided what they return once `grcy:` may no longer be emitted.
+catalogued the couplings, and ADR-0005 made the JSON on the wire the invariant of the
+engine port. ADR-0019 sequenced the label retirement so that the five existing
+`/printlabel` endpoints — products, stock entries, recipes, chores, batteries — would
+migrate only after a wire-contract record decided what they return once `grcy:` may no
+longer be emitted.
 
 That goal has since been abandoned. As the fork dug under the covers, the maintainer decided
 to write its own clients rather than carry upstream's. Two facts follow that the corpus did
@@ -67,8 +69,8 @@ opaque uid is the mapping that replaces it, for every kind.
 
 1. **The fork writes its own clients.** Compatibility with upstream Grocy's clients is not
    an obligation of this repository, so the five `/printlabel` endpoints may be removed
-   without an upstream-compatibility shim. This is not a general licence to break the API:
-   the constitution's rule that the wire contract is what this fork promises its clients
+   without an upstream-compatibility shim. This is not a general licence to break the API.
+   The constitution's rule that the wire contract is what this fork promises its clients
    stands, and a breaking change affecting a Victual-owned client requires that client to
    be updated before or in coordination with the server change. The OpenAPI specification,
    and plan 14's contract snapshot once it exists, must be updated in the same change —
@@ -125,9 +127,9 @@ converge.
 - **After plan 32 lands, Victual makes no outbound connection for printing** — ADR-0019's
   own consequence, true once step 3 completes and not before. `WebhookRunner` itself
   stays: plan 18's InfluxDB writer uses it, so ADR-0019's statement that step 3 takes
-  "`WebhookRunner`'s last caller" was already overtaken when plan 18 landed; this record
-  corrects it, and the accepting pull request places a forward pointer beside that
-  statement as well as beside the step 2 gate.
+  "`WebhookRunner`'s last caller" was already overtaken when plan 18 landed. This record
+  corrects it; the accepting pull request places a forward pointer beside that statement
+  as well as beside the step 2 gate.
 - **The four `LABEL_PRINTER_*` settings** disappear from `config-dist.php`, the
   configuration reference and `/system/config`. `FEATURE_FLAG_LABEL_PRINTER` goes with them;
   `FEATURE_FLAG_LABELS` is the only label flag afterwards.
@@ -137,8 +139,9 @@ converge.
 This record removes a compatibility obligation rather than adding a mechanism, so it
 carries no spike; plan 32's verification owns the replacement mechanism. Accepting it
 requires that the decider confirm decisions 1, 3, 4 and 5 as written — in particular that
-the five routes are removed rather than kept, and that `labels.kind` widens to six —
-and that the accepting pull request add the forward pointers to ADR-0019's index row, its
-decision item 7 and its "`WebhookRunner`'s last caller" statement. Decision 2 restates
-ADR-0005 and needs no separate confirmation. Plan 32's question 4 is answered by decision
-5 and is marked so.
+the five routes are removed rather than kept, and that `labels.kind` widens to six. It
+also requires that the accepting pull request add the forward pointers to ADR-0019's
+index row, its decision item 7 and its "`WebhookRunner`'s last caller" statement.
+
+Decision 2 restates ADR-0005 and needs no separate confirmation. Plan 32's question 4 is
+answered by decision 5 and is marked so.

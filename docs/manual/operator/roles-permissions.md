@@ -22,12 +22,17 @@ user grants nothing until someone chooses to grant it.
 Prices are their own permission, `STOCK_PRICES_VIEW`, which sits under `STOCK_PURCHASE` —
 so anyone who records purchases sees what things cost, and an account holding `STOCK` or
 `ADMIN` is unaffected. The seeded Child and Guest roles hold neither, so they see no prices
-anywhere: not on the stock overview, the entries list, the shopping list, the meal plan, a
-recipe, the product card or the product form's barcode table, and not in an API response —
-a field you may not see is absent from the JSON rather than `null`, and naming it in
-`query[]` or `order` is answered `400` so that it cannot be found by filtering on it
-either. `GET /stock/products/{productId}/price-history` and the Spendings report answer
-`403`, because they are entirely prices.
+anywhere:
+
+- the stock overview, the entries list, the shopping list, the meal plan, a recipe, the
+  product card, and the product form's barcode table
+- an API response, where a field you may not see is absent from the JSON rather than
+  `null`
+- filtering: naming the field in `query[]` or `order` is answered `400`, so it cannot be
+  found that way either
+
+`GET /stock/products/{productId}/price-history` and the Spendings report answer `403`,
+because they are entirely prices.
 
 Two things this does *not* do. It is not a deny grant: an account that still holds `STOCK`,
 `STOCK_PURCHASE` or `ADMIN` directly keeps seeing prices whatever role you also assign, so

@@ -11,7 +11,7 @@ list-filter toggle) — the A + C schema and API work can proceed ahead of it.
 
 ## Today
 
-Most of the pieces exist and are simply not connected:
+Most of the pieces exist and are not connected:
 
 - `shopping_locations` — stores. Referenced by `products.shopping_location_id` (a product's
   default store), `stock.shopping_location_id`, `stock_log.shopping_location_id` and
@@ -61,7 +61,7 @@ Three columns and one table. **Since [ADR-0008](../adr/0008-postgresql-only-runt
 every migration above 0265 is PostgreSQL-only**, so both ship as `NNNN.pgsql.sql` and the
 two-engine discussion that follows is history: it was written when SQLite was still a
 runtime engine, and it is kept because it explains the shapes the frozen range 0256–0265
-uses. Nothing here is `@engine-exclusive` in that range's sense; there is simply one engine.
+uses. Nothing here is `@engine-exclusive` in that range's sense; there is only one engine.
 
 **A and C — one migration, `0286.pgsql.sql`.** All three are nullable `INTEGER` columns added to
 existing tables:
@@ -95,7 +95,7 @@ time rather than reserving one now.
 **Verification** is a tier 1 test class on `tests/Support/PgsqlSchemaTestCase.php` per
 [ADR-0025](../adr/0025-three-test-tiers.md), exercising the three columns through the
 generic API and the shopping-list views, and the response-contract snapshot
-(`tests/Pgsql/ContractTest.php`) regenerated in the same change: adding a nullable column
+(`tests/Pgsql/ContractTest.php`) regenerated in the same change. Adding a nullable column
 changes `SELECT *` output on every view built over these tables, which is exactly what the
 snapshot exists to record rather than reason about. Any shopping-list trigger the change
 touches gets its pgTAP row.
@@ -166,7 +166,7 @@ response gains a field the moment the migration runs, whether or not any plan sa
   on meal plan sections, so copy that pattern rather than inventing one.
 - `product_groups` is quietly becoming a hub — [03](landed/03-category-min-stock.md) gives it
   a minimum, this plan a per-store position. Fine (it is the natural place), but it
-  moves the group picker from "optional taxonomy" to load-bearing master data.
+  moves the group picker from "optional taxonomy" to master data both plans now depend on.
 
 ## Effort
 
@@ -192,14 +192,17 @@ so redaction is unaffected).
 column list at `CREATE VIEW` time. Re-issuing either with `CREATE OR REPLACE VIEW` would
 insert the new column where `*` sits, pushing every already-frozen column after it
 (`has_sub_products`/`qu_factor_*_to_stock` on `products_view`; `item_count` on
-`shopping_lists_view`) one position later — which PostgreSQL refuses ("cannot change name
-of view column ... to ..."). Migration 0276 already hit and documented this exact failure
-for `products_view` when it needed `quick_refill_amount` visible through
-`uihelper_stock_current_overview`; its fix (join straight to the base table instead of
-through the frozen view) is the pattern to follow if a future plan (12's UI, most likely)
-needs `shopping_location_id`/`default_shopping_list_id` through a view rather than the raw
-table. `GenericEntityApiController` is unaffected either way — it reads `products`,
-`recipes` and `shopping_lists` directly, never through the two views — so the generic API
+`shopping_lists_view`) one position later. PostgreSQL refuses that ("cannot change name
+of view column ... to ...").
+
+Migration 0276 already hit and documented this exact failure for `products_view` when it
+needed `quick_refill_amount` visible through `uihelper_stock_current_overview`. Its fix
+(join straight to the base table instead of through the frozen view) is the pattern to
+follow if a future plan (12's UI, most likely) needs
+`shopping_location_id`/`default_shopping_list_id` through a view rather than the raw table.
+
+`GenericEntityApiController` is unaffected either way — it reads `products`,
+`recipes` and `shopping_lists` directly, never through the two views. The generic API
 is additive exactly as the plan's own text says, and the migration comment header records
 this reasoning in place for the next person tempted to "fix" the view.
 

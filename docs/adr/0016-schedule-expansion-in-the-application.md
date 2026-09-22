@@ -22,7 +22,7 @@ doses are due between A and B*. Answering it means expanding a recurrence rule â
 window.
 
 Under [ADR-0009](0009-database-as-the-logic-layer.md)'s direction of travel the instinct is a
-view, and the instinct has a real argument behind it: 0009's strongest claim is that an
+view, and the instinct has a real argument behind it. 0009's strongest claim is that an
 always-awake database can answer while the pod sleeps, and "what is due today" is precisely the
 shape of question an always-on Home Assistant would poll for. This record has to beat that
 argument, not ignore it.
@@ -40,7 +40,7 @@ Four things stand against putting the expansion in SQL:
    layer this record wants to grow."
 2. **The hard part is policy, and policy wants a table of test cases.** Wall-clock versus
    elapsed time across a DST transition is a decision with edge cases rather than an
-   implementation detail: an "every 12 hours" regimen anchored to the clock skips or repeats an
+   implementation detail. An "every 12 hours" regimen anchored to the clock skips or repeats an
    hour twice a year, and anchored to elapsed time it drifts away from the times a person
    actually takes a tablet. Medication wants wall clock. Proving that over both transitions in
    both directions is a unit-test table, which PHP has today and which pgTAP plus a differential
@@ -83,8 +83,8 @@ than "what is expiring this week", and this record declines to build it that way
 table recovers the *capability* and not the *elegance*: it is a scheduled recompute plus a
 staleness window, which is exactly the sort of machinery 0009 hopes to avoid needing.
 
-That is the honest accounting. A reader deciding 0009 should weigh this record as evidence
-against it in at least one domain, not as an unrelated carve-out.
+A reader deciding 0009 should weigh this record as evidence against it in at least one domain,
+not as an unrelated carve-out.
 
 ## Consequences
 

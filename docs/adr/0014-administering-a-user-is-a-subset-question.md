@@ -7,8 +7,7 @@
   so this is bookkeeping only per the lifecycle rule.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
-- **Recorded:** 2026-09-04, which is when the rule was written into the code. **The code
-  landed first, and that is worth saying plainly rather than leaving to be noticed.** The
+- **Recorded:** 2026-09-04, which is when the rule was written into the code. The
   [security sweep](../security-sweep.md)'s S5 and S6 name this remediation — "refuse to
   edit users holding permissions the caller lacks", "never grant a permission the creating
   user lacks" — and the [roadmap](../plans/README.md) unparked both onto wave 2 with the
@@ -42,11 +41,12 @@ The sweep parked these on [19](../plans/19-rbac.md) on the grounds that there wa
 permission *model* to fix them against, and every fix would be a guess at what the model was
 about to say. **That parking was wrong, and the roadmap's own correction is the argument
 this record rests on:** 19's Depends-on line puts it *after* these findings, so parking them
-on 19 inverted the dependency 19 itself states. The distinction the parking missed is
-between the *rule* and the *model*. The rule needs a caller's resolved set, a target's
-resolved set, and the closure of a proposed grant. All three are the two views above,
-today, and 19 widens those views with a union over `role_permissions` rather than changing
-what a comparison over them means.
+on 19 inverted the dependency 19 itself states.
+
+The distinction the parking missed is between the *rule* and the *model*. The rule needs a
+caller's resolved set, a target's resolved set, and the closure of a proposed grant. All
+three are the two views above, today, and 19 widens those views with a union over
+`role_permissions` rather than changing what a comparison over them means.
 
 ## Decision
 
@@ -60,16 +60,15 @@ implementation and `User::CheckMayAdminister()` the assertion.
 confer.** Over the *closure*, not over the ids, so that granting a parent cannot smuggle in
 a child the caller does not hold. `User::CheckMayGrant()` is the one implementation, and it
 asks a second question in the same place: **every id has to name a real permission**, which
-is sweep S27 — the endpoints took an id straight from the body into an insert, so an id
-naming nothing was stored and granted nothing, a grant that looks like it worked and did
+is sweep S27. The endpoints took an id straight from the body into an insert, so an id
+naming nothing was stored and granted nothing — a grant that looks like it worked and did
 not.
 
 **"Administering" covers every act on an account, not only the one the finding named.**
 Editing it, deleting it, changing what it holds, and deleting its picture. The last is the
-sweep's `userpictures` residual and the one it left open in either direction; it is answered
-yes, because deleting the avatar of someone whose permissions you do not hold is the same
-act of administering them, and because answering no would make it the one place the rule
-does not reach.
+sweep's `userpictures` residual and the one it left open in either direction. It is answered
+yes: deleting the avatar of someone whose permissions you do not hold is the same act of
+administering them, and answering no would make it the one place the rule does not reach.
 
 **`DEFAULT_PERMISSIONS` is empty, and creating a user is a grant.** Nothing is conferred by
 merely existing, and `POST /api/users` is bounded by what the creator holds like any other

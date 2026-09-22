@@ -3,13 +3,17 @@
 **Goal:** Give the fork its own name — repo, branding, and internal
 identifiers — landing the would-be-breaking parts while nothing is deployed
 to break.
+
 **Depends on:** nothing — and the internal renames depend on *happening before
 the first deployment*, not on any other plan (the earlier lean on
 [15](landed/15-deliberate-cleanup.md)'s breaking batch is the fallback, not the plan).
+
 **Status:** **landed in the codebase.** Direction settled (Q1), namespaces
 checked (Q3), and Tiers 1, 2 and 3 all executed — see [Executed](#executed)
 below for what landed, what the survey missed, and what deliberately did not
-move. No instance of this fork was deployed anywhere when it landed — the
+move.
+
+No instance of this fork was deployed anywhere when it landed — the
 household runs upstream grocy — which is exactly why the breaking parts went in
 now rather than waiting for [15](landed/15-deliberate-cleanup.md)'s batch. What remains
 is outside the repository: the GitHub repo rename and the registry/domain claims
@@ -49,7 +53,7 @@ themselves. That split also does real work: it distinguishes machine writes from
 human ones in the audit trail, and [02](02-mcp-endpoint.md)'s sidecar wants
 exactly such an actor identity when MCP writes arrive. Meanwhile the
 spelling-variance problem is contained to an in-app label where a canonical
-spelling is simply picked, instead of afflicting the repo, domain, and package
+spelling is picked, instead of afflicting the repo, domain, and package
 names.
 
 ## Codebase touchpoints
@@ -75,8 +79,9 @@ Counts from the tree as of this plan's writing.
 ### Tier 1 — would break deployed instances; free while none exist — **all landed**
 
 - **Env-var prefix `GROCY_*`** — every setting is overridable via the prefix
-  (`helpers/extensions.php:244`), and `GROCY_DATAPATH` is load-bearing at boot
-  (`app.php:14`). Renaming the prefix breaks every deployment's environment.
+  (`helpers/extensions.php:244`), and `GROCY_DATAPATH` is required at boot
+  (`app.php:14`): the app cannot start without it. Renaming the prefix breaks
+  every deployment's environment.
 - **In-database identifiers**: `grocy_user_setting()`,
   `grocy_next_internal_recipe_id`, `grocy_sqlite_percent_w`,
   `grocy_mealplan_week_name` (`db/pgsql/baseline/`, referenced from views and
@@ -120,7 +125,7 @@ Counts from the tree as of this plan's writing.
   soon as there is a name to change it to; arguably before.
 - **README, about page, logo** — **done for the logo**: the Victual branding
   set (masters in `branding/`, production copies in `public/img/`) replaced
-  the four upstream images and the README's hotlink of upstream's SVG; the
+  the four upstream images and the README's hotlink of upstream's SVG. The
   three views showing the logo were resized from upstream's 3.8:1 box to the
   new lockup's 2.5:1, and the PWA manifest colors moved to the brand green
   `#174B3A`. The about page and `grocy.info` links still move to the
@@ -244,11 +249,13 @@ Counts from the tree as of this plan's writing.
 **The largest on the roadmap, and it was recorded as "none".** This section exists because
 [17](17-ecosystem-clients.md)'s item 2 — every plan carries a client-impact line, even
 when it reads "none" — was written the same day this plan landed without one, and this is
-the plan that proves the mechanism is worth the row. Tier 1 renamed the `GROCY-API-KEY`
-request header and the `grocy_version` response field on the recorded justification that
-no client exists; that was true of *deployed instances of this fork* and false of
-*clients*, of which 17 tracks two, both sending the header on every request and one
-reading the version field. Every request from either now answers 401.
+the plan that proves the mechanism is worth the row.
+
+Tier 1 renamed the `GROCY-API-KEY` request header and the `grocy_version` response field
+on the recorded justification that no client exists; that was true of *deployed instances
+of this fork* and false of *clients*, of which 17 tracks two, both sending the header on
+every request and one reading the version field. Every request from either now answers
+401.
 
 Neither break is a path change, so a manifest of routes would have passed. That is 17's
 argument for widening item 1 from paths to **request headers and response keys**, and it
@@ -279,12 +286,14 @@ high-churn internals, each as its own commit.
 Open Food Facts plugin) now name Victual and this repository instead of
 upstream's URL. The about page drops the "Do you find Grocy useful? / Say
 thanks" block from the system-info tab and gains the Q5 attribution footer in
-its place: hard fork of grocy, the two licences and who holds each, the plain
-statement that no upstream sync relationship exists in either direction, and
-the say-thanks link kept there rather than in the UI chrome. Plus README prose,
-the package name, the phpDocumentor title, the dev image (`victual-dev`), and
-the MCP spec, whose sidecar repo is now `victual-mcp` outright rather than
-under a working name.
+its place.
+
+The footer names the hard fork of grocy and the two licences and who holds
+each. It states plainly that no upstream sync relationship exists in either
+direction, and keeps the say-thanks link there rather than in the UI chrome.
+Plus README prose, the package name, the phpDocumentor title, the dev image
+(`victual-dev`), and the MCP spec, whose sidecar repo is now `victual-mcp`
+outright rather than under a working name.
 
 **Tier 1 — breaking, and free.** `GROCY_*` → `VICTUAL_*` across the whole
 setting surface; the four database helper functions in both engines, plus the
@@ -366,8 +375,8 @@ four are the same category as items that were, and all four landed with them:
 - **Every reference to upstream**: the fork attribution, `grocy/grocy` issue
   links, the upstream demos, r/grocy, the say-thanks URL, `LICENSE.md`'s MIT
   section, the `.tx` Transifex project (upstream's), the `mcp-grocy` prior art
-  in the MCP spec's Appendix A, and the changelog, which is upstream's release
-  record and not ours to rewrite.
+  in the MCP spec's Appendix A, and the changelog. The changelog is upstream's
+  release record and not ours to rewrite.
 - **`update.sh`**, which downloads and installs an upstream *release*. Renaming
   its strings would have made it look like this fork's updater, which it is
   emphatically not; it now carries a header comment saying so.

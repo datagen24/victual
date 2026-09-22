@@ -96,22 +96,23 @@ container can have its own. This is decisions 1 and 8, and plan 28 owns it.
 **A vessel carries its tare on the location.** A decanted flour bin or a spice jar is a place
 stock passes through, not a container stock arrived in. Every refill runs through
 [`TransferProduct()`](../../services/StockService.php), which mints a new stock row at the
-destination, and `CompactStockEntries()` merges rows; a tare on the entry would have to be
-copied on every refill and survive compaction, where a tare on the location is set once and
-outlives every row that passes through it. `locations` gains a nullable `tare_weight` and a
-`tare_qu_id`: locations are product-agnostic, so the tare cannot borrow a stock unit the way
-`products.tare_weight` did, and the conversion to the stocked product's unit goes through the
-global quantity unit conversions under decision 3's rule — a stock unit the tare cannot be
-converted to is refused, never assumed. Plan 29 owns it, and plan 23 alters the same table
-first.
+destination, and `CompactStockEntries()` merges rows. A tare on the entry would have to be
+copied on every refill and survive compaction; a tare on the location is set once and
+outlives every row that passes through it.
+
+`locations` gains a nullable `tare_weight` and a `tare_qu_id`. Locations are product-agnostic,
+so the tare cannot borrow a stock unit the way `products.tare_weight` did. The conversion to
+the stocked product's unit goes through the global quantity unit conversions under decision
+3's rule — a stock unit the tare cannot be converted to is refused, never assumed. Plan 29
+owns it, and plan 23 alters the same table first.
 
 **The device posts gross weight and the server subtracts.** A scale identifies the vessel by
 scanning its location label (plan 06, a `vctl:` payload) and posts the gross reading against
-that location. The server resolves the one product stocked there, refuses when there is none
-or more than one, subtracts the location's tare in the product's stock unit, and sets that
-entry's amount through [`EditStockEntry()`](../../services/StockService.php), which already
-takes a stock row id and an amount and does no tare arithmetic. The input contract states
-gross explicitly so a client cannot subtract twice (question 4).
+that location. The server resolves the one product stocked there and refuses when there is
+none or more than one. It subtracts the location's tare in the product's stock unit and sets
+that entry's amount through [`EditStockEntry()`](../../services/StockService.php), which
+already takes a stock row id and an amount and does no tare arithmetic. The input contract
+states gross explicitly so a client cannot subtract twice (question 4).
 
 **Refilled from packs that are themselves stock.** New bottles of a spice are stock at a
 storage location until they are decanted into the jar, which is a transfer. A supply-size
@@ -135,11 +136,13 @@ its opened units; neither measurement nor a global measurement mode is required.
 
 **Decided 2026-09-14 under question 1.** `enable_tare_weight_handling` and `tare_weight`
 remain on `/objects/products` and in the views that project them, so no response shape
-changes; the three arithmetic branches, the two refusals (open and transfer) and the trigger
-that rescales the tare are removed, and a write that enables the flag answers 400 naming the
-location tare that replaced it. Booked amounts are already net, so no stored amount changes;
-a product that used the flag loses its weigh path until its vessel is a location, which is a
-manual upgrade step the migration notes. The two fields are deleted from the contract at
+changes. The three arithmetic branches, the two refusals (open and transfer) and the trigger
+that rescales the tare are removed. A write that enables the flag answers 400 naming the
+location tare that replaced it.
+
+Booked amounts are already net, so no stored amount changes; a product that used the flag
+loses its weigh path until its vessel is a location, which is a manual upgrade step the
+migration notes. The two fields are deleted from the contract at
 [plan 14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's freeze, as a line in
 the first snapshot rather than an amendment after it, with the
 [ADR-0005](0005-wire-contract-is-the-invariant.md) note that removal requires. The text below
