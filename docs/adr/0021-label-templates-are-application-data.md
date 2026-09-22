@@ -2,13 +2,13 @@
 
 - **Status: Accepted, 2026-09-07.** **Victual owns the template document; a reprint is a new
   job replaying retained bytes; an import refuses a target holding live labels.** All six
-  acceptance prerequisites below are met, each annotated in place with what was run and how to
-  reproduce it. **Nothing in the decision was revised on the way through** — no consequence
-  softened, no argument improved, no prerequisite dropped. The three edits the prerequisites
-  forced landed before this acceptance, in the pull request that ran them: the output format in
-  item 2, which item 2 had explicitly deferred to prerequisite 2; the import epoch in item 3,
-  which prerequisite 3 found by running the guard rather than reasoning about it; and the
-  measured retention figure in *Consequences*.
+  acceptance prerequisites below are met, each annotated in place with what was run and how
+  to reproduce it. **Nothing in the decision was revised on the way through** — no
+  consequence softened, no argument improved, no prerequisite dropped. The three edits the
+  prerequisites forced landed before this acceptance, in the pull request that ran them.
+  They are the output format in item 2, which item 2 had explicitly deferred to prerequisite
+  2; the import epoch in item 3, which prerequisite 3 found by running the guard rather than
+  reasoning about it; and the measured retention figure in *Consequences*.
 - **Accepting decides ownership, not the schedule.** No template table exists, no renderer
   exists, and label appearance is still whatever the webhook's external service does. What
   changes today is what may be built — and, immediately, that
@@ -61,9 +61,10 @@ That is a defensible place to draw the line and it forecloses something the fork
 person editing a label's appearance in the browser, against household data, with a preview
 that is trustworthy. A template that lives in the worker repository is edited by changing
 Python, is versioned by a git tag, is deployed by a revision bump, and is previewed by
-printing one. Nobody in a household does any of that. Worse, the seam is drawn where it
-costs the most: appearance is the part a person most wants to change and the part that
-change is currently hardest for.
+printing one. Nobody in a household does any of that.
+
+Worse, the seam is drawn where it costs the most: appearance is the part a person most wants
+to change and the part that change is currently hardest for.
 
 **Reprints.** 0011 item 4's "Reprint is resetting a row" was written against a status-column
 queue and is the wrong mechanism twice over. It destroys the record of what already happened
@@ -151,10 +152,10 @@ whose printers can take one.
 Three findings decided it, none of them a preference between the formats:
 
 - **The QL-820NWBc advertises no page-description format on either transport**, so a page
-  description reaches the one device wave 3b must print on only through a converting host —
-  and that host's report of what it did is not the printer's report of what it printed. The
-  laser is its own converter and does report readable evidence, which is what makes `pdf/1.4`
-  worth keeping expressible.
+  description reaches the one device wave 3b must print on only through a converting host.
+  That host's report of what it did is not the printer's report of what it printed. The
+  laser is its own converter and does report readable evidence, which is what makes
+  `pdf/1.4` worth keeping expressible.
 - **Retention does not separate them.** The same label is 2,573 bytes as an indexed raster and
   1,573 as a compressed PDF.
 - **A reprint means something stronger under a fixed grid.** The retained bytes are the dots,
@@ -185,17 +186,20 @@ importer that instead requires stated application downtime must say so rather th
 safety it does not enforce.
 
 **The lock is necessary and not sufficient, and prerequisite 3 is where that surfaced.** It
-orders issuance against the import; it cannot tell an issuance that the ground moved. A request
-composed before an import and executed after it mints a label for whatever now holds that id —
-a row that is self-consistent and is not what anybody asked for. So **the issuance request
-carries the import epoch it was composed at**, a counter the import increments, and issuance
-refuses when it no longer matches. It is one integer and it closes the last window; without it
-the guard is honest about concurrent imports and silent about consecutive ones.
+orders issuance against the import; it cannot tell an issuance that the ground moved. A
+request composed before an import and executed after it mints a label for whatever now holds
+that id — a row that is self-consistent and is not what anybody asked for.
+
+So **the issuance request carries the import epoch it was composed at**, a counter the
+import increments, and issuance refuses when it no longer matches. It is one integer and it
+closes the last window; without it the guard is honest about concurrent imports and silent
+about consecutive ones.
 
 **Retired labels and their historical identity survive an import.** They are the record that
-answers *what this label was*, they are what makes a retired uid a discrepancy signal rather
-than an error, and no schema decision may put them in `TRUNCATE … CASCADE`'s path: neither a
-label row nor a retirement snapshot may carry a foreign key to a table the importer truncates.
+answers *what this label was*, and they are what makes a retired uid a discrepancy signal
+rather than an error. No schema decision may put them in `TRUNCATE … CASCADE`'s path:
+neither a label row nor a retirement snapshot may carry a foreign key to a table the
+importer truncates.
 
 A Victual-to-Victual import that could carry mappings does not exist and is not created here.
 If one is ever built, re-keying becomes a real question again and gets its own record.
@@ -324,10 +328,10 @@ before deleting it.
    `python3 .spike-renderer/qualify/cost.py`. `kerning.py` pins
    `.spike-renderer/fonts/NotoSans-Regular.ttf` and `cost.py` passes the
    `.spike-renderer/fonts` directory, both in the commit. `rtl.py` takes its font as an
-   argument and the bundled face carries no Hebrew or Arabic at all, so the run recorded above
-   necessarily used a face supplied from outside the repository: **that one input is not
-   recoverable from the commit**, and the eight assertions would have to be re-established
-   against whatever face a re-run supplies.
+   argument, and the bundled face carries no Hebrew or Arabic at all. So the run recorded
+   above necessarily used a face supplied from outside the repository: **that one input is
+   not recoverable from the commit**, and the eight assertions would have to be
+   re-established against whatever face a re-run supplies.
 
 2. **The artifact format comparison is written**: raster against page-description, including
    whether a downstream service exists that verifiably converts *and* delivers with readable
@@ -362,12 +366,12 @@ before deleting it.
      [ADR-0013](0013-nix-built-container-images.md)'s assertion by the very name that check's negative control
      was built to catch.
 
-   Two findings belong to [plan 27](../plans/landed/27-label-templates-and-rendering.md) rather than
-   here: the renderer emits RGBA where the identifier says indexed, 14× larger for identical
-   pixels (37,145 bytes against 2,573, and the re-encode is lossless — decoded palette counts
-   match the renderer's reported 38,439 black / 0 red / 339,489 white exactly); and a form
-   identifier has to pin colour type and bit depth, or "the same form" spans artifacts differing
-   by more than that.
+   Two findings belong to [plan 27](../plans/landed/27-label-templates-and-rendering.md)
+   rather than here. The renderer emits RGBA where the identifier says indexed, 14× larger
+   for identical pixels (37,145 bytes against 2,573, and the re-encode is lossless — decoded
+   palette counts match the renderer's reported 38,439 black / 0 red / 339,489 white
+   exactly). A form identifier also has to pin colour type and bit depth, or "the same form"
+   spans artifacts differing by more than that.
 
    **This comparison confirmed, rather than supplied, ADR-0019's two format-dependent edits.**
    They were written first, over form identifiers rather than over formats, and nothing here
@@ -409,14 +413,14 @@ before deleting it.
    overridable by `PRINTER`, so a re-run reproduces the logic against whatever device it is
    pointed at and not the IPP job recorded below.
 
-   The artifact is rendered once and retained; the renderer
-   binary is then **moved off disk** and shown to fail with exit 127; the reprint queues over
-   the same artifact row and creates no second artifact; the bytes come back out of the database
-   with the digest they went in with
-   (`533d05dd59dd286cb5791ee7b73ebaf13f3caee10ae70d2f43d76d822c33530f`, 16,124 bytes) and print
-   — IPP job 56, `job-state = completed`, `job-completed-successfully`, one impression. The
-   artifact is then collected and the same reprint is **refused**, naming the artifact and its
-   digest, with the renderer still absent and no job queued.
+   The artifact is rendered once and retained; the renderer binary is then **moved off
+   disk** and shown to fail with exit 127. The reprint queues over the same artifact row
+   and creates no second artifact; the bytes come back out of the database with the digest
+   they went in with
+   (`533d05dd59dd286cb5791ee7b73ebaf13f3caee10ae70d2f43d76d822c33530f`, 16,124 bytes) and
+   print — IPP job 56, `job-state = completed`, `job-completed-successfully`, one
+   impression. The artifact is then collected and the same reprint is **refused**, naming
+   the artifact and its digest, with the renderer still absent and no job queued.
 
 5. **The canonical JSON encoding is named and fixed** — [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)
    unless a reason is recorded — and a digest of the same document computed twice through the
@@ -462,10 +466,11 @@ before deleting it.
    with a run-to-completion probe rule, or the renderer is a kind it already checks. A
    scale-to-zero workload that silently escapes ADR-0010's manifest gate is not deployable.
 
-   **Met**, by teaching the checker. `Job` and `CronJob` now resolve their pod specs, and their
-   containers are exempt from the probe requirement for the same reason init containers already
-   were — a probe on a container that is *meant* to terminate either never runs or reports the
-   normal end of the work as a failure. Every security and resourcing obligation still applies.
+   **Met**, by teaching the checker. `Job` and `CronJob` now resolve their pod specs, and
+   their containers are exempt from the probe requirement for the same reason init
+   containers already were. A probe on a container that is *meant* to terminate either never
+   runs or reports the normal end of the work as a failure. Every security and resourcing
+   obligation still applies.
 
    The gap was not the two missing kinds; it was that an unknown kind passed by not being
    examined, with no difference between "holds no containers" and "holds containers I could not
@@ -487,12 +492,13 @@ before deleting it.
 2. **What is the retention period for idempotency keys**, and what does a client do after it
    expires? The rule that a same-key replay returns the original resource has to end
    somewhere, and a client treating an expired key as a guaranteed-safe retry prints twice.
-3. **Which limits** — compressed bytes, decoded pixels, element count, text length, execution
-   time — does the renderer enforce? Prerequisite 1 supplies the baseline they would be set
-   against, which is the part that was missing: a contract-fixture label costs 7.9–22.9 ms and
-   at most 9.1 MiB of resident set, and a refusal costs 2.5 ms and 3.0 MiB. What a limit should
-   be is still a judgement about the worst document a household could author, not about these
-   five, so the question stays open with numbers under it rather than none.
+3. **Which limits** — compressed bytes, decoded pixels, element count, text length,
+   execution time — does the renderer enforce? Prerequisite 1 supplies the baseline they
+   would be set against, which is the part that was missing. A contract-fixture label costs
+   7.9–22.9 ms and at most 9.1 MiB of resident set, and a refusal costs 2.5 ms and 3.0 MiB.
+   What a limit should be is still a judgement about the worst document a household could
+   author, not about these five, so the question stays open with numbers under it rather
+   than none.
 4. **Does a household ever need per-print template selection?** This record pins a template
    version per job and offers revised printing as its own operation. Choosing a template at
    print time is a plausible fifth operation and is deliberately not decided.

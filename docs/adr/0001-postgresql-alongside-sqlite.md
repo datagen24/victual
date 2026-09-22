@@ -30,9 +30,10 @@ suite migrates, seeds and compares both engines table by table and view by view.
   both. The porting rules and the seventeen hazards in
   [db/pgsql/README.md](../../db/pgsql/README.md) are the standing cost of this decision.
 - SQLite became, incidentally, the fork's **reference implementation** — the differential
-  suite is what turns "PostgreSQL still behaves like grocy" from a claim into a test. That
-  side effect was not the point of this decision but is now load-bearing, and it is the
-  main thing [ADR-0008](0008-postgresql-only-runtime-engine.md) has to answer for.
+  suite is what turns "PostgreSQL still behaves like grocy" from a claim into a test.
+  That side effect was not the point of this decision, but the suite now depends on it,
+  and that dependency is what [ADR-0008](0008-postgresql-only-runtime-engine.md) has to
+  answer for.
 - Both `pdo_sqlite` and `pdo_pgsql` are required regardless of driver, and
   `PrerequisiteChecker` opens a throwaway SQLite connection on every request to check its
   version. Making that conditional is [plan 10](../plans/landed/10-cold-start-statelessness.md).
