@@ -227,13 +227,13 @@ not only the added lines.
 Formatting and link checks can support this review. They do not establish factual accuracy,
 readability, or compliance with a decision's meaning.
 
-## Proposed automated style checks
+## Automated style checks
 
-The proposed [Vale setup](../.devtools/vale/README.md) turns repeatable parts of these
+The [Vale setup](../.devtools/vale/README.md) turns repeatable parts of these
 conventions into checks. Its [writing guide](style-guide.md) covers sentence structure,
-terminology, document purpose, and review criteria. The proposal preserves the authority
+terminology, document purpose, and review criteria. The checks preserve the authority
 and lifecycle rules above.
 
 Vale identifies passages for editing; it cannot verify facts, assess an architectural
 tradeoff, or decide whether a requirement has changed. Reviewers remain responsible for
-those checks. The proposed CI baseline tracks existing findings and rejects new ones.
+those checks. The CI baseline tracks existing findings and rejects new ones.

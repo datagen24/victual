@@ -31,6 +31,9 @@ embedded.txt
 # Left behind by "python3 -m unittest discover -s .devtools/ci", which the lint job runs.
 __pycache__/
 
+# Local checksum-pinned prose checker.
+.devtools/vale/.bin/
+
 # Built by .devtools/parity/stack/faketime.sh: the libfaketime library and the clock file.
 .devtools/parity/.faketime/
 

@@ -1,0 +1,12 @@
+extends: existence
+message: "Replace '%s' with the specific effect and supporting evidence."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - (?:serves?|stands?) as a testament to
+  - marks? a pivotal moment
+  - reflects? a broader (?:shift|trend|pattern)
+  - (?:ever[- ]|rapidly )?evolving landscape
+  - speaks? volumes
+  - (?:vibrant|breathtaking|renowned|seamless(?:ly)?)

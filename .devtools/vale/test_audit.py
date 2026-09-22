@@ -37,6 +37,11 @@ class StyleRules(unittest.TestCase):
             'VagueReference': 'See above for the requirement.',
             'Wordiness': 'Use this setting in order to enable logging.',
             'AssumedEase': 'Simply run the command.',
+            'Metadiscourse': 'Let me be clear: the API rejects this request.',
+            'InflatedSignificance': 'This marks a pivotal moment for deployment.',
+            'VagueAttribution': 'Experts believe that this improves reliability.',
+            'DecorativeContrast': 'This is not just a check but a statement of intent.',
+            'TrailingCommentary': 'The test passed, highlighting the importance of review.',
         }
         for rule, text in cases.items():
             with self.subTest(rule=rule):
@@ -45,6 +50,48 @@ class StyleRules(unittest.TestCase):
     def test_readable_prose_is_clean(self):
         self.assertEqual(lint('## Request validation\n\nThe API rejects invalid quantities. '
                               'A failed write leaves the stock ledger unchanged.\n'), [])
+
+    def test_new_patterns_across_case_and_line_wrapping(self):
+        cases = {
+            'Metadiscourse': 'LET ME BE CLEAR: the deployment failed.',
+            'InflatedSignificance': 'This serves as a testament to our care.',
+            'Editorializing': 'At the end of the day, quality matters.',
+            'VagueReference': 'That asymmetry matters.',
+            'Wordiness': 'The API could potentially fail.',
+            'TrailingCommentary': 'The test passed,\nunderscoring the importance of review.',
+            'DecorativeContrast': 'This is not just a check\nbut a statement of intent.',
+        }
+        for rule, text in cases.items():
+            with self.subTest(rule=rule):
+                self.assertIn('Victual.' + rule, {a['Check'] for a in lint(text)})
+
+    def test_technical_distinctions_and_grammar_are_allowed(self):
+        text = ('The server was writing a file when power failed.\n\n'
+                'The API returns JSON, not HTML. Use PostgreSQL rather than SQLite.\n\n'
+                'The client sends three fields: name, amount, and unit.\n\n'
+                'The editor supports rich text. The regex matches this pattern: `a+`.\n\n'
+                'The test failed, returning exit code 1.\n')
+        self.assertEqual(lint(text), [])
+
+    def test_new_patterns_in_examples_are_protected(self):
+        text = ('---\ntitle: Let me be clear\n---\n\n'
+                '> This marks a pivotal moment, highlighting the importance of review.\n\n'
+                '```text\nExperts believe this is not just a check but a guarantee.\n```\n\n'
+                'Avoid `hope this helps` and `serves as`.\n')
+        self.assertEqual(lint(text), [])
+
+    def test_negative_parallelism_with_a_reveal_is_flagged(self):
+        text = "This is not just a check, it's a statement of intent."
+        self.assertIn('Victual.DecorativeContrast', {a['Check'] for a in lint(text)})
+
+    def test_new_rule_exception_does_not_hide_another_rule(self):
+        text = ('<!-- Retain an attributed phrase for discussion. -->\n'
+                '<!-- vale Victual.VagueAttribution = NO -->\n'
+                'Experts believe this marks a pivotal moment.\n'
+                '<!-- vale Victual.VagueAttribution = YES -->\n')
+        checks = {a['Check'] for a in lint(text)}
+        self.assertNotIn('Victual.VagueAttribution', checks)
+        self.assertIn('Victual.InflatedSignificance', checks)
 
     def test_threshold_boundaries(self):
         for count in (45, 46):
