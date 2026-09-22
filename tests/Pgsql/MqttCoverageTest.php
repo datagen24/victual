@@ -112,11 +112,32 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 		// the configured connect timeout on every scenario that needs it.
 		self::$refusedPort = self::ReservePort();
 
-		self::$brokerProcess = self::StartBroker(self::$brokerPort, self::$brokerLog, 'record');
-		self::$droppingBrokerProcess = self::StartBroker(self::$droppingBrokerPort, self::$droppingBrokerLog, 'drop');
+		// PHPUnit does not call tearDownAfterClass when setUpBeforeClass raises, so a broker
+		// that started before the failure would outlive the run holding its port. Whatever
+		// got as far as a process is stopped here instead.
+		try
+		{
+			self::StartBroker(self::$brokerPort, self::$brokerLog, 'record', self::$brokerProcess);
+			self::StartBroker(self::$droppingBrokerPort, self::$droppingBrokerLog, 'drop',
+				self::$droppingBrokerProcess);
+		}
+		catch (\Throwable $failure)
+		{
+			self::StopBrokers();
+
+			throw $failure;
+		}
 	}
 
 	public static function tearDownAfterClass(): void
+	{
+		self::StopBrokers();
+
+		parent::tearDownAfterClass();
+	}
+
+	/** Stops whichever stand-in brokers are running. Safe to call twice, and with neither. */
+	private static function StopBrokers(): void
 	{
 		foreach ([self::$brokerProcess, self::$droppingBrokerProcess] as $process)
 		{
@@ -127,7 +148,8 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 			}
 		}
 
-		parent::tearDownAfterClass();
+		self::$brokerProcess = null;
+		self::$droppingBrokerProcess = null;
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -598,9 +620,14 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 	 * a connection failure is a result this class asserts on elsewhere, so the race would
 	 * read as a passing test of the wrong thing.
 	 *
-	 * @return resource
+	 * $handle is written before the wait rather than returned after it: a process that
+	 * started and never bound is still a process, and the caller can only stop what it
+	 * holds. It is the reason this does not return the resource - a return value arrives
+	 * too late to be cleaned up.
+	 *
+	 * @param resource|null $handle receives the process, whether or not it goes on to bind
 	 */
-	private static function StartBroker(int $port, string $logFile, string $behaviour)
+	private static function StartBroker(int $port, string $logFile, string $behaviour, &$handle): void
 	{
 		file_put_contents($logFile, '');
 
@@ -617,6 +644,8 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 			self::fail('could not start the stand-in broker on 127.0.0.1:' . $port);
 		}
 
+		$handle = $process;
+
 		$waited = 0;
 
 		while ($waited < 100)
@@ -632,7 +661,7 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 				usleep(50000);
 				file_put_contents($logFile, '');
 
-				return $process;
+				return;
 			}
 
 			usleep(50000);

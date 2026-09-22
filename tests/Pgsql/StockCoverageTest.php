@@ -616,7 +616,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * entries the caller did not name - and must not answer 200 for a booking it did not
 	 * make.
 	 */
-	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
+	#[Depends('testPurchasePerUnitLabelTypeWritesOneStockEntryPerUnit')]
 	public function testConsumeOfAStockEntryBelongingToAnotherProductBooksNothing(): void
 	{
 		$foreign = self::$db->prepare('SELECT stock_id FROM stock WHERE product_id = ? LIMIT 1');
@@ -1518,9 +1518,23 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::$db->query('SELECT COUNT(*) FROM shopping_list')->fetchColumn(), 'None of the refusals added a row');
 	}
 
-	#[Depends('testShoppingListAddProductInsertsThenAccumulates')]
+	/**
+	 * The entry the removals work on is written here rather than inherited from the adder
+	 * above. Several tests in this class clear the shopping list as their own first step,
+	 * so an amount left behind by a predecessor is an amount any of them can take away,
+	 * and the removal would then be asserted against a row that is not there.
+	 */
+	#[Depends('testCreatesFixtures')]
 	public function testShoppingListRemoveProductDecrementsThenDeletes(): void
 	{
+		self::$db->exec('DELETE FROM shopping_list');
+		self::insertRow('shopping_list', [
+			'product_id' => self::$ids['staple'],
+			'amount' => 5,
+			'qu_id' => 2,
+			'shopping_list_id' => self::$ids['second_list'],
+		]);
+
 		$this->expectStatus(
 			fn() => self::$stock->RemoveProductFromShoppingList(self::request('POST', ['product_id' => self::$ids['staple'], 'product_amount' => 2, 'list_id' => self::$ids['second_list']]), new Response(), []),
 			204,
@@ -2522,7 +2536,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * error response the other by-id reads answer with. Correct behaviour is the same 400.
 	 * Pinned on the current behaviour; nothing is written either way.
 	 */
-	#[Depends('testCreatesFixtures')]
+	// The predecessor is the purchase that puts the spare product's six units in the pantry
+	// - its default location - because that is the stock this read has to find. Nothing in
+	// this class consumes that product, so the pantry is still not empty however the rest of
+	// the class is ordered.
+	#[Depends('testPurchasePerUnitLabelTypeWritesOneStockEntryPerUnit')]
 	public function testLocationStockEntriesFailsUnhandledForALocationThatDoesNotExist(): void
 	{
 		$entries = $this->expectStatus(
@@ -2839,6 +2857,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	#[Depends('testCreatesFixtures')]
 	public function testCreatesTheSubprocessApiKey(): void
 	{
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9500, 'stockcoverage-api', 'fixture')");

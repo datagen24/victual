@@ -98,7 +98,12 @@ class HttpBootTest extends PgsqlSchemaTestCase
 			. "('" . self::ADMIN_SESSION_KEY . "', " . self::ADMIN_USER_ID . ", now() + interval '1 day'), "
 			. "('" . self::RESTRICTED_SESSION_KEY . "', " . self::RESTRICTED_USER_ID . ", now() + interval '1 day')");
 
-		self::StartServer();
+		$server = self::StartServer();
+
+		self::$server = $server['process'];
+		self::$port = $server['port'];
+		self::$serverErrorLog = $server['errorLog'];
+		self::$serverOutputLog = $server['outputLog'];
 	}
 
 	public static function tearDownAfterClass(): void
@@ -119,25 +124,33 @@ class HttpBootTest extends PgsqlSchemaTestCase
 	 * holding it, and the server cannot bind one this process is holding. The window is
 	 * closed by retrying on a different port rather than by hoping, which is also what
 	 * makes this safe to run beside the other phases of a suite that does not serialise.
+	 *
+	 * What it started is returned rather than stored, so that the shutdown test can raise
+	 * a server of its own from this same helper without taking the class's away from the
+	 * tests that still need it. setUpBeforeClass is what puts the class's server in the
+	 * statics.
+	 *
+	 * @param string $logName distinguishes one server's log pair from another's
+	 * @return array{process: resource, port: int, errorLog: string, outputLog: string}
 	 */
-	private static function StartServer(): void
+	private static function StartServer(string $logName = 'httpboot-server'): array
 	{
 		$root = VICTUAL_ROOT_PATH;
-		self::$serverErrorLog = VICTUAL_DATAPATH . '/httpboot-server.err';
-		self::$serverOutputLog = VICTUAL_DATAPATH . '/httpboot-server.out';
+		$errorLog = VICTUAL_DATAPATH . '/' . $logName . '.err';
+		$outputLog = VICTUAL_DATAPATH . '/' . $logName . '.out';
 
 		foreach (range(1, 5) as $attempt)
 		{
 			$port = self::FreePort();
 
-			file_put_contents(self::$serverErrorLog, '');
-			file_put_contents(self::$serverOutputLog, '');
+			file_put_contents($errorLog, '');
+			file_put_contents($outputLog, '');
 
 			$process = proc_open(
 				[PHP_BINARY, '-S', '127.0.0.1:' . $port, '-t', $root . '/public', $root . '/public/index.php'],
 				[
-					1 => ['file', self::$serverOutputLog, 'a'],
-					2 => ['file', self::$serverErrorLog, 'a']
+					1 => ['file', $outputLog, 'a'],
+					2 => ['file', $errorLog, 'a']
 				],
 				$pipes,
 				$root,
@@ -148,10 +161,12 @@ class HttpBootTest extends PgsqlSchemaTestCase
 
 			if (self::WaitForPort($port, $process))
 			{
-				self::$server = $process;
-				self::$port = $port;
-
-				return;
+				return [
+					'process' => $process,
+					'port' => $port,
+					'errorLog' => $errorLog,
+					'outputLog' => $outputLog
+				];
 			}
 
 			proc_terminate($process);
@@ -159,7 +174,7 @@ class HttpBootTest extends PgsqlSchemaTestCase
 		}
 
 		self::fail('the php built-in server did not start on any of five ports. stderr: '
-			. file_get_contents(self::$serverErrorLog));
+			. file_get_contents($errorLog));
 	}
 
 	/**
@@ -233,18 +248,27 @@ class HttpBootTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Stops the server and waits for it to be gone. Idempotent, so the test that proves
-	 * the shutdown works can run it and tearDownAfterClass can run it again.
+	 * Stops a server and waits for it to be gone.
+	 *
+	 * Called with no argument it stops the class's server and is idempotent, so
+	 * tearDownAfterClass can run after a teardown that already happened. Called with a
+	 * process it stops that one and leaves the class's alone, which is how the shutdown
+	 * test proves SIGTERM works without ending the class.
+	 *
+	 * @param resource|null $process
 	 */
-	private static function StopServer(): bool
+	private static function StopServer($process = null): bool
 	{
-		if (self::$server === null)
+		if ($process === null)
 		{
-			return true;
-		}
+			if (self::$server === null)
+			{
+				return true;
+			}
 
-		$process = self::$server;
-		self::$server = null;
+			$process = self::$server;
+			self::$server = null;
+		}
 
 		proc_terminate($process);
 
@@ -287,11 +311,10 @@ class HttpBootTest extends PgsqlSchemaTestCase
 	 */
 	private static function Send(string $method, string $path, array $headers = []): array
 	{
-		// These methods run in their declared order (PHPUnit's default, as RbacTest also
-		// relies on), and the one that stops the server is declared last. Saying so here
-		// turns a reordering into a sentence rather than into a connection refused.
-		self::assertNotNull(self::$server,
-			'the server has already been stopped - testTheServerIsStoppedByTermination must run last');
+		// The class's server lives from setUpBeforeClass to tearDownAfterClass and no test
+		// takes it away, so this only fires if a start silently failed. Saying so here
+		// turns that into a sentence rather than into a connection refused.
+		self::assertNotNull(self::$server, 'the class\'s server is not running');
 
 		$socket = fsockopen('127.0.0.1', self::$port, $errorNumber, $errorMessage, 10);
 		self::assertIsResource($socket, "could not reach the server under test: $errorMessage");
@@ -764,21 +787,27 @@ class HttpBootTest extends PgsqlSchemaTestCase
 	// --- The server stops ------------------------------------------------------------
 
 	/**
-	 * Last, and on purpose: a `php -S` left running outlives phpunit and holds the port for
-	 * the rest of the job. Proving the shutdown works is worth a test of its own, and
-	 * tearDownAfterClass is idempotent so it can still run after this.
+	 * A `php -S` left running outlives phpunit and holds the port for the rest of the job,
+	 * so that the shutdown works is worth a test of its own.
+	 *
+	 * It is a second, short-lived server rather than the class's: stopping the shared one
+	 * here would make every test declared after this one fail on a refused connection,
+	 * which is an order dependence and not a property of the code under test. The class's
+	 * server is left to tearDownAfterClass.
 	 */
-	#[Depends('testAPageRequestWithoutThePermissionIsRefused')]
 	public function testTheServerIsStoppedByTermination(): void
 	{
-		self::assertTrue(self::StopServer(), 'the server stopped on SIGTERM, without needing to be killed');
+		$server = self::StartServer('httpboot-shutdown');
 
-		$socket = @fsockopen('127.0.0.1', self::$port, $errorNumber, $errorMessage, 1);
+		self::assertTrue(self::StopServer($server['process']),
+			'the server stopped on SIGTERM, without needing to be killed');
+
+		$socket = @fsockopen('127.0.0.1', $server['port'], $errorNumber, $errorMessage, 1);
 
 		if ($socket !== false)
 		{
 			fclose($socket);
-			self::fail('something is still accepting connections on port ' . self::$port);
+			self::fail('something is still accepting connections on port ' . $server['port']);
 		}
 
 		self::assertFalse($socket, 'the port is free again once the server has stopped');
