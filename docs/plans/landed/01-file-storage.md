@@ -183,10 +183,11 @@ Landed 2026-09-02 in seven commits, in the order this plan argues for: the abstr
 and the filesystem backend as a pure refactor, the setting and its validation, the
 migration and the database backend, the S10 bounds, the importer, the suite exemption,
 and this record. Measured against the working copy at `68d1162` (this plan's branch, off
-`4d9e03b`), on PHP 8.4.19 and PostgreSQL 16. Review then added two more, both on the
-importer and both about the same thing: what it is entitled to call an absence. They have
-their own bullets below, with their own measurements, because each changes what a passing
-run of that command means.
+`4d9e03b`), on PHP 8.4.19 and PostgreSQL 16.
+
+Review then added two more commits, both on the importer and both about the same thing:
+what it is entitled to call an absence. They have their own bullets below, with their own
+measurements, because each changes what a passing run of that command means.
 
 **The migration is `0258.pgsql.sql`, not `0257`.** 0257 was consumed by another track
 while this was in flight. Nothing else about the schema moved.
@@ -203,19 +204,23 @@ while this was in flight. Nothing else about the schema moved.
 
   Downscaling moved onto bytes as the plan describes
   (`ImageResize::createFromString()` / `getImageAsString()`), and produces
-  byte-identical output. **One correction to the measurement this plan was designed on:
-  "no temp files anywhere" is true of this repository's code and not of the library.**
+  byte-identical output.
+
+  **One correction to the measurement this plan was designed on: "no temp files anywhere"
+  is true of this repository's code and not of the library.**
   `ImageResize::getImageAsString()` is implemented as `save()` to a `tempnam()` followed
   by `file_get_contents` and `unlink`. So a downscale on the database backend still
   touches `sys_get_temp_dir()`, which is `emptyDir`-shaped rather than PVC-shaped and
   does not affect this plan's goal — but the sentence in *What was measured* was
-  optimistic and is corrected here rather than left standing. **Where that temporary
-  directory is now says so out loud:** review of [10](10-cold-start-statelessness.md)
-  found that the production image named `/data` and `/var/run/apache2` as its writable
-  paths and left PHP's temporary directory implicit, which a read-only root filesystem
-  turns into a failure on the first thumbnail. The image sets `TMPDIR`, `sys_temp_dir`
-  and `upload_tmp_dir` to `/tmp` and lists it among the paths a deployment has to make
-  writable; `php://temp`'s spill past 2 MiB in `DatabaseStorage` lands in the same place.
+  optimistic and is corrected here rather than left standing.
+
+  **Where that temporary directory is now says so out loud:** review of
+  [10](10-cold-start-statelessness.md) found that the production image named `/data` and
+  `/var/run/apache2` as its writable paths and left PHP's temporary directory implicit,
+  which a read-only root filesystem turns into a failure on the first thumbnail. The image
+  sets `TMPDIR`, `sys_temp_dir` and `upload_tmp_dir` to `/tmp` and lists it among the paths
+  a deployment has to make writable; `php://temp`'s spill past 2 MiB in `DatabaseStorage`
+  lands in the same place.
 - **`7eff287` — the setting and the two combinations it may not be in.**
   `FILE_STORAGE` = `filesystem` (default) | `database`, validated in
   `ConfigurationValidator` before anything else can act on it: `database` with a
@@ -227,17 +232,20 @@ while this was in flight. Nothing else about the schema moved.
   SQLite, because the validator refuses it. `files` is not an `ExposedEntity`.
 
   **The plan's three risks, all three confirmed by measurement rather than assumed.**
-  *LessQL cannot bind LOBs* — it quotes values into the statement text and `PDO::quote()`
-  returns `false` for a string that is not valid UTF-8, so a JPEG arrives as an *empty*
-  value and the insert dies as `syntax error at or near ")"`. It fails loudly rather than
-  truncating, which is the better of the two ways to be wrong, but it fails. Everything in
-  `DatabaseStorage` is therefore raw PDO with `PDO::PARAM_LOB`. *`mime_content_type($path)`
-  and `finfo_buffer($bytes)` agree* — checked on the real JPEG, PNG, PDF and text file used
-  throughout the verification below, and on HTML wearing a `.png` name: `image/jpeg`,
-  `image/png`, `application/pdf`, `text/plain`, `text/html` from both. *PDO's `BYTEA`
-  stream is tied to its statement* — on this build it actually survived its statement going
-  out of scope, but `Read()` copies into `php://temp` anyway, because "it happened to work
-  in one PHP version" is not the property the response body needs.
+
+  - *LessQL cannot bind LOBs.* It quotes values into the statement text and `PDO::quote()`
+    returns `false` for a string that is not valid UTF-8, so a JPEG arrives as an *empty*
+    value and the insert dies as `syntax error at or near ")"`. It fails loudly rather than
+    truncating, which is the better of the two ways to be wrong, but it fails. Everything in
+    `DatabaseStorage` is therefore raw PDO with `PDO::PARAM_LOB`.
+  - *`mime_content_type($path)` and `finfo_buffer($bytes)` agree.* Checked on the real
+    JPEG, PNG, PDF and text file used throughout the verification below, and on HTML
+    wearing a `.png` name: `image/jpeg`, `image/png`, `application/pdf`, `text/plain`,
+    `text/html` from both.
+  - *PDO's `BYTEA` stream is tied to its statement.* On this build it actually survived
+    its statement going out of scope, but `Read()` copies into `php://temp` anyway,
+    because "it happened to work in one PHP version" is not the property the response
+    body needs.
 
   `Write` is `INSERT ... ON CONFLICT (file_group, name) DO UPDATE`; `Create` is a plain
   insert letting the unique constraint be what says "exists", mapped back to the same
@@ -264,21 +272,21 @@ while this was in flight. Nothing else about the schema moved.
   on.
 
   `best_fit_height`/`best_fit_width` snap to the nearest of **32, 64, 250, 400, 800**.
-  The first four are every size the front end actually asks for — 32 and 64 for the list
-  thumbnails, 250 for a userfield picture, 400 for the detail views (`grep best_fit` in
-  `public/` and `views/`) — and 800 is a sane larger default so a client wanting better
+  The first four are every size the front end actually asks for: 32 and 64 for the list
+  thumbnails, 250 for a userfield picture, and 400 for the detail views (`grep best_fit`
+  in `public/` and `views/`). 800 is a sane larger default, so a client wanting better
   than a detail view need not invent one. Snapping rather than refusing keeps existing
   clients working: a request for 401 still gets a picture, it just shares 400's cache
   entry.
 - **`49eba3f` — `bin/victual-files-import`,** Q1 answered (a). Walks
   `<data path>/storage/<group>/<name>` into the table, refuses to run unless
   `FILE_STORAGE` is `database` and `DB_DRIVER` is `pgsql`, reports every file, exits 0/1.
-  Idempotent, so a killed Job simply runs again. No `--delete-after`.
+  Idempotent, so a killed Job runs again. No `--delete-after`.
 
   `DatabaseStorage` gained `GetSizeBytes()` and `GetContentDigest()` for it. **That is two
-  methods more than this plan's interface lists, and deliberately not on `FileStorage`:**
-  nothing in the request path asks how big a stored file is or what it hashes to, so they
-  are backend methods the importer uses, not a widening of the seam.
+  methods more than this plan's interface lists, and deliberately not on `FileStorage`.**
+  Nothing in the request path asks how big a stored file is or what it hashes to. They are
+  backend methods the importer uses, not a widening of the seam.
 - **The idempotency key is a content digest, not a size — a review finding, and Q1's
   response is superseded on this point.** As first written the command did what Q1's
   response asks in as many words: "skip rows that already exist with identical size". That
@@ -295,29 +303,34 @@ while this was in flight. Nothing else about the schema moved.
 
   **The digest is recomputed from the stored bytes, not persisted beside them, and that is
   the deliberate half of this.** A column would be written by the same statement as the
-  content, so it would agree with the content by construction: it can prove a row is self
-  consistent and never that the row holds the file — which is exactly the claim this
-  command has to make. `encode(sha256(content), 'hex')` reads what is actually stored.
-  `sha256(bytea)` has been built in since PostgreSQL 11 and this table is PostgreSQL-only
-  by construction, so there is no extension and no portability cost; hashing in the server
-  means neither verification nor the re-check below moves the bytes back over the wire; and
-  no write path acquires a field it must maintain forever for one one-off command's sake.
-  Migration **0258 stays as it is** — the reasoning is recorded in it, as a comment saying
-  why the column is absent.
+  content, so it would agree with the content by construction. It can prove a row is self
+  consistent, never that the row holds the file — which is exactly the claim this command
+  has to make. `encode(sha256(content), 'hex')` reads what is actually stored.
 
-  Three things follow. The skip path distinguishes **`verified … (already imported,
-  content verified)`** from **`replaced … (differs, re-imported)`**, so the log says which
-  claim was made about each file. Every file the command writes is **read back and hashed
-  before it is counted**, so one run stands behind its own result rather than needing a
-  second to confirm it. And **`--verify`** runs the same comparison writing nothing, exiting
-  1 with `DIFFERS` or `MISSING` per file — the check to run against the old volume before
-  removing it, since the operator's evidence there is an exit code. An unrecognised argument
-  is now refused rather than ignored, because a mistyped `--verify` that silently imported
-  would be a surprise in precisely that situation.
+  `sha256(bytea)` has been built in since PostgreSQL 11, and this table is PostgreSQL-only
+  by construction, so there is no extension and no portability cost. Hashing in the server
+  also means neither verification nor the re-check below moves the bytes back over the
+  wire, and no write path acquires a field it must maintain forever for one one-off
+  command's sake. Migration **0258 stays as it is** — the reasoning is recorded in it, as a
+  comment saying why the column is absent.
+
+  Three things follow:
+
+  - The skip path distinguishes **`verified … (already imported, content verified)`** from
+    **`replaced … (differs, re-imported)`**, so the log says which claim was made about
+    each file.
+  - Every file the command writes is **read back and hashed before it is counted**, so one
+    run stands behind its own result rather than needing a second to confirm it.
+  - **`--verify`** runs the same comparison writing nothing, exiting 1 with `DIFFERS` or
+    `MISSING` per file — the check to run against the old volume before removing it, since
+    the operator's evidence there is an exit code.
+
+  An unrecognised argument is now refused rather than ignored, because a mistyped
+  `--verify` that silently imported would be a surprise in precisely that situation.
 - **A suite phase, `run-tests.sh files`.** The gap the section below recorded — that no
   test in the repository covered any of this — is now closed for the importer, which is the
-  piece the finding was about. `.devtools/pgsql/files-import-tests.php` seeds a storage tree,
-  drives the shipped command as a subprocess so its exit codes are what is asserted, and
+  piece the finding was about. `.devtools/pgsql/files-import-tests.php` seeds a storage tree
+  and drives the shipped command as a subprocess so its exit codes are what is asserted. It
   checks the two cases a length comparison gets wrong: a source file rewritten at the same
   length, and a row whose `content` is replaced while `size_bytes` is left right. It also
   asserts the stored digests against the files directly rather than against the command's
@@ -329,16 +342,19 @@ while this was in flight. Nothing else about the schema moved.
   repository's own `dev` image (PHP 8.5) against `postgres:16`, reproduced with
   `podman build --target dev -t victual:dev .` and
   `podman run --rm --network <net> -e PGHOST=… victual:dev .devtools/pgsql/run-tests.sh`:
-  **SUITE PASSED**, all six phases, 27 of 27 cases in the new one. The phase was then
-  checked for being load-bearing rather than decorative, the same way the
-  `ENGINE_EXCLUSIVE_TABLES` exemption was: putting the size comparison back —
+  **SUITE PASSED**, all six phases, 27 of 27 cases in the new one.
+
+  The phase was then checked against a reverted fix, the same way the
+  `ENGINE_EXCLUSIVE_TABLES` exemption was checked. Putting the size comparison back —
   `if ($sizeInDatabase === $sizeOnDisk)` in place of the digest comparison, and nothing
   else — fails **11** of the 27, among them *the corrupted row now holds the file* and
   *every stored digest matches its file*. What that variant prints while failing is the
   whole finding in one line: it reports `verified … (already imported, content verified)`
   and `Every file above was read back from the database and matched its bytes on disk`
-  over content that is not the file. `php -l` on PHP 8.4 is clean on the command — which
-  CI's sweep does not reach, having no `.php` extension — and on all 204 `.php` files.
+  over content that is not the file.
+
+  `php -l` on PHP 8.4 is clean on the command — which CI's sweep does not reach, having no
+  `.php` extension — and on all 204 `.php` files.
 - **A path that cannot be read is a failure, never an absence — the same finding wearing
   different clothes, found by review of the fix above.** `ListDirectory()` folded
   `scandir()`'s `false` into an empty array, so a source directory that could not be read
@@ -347,9 +363,9 @@ while this was in flight. Nothing else about the schema moved.
   `--verify` answered `Verified 5, differing 0, missing 0, failed 0.` and **exit 0** — a
   go-ahead to delete the only copy of a file the command had never seen.
 
-  The pattern is worth naming, because it is the one to look for in anything added here
-  later and it is what both findings have in common: **a failure that returns a falsy or
-  empty value takes on the meaning of a legitimate answer**, in a command whose answer an
+  The pattern is worth naming, because it is what both findings have in common and the
+  one to look for in anything added here later. **A failure that returns a falsy or empty
+  value takes on the meaning of a legitimate answer**, in a command whose answer an
   operator acts on irreversibly. Size that cannot establish equality reported "already
   imported"; a listing that failed reported "nothing there".
 
@@ -357,15 +373,18 @@ while this was in flight. Nothing else about the schema moved.
   named. `ListDirectory()` now returns `null` on failure and `[]` only for a directory that
   really was read and really is empty — the distinction requirement, and an empty group
   stays a success. The three callers count a `null` as a failure and name the path on
-  stderr. The `is_dir($storagePath)` gate no longer answers "nothing to import" for a path
-  it merely could not stat: it lists the *data* directory to tell "absent" from
-  "unreadable", since an entry that is there is there whether or not anything about it can
-  be read. An entry the listing returned but which is neither `is_dir` nor `is_file` — an
-  unreadable group, a dangling symlink — is a failure rather than a silent skip, because
-  what it holds is unknown and unknown is not empty. `filesize()` and `hash_file()`
-  returning `false` were already counted as failures when the digest work landed, and
-  `fopen()` still is; a directory nested inside a group is reported rather than silently
-  passed over, but is not counted, because it *was* read.
+  stderr.
+
+  The `is_dir($storagePath)` gate no longer answers "nothing to import" for a path it
+  merely could not stat: it lists the *data* directory to tell "absent" from "unreadable",
+  since an entry that is there is there whether or not anything about it can be read. An
+  entry the listing returned but which is neither `is_dir` nor `is_file` — an unreadable
+  group, a dangling symlink — is a failure rather than a silent skip, because what it holds
+  is unknown and unknown is not empty.
+
+  `filesize()` and `hash_file()` returning `false` were already counted as failures when
+  the digest work landed, and `fopen()` still is. A directory nested inside a group is
+  reported rather than silently passed over, but is not counted, because it *was* read.
 
   `failed` was already printed in both summaries and already forced exit 1 in both; what
   changed is that it now actually gets incremented for unreadable paths, and that a
@@ -379,12 +398,13 @@ while this was in flight. Nothing else about the schema moved.
   before, covering the empty-but-readable group, the unclassifiable entry, and the
   reviewer's own scenario. The last of those is run as **`www-data` (uid 33) via `su -p`**,
   because mode 000 means nothing to the root the suite runs as; the probe reports a `skip`
-  line rather than a pass if it is ever run somewhere that cannot drop privileges. Broken
-  twice to check the new cases are load-bearing: restoring `return [];` in `ListDirectory`
-  fails **7**, and it fails them by printing exactly what the review reported —
-  `Verified 5, differing 0, missing 0, failed 0.` over a mode 000 directory holding an
-  unimported file. Restoring the old unconditional "not a group directory" skip fails a
-  further **6**. `php -l` clean on the command and on all 204 `.php` files.
+  line rather than a pass if it is ever run somewhere that cannot drop privileges.
+
+  Broken twice to confirm the new cases fail without the fix: restoring `return [];` in
+  `ListDirectory` fails **7**, and it fails them by printing exactly what the review
+  reported — `Verified 5, differing 0, missing 0, failed 0.` over a mode 000 directory
+  holding an unimported file. Restoring the old unconditional "not a group directory" skip
+  fails a further **6**. `php -l` clean on the command and on all 204 `.php` files.
 - **`68d1162` — the suite exemption.** `files` is the first engine-exclusive *table*
   (`0256.sqlite.sql` was a view change), so `migratedifftest.php` — the phase that
   compares table sets — failed on it. It is now excluded by a named
@@ -403,13 +423,12 @@ one on `FILE_STORAGE=filesystem` and one on `database`, plus a scratch checkout 
 The scripts were throwaway rather than committed fixtures, so each is described in the
 form that reproduces it.
 
-1. **The header matrix, three ways, and it is the load-bearing check.** A script drives
-   upload, serve, downscale and delete of a 217 KB JPEG, a 78 KB PNG, a real PDF and a
-   text file across four groups, plus the refusal cases (re-upload of an existing name,
-   HTML under a `.png` name, a disallowed extension, a missing file, an invalid group, a
-   download-name pair, `force_serve_as=picture` on a PDF), and prints the status line and
-   the `Content-Type`, `Content-Disposition`, `Cache-Control` and `X-Content-Type-Options`
-   headers for each.
+1. **The header matrix, run three ways.** A script drives upload, serve, downscale and
+   delete of a 217 KB JPEG, a 78 KB PNG, a real PDF and a text file across four groups. It
+   also drives the refusal cases: re-upload of an existing name, HTML under a `.png` name,
+   a disallowed extension, a missing file, an invalid group, a download-name pair, and
+   `force_serve_as=picture` on a PDF. It prints the status line and the `Content-Type`,
+   `Content-Disposition`, `Cache-Control` and `X-Content-Type-Options` headers for each.
 
    Run against the unmodified `4d9e03b`, against this branch's filesystem backend, and
    against its database backend, the three outputs are **identical apart from the label
@@ -445,8 +464,8 @@ form that reproduces it.
    32/64/99/250/400/401/800/99999 return five distinct images and create exactly five
    cached variants: 99 snaps to 64, 401 to 400, 99999 to 800.
 4. **The importer.** A storage directory of seven files across all five groups, including
-   two cached downscales and a stray file at the storage root: the first run imports seven
-   and reports the stray as not a group directory, the second run skips seven, the row
+   two cached downscales and a stray file at the storage root. The first run imports seven
+   and reports the stray as not a group directory; the second run skips seven. The row
    count and every `size_bytes` match the files on disk, every stored content `md5` matches
    its file, the downscales carry `is_derivative = 1`, and a deliberately corrupted row is
    *replaced* rather than skipped. Both refusals (filesystem backend, sqlite driver) exit 1.
@@ -455,15 +474,15 @@ form that reproduces it.
    was corrupted by changing its length.** Had it been corrupted at the same length, the
    run would have skipped it and this check would have passed anyway — which is the finding
    above, visible in the shape of the check that missed it. The replacement for it is the
-   suite phase, and *that* has not been run: see below.
+   suite phase (`run-tests.sh files`), which this check does not exercise.
 5. **The configuration rejections.** `FILE_STORAGE=database` with `DB_DRIVER=sqlite`, and
    with `MODE=demo`, are both refused at startup by `bin/victual-migrate` (exit 1) and by
    the web application (which serves the message instead of a page), as is a
    `FILE_STORAGE` that is neither name and a `FILE_STORAGE_MAX_SIZE_MB` of 0.
 6. **The differential suite.** `.devtools/pgsql/run-tests.sh`, all five phases that existed
    then, against this working copy: **SUITE PASSED**, including `MIGRATION NUMBERING OK`
-   and `MIGRATED STATE IDENTICAL`. The exemption was checked for being load-bearing rather
-   than decorative: emptying `ENGINE_EXCLUSIVE_TABLES` makes the migration phase fail with
+   and `MIGRATED STATE IDENTICAL`. The exemption was checked against a reverted state:
+   emptying `ENGINE_EXCLUSIVE_TABLES` makes the migration phase fail with
    `DIFF table files exists on PostgreSQL only`. The sixth phase, `files`, was added later
    and is not covered by this run.
 7. **`bin/victual-db-import` into a target carrying the `files` table.** A migrated SQLite
@@ -473,7 +492,7 @@ form that reproduces it.
 8. **The barcode-lookup picture write**, which the header matrix does not reach. A scratch
    lookup plugin returning a `data:image/jpeg;base64,…` URL (no network, which the agent
    proxy would deny anyway) drove `POST /api/stock/barcodes/external-lookup/{barcode}?add=true`
-   on both backends: the picture lands as a 217141 byte file on one and a 217141 byte row
+   on both backends. The picture lands as a 217141 byte file on one and a 217141 byte row
    with `mime_type = image/jpeg` on the other, the product row points at it, and the exact
    thumbnail URL the products page emits (`?force_serve_as=picture&best_fit_width=64&best_fit_height=64`)
    returns 200 `image/jpeg`, 2478 bytes, on both.
@@ -488,9 +507,10 @@ form that reproduces it.
   upload/serve/downscale/delete cycle writes nothing under the data directory.
 - **No test in the repository covers the files *API*.** Every check above is a throwaway
   script; the importer now has a suite phase, but the endpoints do not. The files API has
-  no home in the differential suite — it is an application endpoint, not a view — and 14
-  piece 2's response snapshot is where these headers should eventually be frozen, since the
-  header table in check 1 is exactly the kind of thing that snapshot exists to hold.
+  no home in the differential suite, since it is an application endpoint rather than a
+  view. 14 piece 2's response snapshot is where these headers should eventually be
+  frozen — the header table in check 1 is exactly the kind of thing that snapshot exists
+  to hold.
 - **The `upload_max_filesize` clamp was only exercised downward.** This environment's PHP
   accepts 2 MB, so the 64 MB default is never the binding constraint here and a genuine
   64 MB upload was never made.

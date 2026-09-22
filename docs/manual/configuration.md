@@ -43,7 +43,11 @@ setting's allowed values or cross-setting requirements matter, they are noted be
 
 | Setting | Default | Notes |
 |---|---|---|
-| `VIEWCACHE_PATH` | `<data path>/viewcache` | Where compiled Blade templates, the route cache and the HTML sanitizer's definition cache go. Everything under this path is derived from the source tree and can be deleted and rebuilt at any time. A container image points this at an image-local path baked at build time with `bin/victual-warm-cache` and mounted read-only, so the data directory is the only writable path left. |
+| `VIEWCACHE_PATH` | `<data path>/viewcache` | Where compiled Blade templates, the route cache and the HTML sanitizer's definition cache go. Everything under this path is derived from the source tree and can be deleted and rebuilt at any time. |
+
+A container image points `VIEWCACHE_PATH` at an image-local path baked at build time with
+`bin/victual-warm-cache` and mounted read-only, so the data directory is the only writable
+path left.
 
 ## File storage {: #file-storage }
 
@@ -52,14 +56,22 @@ manuals — are kept.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `FILE_STORAGE` | `filesystem` | `filesystem` puts files below `<data path>/storage`, one folder per group. `database` stores them as `BYTEA` rows instead, so the application directory needs no persistent volume and one `pg_dump` captures a file and the row pointing at it together. Requires `DB_DRIVER` `pgsql`, and is refused in `demo`/`prerelease` mode (those instances share a storage path by suffix, and the files table has no column for it). Switching does **not** move existing files: run `php bin/victual-files-import` once, then `php bin/victual-files-import --verify` before removing the old storage directory. |
+| `FILE_STORAGE` | `filesystem` | `filesystem` puts files below `<data path>/storage`, one folder per group. `database` stores them as `BYTEA` rows instead, so the application directory needs no persistent volume and one `pg_dump` captures a file and the row pointing at it together. Requires `DB_DRIVER` `pgsql`, and is refused in `demo`/`prerelease` mode (those instances share a storage path by suffix, and the files table has no column for it). |
 | `FILE_STORAGE_MAX_SIZE_MB` | `64` | The largest upload accepted, for either backend. The value actually enforced is the smallest of this setting, PHP's `upload_max_filesize` and `post_max_size` — raise those `php.ini` directives too if you raise this. `GET /api/system/config` reports the effective value, not this one, and the migrate step's log says when a `php.ini` directive is the one that binds. |
+
+Switching `FILE_STORAGE` does **not** move existing files: run
+`php bin/victual-files-import` once, then `php bin/victual-files-import --verify` before
+removing the old storage directory.
 
 ## Database migrations {: #database-migrations }
 
 | Setting | Default | Notes |
 |---|---|---|
-| `MIGRATE_ON_ROOT_REQUEST` | `false` | Allows a request to `/` to run pending migrations. Off by default: migrating is something a deployment's init step does, not something that happens to whoever loads the page first. Turn this on only if you run from a stock image with no init step. Either way, an application that finds the schema out of date refuses to serve rather than guessing. |
+| `MIGRATE_ON_ROOT_REQUEST` | `false` | Allows a request to `/` to run pending migrations. Off by default: migrating is something a deployment's init step does, not something that happens to whoever loads the page first. |
+
+Turn `MIGRATE_ON_ROOT_REQUEST` on only if you run from a stock image with no init step.
+Either way, an application that finds the schema out of date refuses to serve rather than
+guessing.
 
 ## Localization and display {: #localization-and-display }
 
@@ -104,9 +116,13 @@ manuals — are kept.
 | `REVERSE_PROXY_AUTH_TRUSTED_PROXIES` | *(empty)* | Comma-separated IPs/CIDR ranges allowed to set the username header, e.g. `10.42.0.0/16, 192.168.1.10`. Required in header mode — without it, anyone who can reach Victual directly can authenticate as any user. Not used when `REVERSE_PROXY_AUTH_USE_ENV` is true. Your proxy must also strip this header from inbound requests before setting its own. |
 | `LOGIN_THROTTLE_MAX_ATTEMPTS` | `10` | Failed logins allowed against one username inside the window below before further attempts are refused — answered exactly like a wrong password, so hitting the limit tells nothing to whoever is guessing. `0` disables the throttle. The count is per username, not per source address, and lives in the database so it survives the process scaling to zero. |
 | `LOGIN_THROTTLE_WINDOW_MINUTES` | `15` | The window the above count resets over; a successful login also clears it. |
-| `API_KEY_MAX_LIFETIME_DAYS` | `365` | The longest lifetime a regular API key may be given at creation (issue #130). The manage-keys screen offers a lifetime up to this many days; a value beyond it is clamped rather than refused. Applies to the default API key type only — the calendar sharing key and the label worker/verifier/renderer credentials each already have their own expiry and rotation story and are unaffected. |
+| `API_KEY_MAX_LIFETIME_DAYS` | `365` | The longest lifetime a regular API key may be given at creation (issue #130). The manage-keys screen offers a lifetime up to this many days; a value beyond it is clamped rather than refused. |
 | `DEFAULT_PERMISSIONS` | `[]` | Permission constants (see [Roles and permissions](operator/roles-permissions.md)) granted to every newly created user. Empty by default and deliberately so — a nonempty default here grants every new account that set of permissions the moment it exists. |
 | `DEFAULT_ROLES` | `[]` | Immutable role codes assigned to new users, e.g. `['CHILD']`. |
+
+`API_KEY_MAX_LIFETIME_DAYS` applies to the default API key type only — the calendar
+sharing key and the label worker/verifier/renderer credentials each already have their own
+expiry and rotation story and are unaffected.
 
 ## Cross-origin requests (CORS) {: #cross-origin-requests-cors }
 
