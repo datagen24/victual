@@ -668,7 +668,7 @@ the second item above, measured rather than reasoned about.
 **Verification 4 now runs in CI**, in the `images` job, as the step *"The production image
 serves with a read-only root filesystem"*. It runs the production image with `--read-only`
 and tmpfs mounts for exactly the three paths above and nothing else, migrates through
-`bin/victual-migrate` (nothing migrates inside a request any more), and waits for
+`bin/victual-migrate` rather than through a request, and waits for
 `/stockoverview`. It then exercises the two paths the finding names: a 200×200 PNG
 uploaded and re-fetched with `best_fit_width=64`, which is the `tempnam` path, and a
 3 MiB body through the upload API, which is over the old clamp.
