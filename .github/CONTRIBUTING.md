@@ -76,10 +76,11 @@ judged against here, and they are stricter than they look:
 The [pull request template](PULL_REQUEST_TEMPLATE.md) asks for exactly those three.
 
 **If a change makes an architectural decision on its way to shipping, leave an
-[ADR](../docs/adr/README.md) behind.** The first two ground rules above are themselves
-ADRs — [0005](../docs/adr/0005-wire-contract-is-the-invariant.md) and
-[0004](../docs/adr/0004-engine-specific-migrations.md). Those two records are the test
-for whether a decision belongs in an ADR: a decision that constrains later work,
+[ADR](../docs/adr/README.md) behind.** The Additive API and Migrations 0256-0265 ground
+rules above are themselves ADRs —
+[0005](../docs/adr/0005-wire-contract-is-the-invariant.md) and
+[0004](../docs/adr/0004-engine-specific-migrations.md) respectively. Those two records are
+the test for whether a decision belongs in an ADR: a decision that constrains later work,
 recorded once and cited from wherever it applies, rather than explained again in each
 plan that runs into it.
 
