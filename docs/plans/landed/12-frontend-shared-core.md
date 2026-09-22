@@ -8,8 +8,9 @@ those copies have already accumulated.
 copy from.
 **Status:** **landed in full**, steps 1 to 6, with all seven verification checks. Step 3a —
 sweep finding **S29**, a High stored-XSS class across ~45 sites assigned here on 2026-08-30 —
-is **closed**, proved with a stored payload, not by reading the diff. Steps 5 and 6 carried
-no security content.
+is **closed for the first pass**, proved with a stored payload rather than by reading the
+diff. The second pass's `recipeform-note` and `error-details` probes are written but have
+not run against the application. Steps 5 and 6 carried no security content.
 
 See [Executed — steps 1 and 2](#executed--steps-1-and-2-and-the-baseline),
 [Executed — steps 3, 3a and 4](#executed--steps-3-3a-and-4) and
@@ -790,7 +791,8 @@ error argument at all.
 `Victual.EntityList.ConfirmDelete` takes the entity name as data and escapes it on the way
 into the message, so no caller can pass markup through it; `Victual.FrontendHelpers.EscapeHtml`
 is the new function form of the tree's existing `String.prototype.escapeHTML`, which throws on
-the `null` that `.attr()` returns for a missing attribute.
+the `undefined` that `.attr()` returns for a missing attribute; the function form returns the
+empty string for `null` and `undefined` alike.
 
 By hand:
 
