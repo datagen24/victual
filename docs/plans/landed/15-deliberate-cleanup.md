@@ -6,6 +6,7 @@ plans one item at a time.
 **Depends on:** [11](../11-api-error-handling.md) for the auth middleware ordering (do the
 ordering fix there, the refactor here);
 [14](14-contract-and-regression-scaffolding.md) for anything verified by result-set diff.
+
 **Status:** Landed 2026-09-17, [issue 132](https://github.com/datagen24/victual/issues/132).
 Deliberately a grab bag — see "Why one plan" below. 15-B2 (session cookie) landed early,
 in the wave 0.5 hotfix; see its Executed note. B3 declined (Q5), B4 not applicable (Q4
@@ -26,10 +27,11 @@ rather than complete — see C8 and C10's own Executed notes below.
 
 ## Why one plan
 
-Every item here is individually too small to justify a plan and individually easy to
-defer forever. They also share a property that makes batching them the right call: about
-half of them are **breaking**, and breaking changes want to happen together, once, with a
-changelog entry, rather than dribbling out attached to unrelated features.
+Every item here is individually too small to justify a plan, and none has a forcing
+function that would ever pull it off the backlog on its own. They also share a property
+that makes batching them the right call: about half of them are **breaking**, and breaking
+changes want to happen together, once, with a changelog entry, rather than dribbling out
+attached to unrelated features.
 
 The review response to [05](../05-store-shopping-lists.md) Q4 already established this for
 the `shopping_locations` → `stores` rename: park it on an explicit "breaking changes,
@@ -53,7 +55,7 @@ Grouped by whether they change behaviour anyone can observe.
 | C8 | **Mostly done, 2026-09-17** — Request data read three ways: PSR-7 `getQueryParams()` (most controllers), slim/http `getQueryParam()` (`GrocycodeTrait`, `ApiKeyAuthMiddleware`), raw superglobals (`BaseController:84` `$_GET['embedded']`, `ReverseProxyAuthMiddleware:47,53` `$_SERVER`, `ApplicationService:94`, `UrlManager:58-63`) | across |
 | C9 | **Done, 2026-09-17** — five `new Service()` sites against the otherwise universal `GetInstance()` convention (~320 sites): three in `DemoDataGeneratorService` (`StockService`, `ChoresService`, `BatteriesService`), one in `SqliteDialect` (`UsersService`), and `middleware/Auth/ApiKeyAuthMiddleware.php:46` (`ApiKeyService`, done with C1) | services |
 | C10 | **Bookkeeping half done, 2026-09-17** — `UndoBooking`'s switch repeats the same undo-bookkeeping block seven times; `StockService` returns LessQL rows from most methods and plain `stdClass` from the raw-SQL ones, so callers must know which they got | `services/StockService.php` |
-| C11 | **Done, 2026-09-17** — Delete `update.sh` — it runs `rm -rf !(data|update.sh)` and then unpacks an unsigned `releases.grocy.info/latest` zip over the result, which is upstream Grocy and would destroy this fork's schema. `.devtools/create_release_package.bat` goes with it: this fork cuts no releases. Sweep S13, rigor review H3 | `update.sh`, `.devtools/create_release_package.bat` |
+| C11 | **Done, 2026-09-17** — Delete `update.sh` — it runs `rm -rf !(data\|update.sh)` and then unpacks an unsigned `releases.grocy.info/latest` zip over the result, which is upstream Grocy and would destroy this fork's schema. `.devtools/create_release_package.bat` goes with it: this fork cuts no releases. Sweep S13, rigor review H3 | `update.sh`, `.devtools/create_release_package.bat` |
 | C12 | **Done, 2026-09-17** — `DatabaseService::InTransaction`'s docblock points at "`DatabaseDialect` for the per-engine locking used around migrations"; no such method exists there and none is planned before [10](10-cold-start-statelessness.md) builds one. Reword to name 10, or make the `@see` resolve. Rigor review A4 | `services/DatabaseService.php` |
 | C13 | **Done, 2026-09-17** — `.gitignore`'s `/.phpdoc` is anchored to the repository root, so a phpDocumentor run in a subdirectory leaves untracked output — `branding/.phpdoc/` is the live case. Unanchor it to `.phpdoc/`. Rigor review H1 | `.gitignore` |
 | C14 | **Done, 2026-09-17** — CI lints PHP with `php -l` and never runs the `node --check` sweep over `public/**/*.js` that [14](14-contract-and-regression-scaffolding.md) piece 3 specifies. Add it, or amend 14 — but not neither, which is where it has sat. Rigor review A9 | `.github/workflows/tests.yml` |
@@ -258,7 +260,7 @@ edit.
 ### C8 — request data access
 
 Standardise on PSR-7 `getQueryParams()`. The `$_SERVER` reads are the interesting ones,
-not the query-parameter ones: `ReverseProxyAuthMiddleware` reads the auth header from
+not the query-parameter ones. `ReverseProxyAuthMiddleware` reads the auth header from
 `$_SERVER` rather than from the request, which is the difference between "the header the
 proxy set" and "whatever the SAPI put in the array" — a security-relevant distinction in
 the one middleware where it matters most. `UrlManager:58-63` mutates `$_SERVER['HTTPS']`
@@ -356,10 +358,10 @@ rather than the original architecture review, and none had its own proposed-chan
 write-up; recorded together here for the same reason.
 
 **C11.** `update.sh` and `.devtools/create_release_package.bat` are deleted. Closes
-**sweep S13**. The two places that pointed at this plan for the deletion question -
+**sweep S13**. Two places pointed at this plan for the deletion question:
 [16](../16-project-rename.md)'s "kept verbatim... a deletion question, which is 15's
-business" checklist item and the architecture rigor review's H3 row - are both updated to
-say so rather than left describing a file that no longer exists.
+business" checklist item, and the architecture rigor review's H3 row. Both are now updated
+to say so, rather than left describing a file that no longer exists.
 
 **C12.** `DatabaseService::InTransaction`'s docblock no longer says "see `DatabaseDialect`
 for the per-engine locking used around migrations" as unresolvable prose - it is now
@@ -383,7 +385,7 @@ this adds it rather than amending 14.
 
 Delete `middleware/Auth/LdapAuthMiddleware.php` and the six `LDAP_*` settings from
 `config-dist.php`. Q1 covers whether a stub remains that fails with a pointer to
-reverse-proxy auth, versus `AUTH_CLASS` simply not resolving.
+reverse-proxy auth, versus `AUTH_CLASS` not resolving to any class at all.
 
 Note the interaction with the defects table: item 2's `/api/system/config` allowlist means
 the `LDAP_*` settings are no longer exposed, so removing them has no API consequence — a
@@ -458,8 +460,8 @@ C3, which is in this section for exactly that reason — a cleanup that reaches
 `/api/system/info` is not a cleanup, and Q6 decides whether `sqlite_version` gains a
 sibling or loses its meaning. The breaking table below *is* the client-impact line for the
 rest, and B3 is the largest single client break available anywhere on the roadmap: it
-changes response *fields* on `stock`, `stock_log` and `shopping_list`, not just a path,
-which is why both 05-Q4 and 15-Q5 declined it and why
+changes response *fields* on `stock`, `stock_log` and `shopping_list`, not just a path.
+That is why both 05-Q4 and 15-Q5 declined it, and why
 [the MCP spec](../../mcp-interface-spec.md) now uses `shopping_location_id` rather than
 minting a second name for it.
 
