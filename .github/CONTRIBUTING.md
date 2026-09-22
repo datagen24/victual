@@ -42,8 +42,8 @@ judged against here, and they are stricter than they look:
   differential suite replays that range. A portable `NNNN.sql`, a per engine
   `NNNN.sqlite.sql` / `NNNN.pgsql.sql` pair, or a documented engine-exclusive migration.
   The third shape is the one that is easy to get wrong: ship a lone engine-specific file
-  only when you can say in the file itself why the other engine is already correct, with an
-  `@engine-exclusive` comment — `check-migrations.php` refuses one without it, because a
+  only when the file itself says why the other engine is already correct, in an
+  `@engine-exclusive` comment. `check-migrations.php` refuses one without it, because a
   missing counterpart and a deliberate omission look identical in a directory listing. An
   engine-specific file that shadows a portable one of the same number likewise has to say
   `@overrides-generic`. See [db/pgsql/README.md](../db/pgsql/README.md), which holds the
@@ -76,11 +76,13 @@ judged against here, and they are stricter than they look:
 The [pull request template](PULL_REQUEST_TEMPLATE.md) asks for exactly those three.
 
 **If a change makes an architectural decision on its way to shipping, leave an
-[ADR](../docs/adr/README.md) behind.** The first two ground rules above are themselves
-ADRs — [0005](../docs/adr/0005-wire-contract-is-the-invariant.md) and
-[0004](../docs/adr/0004-engine-specific-migrations.md) — which is the test for whether
-something belongs there: a decision that constrains later work, recorded once and cited
-from wherever it applies, rather than explained again in each plan that runs into it.
+[ADR](../docs/adr/README.md) behind.** The Additive API and Migrations 0256-0265 ground
+rules above are themselves ADRs —
+[0005](../docs/adr/0005-wire-contract-is-the-invariant.md) and
+[0004](../docs/adr/0004-engine-specific-migrations.md) respectively. Those two records are
+the test for whether a decision belongs in an ADR: a decision that constrains later work,
+recorded once and cited from wherever it applies, rather than explained again in each
+plan that runs into it.
 
 ## API documentation
 
