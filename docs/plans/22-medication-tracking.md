@@ -4,20 +4,25 @@
 regimen drawing on a shared physical supply — rather than as groceries that happen never to
 appear in a recipe. Scheduling, adherence, days-of-supply, lot traceability and cold chain,
 built on the stock subsystem rather than beside it.
+
 **Depends on:** [23](landed/23-storage-classes.md) (the storage vocabulary, extracted from this plan
 per Q1) and [14](landed/14-contract-and-regression-scaffolding.md) piece 2 (this surface is invisible
 to the parity suite and contract tests are its only guard). Builds on
 [12](landed/12-frontend-shared-core.md), landed. **Not** blocked on [19](19-rbac.md) — Q5 decided
 this ships its own narrow visibility enforcement and becomes a client of 19 later.
+
 **Governed by:** [ADR-0015](../adr/0015-medication-records-never-advises.md) (scope boundary)
 and [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md) (where expansion lives),
 both **Proposed** and written alongside this plan.
+
 **Consumes:** [ADR-0011](../adr/0011-label-namespace.md), **accepted 2026-09-04**, for labels
 — this plan proposes no code format of its own — and answers its still-open Q3 for the
 medication case. Constrained by [ADR-0012](../adr/0012-observations-are-proposals.md), also
 accepted 2026-09-04, wherever an inference about stock would otherwise be written as fact.
+
 **Affects:** [02](02-mcp-endpoint.md) — the interface spec is still a draft and should decide
 medication exposure now rather than retrofit it.
+
 **Status:** draft for review.
 
 ## Today
@@ -26,18 +31,21 @@ There is no medication concept. A vitamin is a product, a bottle is a stock entr
 one is a consume booking. That works, and about a third of what this plan needs is already in
 the tree — which is the reason to build on stock rather than alongside it.
 
-**What already fits.** `products.due_type = 2` is hard expiry.
-`default_best_before_days_after_open` is a beyond-use date and `OpenProduct` already applies
-it, capped so it can never exceed the original due date
-(`StockService.php:1466`) — the 28-day inhaler and the
-30-day pierced vial are this field, not new machinery. `move_on_open` plus
-`default_consume_location_id` moves a vial from the fridge to the in-use tray on opening.
-`hide_on_stock_overview` keeps medications out of the general stock view.
-`not_check_stock_fulfillment_for_recipes` keeps them out of recipe fulfilment.
-`quantity_unit_conversions` is per-product, so "1 bottle = 90 tablets" and "1 mL = 100 mg" are
-expressible today. Consumption is FEFO by default, which is the correct order for drugs.
-`stock_log` carries `transaction_id`, `correlation_id` and an `undone`/`undone_timestamp`
-pair, so the audit trail and its reversal already exist.
+**What already fits.**
+
+- `products.due_type = 2` is hard expiry.
+- `default_best_before_days_after_open` is a beyond-use date and `OpenProduct` already applies
+  it, capped so it can never exceed the original due date (`StockService.php:1466`) — the 28-day
+  inhaler and the 30-day pierced vial are this field, not new machinery.
+- `move_on_open` plus `default_consume_location_id` moves a vial from the fridge to the in-use
+  tray on opening.
+- `hide_on_stock_overview` keeps medications out of the general stock view.
+- `not_check_stock_fulfillment_for_recipes` keeps them out of recipe fulfilment.
+- `quantity_unit_conversions` is per-product, so "1 bottle = 90 tablets" and "1 mL = 100 mg" are
+  expressible today.
+- Consumption is FEFO by default, which is the correct order for drugs.
+- `stock_log` carries `transaction_id`, `correlation_id` and an `undone`/`undone_timestamp`
+  pair, so the audit trail and its reversal already exist.
 
 **What does not.** No person dimension — `users` requires `password NOT NULL`, so a child or a
 pet cannot be represented without minting a credentialed account. No lot number: `stock` has
@@ -93,11 +101,12 @@ a printing preference here; it is what makes piece 2 correct.
 
 ### Piece 2 — Lot, cold chain and the stock entry
 
-New `medication_stock_attributes`, keyed on **`stock_id`, not `stock.id`**. This is the
-load-bearing schema decision in the plan. `stock.id` is a row that splits on partial open and
-is deleted when consumed to zero; `stock_id` is the `uniqid` string carried into every
-`stock_log` booking, so it is the only identifier under which a lot survives the bottle being
-finished — which is exactly when a recall notice arrives.
+New `medication_stock_attributes`, keyed on **`stock_id`, not `stock.id`**. `stock.id` is a
+row that splits on partial open and is deleted when consumed to zero; `stock_id` is the
+`uniqid` string carried into every `stock_log` booking, so it is the only identifier under
+which a lot survives the bottle being finished — which is exactly when a recall notice
+arrives. Keying the table on `stock.id` instead would lose that lot record at the one moment
+it is needed.
 
 Columns: `lot_number`, `serial_number`, `national_code` (NDC/DIN/PZN), manufacturer,
 `reconstituted_date`, `first_pierced_date`, `quarantined`, `quarantine_reason`.
@@ -125,7 +134,7 @@ confirms, never as a booking.
 
 That is a reason to keep v1 flagging only (Q8) beyond the alarm-fatigue argument. 0012's
 acceptance decided the contract and not the schedule — no `proposals` table exists, no
-endpoint exists, and no plan owns the work — so a v1 that wanted automatic quarantine would
+endpoint exists, and no plan owns the work. So a v1 that wanted automatic quarantine would
 have to build 0012's machinery first, for one caller, ahead of any plan that owns it.
 
 The application records the excursion, surfaces it against the entries that were resident, and
@@ -178,12 +187,13 @@ subset check cannot reason about it either. That is fine as long as visibility s
 It stops being fine the moment this plan grows a *grant*: a table saying "user X may see
 subject Y" would be a permission wearing a different shape, invisible to
 `User::CheckMayGrant()`, and an account could hand out access its own administrator could not
-see it holding. That is precisely the failure ADR-0014 exists to close. So the rule for this
-plan is that per-subject access is either **derived from the `subjects.user_id` link and the
-`MEDICATIONS_ALL` permission, or it is a real permission in `permission_hierarchy`** — never a
-third grant mechanism beside them. Worth stating now, because the natural next feature request
-after this ships is "let my partner see my regimens too", and the obvious implementation is the
-one that must not be built.
+see it holding. That is precisely the failure ADR-0014 exists to close.
+
+So the rule for this plan is that per-subject access is either **derived from the
+`subjects.user_id` link and the `MEDICATIONS_ALL` permission, or it is a real permission in
+`permission_hierarchy`** — never a third grant mechanism beside them. Worth stating now, because
+the natural next feature request after this ships is "let my partner see my regimens too", and
+the obvious implementation is the one that must not be built.
 
 New permission constants alongside the existing 30 in
 [controllers/Users/User.php](../../controllers/Users/User.php): `MEDICATIONS`,
@@ -202,11 +212,12 @@ morning and 2 at night is expressed.
 
 **A regimen is versioned, not edited.** Changing a dose ends the current regimen and starts a
 new one linked by `previous_regimen_id`. Administrations reference the regimen they were taken
-under, so history stays interpretable against the instruction that was actually in force. Two
-things fall out of this for free: **a taper is a chain of regimens** with consecutive
-start/end dates and needs no separate model, and **the same product at different doses for
-different people** is simply two regimens against one product and one stock pool — the case
-that made a per-product schedule field unworkable in the first place.
+under, so history stays interpretable against the instruction that was actually in force.
+
+Two things fall out of this for free. **A taper is a chain of regimens** with consecutive
+start/end dates and needs no separate model. And **the same product at different doses for
+different people** is two regimens against one product and one stock pool — the case that
+made a per-product schedule field unworkable in the first place.
 
 **Occurrence expansion lives in PHP**, in a new `MedicationService`, not in a view. That is
 [ADR-0016](../adr/0016-schedule-expansion-in-the-application.md)'s subject and the argument is
@@ -309,45 +320,69 @@ Collected because most of them are only visible from inside the existing code.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
 - **Migration numbering.** Two files, claiming **0288** (medication master data and subjects)
-  and **0289** (regimens, administrations, excursions) — 0287–0288 until 2026-09-19, when
-  [issue 208](https://github.com/datagen24/victual/issues/208)'s `api_keys.read_only` took
-  0287 as scheduled work; 0284–0285 until 2026-09-18, when plan
-  05's 0286 merged ahead of them and the hole was closed by writing both as no-ops rather than
-  by moving a file that was already in `master`; see [RESERVATIONS.md](../../migrations/RESERVATIONS.md) — 0275–0276 until 2026-09-14, when the
-  four scheduled wave 4 plans took the lower slots, then 0279–0280 the next day when
-  [issue 148](https://github.com/datagen24/victual/issues/148)'s own defect fix took 0277
-  ahead of plan 30, then 0280–0281 the day after that when
-  [issue 130](https://github.com/datagen24/victual/issues/130) — plan 11's own listed
-  follow-up — took 0280 ahead of this plan, then 0281–0282 the same day when plan 19 piece 2's
-  own migration collided with issue 130's landed 0280 at merge time and moved to the lowest
-  free slot instead, then 0283–0284 later the same day when
-  [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19 piece 2
-  was written as `0282.pgsql.php` and took that slot with a file behind it, and finally
-  **0284–0285** on 2026-09-16 when [plan 32](landed/32-label-kinds.md)'s own migration, written on its
-  branch at 0285, was refused by CI over exactly this hole and renumbered down to 0283 — the
-  same rule applied once more, this time against a file rather than a scheduled plan, with rows
-  added to [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written. 0274
-  belongs to [23](landed/23-storage-classes.md), which lands first. **These numbers have moved
-  thirteen times** — claimed as 0261–0262 until `master` landed 0261, then 0262–0264 until wave
-  2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266, then 0268–0270 to make
-  room for 0267, then 0269–0271 to make room for wave 3b's [03](landed/03-category-min-stock.md), then
-  0272–0273 to make room for wave 3b's [25](25-label-infrastructure.md), then 0273–0275 for
-  [27](landed/27-label-templates-and-rendering.md), then 0275–0276 for
-  [08](landed/08-nested-locations.md), then 0279–0280 for issue 148's fix, then 0280–0281 for
-  issue 130, then 0282–0283 for plan 19 piece 2's collision with it, then 0283–0284 for
-  that plan's own written follow-up, and now 0284–0285 for plan 32's own written migration — so
-  re-read that table at every resync rather than trusting a number this plan claimed a week
+  and **0289** (regimens, administrations, excursions) — see
+  [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
+
+  - 0287–0288 until 2026-09-19, when
+    [issue 208](https://github.com/datagen24/victual/issues/208)'s `api_keys.read_only` took
+    0287 as scheduled work
+  - 0284–0285 until 2026-09-18, when plan 05's 0286 merged ahead of them and the hole was closed
+    by writing both as no-ops rather than by moving a file that was already in `master`
+  - 0275–0276 until 2026-09-14, when the four scheduled wave 4 plans took the lower slots
+  - 0279–0280 the next day, when [issue 148](https://github.com/datagen24/victual/issues/148)'s
+    own defect fix took 0277 ahead of plan 30
+  - 0280–0281 the day after that, when
+    [issue 130](https://github.com/datagen24/victual/issues/130) — plan 11's own listed
+    follow-up — took 0280 ahead of this plan
+  - 0281–0282 the same day, when plan 19 piece 2's own migration collided with issue 130's
+    landed 0280 at merge time and moved to the lowest free slot instead
+  - 0283–0284 later the same day, when
+    [issue 176](https://github.com/datagen24/victual/issues/176)'s follow-up to plan 19 piece 2
+    was written as `0282.pgsql.php` and took that slot with a file behind it
+  - and finally **0284–0285** on 2026-09-16, when [plan 32](landed/32-label-kinds.md)'s own
+    migration, written on its branch at 0285, was refused by CI over exactly this hole and
+    renumbered down to 0283. The same rule applied once more, this time against a file rather
+    than a scheduled plan, with rows added to
+    [RESERVATIONS.md](../../migrations/RESERVATIONS.md) before any file is written
+
+  0274 belongs to [23](landed/23-storage-classes.md), which lands first.
+
+  **These numbers have moved thirteen times.** In order:
+
+  - claimed as 0261–0262 until `master` landed 0261
+  - 0262–0264 until wave 2 landed 0262 through 0265
+  - 0267–0269 until wave 3a took 0266
+  - 0268–0270 to make room for 0267
+  - 0269–0271 to make room for wave 3b's [03](landed/03-category-min-stock.md)
+  - 0272–0273 to make room for wave 3b's [25](25-label-infrastructure.md)
+  - 0273–0275 for [27](landed/27-label-templates-and-rendering.md)
+  - 0275–0276 for [08](landed/08-nested-locations.md)
+  - 0279–0280 for issue 148's fix
+  - 0280–0281 for issue 130
+  - 0282–0283 for plan 19 piece 2's collision with it
+  - 0283–0284 for that plan's own written follow-up
+  - and now 0284–0285 for plan 32's own written migration
+
+  So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
-  numbers, which is the argument for claiming before writing rather than before merging. The
-  last seven are the ones to know about: 0267 went to a defect fix that was already written,
-  0268 to a scheduled plan, issue 148's fix again to a defect fix already being written,
-  issue 130 to plan 11's own follow-up also being written, plan 19 piece 2 a second time
-  to the same migration merging into a `master` that had claimed 0280 out from under it while
-  it was in flight, issue 176's fix to that plan's own review follow-up, which was written
-  and on disk when this table was next read, and plan 32's own migration a second time — first
-  claimed at 0285 without displacing this plan's numbers, then, once CI refused the hole that
-  left, renumbered down to 0283 and this plan moved up again — so this plan's numbers have
-  seven times moved for work that was closer to having a file than this one is.
+  numbers, which is the argument for claiming before writing rather than before merging.
+
+  **The last seven are the ones to know about:**
+
+  - 0267 went to a defect fix that was already written
+  - 0268 to a scheduled plan
+  - issue 148's fix again to a defect fix already being written
+  - issue 130 to plan 11's own follow-up also being written
+  - plan 19 piece 2 a second time, to the same migration merging into a `master` that had
+    claimed 0280 out from under it while it was in flight
+  - issue 176's fix to that plan's own review follow-up, which was written and on disk when this
+    table was next read
+  - and plan 32's own migration a second time — first claimed at 0285 without displacing this
+    plan's numbers, then, once CI refused the hole that left, renumbered down to 0283 and this
+    plan moved up again
+
+  So this plan's numbers have seven times moved for work that was closer to having a file than
+  this one is.
 
   Two files rather than two *pairs*: this plan was written when
   [ADR-0004](../adr/0004-engine-specific-migrations.md) asked for a pair, and ADR-0008's
@@ -391,7 +426,9 @@ Collected because most of them are only visible from inside the existing code.
    trigger-versus-application question about deriving `is_freezer` and was answered
    *application*, overturning its own lean — because its trigger case was
    `bin/victual-db-import`, and an upstream grocy database carries no storage class for a
-   trigger to derive. That argument does not transfer here: this question's trigger case is a
+   trigger to derive.
+
+   That argument does not transfer here: this question's trigger case is a
    `StockService` split site somebody forgets when a fourth is added, in code that already has
    three, which is a live risk rather than a speculative one. So the two may legitimately
    diverge, and 23 Q2's response records why. What must not happen is diverging without
