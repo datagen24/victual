@@ -3,19 +3,23 @@
 **Goal:** Three sealed bags of flour and one open bag holding 1.2 kg is a state the system
 can hold. An opened unit's remaining contents are measured — by weight or by volume,
 whichever the person can actually take — without giving up counting the units themselves.
+
 **Depends on:** [ADR-0022](../../adr/0022-open-containers-carry-a-measured-remainder.md),
 **Accepted** 2026-09-14. Nothing else blocks it.
+
 **Interacts with:** [29](29-working-container-replenishment.md), which takes the location
 half of ADR-0022 decision 4's tare where this plan takes the entry half, and shares nothing
-else; [07](../retired/07-nested-products.md), which rewrites the same aggregation in
-`stock_current`, and with the container decision recorded below that came out of the same
-review. Scheduled into wave 4 beside 07 for that reason.
+else. It also interacts with [07](../retired/07-nested-products.md), which rewrites the same
+aggregation in `stock_current`, and with the container decision recorded below that came out
+of the same review. Scheduled into wave 4 beside 07 for that reason.
+
 **Consumed by:** nothing yet. [22](../22-medication-tracking.md) is the obvious later
 customer — a part-used bottle is the same shape of problem — but that plan is unscheduled
 and this one does not wait for it.
+
 **Status:** landed in wave 4; see [Executed](#executed).
 
-## Why this exists as its own plan
+## Relationship to plan 07
 
 It arrived out of the [07 question 6](https://github.com/datagen24/victual/issues/82)
 review, and it is not part of 07. 07 asks what `parent_product_id` means. This asks where
@@ -25,7 +29,9 @@ review, and it is not part of 07. 07 asks what `parent_product_id` means. This a
 The container decision that came out of that review is recorded here because nothing else
 owns it yet: **per-unit labelling requires a stock unit of pieces, one stock unit per
 product means one product per container size, and a pooled parent supplies the combined
-total.** An 8 oz can, a 12 oz can, a 16 oz bottle and a 2 L bottle of one soda are four
+total.**
+
+An 8 oz can, a 12 oz can, a 16 oz bottle and a 2 L bottle of one soda are four
 products under one parent, not one product measured in fluid ounces. That is a consequence
 of `default_stock_label_type` rather than a preference, and 07's plan should be read against
 it once question 6 is answered.
@@ -54,7 +60,7 @@ if ($newAmount == $productDetails->stock_amount + $containerWeight)
 ```
 
 So the feature is exact where a product has exactly one container — the refillable canister
-it was designed for — and silently wrong the moment a second sealed unit exists beside the
+it was designed for. It is silently wrong the moment a second sealed unit exists beside the
 open one, because the sealed unit's amount is inside `$productDetails->stock_amount` and
 gets subtracted along with the tare. There is also one tare per product, and it is
 denominated in the stock unit, so it only functions where the stock unit is already a
@@ -84,10 +90,11 @@ ADR-0022 open question 4. Its review response recommends storing net contents in
 `opened_amount` and subtracting tare in `opened_qu_id` only when the input is explicitly
 marked gross; the API contract must settle this before implementation.
 
-**`amount = 1` is the load-bearing half.** A `stock` row is not inherently one container.
-`OpenProduct` marks a whole entry open in place when the requested amount covers it, leaving
-`amount` alone (`services/StockService.php:1628-1632`), so three jugs bought without per-unit
-labelling are one row that becomes `open = 1, amount = 3`. One remainder on that row names no
+**The check constraint requires `amount = 1` so a measurement always names one container.** A
+`stock` row is not inherently one container. `OpenProduct` marks a whole entry open in place
+when the requested amount covers it, leaving `amount` alone
+(`services/StockService.php:1628-1632`), so three jugs bought without per-unit labelling are
+one row that becomes `open = 1, amount = 3`. One remainder on that row names no
 particular jug. Measuring an entry holding more than one unit therefore splits it first —
 the operation `OpenProduct`'s else branch already performs when opening part of an entry
 (`:1636`).
@@ -362,41 +369,48 @@ twice.
 
 ## Executed
 
-Landed as `migrations/0275.pgsql.sql`: `stock`/`stock_log` gain the four `opened_*`
-columns, `stock`'s coherence `CHECK` (decision 8), `stock_splits`' third exclusion clause
-(decision 5), `stock_current.amount_measured` (question 3's response), `stock_next_use` and
-`uihelper_stock_entries` rebuilt to project the new columns, and
-`trg_cascade_change_qu_id_stock2` loses its tare-rescale line (its other three rescales are
-untouched). `StockService::OpenProduct()` gains an optional `$measurement` parameter and
-loses its tare-enabled refusal (decision 8; `TransferProduct()`'s own refusal is untouched,
-per the ownership split this session was given — plan 29 owns it); a new
-`MeasureStockEntry()` re-measures an already-open single-unit entry (question 1's response).
-`AddProduct()`, `ConsumeProduct()` and `InventoryProduct()` lose their product-total tare
-arithmetic (decision 7). `UndoBooking()` mirrors the four columns through its `consume`
-branch, clears them on `product-opened` undo, and restores them on the two new
-`stock-measured-*` transaction types. `GenericEntityApiController::RefuseTareEnable()`
-answers 400 on the `enable_tare_weight_handling` `0 -> 1` transition. The API grows
-`POST /stock/entry/{id}/measure` and an optional `measurement` object on
-`POST /stock/products/{id}/open`; `victual.openapi.json` documents both, the four new
-`StockEntry`/`StockLogEntry` fields, `stock_amount_measured`, and marks the two legacy tare
-fields `deprecated: true` with the reason. `views/stockentries.blade.php` gains a
-`.stock-measure-button` (mode `open` or `remeasure`) and a shared modal
-(`#stock-measurement-modal`); `views/stockoverview.blade.php`'s quick-consume and quick-open
-buttons drop their now-meaningless tare special cases (see below);
-`views/productform.blade.php`'s tare checkbox can no longer be newly checked. The design
-above shipped as written, including every answered question; this section covers what the
-plan's own text does not say, plus three defects the plan could not have anticipated because
-they are about porting mechanics, not about the feature.
+Landed as `migrations/0275.pgsql.sql`:
+
+- **Schema.** `stock`/`stock_log` gain the four `opened_*` columns, `stock`'s coherence
+  `CHECK` (decision 8), `stock_splits`' third exclusion clause (decision 5),
+  `stock_current.amount_measured` (question 3's response), and `stock_next_use` and
+  `uihelper_stock_entries` rebuilt to project the new columns.
+  `trg_cascade_change_qu_id_stock2` loses its tare-rescale line (its other three rescales
+  are untouched).
+- **Service layer.** `StockService::OpenProduct()` gains an optional `$measurement`
+  parameter and loses its tare-enabled refusal (decision 8; `TransferProduct()`'s own
+  refusal is untouched, per the ownership split this session was given — plan 29 owns it); a
+  new `MeasureStockEntry()` re-measures an already-open single-unit entry (question 1's
+  response). `AddProduct()`, `ConsumeProduct()` and `InventoryProduct()` lose their
+  product-total tare arithmetic (decision 7). `UndoBooking()` mirrors the four columns
+  through its `consume` branch, clears them on `product-opened` undo, and restores them on
+  the two new `stock-measured-*` transaction types.
+  `GenericEntityApiController::RefuseTareEnable()` answers 400 on the
+  `enable_tare_weight_handling` `0 -> 1` transition.
+- **API.** `POST /stock/entry/{id}/measure` and an optional `measurement` object on
+  `POST /stock/products/{id}/open` are new; `victual.openapi.json` documents both, the four
+  new `StockEntry`/`StockLogEntry` fields, `stock_amount_measured`, and marks the two legacy
+  tare fields `deprecated: true` with the reason.
+- **UI.** `views/stockentries.blade.php` gains a `.stock-measure-button` (mode `open` or
+  `remeasure`) and a shared modal (`#stock-measurement-modal`).
+  `views/stockoverview.blade.php`'s quick-consume and quick-open buttons drop their
+  now-meaningless tare special cases, per ADR-0022 decision 7's removal of the gross-reading
+  arithmetic those cases existed for. `views/productform.blade.php`'s tare checkbox can no
+  longer be newly checked.
+
+The design above shipped as written, including every answered question. This section covers
+what the plan's own text does not say, plus three defects the plan could not have
+anticipated because they are about porting mechanics, not about the feature.
 
 **A real PostgreSQL 16.13 run found three defects the design review could not.** All three
 were caught by actually running `.devtools/pgsql/run-tests.sh` and the new browser probe
-against a live database and a live demo instance during this session, not by inspection —
-recorded here because a future above-freeze migration touching `stock`/`stock_log` will hit
-the same three traps if it does not know to check for them.
+against a live database and a live demo instance during this session, not by inspection.
+They are recorded here because a future above-freeze migration touching `stock`/`stock_log`
+will hit the same three traps if it does not know to check for them.
 
 1. **`stock_next_use`'s `s.*` is frozen at `CREATE VIEW` time.** PostgreSQL does not
    re-expand `SELECT s.*` on every query the way SQLite does; a view defined with it in the
-   baseline (long before this migration) simply does not gain the four new `stock` columns
+   baseline (long before this migration) does not gain the four new `stock` columns
    until the view itself is `CREATE OR REPLACE`d. Without that, `GetProductStockEntries()`
    (which reads this view) failed outright — `SQLSTATE[42703]: column "opened_amount" ...
    does not exist`, since LessQL's `Row::update()` targets the object it was fetched
@@ -418,29 +432,32 @@ the same three traps if it does not know to check for them.
    (`StockController::Stockentries()`) would show every measured container as merely
    "Opened", forever, with nothing to notice. `CREATE OR REPLACE VIEW` also refuses to
    change an *existing* output column's name or ordinal position, so the four new columns
-   had to be appended after the view's very last column (`p.qu_factor_price_to_stock`),
-   not inserted where they sit conceptually (after `s.note`, before `products_view`'s
-   block) — verified empirically: the middle position fails with `cannot change name of
+   had to be appended after the view's very last column (`p.qu_factor_price_to_stock`), not
+   inserted where they sit conceptually (after `s.note`, before `products_view`'s block).
+   This was verified empirically: the middle position fails with `cannot change name of
    view column "id:1" to "opened_amount"`, since every column after the insertion point
    would have been renumbered.
 
 **`.devtools/pgsql/difftest.php` needed a mirror-image accommodation, and a second surprise
 on top of it.** Above the freeze, PostgreSQL-only columns are excluded from the SQLite
-comparison the same way `uihelper_user_permissions.via_roles` already was — but
+comparison the same way `uihelper_user_permissions.via_roles` already was. But
 `stock_next_use` and `uihelper_stock_entries` are *both* `SELECT s.*, ...`-shaped on the
 SQLite side too (the latter only because PostgreSQL cannot otherwise express the original's
 duplicate-column-name behaviour; see that view's own porting note), and unlike PostgreSQL,
-SQLite re-expands `*` on every query. `.devtools/pgsql/fixtures/00_base.sql` adds the four
-columns to SQLite's `stock`/`stock_log` too — not to run this plan's feature on SQLite,
-which nothing asks for, but because the rollback phase drives `StockService` against SQLite
-directly and now writes these columns on every booking unconditionally (decision 9 mirrors
-them whether or not a given row is measured), the same accommodation
-`stock_entry_origins` already has and for the same stated reason: keep the engine-awareness
-in the test tooling, never in `StockService`. Once that fixture existed, SQLite's own copies
-of these two views picked the four columns up automatically where PostgreSQL's needed an
-explicit rewrite — so `difftest.php` strips them from *both* sides for these two views, not
-only from PostgreSQL's as the first version of this change did (which passed by coincidence
-against a database that had not yet gained the fixture columns, then failed once it did).
+SQLite re-expands `*` on every query.
+
+`.devtools/pgsql/fixtures/00_base.sql` adds the four columns to SQLite's `stock`/`stock_log`
+too. This is not to run this plan's feature on SQLite, which nothing asks for. It is because
+the rollback phase drives `StockService` against SQLite directly and now writes these
+columns on every booking unconditionally (decision 9 mirrors them whether or not a given row
+is measured). That is the same accommodation `stock_entry_origins` already has, and for the
+same stated reason: keep the engine-awareness in the test tooling, never in `StockService`.
+
+Once that fixture existed, SQLite's own copies of these two views picked the four columns up
+automatically where PostgreSQL's needed an explicit rewrite. So `difftest.php` strips them
+from *both* sides for these two views, not only from PostgreSQL's as the first version of
+this change did. That version passed by coincidence against a database that had not yet
+gained the fixture columns, then failed once it did.
 
 **`AddProduct()` lost a dead parameter; `ConsumeProduct()` kept one as a no-op.**
 `$addExactAmount` only ever had an effect inside the removed tare branch, and no API
@@ -454,10 +471,10 @@ change this plan does not need to make.
 **A Blade compiler quirk, found the same way.** Two directly-adjacent `@endif@endif` tokens
 in `views/stockentries.blade.php` compiled only the first one, leaving the second as literal
 text in the output HTML and producing a real `ViewException` ("unexpected token
-'endforeach'") the moment the page was actually rendered — a mismatch invisible to a raw
-`@if`/`@endif` count (which matched) and invisible to `php -l` (Blade is not PHP). Fixed by
-separating consecutive directives with whitespace, the same spacing every other multi-`@if`
-line in this file already uses.
+'endforeach'") the moment the page was actually rendered. That mismatch was invisible to a
+raw `@if`/`@endif` count (which matched) and invisible to `php -l` (Blade is not PHP). Fixed
+by separating consecutive directives with whitespace, the same spacing every other
+multi-`@if` line in this file already uses.
 
 **Verification**, against real PostgreSQL 16.13 and a real demo instance, 2026-09-14:
 
@@ -474,14 +491,17 @@ line in this file already uses.
 touches); `files`, `mqtt`, `richtext`, `chores`, `errors` and `groupminstock` were not
 re-run, having no plausible interaction with this plan's changes.
 
-**What is not built.** No product-level "is this measured" configuration (question 5); the
-quick-action preset language in the plan's own UI section ("a preset on the product turning
-an action into a button") is not implemented — the scale button is offered universally
-wherever coherence permits it, at the cost of one icon on every eligible row rather than a
-curated subset. `views/stockentries.blade.php`'s open-and-measure modal always reloads the
-page after a save rather than patching the row in place the way `RefreshStockEntryRow()`
-already does for a plain open or a consume; a re-measure does patch in place. This session's
-sandbox had no PHP 8.5 (`composer.json`'s pinned requirement), so the browser probe above
-was run against a locally patched `REQUIRED_PHP_VERSION` that was reverted before this
-change was committed — CI's `frontend-security` job runs the real gate on PHP 8.5 and is
-where this probe gets its first run against the version this fork actually requires.
+**What is not built.** No product-level "is this measured" configuration was built (question
+5). The quick-action preset language in the plan's own UI section ("a preset on the product
+turning an action into a button") is not implemented either. The scale button is offered
+universally wherever coherence permits it, at the cost of one icon on every eligible row
+rather than a curated subset. `views/stockentries.blade.php`'s open-and-measure modal always
+reloads the page after a save rather than patching the row in place the way
+`RefreshStockEntryRow()` already does for a plain open or a consume; a re-measure does patch
+in place.
+
+This session's sandbox had no PHP 8.5 (`composer.json`'s pinned requirement), so the browser
+probe above was run against a locally patched `REQUIRED_PHP_VERSION` that was reverted
+before this change was committed. CI's `frontend-security` job runs the real gate on PHP
+8.5, and is where this probe gets its first run against the version this fork actually
+requires.
