@@ -187,9 +187,11 @@ took 0277 ahead of it on 2026-09-15, so no further renumbering was needed here.
 
 One column, one reused function (`hierarchy_depth_limit()`, unchanged from 0273 — this is
 the second consumer it was written generic for), one view, and two triggers made up the
-schema change. Also landed: the API surface, the group form's parent picker, the path shown
-in the product form's group dropdown and the product groups list, a PostgreSQL-only suite
-phase, and a browser probe. The design above shipped as written; what follows is not
+schema change. It also replaced the global `product_groups.name` constraint with a
+parent-scoped `UNIQUE NULLS NOT DISTINCT (parent_product_group_id, name)`. Also landed:
+the API surface, the group form's parent picker, the path shown in the product form's
+group dropdown and the product groups list, a PostgreSQL-only suite phase, and a browser
+probe. The design above shipped as written; what follows is not
 derivable from it.
 
 **Nothing from plan 08's schema carries over beyond the shape.** Locations needed
