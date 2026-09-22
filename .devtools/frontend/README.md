@@ -76,9 +76,10 @@ escaping is not available and that server-side purifier is the whole boundary. T
 family fail, make `GetParsedAndFilteredRequestBody` skip `description`: every column then
 reports ten offences and `description-render` reports the payload executing.
 
-The local-input family exists because every other family takes its payload from the
-*database*, and so was structurally blind to a sink fed by input the browser never sent
-anywhere — which is how two live sinks reached master in September 2026.
+The local-input family exists because no other family takes its payload from the browser.
+The rest read it from the *database*, or, for `error-details`, from an intercepted server
+error message. All of them were structurally blind to a sink fed by input the browser never
+sent anywhere — which is how two live sinks reached master in September 2026.
 
 **`s29-payload.js` is a gate, and it is the one this repository runs on every pull
 request** — the `frontend-security` job in `.github/workflows/tests.yml` boots a demo
