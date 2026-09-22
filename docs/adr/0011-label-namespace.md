@@ -7,8 +7,8 @@
   edit the lifecycle rule admits here. Plan [06](../plans/06-location-barcodes.md) is
   reconciled by **narrowing rather than absorption**: what is left of it once this record
   takes the payload, the symbology and the print path is work nobody else owns — label
-  placement, the locations UI, and the current-location notion interactive scanning needs —
-  so it keeps its number and its file and says at the top what was taken from it. Nothing
+  placement, the locations UI, and the current-location notion interactive scanning needs.
+  It keeps its number and its file, and says at the top what was taken from it. Nothing
   else was revised: no consequence softened, no argument improved on the way through, no
   prerequisite dropped.
 - **Accepting decides the namespace, not the schedule.** No `labels` table exists, no print
@@ -19,7 +19,7 @@
   describe. What changes today is what may be built: no new Grocycode type is added, and no
   new label payload carries a row id.
 - **Two statements in the body were checked at acceptance rather than edited.** *Consequences*
-  calls the two new tables a dual-engine liability "while ADR-0008 is Proposed";
+  calls the two new tables a dual-engine liability "while ADR-0008 is Proposed".
   [0008](0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31, the same day this
   record was written, and the liability is unchanged by that — the dual-engine discipline
   stays live until 0008's retirement work is scheduled, which it is not. The same section
@@ -180,10 +180,10 @@ amended, relaxed or dropped, and each carries what met it.
   decision.
 - **Plan [06](../plans/06-location-barcodes.md) is reconciled** — absorbed into this
   record with a superseded note, or narrowed to what remains (placement, UI).
-  — **met, by narrowing.** 06 keeps its number and its file and gains a header saying
+  — **met, by narrowing.** 06 keeps its number and its file, and gains a header saying
   what this record took from it — the payload format, label stability, the symbology
-  choice and the print path — and what it still owns: label placement and the tree path
-  on the human-readable line (its Q5, which interacts with
+  choice and the print path. The header also says what 06 still owns: label placement
+  and the tree path on the human-readable line (its Q5, which interacts with
   [08](../plans/landed/08-nested-locations.md)), the locations print action and UI, and the
   current-location notion interactive scanning needs. Its Q1 and Q3 responses are marked
   superseded in place rather than deleted; its Q2 was already routed out to what became

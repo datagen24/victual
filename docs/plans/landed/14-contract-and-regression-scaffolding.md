@@ -6,7 +6,9 @@ failing test rather than by vigilance, and put both behind minimal CI.
 **Depends on:** nothing. Everything else in the roadmap is easier once this exists.
 **Status:** **Landed.** Pieces 1, 3 and 4 — the runnable suite, CI, and the coverage
 reporting added after the plan was written — landed as wave 0 between 2026-08-27 and
-2026-08-29. **Piece 2, the response-contract snapshot, landed 2026-09-17** as
+2026-08-29.
+
+**Piece 2, the response-contract snapshot, landed 2026-09-17** as
 `tests/Pgsql/ContractTest.php` per [ADR-0025](../../adr/0025-three-test-tiers.md) decision 4,
 [issue 83](https://github.com/datagen24/victual/issues/83). See [Executed](#executed) for
 what landed, what the suite grew in the doing, and what piece 2 does not close (S15, and
@@ -103,15 +105,18 @@ That sharpens what piece 2 has to build rather than weakening it:
 
 **Every tool measures from a state that is copied, not migrated.** `difftest.php`,
 `trigdifftest.php` and the rollback phase each populate PostgreSQL with
-`bin/victual-db-import` from an already-migrated SQLite database, so every case starts from
-a PostgreSQL database whose rows came across from the other engine. Nothing has ever
-asserted anything about what `bin/victual-migrate` produces on its own. That blind spot hid a real defect for the whole
-life of the port: the PostgreSQL baseline is DDL only, while a third of the migrations it
-stands in for also insert rows, so a freshly migrated PostgreSQL database had no admin
-user, an empty permission hierarchy and no quantity units — and exited zero. It surfaced
-far downstream, as `recipes_pos` refusing an ingredient for want of a quantity unit
-conversion, and it was misdiagnosed once as a bad trigger port before anyone thought to
-count rows on a database nobody had touched.
+`bin/victual-db-import` from an already-migrated SQLite database, so every case starts
+from a PostgreSQL database whose rows came across from the other engine.
+
+Nothing has ever asserted anything about what `bin/victual-migrate` produces on its own.
+That blind spot hid a real defect for the whole life of the port. The PostgreSQL baseline
+is DDL only, while a third of the migrations it stands in for also insert rows, so a
+freshly migrated PostgreSQL database had no admin user, an empty permission hierarchy and
+no quantity units — and exited zero.
+
+It surfaced far downstream, as `recipes_pos` refusing an ingredient for want of a quantity
+unit conversion, and it was misdiagnosed once as a bad trigger port before anyone thought
+to count rows on a database nobody had touched.
 
 The check that closes it is small — migrate on both engines, change nothing, compare every
 table — and it is now the suite's first phase (`migratedifftest.php`, run by
@@ -155,7 +160,7 @@ checkout" is not reachable and verification 6 below is not achievable:
   configured database is the missing link, it is already scoped in 10, and the suite
   cannot build its own fixtures without it. It moves here; 10 keeps the rest of its
   scope — the request-time migration removal, the boot lock and the read-only-root
-  work — and simply finds this piece already built when it arrives.
+  work — and finds this piece already built when it arrives.
 
 Then `.devtools/pgsql/run-tests.sh` (or a small PHP runner — Q1) that:
 
@@ -224,14 +229,18 @@ draft claimed it did — that a new path returning `price` without the annotatio
 diff. It passes: with no annotation and no policy row nothing redacts the field, both
 identities receive it, and "Admin minus the annotated fields" still equals the restricted
 response. The diff polices fields somebody has already classified; an unclassified leak is
-its blind spot. So this piece carries a **second, independent assertion — a completeness
-check** — that walks the OpenAPI schemas *and* the recorded snapshot bodies for field names
-in the price/cost vocabulary (`price`, `cost`, `value`, `amount_paid`, and their prefixed
-and suffixed forms) and fails on any that carries neither `x-visibility` nor an explicit
-`x-visibility: none` with a stated reason. The snapshot bodies are in scope alongside the
-schemas because the hand-built responses are not all schema-backed. It is cheap, it is the
-leg that actually generalises to a future endpoint, and its allow-list of deliberate
-exceptions is the deliverable rather than a by-product.
+its blind spot.
+
+So this piece carries a **second, independent assertion — a completeness check.** It walks
+the OpenAPI schemas *and* the recorded snapshot bodies for field names in the price/cost
+vocabulary (`price`, `cost`, `value`, `amount_paid`, and their prefixed and suffixed forms),
+and fails on any that carries neither `x-visibility` nor an explicit `x-visibility: none`
+with a stated reason.
+
+The snapshot bodies are in scope alongside the schemas because the hand-built responses are
+not all schema-backed. It is cheap, it is the leg that actually generalises to a future
+endpoint, and its allow-list of deliberate exceptions is the deliverable rather than a
+by-product.
 
 That restricted user holds the `STOCK` **leaves** (`STOCK_CONSUME`, `STOCK_OPEN`, …) and
 not `STOCK` itself: `STOCK_PRICES_VIEW` hangs under `STOCK` and the tree resolves
@@ -257,9 +266,9 @@ before it: it fails from the moment it exists.
 ### 2b. The read surface has to be complete before it is frozen
 
 Piece 2 freezes the API's response contract. That is only worth doing to a surface that
-covers what its consumers need, and a measurement taken on 2026-08-29 says this one does
-not yet — not because the API is small, but because the web UI has never been a consumer
-of it for reads.
+covers what its consumers need. A measurement taken on 2026-08-29 says this one does not
+yet — not because the API is small, but because the web UI has never been a consumer of
+it for reads.
 
 **What was measured.** Every non-API controller was inventoried: 12 files, 81 route
 handlers, 71 rendered templates, 173 direct `$this->DB->` call sites across 34 distinct
@@ -357,7 +366,7 @@ spawns and prints a line-coverage summary at the end; CI does this on every run 
 the Clover file. Nothing is gated on the number.
 
 The reason it is worth having here specifically is the blind spot this plan's own suite
-had, and which cost three PostgreSQL defects to find: the view and trigger phases drive
+had, and which cost three PostgreSQL defects to find. The view and trigger phases drive
 SQL at each engine and never enter application code, so for a while nothing in the suite
 executed a single line of `StockService` against PostgreSQL and no report said so. A
 coverage figure would have. See [.devtools/coverage/README.md](../../../.devtools/coverage/README.md).
@@ -382,22 +391,25 @@ ASCII cases (`[1,2] vs [2]`).
 It also demonstrates the thing this plan keeps having to relearn about its own suite — that
 a phase is only as good as what it takes on trust. The condition under test is not written
 out in the test; it is fetched from `GetLikeCondition()`, so a future change to the dialect
-is caught rather than mirrored into the fixture. And the non-ASCII case is asserted
-*directionally* (PostgreSQL may fold more than SQLite, never less) rather than exactly,
-because which characters fold is a property of the database's collation: an exact assertion
-would fail on a `C`-locale database for something that is not a defect. A test that has to
-be loosened later is worse than one that states the invariant it actually has.
+is caught rather than mirrored into the fixture.
+
+And the non-ASCII case is asserted *directionally* (PostgreSQL may fold more than SQLite,
+never less) rather than exactly, because which characters fold is a property of the
+database's collation. An exact assertion would fail on a `C`-locale database for something
+that is not a defect. A test that has to be loosened later is worse than one that states
+the invariant it actually has.
 
 **And it paid for itself before it was even committed.** The phase grew a second half —
-comparing the two engines' verdicts on which columns the `~` operator may be used on, across
-every column of every shared table and view — and that half immediately failed on 13
-columns nobody had thought about: SQLite's `PRAGMA table_info` reports an empty type for a
-view column that is a computed expression, where PostgreSQL resolves it. Those 13 would
-have shipped as a silent per-engine difference on exactly the columns most worth matching
-(`stock_missing_products.name`, `users_dto.display_name`). They are now listed by name on
-every run instead. That is the whole argument for behavioural phases in one incident: the
-defect was in the *fixture-free* part of the system, over real schema, and no snapshot of
-response shapes would have contained it.
+comparing the two engines' verdicts on which columns the `~` operator may be used on,
+across every column of every shared table and view — and that half immediately failed on
+13 columns nobody had thought about. SQLite's `PRAGMA table_info` reports an empty type
+for a view column that is a computed expression, where PostgreSQL resolves it.
+
+Those 13 would have shipped as a silent per-engine difference on exactly the columns most
+worth matching (`stock_missing_products.name`, `users_dto.display_name`). They are now
+listed by name on every run instead. That is the whole argument for behavioural phases in
+one incident: the defect was in the *fixture-free* part of the system, over real schema,
+and no snapshot of response shapes would have contained it.
 
 **What is still owed to piece 2** is the general case. The `filter` phase covers one
 operator pair on one code path; the snapshot still needs cases that compare the **rows** a
@@ -542,7 +554,7 @@ it worked.
 3. **Does CI get a PostgreSQL service container, and where does CI run?** There is no
    `.github/workflows/` directory today — the fork has never had CI. A service container
    is standard and free on GitHub Actions. The question is really whether CI runs there at
-   all, given this is a personal fork deployed to a private k3s cluster; a git hook or a
+   all, given this is a personal fork deployed to a private k3s cluster. A git hook or a
    local `make check` may be the honest answer, in which case "minimal CI" means "one
    command a human runs" rather than a workflow file.
 
@@ -662,28 +674,35 @@ nothing further: plans 28 and 31 and 19 piece 2 had already closed the eight gap
 The route-table-vs-spec parity assertion is a two-way set comparison over the live Slim
 route table (`tests/Support/RouteInventory.php`, which boots `routes.php` the way
 `.devtools/check-path-id-validation.php` already did rather than trusting a second regex
-extractor), fixing the one real gap plan 14 found by hand: `/api/openapi/specification`
+extractor). It fixes the one real gap plan 14 found by hand: `/api/openapi/specification`
 is now in `victual.openapi.json`, alongside the `info.version` placeholder (`"xxx"` →
 `version.json`'s `4.6.0`, per this plan's own fallback rule - [17](../17-ecosystem-clients.md)
 Q1 is still unanswered). R1 (`/system/config` keeps `FEATURE_FLAG_STOCK`) is one assertion
 in the same class.
 
-The snapshot itself builds one fixture graph as Admin through the real write endpoints -
-so the writes are exercised too - covering every non-label operation: master data,
-stock (add/consume/transfer/inventory/open/measure/weigh/merge, both by id and by
-barcode, undo on both a booking and a transaction), recipes (including consume and
-copy), chores (execute, undo, merge, next-assignment calculation), batteries, tasks,
-users and roles, a file upload/serve/delete round trip, and the generic `/objects/{entity}`
-sweep over every `ExposedEntity` the label subsystem doesn't own. Two real defects
-surfaced building it, on a route the fixture graph was the first thing to call with real
-event data: `CalendarApiController::Ical` called `$response->write()`, a method
-`Psr\Http\Message\ResponseInterface` does not have, and handed the iCal library's
+The snapshot itself builds one fixture graph as Admin through the real write endpoints, so
+the writes are exercised too. It covers every non-label operation:
+
+- master data
+- stock (add/consume/transfer/inventory/open/measure/weigh/merge, both by id and by
+  barcode, undo on both a booking and a transaction)
+- recipes (including consume and copy)
+- chores (execute, undo, merge, next-assignment calculation)
+- batteries and tasks
+- users and roles
+- a file upload/serve/delete round trip
+- the generic `/objects/{entity}` sweep over every `ExposedEntity` the label subsystem
+  doesn't own
+
+Two real defects surfaced building it, on a route the fixture graph was the first thing to
+call with real event data: `CalendarApiController::Ical` called `$response->write()`, a
+method `Psr\Http\Message\ResponseInterface` does not have, and handed the iCal library's
 `Presentation\Component` object to `getBody()->write()` unstringified once that was fixed
 too. Both are one-line fixes, in this same change.
 
 The comparison is four-way, not the five the plan describes - "engine vs engine" is not
 attempted, because ADR-0008 already retired SQLite as a runtime engine, so there is only
-one engine left to boot the application on; the differential harness's SQLite side is
+one engine left to boot the application on. The differential harness's SQLite side is
 what used to stand in for that leg, and stays until its own retirement (still gated on
 this piece having landed, not performed by it - see the wave 5 status line):
 
@@ -693,7 +712,7 @@ this piece having landed, not performed by it - see the wave 5 status line):
    `CONTRACT_REGEN=1 .devtools/pgsql/run-tests.sh contract` regenerates them, named in
    the failure message, per Q6's response.
 2. **Snapshot vs OpenAPI schema.** The schema-completeness leg below subsumes this for
-   the vocabulary that matters; a full per-operation schema diff over all 145 operations
+   the vocabulary that matters. A full per-operation schema diff over all 145 operations
    was judged not worth building given how much of the surface has no schema at all
    (hand-built responses `BaseApiController::GetOpenApispec()`'s own callers read
    selectively) - a gap worth naming rather than hiding.
@@ -704,17 +723,18 @@ this piece having landed, not performed by it - see the wave 5 status line):
    `STOCK_PRICES_VIEW` the way a parent-holder would. Restricted is asserted to equal
    Admin minus exactly the fields `permission_fields` redacts for CHILD, computed from
    the live table (never a hand-maintained list, matching `FieldPolicy`'s own docblock)
-   and cross-checked in both directions: every policed field the fixture graph reaches
+   and cross-checked in both directions. Every policed field the fixture graph reaches
    must actually be missing from the restricted response, and every restricted 200/403
    split must be one of those two codes and nothing else.
 4. **Schema and snapshot bodies vs the sensitive-field vocabulary.** The completeness
-   leg 3 is structurally blind to (`price`, `cost`, `value`, `amount_paid` and their
-   prefixed/suffixed forms) walks both the recorded Admin bodies and every OpenAPI
-   schema property, failing on a match with neither an `x-visibility` annotation (schema-
-   or property-level - `ProductPriceHistory`'s own schema carries it once rather than
-   its `price` property, and its description said "see the operation", which was wrong
-   until this change fixed the sentence to match the code) nor a `permission_fields`
-   row. Verified the way the plan's own Verification section asks: `FieldPolicy::RedactRow`
+   leg — what leg 3 is structurally blind to — walks both the recorded Admin bodies and
+   every OpenAPI schema property for the sensitive-field vocabulary (`price`, `cost`,
+   `value`, `amount_paid` and their prefixed/suffixed forms). It fails on a match with
+   neither an `x-visibility` annotation, schema- or property-level, nor a
+   `permission_fields` row. `ProductPriceHistory`'s own schema carries the annotation
+   once rather than on its `price` property, and its description said "see the
+   operation," which was wrong until this change fixed the sentence to match the code.
+   Verified the way the plan's own Verification section asks: `FieldPolicy::RedactRow`
    was mutated to redact nothing, and this leg named all nine leaked fields
    (`value, costs, costs_per_serving, prices_incomplete, last_price, avg_price,
    oldest_price, current_price, stock_value`) before the mutation was reverted. Seven
@@ -727,17 +747,17 @@ this piece having landed, not performed by it - see the wave 5 status line):
 **What is deliberately not covered**, named rather than silently skipped: the label
 pairing/worker/renderer/template-admin operations and the thirteen label-subsystem
 `ExposedEntity` rows behind them need real device credentials, paired worker crypto
-material or a rendered artifact this harness cannot manufacture - route/spec parity
-still covers their wire shape, the same division plan 25/27's physical verification
-already drew. `StockApiController::ExternalBarcodeLookup` is excluded because it calls a
+material or a rendered artifact this harness cannot manufacture. Route/spec parity still
+covers their wire shape, the same division plan 25/27's physical verification already
+drew. `StockApiController::ExternalBarcodeLookup` is excluded because it calls a
 configured plugin/network endpoint, which is sweep finding S14's surface and not
 something a contract test should give a target.
 
 **What this piece does not close, contrary to the issue's own text**: S15 (regex filter
 pattern bounds) and S16's remaining half (a schema-derived write allow-list for the
-generic entity controller, 11's Q5) are both real, separately-scoped pieces of work -
-input validation hardening, not response-contract testing - and are not attempted here.
-Both stay open, tracked where they already were.
+generic entity controller, 11's Q5) are both real, separately-scoped pieces of work.
+Both are input validation hardening, not response-contract testing, and neither is
+attempted here. Both stay open, tracked where they already were.
 
 **And one documentation debt this plan owns because it owns the suite.**
 `db/pgsql/README.md` still describes the runner as `[migrate|views|triggers]` and still
