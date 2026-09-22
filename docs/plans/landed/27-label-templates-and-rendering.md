@@ -3,15 +3,18 @@
 **Goal:** Let a person design a label in the browser, see an authoritative preview of what
 will actually print, and print it — with the printed bytes kept, so an exact reprint is the
 same label rather than a similar one.
+
 **Depends on:** [12](12-frontend-shared-core.md) (landed), [01](01-file-storage.md) (landed),
 [19](../19-rbac.md) piece 1 (implemented), and [25](../25-label-infrastructure.md)'s identity and
 job work. Gated on [ADR-0021](../../adr/0021-label-templates-are-application-data.md),
 **accepted 2026-09-07** with all six prerequisites met — see **Gates**. **That gate is
 cleared.**
+
 **Status:** implemented in wave 3b alongside 25; see Executed. Both follow-ups landed
 2026-09-15: the designer's fabric 5.x migration ([issue 126](https://github.com/datagen24/victual/issues/126))
 and sweep S32, the fail-closed group-to-read-permission table for the files API
 ([issue 136](https://github.com/datagen24/victual/issues/136)).
+
 **Migrations:** 0271 and 0272, in `master`. The inventory below is what they were derived from.
 
 ## Why this plan exists
@@ -43,13 +46,15 @@ label says, and the stateless `vctl:` resolve surface.
 route, no UI before that acceptance — is cleared, and the scope below is what the two records
 authorize.
 
-**Its six acceptance prerequisites are met**, as of 2026-09-07 — the renderer comparison and
-the artifact-format comparison, which were this plan's to run, and the four that were not. Each
-one's evidence is in that record; what this plan gained from them is recorded in the pieces
-above rather than left as findings in a spike: the runtime is selected (piece 4), the artifact
-form is fixed and the renderer's PNG encoding is a defect to fix (piece 4), the canonicalizer
-has to be written here and has an acceptance test to port (piece 5), and the manifest gate now
-examines the kind this plan's renderer will be (piece 8).
+**Its six acceptance prerequisites are met**, as of 2026-09-07: the renderer comparison and
+the artifact-format comparison were this plan's to run, and the other four were not. Each
+one's evidence is in that record. What this plan gained from them is recorded in the pieces
+above rather than left as findings in a spike:
+
+- the runtime is selected (piece 4);
+- the artifact form is fixed, and the renderer's PNG encoding is a defect to fix (piece 4);
+- the canonicalizer has to be written here and has an acceptance test to port (piece 5);
+- the manifest gate now examines the kind this plan's renderer will be (piece 8).
 
 **ADR-0019 was reconciled in the same window**, on 2026-09-07. Its decision item 1 ownership
 table and item 3 template-registration rules changed; nothing else about it did, and its two
@@ -74,16 +79,16 @@ references and creates an immutable version with a digest.
   default overflow policy is `error`; `ellipsis` and bounded `shrink_to_fit` are explicit.
   A missing glyph is an error rather than silent font substitution.
 - **A point is a physical size, and the device has two resolutions.** One point is 1/72 inch.
-  **Horizontal geometry resolves against `dpi_x` and vertical geometry against `dpi_y`**, and
-  measuring, wrapping and painting must all use that same physical coordinate model — 11 pt on
-  a 300 × 600 device is a **nominal em of 45.8 × 91.7 device pixels**, and a renderer reaches
-  it by scaling outlines anisotropically rather than by resampling a raster. That is the em,
-  not a glyph: actual advances and ink bounds depend on the font and on shaping.
+  **Horizontal geometry resolves against `dpi_x` and vertical geometry against `dpi_y`**;
+  measuring, wrapping and painting must all use that same physical coordinate model. On a
+  300 × 600 device, 11 pt is a **nominal em of 45.8 × 91.7 device pixels**, and a renderer
+  reaches it by scaling outlines anisotropically rather than by resampling a raster. That is
+  the em, not a glyph: actual advances and ink bounds depend on the font and on shaping.
 
   This is stated because leaving it implicit produced a real defect. In the renderer comparison
   of 2026-09-07, two candidates sized the font at `size_pt × dpi_y / 72` and then measured
-  *horizontal* advances in that space, making every string twice as wide as its physical size:
-  the same document wrapped to five lines instead of three, and through the automatic-height
+  *horizontal* advances in that space, making every string twice as wide as its physical size.
+  The same document wrapped to five lines instead of three, and through the automatic-height
   rule that changes the label's length in millimetres. It is the same class of silent geometry
   error as [issue #90](https://github.com/datagen24/victual/issues/90), arriving from the
   document format rather than from a driver.
@@ -115,11 +120,13 @@ same way later. Sample data exists for previews only and is marked as sample dat
 
 ### Piece 3 — media profiles
 
-An immutable, versioned, digested contract derived from validated printer capabilities, and
-distinct from the mutable printer row and its network address: media identity and physical
-size, printable area, independent `dpi_x`/`dpi_y`, required raster width, permitted lengths and
-increments, the correspondence between image axes and tape feed, colour mode, and a versioned
-threshold/dither policy with its permitted palette.
+An immutable, versioned, digested contract derived from validated printer capabilities, distinct
+from the mutable printer row and its network address. It fixes:
+
+- media identity and physical size, printable area, and independent `dpi_x`/`dpi_y`;
+- required raster width, permitted lengths and increments;
+- the correspondence between image axes and tape feed;
+- colour mode, and a versioned threshold/dither policy with its permitted palette.
 
 Physical-to-pixel rounding is specified once, in the renderer contract. The profile separates
 content pixels from declared non-printing transport padding: adding padding is permitted,
@@ -151,15 +158,16 @@ caller-controlled fetch destination.
   process remembering to launch it.
 
 **The runtime is candidate C: a single Rust binary over `usvg`/`tiny-skia`**, selected
-2026-09-07 when ADR-0021's prerequisite 1 closed. It was decided by rendering the contract —
-the same document through three candidates over multi-line wrapping, a pinned font with a
+2026-09-07 when ADR-0021's prerequisite 1 closed. It was decided by rendering the contract
+through three candidates — the same document over multi-line wrapping, a pinned font with a
 missing glyph, QR at a declared module size with asymmetric resolutions, black/red output and
-continuous length against `length_rules` — then by kerning, right-to-left shaping and cost.
-Question 3 holds every number and the reproduction. Its closure is 62,632,768 bytes over seven
-paths with no shell and no interpreter, which is what ADR-0013 asks of it. **Fabric.js is
-selected for browser editing only.** A headless runtime qualified by reading the document, not
-by sharing the editor's engine; the authoritative preview is the render, so the browser canvas
-is a design aid rather than a fidelity claim.
+continuous length against `length_rules`. Kerning, right-to-left shaping and cost were the
+next criteria. Question 3 holds every number and the reproduction. Its closure is 62,632,768
+bytes over seven paths with no shell and no interpreter, which is what ADR-0013 asks of it.
+
+**Fabric.js is selected for browser editing only.** A headless runtime qualified by reading
+the document, not by sharing the editor's engine; the authoritative preview is the render, so
+the browser canvas is a design aid rather than a fidelity claim.
 
 **The artifact is `raster/png-indexed;v=1`** — ADR-0021 prerequisite 2, settled. PNG **colour
 type 3 at bit depth 2** over the profile's `pixel_policy.palette`, with the pixel grid fixed by
@@ -221,6 +229,7 @@ oracle is the acceptance test to port alongside the implementation.
 anything absent from it. So artifacts and assets are stored under group names **deliberately
 not minted in that enum**, which makes the generic upload, serve and delete routes refuse them
 by the check they already run, and leaves dedicated authorized endpoints as the only path.
+
 That is not decoration: `ServeFile` gates reads by a hardcoded per-group chain and lets
 unlisted groups through on authentication alone — the posture recorded under S2 and filed
 generally as **S32**. Artifacts must not be exposed through `ExposedEntity` either, for the
@@ -232,11 +241,12 @@ label on disk, reintroducing the persistent volume [10](10-cold-start-statelessn
 to remove. So the check is conditional on the label subsystem being enabled, in the shape
 `ConfigurationValidator::checkMqttSettings()` and `::checkInfluxDbSettings()` already use —
 return early when the subsystem is off, and otherwise refuse a configuration it cannot honour
-with an `EInvalidConfig` naming both settings. **There is no fallback to filesystem storage**,
-silent or otherwise: a household that enables labels with the wrong backend finds out at
-startup, when it can still change its mind, rather than when an artifact goes somewhere it was
-not meant to live. That is `checkFileStorage()`'s own stated reason for refusing at startup
-rather than at first upload.
+with an `EInvalidConfig` naming both settings.
+
+**There is no fallback to filesystem storage**, silent or otherwise: a household that enables
+labels with the wrong backend finds out at startup, when it can still change its mind, rather
+than when an artifact goes somewhere it was not meant to live. That is `checkFileStorage()`'s
+own stated reason for refusing at startup rather than at first upload.
 
 Two consequences to carry rather than discover:
 
@@ -681,7 +691,7 @@ plans 23 and 22 moved to 0273–0275 for the seventh time.
 neither is new machinery. `ApiKeyService::API_KEY_TYPE_LABEL_RENDERER` scopes which routes the
 credential is accepted on at all, exactly as the worker and calendar types are scoped, so a
 renderer key presented on `labels-claim` is refused by the authenticator before any subsystem
-code runs — which makes "may not claim a print attempt" a property of the credential rather
+code runs. That makes "may not claim a print attempt" a property of the credential rather
 than a rule the renderer is trusted to follow. The **generation token** the claim hands back is
 the per-resource grant: it names one request and one generation and expires with the lease.
 
@@ -728,8 +738,8 @@ an uploaded font before they can be added, so a fresh installation's first draft
 until one is supplied. The browser probe is `.devtools/frontend/label-designer.js`.
 
 Check 4 is met: a location label rendered by the pinned renderer printed on the QL-820NWBc and
-its QR scanned back to the pinned uid, and a second template with a filled red band printed red
-through the whole path — plan 25's Executed section records both runs. Issue 90's geometry
+its QR scanned back to the pinned uid. A second template with a filled red band printed red
+through the whole path; plan 25's Executed section records both runs. Issue 90's geometry
 half was closed on the same print.
 
 The designer could not move past fabric 5.x by a dependency bump: fabric 6 removed the global
@@ -763,7 +773,9 @@ which pulls in the rest of `dist/src` as separate requests for no benefit here) 
 incidental: a module script always finishes before `DOMContentLoaded`, and every use of
 `window.fabric` in `labeltemplateeditor.js` is inside a jQuery `$(document).ready` handler -
 so the shim and the editor script can load in either order in the document and the editor
-still never sees `fabric` undefined. `nix/runtime/nginx-conf.nix` gained a location matching
+still never sees `fabric` undefined.
+
+`nix/runtime/nginx-conf.nix` gained a location matching
 `\.mjs$` ahead of the general packages location, serving it as `application/javascript`
 regardless of what the pinned nginx's own bundled `mime.types` knows about the extension - a
 module served as `application/octet-stream` would be refused by the browser.
@@ -787,34 +799,38 @@ module served as `application/octet-stream` would be refused by the browser.
   `left`/`top` from its two points' bounding box, but which corner that box's `left`/`top`
   names is still governed by the object's origin the same way it is for every other shape.
 
-**How this was found, because it is the point of the exercise.** The shipped probe
-(`label-designer.js`) adds a QR, saves, and publishes - it passed against the fabric 7 bump
-with the origin defect still in place, because nothing in it ever asked *where* the element
-landed. A real browser session, driven interactively (drag a shape, read the saved
-`x_mm`/`y_mm` back, reload, drag a resize handle, read `width_mm`/`height_mm` back) is what
-surfaced it: after dragging, the *y-coordinate math* moved by the right amount but every
-shape sat visibly off-canvas, clipped at the top-left. Reading `getActiveObject().oCoords`
-against a hand-computed expectation is what pinned the cause to the origin default rather
-than to the drag math itself. `label-designer.js` now carries that check permanently: it adds
-a rectangle, drags it, asserts the saved position changed, reloads the page and asserts the
-position survived a fresh `draw()`, then drags a resize handle and asserts the saved size
-changed. The probe's own `newPage()` also gained an explicit viewport - the default one is
-short enough that, after enough on-page interaction scrolls it, a click at a screen position
-`boundingBox()` reports as the canvas can land on the fixed top navbar instead, which looks
-identical to a drag that silently did nothing and cost real time here to tell apart from one.
+**How this was found.** The shipped probe (`label-designer.js`) adds a QR, saves, and
+publishes - it passed against the fabric 7 bump with the origin defect still in place,
+because nothing in it ever asked *where* the element landed.
+
+A real browser session, driven interactively (drag a shape, read the saved `x_mm`/`y_mm`
+back, reload, drag a resize handle, read `width_mm`/`height_mm` back) is what surfaced it:
+after dragging, the *y-coordinate math* moved by the right amount but every shape sat
+visibly off-canvas, clipped at the top-left. Reading `getActiveObject().oCoords` against a
+hand-computed expectation is what pinned the cause to the origin default rather than to the
+drag math itself.
+
+`label-designer.js` now carries that check permanently: it adds a rectangle, drags it,
+asserts the saved position changed, reloads the page and asserts the position survived a
+fresh `draw()`, then drags a resize handle and asserts the saved size changed. The probe's
+own `newPage()` also gained an explicit viewport: the default one is short enough that,
+after enough on-page interaction scrolls it, a click at a screen position `boundingBox()`
+reports as the canvas can land on the fixed top navbar instead. That looks identical to a
+drag that silently did nothing, and telling the two apart cost real time here.
 
 **Verified**, 2026-09-15, against a real PostgreSQL 16.13 demo instance booted per
 `.agents/skills/run-app/SKILL.md` (PHP 8.4.19, `REQUIRED_PHP_VERSION` lowered locally per that
-skill and restored before committing) and driven with the pinned Playwright/Chromium: the
+skill and restored before committing) and driven with the pinned Playwright/Chromium. The
 updated `label-designer.js` (add, drag, save, reload, resize, publish, all through the
-*document* the server stores) and `label-printers.js` both pass, repeatably. The container image build and boot checks passed in Nix run 38, cited above.
-The physical QL-820NWBc print/scan-back was not re-run here - the renderer and worker are untouched by this
-change, and plan 25's Executed section already exercised that path against the device.
+*document* the server stores) and `label-printers.js` both pass, repeatably. The container
+image build and boot checks passed in Nix run 38, cited above. The physical QL-820NWBc
+print/scan-back was not re-run here - the renderer and worker are untouched by this change,
+and plan 25's Executed section already exercised that path against the device.
 
-**A maintainer review round on PR #172** (same day) verified the runtime side independently -
-every fabric 7.4.0 call site against its actual source, the `.mjs` MIME type under both `php
--S` and the new nginx location, the yarn hash against the CI failure it came from - and found
-one blocking defect this account had missed and three worth fixing:
+**A maintainer review round on PR #172** (same day) verified the runtime side independently.
+It checked every fabric 7.4.0 call site against its actual source, the `.mjs` MIME type
+under both `php -S` and the new nginx location, and the yarn hash against the CI failure it
+came from. It found one blocking defect this account had missed and three worth fixing:
 
 - The merge conflict against master's own wave-table edit (mechanical: master's wave 4/5 rows
   plus this change's one-sentence wave 3b addition).
@@ -830,16 +846,16 @@ one blocking defect this account had missed and three worth fixing:
   `strokeWidth` - a break the origin-default fix above did not by itself cover. An untouched
   line's `left`/`top` sits `strokeWidth/2` short of the point minimum rather than exactly at
   it, so every drag carried that constant into the saved `x1_mm`/`y1_mm`/`x2_mm`/`y2_mm` and
-  drifted the line a little further on each touch - confirmed by constructing the same `Line`
-  the editor builds against the real 7.4.0 package (`left` reads `7.4` against an expected
-  `8`, the exact `strokeWidth/2` for the 0.3mm default) and by a diagonal-line drag before and
-  after the fix (drifted; then landed exactly on the dragged distance). `absorb()`'s line
-  branch now adds `strokeWidth/2` back.
+  drifted the line a little further on each touch. This was confirmed two ways. Constructing
+  the same `Line` the editor builds against the real 7.4.0 package showed `left` reading `7.4`
+  against an expected `8`, the exact `strokeWidth/2` for the 0.3mm default. A diagonal-line
+  drag before and after the fix also confirmed it: it drifted, then landed exactly on the
+  dragged distance. `absorb()`'s line branch now adds `strokeWidth/2` back.
 
-Two cosmetic findings were folded in alongside: the resize assertion in `label-designer.js`
-could not tell a resize from a move, since `absorb()`'s pre-existing `getScaledWidth()`
-read includes stroke and nudges width/height on *any* `object:modified` - now asserting most
-of the dragged distance landed rather than merely `notEqual`; and a short comment at both
+Two cosmetic findings were folded in alongside. The resize assertion in `label-designer.js`
+could not tell a resize from a move, since `absorb()`'s pre-existing `getScaledWidth()` read
+includes stroke and nudges width/height on *any* `object:modified`; it now asserts that most
+of the dragged distance landed rather than merely checking `notEqual`. A short comment at both
 `originX`/`originY` pin sites notes that fabric's own PR #10715 deprecated the properties in
 the same 7.0.0 release that changed their default, so a bump that removes them needs a
 replacement here, not just a version bump.
@@ -869,15 +885,17 @@ one, so every authenticated user's own avatar keeps rendering in the nav bar
 
 Verification extended the existing `.devtools/pgsql/rbac-tests.php` phase (run via
 `run-tests.sh rbac`) rather than adding a new one, following the same pattern it already
-uses for `EntityReadPolicy` against `ExposedEntity`: it asserts every `FileGroups` enum
-member has a row, exercises each mapped group both denied (no grant) and allowed (the
-grant), and separately constructs the unmapped-group case directly against
-`ServeFile`/`DeleteFile`/`UploadFile` so the fail-closed default is proven independent of
-the enum and the table staying in sync. The fail-closed property was verified for real, not
-merely asserted: temporarily reducing `CheckGroupIsKnown()` to a no-op reproduced the S32
-hazard and the new assertion caught it (expected 400, got 404), before the fix was restored
-and `run-tests.sh all` (all nineteen phases) run clean against real PostgreSQL 16. Not
-covered by the automated suite: the own-picture exception itself, since
-`VICTUAL_USER_PICTURE_FILE_NAME` is a constant fixed for the whole test process and the rbac
-phase's single calling user (9000) never has a picture set — the same limitation that leaves
-`CheckUserPictureDeletion`'s own equivalent exception unexercised there today.
+uses for `EntityReadPolicy` against `ExposedEntity`. It asserts every `FileGroups` enum
+member has a row, and exercises each mapped group both denied (no grant) and allowed (the
+grant). It separately constructs the unmapped-group case directly against
+`ServeFile`/`DeleteFile`/`UploadFile`, so the fail-closed default is proven independent of
+the enum and the table staying in sync.
+
+The fail-closed property was verified for real, not merely asserted: temporarily reducing
+`CheckGroupIsKnown()` to a no-op reproduced the S32 hazard, and the new assertion caught it
+(expected 400, got 404). The fix was then restored, and `run-tests.sh all` (all nineteen
+phases) ran clean against real PostgreSQL 16. Not covered by the automated suite: the
+own-picture exception itself. `VICTUAL_USER_PICTURE_FILE_NAME` is a constant fixed for the
+whole test process, and the rbac phase's single calling user (9000) never has a picture set.
+That is the same limitation that leaves `CheckUserPictureDeletion`'s own equivalent exception
+unexercised there today.
