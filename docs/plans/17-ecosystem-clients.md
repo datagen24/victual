@@ -6,26 +6,33 @@ standing decision for each about whether this fork forks it, replaces it, or let
 [11](11-api-error-handling.md) and [16](16-project-rename.md) are the two plans that break
 clients hardest, and both are early. [10](landed/10-cold-start-statelessness.md) has a conflict
 with the Home Assistant integration that is not an API-compatibility problem at all.
-**Status:** premise replaced 2026-09-15 by [ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md)
-(accepted the same day): the fork writes its own clients, so what follows is a catalogue of couplings those
-clients must handle rather than breaks to avoid. Earlier: draft for review — **and already overtaken on [16](16-project-rename.md)**,
-which landed on 2026-08-29, the day this was written, ahead of the roadmap's own
-"17 before 11, 16 and 10" rule. Two of the breaks below are therefore past tense: the API
-key header and the `/system/info` version field are renamed in the tree today. Coupling 0
-records what that costs and what the options are; the three open questions at the end are
-all still unanswered, and Q1 is now being asked after the event rather than before it. The
-rule still holds for [11](11-api-error-handling.md) and
+
+**Status:** premise replaced 2026-09-15 by
+[ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md) (accepted the same day): the
+fork writes its own clients, so what follows is a catalogue of couplings those clients
+must handle rather than breaks to avoid.
+
+Earlier: draft for review — **and already overtaken on [16](16-project-rename.md)**, which
+landed on 2026-08-29, the day this was written, ahead of the roadmap's own "17 before 11,
+16 and 10" rule. Two of the breaks below are therefore past tense: the API key header and
+the `/system/info` version field are renamed in the tree today.
+
+Coupling 0 records what that costs and what the options are; the three open questions at
+the end are all still unanswered, and Q1 is now being asked after the event rather than
+before it. The rule still holds for [11](11-api-error-handling.md) and
 [10](landed/10-cold-start-statelessness.md), which are both still ahead.
 
 **Answered 2026-08-29, and the premise moved.** Q2 and Q4 now carry responses, and they
 change what this document is for. Both tracked clients are being replaced by first-party
 ones — a Home Assistant integration built here and a Swift client module written here —
 so the question stops being "which third-party client does this break" and becomes "what
-does the fork owe the clients it owns". Q2's answer is the larger of the two: the Home
-Assistant path is not a polling HTTP client at all but MQTT state publication from the
-server to a broker that is already always-on in the cluster, which dissolves Coupling 1
-rather than mitigating it. [18](18-mqtt-state-publication.md) is the plan that came out
-of it. Q1 and Q3 are still open, and Q3 is now half-answered.
+does the fork owe the clients it owns".
+
+Q2's answer is the larger of the two: the Home Assistant path is not a polling HTTP client
+at all but MQTT state publication from the server to a broker that is already always-on in
+the cluster. This dissolves Coupling 1 rather than mitigating it.
+[18](18-mqtt-state-publication.md) is the plan that came out of it. Q1 and Q3 are still
+open, and Q3 is now half-answered.
 ## Why this is a plan and not a wiki page
 
 Every other plan is held to "the API is additive — existing endpoints keep their response
@@ -91,10 +98,12 @@ fact. Neither client authenticates against the fork any more.
 This section is written after the event, which is the thing it is chiefly evidence of.
 [16](16-project-rename.md) landed on 2026-08-29 and its "What the survey missed" section
 records two renames whose justification is, verbatim, "the justification is Tier 1's,
-since no client exists". That premise is true of *deployed instances of this fork* — there
-are none, which is what Tier 1 is about — and false of *clients*, of which this document
-names two. The roadmap's own sequencing rule ("17 before 11, 16 and 10") exists precisely
-to put this document in front of that decision, and it did not happen.
+since no client exists".
+
+That premise is true of *deployed instances of this fork* — there are none, which is what
+Tier 1 is about — and false of *clients*, of which this document names two. The roadmap's
+own sequencing rule ("17 before 11, 16 and 10") exists precisely to put this document in
+front of that decision, and it did not happen.
 
 Two things changed, and they are not the same size:
 
@@ -102,7 +111,8 @@ Two things changed, and they are not the same size:
 transport, not a field. `ApiKeyAuthenticator` — `ApiKeyAuthMiddleware` when this was
 written; wave 2's 15-C1 renamed it and gave it one job — looks for exactly one header name,
 resolved from the `ApiKeyHeaderName` container binding. The query parameter of the same
-name that this sentence also named is gone, with sweep S11.
+name is gone too, removed by sweep S11.
+
 Both tracked clients send `GROCY-API-KEY` on every request, because it is the only API
 authentication grocy has. Against the current tree every one of those requests is
 unauthenticated: not a warning banner, not a degraded feature — Grocy-SwiftUI cannot log
@@ -110,23 +120,25 @@ in and the Home Assistant integration's config flow cannot complete. This is the
 break either client has ever been handed by this fork, and it was taken in a commit whose
 reasoning says no client exists.
 
-The mitigation, if one is wanted, is unusually cheap and that is worth writing down before
-the decision is made rather than after: the header name is a single string in a DI binding
-and the middleware already reads it from there, so accepting a legacy name alongside the
-canonical one is a contained change in one file, not a compatibility layer. The cost is
-that it keeps upstream's name alive in the auth path indefinitely, which is the sort of
-thing that is easy to add and never removed. See Q4.
+The mitigation, if one is wanted, is unusually cheap, and that is worth writing down before
+the decision is made rather than after. The header name is a single string in a DI
+binding, and the middleware already reads it from there, so accepting a legacy name
+alongside the canonical one is a contained change in one file, not a compatibility layer.
+The cost is that it keeps upstream's name alive in the auth path indefinitely — the sort
+of thing that gets added quickly and stays forever. See Q4.
 
 **`grocy_version` → `victual_version` in `GET /api/system/info`** (`ApplicationService.php:89`).
 16 correctly calls this out as the only response *field* in the whole API surface carrying
 the name, and correctly calls it a breaking API change. Coupling 2 below was written about
 the version *value*; this is the *key*, and it is the harder of the two, because a client
 that gates on a value it cannot find is in a different situation from one that finds an
-unfamiliar value. Grocy-SwiftUI reads `grocy_version.Version`; that key is now absent.
-Whether that surfaces as a decode failure on `SystemInfo` or as a silently-nil version
-depends on how the Swift model declares it, and this plan should not guess — Verification 5
-below is the check that answers it, and it is now a check on something that has already
-happened rather than a rehearsal for something that has not.
+unfamiliar value.
+
+Grocy-SwiftUI reads `grocy_version.Version`; that key is now absent. Whether that surfaces
+as a decode failure on `SystemInfo` or as a silently-nil version depends on how the Swift
+model declares it, and this plan should not guess. Verification 5 below is the check that
+answers it, and it is now a check on something that has already happened rather than a
+rehearsal for something that has not.
 
 The Home Assistant integration reads `/system/info` through `pygrocy2` for its version
 sensor and is subject to the same key rename, though it is moot while the header break
@@ -143,7 +155,9 @@ unanswered.
 endpoint manifests asserted against 14's snapshot, and notes that a manifest would fail CI
 with the client named. A path manifest would not have caught either of these: `/system/info`
 is still there and still a `GET`, and the API key header does not appear in a path list at
-all. So the manifest is necessary and not sufficient, in the same way the additive rule is.
+all.
+
+So the manifest is necessary and not sufficient, in the same way the additive rule is.
 Whatever piece 2 builds needs to cover the request headers a client sends and the response
 *keys* it reads, not only the routes it calls.
 
@@ -247,7 +261,7 @@ on a missing object 400→404, and the removal of `error_details` (`stack_trace`
 
 Both tracked clients branch on status. Grocy-SwiftUI surfaces failures to a user;
 the Home Assistant integration wraps every failure as `UpdateFailed` and marks the whole
-coordinator unavailable, so a single 403 on one entity takes out all of them — which is a
+coordinator unavailable, so a single 403 on one entity takes out all of them. That is a
 defect in that integration worth fixing in the fork regardless of plan 11.
 
 Error *message* text is not a tracked coupling. No client in scope matches on it, so
@@ -257,13 +271,15 @@ strings, and plan 11 stays free to reword them.
 **One thing on this surface was a client-visible decision rather than a status code, and it
 was decided the cheap way round while it was still cheap.** `db/pgsql/README.md`'s hazard 16:
 the `~` operator of the generic list filter emitted `LIKE`, so `?query[]=name~milk` matched
-"Milk" on SQLite and did not on PostgreSQL. Making the engines agree necessarily changes the
-answers some client gets on one of them, so the direction mattered: SQLite's case-insensitive
-behaviour was taken as the reference and PostgreSQL was moved to `ILIKE`. That is the choice
-that costs a client nothing it can observe — SQLite is what every existing client has ever
-been pointed at, and it is what the spec documented — and it was taken before the forked
-Home Assistant integration exists to be written against the other behaviour. Deciding it
-after would have meant changing a client this household maintains.
+"Milk" on SQLite and did not on PostgreSQL.
+
+Making the engines agree necessarily changes the answers some client gets on one of them, so
+the direction mattered: SQLite's case-insensitive behaviour was taken as the reference, and
+PostgreSQL was moved to `ILIKE`. That choice costs a client nothing it can observe: SQLite is
+what every existing client has ever been pointed at, and it is what the spec documented. It
+was also taken before the forked Home Assistant integration exists to be written against the
+other behaviour, since deciding it after would have meant changing a client this household
+maintains.
 
 Two things to carry forward from it, both of which sharpen "How this plan stays current":
 
@@ -294,10 +310,10 @@ The same shape recurs for location labels, in the form
 [ADR-0011](../adr/0011-label-namespace.md) gave them when it was accepted 2026-09-04: there
 is no `l` Grocycode type and no `grcy:l:{uuid}`, and the iOS app's scanner, which resolves
 `grcy:p:42`, will not recognise a `vctl:<uid>` payload. That is the better version of the
-same problem — an unrecognised namespace fails visibly, where a non-numeric id in a
-`grcy:` code was a parser hazard — and neither tracked client *generates* Grocycodes, which
-is the check ADR-0011's consequences asked this catalogue for before its acceptance claimed
-a zero blast radius at print time.
+same problem: an unrecognised namespace fails visibly, where a non-numeric id in a
+`grcy:` code was a parser hazard. Neither tracked client *generates* Grocycodes, though,
+which is the check ADR-0011's consequences asked this catalogue for before its acceptance
+claimed a zero blast radius at print time.
 
 ## Coupling 5 — fields that may be absent per user
 
@@ -313,7 +329,7 @@ it can break a client for one user and not another, which no coupling here has d
 before.
 
 Whether it *does* break Grocy-SwiftUI depends on how the Swift model declares those
-properties, and this plan should not guess: if they are non-optional, a Child logging in
+properties, and this plan should not guess. If they are non-optional, a Child logging in
 from a phone gets a decoding failure on the stock list rather than a list without prices,
 and the app stops rather than degrading. Verification 5 is the check that answers it, and
 it should be run for `price` and `costs` specifically before 19's piece 2 lands.
@@ -326,9 +342,11 @@ a second instance of the same check.
 
 The mechanism half of this document is what makes it cheap. The Swift module's transport
 is generated from `victual.openapi.json` after [11](11-api-error-handling.md), so if 19
-lands first the optionality is generated rather than retrofitted, and the manifests item 1
-asks for should cover response *keys* — the widening item 3 recommends after Coupling 0,
-and this is the coupling that makes it load-bearing rather than tidy.
+lands first the optionality is generated rather than retrofitted. The manifests item 1 asks
+for should cover response *keys*, not just paths — the widening item 3 recommends after
+Coupling 0 — because without it a field that silently stops appearing in a response would
+pass an unwidened manifest unnoticed.
+
 So the rule is **19 before the Swift generation**, which is stronger than "before the
 client work resumes": after it, every generated model is generated twice.
 
@@ -336,7 +354,7 @@ client work resumes": after it, every generated model is generated twice.
 
 | Plan | Client exposure |
 |---|---|
-| [01](landed/01-file-storage.md) files in the database | Plan 01 states "No change. Same three routes, same headers, same 404 behaviour", which is the right commitment: Home Assistant builds picture URLs by hand from `/api/files/{picture_type}/{filename}` with base64 filenames, and Grocy-SwiftUI uses `/files/{group}/{fileName}`. Both are URL constructors, so the *route* is the contract, not the storage behind it. The one client-visible risk is the one plan 01 already lists — `mime_content_type($path)` and `finfo_buffer($bytes)` disagreeing and shifting `Content-Type` on an existing endpoint. An image client renders that difference; a schema snapshot does not see it. |
+| [01](landed/01-file-storage.md) files in the database | Plan 01 states "No change. Same three routes, same headers, same 404 behaviour": Home Assistant builds picture URLs from `/api/files/{picture_type}/{filename}`, and Grocy-SwiftUI uses `/files/{group}/{fileName}`. Both are URL constructors, so the *route* is the contract, not the storage. The risk plan 01 already lists — `mime_content_type($path)` and `finfo_buffer($bytes)` disagreeing and shifting `Content-Type` — is visible to an image client but not to a schema snapshot. |
 | [03](landed/03-category-min-stock.md) | Home Assistant's missing-products sensor reads `stock/volatile`. The plan keeps group shortfalls out of `stock_missing_products`, so the sensor is unchanged — which is also why the feature is invisible to it until the integration is taught about it. |
 | [05](05-store-shopping-lists.md) | Additive fields on `objects/shopping_list`; both clients ignore unknown fields. Note Grocy-SwiftUI reads `objects/shopping_locations` by that name, so 15-Q5's declined rename stays declined. |
 | [02](02-mcp-endpoint.md), [12](landed/12-frontend-shared-core.md), [13](landed/13-write-path-transactions.md) | None. |
@@ -430,9 +448,9 @@ and no client code to own.
    carrying a dependency whose models no longer describe the server stays flat.
 
 The honest case against reimplementation is that it is code owned forever with no
-upstream, written by a household of one, and that the first year of a hand-rolled HTTP
-client is mostly rediscovering timeouts, retries, connection reuse and error mapping that
-a maintained library already got right. That case is real. It is weaker here than usual
+upstream, written by a household of one. The first year of a hand-rolled HTTP client is
+mostly rediscovering timeouts, retries, connection reuse, and error mapping that a
+maintained library already got right. That case is real. It is weaker here than usual
 because the client is narrow, the server is on the same cluster, and
 [11](11-api-error-handling.md) is about to make the error mapping worth writing fresh
 against rather than inheriting.
@@ -484,10 +502,12 @@ Posture: fork. **The order of work changed when [16](16-project-rename.md) lande
 first commit is now the API key header, because without it the app cannot authenticate and
 nothing else in the list is reachable to test. Then the `victual_version` key, then the
 version gate's value, then the two latent 404s above, then hierarchical pickers when
-[07](retired/07-nested-products.md)/[08](landed/08-nested-locations.md) land. Track upstream and rebase; a
-single-maintainer app is easier to follow than to diverge from. See Q3 on distribution,
-which is the real cost here and is not a code problem, and Q4 on whether the server meets
-the client half way on the header so this fork is not the only way to reach the server.
+[07](retired/07-nested-products.md)/[08](landed/08-nested-locations.md) land.
+
+Track upstream and rebase; a single-maintainer app is easier to follow than to diverge
+from. See Q3 on distribution, which is the real cost here and is not a code problem, and
+Q4 on whether the server meets the client half way on the header so this fork is not the
+only way to reach the server.
 
 > **Revised, 2026-08-29 — write it, do not fork it.** The Apple client is first-party: a
 > Swift client module — models, networking, auth, state — with independent UI modules per
@@ -572,7 +592,7 @@ Q4 exists because that rename took a decision this document was supposed to hold
    same string. The question is therefore live and unchanged, only later than it should
    be; nothing has foreclosed any of the answers. With the iOS app the only version gate
    left, and a soft one, this is no longer constrained by the ecosystem. I lean to
-   resetting the version at the rename rather than continuing upstream's `4.x.y` line: the
+   resetting the version at the rename rather than continuing upstream's `4.x.y` line. The
    fork stops being 4.x in any meaningful sense around [07](retired/07-nested-products.md), and a
    client that believes it is talking to grocy 4.8 fails in more confusing ways than one
    that knows it is talking to something else. The forked iOS app's supported-versions list
@@ -587,8 +607,8 @@ Q4 exists because that rename took a decision this document was supposed to hold
    polling `/system/db-changed-time` and fetching entity data only when it moves. The
    decisive reason is [10](landed/10-cold-start-statelessness.md): thirteen serial requests every
    thirty seconds is not a client that lets a pod scale to zero, and no dependency choice
-   fixes that — but the async rewrite is also the thing that makes depending on a sync
-   library pointless, so the two decisions are one decision. If the answer is to depend on
+   fixes that. The async rewrite is also the thing that makes depending on a sync library
+   pointless, so the two decisions are one decision. If the answer is to depend on
    grocy-py after all, then the `pygrocy2`→`grocy-py` migration is work upstream needs,
    is not fork-specific, and should be offered back as a PR rather than kept private.
 
@@ -645,8 +665,9 @@ Q4 exists because that rename took a decision this document was supposed to hold
      reaches this server. Cleanest, and consistent with the hard-fork posture — but it
      means the *only* way to talk to this fork from iOS or Home Assistant is through
      software this household also maintains, and it forecloses anyone else's client
-     before there is anyone else. It also makes the Q3 distribution problem load-bearing:
-     if the forked iOS app cannot be got onto a device, there is no iOS access at all.
+     before there is anyone else. It also means the Q3 distribution problem controls iOS
+     access entirely: if the forked iOS app cannot be got onto a device, there is no iOS
+     access at all.
    - **Accept both, indefinitely.** One extra string in the `ApiKeyHeaderName` binding and
      one extra lookup in `ApiKeyAuthenticator`. Cheap to write, and the sort of
      compatibility shim that is never removed — upstream's name stays in the auth path
@@ -660,7 +681,7 @@ Q4 exists because that rename took a decision this document was supposed to hold
 
    Whichever is chosen, note that the same question does *not* arise for
    `grocy_version` → `victual_version`: a client reading a missing key needs its own fix
-   regardless, and answering `/system/info` with both keys would be adding a field to a
+   regardless. Answering `/system/info` with both keys would be adding a field to a
    response purely to keep an old name alive, which the additive rule permits and the
    hard-fork posture argues against.
 
@@ -746,9 +767,9 @@ roadmap is held to. Lint is not verification, and neither is reading a client's 
 
 6. **Q4's answer is tested as a pair.** Whichever shim answer Q4 lands on, exercise a stock
    client against a booted instance with the legacy header and with the new one, and
-   confirm both the accepted and the rejected case behave as the answer says — including,
-   if the answer has an expiry, that the deprecation log line fires. A shim nobody has
-   watched reject a request is a shim nobody knows the shape of.
+   confirm both the accepted and the rejected case behave as the answer says. If the answer
+   has an expiry, confirm the deprecation log line fires too. A shim nobody has watched
+   reject a request is a shim nobody knows the shape of.
 
    > **Reduced by Q4's answer.** There is no shim, so the pair collapses to one case:
    > confirm `GROCY-API-KEY` is rejected as an unauthenticated request rather than

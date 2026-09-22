@@ -7,13 +7,15 @@ fails when the numbers on disk and the numbers claimed here disagree.
 
 **Why the record exists.** Plans are worked in parallel branches, and each one needs a
 migration number before any of them merges. Numbers handed out on a branch collide or leave
-holes, and a hole is worse than a collision because nothing complains: a database migrated
-through a tree that has 0257 and 0259 but not 0258 records `MAX(migration) = 259`, so
-anything that asks "is this database at the latest number?" — `GetLatestMigrationNumber()`,
-`DatabaseImporter`'s two-sided comparison, plan 10's boot check — is satisfied by a database
-that never ran 0258. The migration *runner* is not fooled (it asks per number whether a row
-exists, so a 0258 arriving later is applied), but every gate built on the maximum is, and it
-is a gate that decides whether a deployment is allowed to serve.
+holes, and a hole is worse than a collision because nothing complains.
+
+A database migrated through a tree that has 0257 and 0259 but not 0258 records
+`MAX(migration) = 259`. As a result, anything that asks "is this database at the latest
+number?" — `GetLatestMigrationNumber()`, `DatabaseImporter`'s two-sided comparison, plan 10's
+boot check — is satisfied by a database that never ran 0258. The migration *runner* is not
+fooled (it asks per number whether a row exists, so a 0258 arriving later is applied), but
+every gate built on the maximum is, and it is a gate that decides whether a deployment is
+allowed to serve.
 
 **So the sequence above the baseline has no holes in a mergeable tree.** A branch that
 carries 0259 while 0258 lives in another branch is *not independently mergeable*, and the
@@ -23,7 +25,7 @@ which is only safe while no database anywhere has run it.
 
 **Above 0265 a migration is PostgreSQL-only.** ADR-0008's retirement froze the SQLite line
 at `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` = 0265, because SQLite is an input
-format now and an input format's upper bound has to stop moving: nothing here migrates a
+format now and an input format's upper bound has to stop moving. Nothing here migrates a
 SQLite database past that number, so a `NNNN.sqlite.sql` above it is a file no engine can run
 and no source `bin/victual-db-import` accepts could have applied. Write the `.pgsql.sql` — or
 a portable `NNNN.sql`, which now means the same thing — and `check-migrations.php` refuses
@@ -45,9 +47,6 @@ have recorded it.
 | 0260 | [plan 21](../docs/plans/landed/21-frontend-sink-discipline.md) — purify stored rich text that predates the API purifier | in this tree |
 | 0261 | [issue #46](https://github.com/datagen24/victual/issues/46) — a total order for `products_last_purchased.price`, and SQLite's integer division in `products_average_price` | in this tree |
 | 0262 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `login_attempts`, the login throttle's out-of-process state | in this tree |
-
-The file under 0262 was edited in place during review rather than followed by a migration that drops a column, because it has never existed in `master`: the retirement rule above is about numbers that have, and a branch that has not merged is still deciding what its migration says. What changed is that `login_attempts` lost its `ip_address` column — see that file for why a per-address count is the proxy's job and not this application's.
-
 | 0263 | [plan 11](../docs/plans/11-api-error-handling.md) question 4 — `api_keys.key_hint` | in this tree |
 | 0264 | [plan 11](../docs/plans/11-api-error-handling.md) question 4 — hash the stored API keys, backfill the hint | in this tree |
 | 0265 | [security sweep S12](../docs/security-sweep.md) via wave 2 — `users.must_change_password`, moved out of `user_settings` in review | in this tree |
@@ -76,6 +75,12 @@ The file under 0262 was edited in place during review rather than followed by a 
 | 0288 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0289 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
+The file under 0262 was edited in place during review rather than followed by a migration
+that drops a column, because it has never existed in `master`. The retirement rule above is
+about numbers that have, and a branch that has not merged is still deciding what its
+migration says. What changed is that `login_attempts` lost its `ip_address` column — see that
+file for why a per-address count is the proxy's job and not this application's.
+
 Renumbered 2026-09-19, the lowest-free-slot rule once more. Issue #208 was written saying
 "0289 as of 2026-09-19", counting plan 22's two claims as taken; but a written 0289 above
 unwritten 0287 and 0288 is the hole `check-migrations.php` refuses, and plan 22 is still
@@ -88,9 +93,10 @@ number displaced is a plan's own rather than a moving pair of drafts. Plan 30 na
 prerequisite in its header: "Fix issue 148 before writing it: the nesting-level trigger this
 plan copies fires only on `UPDATE`." That fix is being written now, on this branch, which
 makes it the thing with a real file behind it — the same standing plans 03, 25 and 27 had on
-the fifth, sixth and seventh moves — while 0278–0281 remain claims with no file. So the fix
-takes the lowest free slot, 0277, and plans 30, 31 and 22 each move up by one: 30 to 0278, 31
-to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/landed/30-nested-product-groups.md) and
+the fifth, sixth and seventh moves — while 0278–0281 remain claims with no file.
+
+So the fix takes the lowest free slot, 0277, and plans 30, 31 and 22 each move up by one: 30
+to 0278, 31 to 0279, 22 to 0280–0281. [Plan 30](../docs/plans/landed/30-nested-product-groups.md) and
 [31](../docs/plans/landed/31-directed-substitution.md)'s own migration-number lines move with this
 table; [22](../docs/plans/22-medication-tracking.md)'s numbering note does too.
 
@@ -110,25 +116,29 @@ nothing, and it runs `StoredHtmlPurifier` over the five columns in
 `BaseApiController::HTML_RENDERED_COLUMNS`. It is portable in one file because PDO is, so it
 needs no engine pair under [ADR-0004](../docs/adr/0004-engine-specific-migrations.md).
 
-0277 is a defect fix, not a plan — the same case 0260, 0261 and 0267 are, and per the ninth
-move above it took the lowest free slot rather than the next one after 0276, displacing plan
+0277 is a defect fix, not a plan — the same case 0260, 0261 and 0267 are. Per the ninth move
+above, it took the lowest free slot rather than the next one after 0276, displacing plan
 30 (and, in train, 31 and 22) up by one.
 
 **Renumbered again 2026-09-15, the tenth application of the same rule, and the first time
 this branch had to correct its own earlier claim rather than someone else's.** Plan 19
 piece 2 (issue 84) first claimed 0282, on the reasoning that 0280-0281 were "already
-claimed, so the next free number is the one after them" — but that reasoning is exactly
+claimed, so the next free number is the one after them." That reasoning is exactly
 the mistake the fifth through ninth moves exist to prevent: it treated 0280-0281 as
-occupied because a name was written next to them, when the rule has never been about
-whether a number carries a claim, only about whether it carries a *file*. `check-migrations.php`
-said so directly, on this branch's own CI run: a file at 0282 with nothing on disk at
-0280-0281 is the hole the second check refuses, waiver or not, and CI does not set
-`--allow-reserved-holes` — so a branch that leaves itself a hole under its own migration is
-not mergeable by its own doing, not by 22's. Plan 19 piece 2 is scheduled (wave 5) and its
-file is being written on this branch, while 22 remains an unscheduled draft with no file
-behind either of its two numbers; per the rule the fifth through ninth moves already
-established, the number about to have a file takes the lowest free slot and the unscheduled
-claim moves up. So plan 19 piece 2 takes **0280** (displacing its own prior 0282 claim down
+occupied because a name was written next to them.
+
+The rule has never been about whether a number carries a claim, only about whether it
+carries a *file*. `check-migrations.php` said so directly, on this branch's own CI run: a
+file at 0282 with nothing on disk at 0280-0281 is the hole the second check refuses, waiver
+or not, and CI does not set `--allow-reserved-holes`. So a branch that leaves itself a hole
+under its own migration is not mergeable by its own doing, not by 22's.
+
+Plan 19 piece 2 is scheduled (wave 5) and its file is being written on this branch, while 22
+remains an unscheduled draft with no file behind either of its two numbers. Per the rule the
+fifth through ninth moves already established, the number about to have a file takes the
+lowest free slot and the unscheduled claim moves up.
+
+So plan 19 piece 2 takes **0280** (displacing its own prior 0282 claim down
 by two) and plan 22 moves from 0280-0281 to **0281-0282**, keeping its own two-number span
 intact. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
 table. The next unclaimed number is now **0283**.
@@ -140,28 +150,34 @@ which is portable in one file, and [ADR-0004](../docs/adr/0004-engine-specific-m
 asks for a pair only where the two engines genuinely need different SQL.
 
 **0274 landed; 0275 to 0280 are claimed and no file exists for them yet.**
-Plan 23 took the lowest free slot when its migration was written, per the same rule: the
-highest number on disk is now 0274 and there is still no hole or waiver, because 0275–0280
-sit *above* it rather than as a gap below it, which is the case this table's own argument is
-about and the reason no `--allow-reserved-holes` waiver is needed.
+Plan 23 took the lowest free slot when its migration was written, per the same rule. The
+highest number on disk is now 0274, and there is still no hole or waiver, because 0275–0280
+sit *above* it rather than as a gap below it. That is the case this table's own argument is
+about, and the reason no `--allow-reserved-holes` waiver is needed.
 
 Plan 23's number is now fixed — it has a file on disk and does not move again, whatever else
 gets renumbered around it. What sits behind it moved once more on `master` while this branch
-was landing 0274 (see the renumbering note above the table): 28 owns 0275, 29 owns 0276, 30
+was landing 0274 (see the renumbering note above the table). 28 owns 0275, 29 owns 0276, 30
 owned 0277 and 31 owned 0278, ahead of 22 at 0279–0280, because all four were scheduled into
-wave 4 while 22 remained an unscheduled draft. The ninth move (see above the table) then took
+wave 4 while 22 remained an unscheduled draft.
+
+The ninth move (see the 2026-09-15 renumbering note above) then took
 0277 for the fix issue 148 asks plan 30 to depend on, moving 30 to 0278, 31 to 0279 and 22 to
 0280–0281. The next unclaimed number is 0282.
 
-**Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written**:
-claimed as 0261–0262
-while `master` was landing 0261 for [#46](https://github.com/datagen24/victual/issues/46), then
-0262–0264 until wave 2 landed 0262 through 0265, then 0267–0269 until wave 3a took 0266, then
-0268–0270 to make room for 0267, then 0269–0271 to make room for plan 03, then 0271–0273 to
-make room for plan 25, then 0273–0275 to make room for plan 27's two, and now 0274–0276 to make room for
-plan 08's one. Each time the
-correction cost one table edit,
-because nothing had been written to disk under the old numbers.
+**Plan 22 and 23's three numbers have now moved eight times without a line of SQL being written:**
+
+1. Claimed as 0261–0262 while `master` was landing 0261 for [#46](https://github.com/datagen24/victual/issues/46).
+2. To 0262–0264, until wave 2 landed 0262 through 0265.
+3. To 0267–0269, until wave 3a took 0266.
+4. To 0268–0270, to make room for 0267.
+5. To 0269–0271, to make room for plan 03.
+6. To 0271–0273, to make room for plan 25.
+7. To 0273–0275, to make room for plan 27's two.
+8. To 0274–0276, to make room for plan 08's one.
+
+Each time the correction cost one table edit, because nothing had been written to disk under
+the old numbers.
 
 **A ninth move follows, and it breaks the pair.** Until now, 22's two numbers moved in
 lock-step immediately behind 23's one, because 23 always merged first and 22 depended on it.
@@ -170,9 +186,11 @@ numbers move, from 0275–0276 to 0279–0280, to make room for 28, 29, 30 and 3
 
 **A tenth move follows the ninth's own pattern once more, and for once the number displaced
 is not 22's.** The ninth move above left 22 at 0280–0281. Plan 19 piece 2 then wrote a file
-at 0282 without moving 22 out of the way first, leaving a hole at 0280–0281 that
-`--allow-reserved-holes` covered locally but that CI, which does not set the waiver,
-correctly refused. The fix is the same rule stated in reverse: the number with a file being
+at 0282 without moving 22 out of the way first, leaving a hole at 0280–0281.
+`--allow-reserved-holes` covered that hole locally, but CI, which does not set the waiver,
+correctly refused it.
+
+The fix is the same rule stated in reverse. The number with a file being
 written now (0282, plan 19 piece 2) takes the lowest free slot, 0280, and 22 - still the
 unscheduled draft with no file behind either number - moves up one more time, to 0281–0282.
 Same rule as the fifth and sixth moves, applied to four numbers scheduled into wave 4 at
@@ -187,19 +205,23 @@ unscheduled draft with none. So the migration this issue needs takes the lowest 
 
 **An eleventh move, discovered only at merge time rather than by either branch alone.**
 Two branches each independently ran the tenth move's own rule against the same starting
-state and landed on the same number: this plan's own piece 2 corrected itself onto 0280 (the
+state and landed on the same number. This plan's own piece 2 corrected itself onto 0280 (the
 paragraph above this table titled "the tenth application of the same rule"), and, separately,
-issue #130 also took 0280 (the tenth move immediately above this one) — both true when each
-was written, on branches that had not yet seen each other. `git merge` surfaced it as an
-add/add conflict on `migrations/0280.pgsql.sql` rather than as a silently-overwritten file,
-which is the mechanical reason a collision this table exists to prevent still reached a merge
-instead of being caught by a claim: neither branch's claim was wrong when made, and this
+issue #130 also took 0280 (the tenth move immediately above this one). Both were true when
+each was written, on branches that had not yet seen each other.
+
+`git merge` surfaced it as an
+add/add conflict on `migrations/0280.pgsql.sql` rather than as a silently-overwritten file.
+That is the mechanical reason a collision this table exists to prevent still reached a merge
+instead of being caught by a claim. Neither branch's claim was wrong when made, and this
 table cannot serialize two branches that have not yet talked to each other.
 
 Resolution follows the retirement rule rather than the lowest-free-slot rule, because for the
-first time one side of the collision is not a claim but a landed file: issue #130's 0280 is
+first time one side of the collision is not a claim but a landed file. Issue #130's 0280 is
 already `in master`, and "a number is retired, never reused" (above) means it cannot move,
-whichever branch merges second. Plan 19 piece 2 therefore moves again, off 0280 and onto the
+whichever branch merges second.
+
+Plan 19 piece 2 therefore moves again, off 0280 and onto the
 next free slot, 0281; plan 22 — still the unscheduled draft yielding to every scheduled or
 already-written thing that needs a number — moves up one more time, from 0281–0282 to
 **0282–0283**. The next unclaimed number is now **0284**.
@@ -212,14 +234,16 @@ number is now **0285**.
 displaced claims are drafts.** [Issue #176](https://github.com/datagen24/victual/issues/176)'s
 migration is written and on disk as `0282.pgsql.php`, so it takes the lowest free slot by the
 rule this table keeps restating: the numbers that get written take the lowest free slots, and
-claims without files behind them yield. Plan 22 is still the unscheduled draft it was on every
-previous move, and plan 32 is gated on ADR-0024, which is **Proposed** — neither has a file, so
-both yield and both keep their relative order: 22 moves from 0282–0283 to **0283–0284** and 32
+claims without files behind them yield.
+
+Plan 22 is still the unscheduled draft it was on every
+previous move, and plan 32 is gated on ADR-0024, which is **Proposed**. Neither has a file,
+so both yield and both keep their relative order: 22 moves from 0282–0283 to **0283–0284** and 32
 from 0284 to **0285**. Their own numbering lines move with this table. The next unclaimed
 number is now **0286**.
 
 That is two collisions in two days, and both have the same mechanical cause the note above
-already names: plan 32's claim and this migration were made hours apart by branches that could
+already names. Plan 32's claim and this migration were made hours apart by branches that could
 not see each other, and this table cannot serialize branches that have not talked. Neither
 claim was wrong when it was made. What the rule does is decide the tie without either branch
 having to be at fault — a claim is a placeholder, a file is a fact, and the placeholder moves.
@@ -228,10 +252,14 @@ having to be at fault — a claim is a placeholder, a file is a fact, and the pl
 against another branch.** Plan 32's migration was written on this branch under its claimed
 number, 0285, while 22's two numbers, 0283–0284, stayed unwritten claims below it — a hole
 `--allow-reserved-holes` waived locally throughout implementation, exactly as the waiver is
-for. CI does not set that waiver, and its `suite` job refused the branch on those same two
-numbers once 0285 had a file behind it: the rule this table keeps restating cuts the same way
-here as it did against issue #176 and issue #130 — a number that has a file takes the lowest
-free slot, and a claim without one yields, whoever holds each. Applying it: plan 32 moves from
+for.
+
+CI does not set that waiver, and its `suite` job refused the branch on those same two
+numbers once 0285 had a file behind it. The rule this table keeps restating cuts the same way
+here as it did against issue #176 and issue #130: a number that has a file takes the lowest
+free slot, and a claim without one yields, whoever holds each.
+
+Applying it: plan 32 moves from
 0285 to **0283**, the lowest free slot below its own written file, and plan 22's two numbers
 move up in turn, from 0283–0284 to **0284–0285**. `check-migrations.php` then passes with no
 waiver needed. [Plan 32](../docs/plans/landed/32-label-kinds.md)'s own numbering line moves with this
@@ -244,8 +272,10 @@ table. The next unclaimed number is still **0286**.
 lowest-free-slot rule could not fix it.** 0286 merged (#201) while plan 22's 0284–0285 were
 still unwritten claims below it. That was the tree's first hole in `master`: every earlier
 one was closed on a branch, by moving the *file* down to the lowest free slot before anything
-had run it. Here the file is in `master`, its number is retired by the rule at the top of this
-document, and "moved down at merge time" is only safe while no database anywhere has run it —
+had run it.
+
+Here the file is in `master`, so its number is retired by the rule at the top of this
+document. "Moved down at merge time" is only safe while no database anywhere has run it,
 which cannot be promised for a number that has been on `master` for hours. `check-migrations.php`
 failed on `master` itself from that merge on, so the `suite` job was red for every branch
 until this.
@@ -253,18 +283,26 @@ until this.
 So the *hole* moved instead of the file. **0284 and 0285 are now written, as `SELECT 1`
 migrations**, which is what the rule already allowed ("a 0258 arriving later is applied"): a
 database that already ran 0286 applies them on its next start, and one that has not applies all
-three in order. Plan 22's two unwritten claims moved up to **0287–0288** — a fourteenth move,
+three in order.
+
+Plan 22's two unwritten claims moved up to **0287–0288** — a fourteenth move,
 and the first that costs two numbers rather than nothing, because the numbers were spent on
 placeholders rather than merely renamed. They are two of a number space that is not scarce, and
-plan 22 is still an unscheduled draft. **The lesson for the next branch:** a migration
+plan 22 is still an unscheduled draft.
+
+**The lesson for the next branch:** a migration
 scheduled ahead of an unwritten claim must take that claim's number, or move it up *in the
-same pull request*, because once it is in `master` the only way to close the gap is to write
+same pull request*. Once it is in `master`, the only way to close the gap is to write
 something into it. The next unclaimed number is **0289**.
+
+The eighth move is the fifth's case for the third time, and the plan it moves for is not a
 draft: **[plan 08](../docs/plans/landed/08-nested-locations.md) is scheduled, its questions are
-answered, and its migration is being written on this branch**, while 22 and 23 still have no
+answered, and its migration is being written on this branch**. 22 and 23 still have no
 delivery slot. So 08 takes 0273 — the lowest free slot, since 0269–0272 are on disk — and 23
 moves to 0274 with 22 behind it at 0275–0276, keeping the one ordering constraint between
-them. Nothing claimed and unwritten now sits below 0273, so the branch carrying
+them.
+
+Nothing claimed and unwritten now sits below 0273, so the branch carrying
 `0273.pgsql.sql` passes `check-migrations.php` without `--allow-reserved-holes`. Plan 23 is
 the one to re-read after this: it adds `locations.storage_class_id` to the same table 08
 reshapes, and it will now do so on top of `parent_location_id` rather than beside it.
@@ -284,8 +322,10 @@ migration might be rebuilding. Leaving it at 0270 would have left that tree with
 one-table edit to save.
 
 The fifth was the ordinary case the rule was written for: plan 03 is
-*scheduled* — wave 3b — while 22 and 23 are drafts with no delivery slot, so the number that
-is about to have a file behind it takes the lowest free slot and the drafts move up. Doing it
+*scheduled* — wave 3b — while 22 and 23 are drafts with no delivery slot. So the number that
+is about to have a file behind it takes the lowest free slot, and the drafts move up.
+
+Doing it
 the other way round would have put 0271 on disk above a three-number hole that nothing was
 working to close, and `check-migrations.php` would have refused the branch until two
 unscheduled plans landed. That is the argument for
@@ -296,7 +336,9 @@ trusting a number it claimed a week ago.
 The sixth is [plan 25](../docs/plans/25-label-infrastructure.md), and it is the fifth's case
 again with one number more. Plan 25 is scheduled into wave 3b and needs two numbers; 22 and 23
 remain drafts with no delivery slot. So 25 takes 0269–0270 and the drafts move up to 0271–0273,
-preserving the one ordering constraint between them — 23 before 22. Had 25 taken 0272–0273
+preserving the one ordering constraint between them — 23 before 22.
+
+Had 25 taken 0272–0273
 instead, it would have put the only migrations anyone is about to write on disk above a
 three-number hole, and `check-migrations.php` would have refused the wave 3b branch until two
 unscheduled plans landed. The rule keeps producing the same answer because the situation keeps
@@ -306,13 +348,15 @@ files behind them yield.
 **The waiver stays.** `--allow-reserved-holes` (and `SUITE_ALLOW_RESERVED_HOLES=1`) is not
 scaffolding for this one branch: the situation recurs by construction, because parallel plan
 branches each need a number before any of them merges, and the roadmap has several waves of
-those left. Removing it would not make the check any stricter — a tree with a hole still
-fails without it — it would only take away the thing that let this branch run its own suite
+those left.
+
+Removing it would not make the check any stricter — a tree with a hole still
+fails without it. It would only take away the thing that let this branch run its own suite
 for the three rounds it spent waiting, which is the difference between an enforcement and a
 wall. It is opt-in, it prints what it waived, and CI does not set it.
 
-Note that 0257 and 0259 are both plan 18's while 0258 is not. That is not a mistake and is
-not fixable by renumbering within one branch: 0258 was claimed by plan 01 while plan 18's
+Note that 0257 and 0259 are both plan 18's while 0258 is not. That is not a mistake, and it is
+not fixable by renumbering within one branch. 0258 was claimed by plan 01 while plan 18's
 first migration was already written, and moving plan 18's second migration down to 0258
 would collide rather than close the hole.
 
