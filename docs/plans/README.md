@@ -103,7 +103,8 @@ Unscheduled work:
 - The two retirements 24 deferred: archiving migrations 0001–0255, and the differential
   harness itself. Both are unblocked now that 14 piece 2 has landed; neither has been done.
 
-The two label items that were deliberate follow-ups toward the retirement ADR-0011 accepted —
+The two label items that were deliberate follow-ups —
+[ADR-0019](../adr/0019-label-printers-are-master-data.md) decision item 7, steps 2 and 3,
 migrating the five entity types that printed through the webhook, then deleting
 `VICTUAL_LABEL_PRINTER_WEBHOOK` with its constants — landed as
 [32](landed/32-label-kinds.md) on 2026-09-16. The wire-contract question that held them was
