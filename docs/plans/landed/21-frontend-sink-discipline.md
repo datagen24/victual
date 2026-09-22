@@ -1,11 +1,12 @@
 # 21. Frontend sink discipline
 
 **Goal:** Make the frontend XSS gate real. The 23 CodeQL alerts of 2026-09-04 were closed
-by hand; the job that was supposed to have caught them does not exist, the harness it
+by hand. The job that was supposed to have caught them does not exist, the harness it
 would run cannot boot against this tree, and the one sink that is a decision rather than a
 defect is still open. Close all four.
 **Depends on:** nothing. Step 1 unblocks [12](12-frontend-shared-core.md)'s whole harness,
 so it comes first regardless of what else is scheduled.
+
 **Status:** **landed**, 2026-09-04 — steps 0 to 5, all six open questions answered, and one
 of those answers overturned step 4 before it was built. The body below is kept as written;
 [Executed](#executed) is the record of what shipped and of what the plan got wrong.
@@ -56,7 +57,7 @@ stored-XSS class in September 2026 and declared a standing guard against its ret
 sinks of exactly that shape were then merged and sat open for five days until CodeQL — not
 this repository's own gate — reported them.
 
-It is also a second instance of the failure the plans README already named once, in its
+It is also a second instance of the failure the plans README already named once. In its
 own words: *"a deferral that contradicts a stated gate has to change the gate's wording at
 the same time, or the wording quietly becomes a claim nobody checks."* Here the wording was
 never true to begin with. Step 2 is the fix; **Q1** is whether the corpus needs something
@@ -111,8 +112,8 @@ Add `frontend-security` to `.github/workflows/tests.yml`: boot a demo instance t
 `s29-payload.js`, fail the job on a non-zero exit. `PLAYWRIGHT_BROWSERS_PATH` and
 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` per that skill.
 
-The job has to be shown capable of failing before it is believed, by the probe's own rule:
-run it once against a tree with step 0 reverted and confirm it reports the two sinks (after
+The job has to be shown capable of failing before it is believed, by the probe's own rule.
+Run it once against a tree with step 0 reverted and confirm it reports the two sinks (after
 step 3 gives it probes for them), then restore. A gate whose failure mode has never been
 observed is the thing this plan exists to stop shipping.
 
@@ -171,10 +172,10 @@ So:
    picture, video) and `codeview` lets a user type anything else. **Q5**.
 
 This decides where HTML is trusted in this application, so per [AGENTS.md](../../../AGENTS.md)
-it leaves an ADR behind — *Rich text is sanitised in the browser at render time* — recording
-the client-side choice, that the API is deliberately not a sanitising boundary, and what
-that means for [ADR-0006](../../adr/0006-authenticated-issues-in-scope.md)'s threat model. The
-ADR is accepted in its own PR carrying bookkeeping only, per the same file.
+it leaves an ADR behind — *Rich text is sanitised in the browser at render time*. That ADR
+records the client-side choice, that the API is deliberately not a sanitising boundary, and
+what that means for [ADR-0006](../../adr/0006-authenticated-issues-in-scope.md)'s threat
+model. The ADR is accepted in its own PR carrying bookkeeping only, per the same file.
 
 ### Step 5 — the last of the selector class, and a convention
 
@@ -202,7 +203,7 @@ which is the only kind of convention that survives.
 
 ## Open questions
 
-1. **Is a fourth promise the right fix for a gate that was promised three times?** Step 2
+1. **Is a fourth promise sufficient for a gate that was promised three times?** Step 2
    adds the job and the three documents become true. Nothing stops the next divergence. The
    alternative is mechanical: a `lint`-job assertion that each workflow job name named in
    the corpus exists in `.github/workflows/`, so the claim and the tree cannot separate
@@ -312,7 +313,7 @@ a gate, run once against a tree where it had to fail.
 
 **Step 1.** The filter went into `GetAppliedMigrationNumbers()` rather than into
 `GetUnknownMigrationNumbers()` as the plan says. That method's contract is "every migration
-number this database has recorded", and `-1` is not one — filtering at the read keeps the
+number this database has recorded", and `-1` is not one. Filtering at the read keeps the
 contract true and fixes both derived methods and `GetAppliedMigrationNumber()` at once,
 where filtering in the caller would have left the maximum reporting `-1` for a demo
 database that had recorded nothing else.
@@ -404,9 +405,10 @@ This leaves one thing deliberately not done, and it is the residual risk to reco
 purifies these columns in the *browser*. If the server-side purifier is ever misconfigured
 or bypassed, the render sinks have no second line. Adding DOMPurify would give one, at the
 cost of a second allowlist that has to agree with `HTML.Allowed` forever — and a client
-allowlist narrower than the server's silently eats formatting users already have. The
-`html-column` family is the cheaper form of the same assurance, because it fails loudly at
-the boundary rather than papering over it at the sink. Revisit if that purifier is ever
+allowlist narrower than the server's silently eats formatting users already have.
+
+The `html-column` family is the cheaper form of the same assurance, because it fails loudly
+at the boundary rather than papering over it at the sink. Revisit if that purifier is ever
 changed.
 
 ### Executed — the round CodeQL sent back
@@ -432,9 +434,9 @@ and the selector it replaces select the same option, with zero mismatches; prefi
 still resolves and moves focus; and the payload that made the old expression throw returns
 an empty set. 26/26 probes still clean.
 
-The lesson is the one this plan already carries once, in a different costume: an escaper
-hand-written against a parser you do not control is a defect waiting for its next input.
-The fix is to stop parsing, not to escape harder.
+An escaper hand-written against a parser you do not control is a defect waiting for its
+next input — the same failure this plan already found once, in a different costume. The
+fix is to stop parsing, not to escape harder.
 
 ### Executed — the round review sent back
 
@@ -453,12 +455,16 @@ this pull request already touches went with it: `userpicker.js:74` (`option[valu
 a Blade attribute) and `recipes.js:94`, which concatenated the search box's text into
 `:not(:contains_case_insensitive(…))`.
 
-Verified rather than assumed, against the running app: `FindOptionByText` and the expression
-it replaces agree on all 33 comparisons across every option on `/purchase`; the gallery
-filter and its old expression agree on 11 needles including every card-title prefix; typing
-`x") , option:not(` throws `Syntax error` through the old expression and returns cleanly
-through the new one; and the workflow dialog the selector gates behaves identically before
-and after, checked by reverting the line and re-running rather than by reading it.
+Verified rather than assumed, against the running app:
+
+- `FindOptionByText` and the expression it replaces agree on all 33 comparisons across
+  every option on `/purchase`.
+- The gallery filter and its old expression agree on 11 needles including every
+  card-title prefix.
+- Typing `x") , option:not(` throws `Syntax error` through the old expression and returns
+  cleanly through the new one.
+- The workflow dialog the selector gates behaves identically before and after, checked by
+  reverting the line and re-running rather than by reading it.
 
 The gallery case is the one worth keeping. Its hostile input did **not** throw through the
 old expression — `:contains_case_insensitive(x) , div:not()` is a valid *selector list*, so
@@ -469,11 +475,13 @@ been the kinder failure.
 server-side purification on write is the boundary, and it is, for every row the API wrote.
 Two paths do not go through the API and the plan accounted for neither:
 `DatabaseImporter::CopyTable()` copies rows verbatim, which is what an importer should do,
-and no migration has ever rewritten descriptions already stored — so a payload planted
-through upstream grocy, or through this fork before sweep finding S1, survives an upgrade or
-an import and lands in the six raw render sinks. The `html-column:*` probes cannot see it,
-because they write through the purified API. That is the same blind spot this plan found in
-the seeded probe families, one level up, in the probes it added itself.
+and no migration has ever rewritten descriptions already stored.
+
+So a payload planted through upstream grocy, or through this fork before sweep finding S1,
+survives an upgrade or an import and lands in the six raw render sinks. The
+`html-column:*` probes cannot see it, because they write through the purified API. That is
+the same blind spot this plan found in the seeded probe families, one level up, in the
+probes it added itself.
 
 `StoredHtmlPurifier` now runs the API's own purifier over the five columns where they sit,
 from two callers: **migration 0260** for a database upgraded in place, and the end of
@@ -495,6 +503,7 @@ The regression test is a ninth suite phase, `richtext`, on both engines — the 
 identifiers through the dialect and writes through PDO, which is what differs per engine. It
 plants payloads with a direct write, the way the gap does, and the PostgreSQL half also
 takes `--source` and runs a real `DatabaseImporter` copy, which is the finding's own path.
+
 Two of its nine cases are controls rather than assertions about danger: real summernote
 formatting must survive, and a column that is *not* HTML-rendered must be left exactly as
 typed, because rewriting those would be data loss dressed as a security fix. With
@@ -507,11 +516,13 @@ then `bin/victual-migrate`, comes back `<img src="x" alt="x" />`, with 0260 reco
 migrated PostgreSQL database, where `shopping_lists` is the only HTML-rendered table with a
 row in it — the base fixture is applied to the SQLite side. Four of the five columns
 reported themselves untestable, which is exactly the "a phase that quietly tested four of
-five" failure the case was written to produce rather than swallow. The fix is the ordering
-every other PostgreSQL phase in this suite already uses: import first, which is both the
-case the finding asked for *and* how the target gets its rows. It was found by running a
-local PostgreSQL 16 and reproducing the CI failure verbatim, rather than by reading the log
-and guessing — the whole suite now passes locally on both engines, nine phases.
+five" failure the case was written to produce rather than swallow.
+
+The fix is the ordering every other PostgreSQL phase in this suite already uses: import
+first, which is both the case the finding asked for *and* how the target gets its rows. It
+was found by running a local PostgreSQL 16 and reproducing the CI failure verbatim, rather
+than by reading the log and guessing — the whole suite now passes locally on both engines,
+nine phases.
 
 And the import case is capable of failing: with `Import()`'s `purifyStoredHtml` default
 flipped to `false`, it reports an inline event handler surviving in all five columns.
@@ -525,8 +536,9 @@ the next reader does not have to rediscover them.
 prints "Unable to run Victual: PHP 8.5.0 is required…" with the default status. Every route
 on a misconfigured instance is therefore a 200 carrying an error page, and
 `.devtools/frontend/routes-smoke.js`, which asserts on status codes, reports 80 healthy
-routes for an application that cannot boot — this was found by it doing exactly that. The
-`frontend-security` job is not exposed to it (a probe whose sink never appears fails, by
+routes for an application that cannot boot — this was found by it doing exactly that.
+
+The `frontend-security` job is not exposed to it (a probe whose sink never appears fails, by
 that suite's own rule, which is why it survives this), and `SchemaVersionMiddleware`
 already answers 503 for the analogous case, so the house answer exists. One line, someone
 else's PR.

@@ -74,23 +74,29 @@ assertion anywhere that `BaseApiController::HTML_RENDERED_COLUMNS` and its purif
 configuration still do their job — five columns are deliberately rendered as HTML, so
 escaping is not available and that server-side purifier is the whole boundary. To watch the
 family fail, make `GetParsedAndFilteredRequestBody` skip `description`: every column then
-reports ten offences and `description-render` reports the payload executing. The
-local-input family exists because every other family takes its payload from the *database*,
-and so was structurally blind to a sink fed by input the browser never sent anywhere —
-which is how two live sinks reached master in September 2026.
+reports ten offences and `description-render` reports the payload executing.
+
+The local-input family exists because no other family takes its payload from the browser.
+The rest read it from the *database*, or, for `error-details`, from an intercepted server
+error message. All of them were structurally blind to a sink fed by input the browser never
+sent anywhere — which is how two live sinks reached master in September 2026.
 
 **`s29-payload.js` is a gate, and it is the one this repository runs on every pull
 request** — the `frontend-security` job in `.github/workflows/tests.yml` boots a demo
 instance and runs it. That sentence was written here on 2026-09-03 and only became true on
 2026-09-04: the job was described in four documents before it was written and then not
 written, and while nothing ran the probe two live sinks of the class it guards reached
-master. `php .devtools/check-cited-jobs.php`, in the `lint` job, is what stops a job being
-described here again without existing. It prints a `PASS`/`FAIL` line per probe with the reason, and exits
-non-zero if any probe is not clean. Everything that makes a probe uninformative counts as
-a failure, deliberately: a payload that executed, an injected `<img>`, a payload not
-visible as text, a record that was never seeded, a **sink that never appeared** and an
-**action that threw**. A run in which every action silently did nothing must not be able
-to report success, which is what treating those last two as skips would allow.
+master.
+
+`php .devtools/check-cited-jobs.php`, in the `lint` job, is what stops a job being
+described here again without existing. It prints a `PASS`/`FAIL` line per probe with the
+reason, and exits non-zero if any probe is not clean.
+
+Everything that makes a probe uninformative counts as a failure, deliberately: a payload
+that executed, an injected `<img>`, a payload not visible as text, a record that was never
+seeded, a **sink that never appeared** and an **action that threw**. A run in which every
+action silently did nothing must not be able to report success, which is what treating
+those last two as skips would allow.
 
 One probe seeds nothing. `error-details` takes the payload from a *server error message*
 instead, injected by intercepting the route and answering 500 — because `ShowGenericError`
@@ -149,14 +155,20 @@ coverage is in [the label tests](../labels/README.md).
 ## Nested locations
 
 `node nested-locations.js <url>` runs against a disposable demo instance. It builds plan 08's
-fixture tree through `/location/new` with the parent picker, checks that creating a child of a
-freezer pre-ticks *Is freezer* while creating a child of an ordinary location does not, that a
-location dropdown offers a location by its whole path, that a purchase made there lands at that
-location's id, that the stock overview's location filter rolls up (Basement finds stock held at
-Door three levels below, Main does not), and that deleting a location with children shows the
-API's own refusal while leaving the row in place. One location in the tree is named with the S29
-payload, so every page above renders it. Every name carries a per-run token, so a second run
-against the same instance neither collides with the first nor asserts against it.
+fixture tree through `/location/new` with the parent picker and checks:
+
+- creating a child of a freezer pre-ticks *Is freezer*, while creating a child of an ordinary
+  location does not
+- a location dropdown offers a location by its whole path
+- a purchase made there lands at that location's id
+- the stock overview's location filter rolls up (Basement finds stock held at Door three
+  levels below, Main does not)
+- deleting a location with children shows the API's own refusal while leaving the row in
+  place
+
+One location in the tree is named with the S29 payload, so every page above renders it. Every
+name carries a per-run token, so a second run against the same instance neither collides with
+the first nor asserts against it.
 
 CI runs it in `frontend-security` after the product group minimum stock checks, against the
 demo instance on 8085. The database coverage — the view, the guards, the depth cap and the
@@ -166,13 +178,17 @@ entities — is `.devtools/pgsql/nested-locations-tests.php`, run by `run-tests.
 
 `node nested-product-groups.js <url>` runs against a disposable demo instance. It builds a
 small group tree (`Spices / Garlic / Fresh`) through `/productgroup/new` with the parent
-picker, checks that the product form's group dropdown offers a group by its whole path, that
-the product groups list renders a path column, and that deleting a group with children shows
-the API's own refusal (`Product group has child groups`) while leaving the row in place. Every
-name carries a per-run token, so a second run against the same instance neither collides with
-the first nor asserts against it. No S29 payload row here: `s29-payload.js`'s own
-`productgroups` probe, run earlier in the same job, already plants one and asserts the list
-renders it as text.
+picker and checks:
+
+- the product form's group dropdown offers a group by its whole path
+- the product groups list renders a path column
+- deleting a group with children shows the API's own refusal (`Product group has child
+  groups`) while leaving the row in place
+
+Every name carries a per-run token, so a second run against the same instance neither
+collides with the first nor asserts against it. No S29 payload row here: `s29-payload.js`'s
+own `productgroups` probe, run earlier in the same job, already plants one and asserts the
+list renders it as text.
 
 CI runs it in `frontend-security` after the nested location checks, against the demo instance
 on 8085. The database coverage — the view, the guards, the depth cap, the mixed node and the
@@ -184,9 +200,9 @@ entities — is `.devtools/pgsql/nested-product-groups-tests.php`, run by
 `node product-nullable-pickers.js <url>` is the regression test for
 [issue 159](https://github.com/datagen24/victual/issues/159): `public/viewjs/productform.js`'s
 save handler always sent every nullable-integer picker's field even when nothing was picked,
-and `serializeJSON()` reports an unselected `<select>` as `""` — which PostgreSQL refuses for
-the integer column underneath, arriving at the browser as an opaque 400 naming no field. The
-issue reproduced this directly against `POST /api/objects/products` for four fields
+and `serializeJSON()` reports an unselected `<select>` as `""`. PostgreSQL refuses that empty
+string for the integer column underneath, so the browser sees an opaque 400 naming no field.
+The issue reproduced this directly against `POST /api/objects/products` for four fields
 (`parent_product_id`, `product_group_id`, `shopping_location_id`,
 `default_consume_location_id`); the same direct reproduction, done while writing this probe,
 found the identical 400 for the other two nullable-integer pickers the form grew under plan 29
@@ -195,10 +211,10 @@ cover all six.
 
 No PHP phase can see this: a round trip through `/objects/products` posts real integers, never
 `""`. This probe drives `/product/new` exactly as a person filling in only the required fields
-would — every nullable-integer picker left at its default blank selection — asserts the create
-succeeds and every one of the six reads back as `null` rather than an id of `0`, then reopens
-the created product and does an untouched re-save to exercise the edit (PUT) branch of the same
-handler, which runs the identical `jsonData` transform.
+would, leaving every nullable-integer picker at its default blank selection. It asserts the
+create succeeds and every one of the six reads back as `null` rather than an id of `0`. It then
+reopens the created product and does an untouched re-save to exercise the edit (PUT) branch of
+the same handler, which runs the identical `jsonData` transform.
 
 CI runs it in `frontend-security` after the working container replenishment checks, against the
 demo instance on 8085.
