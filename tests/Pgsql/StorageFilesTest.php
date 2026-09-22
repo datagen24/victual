@@ -289,8 +289,13 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 			self::assertSame('not absolute', self::DurableBytes($backend, $group, '/storagefiles-absolute.txt'), 'It is stored as the literal name it is');
 		}
 
-		// A name naming a subdirectory that does not exist is refused by both, and stores
-		// nothing under either spelling.
+		// A name naming a subdirectory that does not exist is the shape the two backends
+		// answer differently, so each is asserted on its own rather than on one claim. The
+		// filesystem backend refuses it, because fopen() will not create a file under a
+		// directory that is not there and nothing creates the directory; the database
+		// backend accepts it, because a name is a column value and a column value has no
+		// directory to be missing - the same reason the traversal two blocks above is stored
+		// rather than escaping.
 		$refused = null;
 		try
 		{
@@ -307,6 +312,15 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		{
 			self::assertNotNull($refused, 'A directory separator in a name is refused rather than silently creating a tree');
 			self::assertFileDoesNotExist(self::$storageRoot . '/' . $group . '/sub/nested.txt');
+			self::assertDirectoryDoesNotExist(self::$storageRoot . '/' . $group . '/sub', 'The refusal created no directory on its way to failing');
+			self::assertNull(self::DurableBytes($backend, $group, 'sub/nested.txt'), 'And nothing landed under the literal name either');
+		}
+		else
+		{
+			self::assertNull($refused, 'The database backend accepts the name: there is no directory for it to be missing');
+			self::assertSame('nested', self::DurableBytes($backend, $group, 'sub/nested.txt'), 'It is stored as the literal name it is');
+			self::assertTrue($storage->Exists($group, 'sub/nested.txt'), 'And it is reachable again only under that same literal name');
+			self::assertSame(['sub/nested.txt'], $storage->ListNames($group, 'sub/'), 'The prefix scan sees one entry, not a folder holding one');
 		}
 	}
 

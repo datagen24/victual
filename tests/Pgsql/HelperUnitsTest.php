@@ -49,6 +49,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		self::$scratch = sys_get_temp_dir() . '/victual-helperunits-' . getmypid();
 		mkdir(self::$scratch, 0700, true);
+
+		self::seedUserfieldFixtures();
+		self::seedCalendarFixtures();
 	}
 
 	public static function tearDownAfterClass(): void
@@ -350,25 +353,52 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		$overrides = VICTUAL_DATAPATH . '/settingoverrides';
 		@mkdir($overrides, 0700, true);
 
-		define('VICTUAL_HELPERUNITS_PREDEFINED', 'already set');
-		Setting('HELPERUNITS_PREDEFINED', 'default that must not win');
-		self::assertSame('already set', VICTUAL_HELPERUNITS_PREDEFINED, 'an existing constant is never overwritten');
+		// Both variables and the override file are process wide: a failure at any assertion
+		// below would otherwise leave them set for every later test in the run, so the undo
+		// runs in a finally rather than as trailing statements.
+		$originalFromFile = getenv('VICTUAL_HELPERUNITS_FROM_FILE');
+		$originalFromEnv = getenv('VICTUAL_HELPERUNITS_FROM_ENV');
 
-		file_put_contents($overrides . '/HELPERUNITS_FROM_FILE.txt', "from the file\n");
-		putenv('VICTUAL_HELPERUNITS_FROM_FILE=from the environment');
-		Setting('HELPERUNITS_FROM_FILE', 'from the default');
-		self::assertSame('from the file', VICTUAL_HELPERUNITS_FROM_FILE, 'the override file outranks the environment');
+		try
+		{
+			define('VICTUAL_HELPERUNITS_PREDEFINED', 'already set');
+			Setting('HELPERUNITS_PREDEFINED', 'default that must not win');
+			self::assertSame('already set', VICTUAL_HELPERUNITS_PREDEFINED, 'an existing constant is never overwritten');
 
-		putenv('VICTUAL_HELPERUNITS_FROM_ENV=false');
-		Setting('HELPERUNITS_FROM_ENV', 'from the default');
-		self::assertFalse(VICTUAL_HELPERUNITS_FROM_ENV, 'the environment outranks the default and "false" arrives as a boolean');
+			file_put_contents($overrides . '/HELPERUNITS_FROM_FILE.txt', "from the file\n");
+			putenv('VICTUAL_HELPERUNITS_FROM_FILE=from the environment');
+			Setting('HELPERUNITS_FROM_FILE', 'from the default');
+			self::assertSame('from the file', VICTUAL_HELPERUNITS_FROM_FILE, 'the override file outranks the environment');
 
-		Setting('HELPERUNITS_FROM_DEFAULT', 42);
-		self::assertSame(42, VICTUAL_HELPERUNITS_FROM_DEFAULT, 'with neither, the default is taken unchanged');
+			putenv('VICTUAL_HELPERUNITS_FROM_ENV=false');
+			Setting('HELPERUNITS_FROM_ENV', 'from the default');
+			self::assertFalse(VICTUAL_HELPERUNITS_FROM_ENV, 'the environment outranks the default and "false" arrives as a boolean');
 
-		putenv('VICTUAL_HELPERUNITS_FROM_FILE');
-		putenv('VICTUAL_HELPERUNITS_FROM_ENV');
-		@unlink($overrides . '/HELPERUNITS_FROM_FILE.txt');
+			Setting('HELPERUNITS_FROM_DEFAULT', 42);
+			self::assertSame(42, VICTUAL_HELPERUNITS_FROM_DEFAULT, 'with neither, the default is taken unchanged');
+		}
+		finally
+		{
+			if ($originalFromFile === false)
+			{
+				putenv('VICTUAL_HELPERUNITS_FROM_FILE');
+			}
+			else
+			{
+				putenv('VICTUAL_HELPERUNITS_FROM_FILE=' . $originalFromFile);
+			}
+
+			if ($originalFromEnv === false)
+			{
+				putenv('VICTUAL_HELPERUNITS_FROM_ENV');
+			}
+			else
+			{
+				putenv('VICTUAL_HELPERUNITS_FROM_ENV=' . $originalFromEnv);
+			}
+
+			@unlink($overrides . '/HELPERUNITS_FROM_FILE.txt');
+		}
 	}
 
 	public function testDefaultUserSettingKeepsTheFirstRegistrationOfAName()
@@ -1749,6 +1779,26 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		return UserfieldsService::GetInstance();
 	}
 
+	/**
+	 * The userfield definitions and the objects they hang off. Seeded for the class rather
+	 * than by whichever case runs first: four of the cases below read them, and under
+	 * --order-by=random a reader can precede the writer. Each case owns its own product so
+	 * that no case can be made to pass or fail by another one's write.
+	 */
+	private static function seedUserfieldFixtures(): void
+	{
+		self::$db->exec('INSERT INTO userfields (id, entity, name, caption, type, sort_number) VALUES '
+			. "(9601, 'products', 'helperunits_zeta', 'Zeta', 'text-single-line', 2), "
+			. "(9602, 'products', 'helperunits_alpha', 'Alpha', 'number-integral', 1), "
+			. "(9603, 'chores', 'helperunits_chore_field', 'Chore field', 'checkbox', 1)");
+
+		self::$db->exec('INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES '
+			. "(9600, 'HelperUnitsProduct', 2, 2, 2), "
+			. "(9601, 'HelperUnitsOtherProduct', 2, 2, 2), "
+			. "(9602, 'HelperUnitsListedProduct', 2, 2, 2), "
+			. "(9603, 'HelperUnitsHalfWrittenProduct', 2, 2, 2)");
+	}
+
 	public function testTheEntityListIsTheExposedEntitiesPlusUserEntitiesPlusUsers()
 	{
 		$before = self::userfields()->GetEntities();
@@ -1770,12 +1820,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	public function testFieldsAreReadPerEntityAndAnUnknownEntityIsRefused()
 	{
-		self::assertSame([], self::userfields()->GetFields('products'), 'an entity with no userfields has none');
-
-		self::$db->exec('INSERT INTO userfields (id, entity, name, caption, type, sort_number) VALUES '
-			. "(9601, 'products', 'helperunits_zeta', 'Zeta', 'text-single-line', 2), "
-			. "(9602, 'products', 'helperunits_alpha', 'Alpha', 'number-integral', 1), "
-			. "(9603, 'chores', 'helperunits_chore_field', 'Chore field', 'checkbox', 1)");
+		self::assertSame([], self::userfields()->GetFields('batteries'), 'an entity the fixture defines no userfield for has none');
 
 		$productFields = self::userfields()->GetFields('products');
 
@@ -1806,9 +1851,6 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	public function testValuesAreNullUntilSomethingStoresThemAndThenReadBack()
 	{
-		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (9600, 'HelperUnitsProduct', 2, 2, 2)");
-		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (9601, 'HelperUnitsOtherProduct', 2, 2, 2)");
-
 		$empty = self::userfields()->GetValues('products', 9600);
 
 		self::assertSame(['helperunits_alpha' => null, 'helperunits_zeta' => null], $empty, 'every field of the entity is a key, with null where nothing is stored');
@@ -1839,9 +1881,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 	public function testAllValuesOfAnEntityAreListedAndAnUnknownEntityIsRefused()
 	{
+		self::userfields()->SetValues('products', 9602, ['helperunits_alpha' => '11']);
+
 		$values = self::userfields()->GetAllValues('products');
 
-		self::assertNotEmpty($values, 'the value stored above is listed');
+		self::assertNotEmpty($values, 'the value this case stored is listed');
 		self::assertContains('helperunits_alpha', array_map(fn ($row) => $row->name, $values));
 		self::assertSame([], self::userfields()->GetAllValues('chores'), 'an entity whose fields nobody has filled in has no values');
 
@@ -1884,11 +1928,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 */
 	public function testAnInvalidFieldNameRefusesAfterWritingTheValidKeysBeforeIt()
 	{
-		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9601'");
+		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9603'");
 
 		try
 		{
-			self::userfields()->SetValues('products', 9601, ['helperunits_alpha' => '3', 'helperunits_not_a_field' => 'x']);
+			self::userfields()->SetValues('products', 9603, ['helperunits_alpha' => '3', 'helperunits_not_a_field' => 'x']);
 			self::fail('an unknown field name was accepted');
 		}
 		catch (\Exception $exception)
@@ -1898,11 +1942,11 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		self::assertSame(
 			'3',
-			self::$db->query("SELECT value FROM userfield_values WHERE field_id = 9602 AND object_id = '9601'")->fetchColumn(),
+			self::$db->query("SELECT value FROM userfield_values WHERE field_id = 9602 AND object_id = '9603'")->fetchColumn(),
 			'DEFECT: the refusal left the earlier key written'
 		);
 
-		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9601'");
+		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9603'");
 	}
 
 	// ======================================================== services/LocalizationService.php
@@ -2036,6 +2080,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 * Everything the calendar can show, dated in 2030 so that the fixtures do not move with
 	 * the calendar day (the unpinned best_before_date that flipped a golden file's JSON type
 	 * is why the rule exists).
+	 *
+	 * Seeded for the class, like the userfield fixtures: every calendar case below reads it,
+	 * so seeding it from the first of them would make the rest depend on running after it.
 	 */
 	private static function seedCalendarFixtures(): void
 	{
@@ -2092,7 +2139,6 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 */
 	public function testTheCalendarShowsOnlyTheUngatedAreasToACallerHoldingNoPermissions()
 	{
-		self::seedCalendarFixtures();
 		self::grant([]);
 
 		$events = CalendarService::GetInstance()->GetEvents();

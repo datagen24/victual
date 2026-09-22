@@ -183,9 +183,20 @@ class StockPagesTest extends PgsqlSchemaTestCase
 	 * are returned so the defect tests below can pin what is actually emitted rather than
 	 * quietly swallowing it.
 	 *
+	 * The mask is what keeps this from swallowing more than the caller meant to pin. It
+	 * defaults to E_WARNING, which is all the cases that merely have to get a create form
+	 * rendered are ignoring. The two cases that pin the diagnostics as a defect pass E_ALL
+	 * and assert the whole captured list, which is the only way to be sure nothing was
+	 * swallowed unnamed: PHP hands a diagnostic outside the mask to its own internal
+	 * handler rather than to the handler that was installed before this one, so what a
+	 * mask leaves out does not reach PHPUnit and failOnWarning never sees it. Measured on
+	 * this tree: masking this helper to E_DEPRECATED alone leaves the create form's
+	 * warnings failing nothing.
+	 *
+	 * @param int $mask The diagnostics to capture; anything else is PHP's own to report.
 	 * @return array{0: string, 1: string[]}
 	 */
-	private static function renderCapturingDiagnostics(object $controller, string $method, array $args = [], array $query = []): array
+	private static function renderCapturingDiagnostics(object $controller, string $method, array $args = [], array $query = [], int $mask = E_WARNING): array
 	{
 		$diagnostics = [];
 		set_error_handler(function (int $severity, string $message) use (&$diagnostics)
@@ -193,7 +204,7 @@ class StockPagesTest extends PgsqlSchemaTestCase
 			$diagnostics[] = $message;
 
 			return true;
-		});
+		}, $mask);
 
 		try
 		{
@@ -1267,30 +1278,59 @@ class StockPagesTest extends PgsqlSchemaTestCase
 	 * literal 'new' and render with mode 'create'), and both templates dereference
 	 * variables the create branch does not pass:
 	 *
-	 *   views/productform.blade.php:779  $product->id
-	 *   views/productform.blade.php:807  $productBarcodeUserfields
-	 *   views/quantityunitform.blade.php:131  $quantityUnit->id
+	 *   views/productform.blade.php:807   $productBarcodeUserfields, in the barcode table's
+	 *                                     @include of components.userfields_thead
+	 *   views/productform.blade.php:966   $product->id, in the Grocycode "Download" link
+	 *   views/productform.blade.php:1084  $product->picture_file_name, in the file label
+	 *   views/quantityunitform.blade.php:131  $quantityUnit->id, in the "Add conversion" link
 	 *
-	 * The blocks are only hidden with a d-none class, not skipped with @if($mode ==
-	 * 'edit') the way the same templates guard their other edit-only blocks, so they are
-	 * still evaluated. Correct behaviour is for the create branch to render no diagnostic
-	 * at all. This test pins what happens today rather than asserting the fix, because
-	 * application code is out of scope for this work; it is marked incomplete so the run
-	 * says so out loud instead of looking like a passing assertion about warnings being
-	 * fine.
+	 * The blocks are only hidden with a d-none class (productform.blade.php:946 for the
+	 * Grocycode row, :1082 for the picture label), not skipped with @if($mode == 'edit')
+	 * the way the same templates guard their other edit-only blocks - the grocycode image
+	 * at :959 is inside such a guard and raises nothing - so they are still evaluated.
+	 *
+	 * The product form's first diagnostic is a second, separate defect on the same page:
+	 * the create branch passes the raw product_barcodes rows as 'barcodes'
+	 * (controllers/StockController.php:393, and :418 for the edit branch), while
+	 * views/components/productpicker.blade.php:71 expects the comma separated view's
+	 * 'barcodes' column and calls strtolower() on the null it gets instead. It is captured
+	 * and asserted here rather than left to leak, because a pinned list that omitted it
+	 * would pass whether the deprecation was there or not.
+	 *
+	 * Correct behaviour is for the create branch to render no diagnostic at all. This test
+	 * pins what happens today rather than asserting the fix, because application code is
+	 * out of scope for this work; it is marked incomplete so the run says so out loud
+	 * instead of looking like a passing assertion about warnings being fine.
 	 */
 	#[Depends('testFixturesAreCreated')]
 	public function testCreateFormsDereferenceVariablesTheyWereNotGiven(): void
 	{
 		self::assumeRole('ADMIN');
 
-		[$productForm, $productDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'ProductEditForm', ['productId' => 'new']);
+		[$productForm, $productDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'ProductEditForm', ['productId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $productForm, 'the page is still served');
-		self::assertNotEmpty($productDiagnostics, 'GET /product/new emits PHP diagnostics');
+		self::assertSame(
+			[
+				'strtolower(): Passing null to parameter #1 ($string) of type string is deprecated',
+				'Undefined variable $productBarcodeUserfields',
+				'Undefined variable $product',
+				'Attempt to read property "id" on null',
+				'Undefined variable $product',
+				'Attempt to read property "picture_file_name" on null'
+			],
+			$productDiagnostics,
+			'DEFECT: GET /product/new emits these six diagnostics and no others'
+		);
+		self::assertStringContainsString('/product//grocycode?download=true', $productForm, 'DEFECT: and renders the broken link that follows from the null id');
 
-		[$unitForm, $unitDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'QuantityUnitEditForm', ['quantityunitId' => 'new']);
+		[$unitForm, $unitDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'QuantityUnitEditForm', ['quantityunitId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $unitForm, 'the page is still served');
-		self::assertNotEmpty($unitDiagnostics, 'GET /quantityunit/new emits PHP diagnostics');
+		self::assertSame(
+			['Undefined variable $quantityUnit', 'Attempt to read property "id" on null'],
+			$unitDiagnostics,
+			'DEFECT: GET /quantityunit/new reads the unit it has not been given, and nothing else warns'
+		);
+		self::assertStringContainsString('/quantityunitconversion/new?embedded&amp;qu-unit="', $unitForm, 'DEFECT: and renders the link with no unit in it');
 
 		self::markTestIncomplete('Create forms emit PHP diagnostics: ' . implode('; ', array_unique(array_merge($productDiagnostics, $unitDiagnostics))));
 	}
