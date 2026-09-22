@@ -5,7 +5,7 @@
   are met, each annotated in place. Both asked for a *statement* rather than a measurement
   or a spike, so this acceptance writes their answers into the Decision section — the
   confirm permission into item 3, the payload's absent-versus-redacted-versus-unknown
-  contract as item 6 — which is the only substantive edit the lifecycle rule admits here.
+  contract as item 6. That is the only substantive edit the lifecycle rule admits here.
   Nothing else was revised: no consequence softened, no argument improved on the way
   through, no prerequisite dropped. Three of the four open questions stay open; they are
   v1 design work rather than gates, and are marked as such below.
@@ -14,7 +14,7 @@
   may be built: no observer credential writes `stock_log`, no confirm path invents a
   reviewer role, and no proposal payload says "you may not see this" by leaving a key out.
 - **Three statements in the body were checked at acceptance rather than edited.**
-  *Consequences* calls the new tables a dual-engine liability "while ADR-0008 is Proposed";
+  *Consequences* calls the new tables a dual-engine liability "while ADR-0008 is Proposed".
   [0008](0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31, the same day this
   record was written, and the liability is unchanged by that — the dual-engine discipline
   stays live until 0008's retirement work is scheduled, which it is not. (The same sentence
@@ -25,9 +25,9 @@
   conditional is settled in the favourable direction and an evidence reference can be a
   stored artifact from day one — "V1 can ship with evidence optional" is now a choice
   rather than a constraint. And *Where the boundary of this repository is* puts the pending
-  count in [18](../plans/18-mqtt-state-publication.md)'s published snapshot; 18 also landed
+  count in [18](../plans/18-mqtt-state-publication.md)'s published snapshot. 18 also landed
   2026-09-02, so that is an eighth ambient sensor added to a shipped publisher rather than a
-  line in a draft, and 18 gains a note saying so — including that its price guard means the
+  line in a draft. 18 gains a note saying so — including that its price guard means the
   **count** is publishable and a proposal *payload* never is.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
@@ -39,16 +39,18 @@
   repository**; what lives here is the entity, the endpoints, and the invariant. The
   proposals schema is one of the flat contracts
   [ADR-0010](0010-workload-standard.md) requires consumers to share.
-- **Would affect:** [01](../plans/landed/01-file-storage.md) (**landed**; it is what evidence
-  storage rests on), [18](../plans/18-mqtt-state-publication.md) (**landed**; carries a note
-  from this acceptance naming the sensor this work adds and the payload it must never
-  publish), [19](../plans/19-rbac.md) (carries a note from this acceptance naming the two
-  permission facts decided here, and the one thing item 6 hands back to it — its
-  `FIELD_POLICY` is keyed by column and a proposal's price is a key inside a payload),
-  [14](../plans/landed/14-contract-and-regression-scaffolding.md) and
-  [02](../plans/02-mcp-endpoint.md) (neither states anything this acceptance makes false —
-  the wire surface is additive and lands under 14's snapshot discipline when it is built,
-  and 02 reads through a Victual user like any other client).
+- **Would affect:**
+  - [01](../plans/landed/01-file-storage.md) — **landed**; it is what evidence storage
+    rests on.
+  - [18](../plans/18-mqtt-state-publication.md) — **landed**; carries a note from this
+    acceptance naming the sensor this work adds and the payload it must never publish.
+  - [19](../plans/19-rbac.md) — carries a note from this acceptance naming the two
+    permission facts decided here, and the one thing item 6 hands back to it: its
+    `FIELD_POLICY` is keyed by column and a proposal's price is a key inside a payload.
+  - [14](../plans/landed/14-contract-and-regression-scaffolding.md) and
+    [02](../plans/02-mcp-endpoint.md) — neither states anything this acceptance makes
+    false. The wire surface is additive and lands under 14's snapshot discipline when it
+    is built, and 02 reads through a Victual user like any other client.
 
 ## Context
 
@@ -60,12 +62,13 @@ true.
 
 Automated observers do not produce that kind of statement. A camera pipeline diffing
 what it can see produces "entry X appears to be gone, confidence 0.7, and here is the
-frame"; a shelf-weight sensor produces "this location lost 340g." Wiring such a client
-to the booking API forces a choice between two bad options: the client asserts
-certainty it does not have, silently polluting the ledger with guesses that read exactly
-like human actions — or the client stays read-only and the observations are wasted. The
-failure mode of the first option is insidious precisely because the ledger's value is
-that nobody doubts it.
+frame"; a shelf-weight sensor produces "this location lost 340g."
+
+Wiring such a client to the booking API forces a choice between two bad options: the
+client asserts certainty it does not have, silently polluting the ledger with guesses
+that read exactly like human actions. Or it stays read-only, and the observations are
+wasted. The failure mode of the first option is insidious precisely because the
+ledger's value is that nobody doubts it.
 
 There is also a threat-model angle. Under
 [ADR-0006](0006-authenticated-issues-in-scope.md), the sensor boxes an operator wires up
@@ -93,7 +96,7 @@ grant for an observer is "may suggest."
    requires directly** — confirming a consume needs `STOCK_CONSUME`, confirming a purchase
    needs `STOCK_PURCHASE` — and **rejecting requires the same permission as confirming.**
    There is no reviewer role and no `PROPOSALS_CONFIRM` leaf: a queue is a way of putting
-   work in front of the people who could already do it, and a queue whose *rejections* need
+   work in front of the people who could already do it. A queue whose *rejections* need
    a grant its confirmations do not is the second admin surface this record's second gate
    exists to prevent. *(Decided 2026-09-04 by this record's acceptance, as open question 2's
    lean stood; [19](../plans/19-rbac.md) carries the note.)*
@@ -107,7 +110,7 @@ grant for an observer is "may suggest."
    belongs here.
 6. **A proposal payload separates absent, redacted and unknown, and never encodes two of
    them the same way.** A proposed booking is partial by nature — a mass delta proposes an
-   amount but maybe not a price — so the payload object carries exactly the keys the
+   amount but maybe not a price. The payload object therefore carries exactly the keys the
    observer proposed, and the row carries **`proposed_fields`**: the sorted key list of the
    payload as submitted, stored at creation and **never redacted**. For any field of the
    booking a proposal proposes:
@@ -176,10 +179,10 @@ what met them lives in the Decision above rather than being restated here.
   — **met**: decision item 6. `proposed_fields` is the key set as submitted, kept
   unredacted, so absence from the payload means redaction and absence from both means
   nobody proposed a value. The gate points at 19, and item 6 is settled against the two of
-  19's rules that are *decided* rather than open — redaction removes the key instead of
+  19's rules that are *decided* rather than open. Redaction removes the key instead of
   nulling it, and a redacted field is already distinguishable from a refused call without a
   new error kind. It therefore does **not** wait on 19's open question 8, which asks whether
-  reads are gated at the object level at all: whichever way that goes, a proposal a reader
+  reads are gated at the object level at all. Whichever way that goes, a proposal a reader
   may not see is a refusal, and a proposal they may partly see is item 6's middle case. The
   index's reading that this record "reads better after 19 unblocks" was right about the
   reading order and wrong about the dependency, and is corrected there.
@@ -191,7 +194,8 @@ what met them lives in the Decision above rather than being restated here.
   for it; open question 2 is annotated with the fact that it was decided, not with the
   decision. Note what this leaves standing: **creating** a proposal is still its own narrow
   grant (item 2), so an observer credential and a confirming household member are different
-  identities holding different permissions, which is the point of the whole record.
+  identities holding different permissions. A compromised observer credential can still
+  only create a proposal; confirming or rejecting one needs the booking permission itself.
 
 ## Open questions
 
