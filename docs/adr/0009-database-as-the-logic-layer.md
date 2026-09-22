@@ -124,8 +124,10 @@ This is about where the next several years of *added* logic should live.
 logic in views, a bad release is a *schema state*: roll forward only, and two image
 versions cannot share a database during any overlap. Plan 10-Q6 already wants fail-fast on
 a database *ahead* of the code; under this record that case goes from theoretical to
-routine. Views sharpen it further — `CREATE OR REPLACE VIEW` may only **append** columns,
-never rename, reorder, retype or drop one. Any real change to a view is a drop-and-recreate
+routine.
+
+Views sharpen this further: `CREATE OR REPLACE VIEW` may only **append** columns, never
+rename, reorder, retype or drop one. Any real change to a view is a drop-and-recreate
 cascading through five dependency layers, which is exactly the shape of change a growing
 report layer produces.
 
@@ -147,12 +149,13 @@ answerable here, one is not, and one is already moot.**
 
 The split is the cost. It should be paid deliberately or not at all.
 
-**Extensions pin the hosting, and one pin is load-bearing.** `pg_cron` cannot be enabled by
-`CREATE EXTENSION` alone; it must be in `shared_preload_libraries` at server start, which
-means a Postgres this project configures — self-hosted, or CloudNativePG with
-`postInitSQL`. That is fine for k3s and it forecloses something worth naming: **a
-serverless Postgres that itself scales to zero is incompatible with this design.** Neon
-documents it directly: pg_cron jobs run only while the compute is awake, so it is
+**Extensions pin the hosting.** `pg_cron` cannot be enabled by `CREATE EXTENSION` alone; it
+must be in `shared_preload_libraries` at server start, which means a Postgres this project
+configures — self-hosted, or CloudNativePG with `postInitSQL`. That is fine for k3s and it
+forecloses something worth naming: **a serverless Postgres that itself scales to zero is
+incompatible with this design.**
+
+Neon documents it directly: pg_cron jobs run only while the compute is awake, so it is
 recommended only where scale-to-zero is disabled. If the database ever becomes the thing
 that sleeps, the scheduler moves back out to a k3s CronJob and the "always-awake component
 answers" premise inverts. **Decide which component is allowed to sleep before building on
@@ -290,29 +293,33 @@ Gates, not suggestions. The accepting pull request says how each was met.
      | Masking substitutes a value; it cannot make a key absent | Same `NULL`-doing-two-jobs defect as the plain view. If masking can only return `NULL` or a placeholder, 19 either revises its wire contract or keeps a response-shaping step |
      | Masking views are deliberately constructed interfaces, not an automatic extension over derived views | Every price-bearing view of ours — `products_average_price`, `uihelper_stock_current_overview`, `uihelper_product_details`, `recipes_resolved` — needs explicit coverage, and [ADR-0005](0005-wire-contract-is-the-invariant.md) already lists that exact set |
      | MQTT has no reader identity | Needs an explicitly chosen unprivileged publishing role, never the interactive caller's |
-     | **A role gets exactly one masking policy.** Several may be *defined*, but where a role is masked in several, only the first in the list applies — they do not compose | This is the gap that shapes the mapping rather than merely complicating it. A Victual user holding several application roles must resolve to **one** database masking policy, deterministically and by a rule written down, because the extension will otherwise pick one silently. Under [ADR-0006](0006-authenticated-issues-in-scope.md) "silently picks the first" is a permission bug waiting to happen: the failure is a user seeing *more* than intended, with nothing in the output to say so |
+     | **A role gets exactly one masking policy.** Several may be *defined*, but where a role is masked in several, only the first in the list applies — they do not compose | A Victual user holding several application roles must resolve to **one** database masking policy, deterministically and by a rule written down, or the extension picks one silently. Under [ADR-0006](0006-authenticated-issues-in-scope.md) a silent pick would be a permission bug: the failure is a user seeing *more* than intended, with nothing in the output to say so |
 
      **One thing the review did not have, and it matters under
      [ADR-0006](0006-authenticated-issues-in-scope.md):** Anonymizer 1.1.0 and 1.2.0 carried
-     a privilege-escalation vulnerability where a non-superuser able to create security
-     labels could inject SQL through masking expressions and escape the trusted-schema
-     restriction — via nested functions, via `MASKED WITH VALUE` (validated less strictly
-     than `masking_function`), and via altering a table into a view with a malicious rule.
-     Patched in 1.3. The lasting lesson is not the CVE but its shape: **who may declare a
-     masking rule is itself a privilege boundary**, and adopting this makes security-label
-     creation part of this fork's permission surface. Any adoption pins ≥ 1.3 and says who
-     may label.
+     a privilege-escalation vulnerability: a non-superuser able to create security labels
+     could inject SQL through masking expressions and escape the trusted-schema restriction.
+     Three paths did it: nested functions, `MASKED WITH VALUE` (validated less strictly than
+     `masking_function`), and altering a table into a view with a malicious rule. Patched in
+     1.3.
+
+     The lasting lesson is not the CVE but its shape: **who may declare a masking rule is
+     itself a privilege boundary**, and adopting this makes security-label creation part of
+     this fork's permission surface. Any adoption pins ≥ 1.3 and says who may label.
 
    *Lean: unchanged for now — separate public/private projections, on the grounds that it is
    the only candidate that never makes a `NULL` do two jobs, and the only one with no
    read-only problem.* Anonymizer is the strongest database-enforced option and should be
    spiked before that lean is treated as settled; the read-only constraint is the item most
-   likely to decide it. Whichever is chosen, if identity is carried in session state then `SET LOCAL`
-   inside the request's transaction is the safe form — plain `SET` on a pooled connection
-   is the standard way tenants leak into each other, and an application connecting as the
-   table owner silently bypasses unforced RLS. This interacts with F1/F2 and with LessQL's
-   connection handling, and it is the single most likely place for this record to produce a
-   security bug rather than a cleanup.
+   likely to decide it.
+
+   Whichever is chosen, if identity is carried in session state then `SET LOCAL` inside the
+   request's transaction is the safe form. Plain `SET` on a pooled connection is the
+   standard way tenants leak into each other, and an application connecting as the table
+   owner silently bypasses unforced RLS.
+
+   This interacts with F1/F2 and with LessQL's connection handling, and it is the single
+   most likely place for this record to produce a security bug rather than a cleanup.
    [ADR-0006](0006-authenticated-issues-in-scope.md) raises the stakes: a redaction bug
    here is a finding under this fork's threat model, not a cosmetic issue.
 5. **Views through LessQL, or raw SQL?** The read layer is `morris/lessql` (berrnd's fork),
