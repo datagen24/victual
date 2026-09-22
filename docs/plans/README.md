@@ -92,13 +92,20 @@ Swift transport generation follows the API error contract and response snapshot.
 work follows 19 piece 2, which makes price fields optional. Home Assistant uses 18's MQTT
 publication. See [17](17-ecosystem-clients.md) for client contracts and impact requirements.
 
-Unscheduled work includes MCP writes after read-only use is proven ([issue 209](https://github.com/datagen24/victual/issues/209)), 05 B if shopping trips
-justify it, 04's importer and datasets, plan 22 (23 landed 2026-09-14; 14 piece 2 landed
-2026-09-17, so 22 is unblocked and simply not yet scheduled), and the two
-retirements 24 deferred: archiving migrations 0001–0255, and the differential harness itself.
-Both are unblocked now that 14 piece 2 has landed — neither has been done. The two label items that were deliberate follow-ups toward the
-retirement ADR-0011 accepted — migrating the five entity types that printed through the
-webhook, then deleting `VICTUAL_LABEL_PRINTER_WEBHOOK` with its constants — landed as
+Unscheduled work:
+
+- MCP writes, after read-only use is proven
+  ([issue 209](https://github.com/datagen24/victual/issues/209)).
+- 05 B, if shopping trips justify it.
+- 04's importer and datasets.
+- Plan 22: unblocked since 14 piece 2 landed 2026-09-17 (23 landed 2026-09-14 already), but
+  not yet scheduled.
+- The two retirements 24 deferred: archiving migrations 0001–0255, and the differential
+  harness itself. Both are unblocked now that 14 piece 2 has landed; neither has been done.
+
+The two label items that were deliberate follow-ups toward the retirement ADR-0011 accepted —
+migrating the five entity types that printed through the webhook, then deleting
+`VICTUAL_LABEL_PRINTER_WEBHOOK` with its constants — landed as
 [32](landed/32-label-kinds.md) on 2026-09-16. The wire-contract question that held them was
 dissolved by [ADR-0024](../adr/0024-the-fork-writes-its-own-clients.md): the fork writes its
 own clients, so the five `*/printlabel` endpoints were removed rather than reshaped. Observation
@@ -107,15 +114,17 @@ delivery slot. Interactive current-location scanning, which 06 deferred to a pla
 no plan yet.
 
 **Label infrastructure is delivered, not merely owned.** [25](25-label-infrastructure.md)
-implements ADR-0011 and ADR-0019; [27](landed/27-label-templates-and-rendering.md) implements
-ADR-0021, which superseded three boundaries of ADR-0011 — template ownership, "reprint is
-resetting a row", and the importer's re-key obligation — so templates are application data, a
+implements ADR-0011 and ADR-0019. [27](landed/27-label-templates-and-rendering.md) implements
+ADR-0021, which superseded three boundaries of ADR-0011: template ownership, "reprint is
+resetting a row", and the importer's re-key obligation. Templates are now application data, a
 reprint replays retained artifact bytes, and an import refuses a target holding live labels.
 Both records were accepted 2026-09-07, 0021 first because 0019's ownership model is the one
-0021 decides. Schema (0269–0272), routes, the designer, the renderer and worker repositories
-pinned into the flake, and the deployment manifests exist; a label printed and scanned back on
-2026-09-09. Issue 79 closed on that evidence. Deployment under K3S is the one verification
-still open, in issue 93.
+0021 decides.
+
+Schema (0269–0272), routes, the designer, the renderer and worker repositories pinned into the
+flake, and the deployment manifests exist; a label printed and scanned back on 2026-09-09, and
+issue 79 closed on that evidence. Deployment under K3S is the one verification still open, in
+issue 93.
 
 **Plan 26 is independent of the wave order**, since it touches no runtime code. Both pieces
 are now implemented: piece 1, the developer section of the documentation site, and piece 2,
