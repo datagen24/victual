@@ -106,10 +106,10 @@ engines for the same assurance. This is the one consequence that is straightforw
 and it should not be oversold — it is a saving on *this* logic, not an argument about where
 logic belongs generally.
 
-**Nothing is foreclosed.** The expansion is a service method with a defined signature; moving
-it into SQL later is a rewrite of one component, not a migration. That asymmetry is why this
-record is comfortable being wrong: the reverse move, extracting recurrence algebra out of five
-layers of dependent views, is the expensive direction.
+**Nothing is foreclosed.** The expansion is a service method with a defined signature.
+Moving it into SQL later requires rewriting one component without a migration.
+Extracting recurrence algebra from five layers of dependent views would cost more.
+The lower cost of moving from PHP to SQL supports starting with PHP.
 
 ## Acceptance prerequisites
 

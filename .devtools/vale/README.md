@@ -1,11 +1,11 @@
-# Proposed prose checks
+# Prose checks
 
-This proposal adds Vale to enforce repeatable parts of Victual's
+Vale enforces repeatable parts of Victual's
 [documentation conventions](../../docs/documentation.md) and
 [writing style](../../docs/style-guide.md). It uses repository-owned rules and a pinned
 Vale binary. No third-party style package or online language service is needed to lint.
 
-The proposed `prose` CI job scans authored documentation on every pull request. It rejects
+The `prose` CI job scans authored documentation on every pull request. It rejects
 new findings while the initial backlog is repaired through page-specific issues.
 No issue is opened automatically by CI.
 
@@ -22,7 +22,7 @@ python3 .devtools/vale/audit.py --check
 
 The installer supports Linux, macOS, and Windows on x86-64 and ARM64. On Windows, choose
 a local installation directory and set `VALE` to its `vale.exe` path. Only the Linux x86-64
-installation has been exercised for this proposal; the other archive checksums are pinned
+installation and macOS ARM64 installation have been exercised; the other archive checksums are pinned
 from the same upstream release.
 
 `install.py` downloads Vale **3.22.0** from its official GitHub release and verifies the
@@ -42,7 +42,7 @@ contains every selected page, including pages with no findings, and the excluded
 
 ## Rules
 
-All ten rules live in [styles/Victual](styles/Victual). Length limits are review thresholds,
+All fifteen rules live in [styles/Victual](styles/Victual). Length limits are review thresholds,
 not automatic rewriting instructions. Fix a passage or explain a narrow exception.
 
 | Rule | Level | What the reviewer checks |
@@ -57,6 +57,11 @@ not automatic rewriting instructions. Fix a passage or explain a narrow exceptio
 | `VagueReference` | Warning | Name or link the referenced section. |
 | `Wordiness` | Suggestion | Use a shorter expression if its meaning is unchanged. |
 | `AssumedEase` | Suggestion | Explain the step or evidence instead of assuming ease. |
+| `Metadiscourse` | Warning | Remove speech prefaces, automatic praise, and generic closers. |
+| `InflatedSignificance` | Warning | Replace inflated significance and promotional wording with a specific effect. |
+| `VagueAttribution` | Warning | Identify the evidence behind an attributed claim. |
+| `DecorativeContrast` | Warning | Keep a contrast only when it explains a choice or corrects a stated error. |
+| `TrailingCommentary` | Warning | Remove trailing interpretation or state a supported consequence directly. |
 
 Word counts use the rules' word-token expression after Vale parses Markdown. Code spans
 and URLs do not contribute to the prose measurement. Table cells have their own length
@@ -66,6 +71,37 @@ Spelling dictionaries, acronym expansion, passive-voice bans, and reading-grade 
 are intentionally absent. They create noise for this technical corpus and do not address
 the writing problems that motivated the proposal. Human review still covers document
 purpose, duplicated rationale, unsupported claims, and changed technical meaning.
+
+The new phrase checks cover specific recurring expressions. They cannot detect every
+maxim, unclear reference, invented term, or claim that gives software human motives.
+The checks do not ban articles, continuous tenses, lists of three, or all technical
+comparisons. They do not establish formal ASD-STE100 compliance.
+
+## Check commits locally
+
+Install Vale into the ignored local directory and enable the hook once per clone:
+
+```sh
+python3 .devtools/vale/install.py --directory .devtools/vale/.bin
+git config --local core.hooksPath .githooks
+```
+
+Check `git config --get core.hooksPath` first if the clone already uses hooks. Preserve
+existing hooks by adding a call to `python3 .devtools/vale/check_staged.py` to the existing
+pre-commit hook. The local Git setting is shared by linked worktrees.
+
+The hook runs the complete baseline check when staged documentation or Vale tooling
+changes. It exports staged pages, rules, configuration, and the baseline to a temporary
+directory. Partially staged files are checked exactly as committed. The hook does not
+stash files or change the index. Commits without relevant changes skip Vale.
+
+The executable comes from `VALE`, `.devtools/vale/.bin/vale`, or `PATH`, in that order.
+A missing executable, a wrong version, or an audit failure blocks the commit. The hook
+does not install software or download packages during a commit.
+
+CI runs the same baseline check on committed files. Installing the hook is a local
+step; Git does not enable hooks when cloning. Chat replies are outside the Git check
+and require self-review against `AGENTS.md`.
 
 ## Scope and protected content
 
@@ -107,7 +143,7 @@ not allow a page-wide count that could hide one new problem behind one resolved 
 Reflowing unchanged prose preserves a fingerprint; changing a flagged block requires
 review of its remaining findings.
 
-The proposed workflow runs the rule tests and the complete audit with `--check`. It uploads
+The workflow runs the rule tests and the complete audit with `--check`. It uploads
 the full report even when the baseline comparison fails. New warnings and suggestions
 must be fixed or receive a justified rule-specific exception.
 
@@ -127,7 +163,7 @@ Do not weaken rules to clear the initial backlog. Rule or Vale-version changes n
 fixture tests, a full audit, and review of changes in findings before updating the baseline.
 No broad prose replacement is applied automatically.
 
-This workflow is proposed in a draft PR. Merging enables the job; making its check required
+The workflow runs on pull requests and pushes to `master`; making its check required
 for merge is a separate repository setting for the maintainer. The initial audit is a
 one-time backlog exercise, not a scheduled issue generator.
 
@@ -141,6 +177,8 @@ Tests run the actual Vale binary. They check every rule's detection, readable pr
 length boundaries, protected code and quotations, front matter, table scoping, and narrow
 exceptions. Baseline tests cover new findings, repeated findings, resolved findings, and
 reflow without changing the claim.
+Commit-hook tests use temporary repositories and the real Vale binary to check staged
+content, partial staging, renames, missing tools, and deletion of baseline findings.
 
 ## References
 

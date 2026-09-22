@@ -1,8 +1,8 @@
 # Victual writing style
 
-**Proposal:** Adopt this guide and the repository's Vale rules alongside
-[the documentation conventions](documentation.md). The proposal adds automated checks
-without changing architectural decisions or their acceptance process.
+Use this guide and the repository's Vale rules alongside
+[the documentation conventions](documentation.md). These prose checks preserve
+architectural decisions and their acceptance process.
 
 Write for the person who needs to understand or use the software. Start with the result,
 requirement, or action. Follow it with the reason and evidence needed to assess it.
@@ -89,6 +89,33 @@ Use shorter familiar words where they preserve meaning. State counts when known.
 claims that a task is obvious or easy; give the necessary step or prerequisite instead.
 Do not remove a term whose technical meaning is needed.
 
+## Remove framing that adds no information
+
+Start with the fact or action. Remove announcements such as `let me be clear` and
+`it's worth noting`. Do not preview the answer, repeat the reader's question, or explain
+why you are about to say something. End when the explanation is complete.
+
+- Remove general lessons and closing maxims. A conclusion should add a specific finding
+  or required action; it should not repeat the explanation as a slogan.
+- Replace inflated significance and promotional wording with a supported effect.
+  Phrases such as `marks a pivotal moment` and `seamless` supply no measurement.
+- Remove trailing interpretation such as `, highlighting the importance of review`.
+  If a consequence matters, name it and explain the cause.
+- Avoid invented contrasts such as `not just X but Y` and `X, not Y`.
+  Retain comparisons that explain a real choice or correct a stated error.
+- Name the subject when a reference is unclear. Introduce unfamiliar terms before
+  treating them as shared vocabulary. Do not give software or documents motives or feelings.
+- Name sources for claims such as `experts believe` or `research shows`.
+  Give the source's relevant result and its limits.
+- Prefer direct verbs: `is` and `has` usually express the meaning of `serves as` and
+  `boasts`. Keep one main point per sentence and consistent names for each concept.
+- Use simple past for completed events unless another tense communicates needed timing
+  or duration. Do not pad lists or remove a useful item to force a particular list length.
+
+Do not use bold labels on every bullet or an em dash to stage a reveal.
+Preserve complete sentences, uncertainty, conditions, and reasons. Articles, continuous
+tenses, technical contrasts, and lists of three remain valid when they convey meaning.
+
 ## State requirements, status, and evidence separately
 
 Use **must** for a requirement, **should** for a recommendation, and **may** for permission.
@@ -120,7 +147,7 @@ choose a convenient interpretation during a prose cleanup.
 
 The [Vale rules](../.devtools/vale/README.md#rules) flag recurring patterns and passages
 that need review. Warnings identify likely structural or wording problems. Suggestions
-identify wording that may have a valid contextual use. Both are included in the proposed
+identify wording that may have a valid contextual use. Both are included in the
 baseline check so new findings require a fix or a documented exception.
 
 A passing lint run does not establish readability or factual accuracy. A failing length

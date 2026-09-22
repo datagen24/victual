@@ -1,0 +1,10 @@
+extends: existence
+message: "Name and cite the source for '%s', or remove the unsupported claim."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - experts (?:believe|agree|say)
+  - research (?:shows|suggests)
+  - studies (?:show|suggest)
+  - widely (?:believed|regarded|recognized)

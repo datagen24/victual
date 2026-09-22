@@ -72,7 +72,7 @@ The two failures are different in kind and both are real:
   unambiguous.
 
 `ChoresApiController` additionally accepted a bare `IsIsoDate()` date and the other two did
-not. That asymmetry was not a decision either: `public/viewjs/choretracking.js` and
+not. The difference in accepted date formats was not a decision either: `public/viewjs/choretracking.js` and
 `choresoverview.js` send `YYYY-MM-DD` for a chore whose `track_date_only` is set, and the
 chore route grew a second predicate to take it. The other two routes have no such caller and
 so never grew one.

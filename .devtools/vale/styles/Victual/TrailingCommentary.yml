@@ -1,0 +1,8 @@
+extends: existence
+message: "Review '%s': remove decorative analysis or state a supported consequence in its own sentence."
+level: warning
+scope: sentence & ~frontmatter
+ignorecase: true
+nonword: true
+tokens:
+  - ',\s+(?:thereby\s+)?(?:highlighting|underscoring|showcasing|emphasizing)\s+(?:the|a|an|its|our)\b'

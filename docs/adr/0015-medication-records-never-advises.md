@@ -30,18 +30,18 @@ Three facts make the aggregate a bad idea:
 
 1. **It is regulated.** Software that analyses patient-specific data and produces a
    treatment-directed recommendation is a medical device under the FDA's device-software
-   framing and under EU MDR Rule 11, and the exemptions for low-risk clinical decision support
-   turn on the clinician being able to independently review the basis of the recommendation —
-   a condition a household inventory app cannot meet for a lay user. This project does not want
+   framing and under EU MDR Rule 11. The exemptions for low-risk clinical decision support
+   turn on the clinician being able to independently review the basis of the recommendation.
+   A household inventory app cannot meet that condition for a lay user. This project does not want
    to be in that conversation, and "it is only for my house" is not a position that survives
    the software being published.
 2. **The knowledge cannot be maintained here.** An interaction table is only useful if it is
    current, and this fork has one maintainer whose interest is inventory. A stale warning is
    worse than no warning, because a warning that has ever appeared teaches the reader that
    silence means safe.
-3. **The failure mode is asymmetric.** A wrong stock count wastes a trip to the shop. A wrong
-   dose assertion has a different order of consequence, and no amount of care in the rest of
-   the application changes that asymmetry.
+3. **The failure mode is asymmetric.** A wrong stock count wastes a trip to the shop.
+   A wrong dose assertion has more serious consequences. Care elsewhere in the application
+   does not reduce the consequences of a wrong dose assertion.
 
 There is a fourth fact specific to this fork: [02](../plans/02-mcp-endpoint.md) puts a
 language model in front of this data. A model asked "can I take these together?" will answer
