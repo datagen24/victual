@@ -12,7 +12,7 @@ matching file-based count are in the [diagram generator's README](../.devtools/d
 This document names what is where; the ten diagrams listed below show how the pieces
 connect.
 
-Two facts shape every diagram below and are worth stating before the pictures:
+Two facts shape every diagram below:
 
 - **Few foreign keys are declared outside the label subsystem.** Of the 46 declared in
   the schema, 36 belong to the label tables (plans [25](plans/25-label-infrastructure.md)
@@ -90,7 +90,7 @@ PDO connection underneath both.
   deliberately does not.
 
 `services/Database/` also holds the pieces that operate on stored values rather than on
-queries: `StoredHtmlPurifier` (re-purifies rich text already in the database),
+queries. These are `StoredHtmlPurifier` (re-purifies rich text already in the database),
 `StoredApiKeyHasher` (hashes keys stored in plaintext by an older version),
 `ColumnTypeManifest` (semantic types for columns the catalogue cannot classify, used by
 the API's generic filter validation), and `DatabaseImporter`.
@@ -132,7 +132,7 @@ is every location's meaning before this migration and stays available afterwards
 3). `is_freezer` keeps its exact meaning and is derived from the chosen class's
 `treats_as_freezer` in the write path (`GenericEntityApiController::WithDerivedIsFreezer()`)
 rather than a trigger, because the importer never sets a class at all and there is nothing
-for a trigger to fire on; an unclassified location keeps the flag independently editable.
+for a trigger to fire on. An unclassified location keeps the flag independently editable.
 
 `product_groups` is a tree since migration 0278 ([plan 30](plans/landed/30-nested-product-groups.md),
 [ADR-0023](adr/0023-taxonomy-is-groups-packaging-is-parent-product.md)): the catalogue's
