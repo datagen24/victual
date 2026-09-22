@@ -1,97 +1,190 @@
 # Coverage
 
-What the differential test suite actually reaches.
+Measure application PHP line coverage with the test suite:
 
 ```sh
-SUITE_COVERAGE=1 .devtools/pgsql/run-tests.sh
+SUITE_COVERAGE=1 SUITE_COVERAGE_CLOVER=clover.xml .devtools/pgsql/run-tests.sh
 ```
 
-The run prints a per-class summary at the end and nothing else changes. Add
-`SUITE_COVERAGE_CLOVER=clover.xml` to also write Clover XML, which is what CI keeps as an
-artifact.
+The runner prints a summary and writes `clover.xml`. Omit
+`SUITE_COVERAGE_CLOVER` if you only need terminal output. For suite prerequisites and
+phase selection, see the [runner usage notes](../pgsql/run-tests.sh).
 
-## What the number means
+The runner's report covers only the processes it starts. CI runs additional PHP tests
+and merges their results before enforcing the coverage threshold. Use that complete run
+when establishing or raising the CI baseline.
 
-It is line coverage of `services/`, `controllers/`, `helpers/`, `middleware/`, `plugins/`
-and the three top-level PHP files. The differential phases that gave this suite its name
-drive SQL straight at each engine and barely enter PHP application code at all — that is
-why most controllers used to read zero, and it was a fact about the suite's shape rather
-than a quality judgement. Since plan 33 the tier-1 PHPUnit phases (ADR-0025) reach them
-directly, so the number is now a statement about the application rather than about which
-phases happen to enter it.
+## Coverage requirements
 
-Read it as a map first: `StockService` sitting around two thirds means the stock write
-paths are exercised, and that figure falling means a phase stopped reaching something it
-used to, which is the failure this exists to make visible.
+The [constitution](../../docs/constitution.md#standing-invariants) sets a **75% minimum**
+for application line coverage, an **85% target**, and a **90% ideal**. The minimum also
+applies to individual files. Tests must check behavior and results; executing a line
+does not establish that its behavior is correct.
 
-It is also a score, since 2026-09-17. The maintainer set a **floor of 75%** line coverage
-of application code, a **target of 85% or better** and **90% as the ideal**
-(`docs/constitution.md`, standing invariants). A threshold nobody chose gets lowered until
-it stops failing; this one was chosen, which is the difference. `report.php` takes
-`--min=NN`, and a pull request that lowers the number, or leaves a file it touched below
-75%, has not met the verification bar.
+The **floor** is the minimum acceptable coverage. The **ratchet** is the CI threshold:
+it preserves the achieved aggregate coverage and is raised as coverage improves. Reaching
+the floor does not allow the ratchet to be lowered.
 
-**The tree is above all three, as of 2026-09-22: 10002 of 10385 executable lines,
-96.31%, with every one of the 140 files in scope at or above the floor.** That is plan
-33's domain work, done against the backlog [issue
-192](https://github.com/datagen24/victual/issues/192) carries — which measured 37.81% at
-`6133e15` on 2026-09-17, from a table that listed 69 classes because a file the suite
-never loaded did not appear in it at all (see below). Four files have no executable lines
-and are listed apart rather than counted either way.
+For each pull request:
 
-The ratchet issue 192 asks for as its first step is wired: `tests.yml`'s `suite` job gates
-on `report.php --min=96.31198844487241217394` in its "Enforce the coverage ratchet" step, near
-the end rather than inside `run-tests.sh`, because it has to see everything the job
-measured — including the label phases below — not just the differential suite's share of
-it. The figure has been raised three times: 47.29875477988038% when the ratchet was wired
-([#196](https://github.com/datagen24/victual/pull/196), `f6e7225`, 2026-09-17, 216
-processes), and twice by plan 33's own work, ending at 10002 of 10385 from 1165 processes.
+- Cover new code with tests. New files must reach at least 75%.
+- Keep files already at or above 75% at or above that floor.
+- Improve touched files that are below 75%, or bring them up to the floor.
+- Do not lower aggregate coverage. Include the relevant file counts and complete-run
+  results in the pull request's Verification section.
 
-Each of those is a full figure rather than a rounded one, and one of them was not a figure
-at all for a while: a placeholder was committed in its place, `report.php` cast it with
-`(float)`, and `(float)'RATCHET_PLACEHOLDER'` is `0.0` — a threshold every run clears. The
-gate ran, compared against zero and reported green. `report.php` now refuses a `--min` it
-cannot read (exit 2, the setup-failure code) rather than casting it, and
-`expectation-tests.php` carries the control that would have caught it.
+CI enforces the aggregate ratchet. Per-file compliance is reviewed using the inventory;
+automated per-file enforcement remains optional under
+[plan 33](../../docs/plans/33-coverage-floor.md).
 
-`--min` is that full figure, not a rounded one — a shorter number is not a ratchet at the
-current total, it is a ratchet at a nearby one. The arithmetic that settled this was done
-against the original 4824/10199 and still reads the same way at any total: a bare `47`
-passed a run that had lost one covered line (47.28895%) or gained one uncovered executable
-line (47.29412%), and even `47.298` passed a regression that moved both counts together —
-deleting a two-line, one-covered file loses one line from each of the numerator and the
-denominator and reads 4823/10197 = 47.298225%, below the true baseline but still ≥
-`47.298`. Both gaps were caught in review before that merge. Only the exact figure,
-parsing back to bit-identically the double `report.php` computes at runtime from the same
-two counts, closes them — which is checked rather than assumed each time the number is
-raised.
+## Measurement scope
 
-The ratchet stays at the measured figure rather than dropping to 75% now that the number
-clears it. A gate set to the floor would admit a twenty-point fall, and the floor is a
-statement about the worst acceptable state, not about this one. The per-file half of the
-floor is the inventory below.
+[prepend.php](prepend.php) measures PHP files in `services/`, `controllers/`, `helpers/`,
+`middleware/`, and `plugins/`, plus `app.php`, `routes.php`, and `config-dist.php`.
+Vendor code, test tooling, and Blade templates are excluded.
 
-## Every file in scope, not just the ones a table happened to list
+Both the differential phases and the tier-1 PHPUnit phases contribute to the same
+measurement. Differential tests primarily exercise SQL directly; PHPUnit phases also
+exercise application services and controllers. See
+[ADR-0025](../../docs/adr/0025-three-test-tiers.md) for the three test tiers.
 
-Issue 192's first mechanics question was whether a file the suite never loads at all shows
-up as 0%, or drops out of the report entirely — because if it drops out, a percentage
-computed from what remains reads too high. It does not drop out of the *total*:
-`CodeCoverage::getData()` adds every file `prepend.php`'s filter names to the report at 0%
-by default (`includeUncoveredFiles()`), so `report.php`'s aggregate percentage always
-counted them. What used to drop a never-loaded class was the per-file table underneath it:
-`Report\Text` omits a class with zero covered statements unless told `showUncoveredFiles:
-true`, which `report.php` did not pass. The backlog table issue 192 carries was built from
-that listing, so a class the suite never reaches even once was invisible in it rather than
-named at 0% — 140 files across the five scoped directories and three top-level ones, 69
-classes shown. `report.php` now passes `showUncoveredFiles: true`, so every file the filter
-names appears, at 0% where nothing reached it.
+Browser-driven tests do not contribute coverage. The separate `frontend-security` job
+retains its pass/fail checks, but its PHP server is not instrumented or merged into this
+report. Application PHP in the filter remains in the denominator even when browser tests
+exercise it. This boundary is the maintainer's decision recorded in
+[plan 33's open questions](../../docs/plans/33-coverage-floor.md#open-questions).
 
-## The denominator moves, and it is not a bug
+Line coverage does not establish SQL test completeness or browser correctness. The pgTAP
+checks and frontend probes remain required independently.
 
-An executable-line count is not a fixed property of a file here. For a file the run
-actually loaded, the count comes from the driver; for one it never loaded, it comes from
-php-code-coverage's static analysis, and the two disagree by a line or two on some files.
-Measured on 2026-09-21, six of the 140 disagree:
+## Read the reports
+
+[report.php](report.php) prints a per-class summary and an aggregate covered/executable
+line count. Files the suite never loads still contribute to the aggregate at zero
+coverage. The text report also requests uncovered classes, but a class listing cannot
+serve as a complete file inventory: files can contain several classes or none.
+
+Use [inventory.php](inventory.php) for the per-file results:
+
+```sh
+php .devtools/coverage/inventory.php clover.xml
+php .devtools/coverage/inventory.php clover.xml --floor=75 --format=csv
+```
+
+The default Markdown report lists files below the floor. CSV includes all files.
+Both order executable files by the number of additional covered lines needed to reach
+the floor, largest shortfall first:
+
+```text
+shortfall = max(0, ceil(0.75 * executable) - covered)
+```
+
+A file with 100 executable lines and 60 covered lines needs 15 more covered lines to
+reach 75%, although 40 lines are uncovered. Files with no executable lines are listed
+separately without a percentage.
+
+CI attempts to print the inventory even when an earlier step fails (`if: always()`).
+The inventory is informational; it does not fail the build when a file is below 75%.
+The workflow also uploads `clover.xml` as the `coverage-clover` artifact when available.
+
+## CI aggregation and enforcement
+
+The `suite` job in [tests.yml](../../.github/workflows/tests.yml) merges the runner's
+coverage with these separately measured steps:
+
+| Tests | Coverage label |
+|---|---|
+| `canonical-json-tests.php` | `canonical-json` |
+| `renderer-agreement-tests.php` | `renderer-agreement` |
+| `path-parameter-tests.php` | `path-parameter` |
+| `identity-tests.php` | `label-identity` |
+| `artifact-tests.php` | `label-artifacts` |
+| `print-job-tests.php` | `label-print-jobs` |
+| `kinds-tests.php` | `label-kinds` |
+| `worker-api-tests.php` | `label-worker-api` |
+| `registry-tests.php` | `label-registry` |
+
+Each step uses the shared `VICTUAL_COVERAGE_DIR` and `PHP_INI_SCAN_DIR`, and sets its own
+`VICTUAL_COVERAGE_LABEL`. The canonical JSON tests compare 2,068 documents with an
+ECMAScript oracle. Renderer agreement checks pass the real renderer's bytes to the
+production verifier. The path-parameter tests dispatch a request through a real Slim
+application using the constrained route pattern from `routes.php`.
+
+After those steps finish, CI runs `report.php` with `--clover`, `--expect`, and `--min`.
+The workflow contains the exact invocation and is the authority for the configured
+threshold and expected labels.
+
+| Result | Exit code |
+|---|---:|
+| Report completes and meets the minimum, if supplied | 0 |
+| Aggregate coverage is below `--min` | 1 |
+| Setup or input failure, including missing coverage, a missing expected label, or a nonnumeric `--min` | 2 |
+
+### Detect missing measurement
+
+A test can pass without producing coverage if its driver or prepend configuration is
+missing. The percentage alone cannot reliably distinguish that failure from a test that
+adds no newly covered lines.
+
+`prepend.php` prefixes each coverage filename with the step's label.
+`report.php --expect=label,label` requires a file for each expected label and names any
+missing steps. It matches the sanitized label followed by a dot, so another label with a
+similar prefix cannot satisfy the check.
+
+[expectation-tests.php](expectation-tests.php) checks successful collection and failures
+including a disabled prepend path, an absent driver, prefix collisions, and invalid
+thresholds. Missing-step checks run with another step's file already present.
+These checks run in CI before the ratchet.
+
+Start each measurement with an empty directory. Label checks do not distinguish a fresh
+file from a stale file with the same label. The runner clears its coverage directory
+before collecting data.
+
+### Preserve threshold precision
+
+Set `--min` to the full measured percentage, with enough precision to parse back to the
+same floating-point value that `report.php` computes. Do not copy the rounded percentage
+from the terminal summary. The Markdown inventory prints the total to 20 decimal places;
+verify the value when updating the workflow.
+
+Rounding can admit a regression. At the earlier baseline of 4824/10199 lines, `--min=47`
+would accept losing one covered line or adding one uncovered line. Even `--min=47.298`
+would accept deleting a two-line file with one covered line: 4823/10197 is approximately
+47.298225%, below the baseline but above the rounded threshold.
+
+The parser also rejects nonnumeric thresholds. A previous placeholder was cast to `0.0`,
+which allowed every measured run to pass. The parser check and its regression tests prevent
+that configuration error from silently disabling the gate.
+
+## Recorded results
+
+The coverage documentation and workflow in [PR #256](https://github.com/datagen24/victual/pull/256),
+at `6ce5bf496a97370154cea801a46b68fdd2cef06c`, record the following result for 2026-09-22:
+**10,002 of 10,385 executable lines covered (96.31%)**, collected from 1,165 processes.
+They report all 140 executable files at or above 75%, with four additional files having
+no executable lines. The configured ratchet is `96.31198844487241217394`.
+
+These figures are the implementation's reported results. Reproduce the measurement by
+running the complete CI `suite` job, including the separate steps above. Delivery status
+belongs in the [plan index](../../docs/plans/README.md).
+
+Earlier baselines were 3857/10201 (37.81%) at `6133e15` on 2026-09-17, recorded in
+[issue 192](https://github.com/datagen24/victual/issues/192), and 4824/10199
+(47.29875477988038%) at `f6e7225` the same day, recorded in
+[PR #196](https://github.com/datagen24/victual/pull/196). The latter established the CI
+ratchet from 216 processes; plan 33 raised it twice.
+
+The original issue's table showed only 69 classes because the text report omitted classes
+with no covered statements. Those files were already included in the aggregate at zero;
+the omission affected the listing, not the total. The report now requests uncovered
+classes, and the Clover inventory supplies the complete per-file view.
+
+### Why executable-line counts can change
+
+For a loaded file, the coverage driver supplies the executable-line count. For a file
+that is never loaded, `php-code-coverage` uses static analysis. The counts can differ.
+The earlier coverage notes record these differences on 2026-09-21; they do not identify
+the measured commit or runtime versions:
 
 | File | Loaded | Never loaded |
 |---|---:|---:|
@@ -102,117 +195,25 @@ Measured on 2026-09-21, six of the 140 disagree:
 | `services/Mqtt/StateSnapshotAssembler.php` | 151 | 152 |
 | `helpers/ConfigurationValidator.php` | 96 | 97 |
 
-So covering a file for the first time raises the numerator **and** lowers the denominator,
-and the total moves slightly more than the new lines alone explain. The direction is the
-harmless one - the ratchet still only goes up - but two things follow. A pull request whose
-total moved by more than its own lines is not necessarily measuring something odd; check
-whether it loaded a file nothing loaded before. And a per-file count quoted from a run that
-did not load that file is the static one, which is why `inventory.php` reports covered and
-executable rather than only a percentage.
+Loading one of these files for the first time can both increase covered lines and reduce
+the executable count. Check this possibility when a coverage change exceeds the apparent
+gain from new tests. Record both counts, use comparable tooling, and investigate changes
+outside the targeted files; a smaller denominator alone does not show stronger tests.
 
-## What the label phases add
+## Collection and dependencies
 
-`tests.yml` also runs the label subsystem's own PHP test scripts as separate steps —
-`identity-tests.php`, `artifact-tests.php`, `print-job-tests.php`, `kinds-tests.php`,
-`worker-api-tests.php`, `registry-tests.php` — and until now they ran outside
-`SUITE_COVERAGE` entirely: they are their own workflow steps, not something
-`run-tests.sh` invokes, so the `auto_prepend_file` wiring above never reached them and a
-real share of `Services\Labels\*`'s exercise went uncounted. They now carry the same
-`VICTUAL_COVERAGE_DIR` and `PHP_INI_SCAN_DIR` `run-tests.sh` set up, pointed at the same
-directory, so their `.cov` files merge with the differential suite's rather than being
-measured — or not measured — on their own.
+With `SUITE_COVERAGE=1`, [run-tests.sh](../pgsql/run-tests.sh) creates a temporary PHP
+configuration fragment that sets `auto_prepend_file` to `prepend.php`. It adds that
+directory to `PHP_INI_SCAN_DIR` while preserving the normal extension configuration.
+PHP processes started by the runner, including PHPUnit, use this configuration.
 
-The same wiring now also covers `middleware/PathParameterMiddleware.php`, which had no
-test of any kind before: nothing else in this tree boots a real Slim App and dispatches a
-request through it (every controller test calls the controller method directly). The new
-`.devtools/middleware/path-parameter-tests.php` step does exactly that, against a
-throwaway app whose one route is registered with the same FastRoute-constrained pattern
-`routes.php` uses for the generic label routes.
+`prepend.php` starts line coverage and registers a shutdown handler that writes a uniquely
+named `.cov` file. When `VICTUAL_COVERAGE_DIR` is unset, it returns without loading the
+autoloader, driver, or handler. `report.php` merges the files; run it with
+`VICTUAL_COVERAGE_DIR` unset so it does not collect coverage of itself.
 
-`canonical-json-tests.php` and `renderer-agreement-tests.php` were the last two named in
-issue 192's mechanics item 2, and they are measured now too (plan 33's M2). The first is
-2068 documents' worth of `Helpers\CanonicalJson`, run against an ECMAScript oracle; the
-second is the only check that feeds the real renderer's bytes to the verifier that will
-accept or refuse them in production. Both are exercise the number never saw.
-
-One thing named there stays outside it:
-
-- **The frontend Playwright probes** (`.devtools/frontend/*.js`, the `frontend-security`
-  job). These drive a running `php -S` server over HTTP from a separate job on a separate
-  runner, so counting them means the server process loading `prepend.php` and a
-  cross-job merge of two coverage directories before `report.php` sees either — not
-  something this change does. What they reach (Blade views, `routes.php`'s dispatch, the
-  session and CORS middleware) is real application code no PHP-process phase here drives at
-  all, so folding them in later would raise the number, not just add more of what is
-  already measured.
-
-## A step that stopped being measured
-
-Adding a step to the directory is easy; noticing that one quietly left is not, because the
-symptom is a number that stopped rising, which is also what an honest run with nothing new
-to reach looks like. A lost `PHP_INI_SCAN_DIR`, a driver that failed to load, a step whose
-`env:` block was dropped in a rebase — none of them fails anything on its own.
-
-So each separately measured step sets **`VICTUAL_COVERAGE_LABEL`**, `prepend.php` makes that
-the `.cov` filename's prefix, and the ratchet step passes **`report.php --expect=`** with
-every label named. A label that left no file exits 2 — the same code as "no `.cov` files at
-all", because both are setup failures rather than a coverage shortfall — and says which step
-went missing. Matching is on that step's own prefix, so a file another step left behind
-cannot stand in for it.
-
-`.devtools/coverage/expectation-tests.php` is the control, and runs in CI just before the
-ratchet. Fourteen checks: one positive (a wired process writes exactly one file named for
-its label, and `--expect` accepts it) and the rest negative — the prepend path disabled, the
-driver absent, and a label that is only a prefix of a real one. Each negative runs against a
-directory that already holds the positive control's file, because a stale file concealing a
-missing step is the specific way this mechanism could be useless.
-
-## Which files are below the floor
-
-`report.php` prints a per-**class** summary. The floor is stated per **file**
-(`docs/constitution.md`), and those are not the same list: a file can hold more than one
-class, and a file holding none at all is a class row nowhere.
-
-```sh
-php .devtools/coverage/inventory.php clover.xml [--floor=75] [--format=markdown|csv]
-```
-
-reads the Clover report and prints the files below the floor, worst first by **shortfall** —
-`max(0, ceil(floor * executable) - covered)`, the number of lines that actually have to be
-covered to reach it, not the file's whole uncovered count. Issue 192's backlog table quotes
-the second, which overstates the work by about a quarter of every file's line count and puts
-the wrong files at the top. Files with no executable lines are listed separately rather than
-given a percentage: 0/0 is neither 0% nor 100%, and printing either invents a measurement.
-
-The `suite` job runs it after the ratchet, with `if: always()`, so what a pull request left
-below the floor is in the log whether the gate passed or not. It is not itself a gate —
-plan 33's M3 leaves automated per-file enforcement optional.
-
-## How it is wired
-
-The suite is a couple of dozen short-lived PHP processes: `difftest.php` once per seed,
-`migratedifftest.php`, `trigdifftest.php`, `rollback-tests.php` once per engine,
-`bin/victual-migrate` and
-`bin/victual-db-import` several times each. Rather than editing each call site — which means
-remembering to edit the next one too — `run-tests.sh` writes a throwaway `php.ini`
-fragment setting `auto_prepend_file` and puts it on `PHP_INI_SCAN_DIR`. Every PHP process
-the run spawns then loads `prepend.php` first.
-
-- **`prepend.php`** starts a line-coverage driver and registers a shutdown handler that
-  writes one `.cov` file named for the process. It returns immediately when
-  `VICTUAL_COVERAGE_DIR` is unset, so an ordinary run is untouched: no driver, no autoloader,
-  no handler. This is also what tier 1 (ADR-0025) measures: `packages/bin/phpunit` is a PHP
-  process like any other the suite spawns, so it loads `prepend.php` through the same
-  `auto_prepend_file` mechanism with no PHPUnit-specific wiring at all — one number, from
-  one run, whether the process is `difftest.php` or a PHPUnit test class.
-- **`report.php`** merges every `.cov` in the directory — no single process can know it is
-  the last one — and prints the summary. It is run with `VICTUAL_COVERAGE_DIR` unset so it
-  does not measure itself into the directory it is reading.
-
-The driver is [pcov](https://github.com/krakjoe/pcov): line coverage only, which is all
-this needs, and fast enough that the suite's runtime does not visibly change. Xdebug
-satisfies the same check if it is what you have. The `Dockerfile` installs pcov and CI asks
-`shivammathur/setup-php` for it; on a host PHP, `pecl install pcov` and enable it.
-
-The merging and reporting is `phpunit/php-code-coverage`, a `require-dev` dependency. The
-library works standalone — PHPUnit is not installed and is not needed.
+The development image and CI install [pcov](https://github.com/krakjoe/pcov). A host PHP
+installation needs pcov or Xdebug configured for coverage. For pcov, install it with
+`pecl install pcov` and enable the extension. Composer development dependencies include
+both `phpunit/phpunit` and `phpunit/php-code-coverage`; the latter provides collection,
+merging, and reports outside PHPUnit as well.
