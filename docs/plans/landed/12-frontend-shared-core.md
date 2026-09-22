@@ -8,19 +8,23 @@ those copies have already accumulated.
 copy from.
 **Status:** **landed in full**, steps 1 to 6, with all seven verification checks. Step 3a —
 sweep finding **S29**, a High stored-XSS class across ~45 sites assigned here on 2026-08-30 —
-is **closed**, proved with a stored payload rather than by reading the diff. Steps 5 and 6
-carried no security content. See
-[Executed — steps 1 and 2](#executed--steps-1-and-2-and-the-baseline),
+is **closed**, proved with a stored payload, not by reading the diff. Steps 5 and 6 carried
+no security content.
+
+See [Executed — steps 1 and 2](#executed--steps-1-and-2-and-the-baseline),
 [Executed — steps 3, 3a and 4](#executed--steps-3-3a-and-4) and
 [Executed — steps 5 and 6](#executed--steps-5-and-6) below.
-**S29's closure needed a second pass**: review of the landing PR found one sink the by-hand
-sweep had missed, and the probe that was meant to be the evidence could not fail. Both are
-fixed. The probe was to run on every pull request rather than once, and **for a day it did
+
+**S29's closure needed a second pass**: review of the landing PR found one sink the
+by-hand sweep had missed, and the probe that was meant to be the evidence could not fail.
+Both are fixed.
+
+The probe was to run on every pull request rather than once, and **for a day it did
 not: the `frontend-security` job was described here and never added to
 `.github/workflows/tests.yml`**, found 2026-09-04 when CodeQL reported two sinks of this
-class that the gate would have caught. [21](21-frontend-sink-discipline.md) added the job,
-two probe families this one was blind to, and a `lint` check that a documented job exists.
-See [Executed — S29, second pass](#executed--s29-second-pass).
+class that the gate would have caught. [21](21-frontend-sink-discipline.md) added the
+job, two probe families this one was blind to, and a `lint` check that a documented job
+exists. See [Executed — S29, second pass](#executed--s29-second-pass).
 
 ## Today
 
@@ -28,7 +32,9 @@ The wiring is exemplary for a no-framework app. The layout auto-loads
 `/viewjs/{view}.js`, every view/viewjs/route name lines up (72 top-level scripts in
 `public/viewjs`, 73 top-level Blade views — 96 counting the subdirectories), inline
 Blade scripts inject data and nothing else, and every call to Victual's own API goes
-through `Victual.Api.*`. The one bypass in the tree is `public/js/victual.js:562`, which uses
+through `Victual.Api.*`.
+
+The one bypass in the tree is `public/js/victual.js:562`, which uses
 `$.ajax` to fire *outbound webhooks* — a different thing to a different host, with its
 own `.fail()` handler that already calls `ShowGenericError`. It is not a candidate for
 the shared core and does not need converting. That leaves exactly one place to change for
@@ -45,8 +51,9 @@ information, forever.
 
 **Silent failure is the default.** 148 error callbacks across 41 viewjs files do nothing
 but `console.error(xhr)`, plus 9 more across 5 files in `public/viewjs/components/`,
-which the counts below and the conversion order should not forget. A failed delete, a
-failed save, a rejected edit — the UI simply does not react.
+which the counts below and the conversion order should not forget.
+
+A failed delete, a failed save, a rejected edit — the UI does not react.
 `Victual.FrontendHelpers.ShowGenericError` already exists (`public/js/victual.js:485`) and
 already renders exactly the right thing, a toast with click-through technical details.
 The catch is that all 157 handlers are passed *explicitly*, so no default in the request
@@ -97,20 +104,20 @@ not merely one whose JavaScript has stopped drifting.
 That matters now rather than someday, because [17](../17-ecosystem-clients.md)'s answers
 committed this household to two more first-party clients — a Home Assistant integration
 and a Swift module with per-platform UI targets. Three clients against one API is what
-the architecture already is; the browser is simply the one that has been allowed to skip
-the API and read the database directly.
+the architecture already is; the browser is the one that has been allowed to skip the API
+and read the database directly.
 
 How directly is measured in [14](14-contract-and-regression-scaffolding.md)'s section 2b:
 173 direct `$this->DB->` call sites across the view controllers, and eight pages whose
 data has no API path in the shape they render. Most reads *are* reachable — the gap is
-narrower than the call-site count suggests — but reachable via several calls plus a
+narrower than the call-site count suggests. But reachable via several calls plus a
 client-side join is a different claim from the README's "the web frontend uses exactly
 this API for pretty much everything", which is true of writes and approximately true of
 reads.
 
 None of that is this plan's work — 14 owns the surface and the contract. What this plan
 owes it is a `request()` core and list/form factories that a page can be built on
-*without* server-injected data, so that when a page's read does arrive as an endpoint,
+*without* server-injected data. So when a page's read does arrive as an endpoint,
 converting it is a change to one call rather than an argument with the template. Steps 1
 and 2 do that already. The thing to avoid is the version of this plan that tidies the
 JavaScript while deepening its reliance on Blade-injected globals.
@@ -122,14 +129,14 @@ what falls out once the API stops treating the browser as special.
 
 [Sweep S29](../../security-sweep.md), raised while fixing S1 on the wave 0.5 hotfix branch and
 assigned here: `bootbox` renders its message with `.html()` and `toastr` ships
-`escapeHtml: false`, so every "are you sure you want to delete X" and every success toast is
-an HTML sink — and roughly 45 of them interpolate a name straight from a text column that can
+`escapeHtml: false`. So every "are you sure you want to delete X" and every success toast is
+an HTML sink, and roughly 45 of them interpolate a name straight from a text column that can
 contain markup. Demonstrated rather than theoretical: a product named with an entity-encoded
 `<img onerror>` executes on view.
 
 That changes this plan's status. It was drift cleanup with no security content and no plan
-blocked on it; it is now the fix for a **High** finding, and the "12 before 05/06/08"
-ordering carries a second reason — every list/form pair added before this lands is another
+blocked on it. It is now the fix for a **High** finding, and the "12 before 05/06/08"
+ordering carries a second reason: every list/form pair added before this lands is another
 copy of the vulnerable dialog. Step 3a below is the work; it is why this plan should be
 scheduled sooner rather than when it is convenient.
 
@@ -168,13 +175,13 @@ wholesale. Doing the deletions here would mean touching every file twice and wou
 behaviour change in the middle of what is meant to be a pure no-op refactor.
 
 So the split is: **step 2's PR is the four bug fixes plus the `request()` core**, and its
-real user-visible value is the `timeout`/`onerror` pair — the form that stays disabled
+real user-visible value is the `timeout`/`onerror` pair. The form that stays disabled
 forever on a dropped connection starts re-enabling and reporting, which is a genuine
 class of failure and cannot be fixed anywhere else. The default error callback ships in
 the same PR as inert scaffolding that the next step switches on.
 
 **The 157 handler deletions ride with step 3**, per file, as each script is converted:
-deleting the callback is one more line of the same mechanical edit, the toast starts
+deleting the callback is one more line of the same mechanical edit. The toast starts
 working for that page the moment its file is converted, and the surfacing of previously
 silent failures arrives gradually rather than all at once. Q2 covers the callers that
 legitimately expect failures and must keep an explicit no-op — those are the ones *not*
@@ -295,8 +302,8 @@ stricter answer affordable; it is recorded because "no API change" was this sect
 first sentence and it is not quite true.
 
 The default error toast is a *user-visible* behaviour change with no wire-format
-component: operations that used to fail silently now say so. That is the point, but it
-will surface pre-existing failures nobody knew about. Because the handler deletions
+component: operations that used to fail silently now say so, and doing so will surface
+pre-existing failures nobody knew about. Because the handler deletions
 happen per file during step 3 rather than in one switch-flip, those discoveries arrive
 page by page — which is the easier version to triage, since at any moment it is clear
 which conversion introduced the noise.
@@ -367,7 +374,7 @@ fix reaches into `controllers/Api/`, and even that does not collide with
 can be done in parallel with 10, 11, 13 or 14.
 
 **It blocks no feature plan outright** but it de-risks 05/06/08 by removing ~1,500 lines
-those plans would otherwise have to keep consistent, and it de-risks
+those plans would otherwise have to keep consistent. It also de-risks
 [04 seed datasets](../04-seed-datasets.md) indirectly: a seeded test instance is much more
 useful when a failed import says so instead of logging to a console nobody has open.
 
@@ -501,6 +508,7 @@ be the one that slips when wave 1 gets busy.
 Medium, dominated by conversion volume rather than difficulty. Steps 1 and 2 are a single
 short session each and deliver the four bug fixes plus network-failure handling — a
 dropped connection now re-enables the form and reports, where today it hangs forever.
+
 They do *not* deliver the end of silent failures: that is step 3's, one file at a time,
 because the 157 explicit handlers can only be removed by the same edits that convert the
 files. Step 3 is the bulk: one pair converted carefully, then ~35 mechanical conversions
@@ -511,9 +519,9 @@ factories wait.
 **S29 adds to step 3 rather than to the total.** The factories absorb the ~24 confirmation
 dialogs at no extra cost, since those are being rewritten anyway. What it does add is the
 ~20 toast sites in page scripts that no factory touches, plus `productamountpicker.js` and
-two irregular confirmations — each an individual judgement about whether that variable is
-display-only or also feeds a URL or an API parameter, so an afternoon of care rather than
-a `sed`. The payload verification is its own sitting.
+two irregular confirmations. Each is an individual judgement about whether that variable
+is display-only or also feeds a URL or an API parameter, so an afternoon of care rather
+than a `sed`. The payload verification is its own sitting.
 
 **One consequence for the split:** if steps 1 and 2 land alone and the factories wait,
 S29 waits with them. If that gap is going to be long, the ~20 straggler sites are worth
@@ -597,7 +605,7 @@ count 157; those remain step 3's, per file.
 **Q2's silent list.** The two `system/log-missing-localization` posts in `__t()` and `__n()`
 now pass an explicit `function () { }` with the recursion as the stated reason. Grepping the
 tree for the *shape* Q2 asks about — a `Victual.Api.*` call made from inside a rendering or
-translation helper — finds no others: `victual_dbchangedhandling.js`, the product card's
+translation helper — finds no others. `victual_dbchangedhandling.js`, the product card's
 price-history fetch and the barcode lookups all already pass explicit handlers and are
 step 3's to classify, and `Victual.FrontendHelpers.SaveUserSetting` passes one too.
 
@@ -647,9 +655,9 @@ harness README.
   `psql`. Stock overview loads clean with `UndoStockTransaction` defined, which is the no-op
   check it is meant to be while the push is still there.
 - **Check 3, forced failures.** With Playwright intercepting `POST /api/objects/locations`:
-  `route.abort('connectionreset')` re-enabled the form and produced the error toast; a route
+  `route.abort('connectionreset')` re-enabled the form and produced the error toast. A route
   that never answers left the form disabled and the cursor busy for the shortened 2 s
-  timeout and then re-enabled it and toasted, which is the failure mode that had no exit
+  timeout, then re-enabled it and toasted, which is the failure mode that had no exit
   before. A forced 500 on `DELETE /api/objects/locations/{id}` reached the locations list's
   explicit `console.error` handler unchanged and produced **no** toast, which is the default
   staying inert where a handler exists.
@@ -697,15 +705,20 @@ the plan's "22 `*form.js` scripts are byte-identical modulo the entity name" imp
 | Leave alone (3) | `mealplan`, `recipes`, `shoppinglist` |
 | Neither, and why | `quantityunitform`, `choreform`, `equipmentform`, `productform`, `recipeform`, `recipeposform`, `shoppinglistform`, `shoppinglistitemform`, `stockentryform`, `productbarcodeform`, `quantityunitconversionform`, `userform` |
 
-That last row is the divergence worth arguing with. Each of those twelve forms differs from
-the clone shape in the part the factory owns, not around it: `equipmentform` uploads a file
-*inside* the save callback and deletes the old one first; `productbarcodeform` and
-`shoppinglistform` post `CloseLastModal` plus a page-specific message and, in
-`shoppinglistform`'s edit branch, save userfields *before* the PUT rather than after;
-`userform` saves a picture between the two; `quantityunitform`, `choreform`, `productform`,
-`recipeform` and `recipeposform` are 170–600 lines of page behaviour with a save in the
-middle. Forcing them through `EntityForm` would have meant adding a hook per file, which is
-the config-object-that-owns-everything failure mode Q5 was avoiding. They keep their own save
+That last row is the divergence worth arguing with. Each of those twelve forms differs
+from the clone shape in the part the factory owns, not around it:
+
+- `equipmentform` uploads a file *inside* the save callback and deletes the old one
+  first.
+- `productbarcodeform` and `shoppinglistform` post `CloseLastModal` plus a page-specific
+  message, and `shoppinglistform`'s edit branch saves userfields *before* the PUT rather
+  than after.
+- `userform` saves a picture between the two.
+- `quantityunitform`, `choreform`, `productform`, `recipeform` and `recipeposform` are
+  170–600 lines of page behaviour with a save in the middle.
+
+Forcing them through `EntityForm` would have meant adding a hook per file, which is the
+config-object-that-owns-everything failure mode Q5 was avoiding. They keep their own save
 handlers; they lost their `console.error` handlers like everything else.
 
 `quantityunitconversionsresolved` is added to the mixin bucket rather than left alone: it is
@@ -727,12 +740,15 @@ forms had drifted to clicking an id that does not exist — `mealplansectionform
 `quantityunitform:147`/`:217` and `recipeform:148` clicking `#save-quantityunit-button` and
 `#save-recipe-button`. The two on the factory list are fixed by the factory;
 `quantityunitform` and `recipeform` are not on it, so their selectors were corrected in place
-to the class-named buttons that actually exist. `userobjectform` gains the handler it never
-had, which also forced the factory to *delegate* keyup/keydown from the form element rather
-than binding to the inputs it has at load — a userobject's only inputs are its userfields, so
-an entity with none has no inputs to bind to at all. That is the mechanical reason that one
-form never had an Enter handler, and delegation is the shape that cannot reproduce it. The
-baseline harness's probe was taught about delegated handlers to match (`ba4910a`);
+to the class-named buttons that actually exist.
+
+`userobjectform` gains the handler it never had, which also forced the factory to
+*delegate* keyup/keydown from the form element rather than binding to the inputs it has
+at load. A userobject's only inputs are its userfields, so an entity with none has no
+inputs to bind to at all. That is the mechanical reason that one form never had an Enter
+handler, and delegation is the shape that cannot reproduce it.
+
+The baseline harness's probe was taught about delegated handlers to match (`ba4910a`);
 `quantityunits`'s delete dialog also regained the `__t()` on its Yes/No labels, which it was
 alone in having lost.
 
@@ -774,20 +790,26 @@ error argument at all.
 `Victual.EntityList.ConfirmDelete` takes the entity name as data and escapes it on the way
 into the message, so no caller can pass markup through it; `Victual.FrontendHelpers.EscapeHtml`
 is the new function form of the tree's existing `String.prototype.escapeHTML`, which throws on
-the `null` that `.attr()` returns for a missing attribute. By hand: the ~20 toast sites in
-`consume`, `purchase`, `transfer`, `inventory`, `stockoverview`, `stockentries`,
-`choresoverview`, `choretracking`, `batteriesoverview`, `batterytracking`, `tasks`, `recipes`,
-`mealplan` and `shoppinglistitemform`; `components/productamountpicker.js`'s `<option>`
-builder; and the irregular confirmations in `manageapikeys`, `shoppinglist`,
-`components/productpicker`, `recipeform` and `calendar`. Both traps the plan named were
-avoided: `toastr.options.escapeHtml` is not set, because ten of these messages carry
-deliberate markup including the consume Undo button, and every value is escaped at the point
-of use rather than where it was written into a `data-` attribute.
+the `null` that `.attr()` returns for a missing attribute.
+
+By hand:
+
+- the ~20 toast sites in `consume`, `purchase`, `transfer`, `inventory`, `stockoverview`,
+  `stockentries`, `choresoverview`, `choretracking`, `batteriesoverview`, `batterytracking`,
+  `tasks`, `recipes`, `mealplan` and `shoppinglistitemform`;
+- `components/productamountpicker.js`'s `<option>` builder; and
+- the irregular confirmations in `manageapikeys`, `shoppinglist`,
+  `components/productpicker`, `recipeform` and `calendar`.
+
+Both traps the plan named were avoided: `toastr.options.escapeHtml` is not set, because
+ten of these messages carry deliberate markup including the consume Undo button, and
+every value is escaped at the point of use rather than where it was written into a
+`data-` attribute.
 
 Two decisions inside that sweep worth recording. `productamountpicker`'s two
 `data-destination-qu-*` attributes are deliberately left *unescaped* at the write, because
-`.attr()` escapes for the attribute by itself and returns the decoded string — so escaping
-there would be escaping into a value that is decoded again, and the fix has to live at the
+`.attr()` escapes for the attribute by itself and returns the decoded string. Escaping
+there would be escaping into a value that is decoded again, so the fix has to live at the
 three places `shoppinglistitemform` reads them back. And `shoppinglistitemform`'s three
 identical message-building expressions were extracted into one named function rather than
 escaped three times, because three copies of an escaping decision is how the next one gets
@@ -797,9 +819,10 @@ forgotten.
 the refactor** — no factory, no mixin, no function moved. Their toast and confirmation lines
 were edited for S29, which the plan asks for explicitly, and their `console.error` handlers
 were deleted in a commit of their own (`a33ffdb`) so that check 4's count could reach zero.
+
 That last one is the divergence a reviewer might not want: it is 23 one-line deletions in
 files the plan says to leave alone. It is kept as a separate commit so it can be dropped
-without disturbing anything else, and the argument for it is that leaving the shopping list,
+without disturbing anything else. The argument for it is that leaving the shopping list,
 the meal plan and the recipe pages failing silently would leave the plan's headline outcome
 unreached in exactly the pages that do the most work.
 
@@ -807,7 +830,7 @@ unreached in exactly the pages that do the most work.
 
 Against two demo-mode SQLite instances run side by side on 2026-09-02 — `59456dd` extracted
 with `git archive` into a scratch directory and served on one port, this branch served on
-another — each on its own freshly migrated demo database, so the absolute row counts are
+another. Each was on its own freshly migrated demo database, so the absolute row counts are
 comparable too and not only the deltas. Both were driven by *this* branch's copy of the
 harness, so the probes are identical and only the application differs. Reproduce with
 `.agents/skills/run-app/SKILL.md` plus `.devtools/frontend/README.md`.
@@ -843,9 +866,10 @@ harness, so the probes are identical and only the application differs. Reproduce
 - **Check 5, S29, with a payload.** `node .devtools/frontend/s29-payload.js`. It seeds a
   location, chore, quantity unit, shopping list, product, task, battery, equipment item, task
   category, product group, shopping location and API key with a name of
-  `&lt;img src=x onerror=window.__xss=1&gt;`, reads each value back from the API to confirm
-  the sanitiser stored a **live tag** rather than the entity-encoded text that was sent, then
-  opens the delete confirmation or triggers the success toast on each page that acts on them.
+  `&lt;img src=x onerror=window.__xss=1&gt;`. It reads each value back from the API to
+  confirm the sanitiser stored a **live tag** rather than the entity-encoded text that was
+  sent, then opens the delete confirmation or triggers the success toast on each page that
+  acts on them.
 
   | Probe | `window.__xss` before | after | name renders as text |
   |---|---|---|---|
@@ -917,10 +941,12 @@ after `victual_entity.js`. The five page-script copies are gone, and so are all 
 step-1 comments that marked them.
 
 They have to be globals under exactly those names because they are reached from inline
-`onclick=` inside a toast, and **the toast is not always shown by the page that built it**:
+`onclick=` inside a toast, and **the toast is not always shown by the page that built it**.
 `consume`, `purchase`, `transfer` and `inventory` post their success message to the *parent*
 window when they are opened in a modal, so the Undo link runs against whatever the parent
-page defined. That is the mechanism the plan's "secretly a shared library" was describing,
+page defined.
+
+That is the mechanism the plan's "secretly a shared library" was describing,
 and it is why the shared file is a plain script with globals rather than a
 `Victual.Components` entry. `Victual.StockDialogs` mirrors the three, plus the one shared
 `BroadcastProductChanged` helper, so the namespace has them too.
@@ -1036,8 +1062,8 @@ the markup later now has something to call.
 
 Two demo-mode SQLite instances run side by side on 2026-09-02 — `cce729b` extracted with
 `git archive` into a scratch directory and served on 8601, this branch served on 8602, each
-on its own freshly migrated demo database — both driven by *this* branch's harness, so the
-probes are identical and only the application differs. Reproduce with
+on its own freshly migrated demo database. Both were driven by *this* branch's harness, so
+the probes are identical and only the application differs. Reproduce with
 `.agents/skills/run-app/SKILL.md` plus `.devtools/frontend/README.md`.
 
 - **Check 1, the baseline, before and after.**
@@ -1066,7 +1092,7 @@ probes are identical and only the application differs. Reproduce with
 
   7 of 7. The meal plan row is the one that is not a real toast click: its Undo toast only
   appears after consuming a meal plan entry whose recipe is fully in stock, which the demo
-  data does not reliably provide, so the probe books a transaction and calls exactly the
+  data does not reliably provide. So the probe books a transaction and calls exactly the
   global the toast's `onclick` names, on the loaded meal plan page.
 
   **The probe is known to be capable of failing**, which is the part that matters. Deleting
@@ -1155,8 +1181,9 @@ ingredient note out of `data-recipe-pos-note` with `.attr()` and passed it strai
 `bootbox.alert()`. That is S29 exactly: `recipes_pos` has no entry in
 `BaseApiController::HTML_RENDERED_COLUMNS`, so `note` is a text column and the sanitiser's
 entity encoding is undone before it is stored; the Blade template escapes it into the
-attribute, `.attr()` decodes it again, and bootbox renders its message with `.html()`. The
-step-3a sweep edited the two *other* handlers in that same file — the ingredient and
+attribute, `.attr()` decodes it again, and bootbox renders its message with `.html()`.
+
+The step-3a sweep edited the two *other* handlers in that same file — the ingredient and
 included-recipe delete confirmations — and stopped at the one that took no `objectName`
 variable. That is the shape of the miss worth remembering: the sweep was looking for a name,
 and this sink carries a note.
@@ -1176,7 +1203,9 @@ where step 3a decided this escaping lives.
 
 **The probe could not fail.** `s29-payload.js` recorded `xss`, `visibleText`, `imgInjected`,
 a missing sink and a caught error, and then evaluated none of them: it wrote its JSON and
-exited 0. A run in which every action errored — a selector that had moved, an instance that
+exited 0.
+
+A run in which every action errored — a selector that had moved, an instance that
 never booted — was indistinguishable from a clean one. It now derives a verdict per probe and
 sets a non-zero exit status, and **"the sink was never reached" and "the action threw" are
 failures, not skips**, which is the specific way the old script could have reported success
