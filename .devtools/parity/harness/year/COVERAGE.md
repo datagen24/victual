@@ -337,7 +337,7 @@ assertion fires.
 |---|---|---|
 | Every booking moved its intended amount | every stock operation | `rowsSum` — the signed total, from the response itself |
 | A recipe consumed its ingredients, nested ones included | every `cook` | `POST /recipes/{id}/consume` answers 204, so the evidence is the state it left: a stock read **and** a lot read per affected product, named by the recipe. `requirements()` resolves nesting, so the model knows what a nested recipe should have drawn and by how much. |
-| An edit carried its prior consumption | 11 edits/year | the average-price oracle's `edited_origin_amount` term — the edited amount plus what had already been drawn from that entry |
+| An edit carried its prior consumption | 11 edits/year | the average-price oracle's `edited_origin_amount` term — `origin_amount + SUM(new - old)` across the origin group |
 | A transfer moved stock to the right place, at the step | every transfer | the lot assertion, whose `LOT_FIELDS` include `location_id` and which is emitted after every transfer. This was listed as a gap until the lot work closed it: per-operation checks previously asserted only the product total, which a transfer never changes. |
 | Each operation left the intended state | ~275/year sampled, always after open/transfer/inventory/undo/edit/spoil/self-production | a read asserting `stock_amount` against the ledger |
 | Partial opening | ~52 opens | `stock_amount` unchanged **and** `stock_amount_opened` up by the opened quantity |
