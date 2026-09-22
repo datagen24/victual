@@ -12,7 +12,7 @@ what remains unproved is [plan 20](../docs/plans/20-container-infrastructure.md)
 [`build-in-podman.sh`](build-in-podman.sh). `nix flake check` passes its 34 assertions and
 all three images build and load. The sentence that stood here until then — "nothing here
 has been built yet, so treat the first `nix build` as part of the work rather than as a
-formality" — turned out to be right: the first build found five defects, three of them
+formality" — turned out to be right. The first build found five defects, three of them
 contradicting ADR-0013's claim that these images carry no shell. Every one was fixed in the
 source rather than in [`checks.nix`](checks.nix), which is what found them.
 
@@ -20,13 +20,15 @@ source rather than in [`checks.nix`](checks.nix), which is what found them.
 `podman kube play` — [issue #49](https://github.com/datagen24/victual/issues/49) is closed
 and [ADR-0013](../docs/adr/0013-nix-built-container-images.md) was accepted on the strength
 of it. That took two more defects that were invisible in the YAML, both of them this
-manifest meaning something different under podman than under Kubernetes: `fsGroup` is not
-honoured for `emptyDir` (fixed by making `config.php` optional, which removed the writable
-mount entirely rather than working around it), and `httpGet` probes are rewritten into
-`CMD-SHELL curl -f …` and run *inside* the container, which an image with no shell and no
-curl cannot pass. Plus a third that no check could have found: every error page on these
-images was a fatal error, because `GetSystemInfo()` opened a SQLite connection these images
-have no driver for.
+manifest meaning something different under podman than under Kubernetes:
+
+- `fsGroup` is not honoured for `emptyDir` (fixed by making `config.php` optional, which
+  removed the writable mount entirely rather than working around it).
+- `httpGet` probes are rewritten into `CMD-SHELL curl -f …` and run *inside* the container,
+  which an image with no shell and no curl cannot pass.
+
+Plus a third that no check could have found: every error page on these images was a fatal
+error, because `GetSystemInfo()` opened a SQLite connection these images have no driver for.
 
 Plan 20's verification section is still the list. As of 2026-09-18 the credential split
 (check 8) is done — `victual-app` runs under a role with no DDL rights, see
@@ -43,21 +45,23 @@ of the signal check (9), and the K3S apply.
 | `.#image-migrate` | `bin/victual-migrate`, a Job | PHP CLI, the application, and the `bin/` CLI entry points |
 | `.#image-label-renderer` | the label renderer, a Rust binary | pinned from `datagen24/victual-label-renderer` |
 | `.#image-label-worker` | the label delivery worker, a Rust binary | pinned from `datagen24/victual-label-worker` |
-| `.#image-mcp` | `victual-mcp`, the read-only MCP sidecar | a Node process built from `mcp/` in this repository — **unbuilt**, see below |
+| `.#image-mcp` | `victual-mcp`, the read-only MCP sidecar | a Node process built from `mcp/` in this repository — **unbuilt**; see [issue #86](https://github.com/datagen24/victual/issues/86) |
 
 All run as uid 65532, contain no shell and no package manager, and are built from
 `scratch` — there is no base image and therefore no base image's CVEs.
 
-**`.#image-mcp` has never been built.** `mcp/` (issue #86) was scaffolded in a sandbox
+**`.#image-mcp` has never been built.** `mcp/`
+([issue #86](https://github.com/datagen24/victual/issues/86)) was scaffolded in a sandbox
 with no npm registry access and no Nix, so `mcp/package-lock.json` does not exist and
 `nix/hashes.nix`'s `mcpNpmDeps` is still the fakeHash placeholder. The first
 `nix build .#mcp` after that lockfile is committed fails on purpose and names the real
-hash — see "Bootstrapping the hashes" below, and `mcp/README.md` for what else the
-local session needs to do first. Unlike the label renderer and worker, whose source is
-pinned from its own repository (`flake.nix`'s `label-renderer`/`label-worker` inputs),
-the sidecar's TypeScript lives in this repository at `mcp/` — see
-`docs/mcp-interface-spec.md`'s Open Question 1 amendment (2026-09-19) for why that
-reverses the spec's original "new repository" answer.
+hash; see "Bootstrapping the hashes" below, and `mcp/README.md` for what else the local
+session needs to do first.
+
+Unlike the label renderer and worker, whose source is pinned from its own repository
+(`flake.nix`'s `label-renderer`/`label-worker` inputs), the sidecar's TypeScript lives in
+this repository at `mcp/`. See `docs/mcp-interface-spec.md`'s Open Question 1 amendment
+(2026-09-19) for why that reverses the spec's original "new repository" answer.
 
 The split is not decoration. The web tier holds the document root and no credential; the
 app tier holds the credential and no document root; the migrate tier is the only one
@@ -69,10 +73,11 @@ in all three images and is meant to be. `migrations/` and `db/` ship in every on
 they are read on the request path — `SchemaVersionMiddleware` asks
 `GetLatestMigrationNumber($dialect)` on every request, which reads the migration
 directory, and the check is deliberately unconditional even though auto-migration
-(`MIGRATE_ON_ROOT_REQUEST`) is off by default. Trimming them is not blocked on plan 10, as
-an earlier draft of this file said; it is ruled out by the view cache below, whose compiled
-file names hash the application root, so a trimmed root would warm a cache the serving
-image could not use.
+(`MIGRATE_ON_ROOT_REQUEST`) is off by default.
+
+Trimming them is not blocked on plan 10, as an earlier draft of this file said. It is ruled
+out by the view cache below, whose compiled file names hash the application root, so a
+trimmed root would warm a cache the serving image could not use.
 
 ## Building it
 
@@ -145,7 +150,7 @@ Paste the `got:` value into `hashes.nix` and build again. `nix build .#app` give
 `composerVendor`; `nix build .#frontend` gives you `yarnOfflineCache`. They change only
 when `composer.lock` or `yarn.lock` changes — and a changed lockfile with an unchanged
 hash here is a build failure rather than a silently stale dependency set, which is the
-property being bought. A version bump does not move them: the vendor tree records a root
+property being bought. A version bump does not move them. The vendor tree records a root
 package version, and `nix/app.nix` pins the one Composer sees rather than passing
 `version.json`'s through, both for this property and because Composer's parser refuses a
 suffix such as `-MVP` that an image tag is free to carry.
@@ -187,11 +192,11 @@ nix/
 
 **The application is served from its store path, and that is not an aesthetic choice.**
 `bin/victual-warm-cache` compiles Blade templates whose compiled file names hash the
-*absolute path* of the views directory — the warmer's own comment says so and calls it
-load-bearing. Warm at one path and serve from another and every page is a 500 against a
-read-only cache. Baking the cache inside `nix/app.nix`, the derivation that owns the tree,
-makes the warm path and the serve path the same one by construction. An earlier draft
-copied the application to `/app` and would have produced exactly that failure.
+*absolute path* of the views directory — the warmer's own comment warns that moving this
+path breaks every request. Warm at one path and serve from another and every page is a 500
+against a read-only cache. Baking the cache inside `nix/app.nix`, the derivation that owns
+the tree, makes the warm path and the serve path the same one by construction. An earlier
+draft copied the application to `/app` and would have produced exactly that failure.
 
 The same constraint is why there is one application derivation for all three images rather
 than a trimmed one for the serving tier: a second root is a second path, and its cache
