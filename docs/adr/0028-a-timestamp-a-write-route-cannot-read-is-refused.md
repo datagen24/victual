@@ -97,35 +97,42 @@ so never grew one.
    | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded, however many |
 
    **The `T` forms are RFC 3339 *shaped* and this is deliberately not that grammar**, in
-   both directions, which is worth naming because calling the set "RFC 3339" would repeat
-   the defect this record is about — a document promising something the server does not do.
-   RFC 3339 requires an offset and this accepts a value without one, because a wall clock in
-   the server's configured zone is what the rest of the API speaks and there is no reason to
-   make a client invent an offset to say what it means. RFC 3339 permits a leap second `:60`
-   and this refuses it: `createFromFormat()` reads `2016-12-31T23:59:60Z` as
-   `2017-01-01 00:00:00`, so accepting it would book a different day without a word, which
-   is decision 1's whole subject. Nothing behind this API can hold a leap second either —
-   the columns are `TIMESTAMP`.
+   both directions. That distinction is worth naming: calling the set "RFC 3339" would
+   repeat the defect this record is about — a document promising something the server
+   does not do.
+
+   RFC 3339 requires an offset; this accepts a value without one. A wall clock in the
+   server's configured zone is what the rest of the API speaks, and there is no reason to
+   make a client invent an offset to say what it means.
+
+   RFC 3339 permits a leap second `:60` and this refuses it: `createFromFormat()` reads
+   `2016-12-31T23:59:60Z` as `2017-01-01 00:00:00`, so accepting it would book a different
+   day without a word, which is decision 1's whole subject. Nothing behind this API can
+   hold a leap second either — the columns are `TIMESTAMP`.
 
    **An offset-free value has to survive the round trip, or it is refused.** It names a wall
    clock, and a wall clock the server's zone skipped is not a time there:
    `2026-03-08 02:30:00` does not happen on `America/New_York`, where the clock goes from
    01:59:59 to 03:00:00. PHP moves such a value forward to 03:30 and reports no warning for
    it, so the routes answered 200 and booked an hour later than the caller wrote — decision
-   1's defect, arriving by a different door. It reaches the bare date too: on
-   `America/Santiago` the clock jumps at midnight, so `2026-09-06` asks for an hour that
-   does not exist. Refusal is the only answer available, because there is no hour there to
-   book, and the 400 says so rather than reciting the shape the value already has.
+   1's defect, arriving by a different door.
+
+   It reaches the bare date too: on `America/Santiago` the clock jumps at midnight, so
+   `2026-09-06` asks for an hour that does not exist. Refusal is the only answer available,
+   because there is no hour there to book, and the 400 says so rather than reciting the
+   shape the value already has.
 
    Two things this deliberately leaves alone. **A value carrying an offset names an
    instant**, and every instant has a wall clock in every zone, so there is nothing to
    check — `2026-03-08T02:30:00Z` is a real moment and 21:30 the previous evening in New
-   York is where it falls. And **the repeated hour is kept**: `2026-11-01 01:30:00` happens
-   twice there, PHP takes the first, and the wall clock survives unchanged, which is all
-   this API stores. Which of the two instants was meant is a question a wall-clock string
-   cannot ask — that is ADR-0027 decision 2's premise, not a defect here — and refusing the
-   value would lose a booking that is perfectly expressible. A client that needs to say
-   which one sends the offset.
+   York is where it falls.
+
+   **The repeated hour is kept**: `2026-11-01 01:30:00` happens twice there, PHP takes
+   the first, and the wall clock survives unchanged, which is all this API stores. Which
+   of the two instants was meant is a question a wall-clock string cannot ask — that is
+   ADR-0027 decision 2's premise, not a defect here — and refusing the value would lose a
+   booking that is perfectly expressible. A client that needs to say which one sends the
+   offset.
 
    All three routes accept all of it. The chore route's bare date stops being a local
    exception and becomes the rule, which is what it should have been: three fields with one
@@ -144,23 +151,27 @@ so never grew one.
    parse that follows decides one further question only — whether the date and time exist.
 
    This is structural rather than tidy. Written as two independent expressions they drift,
-   and on the first review of this record they had: `DateTimeImmutable::createFromFormat()`
-   is considerably more forgiving than its format strings suggest, and was accepting
-   `+0200`, `+02`, `GMT`, a single-digit hour and a doubled separator space — none of them
-   promised anywhere — while the document's `(\.\d+)?` promised fractional seconds of any
-   length that PHP's `u` will not parse past six digits, so `.NET`'s round-trip format
-   (seven) and Go's `RFC3339Nano` (up to nine) were refused for carrying precision this
-   API discards. Fractional seconds are now taken off the value rather than parsed.
+   and on the first review of this record, they had.
+   `DateTimeImmutable::createFromFormat()` is considerably more forgiving than its format
+   strings suggest: it accepted `+0200`, `+02`, `GMT`, a single-digit hour, and a doubled
+   separator space, none of them promised anywhere. The document's `(\.\d+)?` promised
+   fractional seconds of any length, but PHP's `u` will not parse past six digits, so
+   `.NET`'s round-trip format (seven digits) and Go's `RFC3339Nano` (up to nine) were
+   refused for carrying precision this API discards. Fractional seconds are now taken off
+   the value rather than parsed.
 
    **Every component of the pattern is range-bounded**, which is part of the decision and
-   not formatting. As plain `\d{2}` it matched `+99:99`, and `createFromFormat()` read that
-   as an offset of a hundred hours *without a warning* — so a booking the caller dated the
-   4th of March was stored on the 28th of February. An offset nobody wrote is the same
-   silent reinterpretation decision 1 exists to remove, one layer down, and it is worse
-   than the original defect: the original discarded the caller's value, this one keeps it
-   and means something else by it. `+24:00`, `05:60:07` and `2026-13-04` were in the same
-   family. Bounding hours, minutes, seconds, offset hours, offset minutes, months and days
-   in the pattern refuses all of them before anything is parsed.
+   not formatting. As plain `\d{2}` it matched `+99:99`, and `createFromFormat()` read
+   that as an offset of a hundred hours *without a warning* — so a booking the caller
+   dated the 4th of March was stored on the 28th of February.
+
+   An offset nobody wrote is the same silent reinterpretation decision 1 exists to remove,
+   one layer down, and it is worse than the original defect: the original discarded the
+   caller's value, this one keeps it and means something else by it.
+
+   `+24:00`, `05:60:07` and `2026-13-04` were in the same family. Bounding hours, minutes,
+   seconds, offset hours, offset minutes, months and days in the pattern refuses all of
+   them before anything is parsed.
 
 5. **The parse behind the gate is a fixed list of formats, not `new DateTimeImmutable($value)`.**
    `services/Labels/PrintEvidenceService.php:35` uses the constructor for `observed_at`, the
@@ -174,15 +185,17 @@ so never grew one.
    carries the pattern above and a description naming the refusal; the API-level "Dates and
    times" paragraph PR #234 added, which stated the silent ignore, says this instead. The
    agreement is tested over the whole shape space rather than a sample: tens of thousands
-   of generated spellings, over boundary values for every component, asserting that
-   **nothing the document refuses is accepted** and that the only values it accepts and the
-   server refuses are those naming a day the month does not have — `2026-02-30`,
-   `2026-04-31` — which is the one thing a regular expression cannot decide. A pattern
-   looser than the server puts a caller back where issue #231 left them; one tighter
-   refuses in a generated client what the server would have taken.
+   of generated spellings, over boundary values for every component. The test asserts that
+   **nothing the document refuses is accepted**, and that the only values it accepts while
+   the server refuses are those naming a day the month does not have — `2026-02-30`,
+   `2026-04-31` — the one thing a regular expression cannot decide. A pattern looser than
+   the server puts a caller back where issue #231 left them; one tighter refuses in a
+   generated client what the server would have taken.
 
-   The boundary values are load-bearing. The first version of this corpus carried no
-   impossible minute, second or offset, so it did not see `+99:99`; a reviewer did. A
+   The boundary values decide what the property test can catch: without an out-of-range
+   minute, second, or offset in the corpus, the test never generates one to check. The
+   first version of this corpus carried no impossible minute, second or offset, so it did
+   not see `+99:99`; a reviewer did. A
    property test is only as good as the edges it is given.
 
 ## Options considered
@@ -205,11 +218,11 @@ see the consequences — and it is the only option under which a booking's times
 the one the caller named or an error.
 
 **D. Refuse in a middleware, from the document's `pattern`.** Validate every request body
-against the OpenAPI schema generically. Attractive and much larger than this defect: the
-document does not describe most write bodies accurately enough to validate against (ADR-0027
-decision 4 is one instance, the 47 listable entities with no schema another), so turning it
-into an enforcement mechanism is a project, not a fix. Its own record is where that is
-decided.
+against the OpenAPI schema generically. Attractive, and much larger than this defect. The
+document does not describe most write bodies accurately enough to validate against
+(ADR-0027 decision 4 is one instance, the 47 listable entities with no schema another),
+so turning it into an enforcement mechanism is a project, not a fix. Its own record is
+where that is decided.
 
 ## Consequences
 
@@ -222,11 +235,11 @@ decided.
   "book the current time" to "book midnight of that date". No caller in this tree does it;
   the change is named here because it is the one case where a request that used to succeed
   still succeeds and stores something different.
-- **The browser is unaffected.** All six senders were read rather than assumed:
+- **The browser is unaffected.** All six senders were read rather than assumed.
   `batterytracking.js`, `batteriesoverview.js` and `tasks.js` send
   `moment().format('YYYY-MM-DD HH:mm:ss')`; `choretracking.js` and `choresoverview.js` send
   that too, **except** for a chore whose `track_date_only` is set, where both switch to
-  `YYYY-MM-DD` — which is why decision 2 keeps the bare date rather than refusing it, and why
+  `YYYY-MM-DD`. That is why decision 2 keeps the bare date rather than refusing it, and why
   option A would have broken a page. The date/time inputs are free text, but
   `public/viewjs/components/datetimepicker.js:317` parses the value with
   `moment(value, format, true)` and sets `setCustomValidity("error")` when it does not parse,
