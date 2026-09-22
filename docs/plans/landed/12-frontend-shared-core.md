@@ -8,9 +8,11 @@ those copies have already accumulated.
 copy from.
 **Status:** **landed in full**, steps 1 to 6, with all seven verification checks. Step 3a —
 sweep finding **S29**, a High stored-XSS class across ~45 sites assigned here on 2026-08-30 —
-is **closed for the first pass**, proved with a stored payload rather than by reading the
-diff. The second pass's `recipeform-note` and `error-details` probes are written but have
-not run against the application. Steps 5 and 6 carried no security content.
+is **closed for the first pass**. Steps 5 and 6 carried no security content.
+
+That first pass was proved with a stored payload rather than by reading the diff. The second
+pass's `recipeform-note` and `error-details` probes are written but have not run against the
+application.
 
 See [Executed — steps 1 and 2](#executed--steps-1-and-2-and-the-baseline),
 [Executed — steps 3, 3a and 4](#executed--steps-3-3a-and-4) and
@@ -789,10 +791,10 @@ error argument at all.
 
 **Step 3a — S29** (`64867e8`, plus the factories' own escaping in `22f8634`). Structurally,
 `Victual.EntityList.ConfirmDelete` takes the entity name as data and escapes it on the way
-into the message, so no caller can pass markup through it; `Victual.FrontendHelpers.EscapeHtml`
-is the new function form of the tree's existing `String.prototype.escapeHTML`, which throws on
-the `undefined` that `.attr()` returns for a missing attribute; the function form returns the
-empty string for `null` and `undefined` alike.
+into the message, so no caller can pass markup through it.
+`Victual.FrontendHelpers.EscapeHtml` is the new function form of the tree's existing
+`String.prototype.escapeHTML`. That method throws on the `undefined` `.attr()` returns for a
+missing attribute; the function form returns the empty string for `null` and `undefined`.
 
 By hand:
 
