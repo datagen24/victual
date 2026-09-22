@@ -62,13 +62,14 @@ write.
 Accepting a span rather than one version requires one further change. The importer migrates
 the target before copying rows into it, so migrations that rewrite rows rather than schema
 run against an empty database and find nothing to rewrite. Migration 0260's HTML purifier
-was already re-applied after the copy for this reason (review finding P1 on #41). Migration
-0264's API key hashing was not, because a source at 0265 had already run 0264 itself. A
-source at 0255 has not: 0255 is where upstream grocy stops, and grocy stores API keys in
-plaintext. Importing from the lower end of the span would therefore leave readable keys in a
-target whose authenticated requests hash what they are given, so the keys stop working
-without an error, and the table that is sweep finding S12's subject holds live credentials
-again.
+was already re-applied after the copy for this reason (review finding P1 on #41).
+
+Migration 0264's API key hashing was not, because a source at 0265 had already run 0264
+itself. A source at 0255 has not: 0255 is where upstream grocy stops, and grocy stores API
+keys in plaintext. Importing from the lower end of the span would therefore leave readable
+keys in a target whose authenticated requests hash what they are given. The keys then stop
+working without an error, and the table that is sweep finding S12's subject holds live
+credentials again.
 
 The importer therefore applies both after the copy. `StoredApiKeyHasher` states migration
 0264's rule where a second caller can reach it.
