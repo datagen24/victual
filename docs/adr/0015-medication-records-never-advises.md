@@ -16,8 +16,8 @@
 
 [Plan 22](../plans/22-medication-tracking.md) puts drug strength, route, dose, schedule and
 per-person regimens into the database. Once a system holds those five things it is one small,
-obviously-useful feature away from clinical decision support, and it will be one small feature
-away permanently.
+useful feature away from clinical decision support, and it will be one small feature away
+permanently.
 
 The features are individually reasonable and that is the problem. Interaction warnings. A
 maximum-daily-dose check. Duplicate-therapy detection when two products share an active
@@ -71,10 +71,10 @@ The line, stated so it can be applied to a feature request without re-arguing th
 > the household did not enter is not.**
 
 **In scope.** Schedules a human wrote down; administrations a human recorded; quantities,
-dates, lots, storage conditions; days-of-supply, which is division over the household's own
-numbers; a physical-fact comparison between two fields the household supplied — a dose against
-a tablet's recorded `min_dose_increment`, a product's recorded storage requirement against a
-location's recorded class.
+dates, lots, storage conditions. Days-of-supply, which is division over the household's own
+numbers, and a physical-fact comparison between two fields the household supplied — a dose
+against a tablet's recorded `min_dose_increment`, a product's recorded storage requirement
+against a location's recorded class.
 
 **Out of scope, permanently.** Drug–drug, drug–food and drug–condition interaction checking.
 Dose-range or maximum-dose validation against any external reference. Duplicate-therapy or
@@ -106,8 +106,8 @@ rather than overlooked.
 
 ## Consequences
 
-**Useful things are refused, and will be asked for again.** That is the point: the record exists
-so the answer is a decision with reasons rather than the maintainer's mood on the day.
+**Useful things are refused, and will be asked for again.** The record exists so the answer
+is a decision with reasons rather than the maintainer's mood on the day.
 
 **The module is less helpful than a commercial medication app**, and users arriving from one
 will notice the absence. Worth saying in the module's own documentation rather than leaving as
@@ -117,10 +117,11 @@ a gap people assume is a missing feature.
 record does not solve it.** Excluding medication tools from MCP keeps the model from *querying*
 the data; it does not stop a user pasting their regimen into a chat. What this record can bind
 is what this repository ships: no tool that answers a clinical question, and no tool
-*description* phrased as though it could. A tool description is part of what a model reasons
-over, so it is in scope for review the same way UI copy is. Beyond that, the boundary is the
-model's, not ours, and pretending otherwise would be the kind of claim this corpus is supposed
-to catch.
+*description* phrased as though it could.
+
+A tool description is part of what a model reasons over, so it is in scope for review the
+same way UI copy is. Beyond that, the boundary is the model's, not ours, and pretending
+otherwise would be the kind of claim this corpus is supposed to catch.
 
 **It is not enforceable by tooling.** There is no grep for "this feature crossed the line", and
 this record should not pretend there is. It is a review discipline, applied to plan 22's UI
