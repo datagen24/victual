@@ -127,7 +127,8 @@ a database *ahead* of the code; under this record that case goes from theoretica
 routine.
 
 Views sharpen this further: `CREATE OR REPLACE VIEW` may only **append** columns, never
-rename, reorder, retype or drop one. Any real change to a view is a drop-and-recreate
+rename, reorder, retype or drop one, though the calculation behind an unchanged column may
+differ completely. Touching an existing output column is therefore a drop-and-recreate
 cascading through five dependency layers, which is exactly the shape of change a growing
 report layer produces.
 
@@ -151,9 +152,10 @@ The split is the cost. It should be paid deliberately or not at all.
 
 **Extensions pin the hosting.** `pg_cron` cannot be enabled by `CREATE EXTENSION` alone; it
 must be in `shared_preload_libraries` at server start, which means a Postgres this project
-configures — self-hosted, or CloudNativePG with `postInitSQL`. That is fine for k3s and it
-forecloses something worth naming: **a serverless Postgres that itself scales to zero is
-incompatible with this design.**
+configures — self-hosted, or CloudNativePG, where `shared_preload_libraries` is a cluster
+setting under `spec.postgresql` and `postInitSQL` only runs the `CREATE EXTENSION`
+afterwards. That is fine for k3s and it forecloses something worth naming: **a serverless
+Postgres that itself scales to zero is incompatible with this design.**
 
 Neon documents it directly: pg_cron jobs run only while the compute is awake, so it is
 recommended only where scale-to-zero is disabled. If the database ever becomes the thing
@@ -305,7 +307,10 @@ Gates, not suggestions. The accepting pull request says how each was met.
 
      The lasting lesson is not the CVE but its shape: **who may declare a masking rule is
      itself a privilege boundary**, and adopting this makes security-label creation part of
-     this fork's permission surface. Any adoption pins ≥ 1.3 and says who may label.
+     this fork's permission surface. Any adoption pins ≥ 1.3 and says who may label. It
+     also skips 2.0 and 2.1: a masked user there can reach unmasked data through a cursor
+     or `pg_dump --insert`. Version 2.2 fixes that; before it, setting
+     `anon.transparent_dynamic_masking` to `OFF` is the documented mitigation.
 
    *Lean: unchanged for now — separate public/private projections, on the grounds that it is
    the only candidate that never makes a `NULL` do two jobs, and the only one with no
