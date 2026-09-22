@@ -11,7 +11,8 @@ job work. Gated on [ADR-0021](../../adr/0021-label-templates-are-application-dat
 cleared.**
 
 **Status:** implemented in wave 3b alongside 25; see Executed. Both follow-ups landed
-2026-09-15: the designer's fabric 5.x migration ([issue 126](https://github.com/datagen24/victual/issues/126))
+2026-09-15: the designer's migration off fabric 5.x to 7.4.0
+([issue 126](https://github.com/datagen24/victual/issues/126))
 and sweep S32, the fail-closed group-to-read-permission table for the files API
 ([issue 136](https://github.com/datagen24/victual/issues/136)).
 
@@ -886,8 +887,11 @@ one, so every authenticated user's own avatar keeps rendering in the nav bar
 Verification extended the existing `.devtools/pgsql/rbac-tests.php` phase (run via
 `run-tests.sh rbac`) rather than adding a new one, following the same pattern it already
 uses for `EntityReadPolicy` against `ExposedEntity`. It asserts every `FileGroups` enum
-member has a row, and exercises each mapped group both denied (no grant) and allowed (the
-grant). It separately constructs the unmapped-group case directly against
+member has a row, and exercises each permission-protected group both denied (no grant)
+and allowed (the grant). `equipmentmanuals` and `userfiles` map to `null` — a decided "no
+further permission needed" — so for those it asserts the opposite: with no grant at all
+the request falls through to the file lookup rather than being refused. It separately
+constructs the unmapped-group case directly against
 `ServeFile`/`DeleteFile`/`UploadFile`, so the fail-closed default is proven independent of
 the enum and the table staying in sync.
 
