@@ -1,9 +1,9 @@
 # Home Assistant and MQTT
 
 Victual can push the household's ambient state to an MQTT broker as retained topics, with
-Home Assistant discovery payloads alongside them, so nothing has to poll: a consumer holds
-the last snapshot across its own restarts and across the server being asleep or gone
-entirely. Off by default — set `MQTT_ENABLED` and the `MQTT_*` settings
+Home Assistant discovery payloads alongside them. Nothing has to poll: a consumer holds the
+last snapshot across its own restarts and across the server being asleep or gone entirely.
+Off by default — set `MQTT_ENABLED` and the `MQTT_*` settings
 ([Configuration](../configuration.md#home-assistant-and-mqtt)).
 
 ## What gets published
@@ -38,8 +38,8 @@ on it under mod_php, so on mod_php an unreachable broker costs the caller that t
 `INFLUXDB_ENABLED` and the `INFLUXDB_*` settings
 ([Configuration](../configuration.md#influxdb)) write price and stock-value *events* — not
 sampled state — to InfluxDB on the same after-commit path: a point when a purchase commits
-produces a series whose gaps mean "no purchases", which is true, where sampling stock from a
-pod that is mostly asleep would produce gaps that mean nothing. Two measurements, both
+produces a series whose gaps mean "no purchases", which is true. Sampling stock from a pod
+that is mostly asleep would instead produce gaps that mean nothing. Two measurements, both
 tagged only with `product_id` and carrying no user-identifying data:
 
 ```
