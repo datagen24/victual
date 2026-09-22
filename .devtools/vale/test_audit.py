@@ -1,9 +1,14 @@
 """Exercise actual Vale rules, protected markup, and regression-baseline behavior."""
 from collections import Counter
+from contextlib import redirect_stdout, redirect_stderr
+import io
 import json
 import os
+from pathlib import Path
 import subprocess
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import audit
 
@@ -73,6 +78,27 @@ class StyleRules(unittest.TestCase):
 class BaselineBehavior(unittest.TestCase):
     def report(self, keys):
         return {'findings': {'docs/example.md': [{'fingerprint': x} for x in keys]}}
+
+    def test_check_requires_matching_rule_digest_even_without_findings(self):
+        for digest, expected in (('current-rules', 0), ('old-rules', 2), (None, 2)):
+            with self.subTest(digest=digest), tempfile.TemporaryDirectory() as directory:
+                baseline = {'schema_version': 1, 'vale_version': audit.VERSION,
+                            'fingerprints': {}}
+                if digest is not None:
+                    baseline['rules_sha256'] = digest
+                path = Path(directory) / 'baseline.json'
+                path.write_text(json.dumps(baseline))
+                errors = io.StringIO()
+                with patch.object(audit, 'BASELINE', path), \
+                        patch.object(audit, 'discover', return_value=(['docs/example.md'], [])), \
+                        patch.object(audit, 'run_vale', return_value={'docs/example.md': []}), \
+                        patch.object(audit, 'rules_digest', return_value='current-rules'), \
+                        patch.object(audit.subprocess, 'check_output', return_value='commit'), \
+                        patch('sys.argv', ['audit.py', '--check']), \
+                        redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                    self.assertEqual(audit.main(), expected)
+                if expected:
+                    self.assertIn('rule digest does not match', errors.getvalue())
 
     def test_existing_findings_pass_but_new_findings_fail(self):
         baseline = {'fingerprints': {'old': 1}}

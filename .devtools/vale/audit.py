@@ -148,8 +148,11 @@ def main() -> int:
             print(f'Candidate baseline written to {args.write_baseline}; review changes before committing.')
         if args.check:
             baseline = json.loads(BASELINE.read_text())
-            if baseline.get('schema_version') != 1 or baseline.get('vale_version') != VERSION:
-                raise ValueError('Baseline schema or Vale version does not match; review a new full audit.')
+            if (baseline.get('schema_version') != 1
+                    or baseline.get('vale_version') != VERSION
+                    or baseline.get('rules_sha256') != report['rules_sha256']):
+                raise ValueError('Baseline schema, Vale version, or rule digest does not match; '
+                                 'review a new full audit.')
             added = new_findings(report, baseline)
             for path, alert in added:
                 print(f"{path}:{alert['Line']}: {alert['Check']}: {alert['Message']}")
