@@ -99,6 +99,14 @@ jobs:
       - name: Check runtime SQL portability
         run: php .devtools/pgsql/check-runtime-sql.php
 
+      # packages/ is Composer's vendor directory and is gitignored, so CI fills it from
+      # dist archives while a working copy may hold source checkouts. A package's
+      # export-ignore rules decide the difference, and two label tests read a font out of
+      # php-di's export-ignored website directory: green in a working copy, absent in CI,
+      # and the suite blocked on a file no test had any business knowing about.
+      - name: No test reads a vendor file dist does not ship
+        run: python3 .devtools/ci/check_vendor_paths.py
+
       # Every CI job the documentation names has to exist. The `frontend-security` job
       # below was described in four documents for a day before it was written, and while
       # it did not exist nobody looked for the gate it claimed to be. See

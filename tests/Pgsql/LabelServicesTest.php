@@ -26,6 +26,7 @@ use Victual\Services\Labels\RenderRequestService;
 use Victual\Services\Labels\SettingsSchemaValidator;
 use Victual\Services\Labels\TemplateDocument;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\SfntFixture;
 
 /**
  * The label services the artifact, identity and worker-API phases in `.devtools/labels/`
@@ -672,13 +673,19 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 		self::assertSame('Regular', $mac['font_style'], 'A font naming no subfamily is Regular');
 		self::assertStringEndsWith('.ttf', $mac['file_name'], 'font/sfnt is stored as a TrueType file');
 
-		// A real shipped font, so the decoder is not only being shown fonts this test built.
-		$real = file_get_contents(VICTUAL_ROOT_PATH . '/packages/php-di/php-di/website/fonts/fontawesome-webfont.ttf');
+		// A font shaped the way a shipped one is: five tables in tag order with `name` fourth,
+		// padded and checksummed, and all of nameIDs 0 to 6 recorded on both platforms. The
+		// fixtures above carry a single table holding nothing but the two names being read, so
+		// neither walking the directory nor passing over the other eleven records is asked of
+		// the decoder anywhere else.
+		$shipped = SfntFixture::Shipped('Victual Shipped Sans', 'Book');
 		$stored = self::tx(static fn () => (new LabelAssetService(self::$db))
-			->Store('Real Shipped Font', 'font', 'font/ttf', $real, 'OFL-1.1', 'Bundled with php-di documentation'));
-		self::assertSame('FontAwesome', $stored['font_family'], 'A genuine TrueType font reports the family it calls itself');
-		self::assertSame(strlen($real), (int)$stored['byte_length'], 'The whole font is stored');
-		self::assertSame($real, (new LabelAssetService(self::$db))->Bytes((int)$stored['id']),
+			->Store('Shipped Shaped Font', 'font', 'font/ttf', $shipped, 'OFL-1.1', 'Built by tests/Support/SfntFixture.php'));
+		self::assertSame('Victual Shipped Sans', $stored['font_family'],
+			'The family is found in a directory where `name` is not the first table, and is nameID 1 rather than the copyright or the full name');
+		self::assertSame('Book', $stored['font_style'], 'The subfamily is nameID 2 of that same table');
+		self::assertSame(strlen($shipped), (int)$stored['byte_length'], 'The whole font is stored');
+		self::assertSame($shipped, (new LabelAssetService(self::$db))->Bytes((int)$stored['id']),
 			'A font reads back byte for byte, which is what pinning by content means');
 	}
 

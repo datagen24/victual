@@ -8,6 +8,7 @@ use Victual\Controllers\Users\User;
 use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 use Victual\Tests\Support\RouteInventory;
+use Victual\Tests\Support\SfntFixture;
 
 /**
  * The HTTP surface of the label subsystem: the five `/api/labels` controllers.
@@ -1935,7 +1936,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 	#[Depends('testALivePreviewOfALabelledTargetCanBePromotedToAPrint')]
 	public function testATemplateThatPrintsAFieldPinsItsFontAndCapturesThatField(): void
 	{
-		$font = file_get_contents(VICTUAL_ROOT_PATH . '/packages/php-di/php-di/website/fonts/fontawesome-webfont.ttf');
+		$font = SfntFixture::Shipped('Labelapi Text Sans', 'Book');
 		$stored = self::Send('POST', '/api/labels/assets', [
 			'name' => 'Labelapi text font',
 			'asset_kind' => 'font',
@@ -1945,7 +1946,7 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		], self::$adminKey);
 
 		self::assertSame(200, $stored['status'], $stored['body']);
-		self::assertSame('FontAwesome', $stored['json']['font_family'], 'a font is pinned by what it calls itself, read from its own name table');
+		self::assertSame('Labelapi Text Sans', $stored['json']['font_family'], 'a font is pinned by what it calls itself, read from its own name table');
 		$assetId = (int)$stored['json']['id'];
 
 		$created = self::Send('POST', '/api/labels/templates', ['name' => 'Labelapi text label', 'entity_kind' => 'location'], self::$adminKey);

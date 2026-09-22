@@ -73,3 +73,28 @@ To check it locally:
 ```sh
 python3 .devtools/ci/check_deploy_manifest.py
 ```
+
+## Vendor paths in tests
+
+The `lint` job runs `check_vendor_paths.py` over every `.php` file under `tests/` and
+`.devtools/`. It refuses any reference to a path inside `packages/` other than
+`packages/autoload.php` and `packages/bin/`.
+
+`packages/` is Composer's vendor directory, it is gitignored, and CI fills it from dist
+archives. Each package's `.gitattributes` decides what a dist archive holds, and
+`export-ignore` on a package's own tests, docs and website is ordinary. A working copy
+installed from source carries those directories and CI does not, so a test that reads one
+passes locally and fails in CI with a missing file rather than with anything about the
+behaviour under test. That happened: two label tests took a real TrueType font from
+php-di's `website/fonts/`, which is export-ignored, and both PostgreSQL suite jobs failed
+on it. The font is now built by `tests/Support/SfntFixture.php`.
+
+The check does not distinguish a file dist ships from one it does not. Reaching into a
+dependency's file layout at all is the thing being refused; the autoloader and the binary
+proxies are the interface Composer promises.
+
+To check it locally:
+
+```sh
+python3 .devtools/ci/check_vendor_paths.py
+```
