@@ -145,9 +145,9 @@ On the k3s target, "reach the backend directly" is any pod in the namespace.
 
 ### S5: call sites with no creator
 
-Two call sites have no creator to compare against: reverse-proxy user creation, and the
-LDAP one that 15-B1 has now deleted. Both get the config default and nothing else, which
-is why the config half was the important one for them.
+Reverse-proxy user creation has no creator to compare against, and gets the config default
+and nothing else. LDAP user creation was the same until 15-B1 deleted it. That is why the
+config half was the important one for both.
 
 ### S6: where it applies
 
