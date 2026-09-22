@@ -49,16 +49,13 @@ consumer, or constraint rather than referring vaguely to “the shape” or “t
 
 Remove these patterns during editing:
 
-- Narrated deliberation: “the obvious answer was … but then we realised …”. State the
+- Narrated deliberation: `the obvious answer was … but then we realised …`. State the
   selected approach and the relevant reason the alternative was rejected.
-- Self-evaluation: “the honest accounting”, “the right fix”, “this proves the discipline
-  worked”, or claims about how careful or insightful the work was.
+- Self-evaluation: `the honest accounting`, `the right fix`, `this proves the discipline worked`, or claims about how careful or insightful the work was.
 - Rhetorical questions, dramatic contrasts, metaphors, and repeated closing lessons.
-- Commentary about prose: “this paragraph used to say”, “listed here so the reader is
-  not left thinking”, or “worth stating plainly”.
+- Commentary about prose: `this paragraph used to say`, `listed here so the reader is not left thinking`, or `worth stating plainly`.
 - Repeated explanations of the same rule in an introduction, table, and conclusion.
-- Chat residue: “as discussed above” when it refers to a conversation, instructions to
-  the next agent, or a recap of who investigated which file in which session.
+- Chat residue: `as discussed above` when it refers to a conversation, instructions to a later agent, or a recap of who investigated which file in which session.
 
 These are editing criteria, not a banned-word list. A word replacement does not fix a
 paragraph whose content belongs elsewhere. Do not shorten a document into unexplained
@@ -82,7 +79,7 @@ applicable; omit irrelevant sections rather than filling a template with boilerp
 Component breakdowns, schema sketches, code examples, and dependency order are appropriate
 when they explain or constrain the design. Distinguish required behavior from illustrative
 implementation details. Do not prescribe an edit sequence merely because an author can
-imagine one. Agent assignments, parallel sessions, “one sitting” estimates, tool-use
+imagine one. Agent assignments, parallel sessions, session-duration estimates, tool-use
 instructions, and exhortations to run checks belong outside the research plan.
 
 Verification criteria describe evidence of success. For example: “A group containing both
@@ -173,32 +170,40 @@ convenient answer. Prose cleanup is not authorization to decide architecture or 
 
 **Decision rationale**
 
-Before: “The obvious implementation is a counter in memory, and it is wrong for a reason
-that has nothing to do with security craft and everything to do with the deployment.”
+Before:
+
+> “The obvious implementation is a counter in memory, and it is wrong for a reason
+> that has nothing to do with security craft and everything to do with the deployment.”
 
 After: “Store the counter in a database table. An in-memory counter resets when the pod
 scales to zero, allowing another set of attempts after each restart.”
 
 **Status correction**
 
-Before: “This section said the pod did not serve until review caught that all three images
-had already landed. The lesson is that a status row is not enough.”
+Before:
+
+> “This section said the pod did not serve until review caught that all three images
+> had already landed. The lesson is that a status row is not enough.”
 
 After: “The pod served requests in the 2026-09-04 deployment check. Credential separation
 and SIGTERM verification remain open.” Link to the check results in the owning plan.
 
 **Plan scope**
 
-Before: “While the auth files are open, have the second agent take the remaining fixes;
-this should be one sitting and leaves every track mergeable.”
+Before:
+
+> “While the auth files are open, have the second agent take the remaining fixes;
+> this should be one sitting and leaves every track mergeable.”
 
 After: “Authentication changes include key validation and permission checks. The MCP
 endpoint depends on both because its bearer key must resolve to a permission-checked user.”
 
 **Folder README entry**
 
-Before: “Plan 20 is complete in the sense this table has always meant, although the nine
-defects discovered in two rounds show why the first build was never the whole question.”
+Before:
+
+> “Plan 20 is complete in the sense this table has always meant, although the nine
+> defects discovered in two rounds show why the first build was never the whole question.”
 
 After: “Plan 20: image builds and pod startup complete. Credential separation and signal
 checks remain; see Executed for results.”
@@ -221,3 +226,14 @@ not only the added lines.
 
 Formatting and link checks can support this review. They do not establish factual accuracy,
 readability, or compliance with a decision's meaning.
+
+## Proposed automated style checks
+
+The proposed [Vale setup](../.devtools/vale/README.md) turns repeatable parts of these
+conventions into checks. Its [writing guide](style-guide.md) covers sentence structure,
+terminology, document purpose, and review criteria. The proposal preserves the authority
+and lifecycle rules above.
+
+Vale identifies passages for editing; it cannot verify facts, assess an architectural
+tradeoff, or decide whether a requirement has changed. Reviewers remain responsible for
+those checks. The proposed CI baseline tracks existing findings and rejects new ones.

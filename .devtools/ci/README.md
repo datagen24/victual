@@ -85,7 +85,9 @@ archives. Each package's `.gitattributes` decides what a dist archive holds, and
 `export-ignore` on a package's own tests, docs and website is ordinary. A working copy
 installed from source carries those directories and CI does not, so a test that reads one
 passes locally and fails in CI with a missing file rather than with anything about the
-behaviour under test. That happened: two label tests took a real TrueType font from
+behaviour under test.
+
+That happened: two label tests took a real TrueType font from
 php-di's `website/fonts/`, which is export-ignored, and both PostgreSQL suite jobs failed
 on it. The font is now built by `tests/Support/SfntFixture.php`.
 

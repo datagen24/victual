@@ -1,0 +1,6 @@
+extends: occurrence
+message: "This sentence has %d words (review threshold: 45). Split independent claims; preserve conditions and exceptions."
+level: warning
+scope: sentence & ~heading & ~table & ~blockquote & ~frontmatter
+max: 45
+token: '\b[\p{L}\p{N}][\p{L}\p{N}’_-]*\b'

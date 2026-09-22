@@ -1,0 +1,6 @@
+extends: occurrence
+message: "This table cell has %d words (review threshold: 60). Keep the summary here and link to the detailed explanation."
+level: warning
+scope: table.cell & ~frontmatter
+max: 60
+token: '\b[\p{L}\p{N}][\p{L}\p{N}’_-]*\b'

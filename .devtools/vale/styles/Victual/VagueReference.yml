@@ -1,0 +1,11 @@
+extends: existence
+message: "Replace '%s' with a named section or linked source so the reference survives reordering."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - as (?:noted|mentioned|described|explained) (?:above|below|earlier)
+  - see (?:above|below)
+  - the aforementioned
+  - the former paragraph
+  - the latter paragraph

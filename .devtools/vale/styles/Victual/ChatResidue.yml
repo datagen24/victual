@@ -1,0 +1,11 @@
+extends: existence
+message: "Remove '%s' from durable documentation. State the requirement or dependency without session instructions."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - as (?:we )?discussed (?:above|earlier|in (?:the|our) chat)
+  - (?:the )?next agent
+  - (?:the )?(?:first|second|third) agent
+  - one sitting
+  - in (?:the )?next session

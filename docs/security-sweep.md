@@ -104,21 +104,110 @@ and came from plan 16: every feature flag is dropped from the UI and the API (R1
 
 **There is deliberately no per-address counter, and that is the finding's most interesting outcome.** The first draft had one, alongside the per-username limit. Review of this pull request found a bypass in how a success cleared it — it deleted every row from that address, so nine guesses at `admin` followed by logging into your own account wiped the slate, repeatable indefinitely — and narrowing it to the username alone then exposed the deeper problem the maintainer named: **behind a reverse proxy `REMOTE_ADDR` is the proxy for every request**, so a per-address count was never per-address. It was a whole-instance lockout wearing a per-address name, which is [ADR-0007](adr/0007-auth-state-outlives-the-process.md)'s own objection in a different disguise — something that looks like protection and is not.
 
-So the counter is gone rather than tuned. What remains bounds the thing this finding is about, wherever the request came from: how many times one username may be guessed per window. Rate limiting a misbehaving *client address* needs the real address, which only the proxy knows, and belongs at that layer (fail2ban, `limit_req`, an ingress middleware); `config-dist.php` says so where an operator will read it. **The residual, stated plainly:** an attacker spreading attempts thinly across many usernames from one address is not slowed down by this application, by design. |
+So the counter is gone rather than tuned. What remains bounds the thing this finding is about, wherever the request came from: how many times one username may be guessed per window. Rate limiting a misbehaving *client address* needs the real address, which only the proxy knows, and belongs at that layer (fail2ban, `limit_req`, an ingress middleware); `config-dist.php` says so where an operator will read it. **The residual, stated plainly:** an attacker spreading attempts thinly across many usernames from one address is not slowed down by this application, by design.
+
+| # | Sev | Finding | Where | Fix |
+|---|---|---|---|---|
 | S13 | **Low** | **`update.sh` wipes the install and unpacks an unsigned upstream Grocy zip.** `rm -rf !(data|update.sh)` then `wget https://releases.grocy.info/latest` and `unzip -o` — no checksum, no signature, and it is upstream Grocy, so it would destroy the fork's schema. Already flagged as homeless in the rigor review (H3). | `update.sh` | Delete it (15's non-breaking table). |
-| S14 | **Low** — *understated; corrected 2026-09-21, see the update above this table* | **Barcode lookup writes a file named from the raw route argument and fetches whatever URL the plugin returns.** `StockService::ExternalBarcodeLookup` uses `$pluginOutput['__barcode'] . '.' . $ext` as the picture filename without `IsValidFileName`, and `file_get_contents`s `__image_url` (`^https?://` only). Slim decodes the path before routing so `/` cannot reach `$args`, which limits it to odd names inside `productpictures/`; the fetch is SSRF only via a spoofed lookup service. Plan 09 adds more lookup sources and should inherit the fix. | `services/StockService.php::ExternalBarcodeLookup`, `plugins/OpenFoodFactsBarcodeLookupPlugin.php` | Filter `__barcode` to `[0-9A-Za-z_-]`, allow-list `$fileExtension` to image types, refuse loopback/private hosts before fetching. |
+| S14 | **Low** — *understated; corrected 2026-09-21, see the update above this table* | **Barcode lookup uses an unchecked picture filename and plugin-supplied URL.** The original assessment understated both risks. See the correction above and the [original assessment below](#s14-original-assessment). | `services/StockService.php::ExternalBarcodeLookup`, `plugins/OpenFoodFactsBarcodeLookupPlugin.php` | Filter `__barcode` to `[0-9A-Za-z_-]`, allow-list `$fileExtension` to image types, refuse loopback/private hosts before fetching. |
 | S15 | **Low** | **Regex filter operator (`§`) runs caller-supplied patterns per row.** `SqliteDialect` registers `regexp` as `mb_ereg($pattern, $value)`; PostgreSQL's `~` is equally exposed. An authenticated caller can ReDoS a list endpoint. Not injection — the pattern is bound. Still open: [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2 landed 2026-09-17 without touching this — it is response-contract testing, not filter input validation, and stayed out of that piece's scope on purpose. | `services/Database/SqliteDialect.php`, `controllers/Api/BaseApiController.php` filter parsing | Cap pattern length and reject nested quantifiers, or restrict `§` to admins. |
-| S16 | **Low** — *half fixed* | **Generic PUT/POST has no column allow-list.** `GenericEntityApiController::AddObject/EditObject` hand the whole body to `createRow`/`update`. `users`, `user_permissions`, `sessions` are not exposed and `api_keys` is `NoEdit`, so no escalation — but a `MASTER_DATA_EDIT` user can rewrite `id` and `row_created_timestamp` on any exposed row and create `userfields` with `entity = 'users'`. | `controllers/Api/GenericEntityApiController.php` | Strip `id`/`row_created_timestamp`; validate the body against the entity's OpenAPI schema (14 piece 2 territory). **The stripping is done, 2026-09-04 with [11](plans/11-api-error-handling.md)** — `WithoutServerOwnedColumns()` drops both keys in `AddObject` and `EditObject`, and drops them rather than refusing them so that a read-modify-write client keeps working. **The schema-validation half is still open.** [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2 landed 2026-09-17 and did give the entity schemas real trustworthiness evidence — its completeness leg walks every OpenAPI schema property against recorded response bodies and the `permission_fields` table, which is closer scrutiny than the schemas had before — but it reads responses, and a write-body allowlist derived from those same schemas (11's question 5) is a distinct piece of work piece 2's own Executed section says it deliberately left alone. The `userfields` with `entity = 'users'` half of this row is a separate question and still open. |
-| S17 | **Low** — *fixed* | **iCal `secret` branch is dead, and the calendar key is instance-wide.** `ApiKeyAuthMiddleware` only checks `secret` when `$this->RouteName === 'calendar-ical'`, but `RouteName` is set in `BaseAuthMiddleware::__invoke`, and `DefaultAuthMiddleware`/`ReverseProxyAuthMiddleware` construct a fresh `ApiKeyAuthMiddleware` and call `AuthenticateRequest` directly — so `RouteName` is null and sharing links 401. When fixed, note `ApiKeyService::GetOrCreateApiKey` selects by `key_type` only, not `user_id`: one calendar key is handed to every user and authenticates as whoever created it. This is the cross-instance construction 15-C1 exists to remove. | `middleware/Auth/ApiKeyAuthMiddleware.php`, `services/ApiKeyService.php::GetOrCreateApiKey` | Resolve the route inside `AuthenticateRequest` via `RouteContext::fromRequest`; scope special-purpose keys per user. Fold into 15-C1. **Done 2026-09-04 with 15-C1**, exactly as remediated: `ApiKeyAuthenticator` resolves the route itself, and `GetOrCreateApiKey` matches on `user_id` as well as `key_type`. Proved on a booted instance — `GET /api/calendar/ical/sharing-link` returns a URL that now answers 200 where it answered 401. The cross-instance construction that caused it is gone with the middlewares that did it. |
+| S16 | **Low** — *half fixed* | **Generic PUT/POST has no column allow-list.** `GenericEntityApiController::AddObject/EditObject` hand the whole body to `createRow`/`update`. `users`, `user_permissions`, `sessions` are not exposed and `api_keys` is `NoEdit`, so no escalation — but a `MASTER_DATA_EDIT` user can rewrite `id` and `row_created_timestamp` on any exposed row and create `userfields` with `entity = 'users'`. | `controllers/Api/GenericEntityApiController.php` | Strip server-owned columns and validate write bodies against the OpenAPI schema. Column stripping landed on 2026-09-04; schema validation and the `userfields` concern remain open. See [remediation details](#s16-remediation-details). |
+| S17 | **Low** — *fixed* | **iCal sharing links return 401, and the calendar key is instance-wide.** A fresh auth middleware has no route name, so it misses the calendar branch. Key lookup also ignores the user. See [original finding details](#s17-original-finding-details). | `middleware/Auth/ApiKeyAuthMiddleware.php`, `services/ApiKeyService.php::GetOrCreateApiKey` | **Fixed 2026-09-04 with 15-C1.** Resolve the route inside authentication and scope calendar keys per user. A booted-instance check confirmed that sharing links return 200. See [remediation details](#s17-remediation-details). |
 | S18 | **Low** — *fixed* | **`AUTH_CLASS` is instantiated from config/env/`settingoverrides` with no type check.** `app.php` does `new $authMiddlewareClass(...)`; `ConfigurationValidator` validates seven other settings and not this one. Same trust level as writing `config.php`, so Low — but 15-B1 already plans the check. | `app.php`, `helpers/ConfigurationValidator.php` | `is_subclass_of(VICTUAL_AUTH_CLASS, BaseAuthMiddleware::class)` in the validator. **Done 2026-09-04 with 15-B1**, as remediated, plus a `class_exists` check ahead of it whose message names the LDAP removal — an installation still configured for it is told in one line at startup instead of fataling on the first request. |
 | S19 | **Low** — *three of four fixed, one moot* | **LDAP bind with no TLS enforcement; username enumeration by timing; logout leaves the cookie; sessions never pruned.** `LdapAuthMiddleware` never calls `ldap_start_tls` and the documented example is `ldap://`. `DefaultAuthMiddleware::ProcessLogin` short-circuits `password_verify` for unknown users (Argon2id makes the timing gap large). `LoginController::Logout` deletes the row but not the cookie; `sessions` grows without cleanup. LDAP goes away with 15-B1. | `middleware/Auth/LdapAuthMiddleware.php`, `middleware/Auth/DefaultAuthMiddleware.php`, `controllers/LoginController.php`, `services/SessionService.php` | Dummy-hash verify for unknown users; expire the cookie on logout; prune expired sessions on login. **Done 2026-09-04 in wave 2**, all three as remediated: `PasswordLogin` verifies against a constant Argon2id hash when the username is unknown, `LoginController::Logout` expires the cookie through `SessionCookie::Clear()`, and `SessionService::RemoveExpiredSessions()` runs on login. The LDAP TLS half is moot — 15-B1 deleted the backend. |
 | S20 | **Low** | **`Host` header builds absolute redirect URLs.** `UrlManager::GetBaseUrl` uses `$_SERVER['HTTP_HOST']` when `BASE_URL` is `/`. Only exploitable if the web server accepts arbitrary `Host` values. | `helpers/UrlManager.php` | Require `BASE_URL` in the deployment docs, or validate `Host`. |
-| S21 | **Low** — *fixed* | **Wildcard CORS on every response.** `Access-Control-Allow-Origin: *`, `Allow-Headers: *`, no `Allow-Credentials` — so cookies are not sent cross-origin and this is surface, not a hole. The preflight route is unnamed so `BaseAuthMiddleware` answers `OPTIONS` with 401 (functional, not security). | `middleware/CorsMiddleware.php`, `routes.php` | Restrict to configured origins once 17 decides which browser clients exist. **Done 2026-09-04 with [11](plans/11-api-error-handling.md)**, and without waiting on 17: `CORS_ALLOWED_ORIGINS` is empty by default, so the answer to "which browser clients exist" is now "none unless an operator names one" rather than "all of them". Entries are exact-matched against `Origin`, validated at startup so a trailing slash is refused rather than silently matching nothing, and `Vary: Origin` is sent once the list is non-empty. The unnamed preflight route is gone with the same change — `OPTIONS` is answered `204` by the middleware outside routing, where the 401 came from. |
+| S21 | **Low** — *fixed* | **Wildcard CORS on every response.** `Access-Control-Allow-Origin: *`, `Allow-Headers: *`, no `Allow-Credentials` — so cookies are not sent cross-origin and this is surface, not a hole. The preflight route is unnamed so `BaseAuthMiddleware` answers `OPTIONS` with 401 (functional, not security). | `middleware/CorsMiddleware.php`, `routes.php` | **Fixed 2026-09-04 with [11](plans/11-api-error-handling.md).** Origins must be configured explicitly; preflight requests return 204. See [remediation details](#s21-remediation-details). |
 | S22 | **Low** | **Integer ids concatenated into SQL, guarded upstream.** `StockService::MergeProducts` and `ChoresService::MergeChores` build `UPDATE … WHERE product_id = ' . $id` strings; safe only because the controllers `FILTER_VALIDATE_INT` first. `stock_id` strings are interpolated in quotes and are `uniqid()`-generated today. | `services/StockService.php::MergeProducts`, `services/ChoresService.php::MergeChores` | Pass as `?` params — `ExecuteDbStatement` already takes them. |
 | S23 | **Low** — *fixed* | **Content-Disposition filename unquoted.** `ServeFile` concatenates the decoded name into `filename="…"`; `IsValidFileName` does not reject `"`. slim/psr7 rejects CR/LF so this is not header injection. | `controllers/Api/FilesApiController.php::ServeFile` | `filename*=UTF-8''` + `rawurlencode`. |
 | S24 | **Low** | **GitHub Actions pinned to tags, not SHAs.** No secrets in the workflow and no `pull_request_target`, so supply-chain only. | `.github/workflows/tests.yml` | Pin to full SHAs. |
-| S25 | **Info** — *fixed* | **Dev container runs as root and `COPY . /app` with no `.dockerignore`** (copies `.git` and `data/`); compose and CI use `victual`/`victual` Postgres credentials. All documented as non-production, tmpfs DB, no published ports. Matters only when 10 bakes a production image from this Dockerfile. | `Dockerfile`, `docker-compose.yml` | `.dockerignore`, non-root `USER`, before 10 publishes an image. **Done 2026-09-02 with [10](plans/landed/10-cold-start-statelessness.md)** (`5a3ab76`): a `.dockerignore` keeping `.git`, `data/` and the build outputs out of the context, and a `production` target that runs as `www-data` with a baked, unwritable view cache and no baked credentials. The compose defaults stay and now say why in place — a tmpfs database with no published ports, created from nothing by every run, where changing the values moves the secret rather than removing it. CI builds both targets and asserts the non-root and no-`.git`/`data/` claims rather than describing them. |
+| S25 | **Info** — *fixed* | **Dev container runs as root and `COPY . /app` with no `.dockerignore`** (copies `.git` and `data/`); compose and CI use `victual`/`victual` Postgres credentials. All documented as non-production, tmpfs DB, no published ports. Matters only when 10 bakes a production image from this Dockerfile. | `Dockerfile`, `docker-compose.yml` | **Fixed 2026-09-02 with [10](plans/landed/10-cold-start-statelessness.md)** (`5a3ab76`). Added `.dockerignore` and a non-root production target. CI verifies both targets. See [remediation details](#s25-remediation-details). |
 | S26 | **Info** | **`DISABLE_AUTH`/non-production modes.** `MODE` is settable via env or `settingoverrides/MODE.txt`; `dev` disables auth entirely and enables API error details. `DISABLE_AUTH` defines `VICTUAL_USER_ID = 1` while the middleware picks the lowest-id user — they diverge if user 1 is deleted. | `app.php`, `middleware/Auth/BaseAuthMiddleware.php`, `services/SessionService.php` | Note only. |
+
+### S14: original assessment
+
+This was the original assessment; the 2026-09-21 update above corrects it.
+
+`StockService::ExternalBarcodeLookup` uses `$pluginOutput['__barcode'] . '.' . $ext`
+as the picture filename without `IsValidFileName`. It fetches `__image_url` with
+`file_get_contents`, checking only `^https?://`.
+
+The original assessment said Slim decodes the path before routing, so `/` cannot
+reach `$args`. It concluded that filenames were limited to odd names inside
+`productpictures/` and that SSRF required a spoofed lookup service. Those conclusions
+understated the risks. Plan 09 adds more lookup sources and should inherit the fix.
+
+### S16: remediation details
+
+Strip `id` and `row_created_timestamp`, then validate write bodies against the
+entity's OpenAPI schema.
+
+**Column stripping landed on 2026-09-04 with [11](plans/11-api-error-handling.md).**
+`WithoutServerOwnedColumns()` drops both keys in `AddObject` and `EditObject`.
+It drops them instead of rejecting the request so read-modify-write clients keep working.
+
+**Schema validation remains open.** [14](plans/landed/14-contract-and-regression-scaffolding.md)
+piece 2 landed on 2026-09-17. Its completeness check compares every OpenAPI schema
+property with recorded response bodies and the `permission_fields` table.
+This provides evidence about response schemas, but does not validate write bodies.
+
+A write-body allowlist derived from those schemas is separate work, recorded as
+plan 11's question 5. Piece 2's Executed section explicitly leaves it out of scope.
+The ability to create `userfields` with `entity = 'users'` is a separate, open question.
+
+### S17: original finding details
+
+`ApiKeyAuthMiddleware` checks `secret` only when `$this->RouteName === 'calendar-ical'`.
+`BaseAuthMiddleware::__invoke` sets `RouteName`. However, `DefaultAuthMiddleware`
+and `ReverseProxyAuthMiddleware` construct a fresh `ApiKeyAuthMiddleware` and call
+`AuthenticateRequest` directly. Its route name is therefore null, so sharing links return 401.
+
+`ApiKeyService::GetOrCreateApiKey` selects by `key_type` alone, without `user_id`.
+Every user receives one calendar key, which authenticates as whoever created it.
+15-C1 removes this construction across middleware instances; the table records the fix.
+
+### S17: remediation details
+
+The proposed fix was to resolve the route inside `AuthenticateRequest` through
+`RouteContext::fromRequest`, scope special-purpose keys per user, and include both
+changes in 15-C1.
+
+**Fixed 2026-09-04 with 15-C1.** `ApiKeyAuthenticator` resolves the route itself.
+`GetOrCreateApiKey` matches on both `user_id` and `key_type`. The middlewares that
+constructed separate auth instances were removed.
+
+Verified on a booted instance: `GET /api/calendar/ical/sharing-link` returns a URL
+that answers 200 where it previously answered 401.
+
+### S21: remediation details
+
+The proposed fix was to restrict CORS to configured origins once plan 17 identified
+which browser clients needed access.
+
+**Fixed 2026-09-04 with [11](plans/11-api-error-handling.md), without waiting for 17.**
+`CORS_ALLOWED_ORIGINS` is empty by default. Operators must name each permitted origin.
+Entries must match `Origin` exactly. Startup validation rejects a trailing slash
+instead of allowing an entry that silently matches nothing.
+
+Responses include `Vary: Origin` when the configured list is non-empty.
+The same change removed the unnamed preflight route. Middleware outside routing
+now answers `OPTIONS` with `204`, avoiding the previous 401.
+
+### S25: remediation details
+
+The proposed fix was to add `.dockerignore` and a non-root `USER` before plan 10
+published a production image.
+
+**Fixed 2026-09-02 with [10](plans/landed/10-cold-start-statelessness.md)** (`5a3ab76`).
+`.dockerignore` excludes `.git`, `data/` and build outputs from the build context.
+The `production` target runs as `www-data`, with a baked, unwritable view cache
+and no baked credentials.
+
+The compose credentials remain, with an explanation beside them. Each run creates
+a fresh tmpfs database with no published ports. Changing those values would move
+the secret rather than remove it.
+
+CI builds both targets and checks that production runs without root and that
+neither `.git` nor `data/` is included.
 
 ## What the hotfix changed
 

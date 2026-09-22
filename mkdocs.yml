@@ -96,6 +96,7 @@ nav:
           - Constitution: development/constitution.md
           - Contributing: development/contributing.md
           - Documentation conventions: development/documentation-conventions.md
+          - Writing style: development/writing-style.md
       - Data model:
           - Overview: development/data-model.md
           - PostgreSQL: development/postgresql.md
