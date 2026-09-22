@@ -9,9 +9,9 @@ left to configure.
 Set `FEATURE_FLAG_LABELS` to `true` and `FILE_STORAGE` to `database`
 ([Configuration](../configuration.md#feature-flags) — the second is required by the first
 and checked at startup). A label is an opaque identity (`vctl:<uid>`, resolved by a mapping
-table Victual owns rather than an encoded row id), a print request enqueues a job, a delivery
-worker claims and renders it, and a reprint replays the retained artifact rather than
-re-running whatever booking produced it.
+table Victual owns rather than an encoded row id). A print request enqueues a job, a
+delivery worker claims and renders it, and a reprint replays the retained artifact rather
+than re-running whatever booking produced it.
 
 **In the browser:**
 
@@ -28,7 +28,8 @@ re-running whatever booking produced it.
   `dead_lettered`. A `printed` outcome appears as `reported` in this view.
 - A print action on each kind's own page: the product form, the stock entries list and
   form, the recipe form and list, the chore form and overview, and the battery form and
-  overview — a printer picker, and a button that requests a label for that one record.
+  overview. Each offers a printer picker and a button that requests a label for that one
+  record.
 
 **Five operations** are available under `/api/labels`:
 
@@ -43,6 +44,7 @@ re-running whatever booking produced it.
 `kind` is `location`, `product`, `stock_entry`, `recipe`, `chore` or `battery`.
 The entity pages expose printing without typing these paths. Locations also retain
 `/api/labels/locations/{locationId}/print` and `/revised-print` under the same prefix.
+
 Printing new or revised data requires `MASTER_DATA_EDIT` *and* the domain read permission
 for what is being printed — `STOCK_VIEW`
 for a location, product or stock entry, `RECIPES_VIEW`, `CHORES_VIEW`, or `BATTERIES` —
@@ -53,15 +55,17 @@ answers 202: the job exists, but it is not finished until a worker has produced 
 has verified.
 
 **Purchasing.** The purchase and inventory-correction forms carry their own "label per
-booking" / "label per unit" choice (the `stock_label_type` field); when a booking adds stock
-with either option set, the booking issues the label and enqueues its print job itself, in
-the same transaction as the stock entry and its booking — a purchase that cannot label
-succeeds at neither. No printer picker exists on those forms: the job goes to the default
-printer (the first active one) and the `stock_entry` kind's default template. A product
-whose `auto_reprint_stock_label` setting is on and whose due date changes because it was
-opened, frozen or thawed gets its label reprinted (a revised print, same identity) only if
-one was already printed for that entry; opening or moving stock never mints a first label on
-its own.
+booking" / "label per unit" choice (the `stock_label_type` field). When a booking adds
+stock with either option set, the booking issues the label and enqueues its print job
+itself, in the same transaction as the stock entry and its booking — a purchase that
+cannot label succeeds at neither. No printer picker exists on those forms: the job goes
+to the default printer (the first active one) and the `stock_entry` kind's default
+template.
+
+A product whose `auto_reprint_stock_label` setting is on and whose due date changes
+because it was opened, frozen or thawed gets its label reprinted (a revised print, same
+identity) only if one was already printed for that entry. Opening or moving stock never
+mints a first label on its own.
 
 **Registering a printer and a worker.** Use the forms on `/labelprinters` (`ADMIN`).
 The worker form registers a worker in declared or paired mode; its buttons issue a
