@@ -126,12 +126,13 @@ available while this record is unaccepted.
 until it does there is a gap.** Today the differential suite is what makes the wire
 contract testable rather than aspirational — `difftest.php` puts both engines into an
 identical table state and compares what the views return. That mechanism disappears with
-the second engine. The replacement is
-[14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's response snapshot,
-which is the right mechanism and is **outstanding**. So the ordering constraint is real
-even though the permanent requirement is not: **do not retire the harness before 14 piece
-2 exists**, or the fork spends a window with neither check. Keeping the harness through
-the transition (option C) is what covers that window.
+the second engine.
+
+The replacement is [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2's
+response snapshot, which is the right mechanism and is **outstanding**. So the ordering
+constraint is real even though the permanent requirement is not: **do not retire the
+harness before 14 piece 2 exists**, or the fork spends a window with neither check. Keeping
+the harness through the transition (option C) is what covers that window.
 
 This also reframes what the harness was ever for. It proved two engines agreed. It never
 proved the fork's own contract was stable over time — 14 does that, for a single engine,
@@ -181,7 +182,7 @@ Gates, not suggestions. The accepting pull request says how each was met.
    **Answered 2026-08-31, at acceptance.** The span is **0255 — the fork's squashed
    baseline — through the SQLite dialect's latest migration number at retirement time**,
    frozen thereafter. Refusal outside the span names both numbers, per the lean. The
-   lower bound is honest rather than generous by design: any wild grocy 4.x install
+   lower bound is honest rather than generous by design. Any wild grocy 4.x install
    reaches 0255 by booting upstream grocy once, so the narrow span costs an adopter one
    boot of the software they are leaving rather than costing this fork an import surface
    across every historical schema delta.
