@@ -1,0 +1,16 @@
+extends: existence
+message: "Remove '%s'; state the fact or action without announcing the answer."
+level: warning
+scope: text & ~frontmatter
+ignorecase: true
+tokens:
+  - let me (?:be clear|be direct|be honest|explain)
+  - I want to be (?:straight|clear|honest) about
+  - I['’]ll say the harder thing
+  - it['’]s worth noting
+  - it is worth noting
+  - I should mention
+  - (?:the )?important thing to understand is
+  - great question
+  - hope this helps
+  - you['’]re absolutely right

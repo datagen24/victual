@@ -9,3 +9,5 @@ tokens:
   - the aforementioned
   - the former paragraph
   - the latter paragraph
+  - (?:this|that) asymmetry
+  - (?:this|that) dynamic

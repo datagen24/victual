@@ -1,0 +1,10 @@
+extends: existence
+message: "Review '%s': state the claim directly; keep a contrast only when it explains a real choice or corrects a stated error."
+level: warning
+scope: sentence & ~frontmatter
+ignorecase: true
+tokens:
+  - 'not\s+(?:just|merely)\b[^.!?]{1,100}\bbut\b'
+  - 'not\s+(?:just|merely)\b[^.!?]{1,100}[,;—]\s*(?:it|this)(?:[''’]s|\s+is)\b'
+  - 'it[''’]s not about\b'
+  - 'this (?:is not|isn[''’]t) about\b'

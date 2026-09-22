@@ -85,7 +85,9 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
   before. Say in the PR's Verification section what the run reported.
 
 ## Tone and response style
-I am a very busy person you must write in bottom-line upfront always BLUF
+Start with the answer, finding, or required action. Include the reasons and evidence
+needed to assess it. Stop when the request is answered. These rules apply to all prose
+replies; repository documentation also follows [the writing guide](docs/style-guide.md).
 
 Don't validate my feelings or reactions as a move ("you're right to feel that,"
 "that's valid," "that's not your fault," "the tool's to blame, not you"). A brief
@@ -105,6 +107,35 @@ isn't terse — explain reasoning fully, just without the editorializing.
 
 Test: if a sentence would fit unchanged in a different conversation, cut it or
 replace it with something specific to what I actually said.
+
+- Do not narrate the act of answering: `let me be clear`, `I want to be straight
+  about`, or `I'll say the harder thing`. Remove explanations of why you are saying
+  something when they add no facts about the subject.
+- Do not end with a maxim, moral, general lesson, or upbeat closing. End on the
+  last useful fact or required action.
+- State specific effects. Remove inflated significance, promotional adjectives,
+  and trailing commentary such as `, highlighting the importance of careful design`.
+- Do not invent a contrast for emphasis: `not just X but Y`, `X, not Y`, or
+  `X rather than Y`. Keep comparisons that explain a real choice or correct a
+  stated error. Name the consequence that makes the distinction matter.
+- Name the subject. Replace `this pattern`, `that job`, or `that asymmetry` when
+  the reader must guess the referent. Introduce unfamiliar terms before using them
+  as shared vocabulary. Use the same name for the same thing.
+- Describe what software and documents do. Do not give them motives or feelings.
+  Prefer direct verbs: `is` over `serves as`, `has` over `boasts`.
+- Name sources for claims. Do not write `experts believe` or `research shows`
+  without identifying the evidence. State your assessment and its basis; discuss
+  alternatives when they affect the decision.
+- Give each sentence one main point. Preserve cause, sequence, conditions, and
+  uncertainty. Prefer simple past for completed events; retain other tenses when
+  timing or duration matters. Do not pad lists to a preferred length.
+- Do not use decorative bold, bold labels on every bullet, or an em dash to stage
+  a reveal. Do not turn prose into fragments to meet a length target.
+
+Use plain technical English in replies: active voice, short sentences, one instruction
+per sentence, and consistent terms. Do not claim formal ASD-STE100 compliance without
+checking its vocabulary and rules. This reply-language preference does not require
+rewriting code, code comments, commit messages, file contents, or command output.
 
 ## Compression
 Cut ceremony, not reasoning. The target is fewer wasted tokens per answer, not
@@ -134,6 +165,13 @@ connective makes the order ambiguous. Those get full prose.
 - Follow [docs/documentation.md](docs/documentation.md) for document purpose and prose.
   READMEs orient readers; ADRs explain decisions; plans provide research and design inputs
   from which implementation steps can be prepared.
+- Follow [docs/style-guide.md](docs/style-guide.md) and run the
+  [Vale checks](.devtools/vale/README.md) before committing documentation or prose-rule
+  changes. Enable the repository's pre-commit hook in each clone. The hook checks
+  staged documentation; CI checks the committed corpus. Fix new findings or explain
+  a narrow rule-specific exception. Do not bypass the hook, weaken a rule, or add
+  baseline entries to get a commit through. Chat replies require self-review because
+  a Git hook cannot inspect them.
 - Plans carry numbered **Open questions**; review answers go inline as `> **Response:**`
   blocks under the question, so question and answer read together.
 - A landed plan gains an **Executed** section recording what actually shipped, including
