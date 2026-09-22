@@ -3,10 +3,12 @@
 **Goal:** Home Assistant knows what is in stock, what is due and what is expiring without
 ever asking the server — so the pod can sleep for days and the household still sees
 current information.
+
 **Depends on:** [13](landed/13-write-path-transactions.md), landed, which centralised the write
 entrypoints and established that side effects fire *after* commit. Pairs with
 [10](landed/10-cold-start-statelessness.md): 18 is what makes 10's scale-to-zero survive contact
 with an always-on consumer.
+
 **Status:** landed; see Executed. Three Home Assistant verifications remain
 ([issue 139](https://github.com/datagen24/victual/issues/139)). Exists because of [17](17-ecosystem-clients.md)'s Q2, which
 asked which Python HTTP client the Home Assistant integration should use and was answered
@@ -133,9 +135,9 @@ these decide the shape of the plan.
 
 Consuming a product or ticking a chore from Home Assistant is an HTTP call that wakes the
 pod. That is correct rather than a compromise: a write is user-initiated, so the cold start
-sits behind a button press where it is invisible, and the household's own pattern —
-shopping once or twice a week, bulk shopping every other week — puts that at a handful of
-wakes a week rather than 2,880 polls a day.
+sits behind a button press where it is invisible. The household's own pattern — shopping
+once or twice a week, bulk shopping every other week — puts that at a handful of wakes a
+week rather than 2,880 polls a day.
 
 This keeps the interesting property of the split: **the ambient path never wakes the
 server, and the interactive path always may.**
@@ -169,8 +171,8 @@ anything [17](17-ecosystem-clients.md) tracks over REST.
 
 The impact is that a *new* class of consumer appears with no authentication to Victual at
 all — anything holding broker credentials. That is the reason the security notes below
-draw the line where they do, and the reason [19](19-rbac.md)'s Q5 is carried here as
-question 8 rather than inherited from that plan: what goes on a retained topic is a
+draw the line where they do. It is also the reason [19](19-rbac.md)'s Q5 is carried here
+as question 8 rather than inherited from that plan. What goes on a retained topic is a
 visibility decision made at publish time, by this plan, for every subscriber at once, and
 there is no reader identity to gate it on afterwards.
 
@@ -228,19 +230,25 @@ ordering.** 19 asks whether published state carries prices, offering three answe
 without the visibility-gated fields, publish per-role topics, or declare MQTT an admin
 channel. It asks 18 to record which it chose — but 19's piece 2 is wave 5 and this is wave
 1, so on the roadmap as written 18 merges four waves before the plan whose question it
-defers to. That is not a deferral anyone could honour: a retained topic is *retained*, so
+defers to.
+
+That is not a deferral anyone could honour: a retained topic is *retained*, so
 an unanswered question here is not a decision postponed, it is household pricing sitting on
 the broker until something re-publishes without it.
 
 It is therefore **question 8 below**, answered here or not at all — and, like every other
 question in this plan, it carries a lean rather than a settled answer until it has a
-Response. The lean is the first option: publish no price or cost field, on any topic. It
-costs little to lean that way because it is what this plan's own rules already say — the
-entity set is facts a wall tablet would show, and the security notes below already exclude
-user records, notes fields and API keys on exactly the "anything with broker access reads
-this without authenticating to Victual" reasoning that applies to prices with more force,
-not less. Per-role topics are the option to revisit if 19's piece 2 ever gives the
-publisher a role to publish *as*; until then there is no reader identity here to gate on,
+Response.
+
+The lean is the first option: publish no price or cost field, on any topic. It costs
+little to lean that way because it is what this plan's own rules already say: the entity
+set is facts a wall tablet would show. The security notes below already exclude user
+records, notes fields and API keys on exactly the "anything with broker access reads this
+without authenticating to Victual" reasoning, which applies to prices with more force, not
+less.
+
+Per-role topics are the option to revisit if 19's piece 2 ever gives the
+publisher a role to publish *as*. Until then there is no reader identity here to gate on,
 which is 19's own framing of why this channel is the hard case.
 
 ## Open questions
@@ -283,9 +291,9 @@ which is 19's own framing of why this channel is the hard case.
 
 3. **Does a bulk write publish once or many times?** An import or a shopping trip is many
    commits in quick succession, and publishing a full snapshot per commit is wasteful even
-   if it is harmless. I lean to marking the request dirty and publishing once as it ends,
-   which also makes the publish trivially skippable for reads. The cost is that a
-   long-running CLI operation publishes only at the end.
+   if it is harmless. I lean to marking the request dirty and publishing once as it ends. A
+   read never sets the flag, so the publish is skipped without a separate check. The cost
+   is that a long-running CLI operation publishes only at the end.
 
    > **Response:** As leaned — mark the request dirty on the first committed write,
    > publish once as the request ends. The tree already has the pattern this hangs off:
@@ -298,8 +306,8 @@ which is 19's own framing of why this channel is the hard case.
 4. **Does the topic prefix carry a schema version?** `victual/…` versus `victual/v1/…`. I
    lean to no version. A version in the topic makes every consumer's configuration a
    migration when it changes, in exchange for a transition this household can perform by
-   hand in five minutes; and retained topics need explicit retraction on rename either way,
-   so the version does not save the cleanup it appears to.
+   hand in five minutes. Retained topics need explicit retraction on rename either way, so
+   the version does not save the cleanup it appears to.
 
    > **Response:** No version in the prefix, as leaned. One consequence of question 2's
    > opt-in entities is noted rather than feared: per-product topics raise the
@@ -314,14 +322,15 @@ which is 19's own framing of why this channel is the hard case.
    That is against the instinct to reach for QoS 1, and the library is what changed it.
    `php-mqtt/client` — MIT, `php: ^8.0`, v2.3.2 as of 2026-03-28, TLS and retain
    first-class, and the obvious choice on adoption and upkeep — supports MQTT 3, 3.1 and
-   3.1.1 but **not 5.0**, and needs `loop()` to be running to process the acknowledgements
-   QoS 1 and 2 depend on. Running an MQTT event loop at the end of a web request to collect
-   an ACK is precisely the shape this design exists to avoid, and the library additionally
-   has no cross-session persistence for QoS 1/2, so the guarantee would be weaker than it
-   looks anyway.
+   3.1.1 but **not 5.0**. It needs `loop()` to be running to process the acknowledgements
+   QoS 1 and 2 depend on.
+
+   Running an MQTT event loop at the end of a web request to collect an ACK is precisely
+   the shape this design exists to avoid. The library additionally has no cross-session
+   persistence for QoS 1/2, so the guarantee would be weaker than it looks anyway.
 
    QoS 0 is the right level here for a reason that is about the design rather than the
-   library: **the snapshot is idempotent and every publish supersedes the last**, so a lost
+   library. **The snapshot is idempotent and every publish supersedes the last**, so a lost
    message costs nothing that the next write or the next boot does not repair. Paying for
    delivery guarantees on a message that is about to be replaced is paying for the wrong
    thing. Once the broker has accepted a retained publish it is durable there, which is the
@@ -566,9 +575,9 @@ self-heals. There is no first-request-per-process publish; that would need proce
 ### Verification
 
 Home Assistant itself was not available, so verifications **2** (entities repopulate after
-a Home Assistant restart with the pod at zero), the Home-Assistant half of **4** (a template
-derived from the attributes changes as the day rolls over) and **8** (a week of pod idle
-time) **could not be run**. Everything else was, against a real broker.
+a Home Assistant restart with the pod at zero) and **8** (a week of pod idle time) **could
+not be run**. Nor could the Home-Assistant half of **4** (a template derived from the
+attributes changes as the day rolls over). Everything else was, against a real broker.
 
 1. **Retention actually retains.** Publisher connected, published, disconnected. A *fresh*
    subscriber (`php .devtools/mqtt/subscribe.php 127.0.0.1 1884 '#' 2`, clean session, a
@@ -600,21 +609,22 @@ time) **could not be run**. Everything else was, against a real broker.
    deployed one.
 6. **Retraction works.** With 11 retained topics on the broker,
    `php bin/victual-publish-state --retract` exited 0 and a fresh subscriber then saw
-   **0 messages**. The per-product path was verified three ways: clearing the flag
+   **0 messages**. The per-product path was verified three ways. Clearing the flag
    (`DELETE /api/objects/mqtt_product_entities/1`) published empty payloads to
-   `homeassistant/sensor/victual/product_1/config` and `victual/state/product/1`;
-   deactivating a flagged product (`PUT /api/objects/products/2` with `active: 0`) did the
-   same and left **0** orphan flag rows behind; and running `bin/victual-publish-state`
+   `homeassistant/sensor/victual/product_1/config` and `victual/state/product/1`.
+   Deactivating a flagged product (`PUT /api/objects/products/2` with `active: 0`) did the
+   same and left **0** orphan flag rows behind. And running `bin/victual-publish-state`
    twice in a row published the per-product topics **once**, the second run finding the
    ledger hash unchanged.
-7. **The assembler agrees on both engines.** `.devtools/mqtt/engine-diff.sh` migrates a
-   fresh SQLite database, seeds it, migrates a fresh PostgreSQL database, copies the first
-   into it with the real `bin/victual-db-import`, assembles on each and diffs:
-   `MQTT PAYLOAD IDENTICAL ON BOTH ENGINES`, 3735 bytes over 124 lines, byte-identical
-   rather than merely equivalent. The fixture is deliberately awkward — the null-due-date
-   sentinel, a below-minimum product with no stock, a priced purchase, a shopping list note,
-   an expired product, a chore with no schedule, a battery with no interval, a task with no
-   due date, and two opted-in products of which one has no stock.
+7. **The assembler agrees on both engines.** Running `.devtools/mqtt/engine-diff.sh`
+   migrates a fresh SQLite database, seeds it, migrates a fresh PostgreSQL database, copies
+   the first into it with the real `bin/victual-db-import`, and assembles on each. The diff
+   reports `MQTT PAYLOAD IDENTICAL ON BOTH ENGINES`, 3735 bytes over 124 lines,
+   byte-identical rather than merely equivalent. The fixture is deliberately awkward: the
+   null-due-date sentinel, a below-minimum product with no stock, and a priced purchase. It
+   also includes a shopping list note, an expired product, a chore with no schedule, a
+   battery with no interval, a task with no due date, and two opted-in products of which
+   one has no stock.
 
 Alongside those: `.devtools/mqtt/price-guard.php` passes all 22 checks (the deny-list covers
 every column the security note names, no allow-list admits a money-shaped key, and
@@ -644,14 +654,17 @@ No user id, no note, no location — `product_id` is the only tag.
 caught it and the fix is recorded here with the baseline that makes it mean something.
 `SqliteDialect::RequiresChangeTracking()` is false — the file modification time *is* the
 changed time — so on SQLite the LessQL query callback is installed only because something
-else asks for it, and the flag asked only whether MQTT was enabled. With
-`INFLUXDB_ENABLED=true` and `MQTT_ENABLED=false` on SQLite, measured against the pre-fix
-code: a **purchase** wrote both points, and a **consume** wrote nothing at all. The purchase
-survived by accident — `CompactStockEntries` issues raw SQL, which marks the request dirty
-through `ExecuteDbStatement` — while `ConsumeProduct` is LessQL only and had no such
-accident. Two entrypoints of the same feature behaving differently is the shape of the bug,
-and it would have been silent: the write succeeds, nothing is logged, and the series simply
-has a hole.
+else asks for it, and the flag asked only whether MQTT was enabled.
+
+With `INFLUXDB_ENABLED=true` and `MQTT_ENABLED=false` on SQLite, measured against the
+pre-fix code: a **purchase** wrote both points, and a **consume** wrote nothing at all. The
+purchase survived by accident — `CompactStockEntries` issues raw SQL, which marks the
+request dirty through `ExecuteDbStatement` — while `ConsumeProduct` is LessQL only and had
+no such accident.
+
+Two entrypoints of the same feature behaving differently is the shape of the bug, and it
+would have been silent: the write succeeds, nothing is logged, and the series is left with
+a hole nothing else explains.
 
 Two halves to the fix. The callback is now installed when *either* publisher wants it
 (`MqttStatePublicationService::IsEnabled() || InfluxEventWriter::IsEnabled()`), and the
@@ -684,22 +697,25 @@ The fix is **a transactional outbox, and it is the first instance of ADR-0010's 
 schema discriminated by event type"** rather than a private queue for this one consumer.
 Migration 259 (a pair, for the same generated-primary-key reason 257 is) creates `outbox`
 with `event_type`, a JSON `payload`, `delivered_at`, `attempts` and `last_error`.
+
 `BookingEventPublisher::RecordTransaction()` now writes a row **inside the booking's own
 transaction** — the calls moved into the `InTransaction` closures, one line each — so a
 rollback takes the event with it and the queue can never describe a booking that did not
 happen. (**Round 3 moved them again**, from the closures to the outermost commit, because
-one call per entrypoint is several per transaction once the entrypoints nest.) `Drain()` reads the undelivered rows, builds one batch, POSTs it, and marks them
-delivered **only on success**; a failure increments `attempts`, stores `last_error` and
-leaves the rows. Both the request-end seam and `bin/victual-publish-state --drain` drain,
-and the acknowledgement is a bookkeeping write through the restore-changed-time idiom so
-draining cannot dirty the request that triggered it.
+one call per entrypoint is several per transaction once the entrypoints nest.)
+
+`Drain()` reads the undelivered rows, builds one batch, POSTs it, and marks them delivered
+**only on success**. A failure increments `attempts`, stores `last_error`, and leaves the
+rows. Both the request-end seam and `bin/victual-publish-state --drain` drain, and the
+acknowledgement is a bookkeeping write through the restore-changed-time idiom so draining
+cannot dirty the request that triggered it.
 
 Two consequences worth stating. **Nothing is enqueued when `INFLUXDB_ENABLED` is false** —
 an outbox nobody drains is a leak, so the gate is at the enqueue site and not only at the
 drain. And the request-end guard now asks the outbox rather than process memory, which costs
-one indexed query per request when InfluxDB is on and buys the thing that matters: a request
-that books nothing still delivers what an earlier failed attempt left behind, so a queue
-drains itself when the endpoint comes back rather than waiting for somebody to notice.
+one indexed query per request when InfluxDB is on. That buys the thing that matters: a
+request that books nothing still delivers what an earlier failed attempt left behind, so a
+queue drains itself when the endpoint comes back rather than waiting for somebody to notice.
 
 `EditStockEntry` was the one call not inside a transaction, because that method had none.
 **Corrected in the second review round below**: it is now an eighth transactional
@@ -726,19 +742,20 @@ sleeps for days that is the failure this plan exists to prevent, and nothing log
 advisory key so a publish never queues behind a migration. **Assembly is inside the lock,
 not just the publish**: a lock around the publish alone still lets both requests read before
 either writes, which is the same lost update with a smaller window. `Retract()` takes it
-too, since a retraction racing a publish would otherwise be undone by it. The PostgreSQL
-implementation carries the same session-mode pooling caveat as the migration lock, restated
-rather than cross-referenced because the consequence is the same and the failure is as
-quiet. SQLite's is a documented no-op for the reason its migration lock is.
+too, since a retraction racing a publish would otherwise be undone by it.
+
+The PostgreSQL implementation carries the same session-mode pooling caveat as the migration
+lock, restated rather than cross-referenced because the consequence is the same and the
+failure is as quiet. SQLite's is a documented no-op for the reason its migration lock is.
 
 No version was added to any topic. The `last_published` sensor already carries the freshness
 fact and topic versioning is what question 4 declined; the lock is the fix.
 
 **4. The MQTT client id could lose its randomness.** The suffix was appended and *then* the
 whole string trimmed to 23 characters, so a configured prefix approaching 23 ate the
-randomness and a prefix of 23 or more removed it entirely — two overlapping requests would
-present the same client id and knock each other off the broker. The prefix is now trimmed to
-ten characters first and the full twelve-hex suffix appended after.
+randomness and a prefix of 23 or more removed it entirely. Two overlapping requests would
+then present the same client id and knock each other off the broker. The prefix is now
+trimmed to ten characters first and the full twelve-hex suffix appended after.
 
 **Verification of the fixes**, all reproducible from `.devtools/mqtt/`:
 
@@ -790,7 +807,9 @@ three ways for the durability to be undone.
 `RecordTransaction()` caught everything `Enqueue()` threw and logged it. The reasoning at
 the time - a metrics queue should not be able to stop the household recording their
 shopping - reads well and is wrong, because catching it does not make the booking succeed
-cleanly. An error that does not abort the transaction commits a booking with no event; on
+cleanly.
+
+An error that does not abort the transaction commits a booking with no event; on
 PostgreSQL an error that *does* abort it surfaces later at `commit()` as something
 apparently unrelated. Either way the caller is lied to. The catch is gone: a booking whose
 event cannot be recorded has not fully happened, and rolling it back is the honest outcome.
@@ -834,12 +853,14 @@ the authority on which paths are transactional.
 none of the fixes. `run-tests.sh` has a sixth phase, `mqtt`, part of `all` and therefore of
 the workflow, which runs the client-id check, the price guard, the lock check (against its
 own `SUITE_PGSQL_MQTT_DB`), the outbox probe, the new idempotency probe and the both-engine
-payload diff. Every one of them is self-contained: no broker, no node, and InfluxDB stood in
+payload diff.
+
+Every one of them is self-contained: no broker, no node, and InfluxDB stood in
 for by PHP's own built-in server (`.devtools/mqtt/influx-standin.php`), because a probe that
 only runs where somebody installed extra software is a probe CI skips. `db/pgsql/README.md`
 listed four phases and now lists six.
 
-**Verification.** All of it through the suite, which is the point of finding 5:
+**Verification.** All of it runs through the suite, which is what finding 5 requires:
 
 - **The enqueue is part of the booking** - `outbox-check.php` renames the outbox table out
   from under a purchase: the booking throws and `stock_log` is at exactly the row count it
@@ -871,7 +892,9 @@ tag set and timestamp, and `stock_value` carried only `product_id`, `transaction
 second. Two things collide under that. **A transaction id is reused** - undoing a
 transaction writes rows under the one it names - so an undo landing in the same second as
 its purchase overwrote it, and landing in a different second left both standing as if they
-were separate truths. And **the call graph nests**: `OpenProduct` delegates to
+were separate truths.
+
+And **the call graph nests**: `OpenProduct` delegates to
 `TransferProduct`, `ConsumeRecipe` wraps `ConsumeProduct`, `UndoTransaction` loops over
 `UndoBooking`, and `InTransaction()` deliberately lets an inner call join the outer one - so
 capturing at each entrypoint produced several events per transaction, each recording a state
@@ -883,7 +906,9 @@ however they are timed. And capture moved to the outermost commit:
 `DatabaseService::RegisterBeforeOutermostCommit()` runs keyed work inside the outermost
 transaction just before it commits, `RecordTransaction()` registers under the transaction id
 rather than capturing, and the listeners are cleared on rollback so nothing leaks into the
-next transaction. That hook is the general shape of "once per transaction, describing its
+next transaction.
+
+That hook is the general shape of "once per transaction, describing its
 final state", which the tree had no seam for; putting the logic in `StockService` instead
 would have meant every future entrypoint rediscovering the same trap.
 
@@ -894,12 +919,13 @@ because it blocks every valid row behind it.
 
 So the outbox has a third state. Every payload carries a `payload_version` (version 1 was
 the transaction-id-only shape, before the event became self-contained; it is not upgraded
-in place, because the ledger it would have re-read has moved on). `DescribeUnreadable()`
-decides before anything is built, `Drain()` dead-letters those rows individually with the
-reason, `GetUndelivered()` excludes them, and the CLI reports the count so a queue that is
-empty only because rows stopped counting does not read as a queue that drained. The
-`dead_lettered_at` column went into migration 0259 in place rather than a 0260, because 0259
-has not reached master and no database anywhere ran the earlier shape.
+in place, because the ledger it would have re-read has moved on).
+
+`DescribeUnreadable()` decides before anything is built, `Drain()` dead-letters those rows
+individually with the reason, `GetUndelivered()` excludes them, and the CLI reports the
+count so a queue that is empty only because rows stopped counting does not read as a queue
+that drained. The `dead_lettered_at` column went into migration 0259 in place rather than
+a 0260, because 0259 has not reached master and no database anywhere ran the earlier shape.
 
 **3. A database error looked like an empty queue.** `HasBookings()` caught everything and
 returned false, which is right for its caller - a shutdown handler must not throw - and
@@ -909,11 +935,11 @@ queue nobody managed to look at; `HasBookings()` still swallows, and its docbloc
 and points at the other one.
 
 **Coverage.** The 450-event CLI scenario is now `backlog-check.php`, running the real
-`bin/victual-publish-state --drain` as a subprocess - the exit code is half of what is being
+`bin/victual-publish-state --drain` as a subprocess. The exit code is half of what is being
 asserted, and a reimplemented loop would pass while the real one was broken. It queues 450
 against a rejecting stand-in, flips the stand-in to accepting through a control file rather
 than restarting it (a restart would lose the request log the failure case counts), and
-asserts three batches and exit 0; then repeats with the stand-in failing after two writes
+asserts three batches and exit 0. It then repeats with the stand-in failing after two writes
 and asserts exit 1 with exactly 50 left, and that a later run finishes the job.
 
 And four probes - `outbox-check`, `idempotency-check`, `event-identity-check`,
@@ -949,15 +975,18 @@ Three blocking findings, fixed 2026-09-03. Two are defects in what round 3 built
 is not a defect in the code at all but in this branch's relationship to the two beside it.
 
 **1. This branch is not independently mergeable, and now says so.** Migration 0258 belongs to
-[plan 01](landed/01-file-storage.md) and lives in PR #34; this branch carries 0257 and 0259. A
-deployment migrated through this tree alone records `MAX(migration) = 259` while never having
-run 0258, and 0258 merging afterwards does not fix what has already been decided on that
+[plan 01](landed/01-file-storage.md) and lives in PR #34; this branch carries 0257 and 0259.
+
+A deployment migrated through this tree alone records `MAX(migration) = 259` while never
+having run 0258. Merging 0258 afterwards does not fix what has already been decided on that
 number: the migration *runner* is not fooled — it asks per number whether a row exists, so a
-later 0258 is applied — but every gate built on the maximum is, and a gate is what decides
-whether a deployment is allowed to serve. Fixing the gate is PR #33's, which makes the boot
-check verify the complete required migration set instead of the highest recorded number. This
-branch owns the other half: saying which number belongs to whom, and refusing to be green
-while the sequence has a hole in it.
+later 0258 is applied — but every gate built on the maximum is. And a gate is what decides
+whether a deployment is allowed to serve.
+
+Fixing the gate is PR #33's, which makes the boot check verify the complete required
+migration set instead of the highest recorded number. This branch owns the other half:
+saying which number belongs to whom, and refusing to be green while the sequence has a hole
+in it.
 
 So `migrations/RESERVATIONS.md` is new — the record of every number above the baseline, its
 owning plan, and whether its file is in this tree — and
@@ -970,17 +999,19 @@ Nothing was renumbered. Moving 0259 down to 0258 would collide with plan 01 rath
 close the hole, and moving *both* of this branch's numbers up leaves the same gap one place
 further along. The check has a `--allow-reserved-holes` waiver, wired to
 `SUITE_ALLOW_RESERVED_HOLES=1` in `run-tests.sh`, so that a branch in this position can still
-run its own suite; CI does not set it, which is what keeps the enforcement real. Two stale
-references to plan 01 shipping `0257.pgsql.sql` — in its own body and in the roadmap's note
-on the engine-exclusive rule — are recorded in `RESERVATIONS.md` rather than edited here, so
-the correction lands with the file it describes.
+run its own suite; CI does not set it, which is what keeps the enforcement real.
+
+Two stale references to plan 01 shipping `0257.pgsql.sql` — in its own body and in the
+roadmap's note on the engine-exclusive rule — are recorded in `RESERVATIONS.md` rather than
+edited here, so the correction lands with the file it describes.
 
 **2. Bookkeeping writes no longer rewind the global change timestamp.** The publication
 ledger and the outbox both hid their writes with the idiom `SessionService` and
 `ApiKeyService` use for last-used stamps: read `db-changed-time`, write, put the old value
-back. That is safe for a last-used stamp inside one request and not safe here. Another
-request can commit and flush a newer `system_db_changed_time` inside the window, and the
-restore then overwrites it with the stale snapshot — so a client polling
+back. That is safe for a last-used stamp inside one request and not safe here.
+
+Another request can commit and flush a newer `system_db_changed_time` inside the window,
+and the restore then overwrites it with the stale snapshot. A client polling
 `GET /api/system/db-changed-time`, which is a timestamp rather than a version, never learns
 of the committed change until something else happens to write. The publication lock does not
 close this: it serializes publishers, not the application writes happening beside them. The
@@ -998,14 +1029,16 @@ exactly.
 **One residual, and it is SQLite's.** There the changed time *is* the database file's
 modification time, which the operating system advances when the write lands with no PHP
 involved to suppress; hiding a write from it means rewinding it, which is the hazard. So it
-is not hidden, and a ledger or outbox row can advance the changed time on SQLite. The cost is
-at worst one redundant client refetch, and almost never even that — these writes happen on
-the back of a request that already changed data, or during a backlog drain, on an engine
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) retires from runtime use and which
-has no concurrent writer to be wrong about. The two last-used stamps deliberately keep the
-old idiom and are **not** converted: they fire on every authenticated read, so letting them
-advance the file modification time would make SQLite's changed time useless rather than
-slightly noisy, and their window is one statement inside one request.
+is not hidden, and a ledger or outbox row can advance the changed time on SQLite. The cost
+is at worst one redundant client refetch, and almost never even that.
+
+These writes happen on the back of a request that already changed data, or during a
+backlog drain, on an engine that [ADR-0008](../adr/0008-postgresql-only-runtime-engine.md)
+retires from runtime use and that has no concurrent writer to be wrong about. The two
+last-used stamps deliberately keep the old idiom and are **not** converted. They fire on
+every authenticated read, so letting them advance the file modification time would make
+SQLite's changed time useless rather than slightly noisy, and their window is one statement
+inside one request.
 
 **3. A malformed nested payload is dead-lettered instead of being written as zeros.**
 `DescribeUnreadable()` checked the version and that `bookings` and `stock` were arrays, so a
@@ -1016,20 +1049,24 @@ product 0, an absent `amount` or `value` became 0.0, an absent `row_created_time
 on a row then marked delivered — arriving through the gap between "the arrays are there" and
 "the arrays say something".
 
-Every key `BuildLines()` reads is now required with its type: `event_id` as an actual UUID
-(`Uuid::isValid`, not merely non-empty — a blank identity puts every point of the event under
-the same nothing and brings back the collision the UUID was added to prevent),
-`transaction_id` as a non-empty string, `occurred_at` and each booking's
-`row_created_timestamp` as a `Y-m-d H:i:s` timestamp that `DateTimeImmutable` accepts (shape
-checked first, because that constructor also accepts "now" and "+1 day" and neither belongs
-in a series), each booking's `booking_id`, `product_id` and `undone` as integers, `amount` as
-a number, `price` as null or a number, `transaction_type` as a non-empty string, and each
-stock entry's `product_id`, `amount` and `value`. The failure names the element and the
-field — `bookings[2].row_created_timestamp is not a "Y-m-d H:i:s" timestamp ("")` — because
-`last_error` is read by a person asking what stopped. Dead-lettering is per row and already
-was, so one bad payload never stops the batch. `OutboxService::GetUndelivered()` also stopped
-handing back a decoded scalar for a corrupt row, which would have been a `TypeError` taking
-the whole drain with it.
+Every key `BuildLines()` reads is now required with its type:
+
+- `event_id` as an actual UUID (`Uuid::isValid`, not merely non-empty — a blank identity
+  puts every point of the event under the same nothing and brings back the collision the
+  UUID was added to prevent).
+- `transaction_id` as a non-empty string.
+- `occurred_at` and each booking's `row_created_timestamp` as a `Y-m-d H:i:s` timestamp
+  that `DateTimeImmutable` accepts (shape checked first, because that constructor also
+  accepts "now" and "+1 day" and neither belongs in a series).
+- Each booking's `booking_id`, `product_id` and `undone` as integers, `amount` as a
+  number, `price` as null or a number, and `transaction_type` as a non-empty string.
+- Each stock entry's `product_id`, `amount` and `value`.
+
+The failure names the element and the field — `bookings[2].row_created_timestamp is not a
+"Y-m-d H:i:s" timestamp ("")` — because `last_error` is read by a person asking what
+stopped. Dead-lettering is per row and already was, so one bad payload never stops the
+batch. `OutboxService::GetUndelivered()` also stopped handing back a decoded scalar for a
+corrupt row, which would have been a `TypeError` taking the whole drain with it.
 
 **Verification**, all inside the suite, on both engines:
 
@@ -1037,21 +1074,22 @@ the whole drain with it.
   named, each building **zero** lines (in particular none carrying `product_id=0`), each
   dead-lettered individually with `attempts` advanced and **not** marked delivered, and a
   real booking queued behind all fifteen still deliverable afterwards.
-- **`changed-time-check.php`** — a bookkeeping write does not mark the request dirty; a real
-  data change made before one **survives** it; a concurrent writer's newer changed time,
-  committed from a second connection inside a bookkeeping section that has already written
-  its row, is still standing when the section ends; and on PostgreSQL the changed-time row's
-  `xmin` is **unchanged** across ledger and outbox writes, which is the exact assertion a
-  snapshot-and-restore implementation fails even though the value it restores is identical.
+- **`changed-time-check.php`** — a bookkeeping write does not mark the request dirty, and a
+  real data change made before one **survives** it. A concurrent writer's newer changed
+  time, committed from a second connection inside a bookkeeping section that has already
+  written its row, is still standing when the section ends. And on PostgreSQL the
+  changed-time row's `xmin` is **unchanged** across ledger and outbox writes — the exact
+  assertion a snapshot-and-restore implementation fails even though the value it restores
+  is identical.
 - **The numbering check** — `check-migrations.php` names 0258, its owner and the merge order,
   and exits 1.
 - **The suite** — `SUITE PASSED` on all six phases with `SUITE_ALLOW_RESERVED_HOLES=1`, the
   two new probes reported twice each, `(engine: sqlite)` and `(engine: pgsql)`.
 
 One unrelated defect was fixed on the way: `client-id-check.php` called
-`ReflectionMethod::setAccessible()`, a no-op since PHP 8.1 which on 8.5 — the version
-`composer.json` pins and the dev image runs — emits a deprecation notice onto stdout, where
-the parent process read it back as the client id and failed all eight cases with a
+`ReflectionMethod::setAccessible()`. Since PHP 8.1 this is a no-op. On 8.5 — the version
+`composer.json` pins and the dev image runs — it emits a deprecation notice onto stdout,
+where the parent process read it back as the client id and failed all eight cases with a
 diagnostic. The call is gone.
 
 ### Review fixes, round 5
@@ -1065,7 +1103,9 @@ to*.
 throw — and Guzzle's `http_errors` raises for 4xx and 5xx but not for 3xx, while
 `allow_redirects` is on by default. So a bare HTTP 302 came back as an ordinary response
 nobody looked at, and a 302 followed to a login page came back as an HTTP 200 written by
-something that is not InfluxDB. Both reported success. Through the real drain the bare 302 set
+something that is not InfluxDB.
+
+Both reported success. Through the real drain the bare 302 set
 `delivered_at` with zero attempts and no `last_error`, so the event was never retried: a
 committed event discarded silently, which is the one failure the whole outbox exists to
 prevent, arriving at the last step.
@@ -1074,7 +1114,9 @@ The client now sets `ALLOW_REDIRECTS => false` and `HTTP_ERRORS => false`, and o
 decides what an acknowledgement is: a 2xx, from the address the request was sent to, with no
 body. The empty body is part of the contract rather than fussiness — InfluxDB's v2 write API
 answers `204 No Content`, so a 2xx carrying a page was answered by a proxy or a portal in
-front of it. Every other outcome goes through `Reject()`, which records the status and a
+front of it.
+
+Every other outcome goes through `Reject()`, which records the status and a
 bounded, single-line rendering of the body in `last_error` and leaves the row pending. If a
 deployment ever puts something in front of InfluxDB that answers 2xx with a body, that is the
 check to loosen deliberately, with the endpoint named.
@@ -1091,22 +1133,26 @@ is `php-mqtt/client` over TCP, not HTTP.
 `PublishLocked()` compared each product's payload hash with `mqtt_published_entities` and
 skipped a match — on every path, including the boot and CLI publish. But the ledger records
 what this application last *sent*, and a full refresh exists to answer a different question:
-what does the broker still *retain*? Everything here is QoS 0, so a message can simply be
-lost, and a broker can be restarted without persistence, replaced, or have its retained
-messages cleared by hand. In all of those the ledger still says "sent", so the product's
-discovery and state topics stayed missing from Home Assistant until that particular product's
-payload happened to change — which for a product nobody buys is never. The ambient topics
-never had this problem because they are resent every time; the recovery this design promises
-for QoS 0 losses simply did not cover the per-product half.
+what does the broker still *retain*? Everything here is QoS 0, which gives no delivery
+guarantee, so a message can be lost outright, and a broker can be restarted without
+persistence, replaced, or have its retained messages cleared by hand.
+
+In all of those the ledger still says "sent", so the product's discovery and state topics
+stayed missing from Home Assistant until that particular product's payload happened to
+change — which for a product nobody buys is never. The ambient topics never had this
+problem because they are resent every time. The recovery this design promises for QoS 0
+losses did not cover the per-product half at all.
 
 The parameter that already distinguished the two paths was named `$includeDiscovery`, which
 described one of its consequences rather than what it means. It is now `$fullRefresh`, and the
-ledger comparison is `!$fullRefresh && …`. The incremental path keeps the diff, because there
-the ledger is answering the question it is good for — nothing has changed since we last sent
-this — and resending hundreds of identical discovery payloads on every purchase is the cost
-the diff exists to avoid. No other topic had the same skip: the ambient state topics are
-rebuilt and published unconditionally on both paths, and the ambient discovery payloads are
-already unconditional on a full refresh.
+ledger comparison is `!$fullRefresh && …`.
+
+The incremental path keeps the diff, because there the ledger is answering the question it
+is good for — nothing has changed since we last sent this — and resending hundreds of
+identical discovery payloads on every purchase is the cost the diff exists to avoid. No
+other topic had the same skip: the ambient state topics are rebuilt and published
+unconditionally on both paths, and the ambient discovery payloads are already unconditional
+on a full refresh.
 
 **Verification**, all inside the suite, on both engines:
 
@@ -1139,7 +1185,7 @@ connection closes and the probe waits for it. Recorded because the near miss is 
 probe whose failure mode is indistinguishable from its finding is worse than no probe.
 
 **What is still not covered.** Neither stand-in is the real system. There is no Mosquitto, no
-Home Assistant and no InfluxDB in the suite, so "Home Assistant creates the entity", "the
+Home Assistant and no InfluxDB in the suite. So "Home Assistant creates the entity", "the
 broker retains the payload across a restart" and "InfluxDB accepts this line protocol" remain
 hand verifications — the same three the Executed section already lists as outstanding.
 
@@ -1213,24 +1259,27 @@ connection the application makes that is not the label printer.
   at all; it goes through the Guzzle client already in the tree.
 - **The retained payload is household data on a shared broker.** Anything with access to
   the broker can read the household's stock and chores without authenticating to Victual.
-  That is a real widening of who can see this data, it is accepted here because the broker
-  is on the same private cluster with its own credentials, and it is a reason not to
+  That is a real widening of who can see this data. It is accepted here because the broker
+  is on the same private cluster with its own credentials. It is also a reason not to
   publish anything that would not also be shown on a wall tablet — no user records, no
+  notes fields, no API keys, and — per **question 8**, answered — no prices.
 
-  notes fields, no API keys, and — per **question 8**, answered — no prices. Prices are the
-  addition [19](19-rbac.md) forces and the one this plan would otherwise have missed. The
-  wall-tablet test excludes them on its own reasoning, since a broker subscriber is not a
-  logged-in user and cannot be made into one, which is why 19's Q5 is carried here rather
-  than gating that plan; question 8's Response adopts the lean (2026-08-31). The exposure is real either way: if the
-  stock summary's attributes are assembled from `uihelper_stock_current_overview`, which
-  the UI reads and which selects `value`, `last_price` and `average_price`
-  (`migrations/0252.sql:38-39`), they ship by default unless something removes them.
-  Concretely, the v1 entity set in question 1 carries none of `stock.price`,
-  `stock_log.price`, `products_average_price`, `product_price_history`,
+  Prices are the addition [19](19-rbac.md) forces and the one this plan would otherwise
+  have missed. The wall-tablet test excludes them on its own reasoning, since a broker
+  subscriber is not a logged-in user and cannot be made into one, which is why 19's Q5 is
+  carried here rather than gating that plan. Question 8's Response adopts the lean
+  (2026-08-31).
+
+  The exposure is real either way: if the stock summary's attributes are assembled from
+  `uihelper_stock_current_overview`, which the UI reads and which selects `value`,
+  `last_price` and `average_price` (`migrations/0252.sql:38-39`), they ship by default
+  unless something removes them. Concretely, the v1 entity set in question 1 carries none
+  of `stock.price`, `stock_log.price`, `products_average_price`, `product_price_history`,
   `products_last_purchased.price`, `last_price`, `avg_price` or a recipe's `costs`, and
-  adding an entity that would is a change this bullet has to be edited to permit. As built
-  that list is `StateSnapshotAssembler::DENIED_COLUMNS`, which also names
-  `last_price_unit`, `last_price_total`, `note` and `api_key`, and it is not trusted on its
+  adding an entity that would is a change this bullet has to be edited to permit.
+
+  As built that list is `StateSnapshotAssembler::DENIED_COLUMNS`, which also names
+  `last_price_unit`, `last_price_total`, `note` and `api_key`. It is not trusted on its
   own: each entity carries an allow-list of the only keys it may emit, and
   `AssertNoForbiddenKeys()` walks the finished payload and throws on any key matching
   `/price|cost|value/i` rather than publishing it. `.devtools/mqtt/price-guard.php` is the
