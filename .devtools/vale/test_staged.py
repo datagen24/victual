@@ -136,7 +136,15 @@ class StagedProse(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Expected a resolved regular file', result.stdout + result.stderr)
 
-    def test_deleting_baselined_page_requires_removing_allowance(self):
+    def test_deleting_baselined_page_reports_stale_allowance_without_failing(self):
+        """Deleting a page strands its allowances. That is reported, not refused.
+
+        A stale allowance covers a finding that no longer exists, so it cannot hide
+        a new one -- an unrecognised fingerprint still fails. Refusing the commit
+        instead forced every page cleanup to edit .devtools/vale/baseline.json,
+        which made that single file a conflict between every concurrent branch.
+        The scheduled prune on master removes stale entries.
+        """
         self.write('docs/page.md', 'Hope this helps.\n')
         subprocess.run([sys.executable, '.devtools/vale/audit.py', '--write-baseline',
                         '.devtools/vale/baseline.json'], cwd=self.root, env=self.environment,
@@ -147,8 +155,23 @@ class StagedProse(unittest.TestCase):
         self.git('add', 'docs/clean.md')
         self.git('rm', 'docs/page.md')
         result = self.commit()
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('stale', result.stdout + result.stderr)
+
+    def test_new_finding_still_fails_when_an_allowance_is_stale(self):
+        """Staleness being tolerated must not let a genuinely new finding through."""
+        self.write('docs/page.md', 'Hope this helps.\n')
+        subprocess.run([sys.executable, '.devtools/vale/audit.py', '--write-baseline',
+                        '.devtools/vale/baseline.json'], cwd=self.root, env=self.environment,
+                       check=True, capture_output=True)
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Create reviewed test backlog')
+        self.git('rm', 'docs/page.md')                     # strands that allowance
+        self.write('docs/new.md', 'Simply drop the table.\n')  # and adds a new finding
+        self.git('add', 'docs/new.md')
+        result = self.commit()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('baseline entries must be removed', result.stdout + result.stderr)
+        self.assertIn('Victual.AssumedEase', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':
