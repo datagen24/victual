@@ -27,34 +27,32 @@ create-a-successor-then-retire rotation path. **One residual remains rather than
 S16's body-schema-validation half. See S11's own row for what shipped and how it was
 verified.
 
-**Update, 2026-09-21: S14's mitigating factor does not hold, and the finding now has tests.**
-Plan 33's coverage work (issue [192](https://github.com/datagen24/victual/issues/192)) took the
-three barcode lookup files to 100% and demonstrated all three protections absent. Two things in
-S14's row below need correcting.
+**Update, 2026-09-21:** S14's filename and fetch descriptions below understate the
+finding. Plan 33's coverage work (issue [192](https://github.com/datagen24/victual/issues/192))
+took the three barcode lookup files to full line coverage and now records the behaviour of both
+halves.
 
-The row says the filename comes from "the raw route argument", and rests on that: "Slim decodes
-the path before routing so `/` cannot reach `$args`, which limits it to odd names inside
-`productpictures/`". The value actually used is `$pluginOutput['__barcode']`
-(`services/StockService.php:1036`) — what the *plugin* returned, not what Slim decoded. A plugin
-may set it to anything, `../../` included, and `services/Storage/FilesystemStorage.php:167` joins
-it onto the group folder unnormalised. So the containment the row relies on is not there, and the
-row's **Low** rating was set against a narrower finding than the real one.
+S14 describes the picture filename as coming from the route argument, and rates the finding
+**Low** on that basis: "Slim decodes the path before routing so `/` cannot reach `$args`, which
+limits it to odd names inside `productpictures/`". The value used is `$pluginOutput['__barcode']`
+(`services/StockService.php:1036`), supplied by the barcode lookup plugin. A plugin may return any
+string, including `../../`, and `services/Storage/FilesystemStorage.php:167` joins it onto the
+group folder without normalising it. The rating rests on a constraint the code does not apply.
 
-The fetch half is the same shape: the row calls it "SSRF only via a spoofed lookup service", but
-the URL is whatever the third-party source returned, so anyone who can put a product into that
-source chooses what the deployment fetches — `169.254.169.254` included.
+S14 describes the fetch as "SSRF only via a spoofed lookup service". The requested URL is
+`__image_url` as returned by the configured source, so any party able to publish a product to that
+source selects the address the deployment requests, including `169.254.169.254`.
 
-**Before changing any of this, read `tests/Pgsql/BarcodeLookupTest.php` and
-`tests/Pgsql/StorageFilesTest.php`.** Around fifteen tests there are named for what is *not*
-refused (`testLookupDoesNotRefuseAPictureUrlNamingALoopbackOrPrivateHost`,
-`…ThatWouldEscapeThePictureDirectory`, `…WithANonImageExtension`) and pin today's behaviour with
-`DEFECT:` blocks naming the correct behaviour. They are written to fail the day a check is added,
-which is deliberate — an incomplete test would say nothing when the gap closed. Closing S14
-therefore means replacing those assertions with their refusal counterparts, not debugging them.
-Issues [243](https://github.com/datagen24/victual/issues/243) (the storage half) and
-[247](https://github.com/datagen24/victual/issues/247) (the gate, plus the two things plan 09
-will otherwise inherit: no fetch seam, and no asked-versus-answered barcode comparison) carry the
-detail.
+`tests/Pgsql/BarcodeLookupTest.php` and `tests/Pgsql/StorageFilesTest.php` record the current
+behaviour. Approximately fifteen tests assert that a hostile value is accepted, for example
+`testLookupDoesNotRefuseAPictureUrlNamingALoopbackOrPrivateHost`, each carrying a `DEFECT:` comment
+naming the required behaviour. Adding a check makes those assertions fail, so closing S14 requires
+replacing them with the corresponding refusal assertions.
+
+[Issue 243](https://github.com/datagen24/victual/issues/243) covers the storage half.
+[Issue 247](https://github.com/datagen24/victual/issues/247) covers the validation gate and two
+capabilities plan 09 depends on: a fetch seam, and a comparison between the requested barcode and
+the one the source returned.
 
 **Update, 2026-09-17:** [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2
 landed - the response-contract snapshot, not the write-body allowlist S16's row once
