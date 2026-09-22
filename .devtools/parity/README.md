@@ -16,8 +16,8 @@ and Node 18+.
 
 **A tool to run as you work, not a gate.** It is deliberately not wired into CI: you run it
 while changing a controller, a service or a view, to find out whether the change moved
-something away from upstream — and you run one phase or one scenario, not the whole thing,
-when you know what you touched.
+something away from upstream. You run one phase or one scenario, not the whole thing, when
+you know what you touched.
 
 ```bash
 .devtools/parity/bin/parity up                        # once
@@ -26,13 +26,15 @@ when you know what you touched.
 
 That is why the report is written to be read rather than merely to exit non-zero: every
 difference names the step, the JSON pointer and both values, and accepted ones say which
-record accepted them. It exited non-zero against `master` for its first two weeks because
-the differences it reported were real, which is another reason it is not a gate — a gate
-that is red on arrival is one people learn to route around. Since 2026-09-19 (issue #219)
-`parity all` exits 0: every difference is either fixed or accepted with its record, so a
-new one stands out — but it is still a tool, not a gate.
+record accepted them.
 
-## Why this exists next to `.devtools/pgsql/`
+It exited non-zero against `master` for its first two weeks because the differences it
+reported were real, which is another reason it is not a gate — a gate that is red on
+arrival is one people learn to route around. Since 2026-09-19 (issue #219) `parity all`
+exits 0: every difference is either fixed or accepted with its record, so a new one
+stands out — but it is still a tool, not a gate.
+
+## Relationship to `.devtools/pgsql/`
 
 They ask different questions and neither subsumes the other.
 
@@ -66,10 +68,12 @@ there is no SQLite path left to break.
 **The order matters and `all` fixes it.** `api` is what puts data into both instances, so
 the browser walk has tables with rows in them and the MQTT check has a stock level to
 publish. Running `ui` against a cold stack compares two empty applications, which is a
-comparison that cannot fail. `side-effects` runs after the walk because it writes to the fork
-only, and anything it creates would show up in the browser walk as a row-count difference
-that means nothing — which is exactly what happened while this was being written. `mcp`
-runs last for the same reason: it mints keys and creates a user on the fork.
+comparison that cannot fail.
+
+`side-effects` runs after the walk because it writes to the fork only, and anything it
+creates would show up in the browser walk as a row-count difference that means nothing —
+which is exactly what happened while this was being written. `mcp` runs last for the same
+reason: it mints keys and creates a user on the fork.
 
 ### The scenarios
 
@@ -101,19 +105,23 @@ say whether any of it is exposed, and cite the record that decided it. "It has a
 that" is not a reason, and neither is "no endpoint returns it" — ADR-0005 records that
 exact reasoning being withdrawn once already, over `qu_factor`.
 
-Twenty-four API entries exist today (six added on 2026-09-19 with the first full-stack run
-against the MVP, two of them the maintainer's approval of plan 19's permissions shape and
-issue #46's price views), and `UI_ACCEPTED` holds the browser walk's two: plan 28's
-measurement form on `/stockentries`, and upstream's own `/equipment` fetching
-`/api/objects/equipment/undefined`. There is also an explicit `FORK_ADDED_FIELDS` list for fields the
-fork adds that upstream never had — deliberately a named list rather than a blanket "extra
-fields are fine", so that a field arriving by accident is still a difference somebody has
-to explain. Two entries are ADR-0005's own accepted exceptions, and a third is the second
-of those seen downstream — `chores.next_estimated_execution_time`, which is `null` upstream
-because a date-only `start_date` breaks the positional `SUBSTR` upstream slices the time of
-day out of. The rest are the fork's deliberate divergences, and three of those are worth
-knowing about because they are the fork being *more careful* than upstream rather than
-merely different:
+Twenty-four API entries exist today: six were added on 2026-09-19 with the first
+full-stack run against the MVP, two of them the maintainer's approval of plan 19's
+permissions shape and issue #46's price views. `UI_ACCEPTED` holds the browser walk's two:
+plan 28's measurement form on `/stockentries`, and upstream's own `/equipment` fetching
+`/api/objects/equipment/undefined`.
+
+There is also an explicit `FORK_ADDED_FIELDS` list for fields the fork adds that upstream
+never had — deliberately a named list rather than a blanket "extra fields are fine", so
+that a field arriving by accident is still a difference somebody has to explain.
+
+Two entries are ADR-0005's own accepted exceptions, and a third is the second of those
+seen downstream — `chores.next_estimated_execution_time`, which is `null` upstream because
+a date-only `start_date` breaks the positional `SUBSTR` upstream slices the time of day out
+of.
+
+The rest are the fork's deliberate divergences, and three of those are worth knowing about
+because they are the fork being *more careful* than upstream rather than merely different:
 
 - **`exposed-settings-allowlist`** — `GET /api/system/config` returns 21 fewer settings
   here. `SystemApiController::EXPOSED_SETTINGS` is an allowlist; upstream returns
@@ -127,8 +135,8 @@ merely different:
   comparison a silent non-match. The fork used to answer `500` and quote the failing
   statement; see [issue #48](https://github.com/datagen24/victual/issues/48).
 - **`missing-object-is-404-on-every-verb`** — `PUT` and `DELETE` against an id that does
-  not exist are `404` here and `400` upstream. `GET` of the same id is `404` on both,
-  which is the point: the status used to depend on the verb rather than on the fact.
+  not exist are `404` here and `400` upstream. `GET` of the same id is `404` on both: the
+  status now depends on whether the object exists, not on which verb asked.
 - **`create-with-no-fields-refused`** — `POST /api/objects/{entity}` with a body that sets
   no column of the entity is a `400` here and a `200` upstream. Neither side creates
   anything; upstream answers with a `created_object_id` of `"0"`, which identifies no
@@ -239,17 +247,18 @@ The app container's readiness gate is the manifest's `startupProbe` run the same
 because these images have no shell to run anything else with.
 
 The upstream image is pinned to `version-v4.6.0` rather than `latest`, and that is the
-whole argument of the suite: grocy 4.6.0 (2026-03-06) is the release the fork was cut
+whole argument of the suite. Grocy 4.6.0 (2026-03-06) is the release the fork was cut
 from — `version.json` carried that number until the fork's first release, 0.1.0-MVP on
-2026-09-19, and the upstream image's own `version.json` still does — so a difference the
+2026-09-19, and the upstream image's own `version.json` still does. So a difference the
 suite reports is one *this fork* introduced, not one upstream shipped in a release the fork
 has not merged. Comparing against `latest` would produce a report full of upstream's
 changelog. The fork-side image tags above follow `version.json`, read by `stack.sh`.
 
 Both databases are thrown away and rebuilt on `parity reset`, and a cold start is a
-first-class check rather than a convenience: [plan 10](../../docs/plans/landed/10-cold-start-statelessness.md)
-is about what happens on the first request after a scale-up, and the only way to test that
-is to have a first request.
+first-class check rather than a convenience.
+[Plan 10](../../docs/plans/landed/10-cold-start-statelessness.md) is about what happens on
+the first request after a scale-up, and the only way to test that is to have a first
+request.
 
 **Two ordering traps are worth knowing before changing `stack.sh`.** Upstream grocy has no
 migrate command — `SystemController::Root` is what calls `MigrateDatabase()`, so the schema
@@ -285,11 +294,18 @@ once on stderr and flags the account, and until it is changed the API answers th
 `PARITY_BOOTSTRAP_ADMIN=generated`, the default. The migrate log is kept at
 `reports/migrate.log`, and `harness/bootstrap-admin.js` reads the generated password out of
 it. It then walks the forced change over the API before anything else logs in, asserting
-each step: the password logs in, the API refuses the flagged account, re-saving the same
-password is refused, `PUT /api/users/{id}` with `current_password` changes it, and afterwards
-the old one fails while the new one opens the API. Its report is
-`reports/bootstrap-admin.json`. `PARITY_BOOTSTRAP_ADMIN=env` hands the migrate container the
-password directly instead: that is the other supported path, and it skips all of the above.
+each step:
+
+- the password logs in
+- the API refuses the flagged account
+- re-saving the same password is refused
+- `PUT /api/users/{id}` with `current_password` changes it
+- afterwards the old one fails while the new one opens the API
+
+Its report is `reports/bootstrap-admin.json`.
+
+`PARITY_BOOTSTRAP_ADMIN=env` hands the migrate container the password directly instead:
+that is the other supported path, and it skips all of the above.
 
 The user name is the same on both sides, which is what lets a scenario be written once. Authentication is a session cookie rather than an
 API key for the same reason — `DefaultAuthMiddleware` accepts either on API routes, and
