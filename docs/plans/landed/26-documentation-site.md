@@ -32,10 +32,12 @@ stable. It does not hold up for this fork. Victual runs on PostgreSQL alone
 ([ADR-0008](../../adr/0008-postgresql-only-runtime-engine.md)), ships production images built by
 Nix from `scratch` ([ADR-0013](../../adr/0013-nix-built-container-images.md)), runs without a
 persistent application volume ([plan 10](10-cold-start-statelessness.md)), and has added
-roles and domain read permissions ([plan 19](../19-rbac.md)). A community article explaining how
-to point nginx at grocy on a Raspberry Pi with a SQLite file is not merely dated for Victual;
-it describes a system this one is not compatible with. The fork has made the community's
-installation documentation wrong for it and has published nothing of its own aimed at a user.
+roles and domain read permissions ([plan 19](../19-rbac.md)).
+
+A community article explaining how to point nginx at grocy on a Raspberry Pi with a SQLite
+file is not merely dated for Victual; it describes a system this one is not compatible
+with. The fork has made the community's installation documentation wrong for it and has
+published nothing of its own aimed at a user.
 
 The developer half has the opposite problem: the material exists and has no shape. `docs/` is
 a flat directory mixing standing principles, decisions, in-flight research, review findings
@@ -100,8 +102,8 @@ Manual and it is new writing.
 | Links from `docs/adr/` into `docs/plans/` | 173 | `grep -rhoE '\]\((\.\./)?plans/[0-9]+[^)]*\)' docs/adr/ \| wc -l` |
 
 The 173 are the consequence of ADR-0020's boundary and the largest single piece of link
-handling this plan owns: the ADRs are published and the plans are not, so every one of those
-links has to resolve to the repository instead of to a page.
+handling this plan owns. The ADRs are published and the plans are not, so every one of
+those links has to resolve to the repository instead of to a page.
 
 **One defect found during this research has been fixed.** Four citations in
 [plan 22](../22-medication-tracking.md) were written as links to a
@@ -168,9 +170,9 @@ This belongs to piece 2; piece 1 leaves the file where it is, and the site's lan
 links to it in the repository until the Manual exists.
 
 It moves into the Manual and is deleted from `docs/`. Duplication is not an option — the
-conventions make one document the authoritative home for a fact — and the inbound cost is one
-line: three files mention `usage.md`, of which [`README.md`](../../../README.md) line 57 is the
-only link, one is this plan, and one is a sentence in
+conventions make one document the authoritative home for a fact — and the inbound cost is
+one line. Three files mention `usage.md`, of which [`README.md`](../../../README.md) line
+57 is the only link, one is this plan, and one is a sentence in
 [ADR-0017](../../adr/0017-doctrine-dbal-is-the-persistence-seam.md) telling the author of
 `usage.md` not to restate a decision more warmly. That constraint carries to the Manual
 unchanged: the Manual describes behaviour, and the ADR remains the home for why.
@@ -209,8 +211,8 @@ unindexed document a build failure rather than a file nobody finds.
 
 Each diagram becomes a page. `stage.py` lifts the `<svg>` out of the self-contained HTML and
 writes a Markdown page around it, in a container that scrolls sideways at the width the
-diagram was drawn for — so the diagram sits inside the site with its navigation and search,
-and the page body still never scrolls sideways on a narrow screen.
+diagram was drawn for. That way the diagram sits inside the site with its navigation and
+search, and the page body still never scrolls sideways on a narrow screen.
 
 The standalone file is staged beside each page and linked from it, because a full-bleed ER
 diagram is easier to read at its own size. Links from prose are rewritten to the page rather
@@ -251,7 +253,7 @@ Read the Docs runs a pinned PHAR where a developer runs the container, both read
 
 The build script therefore picks a runtime rather than requiring one: the container when a
 container runtime is present, the PHAR when `php` is, and neither when a contributor has
-only MkDocs — in which case the site still builds with the API reference section absent
+only MkDocs. In that case the site still builds with the API reference section absent
 rather than the build failing.
 
 **Both are pinned to phpDocumentor 3.10.0**, released 2026-05-13, checked 2026-09-07:
@@ -369,9 +371,9 @@ cost of emptying the directories those files exist to orient a reader inside.
 
 **Publish the Manual first and add the Development section later.** It front-loads the half
 with no existing material. Rejected by open question 6's answer, and for the reason that
-answer implies: the Development section is assembly and ships within the build's own effort,
-while the Manual's part 3 covers 81 undocumented pages, so ordering it first would hold the
-whole site behind the slowest part of it.
+answer implies. The Development section is assembly and ships within the build's own
+effort, while the Manual's part 3 covers 81 undocumented pages, so ordering it first would
+hold the whole site behind the slowest part of it.
 
 ## Dependencies
 
@@ -405,7 +407,7 @@ whole site behind the slowest part of it.
 
    The plan above is reconciled to the second response, and the boundary it draws is recorded
    as [ADR-0020](../../adr/0020-documentation-publication-boundary.md), because publishing the
-   ADRs constrains every ADR written afterwards. Questions 3 and 5 are affected; see below.
+   ADRs constrains every ADR written afterwards. Questions 3 and 5 are affected.
 
 2. **Are advertisements acceptable on the site?** Read the Docs Community is free and
    permanently public but advertisement-supported, and nothing published here is private, so
@@ -455,9 +457,13 @@ whole site behind the slowest part of it.
 
    Recorded as [ADR-0020](../../adr/0020-documentation-publication-boundary.md)'s answered
    question 1 and implemented in the design above. Two things it does not settle stay with
-   that record: whether private members remain in the output, since `phpdoc.dist.xml`
-   justifies including them on the grounds that it is "not a published library API" (its
-   question 2), and where a build with a container runtime actually runs (its question 4).
+   that record:
+
+   - Whether private members remain in the output, since `phpdoc.dist.xml` justifies
+     including them on the grounds that it is "not a published library API" (its
+     question 2).
+   - Where a build with a container runtime actually runs (its question 4).
+
    The second determines whether this site stays on Read the Docs.
 
 ## Verification
@@ -596,6 +602,7 @@ the first attempt put them on `:root` and the header stayed indigo.
 
 **The diagrams were linked, not shown.** The design copied the self-contained HTML through
 and linked it, which put a reader on a bare page with no navigation and no way back.
+
 `stage.py` now lifts the `<svg>` out of each and writes a Markdown page around it, in a
 container that scrolls at the width the diagram was drawn for. The standalone file stays
 beside each page and is linked from it, since a full-bleed ER diagram is easier to read at
@@ -616,8 +623,9 @@ that one of those two was not actually met, for a mechanical reason nobody had t
 build demonstrate the ADR-to-plan links resolving to the repository "rather than 404ing",
 and that "a build that leaves them broken fails this gate". `mkdocs build --strict` cannot
 do that: `stage.py` rewrites every link into an unpublished document to an absolute
-`https://github.com/…` URL, and strict mode does not resolve absolute URLs. Demonstrated
-rather than reasoned about — pointing ADR-0020's own **Referenced by** line at
+`https://github.com/…` URL, and strict mode does not resolve absolute URLs.
+
+Demonstrated rather than reasoned about — pointing ADR-0020's own **Referenced by** line at
 `../plans/99-does-not-exist.md` produced a clean strict build, exit 0 and no warnings, with
 the 404 sitting in the staged page. The link-count comparison verification check 3 asks for
 would not catch it either: the rewrite fires, so the counts match.
@@ -669,20 +677,22 @@ accepting pull request, not here.
 **Prerequisite 4, inspected 2026-09-14 against this change's build — 46 pages.** The gate is
 that no page is incomprehensible without a plan, the rewritten links being citations a
 reader may follow rather than reading the section depends on. No page failed that. What the
-inspection did find is a class of reference the first delivery did not consider: the records
+inspection did find is a class of reference the first delivery did not consider. The records
 cite working documents by the labels those documents number their contents with — wave 3b,
 piece 2, Q6, verification check 8, C10, S14 — and every one of those labels is defined only
 in a document the boundary does not publish.
 
-Most are glossed where they are used, which is why no page fails: ADR-0008's plan 10 table
+Most are glossed where they are used, which is why no page fails. ADR-0008's plan 10 table
 names what each question was about ("Q3, where the SQLite `flock` lock file lives", "Q7's
 `dialect` column"), and ADR-0007 says what S12 called for in the same sentence that cites
-it. **"Wave N" is the exception: it appears across eight published pages and is nowhere
+it.
+
+**"Wave N" is the exception: it appears across eight published pages and is nowhere
 glossed**, so a reader meeting "it is outside wave 3b" cannot tell whether that is a past
 stage or a future one. A weaker instance is ADR-0012's "19 piece 2's funnel", where the
 paragraph's claim about redaction still reads but the term does not.
 
-The fix stays inside the boundary rather than publishing the plans index: the Development
+The fix stays inside the boundary rather than publishing the plans index. The Development
 overview page gains a short table defining wave N, piece N, question N, verification check
 N, the plan 15 C-numbers and the sweep's S-numbers, each pointing at the unpublished
 document it lives in. That is one page of new writing against 224 citations, and it is what
