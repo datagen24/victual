@@ -19,7 +19,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | File | What it is |
 |---|---|
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
-| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. Applied to kind on 2026-09-19 (see below). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
+| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. Applied to kind on 2026-09-19 (see ["What this deployment does not yet do"](#what-this-deployment-does-not-yet-do)). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
@@ -28,10 +28,10 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |
 | [`compose/label-workers.yml`](compose/label-workers.yml) | The same two workloads as profiled Compose services, for `docker compose run --rm` on a systemd timer |
 
-The pod manifest is a Kubernetes object rather than
-a compose file on purpose: `podman kube play` gives the two serving containers a shared
-network namespace exactly as Kubernetes does, so `127.0.0.1:9000` means the same thing on
-a laptop and in the cluster, and there is one manifest to keep true instead of two.
+The pod manifest is a Kubernetes object rather than a compose file on purpose.
+`podman kube play` gives the two serving containers a shared network namespace exactly as
+Kubernetes does, so `127.0.0.1:9000` means the same thing on a laptop and in the cluster,
+and there is one manifest to keep true instead of two.
 
 ## The label workloads: one pair, three deployment methods
 
@@ -45,11 +45,14 @@ files** because the three targets do not offer the same kinds:
 | Docker Compose | [`compose/label-workers.yml`](compose/label-workers.yml) | a profiled service | a systemd timer running `docker compose run --rm` |
 
 Each file's header carries the timer unit for its own method. Two properties are constant
-across all three and are the reason the split is safe: the worker is **run to completion**
-on every target — its claim loop breaks on an empty queue and exits 0, never mid-attempt,
-so it exits exactly when it holds no lease — and **exactly one worker serves a printer at a
-time**, which is `concurrencyPolicy: Forbid` on Kubernetes and `Type=oneshot` on the other
-two. Losing the second property is the ownership ambiguity
+across all three and are the reason the split is safe:
+
+- The worker is **run to completion** on every target: its claim loop breaks on an empty
+  queue and exits 0, never mid-attempt, so it exits exactly when it holds no lease.
+- **Exactly one worker serves a printer at a time**, which is `concurrencyPolicy: Forbid`
+  on Kubernetes and `Type=oneshot` on the other two.
+
+Losing the second property is the ownership ambiguity
 [ADR-0019](../docs/adr/0019-label-printers-are-master-data.md) decision item 3 removes, so
 if you drive either timer from cron instead, wrap it in `flock`.
 
@@ -58,20 +61,23 @@ is what keeps three files from becoming three workloads. It compares image, argu
 path, uid, read-only root, dropped capabilities, memory ceiling and tmpfs size across all
 three, and allows exactly two differences: the API base, and `imagePullPolicy: Never`.
 
-**Why podman is not simply handed the Kubernetes file.** Podman plays "Pods, Deployments,
-DaemonSets, Jobs, and PersistentVolumeClaims" (`podman kube play --help`, podman 6.0.2) —
-not CronJob — and it **skips** an unsupported kind in a multi-document file instead of
-refusing it. Measured 2026-09-20 on podman 6.0.2, macOS, against the CronJob version of the
-file when it still lived in `podman/`: the Secret was created, both CronJobs were dropped,
-and the command **exited 0**, leaving no renderer, no worker and a success code. The
-renderer had been a CronJob since it was written, so that file had never worked; it
-survived because nothing here had ever run the command.
+**Why podman does not receive the Kubernetes file unchanged.** Podman plays "Pods,
+Deployments, DaemonSets, Jobs, and PersistentVolumeClaims" (`podman kube play --help`,
+podman 6.0.2) — not CronJob — and it **skips** an unsupported kind in a multi-document
+file instead of refusing it.
 
-**Why Compose is not simply given `restart: always`.** A binary that exits when its queue
+Measured 2026-09-20 on podman 6.0.2, macOS, against the CronJob version of the file when
+it still lived in `podman/`: the Secret was created, both CronJobs were dropped, and the
+command **exited 0**, leaving no renderer, no worker and a success code. The renderer had
+been a CronJob since it was written, so that file had never worked; it survived because
+nothing here had ever run the command.
+
+**Why Compose does not use `restart: always`.** A binary that exits when its queue
 drains, under a restart policy, is a tight restart loop with a
 `POST /api/labels/register` every cycle — the same defect that made deploying the worker as
 a `replicas: 1` Deployment wrong. Both Compose services therefore sit behind a `manual`
 profile so `docker compose up` does not start them.
+
 [ADR-0026](../docs/adr/0026-a-wake-signal-may-announce-label-work.md) decision 6 calls this
 the "resident" topology and would give the binaries a `--wait` mode that makes the host
 timer unnecessary; the maintainer intends to accept that record, but **no part of it is
@@ -152,11 +158,12 @@ no `admin`/`admin` any more: the migrate container seeds the `admin` account wit
 `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, read once, on the run that creates the database. It sits in
 `victual-db-migrate` and not in `victual-db-app` because the migrate container is the only
 one that seeds — the serving containers never need it, the same split as the database
-credentials. Leave the key out and the first migration generates a password instead, prints
-it once to the migrate container's log, and the account has to change it at first login;
-until it does, the API answers `403` to everything except the change itself. For a
-deployment that is the better default, since nothing then has to hold the password
-afterwards:
+credentials.
+
+Leave the key out and the first migration generates a password instead, prints it once to
+the migrate container's log, and the account has to change it at first login; until it
+does, the API answers `403` to everything except the change itself. For a deployment that
+is the better default, since nothing then has to hold the password afterwards:
 
 ```sh
 kubectl logs deploy/victual -c migrate --all-pods=true | grep 'generated password'   # Kubernetes 1.30+
@@ -173,8 +180,7 @@ touch an account that already exists. [The Manual's first-login
 section](../docs/manual/getting-started.md#the-first-login) has the rest.
 
 **The ConfigMap and both Secrets must be in the stream, and each Secret must be a
-Kubernetes `Secret`.** This is worth stating plainly because two plausible-looking
-alternatives both fail:
+Kubernetes `Secret`.** Two plausible-looking alternatives both fail:
 
 - `podman kube play --secret …` takes a *podman* secret (`podman secret create`), which
   is not the same object. Passing one fails with
@@ -244,7 +250,7 @@ The minimum for a PostgreSQL deployment:
 |---|---|
 | `VICTUAL_DB_DRIVER=pgsql` | The only value there is, since ADR-0008's retirement; set explicitly so the pod's configuration says what it runs on rather than relying on a default |
 | `VICTUAL_DB_HOST`, `_PORT`, `_NAME` | Connection, from the ConfigMap |
-| `VICTUAL_DB_USER`, `VICTUAL_DB_PASSWORD` | From a Secret, **one Secret per workload** — see below. Never in the ConfigMap |
+| `VICTUAL_DB_USER`, `VICTUAL_DB_PASSWORD` | From a Secret, **one Secret per workload** — see ["Two database roles"](#two-database-roles). Never in the ConfigMap |
 | `VICTUAL_BASE_URL` | What the ingress publishes |
 | `VICTUAL_MODE=production` | Any other value disables authentication and generates demo data |
 
@@ -264,19 +270,21 @@ the image's store path) are set by the image and should be left alone.
 | — | the `web` container | Nothing; it holds no database variable at all |
 
 Run the script before the first migration or after it: it is repeatable. Three consequences
-worth knowing before they surprise anyone: **`VICTUAL_MIGRATE_ON_ROOT_REQUEST` cannot be turned
-on** in a pod running as `victual_app`, since migrating in a request needs DDL; a database
-already populated by another role has to be handed to `victual_migrate` first (`REASSIGN OWNED
-BY <old> TO victual_migrate`) or its tables stay owned by someone the migrations cannot alter;
-and `bin/victual-db-import`, which `TRUNCATE`s, belongs with the migrate credential, never the
-app's.
+follow:
+
+- **`VICTUAL_MIGRATE_ON_ROOT_REQUEST` cannot be turned on** in a pod running as
+  `victual_app`, since migrating in a request needs DDL.
+- A database already populated by another role has to be handed to `victual_migrate`
+  first (`REASSIGN OWNED BY <old> TO victual_migrate`) or its tables stay owned by someone
+  the migrations cannot alter.
+- `bin/victual-db-import`, which `TRUNCATE`s, belongs with the migrate credential, never
+  the app's.
 
 The application had to change for this to work. `PostgresDialect::OnConnected()` used to run
 `CREATE TABLE IF NOT EXISTS` on every connection, and PostgreSQL checks `CREATE` on the schema
 before it checks whether the table exists, so a role with no `CREATE` could not connect.
 
-**Three security-context settings are load-bearing**, and each has a failure that does
-not say what it is:
+Three security-context settings each have a failure that does not say what it is:
 
 - `runAsNonRoot: true` with `runAsUser: 65532` — the images already declare this in
   their OCI config, but a cluster policy that reads the manifest rather than the image
@@ -300,13 +308,16 @@ and worth knowing before wondering where a truncated request went.
 
 **Measured, 2026-09-18, on podman rather than a cluster** (plan 20's Executed section has the
 method): with a request held inside PostgreSQL, `SIGQUIT` to nginx let the response finish and
-`SIGTERM` dropped the connection; php-fpm answered **both** by exiting within about a second and
+`SIGTERM` dropped the connection. php-fpm answered **both** by exiting within about a second and
 resetting the request, so nginx returned 502. That contradicts the sentence above for the app
 tier — "SIGQUIT is php-fpm's graceful stop" is what the documentation says and not what this
 deployment showed for a request blocked on the database. A request not blocked on the database
-was not measured. `lifecycle.stopSignal` is alpha (Kubernetes 1.33, feature gate
-`ContainerStopSignals`) and needs `spec.os.name`; on a cluster without the gate the API server
-drops the field. **Observed 2026-09-19 on kind v1.37 with default gates:** the applied
+was not measured.
+
+`lifecycle.stopSignal` is alpha (Kubernetes 1.33, feature gate `ContainerStopSignals`) and
+needs `spec.os.name`; on a cluster without the gate the API server drops the field.
+
+**Observed 2026-09-19 on kind v1.37 with default gates:** the applied
 Deployment came back with no `lifecycle` on either container, so SIGTERM is what this pod
 gets on a stock cluster. To get SIGQUIT, enable the gate on the API server and the kubelet.
 The manifest does not assume either way.
@@ -342,7 +353,7 @@ Stated plainly because the gap is the point of tracking it:
   kinds and created both pods, and then both containers failed with
   `starting container …: workdir "/app" does not exist on container`.
   [`nix/images/lib.nix`](../nix/images/lib.nix)'s `commonConfig` set `WorkingDir = "/app"`
-  for every image while `scaffold` creates only `/tmp`; `app.nix` and `migrate.nix` set
+  for every image while `scaffold` creates only `/tmp`. `app.nix` and `migrate.nix` set
   their own `appRoot` and `web.nix` overrides it, so the default applied to exactly the
   three images built from a single binary on no base image — the two label images and
   **the MCP sidecar** — none of which contain an `/app`. It was invisible on Kubernetes,
