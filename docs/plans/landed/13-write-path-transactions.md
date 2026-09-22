@@ -3,6 +3,7 @@
 **Goal:** No stock operation can leave the ledger half-written. Wrap the four unwrapped
 multi-row entrypoints in transactions, and give `DatabaseImporter` the same guarantee.
 **Depends on:** nothing.
+
 **Status:** **landed in the codebase** (2026-08-29). All seven entrypoints and the
 importer are wrapped; see [Executed](#executed) below for what landed, and for the two
 places the plan's own scope grew in the doing. Everything from here down is the plan as
@@ -159,9 +160,9 @@ all. Nothing on the wire changes.
 **Client impact: none, and it is the good kind of none.** A client that retried a failed
 consume used to retry against a half-changed database and could double-count; now it
 retries against the state it started from. Behaviour a client relied on cannot have been
-relied on correctly, so there is nothing to warn about — but the *label printer* is a
-client of a sort, and it is the one thing that changes: a failed transfer no longer prints
-a label for a move that did not happen.
+relied on correctly, so there is nothing to warn about. The *label printer* is a client of
+a sort, though, and it is the one thing that changes: a failed transfer no longer prints a
+label for a move that did not happen.
 
 ## Verification
 
@@ -217,12 +218,12 @@ a *failed* operation leaves nothing behind.
 ## Sequencing
 
 **Before [02 MCP](../02-mcp-endpoint.md), and specifically before 02's write tools.** This
-is the review's own ordering and it is right: read-only MCP tools do not need it, but the
+is the review's own ordering and it is right: read-only MCP tools do not need it. But the
 moment an assistant can call `consume_product`, "a failure mid-loop leaves a half-consumed
 booking" stops being a theoretical risk and becomes something that will happen unattended,
 with nobody watching the screen to notice the stock went strange. If 02 ships read-only
-first (as both the plan and 02's Q2 response recommend), this can
-land during that window rather than blocking it.
+first (as both the plan and 02's Q2 response recommend), this can land during that window
+rather than blocking it.
 
 **Independent of the other hardening plans.** It touches `services/StockService.php`,
 `services/DatabaseService.php` and `services/Database/DatabaseImporter.php`.
@@ -343,13 +344,14 @@ then the entrypoints that use it, then the importer.
 
   **Eight since 2026-09-02**: `EditStockEntry` was wrapped by
   [18](../18-mqtt-state-publication.md)'s review, which found it writing a correlated pair of
-  `stock_log` rows and mutating the stock row between them with no transaction at all. That
-  it was missed here is the interesting part - "every stock write path is transactional"
-  was said above about the seven *booking* entrypoints, and an edit that rewrites a booking
-  pair is one of those by any reading. 18 forced the question by adding a ninth write to
-  the method that has to commit with the rest or not at all; the fix is 13's shape applied
-  to an eighth entrypoint, recorded here so this list stays the authority on which paths
-  are transactional.
+  `stock_log` rows and mutating the stock row between them with no transaction at all.
+
+  The omission matters because "every stock write path is transactional" was said above
+  about the seven *booking* entrypoints, and an edit that rewrites a booking pair is one
+  of those by any reading. 18 forced the question by adding a ninth write to the method
+  that has to commit with the rest or not at all. The fix is 13's shape applied to an
+  eighth entrypoint, recorded here so this list stays the authority on which paths are
+  transactional.
 - **`96f9ec99` — the importer.** The transaction covers the truncate, the trigger
   toggling and the copy, which it has to: the truncate happens before anything can go
   wrong, and a failure between disabling and re-enabling triggers leaves a target that
@@ -363,11 +365,12 @@ Verified as the Verification section asks: a probe that injects a real failure m
 and compares the full `stock` and `stock_log` ledger before and after. On unmodified code
 all five cases report DIRTY, every one genuinely throwing; with the change all five are
 CLEAN and the ledger is byte-identical after a failed operation. That baseline is the part
-that makes the result mean anything. Webhook behaviour was measured against a request-counting
-target rather than reasoned about: a successful three-unit labelled purchase fires three
-calls as before, and the same purchase failing on its second unit now fires zero where it
-previously printed a label for a unit that was then rolled back. The differential suite
-passes on both engines.
+that makes the result mean anything.
+
+Webhook behaviour was measured against a request-counting target rather than reasoned
+about. A successful three-unit labelled purchase fires three calls as before, and the same
+purchase failing on its second unit now fires zero, where it previously printed a label for
+a unit that was then rolled back. The differential suite passes on both engines.
 
 ## Effort
 

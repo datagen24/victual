@@ -2,39 +2,47 @@
 
 **Goal:** Let a household say "adults see what things cost, children see chores and
 recipes, one person administers" as three named roles rather than thirty checkboxes per
-user — and make "see what things cost" a permission the server actually enforces, on every
+user. Make "see what things cost" a permission the server actually enforces, on every
 channel, rather than a column the web UI hides.
 
 **Depends on:** wave 2's **S5/S6** (never grant what the caller lacks) because role
 assignment is a grant — this plan inherits that rule rather than defining it, which is
-why S5 and S6 are not parked here. **Piece 2 additionally** depends on
-[11](11-api-error-handling.md) for the single error helper (a redacted field and a
-refused call must be distinguishable and both must be spec'd) and on
-[14](landed/14-contract-and-regression-scaffolding.md) piece 2 for the response-contract
-snapshot that proves redaction; piece 1 needs neither, and verifies its views against
-14 **piece 1**, which landed in wave 0. Feeds [04](04-seed-datasets.md) (the four
-roles are a seed) and constrains [02](02-mcp-endpoint.md) and
+why S5 and S6 are not parked here.
+
+**Piece 2 additionally** depends on [11](11-api-error-handling.md) for the single error
+helper (a redacted field and a refused call must be distinguishable and both must be
+spec'd) and on [14](landed/14-contract-and-regression-scaffolding.md) piece 2 for the
+response-contract snapshot that proves redaction. Piece 1 needs neither; it verifies its
+views against 14 **piece 1**, which landed in wave 0. Feeds [04](04-seed-datasets.md)
+(the four roles are a seed) and constrains [02](02-mcp-endpoint.md) and
 [18](18-mqtt-state-publication.md) (both are channels that carry prices — see Q4 and Q5).
+
 **Status:** piece 1 implemented in wave 3a, 2026-09-05 (see Executed); piece 2 landed
 2026-09-15 as migration 0281, [issue 84](https://github.com/datagen24/victual/issues/84)
 closed, and its follow-ups ([issue 176](https://github.com/datagen24/victual/issues/176) —
 the importer cascade, `/stock/bookings/{id}`, `product_barcodes.last_price` and four
-flag-only pages) the same day as migration 0282. Both pieces have Executed sections. Originally draft for review and **on the roadmap as of 2026-08-30** — the README's
+flag-only pages) the same day as migration 0282. Both pieces have Executed sections.
+Originally draft for review and **on the roadmap as of 2026-08-30** — the README's
 Status table and its waves both carry it, rather than the tail bullet that promised it a
-number. **Question 8 answered 2026-09-04: (a), gate reads in piece 1**, which makes
-piece 1 a model change and gives it wave 3a to itself, and **split across two waves** —
-piece 1 in wave 3a, alone,
-piece 2 in wave 5 alongside 14 piece 2, whose snapshot harness it extends. Piece 1
-is in wave 3a rather than later because it grows the API read surface, which the roadmap
-requires to happen *before* 14 piece 2 freezes the contract; piece 2 is in wave 5 because
-it changes existing response shapes and cannot precede the harness that proves it. Both
-land before any client work in [17](17-ecosystem-clients.md) resumes, because the Swift
-client renders price fields and needs to know they may be absent.
+number.
+
+**Question 8 answered 2026-09-04: (a), gate reads in piece 1**, which makes piece 1 a
+model change and gives it wave 3a to itself. It is also **split across two waves** —
+piece 1 in wave 3a, alone, piece 2 in wave 5 alongside 14 piece 2, whose snapshot
+harness it extends.
+
+Piece 1 is in wave 3a rather than later because it grows the API read surface, which the
+roadmap requires to happen *before* 14 piece 2 freezes the contract. Piece 2 is in wave 5
+because it changes existing response shapes and cannot precede the harness that proves
+it. Both land before any client work in [17](17-ecosystem-clients.md) resumes, because
+the Swift client renders price fields and needs to know they may be absent.
+
 One of the five permission findings that were parked against "an RBAC plan in draft on a
 branch" stays here — the permissions page's `ADMIN`-versus-`USERS_READ` mismatch from
-[14](landed/14-contract-and-regression-scaffolding.md)'s section 2b, carried as question 9. The
-other four (**S5**, **S6**, **S27** and the `userpictures` residual) go back to wave 2;
-see the roadmap's tail for why parking them here inverted this plan's own Depends-on line.
+[14](landed/14-contract-and-regression-scaffolding.md)'s section 2b, carried as question
+9. The other four (**S5**, **S6**, **S27** and the `userpictures` residual) go back to
+wave 2; see the roadmap's tail for why parking them here inverted this plan's own
+Depends-on line.
 
 ## Why this is two plans wearing one number
 
@@ -53,7 +61,9 @@ at all, and `routes.php:268` adds only CORS and JSON middleware to the group. Th
 surface is the sole exception and the only gated read anywhere:
 `UsersController.php:23,93` and `UsersApiController::GetUsers` (`:174`) require
 `USERS_READ`, and `::ListPermissions` (`:210`) requires `ADMIN` — which is the mismatch
-question 9 is about. Everywhere else, *every authenticated user* already sees `stock.price`, `stock_log.price`,
+question 9 is about.
+
+Everywhere else, *every authenticated user* already sees `stock.price`, `stock_log.price`,
 `products_average_price`, `product_price_history`, `products_last_purchased.price`, a
 product's `last_price` and `avg_price` in `/stock/products/{id}`, and every recipe's
 `costs` — holding nothing. The action permissions gate writes; reads are open to anyone
@@ -81,7 +91,8 @@ direct grants; `user_permissions_resolved` is the closure and is what
 `User::HasPermission()` queries; `uihelper_user_permissions` drives the checkbox tree at
 `/user/{id}/permissions`. The API mirrors it: `GET/POST/PUT /users/{id}/permissions`.
 Controllers call `User::CheckPermission($request, User::PERMISSION_*)` and the exception
-becomes a 403 (or, on the web side, an error page) — but only on write paths; see above.
+becomes a 403 (or, on the web side, an error page) — but only on write paths; see
+[Why this is two plans wearing one number](#why-this-is-two-plans-wearing-one-number).
 `permission_hierarchy` is itself an exposed read-only entity, and since the generic read
 is ungated, the tree is world-readable to any authenticated user.
 
@@ -90,7 +101,9 @@ permission resolves to every *descendant* name, never to an ancestor: `permissio
 seeds on each id and walks to its children (`migrations/0110.sql:98-109`). Two
 consequences this plan has to design around. First, granting a parent grants every leaf
 under it, so a role cannot be built by naming a parent and excluding some of its children
-— there is no deny. Second, `USERS` → `USERS_CREATE` → `USERS_EDIT` → `USERS_READ` is a
+— there is no deny.
+
+Second, `USERS` → `USERS_CREATE` → `USERS_EDIT` → `USERS_READ` is a
 chain rather than a fan (`migrations/0110.sql:24-43`), so **`USERS_CREATE` alone already
 resolves to `USERS_EDIT` and `USERS_READ`**: an account that may create users may today
 rewrite any admin's password. That is sweep S6 as a structural fact rather than a missing
@@ -165,7 +178,9 @@ CREATE TABLE user_roles (
 re-shippable, which cannot both be true of one column.** [04](04-seed-datasets.md)'s format
 references entities by name; a household that renames "Child" to "Kids" would leave a later
 seed import unable to find the row it means, so it either creates a second Child role or
-overwrites the rename. `code` is what the seed keys on, what a migration matches when it
+overwrites the rename.
+
+`code` is what the seed keys on, what a migration matches when it
 adds a permission to a built-in role, and what an API caller can rely on; `name` is what
 the UI shows and the household may change. `code` is immutable for `builtin` rows and
 assigned once for custom ones, and `PUT /roles/{id}` never accepts it.
@@ -187,16 +202,21 @@ WHERE pt.id IN (
 `uihelper_user_permissions` gains a `via_roles` column so the checkbox tree can show a
 grant as inherited and read-only rather than silently ticked. It is the **comma-separated
 list of the `code`s of every role granting that permission to that user, sorted
-ascending**, or NULL for a permission held only directly. "The first role that grants it"
-was the first draft and is wrong twice over: it is not deterministic — SQLite and
-PostgreSQL are free to return the rows of an unordered join in different orders, which
-would make `difftest.php` fail on a correct implementation — and it discards information
-the UI wants, since a permission inherited from two roles survives the removal of either
-one. Sorting on the immutable `code` rather than the editable `name` keeps the column
-stable across a rename, and the UI resolves codes to display names for the tooltip. This migration is PostgreSQL-only — it lands after the
-[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) retirement sitting (README, wave
-2.5) — so `SMALLINT` and an identity column, no `AUTOINCREMENT` twin; the `permission_tree`
-recursive CTE already runs there, so the closure needs no new SQL of its own.
+ascending**, or NULL for a permission held only directly.
+
+"The first role that grants it" was the first draft, and it is wrong twice over. It is
+not deterministic — SQLite and PostgreSQL are free to return the rows of an unordered
+join in different orders, which would make `difftest.php` fail on a correct
+implementation. It also discards information the UI wants, since a permission inherited
+from two roles survives the removal of either one. Sorting on the immutable `code`
+rather than the editable `name` keeps the column stable across a rename, and the UI
+resolves codes to display names for the tooltip.
+
+This migration is PostgreSQL-only — it lands after the
+[ADR-0008](../adr/0008-postgresql-only-runtime-engine.md) retirement sitting (README,
+wave 2.5) — so `SMALLINT` and an identity column, no `AUTOINCREMENT` twin; the
+`permission_tree` recursive CTE already runs there, so the closure needs no new SQL of
+its own.
 
 Direct grants in `user_permissions` stay. A user's effective permissions are the union of
 direct and role grants; there is no "deny". This keeps the existing API and the existing
@@ -228,8 +248,8 @@ Dropping the parents costs the Child nothing today only because reads are ungate
 Q8, which is where that debt is recorded rather than being silently relied on.
 
 `VICTUAL_DEFAULT_PERMISSIONS` gains a sibling `VICTUAL_DEFAULT_ROLES` (default `[]`).
-With wave 2's S5 in place a new user starts with nothing unless the creator assigns a
-role, and the creator can only assign a role whose grants are a subset of their own
+With wave 2's S5 in place, a new user starts with nothing unless the creator assigns a
+role. The creator can only assign a role whose grants are a subset of their own
 effective permissions — the same rule S5/S6 impose on direct grants, applied to the
 bundle. `Admin` therefore cannot be handed out by an Adult.
 
@@ -259,7 +279,9 @@ the caller's effective permissions be a superset of the *new* set, not just of t
 The users list gains a Roles column. `/user/{id}/permissions` grows a roles multi-select
 above the existing tree; inherited ticks render disabled with the role name as a tooltip.
 A new `/roles` and `/role/{id}` pair reuses the same tree component with the checkbox
-tree bound to `role_permissions` instead. Under [12](landed/12-frontend-shared-core.md) that is
+tree bound to `role_permissions` instead.
+
+Under [12](landed/12-frontend-shared-core.md) that is
 one `Victual.EntityList` call for `/roles` and **two mixin adopters, not a factory form**
 — `/role/{id}` is the same partial-clone shape 12's Q5 response already buckets
 `userpermissions.js` into, and this plan modifies `userpermissions.js` itself. Nor is
@@ -284,10 +306,12 @@ as before** until an administrator removes the leaf or builds a role without it.
 That is the migration-safety property this plan wants, and **it does not hold as stated**,
 because reads are ungated: a user holding only `CHORES`, or holding nothing at all, reads
 every price today and holds no `STOCK` grant to inherit the new leaf from. Gating a field
-that was never gated necessarily takes it from someone. The honest form of the property is
-therefore narrower — *no user who holds `STOCK` or `ADMIN` loses a field on upgrade* — and
-the residue is a deliberate change of behaviour for everyone else, which is the point of
-the plan rather than an accident of it. Q8 asks whether the two halves land together.
+that was never gated necessarily takes it from someone.
+
+The honest form of the property is therefore narrower — *no user who holds `STOCK` or
+`ADMIN` loses a field on upgrade* — and the residue is a deliberate change of behaviour
+for everyone else: the plan intends that narrowing rather than causing it by accident.
+Q8 asks whether the two halves land together.
 
 `RECIPES_VIEW` is the inverse case: `RECIPES` today means read+write, and the plan keeps
 that meaning (so existing grants keep working) while making `RECIPES_VIEW` the narrower
@@ -322,23 +346,30 @@ const FIELD_POLICY = [
 
 Four of those rows were missing from the first draft — `recipes_resolved`,
 `uihelper_shopping_list`, `uihelper_stock_current_overview` and `products_price_history` —
-and each is a real channel rather than belt-and-braces. `recipes_resolved` is returned wholesale by `GET /recipes/fulfillment`
+and each is a real channel rather than belt-and-braces.
+
+`recipes_resolved` is returned wholesale by `GET /recipes/fulfillment`
 through `FilteredApiResponse` (`controllers/Api/RecipesApiController.php:73`), so it is
 both unredacted *and* filterable today; it also carries `prices_incomplete`, which is
 `MIN(costs) = 0` (`migrations/0247.sql:15`) and therefore survives the redaction of
 `costs` while still answering a question about them. It leaks one bit — some ingredient
 has no recorded cost — rather than a value, which is enough to make the point: a policy
 has to enumerate derived columns, not columns named `price`.
+
 `uihelper_shopping_list` selects `last_price_unit`, `last_price_total` and `price`
 (`migrations/0251.sql:7-9`) and is an exposed entity, so it is a live ungated price
 channel today rather than a future one.
+
 `uihelper_stock_current_overview` (`migrations/0252.sql:38-39` — the highest-numbered
-migration defining it; 0219 is superseded) is what the Blade stock overview renders, what [02](02-mcp-endpoint.md)'s `stock_overview` tool reads and what
-[18](18-mqtt-state-publication.md) would publish as attributes; it is not an API path
-today, but [14](landed/14-contract-and-regression-scaffolding.md)'s section 2b requires it to
-become one before piece 2 freezes the contract, so it will be. And
-`products_price_history` is the entity 14's 2b parked as "a deliberate widening pending a
-decision" — this plan is that decision, and the leaf is what makes exposing it safe.
+migration defining it; 0219 is superseded) is what the Blade stock overview renders,
+what [02](02-mcp-endpoint.md)'s `stock_overview` tool reads, and what
+[18](18-mqtt-state-publication.md) would publish as attributes. It is not an API path
+today, but [14](landed/14-contract-and-regression-scaffolding.md)'s section 2b requires
+it to become one before piece 2 freezes the contract, so it will be.
+
+And `products_price_history` is the entity 14's 2b parked as "a deliberate widening
+pending a decision" — this plan is that decision, and the leaf is what makes exposing it
+safe.
 
 Redaction is applied where the entity is still known: **`FilteredApiResponse()`**
 (`BaseApiController::FilteredApiResponse`), which receives a LessQL `Result` and can
@@ -362,9 +393,9 @@ the whole endpoint is the field, so it gets
 The filter hole that verification 5 names closes at one call site rather than in a new
 mechanism. `BaseApiController::AssertFieldExists()`
 (`controllers/Api/BaseApiController.php:180`) already rejects a field the entity does not
-have with 400, and is reached from both the `query[]` and the `order` path with the
-entity's column types in hand; it gains the caller's policy alongside the column list, and
-a filter on a redacted field is refused with 11's `EInvalidApiQuery`. The message
+have with 400. It is reached from both the `query[]` and the `order` path with the
+entity's column types in hand, so it gains the caller's policy alongside the column list.
+A filter on a redacted field is refused with 11's `EInvalidApiQuery`. The message
 distinguishes it from an unknown field and the status code deliberately does not, since a
 distinct code would confirm the field exists.
 
@@ -393,14 +424,15 @@ this repository can return that matches the sensitive set must be classified**, 
 is redacted or deliberately not. Concretely, walk the OpenAPI schemas and the recorded
 snapshot bodies for field names matching the price/cost vocabulary — `price`, `cost`,
 `value`, `amount_paid` and their prefixed and suffixed forms — and fail on any that carries
-neither `x-visibility` nor an explicit `x-visibility: none` with a one-line reason. The
-snapshot bodies are needed alongside the schemas because the hand-built responses
+neither `x-visibility` nor an explicit `x-visibility: none` with a one-line reason.
+
+The snapshot bodies are needed alongside the schemas because the hand-built responses
 (`/stock/products/{id}`, the MCP tool payloads 02 describes) are not all schema-backed. The
 allow-list is the deliverable: `qu_factor_price_to_stock` is a unit factor and is annotated
 `none`, and every future exception has to be written down rather than merely absent. This
 lives with the harness in 14 piece 2, alongside the double snapshot.
 
-Both legs are load-bearing, and it is worth saying why since the assertion is described as
+Both legs are necessary, and it is worth saying why since the assertion is described as
 the proof. A field that is absent *for everyone* — dropped by a bug, renamed, never
 populated — satisfies the restricted leg exactly as a correctly redacted one does. Only
 the Admin leg distinguishes them, so the restricted snapshot proves redaction only in
@@ -441,14 +473,15 @@ built.
 **One thing is named and not decided: the field policy has no path form.** `FIELD_POLICY`
 above is keyed `(entity → column)`, and a proposal's price is not a column — it is a key
 inside a payload that is partial by design. 0012's decision item 6 handles the *reader's*
-half of that (`proposed_fields` carries the key set as submitted and is never redacted, so a
-key missing from the payload means redacted and a key missing from both means unobserved),
-which is what makes redaction expressible on a partial object at all. What it does not
-decide is which side of this plan's funnel does the removing: a `proposals` row would need
-either a `FIELD_POLICY` entry that can name `payload.price`, or a rule that a reader without
-`STOCK_PRICES_VIEW` is refused priced proposal *kinds* wholesale. Q2's constant-versus-table
-question is the natural place for it, and it is cheaper to answer while the constant is
-still being written than after.
+half of that — `proposed_fields` carries the key set as submitted and is never redacted,
+so a key missing from the payload means redacted and a key missing from both means
+unobserved. That is what makes redaction expressible on a partial object at all.
+
+What it does not decide is which side of this plan's funnel does the removing: a
+`proposals` row would need either a `FIELD_POLICY` entry that can name `payload.price`,
+or a rule that a reader without `STOCK_PRICES_VIEW` is refused priced proposal *kinds*
+wholesale. Q2's constant-versus-table question is the natural place for it, and it is
+cheaper to answer while the constant is still being written than after.
 
 Note what this does **not** wait on. 0012's payload contract is settled against the two
 rules of this plan that are decided — redaction removes the key rather than nulling it, and
@@ -466,8 +499,9 @@ Piece 1's field is `via_roles` on every row of `GET /users/{id}/permissions`. Ca
 "unchanged shape" was this plan's own first draft and it is the mistake this section exists
 to catch: additive is not the same as invisible. A strict decoder that rejects unknown keys
 breaks on it exactly as a strict decoder breaks on a removed key in piece 2 — the same
-compatibility model, applied in the other direction — and neither tracked client is known
-to read this endpoint, which is what makes it affordable rather than what makes it absent.
+compatibility model, applied in the other direction. Neither tracked client is known to
+read this endpoint, which is what makes it affordable rather than what makes it absent.
+
 It goes in [14](landed/14-contract-and-regression-scaffolding.md)'s contract snapshot as an
 addition on a path piece 2 later removes fields from, so both directions are recorded on
 the same endpoint. Piece 2 removes `price`, `costs` and their
@@ -476,8 +510,8 @@ relatives from responses to users who lack `STOCK_PRICES_VIEW` — `stock.price`
 `products_last_purchased.price`, and `last_price`/`avg_price` on `/stock/products/{id}`.
 
 The Swift module [17](17-ecosystem-clients.md) commits to renders both unconditionally,
-which is why the roadmap sequences this before client work resumes: in Swift an absent key
-is a decode failure rather than a blank cell, so the first Child login from a phone would
+which is why the roadmap sequences this before client work resumes. In Swift an absent
+key is a decode failure rather than a blank cell, so the first Child login from a phone would
 break the whole screen rather than hide a number. A redacted field and a refused call must
 also be distinguishable — that is why this plan waits on [11](11-api-error-handling.md)
 rather than inventing a second error shape.
@@ -680,32 +714,38 @@ topic, and has no Response yet. See Q5.
    system — a field-level control sitting on top of an object-level control that does not
    exist, which is a strange shape to build and a stranger one to explain.
 
-   The honest options are: (a) gate reads in piece 1, which means a `*_VIEW` leaf for
-   stock, shopping list, chores and tasks — the same split Q1 debates for recipes, four
-   more times — and turns piece 1 from a bundling layer into a model change with real
-   upgrade risk; (b) gate reads in piece 2, where the redaction funnel already has to
-   inspect every response and can refuse the whole object as easily as a field; or
-   (c) declare read-gating out of scope *for roles* and say so in the plan, accepting that
-   roles restrict what a user can *do*, that prices restrict what they can *see*, and that
-   a domain needing its own read predicate owns it locally rather than waiting for a
-   general mechanism. Option (c) is coherent and is what the family actually asked for — it
-   is only unacceptable if left unsaid. This question is worth answering before
-   piece 1 is scheduled, because (a) changes piece 1's size and its wave.
+   The honest options are three. (a) Gate reads in piece 1, which means a `*_VIEW` leaf
+   for stock, shopping list, chores and tasks — the same split Q1 debates for recipes,
+   four more times — and turns piece 1 from a bundling layer into a model change with
+   real upgrade risk. (b) Gate reads in piece 2, where the redaction funnel already has
+   to inspect every response and can refuse the whole object as easily as a field.
+
+   (c) Declare read-gating out of scope *for roles* and say so in the plan. Doing so
+   accepts that roles restrict what a user can *do*, that prices restrict what they can
+   *see*, and that a domain needing its own read predicate owns it locally rather than
+   waiting for a general mechanism.
+
+   Option (c) is coherent and is what the family actually asked for — it is only
+   unacceptable if left unsaid. This question is worth answering before piece 1 is
+   scheduled, because (a) changes piece 1's size and its wave.
 
    **One read gate now exists outside this plan, decided 2026-09-04.**
    [22](22-medication-tracking.md) Q5 ships subject-scoped visibility for regimens and
-   administrations in `MedicationService`, rather than waiting for this plan — because
-   waiting would hold half of 22 behind several waves, and because the medication case is
-   **row filtering** (an invisible subject is absent) rather than field redaction, so it does
-   not touch the absent-versus-redacted contract that makes piece 2 hard. It is explicitly
-   narrow and explicitly a client of whatever this plan builds. Two things follow for this
-   question, and **neither answers it** — the Response below does, later the same day.
+   administrations in `MedicationService`, rather than waiting for this plan. Waiting
+   would hold half of 22 behind several waves, and the medication case is **row
+   filtering** (an invisible subject is absent) rather than field redaction, so it does
+   not touch the absent-versus-redacted contract that makes piece 2 hard. It is
+   explicitly narrow and explicitly a client of whatever this plan builds. Two things
+   follow for this question, and **neither answers it** — the Response below does, later
+   the same day.
 
-   Option (c) was reworded rather than left standing: as originally written it said only
-   prices restrict what a user can see, and that is now false, so it reads *read-gating out
-   of scope for roles*, with a domain that needs its own predicate owning it locally. The
-   substance of the option is unchanged and it is no more or less favoured than it was. And
-   option (a) gains a worked example of what a `*_VIEW` leaf costs when the domain is
+   Option (c) was reworded rather than left standing. As originally written it said only
+   prices restrict what a user can see, and that is now false, so it reads *read-gating
+   out of scope for roles*, with a domain that needs its own predicate owning it locally.
+   The substance of the option is unchanged and it is no more or less favoured than it
+   was.
+
+   And option (a) gains a worked example of what a `*_VIEW` leaf costs when the domain is
    row-shaped, which is much less than the general case: no wire-contract question, no
    redaction funnel. Whether that generalises to stock, which is not row-shaped in the same
    way, is precisely what this question still has to decide.
@@ -751,10 +791,10 @@ topic, and has no Response yet. See Q5.
    `USERS_EDIT`, reading roles behind `USERS_READ`, which the tree supports since
    `USERS_EDIT` resolves down to `USERS_READ`. It does **not** decide the existing
    `GET /users/{id}/permissions`, which the API section above leaves at "unchanged shape".
-   The obvious extension is to apply the same rule there and return the resolved shape both
-   consumers want, and wave 2 may take that rather than wait — but it is an extension of
-   this plan's rule, not a decision this plan has recorded, and it wants an answer here
-   before anyone relies on it.
+   The obvious extension is to apply the same rule there and return the resolved shape
+   both consumers want, and wave 2 may take that rather than wait. But it is an
+   extension of this plan's rule, not a decision this plan has recorded, and it wants an
+   answer here before anyone relies on it.
 
    > **Response, from wave 2 (2026-09-04): the read half is taken, the write half is not.**
    > `GET /api/users/{userId}/permissions` now requires `USERS_READ`, which is what the page
@@ -789,17 +829,22 @@ topic, and has no Response yet. See Q5.
 
 Piece 1 (roles and read gating): **medium — Q8 answered (a).** One migration (PostgreSQL
 only, after the 0008 retirement) with two views rewritten, six new `*_VIEW` leaves, the
-`permission_fields` table and its seed, a `CheckPermission` on every read path in five
-subtrees, the behaviour-preserving `*_VIEW` backfill, ~8 routes on `UsersApiController` (or
-a new `RolesApiController`), the Q9 endpoint change, one list plus two mixin adopters, four
-seed roles. Its own sitting, as wave 3a; four to five sittings of work.
+`permission_fields` table and its seed, and a `CheckPermission` on every read path in
+five subtrees. It also includes the behaviour-preserving `*_VIEW` backfill, ~8 routes on
+`UsersApiController` (or a new `RolesApiController`), the Q9 endpoint change, one list
+plus two mixin adopters, and four seed roles. Its own sitting, as wave 3a; four to five
+sittings of work.
 
 Piece 2 (visibility): medium. Two permission leaves, the policy constant, the funnel in
 `BaseApiController`, the Blade helper, the OpenAPI annotations, and 14's double snapshot
-plus its completeness check. The snapshot work is the bulk of it and is also the part that
-pays back on every future endpoint; the completeness check is the smaller half and the one
-that keeps paying after this plan, since it fails on a field nobody thought about rather
-than on one somebody already classified. Three to four sittings, of which the first is answering Q1, Q3 and Q8 —
+plus its completeness check.
+
+The snapshot work is the bulk of it and is also the part that pays back on every future
+endpoint. The completeness check is the smaller half and the one that keeps paying after
+this plan, since it fails on a field nobody thought about rather than on one somebody
+already classified.
+
+Three to four sittings, of which the first is answering Q1, Q3 and Q8 —
 Q2 the plan answers itself (a constant), and Q4, Q5 and Q9 are now questions for 02, 18
 and wave 2 rather than for this plan.
 
@@ -868,7 +913,9 @@ Migration `0281.pgsql.sql` adds `STOCK_PRICES_VIEW` and the `permission_fields` 
 decides which fields of which entity a caller may not see. `services/FieldPolicy.php` reads
 that table once per request and removes redacted fields from a row entirely rather than
 nulling them, so `stock_log.price` being null for a consumption stays distinguishable from
-"you may not see this". Redaction is applied at the response boundary — `FilteredApiResponse`,
+"you may not see this".
+
+Redaction is applied at the response boundary — `FilteredApiResponse`,
 the two generic reads, and each hand-built response that knows its own entity name — and
 `BaseApiController::AssertFieldExists()` refuses a redacted field named in `query[]` or
 `order` with 400, closing the filter hole verification 5 asks about.
@@ -913,12 +960,13 @@ by Child and Guest, and they were fixed the same day rather than left open acros
 - **`product_barcodes.last_price`** had no policy row, so it was readable and filterable on
   `STOCK_VIEW` alone through `/objects/product_barcodes`, `/objects/product_barcodes/{id}`
   and `/objects/product_barcodes_view`. Rows for both entity names ship in `0282`.
-- **Four pages were gated on the feature flag alone**, which says the instance tracks prices
-  and not that this user may see them: the shopping list's per-row and header totals,
-  `mealplan.blade.php`'s embedded `recipes_resolved` (now redacted in the controller, since
-  that array leaves the server verbatim for `mealplan.js`), `/stockreports/spendings` (now
-  refused with 403 — the whole page is `SUM(amount * price)` over `products_price_history`,
-  which is the `'*'` whole-object row), and `productform.blade.php`'s barcode price. Each
+- **Four pages were gated on the feature flag alone**, which says the instance tracks
+  prices and not that this user may see them. They are the shopping list's per-row and
+  header totals; `mealplan.blade.php`'s embedded `recipes_resolved` (now redacted in the
+  controller, since that array leaves the server verbatim for `mealplan.js`);
+  `/stockreports/spendings` (now refused with 403 — the whole page is
+  `SUM(amount * price)` over `products_price_history`, which is the `'*'` whole-object
+  row); and `productform.blade.php`'s barcode price. Each
   omits the value rather than hiding it with `d-none`, which verification 6 asks for.
   The `mealplan.blade.php` change shipped broken: `RecipesController::MealPlan()` passed
   `FieldPolicy::RedactRows()` the LessQL `Result` rather than its rows, so `GET /mealplan`
@@ -936,26 +984,31 @@ exposed generic entity, so it never reaches that method, and the one route whose
 purpose is prices should refuse even on a database whose policy table was emptied.
 
 Verification is reproducible with `.devtools/pgsql/run-tests.sh pricevisibility` and
-`import`. The price phase builds a product with priced stock, a recipe, a shopping list item
-and a priced barcode, then moves one caller through ADMIN, ADULT, CHILD, GUEST and a bare
-`STOCK_VIEW` grant — the plan's own named residue — asserting per identity on `GET /stock`,
-`/stock/volatile`, `/stock/products/{id}`, `/stock/entry/{id}`, `/stock/bookings/{id}`,
-`/stock/transactions/{id}`, `/stock/products/{id}/entries`, `/stock/products/{id}/price-history`,
-`/stockreports/spendings`, `/recipes/fulfillment` and `/recipes/{id}/fulfillment`, the
-generic reads for `stock`, `stock_log`, `products_average_price`, `products_last_purchased`,
-`product_barcodes`, `product_barcodes_view`, `uihelper_shopping_list` and
-`recipes_pos_resolved`, both halves of the filter hole (`query[]=price>0` and `order=price`),
-and real Blade renders of the shopping list, stock overview and stock entries pages —
-three of the four views verification 6 names — asserting no `locale-number-currency` span
-and no price in the page source. The import phase compares `permission_fields` before and
-after an import rather than against a row count written down in the test, so a policy row
-added later is covered without that assertion being edited.
+`import`. The price phase builds a product with priced stock, a recipe, a shopping list
+item and a priced barcode, then moves one caller through ADMIN, ADULT, CHILD, GUEST and
+a bare `STOCK_VIEW` grant — the plan's own named residue.
+
+It asserts per identity on `GET /stock`, `/stock/volatile`, `/stock/products/{id}`,
+`/stock/entry/{id}`, `/stock/bookings/{id}`, `/stock/transactions/{id}`,
+`/stock/products/{id}/entries`, `/stock/products/{id}/price-history`,
+`/stockreports/spendings`, `/recipes/fulfillment` and `/recipes/{id}/fulfillment`, and on
+the generic reads for `stock`, `stock_log`, `products_average_price`,
+`products_last_purchased`, `product_barcodes`, `product_barcodes_view`,
+`uihelper_shopping_list` and `recipes_pos_resolved`. It also asserts both halves of the
+filter hole (`query[]=price>0` and `order=price`) and real Blade renders of the shopping
+list, stock overview and stock entries pages — three of the four views verification 6
+names — checking that no `locale-number-currency` span and no price appear in the page
+source. The import phase compares `permission_fields` before and after an import rather
+than against a row count written down in the test, so a policy row added later is
+covered without that assertion being edited.
 
 On 2026-09-15, the follow-up working copy based on `82baee8` passed the complete
 `.devtools/pgsql/run-tests.sh` suite against PostgreSQL 16.13, including 279 price-visibility
-assertions and 358 role assertions, and the four label suites CI runs beside it. Each of the two defects above was reproduced before it
-was fixed: removing the `StockBooking` redaction fails three of the new assertions (CHILD,
-GUEST and the bare `STOCK_VIEW` grant), and removing the importer's re-application of the
+assertions and 358 role assertions, and the four label suites CI runs beside it.
+
+Each of the two defects above was reproduced before it was fixed. Removing the
+`StockBooking` redaction fails three of the new assertions (CHILD, GUEST and the bare
+`STOCK_VIEW` grant). Removing the importer's re-application of the
 seed fails six of the import phase's, at both ends of the supported source span.
 
 Still open from the review, deliberately: the schema-less generic entities have no
