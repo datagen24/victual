@@ -88,21 +88,22 @@ the shape of [03](03-category-min-stock.md)'s `product_groups_missing` reports t
 
 **The tare is the location's, decided 2026-09-14** under ADR-0022 question 1 and recorded in
 its decision 4. A bin or a spice jar is a place stock passes through: every refill is a
-`TransferProduct()` that mints a new stock row at the destination, so a tare on the row would
-be lost on each refill, where a tare on the location is set once. `locations` gains a nullable
-`tare_weight` and `tare_qu_id` in this plan's migration — after [23](23-storage-classes.md)'s
-0274, which alters the same table and the same form first. The unit is the location's own,
-since a location holds no stock unit to borrow; conversion to the stocked product's unit goes
-through the global quantity unit conversions and is refused, never assumed, when the product's
-stock unit is not a weight.
+`TransferProduct()` call that mints a new stock row at the destination. A tare on the row
+would be lost on each refill; a tare on the location is set once.
+
+`locations` gains a nullable `tare_weight` and `tare_qu_id` in this plan's migration — after
+[23](23-storage-classes.md)'s 0274, which alters the same table and the same form first. The
+unit is the location's own, since a location holds no stock unit to borrow. Conversion to
+the stocked product's unit goes through the global quantity unit conversions and is refused,
+never assumed, when the product's stock unit is not a weight.
 
 **The scale posts gross weight against a location and the server subtracts.** The device
-identifies the vessel by scanning its location label ([06](../06-location-barcodes.md), a `vctl:`
-payload) and posts the gross reading. The server resolves the one product stocked at that
-location — refusing when there is none or more than one — subtracts the tare in the product's
-stock unit, and sets the entry's amount through
-[`EditStockEntry()`](../../../services/StockService.php), which already takes a stock row id and
-an amount and does no tare arithmetic. The contract names the reading `gross`.
+identifies the vessel by scanning its location label ([06](../06-location-barcodes.md), a
+`vctl:` payload) and posts the gross reading. The server resolves the one product stocked at
+that location — refusing when there is none or more than one — and subtracts the tare in the
+product's stock unit. It sets the entry's amount through
+[`EditStockEntry()`](../../../services/StockService.php), which already takes a stock row id
+and an amount and does no tare arithmetic. The contract names the reading `gross`.
 
 **Spice jars are the same pattern at a smaller scale.** Each refilled jar is a location under
 [08](08-nested-locations.md)'s tree with its own label and tare; new bottles are stock at a
@@ -233,17 +234,18 @@ a browser probe. The design above shipped as written, both halves at once (the p
 predates ADR-0022's acceptance; by the time this landed both halves were ready). Several things
 are worth recording because they are not derivable from the design above.
 
-**The division with plan 28 held exactly as scoped.** This plan owns
-`TransferProduct()`'s tare refusal (removed outright — ADR-0022 decision 7 retires the
-mechanism, not merely relaxes the one refusal) and the new `StockService::WeighLocation()`
-method; `OpenProduct()`'s refusal and the `AddProduct`/`ConsumeProduct`/`InventoryProduct`
-arithmetic were untouched, left for the sibling branch. `WeighLocation()` does not put tare
-arithmetic inside `EditStockEntry()` itself, despite the scope-boundary text that introduced
-this plan describing it that way: `EditStockEntry()` still does no tare arithmetic, exactly as
-the plan's own *Weighing the bin* section says, and the correction happens in
-`WeighLocation()` before it calls that method with the already-tared amount — "entry-scoped"
-there means scoped to correcting one stock entry via `EditStockEntry()`, not that the
-arithmetic lives inside it.
+**The division with plan 28 held exactly as scoped.** This plan owns `TransferProduct()`'s
+tare refusal (removed outright — ADR-0022 decision 7 retires the mechanism, not merely
+relaxes the one refusal) and the new `StockService::WeighLocation()` method.
+`OpenProduct()`'s refusal and the `AddProduct`/`ConsumeProduct`/`InventoryProduct`
+arithmetic were untouched, left for the sibling branch.
+
+`WeighLocation()` does not put tare arithmetic inside `EditStockEntry()` itself, despite the
+scope-boundary text that introduced this plan describing it that way. `EditStockEntry()`
+still does no tare arithmetic, exactly as the plan's own *Weighing the bin* section says;
+the correction happens in `WeighLocation()` before it calls that method with the
+already-tared amount. "Entry-scoped" there means scoped to correcting one stock entry via
+`EditStockEntry()`, not that the arithmetic lives inside it.
 
 **Weighing requires exactly one stock entry at the location, and `CompactStockEntries()` is
 called first to get there.** The plan does not specify this; it fell out of implementing
@@ -254,20 +256,24 @@ happened to precede it rather than by anything about the vessel itself.
 
 **The negative control the plan's own verification section asks for by name** — "a control
 showing the present product-scoped tare getting it wrong" — is reproduced as arithmetic in
-`working-container-tests.php`, not by calling the retired mechanism: ADR-0022 decision 7
-removes `enable_tare_weight_handling`'s arithmetic from this codebase entirely, so there is no
-live code path left to call. The scenario (three sealed 5 lb bags, one transferred and weighed
-into a 1 lb-tared bin at a gross reading of 3.4 lb) is real, run against real PostgreSQL 16;
-what the old formula *would have* answered is computed by hand from the same real numbers,
-matching the shape of the demonstration ADR-0022's own acceptance spike ran for prerequisite 1.
+`working-container-tests.php`, not by calling the retired mechanism. ADR-0022 decision 7
+removes `enable_tare_weight_handling`'s arithmetic from this codebase entirely, so there is
+no live code path left to call.
 
-**The gross-reading contract is stricter than "the location's own unit" alone.** `gross_qu_id`
-is accepted as an optional body field on `POST /stock/locations/{id}/weigh`; when given, it
-must equal the location's `tare_qu_id` exactly, or the request is refused rather than
-converted. This was not forced by anything in the plan text, which only says the unit is the
-location's own — it is a deliberate reading of ADR-0022 question 5's "a client cannot subtract
-tare twice" concern applied one step further: a client that thinks it is posting ounces against
-a location tared in pounds should get a 400, not a silently wrong weighing.
+The scenario — three sealed 5 lb bags, one transferred and weighed into a 1 lb-tared bin at
+a gross reading of 3.4 lb — is real, run against real PostgreSQL 16. What the old formula
+*would have* answered is computed by hand from the same real numbers, matching the shape of
+the demonstration ADR-0022's own acceptance spike ran for prerequisite 1.
+
+**The gross-reading contract is stricter than "the location's own unit" alone.**
+`gross_qu_id` is accepted as an optional body field on `POST /stock/locations/{id}/weigh`;
+when given, it must equal the location's `tare_qu_id` exactly, or the request is refused
+rather than converted.
+
+This was not forced by anything in the plan text, which only says the unit is the location's
+own. It is a deliberate reading of ADR-0022 question 5's "a client cannot subtract tare
+twice" concern applied one step further: a client that thinks it is posting ounces against a
+location tared in pounds should get a 400, not a silently wrong weighing.
 
 **A device authenticates however every other API caller does today (question 4 stays open).**
 No pairing mechanism was built. `POST /stock/locations/{id}/weigh` and its `by-label` sibling
@@ -276,7 +282,7 @@ authenticated caller with stock-edit rights already has. This plan does not narr
 question 4; a kitchen terminal today would need the same session or API key a person's browser
 uses.
 
-**The label-scanning route is additive, not load-bearing for verification.** `POST
+**The label-scanning route is additive: verification does not depend on it.** `POST
 /stock/locations/by-label/{code}/weigh` resolves a `vctl:` code through the existing
 `LabelIdentityService` (plan 06/25's machinery, unchanged) and delegates to `WeighLocation()`.
 No fixture or suite case exercises it directly beyond confirming the resolved-location branch
@@ -285,16 +291,18 @@ compiles and routes; the device this plan anticipates is out of this repository 
 
 **Two things needed generic-controller changes the plan did not anticipate.**
 `GenericEntityApiController` projects `/objects/locations` through an explicit column list
-(added when plan 25 kept `import_epoch` off the wire) — `tare_weight` and `tare_qu_id` had to
-be added to it in both `GetObject()` and `GetObjects()`, the same gap plan 08's Executed
-section records for `parent_location_id` and `storage_class_id` before it, and
-`nested-locations-tests.php`'s exact-key-set assertion needed updating for it. Separately,
-`uihelper_stock_current_overview`'s widening could not simply select the three new `products`
-columns off `products_view`'s own `p.*`: that view flattens `p.*` into an explicit column list
-at `CREATE VIEW` time, so the new columns were invisible to it, and re-issuing the view's
-definition to pick them up shifts every column after `p.*` out of position, which
-`CREATE OR REPLACE VIEW` refuses outright. The migration joins straight to `products` a second
-time instead; see its own comment for the measured error text either way would have produced.
+(added when plan 25 kept `import_epoch` off the wire). `tare_weight` and `tare_qu_id` had to
+be added to it in both `GetObject()` and `GetObjects()` — the same gap plan 08's Executed
+section records for `parent_location_id` and `storage_class_id` before it — and
+`nested-locations-tests.php`'s exact-key-set assertion needed updating for it.
+
+Separately, `uihelper_stock_current_overview`'s widening could not select the three new
+`products` columns off `products_view`'s own `p.*` directly. That view flattens `p.*` into
+an explicit column list at `CREATE VIEW` time, so the new columns were invisible to it.
+Re-issuing the view's definition to pick them up shifts every column after `p.*` out of
+position, which `CREATE OR REPLACE VIEW` refuses outright; the migration joins straight to
+`products` a second time instead. See its own comment for the measured error text either way
+would have produced.
 
 **A pre-existing, unrelated defect blocked the browser probe until it was routed around.**
 `public/viewjs/productform.js` always sends `parent_product_id` (the parent-product picker's
@@ -303,53 +311,65 @@ posts `""` for it — the same trap plan 08's Executed section records for
 `parent_location_id`, unfixed for products. Reproduced directly against
 `POST /api/objects/products` with a minimal payload, independent of anything this plan
 touches, and confirmed to affect `product_group_id` and `shopping_location_id` the same way.
-Filed as [issue 159](https://github.com/datagen24/victual/issues/159) rather than fixed here —
-it is a defect in a shared form's submit handler, not this plan's own scope — and
+
+Filed as [issue 159](https://github.com/datagen24/victual/issues/159) rather than fixed
+here, since it is a defect in a shared form's submit handler, not this plan's own scope.
 `working-container.js` routes around it with a Playwright request interception that rewrites
-only `parent_product_id: ""` to `null` immediately before the request reaches the server, so a
-real defect in this plan's own fields would still reach the API unmasked.
+only `parent_product_id: ""` to `null` immediately before the request reaches the server, so
+a real defect in this plan's own fields would still reach the API unmasked.
 
-**Verification.** `.devtools/pgsql/working-container-tests.php` is the sixteenth suite phase,
-PostgreSQL-only for the same structural reason the group-minimum and nested-locations phases
-are: `product_location_min_stock` and the two new `locations` columns exist on one side only,
-so a `difftest.php` seed would pass while asserting nothing. It makes its own products and
-locations and asserts 28 things: the shortfall view including the opened-stock discount and
-the inactive-product/inactive-location exclusions, the rule that a short location never
-reaches `stock_missing_products` or the shopping list, `TransferProduct()` accepting a
-tare-enabled product, a full weigh-after-transfer scenario with dry stores left untouched, the
-negative control described above, every refusal `WeighLocation()` has to raise, and the two
-new entities' CRUD behaviour. `.devtools/frontend/working-container.js` — invoked by the
-`frontend-security` job's actual step list, not merely placed beside the other probes — drives
-both forms' round-trips, the shortfall list (including that it is not wired into the
-`.status-filter-message` click handler product groups share, and that the S29 payload survives
-as text), and a real one-tap refill that moves real stock. Both were confirmed passing against
-real PostgreSQL 16.13 and a real demo instance; `run-tests.sh locations` and `run-tests.sh
-groupminstock` were re-run to confirm no regression from the shared-view and
-`GenericEntityApiController` changes.
+**Verification.** `.devtools/pgsql/working-container-tests.php` is the sixteenth suite
+phase, PostgreSQL-only for the same structural reason the group-minimum and nested-locations
+phases are: `product_location_min_stock` and the two new `locations` columns exist on one
+side only, so a `difftest.php` seed would pass while asserting nothing. It makes its own
+products and locations and asserts 28 things:
 
-Deferred: the barcode pack-size case ("a 25 lb barcode scanned, adding 25 lb rather than one
-unit") in the plan's own verification list is existing `product_barcodes` behaviour this plan
-does not change, and was not re-asserted here. A dedicated UI form for
-`product_location_min_stock` itself was not built — the entity is reachable through the
-generic `/objects/product_location_min_stock` API and its shortfall reporting is fully wired,
-but setting a location minimum today means a direct API call rather than a page; the browser
-probe seeds it that way, matching how `group-min-stock.js` seeds product-group membership
-through the API rather than a dedicated form.
+- the shortfall view, including the opened-stock discount and the
+  inactive-product/inactive-location exclusions
+- the rule that a short location never reaches `stock_missing_products` or the shopping list
+- `TransferProduct()` accepting a tare-enabled product
+- a full weigh-after-transfer scenario with dry stores left untouched
+- the negative control described above
+- every refusal `WeighLocation()` has to raise
+- the two new entities' CRUD behaviour
 
-**Two more real defects surfaced merging plan 28's landed PR in, both found by re-running the
-suite after the merge rather than by inspection.** Plan 28's migration 0275 (below this one in
-`migrations/RESERVATIONS.md`'s order) appended `stock_current.amount_measured`; this plan's own
-`uihelper_stock_current_overview` rebuild reads that view through a `SELECT *` branch of a
-three-way `UNION` whose other two branches spell every column out as literals, so the union's
-column counts disagreed the moment both migrations existed in one tree
+`.devtools/frontend/working-container.js` — invoked by the `frontend-security` job's actual
+step list, not merely placed beside the other probes — drives both forms' round-trips, the
+shortfall list, and a real one-tap refill that moves real stock. The shortfall-list check
+also covers that it is not wired into the `.status-filter-message` click handler product
+groups share, and that the S29 payload survives as text.
+
+Both were confirmed passing against real PostgreSQL 16.13 and a real demo instance;
+`run-tests.sh locations` and `run-tests.sh groupminstock` were re-run to confirm no
+regression from the shared-view and `GenericEntityApiController` changes.
+
+Deferred: the barcode pack-size case — "a 25 lb barcode scanned, adding 25 lb rather than
+one unit" in the plan's own verification list — is existing `product_barcodes` behaviour.
+This plan does not change it and it was not re-asserted here. A dedicated UI form for
+`product_location_min_stock` itself was not built. The entity is reachable through the
+generic `/objects/product_location_min_stock` API and its shortfall reporting is fully
+wired, but setting a location minimum today means a direct API call rather than a page. The
+browser probe seeds it that way, matching how `group-min-stock.js` seeds product-group
+membership through the API rather than a dedicated form.
+
+**Two more real defects surfaced merging plan 28's landed PR in, both found by re-running
+the suite after the merge rather than by inspection.** Plan 28's migration 0275 (below this
+one in `migrations/RESERVATIONS.md`'s order) appended `stock_current.amount_measured`. This
+plan's own `uihelper_stock_current_overview` rebuild reads that view through a `SELECT *`
+branch of a three-way `UNION` whose other two branches spell every column out as literals.
+The union's column counts disagreed the moment both migrations existed in one tree
 (`each UNION query must have the same number of columns`, measured against real PostgreSQL
-16.13) — `migrations/0276.pgsql.sql` now carries a matching literal for the two stand-in
-branches, with the mismatch explained at the union itself. Separately, `difftest.php`'s
-`uihelper_stock_current_overview` comparison needed the same PostgreSQL-only-column strip
-plan 28 had already added for `stock_current.amount_measured`, this time for the three new
-one-tap refill columns the view joins in from `products` — without it the `views` suite phase
-failed on every row once both plans' widened views ran in the same PostgreSQL differential
-comparison. Both were caught by re-running `check-migrations.php` and the `migrate`, `views`,
+16.13). `migrations/0276.pgsql.sql` now carries a matching literal for the two stand-in
+branches, with the mismatch explained at the union itself.
+
+Separately, `difftest.php`'s `uihelper_stock_current_overview` comparison needed the same
+PostgreSQL-only-column strip plan 28 had already added for `stock_current.amount_measured`,
+this time for the three new one-tap refill columns the view joins in from `products`.
+Without it, the `views` suite phase failed on every row once both plans' widened views ran
+in the same PostgreSQL differential comparison.
+
+Both were caught by re-running `check-migrations.php` and the `migrate`, `views`,
 `triggers`, `rollback`, `locations`, `groupminstock`, `openmeasure` and `workingcontainer`
-suite phases against real PostgreSQL 16.13 after merging plan 28's PR in, not by either plan's
-own suite phase alone — each was blind to the other's widened view until both existed together.
+suite phases against real PostgreSQL 16.13 after merging plan 28's PR in, not by either
+plan's own suite phase alone — each was blind to the other's widened view until both existed
+together.
