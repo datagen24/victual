@@ -3,12 +3,15 @@
 **Goal:** A location declares *how cold it is kept*, not merely whether it is a freezer.
 Deep freeze, freezer, fridge, cooler and ambient are distinguishable, so a wine cooler, a
 cheese cave and a medication fridge stop being the same thing.
+
 **Depends on:** nothing. Interacts with [08](08-nested-locations.md), whose Q3 answer this
 adopts unchanged.
+
 **Consumed by:** [22](../22-medication-tracking.md), which needs a product to be able to
 require a class. Extracted from 22 per its Q1 — this is a general locations feature that
 medication happens to need first, and it changes a column every client of `/objects/locations`
 can see, which is not a change that should arrive as a side effect of a medication plan.
+
 **Status:** landed in wave 4; see [Executed](#executed).
 
 ## Today
@@ -40,7 +43,7 @@ Ambient. The table is user-extensible because the seed cannot anticipate a chees
 point.
 
 Temperatures are stored as data rather than encoded in an enum, because the cases that forced
-this plan differ by *set point* and not by kind: a wine cooler and a cheese cave are the same
+this plan differ by *set point* and not by kind. A wine cooler and a cheese cave are the same
 sort of appliance held at different temperatures, and a class list that cannot express that
 would need a new enum member per appliance.
 
@@ -84,7 +87,7 @@ plan, and the one most likely to surprise someone who has been ticking that box 
 ### Migration
 
 One file, claiming **0274** in [RESERVATIONS.md](../../../migrations/RESERVATIONS.md) before any
-file is written — moved up from 0269 on 2026-09-06 to make room for wave 3b's
+file is written. It moved up from 0269 on 2026-09-06 to make room for wave 3b's
 [25](../25-label-infrastructure.md), again on 2026-09-08 for [27](27-label-templates-and-rendering.md),
 and again on 2026-09-09 for [08](08-nested-locations.md), each of which is scheduled while
 this plan is not. Read the table rather than this line: it has moved three times. It is a table, a
@@ -215,9 +218,11 @@ but the seed has to go through `LocalizationService` per ADR-0003 — "Ambient" 
 same string in every configured locale, and a `.sql` file cannot call a PHP service. So the
 schema (`CREATE TABLE`, `ALTER TABLE`) and the seed both live in one `.pgsql.php` file
 instead, run through `$db->exec()` and a prepared `INSERT` the way `migrations/0031.php`
-seeds the default location and quantity units. It is still the one file the plan asks for,
-and still above `DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` with no SQLite
-counterpart — `storage_classes` is named in `.devtools/pgsql/migratedifftest.php`'s
+seeds the default location and quantity units.
+
+It is still the one file the plan asks for, and still above
+`DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID` with no SQLite counterpart —
+`storage_classes` is named in `.devtools/pgsql/migratedifftest.php`'s
 `ENGINE_EXCLUSIVE_TABLES` for that reason, per `db/pgsql/README.md`'s "above the freeze"
 rule, with no `@engine-exclusive` marker since `check-migrations.php` asks for one only
 below the freeze.
@@ -227,11 +232,13 @@ below the freeze.
 reason, a self-referential tree needs its own cycle/depth guards regardless of what a
 constraint could check. A class reference has no such argument against it, so it was given
 the same `FOREIGN KEY` every other master-data reference this fork's own migrations
-(0270-0272) added carries. The consequence: `GenericEntityApiController::EditObject()` and
-`AddObject()` derive `is_freezer` only when `storage_class_id` resolves to a real row and
-leave an unresolvable id for the constraint to refuse, rather than silently accepting one -
-verified in `.devtools/pgsql/nested-locations-tests.php` case 11, which sends id `999999`
-and checks both the 400 and that the row is untouched.
+(0270-0272) added carries.
+
+The consequence: `GenericEntityApiController::EditObject()` and `AddObject()` derive
+`is_freezer` only when `storage_class_id` resolves to a real row and leave an unresolvable
+id for the constraint to refuse, rather than silently accepting one — verified in
+`.devtools/pgsql/nested-locations-tests.php` case 11, which sends id `999999` and checks
+both the 400 and that the row is untouched.
 
 **The derivation overrides `is_freezer` even when the same request also submits it.**
 Question 1/2 decided the class is the sole writer once one is set; case 11 tests that
@@ -245,10 +252,32 @@ when the caller also got it right."
 |---|---|
 | `php bin/victual-migrate` | `Schema is up to date at migration 274.` |
 | `php .devtools/pgsql/check-migrations.php` | `MIGRATION NUMBERING OK` (19 migrations above baseline, 25 claimed in RESERVATIONS.md) |
-| `.devtools/pgsql/run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (64 assertions)`, `SUITE PASSED`. Case 11's 19 assertions: five seeded classes in order with the right `treats_as_freezer`; setting a freezer class on Door (the 08 Q5 fixture) derives `is_freezer = 1` even against a contradicting request body; a non-freezer class derives `0` with no `is_freezer` key sent at all; clearing the class hands the flag back to direct editing; an unresolvable class id is refused and leaves the row untouched; `AddObject` derives on create the same way; `/objects/storage_classes` lists all five with the documented column set; `/objects/storage_classes/{id}` carries a `userfields` key, the list endpoint does not (no userfields configured). Cases 1-10 (plan 08's) are unaffected |
+| `.devtools/pgsql/run-tests.sh locations` | `EVERY NESTED LOCATION ANSWERED AS EXPECTED (64 assertions)`, `SUITE PASSED`. Case 11 adds 19 assertions for this plan's derivation (below); cases 1-10 (plan 08's) are unaffected |
 | `GET /api/objects/locations/{id}` (session auth) | a location saved with the Freezer class through the real form carries `storage_class_id` and `is_freezer: 1`, matching `treats_as_freezer` - confirmed server-side, independent of the UI's own JS |
 | `GET /api/objects/storage_classes` | lists all five seeded classes with correct `treats_as_freezer` and `sort_order` |
-| Browser, `/location/new` and `/location/{id}` (Playwright) | the class picker lists the five seeded classes in seeded order; selecting Freezer checks and disables the "Is freezer" checkbox and shows the derived-note; clearing the class back to blank re-enables the checkbox; a location saved with a class through the form re-opens with the class preselected and the checkbox checked and disabled server-side (not only by the client JS), confirmed by fetching the edit page with plain `curl`, no JavaScript |
+| Browser, `/location/new` and `/location/{id}` (Playwright) | the class picker, derived checkbox and reload all matched across five classes; the disabled state was confirmed server-side, not only by client JS (below) |
+
+**Case 11's 19 assertions** cover:
+
+- Five seeded classes in order, with the right `treats_as_freezer`.
+- Setting a freezer class on Door (the 08 Q5 fixture) derives `is_freezer = 1` even against
+  a contradicting request body.
+- A non-freezer class derives `0` with no `is_freezer` key sent at all, and clearing the
+  class hands the flag back to direct editing.
+- An unresolvable class id is refused and leaves the row untouched; `AddObject` derives on
+  create the same way.
+- `/objects/storage_classes` lists all five with the documented column set;
+  `/objects/storage_classes/{id}` carries a `userfields` key that the list endpoint does not
+  (no userfields configured).
+
+**The Playwright check** confirmed:
+
+- The class picker lists the five seeded classes in seeded order.
+- Selecting Freezer checks and disables the "Is freezer" checkbox and shows the
+  derived-note; clearing the class back to blank re-enables the checkbox.
+- A location saved with a class through the form re-opens with the class preselected and
+  the checkbox checked and disabled server-side, not only by the client JS — confirmed by
+  fetching the edit page with plain `curl`, no JavaScript.
 
 `run-tests.sh all` and the frontend probes beyond the one above were not re-run for this
 change; the locations phase and the manual browser/API checks above are what this plan's
