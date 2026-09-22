@@ -2,11 +2,11 @@
 
 Requires `FEATURE_FLAG_SHOPPINGLIST`.
 
-**`/shoppinglist`** is the list itself: check items off as you buy them, add a product or a
-free-text note, and — where stock is enabled — convert a checked item straight into a
-purchase booking using the last known price and, if the product has default due days set,
-submit that booking automatically (`shopping_list_to_stock_workflow_auto_submit_when_prefilled`,
-a per-user setting). **`/shoppinglistitem/{id}`** edits one item directly.
+**`/shoppinglist`** is the list itself: check items off as you buy them, and add a product or a
+free-text note. Where stock is enabled, you can also convert a checked item straight into a
+purchase booking using the last known price and, if the product has default due days set, submit
+that booking automatically (`shopping_list_to_stock_workflow_auto_submit_when_prefilled`, a
+per-user setting). **`/shoppinglistitem/{id}`** edits one item directly.
 
 With `FEATURE_FLAG_SHOPPINGLIST_MULTIPLE_LISTS`, a household can keep more than one list
 (**`/shoppinglist/{listId}`** manages a list's own name); without it, there is exactly one.

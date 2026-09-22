@@ -27,8 +27,8 @@ form automatically after a scan instead of waiting for you to press the button. 
 [Barcodes and scanning](../operator/barcodes-scanning.md).
 
 **Opening a container.** When `FEATURE_FLAG_STOCK_PRODUCT_OPENED_TRACKING` is on, an entry
-can be marked opened, optionally with a measured remainder (a scale button appears on the
-stock entries page wherever the product's coherence rules permit it) — this is what backs
+can be marked opened, optionally with a measured remainder; a scale button appears on the
+stock entries page wherever the product's coherence rules permit it. The opened state backs
 "treat opened as out of stock" and per-container tare weight corrections on a location. A
 booking can be undone from the stock journal.
 
@@ -48,9 +48,9 @@ booking can be undone from the stock journal.
 
 - **`/products`** / **`/product/{id}`** — the product list and edit form: name, quantity
   unit, purchase and stock quantity unit (with a conversion between them if they differ),
-  default due days, minimum stock amount, product group, default location, and the
-  per-product presets used by the pages above (quick consume amount, default stock label
-  type, "treat opened as out of stock").
+  default due days, minimum stock amount, product group, and default location. It also
+  holds the per-product presets used by the pages above: quick consume amount, default
+  stock label type, and "treat opened as out of stock".
 - **`/locations`** / **`/location/{id}`** — where stock physically lives. Locations can
   nest (a shelf inside a fridge inside a room); a location can also carry a tare weight and
   quantity unit for scale-based replenishment. **`/locationcontentsheet`** prints what
