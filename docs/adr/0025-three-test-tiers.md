@@ -9,13 +9,13 @@
   `.devtools/pgtap/`, the `pgtap` phase of `run-tests.sh`, `phpunit/phpunit ^11.5` in
   `composer.json`) are in `master`. **Nothing in the decision was revised by this
   acceptance.** Three edges the spikes reported are recorded here rather than smoothed
-  over: decision 3's "nothing else changes" needed one addendum for a ported phase (its
+  over. Decision 3's "nothing else changes" needed one addendum for a ported phase: its
   database is migrated by the test class, not by `build_pgsql()`, which follows from
-  decision 2); decision 6's "the dev image carries it" was met with `pg_prove` in the dev
+  decision 2. Decision 6's "the dev image carries it" was met with `pg_prove` in the dev
   image and the extension in the compose-built PostgreSQL image, since the dev image never
-  runs a server; and decision 5's CI check exists and is proven but is **not yet wired
+  runs a server. Decision 5's CI check exists and is proven but is **not yet wired
   into CI**, because sixteen functions and triggers predate pgTAP and would fail every
-  build — `.devtools/pgtap/README.md`'s "What is not covered yet" names them, and
+  build. `.devtools/pgtap/README.md`'s "What is not covered yet" names them, and
   [issue 192](https://github.com/datagen24/victual/issues/192)'s ratchet-then-gate shape
   is the path to turning it on. Written 2026-09-17 for the coverage floor the maintainer
   set the same day (`docs/constitution.md`, standing invariants; issue 192 holds the
@@ -47,13 +47,14 @@ spawns (`.devtools/coverage/`), and until 2026-09-17 nothing was gated on the nu
 
 On 2026-09-17 the maintainer set a floor: **75%** line coverage of application code, **85 or
 better** the target, **90** the ideal. Master stands at 37.81% across the 69 classes the
-suite loads; 42 of them are below the floor and 2786 uncovered lines sit in those 42. The
-coverage README's own explanation is that three of the four differential phases drive SQL
-at the engines and barely enter PHP, so most controllers are near zero by design. That was
-an acceptable reading while nothing was gated. Closing a gap that size with 25th, 26th and
-27th bespoke scripts, each with its own `check()`, is the wrong tool: the scripts have no
-shared fixtures, no per-test isolation, no filtering, and no way to report which assertion
-failed beyond what each author wrote by hand.
+suite loads; 42 of them are below the floor and 2786 uncovered lines sit in those 42.
+
+The coverage README's own explanation is that three of the four differential phases drive
+SQL at the engines and barely enter PHP, so most controllers are near zero by design. That
+was an acceptable reading while nothing was gated. Closing a gap that size with 25th, 26th
+and 27th bespoke scripts, each with its own `check()`, is the wrong tool. The scripts have
+no shared fixtures, no per-test isolation, no filtering, and no way to report which
+assertion failed beyond what each author wrote by hand.
 
 Two things about this codebase shape the choice of tools:
 
@@ -108,8 +109,8 @@ against the tree and decides.
 5. **Tier 2 covers SQL logic by name, not by percentage.** pcov measures PHP lines and
    nothing else, so the floor cannot see a trigger. The rule for the SQL half is
    completeness: a list, kept in `.devtools/pgtap/README.md`, of every function and
-   trigger the fork's migrations create, each with the test file that exercises it, and a
-   check (`check-pgtap-coverage.php`, the shape of `check-migrations.php`) that fails CI when
+   trigger the fork's migrations create, each with the test file that exercises it. A
+   check (`check-pgtap-coverage.php`, the shape of `check-migrations.php`) fails CI when
    a migration creates a function or trigger the list does not name. Views are tested
    where they carry logic (recursive CTEs, the resolved views) and listed the same way.
 
