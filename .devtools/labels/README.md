@@ -64,8 +64,8 @@ it verifies the generated form's 422 refusal, successful save and visible artifa
 ## Printable width in the fixture: 58928 µm, not 62000
 
 `fixtures/brother-ql.json` declared `printable_width_um: 62000` — the width of the *tape* —
-where the capability contract asks for the **printable area**. The two differ by twelve dots on
-a QL-820NWBc: 62 mm of tape carries 732 device dots and 696 of them print.
+where the capability contract asks for the **printable area**. The two differ by thirty-six dots
+on a QL-820NWBc: 62 mm of tape carries 732 device dots and 696 of them print.
 
 That is issue [#90](https://github.com/datagen24/victual/issues/90)'s defect written into a
 fixture. The prototype authored an image against `dots_total` while its library compared
