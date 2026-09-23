@@ -113,6 +113,13 @@ class RecipesService extends BaseService
 
 		DatabaseService::GetInstance()->InTransaction(function () use ($recipePositions, $recipeId, &$transactionId)
 		{
+			// A recipe can name several ingredient products, each of which ConsumeProduct()
+			// below will lock individually - locked here, upfront and in ascending order,
+			// so two recipes consumed concurrently over an overlapping ingredient set always
+			// request their first conflicting lock in the same order and queue rather than
+			// deadlock (issue #458).
+			DatabaseService::GetInstance()->LockProductsStock(array_map(fn($position) => $position->product_id, $recipePositions));
+
 			foreach ($recipePositions as $recipePosition)
 			{
 				if ($recipePosition->only_check_single_unit_in_stock == 0 && $recipePosition->stock_amount > 0)
