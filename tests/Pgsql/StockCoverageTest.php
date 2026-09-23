@@ -455,16 +455,9 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:246-251): the "location does not exist" check sits
-	 * inside the branch that derives a default due date, so a purchase that supplies a due
-	 * date never reaches it and books a stock entry pointing at a location id that does not
-	 * exist. `stock.location_id` carries no foreign key, so the row is accepted and the
-	 * entry is then invisible to every location-scoped read. Correct behaviour is to
-	 * validate the location for every purchase, as ConsumeProduct() and TransferProduct()
-	 * already do.
-	 *
-	 * Contained in a transaction that is rolled back, so the dangling row this pins does
-	 * not reach the rest of the class.
+	 * A purchase naming a location that does not exist is refused whether or not a
+	 * best_before_date is supplied. The location check runs unconditionally like it does
+	 * in ConsumeProduct() and TransferProduct(), and the ledger is untouched.
 	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
 	public function testPurchaseRefusesAMissingLocationEvenWhenADueDateIsSupplied(): void
