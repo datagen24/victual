@@ -11,7 +11,7 @@
 #
 #   .devtools/pgsql/run-tests.sh [migrate|views|triggers|rollback|filter|schema|richtext|files|mqtt|import|rbac|pricevisibility|chores|errors|average|groupminstock|locations|productgroups|substitutions|openmeasure|workingcontainer|apikeys|pgtap|contract|shopliststores|credentialsplit|mealplan|rootentry|mcpauth|bootstrapadmin|uploadclamp|labeltracking|serverversion|wirecontract|stockpages|householdpages|labelapi|labelservices|authstack|helperunits|barcodelookup|storagefiles|stockcoverage|stockconcurrency|demodata|dialectpolicy|httpboot|mqttcoverage|genericquery|recipeoperations]
 #
-# Forty-nine kinds of check. Views are compared by what they return, because
+# Fifty kinds of check. Views are compared by what they return, because
 # that is all a view is. Triggers cannot be compared that way — what a trigger does is
 # change other rows — so those scripts are applied to both engines and every table is
 # compared afterwards.
