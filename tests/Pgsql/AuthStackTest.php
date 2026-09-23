@@ -1835,7 +1835,7 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 		self::assertSame(403, $fromElsewhere['status'],
 			'an address outside the list is not the proxy: ' . $fromElsewhere['body']);
-		self::assertBodyDescribesNoDeploymentDetail($fromElsewhere['body']);
+		self::assertBodyDescribesNoDeploymentDetail($fromElsewhere['body'], ['10.0.0.0/24', '203.0.113.9']);
 
 		$fromTheProxy = self::send('GET', '/api/user', [
 			'headers' => ['REMOTE_USER' => 'authstack-proxy'],
@@ -1895,13 +1895,21 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	/**
 	 * Asserts a reverse-proxy refusal body names none of the settings or headers that
 	 * describe this deployment: no REVERSE_PROXY_AUTH* setting, no REMOTE_USER, no
-	 * TRUSTED_PROXIES.
+	 * TRUSTED_PROXIES, and none of the configured values the caller passes in (the
+	 * trusted-proxy range, the refused address).
+	 *
+	 * @param string[] $values Configured values the body must not contain either
 	 */
-	private static function assertBodyDescribesNoDeploymentDetail(string $body): void
+	private static function assertBodyDescribesNoDeploymentDetail(string $body, array $values = []): void
 	{
 		self::assertStringNotContainsString('REVERSE_PROXY_AUTH', $body, $body);
 		self::assertStringNotContainsString('REMOTE_USER', $body, $body);
 		self::assertStringNotContainsString('TRUSTED_PROXIES', $body, $body);
+
+		foreach ($values as $value)
+		{
+			self::assertStringNotContainsString($value, $body, $body);
+		}
 	}
 
 	/**
