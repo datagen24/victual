@@ -84,6 +84,8 @@ class DatabaseStorage extends FileStorage
 
 	public function Create(string $group, string $name, $source): void
 	{
+		self::AssertValidName($name);
+
 		$buffer = $this->BufferSource($source);
 
 		try
@@ -114,6 +116,8 @@ class DatabaseStorage extends FileStorage
 
 	public function Write(string $group, string $name, $source): void
 	{
+		self::AssertValidName($name);
+
 		$buffer = $this->BufferSource($source);
 
 		try

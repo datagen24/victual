@@ -113,6 +113,24 @@ abstract class FileStorage
 	abstract public function GetMimeType(string $group, string $name): ?string;
 
 	/**
+	 * Refuses a name that is not a valid single file name - one containing a directory
+	 * separator or a traversal segment. Applied by both backends' Create() and Write(), so
+	 * a caller that reaches a backend directly rather than through the files API -
+	 * services/StockService.php's barcode-picture write is the one that does - cannot make
+	 * FilesystemStorage write outside its group folder or DatabaseStorage store a name
+	 * FilesystemStorage would refuse.
+	 *
+	 * @throws InvalidFileNameException When $name is not a valid single file name
+	 */
+	protected static function AssertValidName(string $name): void
+	{
+		if (!IsValidFileName($name))
+		{
+			throw new InvalidFileNameException("Invalid file name: $name");
+		}
+	}
+
+	/**
 	 * Copies a source into an open sink in COPY_CHUNK_SIZE chunks, refusing to write more
 	 * than the effective upload limit.
 	 *

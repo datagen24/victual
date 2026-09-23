@@ -115,6 +115,15 @@ abstract class BaseBarcodeLookupPlugin
 			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a number greater than zero');
 		}
 
+		// __barcode is not just an identifier: services/StockService.php builds the stored
+		// picture's file name from it directly, so every source has to agree on what a safe
+		// file name component looks like, checked once here rather than by each source.
+		$barcode = $pluginOutput['__barcode'];
+		if (!is_string($barcode) || str_contains($barcode, '/') || str_contains($barcode, '\\') || str_contains($barcode, "\0") || str_starts_with($barcode, '.'))
+		{
+			throw new \Exception('Provided __barcode is not a valid file name component');
+		}
+
 		return $pluginOutput;
 	}
 

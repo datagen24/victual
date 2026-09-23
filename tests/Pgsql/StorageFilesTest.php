@@ -228,100 +228,52 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * A stored name must not reach outside the group it was stored in. The API refuses
-	 * every one of these before a backend sees it (IsValidFileName), which is asserted
-	 * separately; this is the backends' own answer.
+	 * A stored name must not reach outside the group it was stored in, and the backend
+	 * itself refuses one that could rather than leaving that to whichever caller happens
+	 * to check first. The API refuses every one of these before a backend sees it
+	 * (IsValidFileName), which is asserted separately (testTheApiRefusesANameThatCouldEscapeItsGroup);
+	 * this is the backends' own answer, now that both give one.
 	 *
-	 * DEFECT (services/Storage/FilesystemStorage.php:165-168): GetFilePath concatenates
-	 * the name onto the group folder with no normalisation, so a name containing ".."
-	 * traverses out of the storage root and writes wherever the traversal lands - here,
-	 * straight into the data path. DatabaseStorage cannot do this: a name is a column
-	 * value. The current behaviour is pinned rather than skipped because the escape is
-	 * reachable from at least one caller that is not the files API
+	 * Before this fix the two backends disagreed: FilesystemStorage concatenated the name
+	 * onto the group folder with no normalisation (services/Storage/FilesystemStorage.php:165-168),
+	 * so ".." traversed out of the storage root while DatabaseStorage - where a name is a
+	 * column value - stored the same string literally, and a leading slash or an
+	 * unrepresentable subdirectory each behaved differently again. That mattered because
+	 * the escape is reachable from a caller that is not the files API
 	 * (services/StockService.php:1036-1037 builds a product picture name from the
-	 * caller-supplied barcode), and a test that merely skipped would stop reporting it.
-	 * The correct behaviour is for a name that resolves outside the group folder to be
-	 * refused by the backend.
+	 * caller-supplied barcode, with no IsValidFileName() call in between). Issue #243:
+	 * FileStorage::AssertValidName() now refuses any name that is not a valid single file
+	 * name - one with a directory separator anywhere in it - in Create() and Write() on
+	 * both backends, so a caller that reaches the backend directly gets the same refusal
+	 * the files API already gave.
 	 */
 	#[DataProvider('backends')]
-	public function testAStoredNameIsNotConfinedToItsGroupFolder(string $backend): void
+	public function testAStoredNameWithADirectorySeparatorIsRefusedByBothBackends(string $backend): void
 	{
 		$group = 'storagefiles-escape';
 		$storage = self::Storage($backend, [$group]);
 		$escaped = VICTUAL_DATAPATH . '/storagefiles-escape-marker.txt';
 
-		try
+		foreach (['../../storagefiles-escape-marker.txt', '/storagefiles-absolute.txt', 'sub/nested.txt'] as $hostileName)
 		{
-			$storage->Create($group, '../../storagefiles-escape-marker.txt', 'escaped');
-		}
-		catch (\Exception $ex)
-		{
-			// Either backend refusing the name outright would be the correct answer, and
-			// is not what happens; the assertions below say what each one does instead.
+			$refused = null;
+
+			try
+			{
+				$storage->Create($group, $hostileName, 'escaped');
+			}
+			catch (\Throwable $ex)
+			{
+				$refused = $ex;
+			}
+
+			self::assertNotNull($refused, "$hostileName must be refused on the $backend backend rather than stored");
 		}
 
-		if ($backend === 'filesystem')
-		{
-			self::assertFileExists($escaped, 'Current behaviour, and a defect: the name traversed out of the storage root');
-			self::assertSame('escaped', file_get_contents($escaped), 'The bytes really did land outside the root');
-			unlink($escaped);
-		}
-		else
-		{
-			self::assertFileDoesNotExist($escaped, 'A database backend has no path to traverse');
-			self::assertSame('escaped', self::DurableBytes($backend, $group, '../../storagefiles-escape-marker.txt'), 'The traversal is stored as the literal name it is');
-		}
-
-		// A leading slash is not an absolute path here: the name is appended to the group
-		// folder, so it stays inside it. This is the one of the four hostile shapes that
-		// the concatenation happens to get right, and it is asserted rather than assumed
-		// because the file landing at the root of the filesystem is what it would mean if
-		// it were wrong.
-		$storage->Create($group, '/storagefiles-absolute.txt', 'not absolute');
-		self::assertFileDoesNotExist('/storagefiles-absolute.txt', 'A leading slash did not make the name an absolute path');
-
-		if ($backend === 'filesystem')
-		{
-			self::assertSame('not absolute', file_get_contents(self::$storageRoot . '/' . $group . '//storagefiles-absolute.txt'), 'It stayed inside the group folder');
-		}
-		else
-		{
-			self::assertSame('not absolute', self::DurableBytes($backend, $group, '/storagefiles-absolute.txt'), 'It is stored as the literal name it is');
-		}
-
-		// A name naming a subdirectory that does not exist is the shape the two backends
-		// answer differently, so each is asserted on its own rather than on one claim. The
-		// filesystem backend refuses it, because fopen() will not create a file under a
-		// directory that is not there and nothing creates the directory; the database
-		// backend accepts it, because a name is a column value and a column value has no
-		// directory to be missing - the same reason the traversal two blocks above is stored
-		// rather than escaping.
-		$refused = null;
-		try
-		{
-			// Suppressed for the same reason as in the exclusive-create case above: the
-			// failing fopen() warns on its way to the false the backend acts on.
-			@$storage->Create($group, 'sub/nested.txt', 'nested');
-		}
-		catch (\Throwable $ex)
-		{
-			$refused = $ex;
-		}
-
-		if ($backend === 'filesystem')
-		{
-			self::assertNotNull($refused, 'A directory separator in a name is refused rather than silently creating a tree');
-			self::assertFileDoesNotExist(self::$storageRoot . '/' . $group . '/sub/nested.txt');
-			self::assertDirectoryDoesNotExist(self::$storageRoot . '/' . $group . '/sub', 'The refusal created no directory on its way to failing');
-			self::assertNull(self::DurableBytes($backend, $group, 'sub/nested.txt'), 'And nothing landed under the literal name either');
-		}
-		else
-		{
-			self::assertNull($refused, 'The database backend accepts the name: there is no directory for it to be missing');
-			self::assertSame('nested', self::DurableBytes($backend, $group, 'sub/nested.txt'), 'It is stored as the literal name it is');
-			self::assertTrue($storage->Exists($group, 'sub/nested.txt'), 'And it is reachable again only under that same literal name');
-			self::assertSame(['sub/nested.txt'], $storage->ListNames($group, 'sub/'), 'The prefix scan sees one entry, not a folder holding one');
-		}
+		self::assertFileDoesNotExist($escaped, 'The traversal never reached the storage root');
+		self::assertFileDoesNotExist('/storagefiles-absolute.txt', 'The leading slash never reached the filesystem root either');
+		self::assertDirectoryDoesNotExist(self::$storageRoot . '/' . $group . '/sub', 'The refusal created no directory on its way to failing');
+		self::assertSame([], self::DurableNames($backend, $group), 'Nothing landed under any of the hostile names, on either backend');
 	}
 
 	/**
