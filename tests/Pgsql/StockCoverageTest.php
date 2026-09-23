@@ -3031,27 +3031,29 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * behaviour, including the half-write, which is the part that matters.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
-	public function testAddingALookedUpProductWhosePurchaseUnitDiffersLeavesAHalfWrittenProduct(): void
+	public function testAddingALookedUpProductWhosePurchaseUnitDiffersSucceedsWithOneConversion(): void
 	{
 		$pluginFile = self::writeUserLookupPlugin('Coverage Differing Units ', 3, 2, 'null');
 
 		try
 		{
 			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025012?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
-			self::assertSame(400, $response['status'], 'Current behaviour: the add is refused');
+			self::assertSame(200, $response['status'], 'the add succeeds instead of refusing after already writing the product');
 
 			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
 			$product->execute(['Coverage Differing Units 4000417025012']);
 			$productId = $product->fetchColumn();
-			self::assertNotFalse($productId, 'but the product row was already written and stays behind');
+			self::assertNotFalse($productId, 'the product row was written');
 
 			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ?');
 			$barcode->execute([$productId]);
 			self::assertSame(1, (int)$barcode->fetchColumn(), 'together with its barcode');
 
-			$factor = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
-			$factor->execute([$productId]);
-			self::assertSame(1.0, (float)$factor->fetchColumn(), 'while the conversion is the trigger default, not the factor the lookup found');
+			$conversions = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$conversions->execute([$productId]);
+			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertCount(1, $factors, 'exactly one purchase->stock conversion, not the trigger default plus a duplicate');
+			self::assertSame(6.0, (float)$factors[0], 'carrying the factor the lookup plugin found, not the trigger default of 1');
 		}
 		finally
 		{

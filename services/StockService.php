@@ -1044,23 +1044,35 @@ class StockService extends BaseService
 					}
 				}
 
-				$newProductRow = $this->DB->products()->createRow($productData);
-				$newProductRow->save();
-
-				$this->DB->product_barcodes()->createRow([
-					'product_id' => $newProductRow->id,
-					'barcode' => $pluginOutput['__barcode']
-				])->save();
-
-				if ($pluginOutput['qu_id_stock'] != $pluginOutput['qu_id_purchase'])
+				DatabaseService::GetInstance()->InTransaction(function () use ($productData, $pluginOutput, &$newProductRow)
 				{
-					$this->DB->quantity_unit_conversions()->createRow([
+					$newProductRow = $this->DB->products()->createRow($productData);
+					$newProductRow->save();
+
+					$this->DB->product_barcodes()->createRow([
 						'product_id' => $newProductRow->id,
-						'from_qu_id' => $pluginOutput['qu_id_purchase'],
-						'to_qu_id' => $pluginOutput['qu_id_stock'],
-						'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+						'barcode' => $pluginOutput['__barcode']
 					])->save();
-				}
+
+					if ($pluginOutput['qu_id_stock'] != $pluginOutput['qu_id_purchase'])
+					{
+						// products_default_qu_conversions_INS already created the 1:1
+						// purchase->stock conversion for this product as part of the
+						// products insert above; set the plugin's factor onto that row
+						// instead of inserting a second one for the same unit pair, which
+						// qu_conversions_custom_constraint_INS refuses as a duplicate.
+						$conversionRow = $this->DB->quantity_unit_conversions()->where(
+							'product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3',
+							$newProductRow->id,
+							$pluginOutput['qu_id_purchase'],
+							$pluginOutput['qu_id_stock']
+						)->fetch();
+
+						$conversionRow->update([
+							'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+						]);
+					}
+				});
 
 				$pluginOutput['id'] = $newProductRow->id;
 			}

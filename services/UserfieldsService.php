@@ -161,6 +161,10 @@ class UserfieldsService extends BaseService
 			throw new \Exception('Entity does not exist or is not exposed');
 		}
 
+		// Resolve every key to its field row before writing any value: a submitted key
+		// that is not a userfield of this entity must refuse the whole request rather
+		// than leave the keys before it written.
+		$fieldIdsByKey = [];
 		foreach ($userfields as $key => $value)
 		{
 			$fieldRow = $this->DB->userfields()->where('entity = :1 AND name = :2', $entity, $key)->fetch();
@@ -170,24 +174,32 @@ class UserfieldsService extends BaseService
 				throw new \Exception("Field $key is not a valid userfield of the given entity");
 			}
 
-			$fieldId = $fieldRow->id;
-
-			$alreadyExistingEntry = $this->DB->userfield_values()->where('field_id = :1 AND object_id = :2', $fieldId, $objectId)->fetch();
-
-			if ($alreadyExistingEntry) // Update
-			{$alreadyExistingEntry->update([
-				'value' => $value
-			]);
-			}
-			else // Insert
-			{$newRow = $this->DB->userfield_values()->createRow([
-				'field_id' => $fieldId,
-				'object_id' => $objectId,
-				'value' => $value
-			]);
-				$newRow->save();
-			}
+			$fieldIdsByKey[$key] = $fieldRow->id;
 		}
+
+		DatabaseService::GetInstance()->InTransaction(function () use ($userfields, $fieldIdsByKey, $objectId)
+		{
+			foreach ($userfields as $key => $value)
+			{
+				$fieldId = $fieldIdsByKey[$key];
+
+				$alreadyExistingEntry = $this->DB->userfield_values()->where('field_id = :1 AND object_id = :2', $fieldId, $objectId)->fetch();
+
+				if ($alreadyExistingEntry) // Update
+				{$alreadyExistingEntry->update([
+					'value' => $value
+				]);
+				}
+				else // Insert
+				{$newRow = $this->DB->userfield_values()->createRow([
+					'field_id' => $fieldId,
+					'object_id' => $objectId,
+					'value' => $value
+				]);
+					$newRow->save();
+				}
+			}
+		});
 	}
 
 	/**
