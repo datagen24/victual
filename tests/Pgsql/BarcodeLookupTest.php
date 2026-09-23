@@ -663,7 +663,7 @@ class BarcodeLookupTest extends TestCase
 
 	/**
 	 * @param array<string, mixed> $spec
-	 * @return array{outcome: string, product: ?array, message: ?string, request_uri: ?string, request_headers: array, client_config: array, diagnostics: array}
+	 * @return array{outcome: string, product: ?array, message: ?string, request_uri: ?string, request_headers: array, request_options: array, client_config: array, diagnostics: array}
 	 */
 	private static function openFoodFacts(array $spec): array
 	{
@@ -674,7 +674,11 @@ class BarcodeLookupTest extends TestCase
 			'body' => '{}',
 			'locations' => [['id' => 2, 'name' => 'Fridge'], ['id' => 5, 'name' => 'Pantry']],
 			'quantity_units' => [['id' => 2, 'name' => 'Piece'], ['id' => 3, 'name' => 'Pack']],
-			'user_settings' => ['product_presets_location_id' => -1, 'product_presets_qu_id' => -1]
+			'user_settings' => ['product_presets_location_id' => -1, 'product_presets_qu_id' => -1],
+			// A canned, public answer for Fetch()'s host policy (issue #460), so every test
+			// but the one that deliberately asks for real DNS (pass null here) stays
+			// offline - see barcodelookup-subprocess-helper.php's own docblock.
+			'host_resolver_addresses' => ['93.184.216.34']
 		], $spec);
 
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -887,7 +891,197 @@ class BarcodeLookupTest extends TestCase
 			'the endpoint is not configurable and must stay that way'
 		);
 		self::assertStringStartsWith('VictualOpenFoodFactsBarcodeLookupPlugin/', $result['request_headers']['User-Agent'], 'Open Food Facts requires an identifying User-Agent');
-		self::assertFalse($result['client_config']['http_errors'], 'a 404 must reach the status check rather than raising');
+		self::assertFalse($result['request_options']['http_errors'], 'a 404 must reach the status check rather than raising');
+	}
+
+	/**
+	 * Issue #460: OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() no longer builds its own
+	 * GuzzleHttp\Client - it calls $this->Fetch(), the same seam
+	 * services/StockService.php::ExternalBarcodeLookup()'s picture download goes through
+	 * (see tests/Pgsql/StockCoverageTest.php's
+	 * testAPermittedHostAndExtensionAreStillFetchedAndStored for that caller's half of this
+	 * proof). Every option below is Fetch()'s doing, not anything OpenFoodFactsBarcodeLookupPlugin
+	 * asks for itself; 'timeout' in particular did not exist anywhere before issue #460, so
+	 * its presence here cannot be explained by the plugin's own pre-#460 request building.
+	 */
+	public function testOpenFoodFactsRequestGoesThroughTheSharedFetchSeam(): void
+	{
+		$result = self::openFoodFacts(['body' => self::foundPayload()]);
+
+		self::assertFalse($result['request_options']['allow_redirects'], 'Fetch() does not follow redirects');
+		self::assertSame('', $result['request_options']['proxy'], 'Fetch() overrides any HTTP_PROXY/HTTPS_PROXY in the environment');
+		// JSON round-tripping a whole-number float (10.0) through the subprocess helper
+		// loses the distinction from an int (10) - a (float) cast restores it for the
+		// comparison without weakening it to a loose assertEquals().
+		self::assertSame(10.0, (float)$result['request_options']['timeout'], 'Fetch() sets a timeout, which nothing set before issue #460');
+
+		$resolveOptions = $result['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
+		self::assertNotEmpty($resolveOptions, 'Fetch() pins the request to the address OutboundHostPolicy validated');
+		self::assertStringContainsString('world.openfoodfacts.org:443:93.184.216.34', $resolveOptions[0], 'pinned to the canned resolver answer this test supplied, naming the real compiled-in host');
+	}
+
+	/**
+	 * Issue #460 requires routing Open Food Facts' compiled-in host through
+	 * OutboundHostPolicy to still work - not to be confused with the network request itself,
+	 * which is faked throughout this file. No test here ever performs a real DNS lookup: a
+	 * canned resolver answer stands in for one (BaseBarcodeLookupPlugin's fourth constructor
+	 * argument, injected by barcodelookup-subprocess-helper.php from this spec's
+	 * host_resolver_addresses key), exactly as OutboundHostPolicyTest injects one directly.
+	 * This case names its own address, distinct from testOpenFoodFactsRequestGoesThroughTheSharedFetchSeam's
+	 * default, to make plain that the policy result follows whatever the resolver answers,
+	 * not something specific to that one address.
+	 */
+	public function testOpenFoodFactsRequestIsPinnedWhenTheResolverAnswersAPublicAddress(): void
+	{
+		$result = self::openFoodFacts([
+			'body' => self::foundPayload(),
+			'host_resolver_addresses' => ['203.0.113.9']
+		]);
+
+		self::assertSame('hit', $result['outcome'], 'a resolver answer the host policy allows must not be refused: ' . json_encode($result));
+
+		$resolveOptions = $result['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
+		self::assertNotEmpty($resolveOptions);
+		self::assertStringContainsString('world.openfoodfacts.org:443:203.0.113.9', $resolveOptions[0], 'pinned to the address this test\'s resolver answered, not the default from other tests in this file');
+	}
+
+	/**
+	 * The other side of the case above: a resolver answering with a private address for the
+	 * compiled-in host is refused exactly as it would be for any other source, before any
+	 * request is made. Unlike the barcode picture download (services/StockService.php),
+	 * ExecuteLookup() does not catch Fetch()'s OutboundHostRefusedException - neither this
+	 * method nor Lookup() (helpers/BaseBarcodeLookupPlugin.php) wraps it - so a refusal here
+	 * does not fail soft into a miss; it propagates as an uncaught exception, which
+	 * services/StockService.php::ExternalBarcodeLookup() also does not catch around
+	 * $plugin->Lookup($barcode). In production this reaches the API controller as the same
+	 * "plugin error" 400 response any other ExecuteLookup() exception produces (see
+	 * StockCoverageTest::testExternalBarcodeLookupReturnsAndOptionallyCreatesTheFoundProduct's
+	 * "error" barcode case) - appropriate here, since a lookup that cannot ask its source
+	 * anything has nothing to report as a miss.
+	 */
+	public function testOpenFoodFactsRequestIsRefusedRatherThanFailingSoftWhenTheResolverAnswersAPrivateAddress(): void
+	{
+		$result = self::openFoodFacts([
+			'body' => self::foundPayload(),
+			'host_resolver_addresses' => ['10.0.0.5']
+		]);
+
+		self::assertSame('exception', $result['outcome'], 'a private resolver answer must refuse the request rather than proceeding: ' . json_encode($result));
+		self::assertStringContainsString('resolves to refused address', $result['message']);
+		self::assertNull($result['request_uri'], 'refused before GuzzleHttp\\Client::request() is ever reached');
+	}
+
+	/**
+	 * Fetch() is the one chokepoint every barcode-lookup outbound request goes through
+	 * (issue #460), which is only true if a caller cannot hand it options that undo the
+	 * policy it enforces. $options is an allow-list of 'headers' alone (CodeRabbit's review
+	 * of #472/#473: a deny-list of the settings Fetch() already knew about still forwarded
+	 * any other Guzzle option straight through, including ones with no connection to
+	 * anything named above - 'verify' => false would disable TLS certificate verification
+	 * entirely), so every one of 'allow_redirects' => true (a redirect off the pinned
+	 * address), 'proxy' => '...' (the proxy resolves the host itself, making the pin
+	 * meaningless), 'timeout' => 0 / 'connect_timeout' => 0 (Guzzle's own spelling of "no
+	 * limit", for the whole request and the connect phase respectively),
+	 * 'curl' => [CURLOPT_FOLLOWLOCATION => true] (the same redirect-following defeat by a
+	 * different route) and 'verify' => false must be ignored outright rather than merged,
+	 * however plausible the reason a caller might pass any of them looks. No current caller
+	 * passes any of these; this proves Fetch() does not merely happen to be safe because of
+	 * that.
+	 */
+	public function testFetchIgnoresACallerSuppliedAllowRedirectsProxyAndCurlOverride(): void
+	{
+		$result = self::fetchHardening(
+			'https://world.openfoodfacts.org/x.jpg',
+			['203.0.113.9'],
+			[
+				// A User-Agent, so DefaultUserAgent() (which resolves the installed version
+				// through a database connection this lightweight process does not have) is
+				// never reached - unrelated to what this test is actually about.
+				'headers' => ['User-Agent' => 'FetchHardeningTest/1.0'],
+				'allow_redirects' => true,
+				'proxy' => 'http://proxy.example:3128',
+				'timeout' => 0,
+				'connect_timeout' => 0,
+				'curl' => [CURLOPT_FOLLOWLOCATION => true],
+				'verify' => false,
+			]
+		);
+
+		self::assertFalse($result['request_options']['allow_redirects'], 'a caller cannot re-enable following redirects');
+		self::assertSame('', $result['request_options']['proxy'], 'a caller cannot re-enable an outbound proxy');
+		self::assertSame(10.0, (float)$result['request_options']['timeout'], 'a caller cannot remove the whole-request timeout');
+		self::assertSame(5.0, (float)$result['request_options']['connect_timeout'], 'a caller cannot remove the connect timeout');
+		self::assertArrayNotHasKey(CURLOPT_FOLLOWLOCATION, $result['request_options']['curl'] ?? [], 'a caller-supplied curl option is discarded entirely, not merged with the pin');
+		self::assertArrayHasKey(CURLOPT_RESOLVE, $result['request_options']['curl'] ?? [], "Fetch()'s own DNS-rebinding pin still applies");
+		self::assertNotSame(false, $result['request_options']['verify'], "a caller cannot disable TLS certificate verification - Guzzle's own default (true) applies since Fetch() never even looks at this key");
+	}
+
+	/**
+	 * The response-size cap (issue #460, added on CodeRabbit's review of #472): Fetch()
+	 * always installs its own 'on_headers' callback and CURLOPT_MAXFILESIZE_LARGE, and a
+	 * caller cannot replace either (proven above for on_headers implicitly, since it is one
+	 * of the keys unset before the merge - this test additionally proves the installed
+	 * callback actually enforces the cap it claims to). Invoking the recorded on_headers
+	 * with a response Content-Length at or under 10 MiB does not throw; strictly over it
+	 * does, before the body would have downloaded at all.
+	 */
+	public function testFetchsOnHeadersGuardEnforcesTheTenMebibyteCap(): void
+	{
+		$tenMebibytes = 10 * 1024 * 1024;
+
+		$result = self::fetchHardening(
+			'https://world.openfoodfacts.org/x.jpg',
+			['203.0.113.9'],
+			['headers' => ['User-Agent' => 'FetchHardeningTest/1.0']],
+			[$tenMebibytes, $tenMebibytes + 1]
+		);
+
+		self::assertTrue($result['request_options']['on_headers_is_callable'], 'Fetch() always installs its own on_headers callback');
+		self::assertArrayHasKey(CURLOPT_MAXFILESIZE_LARGE, $result['request_options']['curl'] ?? [], 'and the curl-level backstop for a response with no Content-Length at all');
+		self::assertSame($tenMebibytes, $result['request_options']['curl'][CURLOPT_MAXFILESIZE_LARGE] ?? null);
+
+		self::assertSame('passed', $result['on_headers_results'][(string)$tenMebibytes], 'exactly the cap is not "above" it');
+		self::assertSame('threw', $result['on_headers_results'][(string)($tenMebibytes + 1)], 'one byte over the cap is rejected before the body downloads');
+	}
+
+	/**
+	 * Runs fetch-hardening-subprocess-helper.php, which calls BaseBarcodeLookupPlugin::Fetch()
+	 * directly (via a concrete OpenFoodFactsBarcodeLookupPlugin instance) with $options,
+	 * against a substituted GuzzleHttp\Client and an injected resolver - no real network
+	 * call and no real DNS lookup either.
+	 *
+	 * @return array{request_options: array{allow_redirects: ?bool, proxy: ?string, timeout: ?float, connect_timeout: ?float, on_headers_is_callable: bool, curl: ?array, verify: mixed}, on_headers_results: array<string, string>}
+	 */
+	private static function fetchHardening(string $url, array $hostResolverAddresses, array $options, array $onHeadersContentLengths = []): array
+	{
+		$spec = [
+			'url' => $url,
+			'host_resolver_addresses' => $hostResolverAddresses,
+			'options' => $options,
+			'on_headers_content_lengths' => $onHeadersContentLengths,
+		];
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$environment = array_merge($inherited, ['VICTUAL_ROOT' => VICTUAL_ROOT_PATH]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/fetch-hardening-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$environment
+		);
+
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		$result = json_decode($output, true);
+		self::assertIsArray($result, "fetch-hardening-subprocess-helper.php printed no JSON. stdout: $output\nstderr: $errors");
+
+		return $result;
 	}
 
 	/** @return array<string, array{0: string, 1: string}> */

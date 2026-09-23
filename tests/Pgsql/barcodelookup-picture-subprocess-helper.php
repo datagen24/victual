@@ -8,12 +8,14 @@
 //
 // GuzzleHttp\Client is declared in the global namespace before packages/autoload.php runs,
 // the same substitution tests/Pgsql/barcodelookup-subprocess-helper.php uses for
-// OpenFoodFactsBarcodeLookupPlugin: services/StockService.php's picture download does
-// `use GuzzleHttp\Client;` and `new Client()`, which binds to this stand-in instead of the
-// real class, because the stand-in already exists by the time anything asks for it. It
-// records whether request() was ever called and with what, which is how the "no outbound
-// request was made" assertions are proved rather than assumed - a refused host could
-// otherwise look identical to a host that was fetched and merely timed out.
+// OpenFoodFactsBarcodeLookupPlugin. Since issue #460, services/StockService.php's picture
+// download does not build a client itself at all - it calls $plugin->Fetch() (the shared
+// seam, helpers/BaseBarcodeLookupPlugin.php), which does `use GuzzleHttp\Client;` and
+// `new Client()`; that binds to this stand-in instead of the real class, because the
+// stand-in already exists by the time anything asks for it. It records whether request()
+// was ever called and with what, which is how the "no outbound request was made"
+// assertions are proved rather than assumed - a refused host could otherwise look
+// identical to a host that was fetched and merely timed out.
 //
 //   php barcodelookup-picture-subprocess-helper.php <base64 of a JSON spec>
 //
@@ -22,9 +24,11 @@
 // response Client::request() returns when it is called at all.
 //
 // Output: request-subprocess-helper.php's {status, body} plus request_made (bool),
-// request_uri, request_options ("curl", "allow_redirects" and "proxy" in particular,
-// which is where the resolved-address pin, the redirect refusal and the proxy bypass
-// guard are each asserted).
+// request_uri, request_options ("curl", "allow_redirects", "proxy" and "timeout" in
+// particular, which is where the resolved-address pin, the redirect refusal, the proxy
+// bypass guard and Fetch()'s timeout are each asserted - the same options
+// tests/Pgsql/barcodelookup-subprocess-helper.php captures for Open Food Facts' own
+// request, which is how both callers going through the same seam is proven).
 
 namespace GuzzleHttp
 {
@@ -159,6 +163,7 @@ namespace
 			'allow_redirects' => \GuzzleHttp\Client::$LastOptions['allow_redirects'] ?? null,
 			'curl' => \GuzzleHttp\Client::$LastOptions['curl'] ?? null,
 			'proxy' => \GuzzleHttp\Client::$LastOptions['proxy'] ?? null,
+			'timeout' => \GuzzleHttp\Client::$LastOptions['timeout'] ?? null,
 		],
 	]);
 }

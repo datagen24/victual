@@ -3,11 +3,8 @@
 namespace Victual\Services;
 
 use Victual\Helpers\Grocycode;
-use Victual\Helpers\OutboundHostPolicy;
-use Victual\Helpers\OutboundHostRefusedException;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Storage\FileStorage;
-use GuzzleHttp\Client;
 
 /**
  * Core domain service for all stock operations (purchases, consumption, transfers,
@@ -1088,53 +1085,26 @@ class StockService extends BaseService
 							else
 							{
 								// __image_url is chosen by the barcode source, not by this
-								// deployment - sweep finding S14 (docs/security-sweep.md)
-								// requires its host to be resolved and refused before the
-								// fetch when it is, or resolves to, a loopback, private,
-								// link-local or otherwise internal address. Every address the
-								// host resolves to is checked; one of the addresses returned
-								// is then pinned for the request itself (CURLOPT_RESOLVE), so
-								// a second, different DNS answer at request time cannot be
-								// used instead of the one just validated (DNS rebinding).
-								$hostPolicy = new OutboundHostPolicy();
-								$validatedAddresses = $hostPolicy->AssertAllowed($pluginOutput['__image_url']);
-
-								$urlParts = parse_url($pluginOutput['__image_url']);
-								$scheme = strtolower($urlParts['scheme']);
-								$host = trim($urlParts['host'], '[]');
-								$port = $urlParts['port'] ?? ($scheme === 'https' ? 443 : 80);
-								$pinnedAddress = $validatedAddresses[0];
-
-								// An IPv6 literal host is never looked up, so there is nothing
-								// to pin, and its colons make curl's host:port:address entry
-								// unparseable. Every other host keeps the pin.
-								$curlOptions = [];
-								if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
-								{
-									$curlOptions[CURLOPT_RESOLVE] = [$host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress)];
-								}
-
-								$webClient = new Client();
-								$response = $webClient->request('GET', $pluginOutput['__image_url'], [
-									'headers' => ['User-Agent' => 'Victual/' . ApplicationService::GetInstance()->GetInstalledVersion()->Version . ' (https://github.com/datagen24/victual)'],
-									// A redirect (3xx) is not an HTTP error to Guzzle and would
-									// otherwise come back as an ordinary response here, since
-									// allow_redirects is off; without the status check below, a
-									// .jpg URL answering 302 with an HTML body would have that
-									// body stored as the picture.
-									'allow_redirects' => false,
-									// Pinning the connection to the validated address
-									// (CURLOPT_RESOLVE, above) is worthless if a proxy - picked
-									// up from HTTP_PROXY/HTTPS_PROXY/NO_PROXY by default - does
-									// its own DNS resolution instead. An explicit empty proxy
-									// overrides the environment (curl's own documented
-									// behaviour) rather than merely omitting the option, which
-									// would still inherit it. A deployment behind a mandatory
-									// outbound proxy loses only this one already-fail-soft
-									// picture fetch, not the lookup itself.
-									'proxy' => '',
-									'curl' => $curlOptions,
-								]);
+								// deployment. $plugin->Fetch() (issue #460) is the shared seam
+								// every outbound request this tree makes on a source's say-so
+								// goes through: it resolves and refuses a loopback, private,
+								// link-local or otherwise internal host before requesting
+								// anything (sweep finding S14, docs/security-sweep.md, via
+								// helpers/OutboundHostPolicy.php), pins the request to the
+								// validated address for every host except an IPv6 literal -
+								// which is never looked up, so there is nothing to pin, and
+								// whose colons curl's host:port:address form cannot express -
+								// does not follow redirects, and does not honour an
+								// HTTP_PROXY/HTTPS_PROXY environment override - a proxy would
+								// resolve the host itself and make the pin meaningless. Every
+								// barcode-lookup request goes through the same Fetch() and so
+								// ignores the environment proxy the same way, not only this
+								// picture fetch: a deployment behind a mandatory outbound
+								// proxy cannot use any barcode source at all, and this fetch
+								// failing soft (unlike a source's own request, which is not
+								// caught here) only means the picture step in particular does
+								// not fail the whole add.
+								$response = $plugin->Fetch($pluginOutput['__image_url']);
 
 								if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300)
 								{

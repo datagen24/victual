@@ -76,6 +76,7 @@
 		<testsuite name="barcodelookup">
 			<file>tests/Pgsql/BarcodeLookupTest.php</file>
 			<file>tests/Pgsql/OutboundHostPolicyTest.php</file>
+			<file>tests/Pgsql/GtinTest.php</file>
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>

@@ -5,20 +5,35 @@
 //
 //   php barcodelookup-subprocess-helper.php <base64 of a JSON spec>
 //
-// Why a separate process. OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() builds its own
-// GuzzleHttp\Client inside the method against a URL compiled into the source, so there is
-// no argument, no constructor parameter and no protected method a subclass could override
-// to reach the transport - the only seam left is the class name itself. This file declares
-// GuzzleHttp\Client before packages/autoload.php is required, so `new Client(...)` in the
-// plugin binds to the stand-in and the request never leaves the process. Doing that in the
-// PHPUnit process would replace Guzzle for every other test in the run; here it dies with
-// the process. The network is the one genuine external boundary in this plugin - the
-// parsing, the mapping and the null-on-miss decisions all run for real.
+// Why a separate process. OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() calls
+// $this->Fetch() (issue #460's shared seam, helpers/BaseBarcodeLookupPlugin.php), which
+// builds its own GuzzleHttp\Client against a URL compiled into the plugin, so there is no
+// argument and no return value a caller in the same process could substitute - the seam is
+// reached, but the transport it uses still is not. This file declares GuzzleHttp\Client
+// before packages/autoload.php is required, so `new Client(...)` inside Fetch() binds to
+// the stand-in and the request never leaves the process. Doing that in the PHPUnit process
+// would replace Guzzle for every other test in the run; here it dies with the process. The
+// network is the one genuine external boundary in this plugin - the parsing, the mapping
+// and the null-on-miss decisions all run for real.
 //
-// Spec keys: barcode, locale, status, body, locations, quantity_units, user_settings.
+// Fetch() also resolves the request's host through OutboundHostPolicy (issue #459), which
+// defaults to a real DNS lookup. host_resolver_addresses (below) is always passed as the
+// fourth, injectable BaseBarcodeLookupPlugin constructor argument precisely so that stays
+// offline too - no test in this file performs a real DNS lookup or a real network request;
+// BarcodeLookupTest::testOpenFoodFactsRequestIsPinnedWhenTheResolverAnswersAPublicAddress
+// and ...RefusedRatherThanFailingSoftWhenTheResolverAnswersAPrivateAddress exercise the
+// host policy itself, each with its own canned resolver answer, exactly as
+// OutboundHostPolicyTest does directly.
+//
+// Spec keys: barcode, locale, status, body, locations, quantity_units, user_settings,
+// host_resolver_addresses (required array of IPs the compiled-in host "resolves" to).
 // Prints one JSON object: outcome ("hit" | "miss" | "exception"), product, message,
-// request_uri, request_headers, client_config, diagnostics (every PHP notice/warning the
-// plugin raised, which is how the test pins the payload shapes the plugin does not guard).
+// request_uri, request_headers, request_options (allow_redirects, proxy, timeout, and the
+// curl CURLOPT_RESOLVE entry - the same seam options
+// tests/Pgsql/barcodelookup-picture-subprocess-helper.php captures for the picture
+// download, which is how both callers going through Fetch() is proven), client_config,
+// diagnostics (every PHP notice/warning the plugin raised, which is how the test pins the
+// payload shapes the plugin does not guard).
 
 namespace GuzzleHttp
 {
@@ -71,10 +86,14 @@ namespace
 
 	$toObjects = fn (array $rows) => array_map(fn ($row) => (object)$row, $rows);
 
+	// Always injected, never null: this file makes no real DNS lookup, ever.
+	$hostResolver = fn (string $host) => $spec['host_resolver_addresses'];
+
 	$plugin = new OpenFoodFactsBarcodeLookupPlugin(
 		$toObjects($spec['locations']),
 		$toObjects($spec['quantity_units']),
-		$spec['user_settings']
+		$spec['user_settings'],
+		$hostResolver
 	);
 
 	$result = ['outcome' => 'miss', 'product' => null, 'message' => null];
@@ -96,6 +115,13 @@ namespace
 	echo json_encode($result + [
 		'request_uri' => \GuzzleHttp\Client::$LastUri,
 		'request_headers' => \GuzzleHttp\Client::$LastOptions['headers'] ?? [],
+		'request_options' => [
+			'allow_redirects' => \GuzzleHttp\Client::$LastOptions['allow_redirects'] ?? null,
+			'proxy' => \GuzzleHttp\Client::$LastOptions['proxy'] ?? null,
+			'timeout' => \GuzzleHttp\Client::$LastOptions['timeout'] ?? null,
+			'http_errors' => \GuzzleHttp\Client::$LastOptions['http_errors'] ?? null,
+			'curl' => \GuzzleHttp\Client::$LastOptions['curl'] ?? null,
+		],
 		'client_config' => \GuzzleHttp\Client::$LastConfig,
 		'diagnostics' => $diagnostics
 	]);
