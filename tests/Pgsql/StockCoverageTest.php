@@ -3017,18 +3017,12 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:1047-1063): when a looked-up product's purchase and
-	 * stock units differ, the products INSERT lands first and the database's own
-	 * products_default_qu_conversions_INS trigger immediately creates the 1:1 conversion for
-	 * that unit pair; the explicit insert of the plugin's __qu_factor_purchase_to_stock then
-	 * duplicates it and is refused by qu_conversions_custom_constraint_INS. Nothing here runs
-	 * in a transaction, so the product and its barcode stay behind while the factor the
-	 * lookup found is lost, and the client is told only that "the database rejected this
-	 * request".
-	 *
-	 * Correct behaviour is either to update the conversion the trigger created or to wrap the
-	 * three writes in one transaction so the refusal leaves nothing. Pinned on the current
-	 * behaviour, including the half-write, which is the part that matters.
+	 * When a looked-up product's purchase and stock units differ, the products INSERT fires
+	 * products_default_qu_conversions_INS, which creates the 1:1 conversion for that unit
+	 * pair only when no conversion (including a global, product_id IS NULL one) already
+	 * resolves it. The plugin's __qu_factor_purchase_to_stock is written onto that
+	 * trigger-created row when it exists, and the product, its barcode and the conversion are
+	 * all written in one transaction so a failure leaves nothing behind.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAddingALookedUpProductWhosePurchaseUnitDiffersSucceedsWithOneConversion(): void
@@ -3054,6 +3048,50 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
 			self::assertCount(1, $factors, 'exactly one purchase->stock conversion, not the trigger default plus a duplicate');
 			self::assertSame(6.0, (float)$factors[0], 'carrying the factor the lookup plugin found, not the trigger default of 1');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * products_default_qu_conversions_INS creates the product-specific 1:1 conversion only
+	 * "when no default QU conversion apply" (db/pgsql/baseline/06_triggers_a.sql), i.e. it
+	 * checks quantity_unit_conversions_resolved, which a global (product_id IS NULL)
+	 * conversion between the same two units already satisfies. When one exists, the trigger
+	 * inserts nothing, so the add must insert the product-specific conversion itself instead
+	 * of updating a row that was never created.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAddingALookedUpProductSucceedsWhenAGlobalConversionAlreadyCoversTheUnits(): void
+	{
+		$quIdPurchase = self::insertRow('quantity_units', ['name' => 'Coverage Global Purchase', 'name_plural' => 'Coverage Global Purchases']);
+		$quIdStock = self::insertRow('quantity_units', ['name' => 'Coverage Global Stock', 'name_plural' => 'Coverage Global Stocks']);
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 4, NULL)')
+			->execute([$quIdPurchase, $quIdStock]);
+
+		$pluginFile = self::writeUserLookupPlugin('Coverage Global Conversion ', $quIdPurchase, $quIdStock, 'null');
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025036?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'a pre-existing global conversion between the units does not stop the add from succeeding');
+
+			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
+			$product->execute(['Coverage Global Conversion 4000417025036']);
+			$productId = $product->fetchColumn();
+			self::assertNotFalse($productId, 'the product row was written');
+
+			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ?');
+			$barcode->execute([$productId]);
+			self::assertSame(1, (int)$barcode->fetchColumn(), 'together with its barcode');
+
+			$conversions = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
+			$conversions->execute([$productId, $quIdPurchase, $quIdStock]);
+			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertCount(1, $factors, 'exactly one product-specific purchase->stock conversion, inserted since the trigger created none');
+			self::assertSame(6.0, (float)$factors[0], 'carrying the factor the lookup plugin found, not the pre-existing global factor of 4');
 		}
 		finally
 		{

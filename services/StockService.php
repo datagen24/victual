@@ -1056,11 +1056,17 @@ class StockService extends BaseService
 
 					if ($pluginOutput['qu_id_stock'] != $pluginOutput['qu_id_purchase'])
 					{
-						// products_default_qu_conversions_INS already created the 1:1
-						// purchase->stock conversion for this product as part of the
-						// products insert above; set the plugin's factor onto that row
-						// instead of inserting a second one for the same unit pair, which
-						// qu_conversions_custom_constraint_INS refuses as a duplicate.
+						// products_default_qu_conversions_INS only creates the 1:1
+						// purchase->stock conversion for this product when no conversion
+						// (including a global, product_id IS NULL one) already resolves
+						// that unit pair. When it did create one, set the plugin's factor
+						// onto that row instead of inserting a second one for the same
+						// pair, which qu_conversions_custom_constraint_INS refuses as a
+						// duplicate. When it did not - a global conversion already covers
+						// the pair - insert the product-specific conversion ourselves, as
+						// the old code did; that is accepted because the constraint keys
+						// on (from_qu_id, to_qu_id, product_id) and a global row's
+						// product_id is NULL, not this product's id.
 						$conversionRow = $this->DB->quantity_unit_conversions()->where(
 							'product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3',
 							$newProductRow->id,
@@ -1068,9 +1074,21 @@ class StockService extends BaseService
 							$pluginOutput['qu_id_stock']
 						)->fetch();
 
-						$conversionRow->update([
-							'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
-						]);
+						if ($conversionRow !== null)
+						{
+							$conversionRow->update([
+								'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+							]);
+						}
+						else
+						{
+							$this->DB->quantity_unit_conversions()->createRow([
+								'product_id' => $newProductRow->id,
+								'from_qu_id' => $pluginOutput['qu_id_purchase'],
+								'to_qu_id' => $pluginOutput['qu_id_stock'],
+								'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+							])->save();
+						}
 					}
 				});
 
