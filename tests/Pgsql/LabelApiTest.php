@@ -2042,9 +2042,21 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 		// The print route reaches the exact same derivation failure and, since #462's fix,
 		// answers the exact same named refusal - not a generic 400 with no field or code.
+		// The catch for it in LabelsApiController::Operate() sits outside
+		// InRequestTransaction(), so the label LabelIdentityService::Issue() mints before
+		// ResolvePrinter() ever reaches the failing digest, the print_jobs row CreateJob()
+		// would write afterwards, and the idempotency record IdempotencyService::Record()
+		// would write on success must all roll back together - this pins that they do.
+		$before = self::Counts();
+		$idempotencyKeysBefore = (int)self::$db->query('SELECT count(*) FROM label_idempotency_keys')->fetchColumn();
+
 		$print = self::Send('POST', '/api/labels/location/' . self::$targets['location'] . '/print',
-			['import_epoch' => 0, 'printer_id' => $printerId], self::$operatorKey);
+			['import_epoch' => 0, 'printer_id' => $printerId], self::$operatorKey, ['Idempotency-Key' => 'labelapi-unencodable-' . bin2hex(random_bytes(4))]);
 		self::AssertRefusal($print, 422, 'document', 'not_canonicalizable');
+
+		self::assertSame($before, self::Counts(), 'a refused print leaves no label, print job or outbox event behind');
+		self::assertSame($idempotencyKeysBefore, (int)self::$db->query('SELECT count(*) FROM label_idempotency_keys')->fetchColumn(),
+			'a refused print records no idempotency key either, so a retry is not treated as a replay of nothing');
 
 		self::assertSame($profiles, (int)self::$db->query('SELECT count(*) FROM label_media_profiles')->fetchColumn(),
 			'a profile that cannot be digested is not stored undigested');
