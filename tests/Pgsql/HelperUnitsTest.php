@@ -727,15 +727,14 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 * Pinned rather than marked incomplete: the current answer is what every caller sees
 	 * today, and a test that skipped would stop saying so.
 	 */
-	public function testGrocycodeAcceptsACodeWithNoIdAndAnswersNullForIt()
+	public function testGrocycodeRefusesACodeWithNoId()
 	{
-		self::assertTrue(Grocycode::Validate('grcy:p'), 'DEFECT: an id-less code validates');
+		self::assertFalse(Grocycode::Validate('grcy:p'), 'a code with no id part is refused');
 
-		$parsed = new Grocycode('grcy:p');
+		$this->expectException(\Exception::class);
+		$this->expectExceptionMessage('Not a Grocycode');
 
-		self::assertSame('p', $parsed->GetType());
-		self::assertNull($parsed->GetId(), 'DEFECT: the mandatory object id is absent and unreported');
-		self::assertSame([], $parsed->GetExtraData());
+		new Grocycode('grcy:p');
 	}
 
 	public function testGrocycodeRefusesArgumentListsItHasNoOverloadFor()
