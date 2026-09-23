@@ -3529,6 +3529,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * happens for a literal, so there is nothing to pin, and the host:port:address form
 	 * cannot express an IPv6 host, so the entry used to make the download fail.
 	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAPublicIpv6LiteralIsFetchedWithoutAResolvePin(): void
 	{
 		$pluginFile = self::writeUserLookupPlugin('Coverage Ipv6 Fetch ', 2, 2, "'https://[2001:4860:4860::8888]/products/x.png'");
