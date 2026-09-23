@@ -65,7 +65,7 @@ class IdempotencyService extends LabelService
                 // produce a second physical label.
                 $this->Refuse('idempotency_key', 'idempotency_in_progress', 'A request with that key is still in progress');
             }
-            return ['replay' => true, 'row' => $existing + ['response' => json_decode((string)$existing['response'], true)]];
+            return ['replay' => true, 'row' => array_merge($existing, ['response' => json_decode((string)$existing['response'], true)])];
         }
 
         $this->Query('INSERT INTO label_idempotency_keys(principal_user_id,operation,idempotency_key,request_fingerprint,expires_at)

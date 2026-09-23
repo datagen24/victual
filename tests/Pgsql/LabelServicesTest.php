@@ -1993,18 +1993,23 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 	 * accepted. The correct behaviour is to accept it; this test pins what happens today,
 	 * because application code is out of scope for this work.
 	 */
-	public function testIntegerConfidenceIsRefusedAsConflictingWithItself(): void
+	public function testIntegerConfidenceIsAcceptedAsARepeatedIdenticalSubmission(): void
 	{
 		[, $attempt] = self::attempt(self::$worker);
+		$evidence = self::deviceStatusEvidence(['confidence' => 1.0]);
 
-		self::assertSame(1.0, (float)self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt,
-			self::deviceStatusEvidence(['confidence' => 1.0])))['confidence'],
+		self::assertSame(1.0, (float)self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence))['confidence'],
 			'Full confidence written as a float is accepted');
 
+		$evidence['confidence'] = 1;
+		self::assertSame(1.0, (float)self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence))['confidence'],
+			'Full confidence written as an integer is accepted as equivalent to the stored 1.0');
+
+		$evidence['confidence'] = 0.95;
 		self::assertRefused(
-			static fn () => self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, self::deviceStatusEvidence(['confidence' => 1]))),
+			static fn () => self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence)),
 			'submission_id', 'conflicting_evidence',
-			'DEFECT: full confidence written as an integer is refused as contradicting itself');
+			'A different confidence value on the same evidence is refused as conflicting');
 	}
 
 	// --- IndexedPng: the form reader -------------------------------------------------------
