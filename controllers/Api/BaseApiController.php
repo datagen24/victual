@@ -189,12 +189,7 @@ class BaseApiController extends BaseController
 		}
 		catch (InvalidFileNameException $ex)
 		{
-			// Belt and braces: every files API route already refuses a bad name with
-			// IsValidFileName() before either storage backend is reached, so this is only
-			// reachable through a caller that bypasses that check (issue #243). Mapped to
-			// 400, same as EInvalidApiQuery, so a name that reached this far answers the
-			// way an invalid name always does rather than the generic 500 the catch below
-			// would give it.
+			// Same 400 as every other invalid-input refusal, not the generic 500 below.
 			return $this->GenericErrorResponse($response, $ex->getMessage(), 400);
 		}
 		catch (\Exception $ex)

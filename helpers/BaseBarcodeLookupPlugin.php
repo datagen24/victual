@@ -105,12 +105,8 @@ abstract class BaseBarcodeLookupPlugin
 		}
 
 		// __barcode is not just an identifier: services/StockService.php builds the stored
-		// picture's file name from it directly, so every source it could come from has to
-		// agree on what a safe file name component looks like rather than each remembering
-		// to check on the way to the storage layer (issue #243). A directory separator, a
-		// leading dot (which would let the barcode alone choose a dotfile name once an
-		// extension is appended) or a null byte are refused here so that the check lives
-		// once, in the one place every barcode source passes through.
+		// picture's file name from it directly, so every source has to agree on what a safe
+		// file name component looks like, checked once here rather than by each source.
 		$barcode = $pluginOutput['__barcode'];
 		if (!is_string($barcode) || str_contains($barcode, '/') || str_contains($barcode, '\\') || str_contains($barcode, "\0") || str_starts_with($barcode, '.'))
 		{
