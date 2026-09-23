@@ -74,6 +74,13 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 		return (new ServerRequestFactory())->createServerRequest('GET', $uri);
 	}
 
+	/** A POST/DELETE request with a parsed JSON body, for the AddObject()/DeleteObject() cases below. */
+	private static function requestWithBody(string $method, ?array $body = null)
+	{
+		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api');
+		return $body === null ? $request : $request->withParsedBody($body)->withHeader('Content-Type', 'application/json');
+	}
+
 	private static function grant(array $names): void
 	{
 		self::$db->exec('DELETE FROM user_permissions WHERE user_id = 9000; DELETE FROM user_roles WHERE user_id = 9000');
@@ -704,24 +711,20 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (controllers/Api/BaseApiController.php:388-396, on PostgreSQL). "offset"
-	 * without "limit" defaults the limit to -1, which is SQLite's spelling of "no limit"
-	 * and is a hard error in PostgreSQL ("LIMIT must not be negative"). The caller supplied
-	 * neither "query" nor "order", so MaterialiseFiltered() correctly declines to blame
-	 * them and rethrows the PDOException - which the error middleware answers as a 500. A
-	 * documented parameter used on its own therefore fails on the only engine this fork
-	 * runs. The correct behaviour is to omit the LIMIT clause entirely when no limit was
-	 * asked for.
-	 *
-	 * Pinned rather than skipped, because the rethrow arm it goes through is itself the
-	 * documented contract - "if the caller supplied no query[] and no order, a PDO failure
-	 * is the server's and stays a 500" - and that half is right.
+	 * "offset" without "limit" used to default the limit to -1, which is SQLite's spelling
+	 * of "no limit" and a hard error in PostgreSQL ("LIMIT must not be negative") - issue
+	 * #254. QueryData() (BaseApiController.php) now leaves the LIMIT clause out entirely
+	 * when no limit was asked for, and MaterialiseFiltered() applies the offset itself with
+	 * array_slice() once the unlimited statement has run, so a documented parameter used on
+	 * its own is an ordinary page rather than a 500.
 	 */
-	public function testAnOffsetWithoutALimitFailsOnPostgres(): void
+	public function testAnOffsetWithoutALimitReturnsEveryRowAfterIt(): void
 	{
-		$this->expectException(\PDOException::class);
-
-		self::listing('products', ['offset' => 1]);
+		self::assertSame(
+			['Beta Query Text', 'Delta Storage Item', 'Gamma Query Text'],
+			self::names(self::listing('products', ['order' => 'name', 'offset' => 1])),
+			'An offset with no limit is every row after it, not a 500'
+		);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -750,6 +753,49 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('double precision', $refusal['message'],
 			'Nor the column type it named');
 		self::assertStringContainsString('Invalid query', $refusal['message']);
+	}
+
+	/**
+	 * The other half of MaterialiseFiltered()'s catch block: a caller who supplied neither
+	 * "query[]" nor "order" gets the raw PDOException rethrown rather than the 400 above,
+	 * because nothing they sent shaped the statement that failed - see the method's own
+	 * docblock. Before issue #254 was fixed, "offset" without "limit" was the only thing in
+	 * this suite that reached that arm (it built an invalid LIMIT the caller never asked
+	 * for); now that path no longer fails, so this reaches the same arm a different way -
+	 * the aborted-transaction idiom testAFilteredListIsRefusedWith500WhenTheColumnCatalogueCannotBeRead()
+	 * below uses, but with a request that carries no "query" or "order" at all, so QueryData()
+	 * never touches the column catalogue and the only statement that runs is
+	 * MaterialiseFiltered()'s own fetchAll().
+	 */
+	public function testAnUnfilteredListRethrowsAPdoExceptionRatherThanWrappingIt(): void
+	{
+		self::grantReaders();
+
+		// One ordinary read first, so the fixtures are known-good before the connection is
+		// broken.
+		self::assertCount(4, self::listing('products'));
+
+		self::$db->beginTransaction();
+
+		try
+		{
+			self::$db->exec('SELECT 1 FROM a_table_that_does_not_exist');
+			self::fail('The probe statement was supposed to fail');
+		}
+		catch (\PDOException $expected)
+		{
+			// The connection is now in the aborted state this case is about.
+		}
+
+		try
+		{
+			$this->expectException(\PDOException::class);
+			self::listing('products');
+		}
+		finally
+		{
+			self::$db->rollBack();
+		}
 	}
 
 	// ------------------------------------------------------------------------------
@@ -877,5 +923,71 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 			500,
 			'A filter on the same entity is still refused'
 		);
+	}
+
+	// ------------------------------------------------------------------------------
+	// GenericEntityApiController::AddObject()/DeleteObject() - the write half of the same
+	// controller this phase otherwise exercises only through its read/list path
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * AddObject() (GenericEntityApiController.php:87-94) refuses a POST whose body sets no
+	 * column of the entity - here, a body naming only "id", which WithoutServerOwnedColumns()
+	 * strips before the emptiness check, along with "row_created_timestamp" and
+	 * "import_epoch" (see issue #47, its own docblock above). Without this refusal LessQL
+	 * silently skips an insert with no modified columns, and the endpoint used to answer 200
+	 * with whatever id the driver happened to report for an insert that never ran.
+	 */
+	public function testAddObjectRefusesABodyThatSetsNoColumn(): void
+	{
+		self::grant(['MASTER_DATA_EDIT']);
+
+		try
+		{
+			$refusal = $this->expectStatus(
+				fn () => self::$generic->AddObject(
+					self::requestWithBody('POST', ['id' => 999999]),
+					new Response(),
+					['entity' => 'task_categories']
+				),
+				400,
+				'A body that sets only a server-owned column leaves nothing to create'
+			);
+
+			self::assertStringContainsString('nothing to create', $refusal['message']);
+		}
+		finally
+		{
+			self::grantReaders();
+		}
+	}
+
+	/**
+	 * DeleteObject() (GenericEntityApiController.php:180-184) answers 404 for an id that
+	 * does not exist, before any of the entity-specific checks below it (children, ownership)
+	 * that only make sense once a row was actually found.
+	 */
+	public function testDeleteObjectAnswersNotFoundForAMissingId(): void
+	{
+		self::grant(['MASTER_DATA_EDIT']);
+
+		try
+		{
+			$refusal = $this->expectStatus(
+				fn () => self::$generic->DeleteObject(
+					self::requestWithBody('DELETE'),
+					new Response(),
+					['entity' => 'task_categories', 'objectId' => 999999]
+				),
+				404,
+				'Deleting an id that does not exist is a 404, not a silent no-op'
+			);
+
+			self::assertSame('Object not found', $refusal['message']);
+		}
+		finally
+		{
+			self::grantReaders();
+		}
 	}
 }

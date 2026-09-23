@@ -377,6 +377,11 @@ class BaseApiController extends BaseController
 	 * Applies the generic list query parameters to a LessQL result:
 	 * query[] (filter conditions, see FilterData), limit/offset (pagination)
 	 * and order ("field" or "field:asc|desc"; throws on any other sort order).
+	 *
+	 * "offset" without "limit" used PHP_INT_MAX rather than -1 as the count LessQL's
+	 * limit() is given: -1 is SQLite's spelling of "no limit" and PostgreSQL refuses it
+	 * outright ("LIMIT must not be negative"), where a LIMIT of bigint's maximum value is
+	 * accepted by both and is, in practice, no limit at all.
 	 */
 	protected function QueryData(Request $request, Result $data, array $query)
 	{
@@ -387,12 +392,7 @@ class BaseApiController extends BaseController
 
 		if (isset($query['limit']) || isset($query['offset']))
 		{
-			if (!isset($query['limit']))
-			{
-				$query['limit'] = -1;
-			}
-
-			$data = $data->limit(intval($query['limit']), intval($query['offset'] ?? 0));
+			$data = $data->limit(isset($query['limit']) ? intval($query['limit']) : PHP_INT_MAX, intval($query['offset'] ?? 0));
 		}
 
 		if (isset($query['order']))
