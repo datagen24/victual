@@ -3107,45 +3107,55 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * by anything because the product row that would have named it never survives.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
+	/**
+	 * The barcode this case's injected trigger fails on - a fixed, test-owned literal
+	 * (never request or database-sourced), so interpolating it into the trigger function's
+	 * body below carries no injection risk.
+	 */
+	private const FAILED_ADD_BARCODE = '4000417025043';
+
 	public function testAFailedAddLeavesNoProductNoBarcodeAndNoOrphanedPicture(): void
 	{
-		$quIdPurchase = self::insertRow('quantity_units', ['name' => 'Coverage Fail Purchase', 'name_plural' => 'Coverage Fail Purchases']);
-		$quIdStock = self::insertRow('quantity_units', ['name' => 'Coverage Fail Stock', 'name_plural' => 'Coverage Fail Stocks']);
-
+		// Fails the product_barcodes INSERT, a separate statement that runs only after the
+		// products INSERT before it has already succeeded. A trigger on
+		// quantity_unit_conversions instead would fire from inside that same INSERT (via
+		// products_default_qu_conversions_INS) and only prove that PostgreSQL rolls back a
+		// single failed statement on its own, which needs no transaction of ours - this has
+		// to fail a later, separate statement to prove the multi-write atomicity.
 		self::$db->exec(
-			'CREATE FUNCTION coverage_fail_conversion_insert() RETURNS trigger LANGUAGE plpgsql AS $$ '
-			. 'BEGIN IF NEW.from_qu_id = ' . $quIdPurchase . ' AND NEW.to_qu_id = ' . $quIdStock . ' THEN RAISE EXCEPTION \'injected\'; END IF; RETURN NEW; END $$;'
-			. 'CREATE TRIGGER coverage_fail_conversion_insert BEFORE INSERT ON quantity_unit_conversions '
-			. 'FOR EACH ROW EXECUTE FUNCTION coverage_fail_conversion_insert()'
+			"CREATE FUNCTION coverage_fail_barcode_insert() RETURNS trigger LANGUAGE plpgsql AS \$\$ "
+			. "BEGIN IF NEW.barcode = '" . self::FAILED_ADD_BARCODE . "' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END \$\$;"
+			. 'CREATE TRIGGER coverage_fail_barcode_insert BEFORE INSERT ON product_barcodes '
+			. 'FOR EACH ROW EXECUTE FUNCTION coverage_fail_barcode_insert()'
 		);
 
 		$pluginFile = self::writeUserLookupPlugin(
 			'Coverage Failed Add ',
-			$quIdPurchase,
-			$quIdStock,
+			2,
+			2,
 			"'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
 		);
 
 		try
 		{
-			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025043?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
-			self::assertSame(400, $response['status'], 'the injected conversion failure refuses the add: ' . $response['body']);
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . self::FAILED_ADD_BARCODE . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(400, $response['status'], 'the injected barcode-insert failure refuses the add: ' . $response['body']);
 
 			$product = self::$db->prepare('SELECT COUNT(*) FROM products WHERE name = ?');
-			$product->execute(['Coverage Failed Add 4000417025043']);
-			self::assertSame(0, (int)$product->fetchColumn(), 'no product row survives the rollback');
+			$product->execute(['Coverage Failed Add ' . self::FAILED_ADD_BARCODE]);
+			self::assertSame(0, (int)$product->fetchColumn(), 'no product row survives the rollback, even though its own INSERT succeeded');
 
 			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE barcode = ?');
-			$barcode->execute(['4000417025043']);
+			$barcode->execute([self::FAILED_ADD_BARCODE]);
 			self::assertSame(0, (int)$barcode->fetchColumn(), 'nor its barcode');
 
-			$picture = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025043.gif';
+			$picture = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/' . self::FAILED_ADD_BARCODE . '.gif';
 			self::assertFileDoesNotExist($picture, 'and the picture is not written when the product it belongs to never survives');
 		}
 		finally
 		{
 			@unlink($pluginFile);
-			self::$db->exec('DROP TRIGGER coverage_fail_conversion_insert ON quantity_unit_conversions; DROP FUNCTION coverage_fail_conversion_insert()');
+			self::$db->exec('DROP TRIGGER coverage_fail_barcode_insert ON product_barcodes; DROP FUNCTION coverage_fail_barcode_insert()');
 		}
 	}
 
