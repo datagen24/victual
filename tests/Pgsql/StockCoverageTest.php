@@ -2098,6 +2098,150 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(0.0, self::stockAmount(self::$ids['undo_gap_consume']), 'and the purchase itself is now undone too');
 	}
 
+	/**
+	 * AddProduct() runs CompactStockEntries() after every purchase (StockService.php:384),
+	 * which merges stock rows that agree on every grouping column of the stock_splits view -
+	 * product, due date, purchased date, price, open/opened_date, location, shopping location -
+	 * into one row holding their summed amount, and rewrites every stock_log row of the group
+	 * onto the surviving stock_id. Two same-day purchases that agree on all of those land on
+	 * one stock entry sharing one stock_id but two separate stock_log bookings.
+	 *
+	 * Before the fix (issue #457), undoing the later purchase ran
+	 * `stock()->where('stock_id', $logRow->stock_id)->delete()`, which took the whole merged
+	 * row - both purchases' units - with it, leaving the earlier purchase's booking live
+	 * against stock that no longer existed. The fix subtracts only the undone booking's own
+	 * amount, deleting the row only when nothing is left, mirroring how the TRANSFER_TO branch
+	 * already shares a stock_id with another location.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoingTheLaterOfTwoCompactedPurchasesLeavesTheEarlierOnesUnits(): void
+	{
+		self::$ids['undo_compacted'] = self::insertProduct('Coverage Undo Compacted Purchase');
+
+		$firstPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
+			200,
+			'Two units are purchased'
+		);
+		$secondPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
+			200,
+			'Three more, matching every grouping column, are purchased the same day'
+		);
+
+		$entries = self::$db->query('SELECT id, stock_id, amount FROM stock WHERE product_id = ' . self::$ids['undo_compacted'])->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(1, $entries, 'The two purchases were compacted into a single stock entry');
+		self::assertSame(5.0, (float)$entries[0]['amount'], 'holding the combined five units');
+		$sharedStockId = $entries[0]['stock_id'];
+
+		$secondLogId = (int)$secondPurchase[0]['id'];
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $secondLogId]),
+			204,
+			'Undoing the later (second) purchase is accepted'
+		);
+
+		$remaining = self::$db->query('SELECT id, amount FROM stock WHERE product_id = ' . self::$ids['undo_compacted'])->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(1, $remaining, 'The compacted entry still exists');
+		self::assertSame(2.0, (float)$remaining[0]['amount'], 'holding only the first purchase\'s two units, not zero');
+		self::assertSame(2.0, self::stockAmount(self::$ids['undo_compacted']), 'and the product\'s on-hand amount agrees');
+
+		$firstLogId = (int)$firstPurchase[0]['id'];
+		$undoneFlags = self::$db->prepare('SELECT id, undone FROM stock_log WHERE stock_id = ? ORDER BY id');
+		$undoneFlags->execute([$sharedStockId]);
+		$undoneFlags = $undoneFlags->fetchAll(PDO::FETCH_KEY_PAIR);
+		self::assertSame(0, (int)$undoneFlags[$firstLogId], 'The first (earlier) booking is still live');
+		self::assertSame(1, (int)$undoneFlags[$secondLogId], 'The second (later) booking is now undone');
+
+		$liveBookingTotal = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock_log WHERE stock_id = ? AND undone = 0');
+		$liveBookingTotal->execute([$sharedStockId]);
+		self::assertSame(2.0, (float)$liveBookingTotal->fetchColumn(), 'The sum of live bookings for the stock_id agrees with the surviving row amount');
+	}
+
+	/**
+	 * Continues the fixture above: undoing the remaining (first, earlier) purchase now that
+	 * the later one is undone succeeds, deletes the entry (nothing is left to hold), and
+	 * leaves the product with no stock.
+	 */
+	#[Depends('testUndoingTheLaterOfTwoCompactedPurchasesLeavesTheEarlierOnesUnits')]
+	public function testUndoingTheRemainingCompactedPurchaseDeletesTheEntry(): void
+	{
+		$firstLogId = self::$db->prepare("SELECT id FROM stock_log WHERE product_id = ? AND transaction_type = 'purchase' AND undone = 0");
+		$firstLogId->execute([self::$ids['undo_compacted']]);
+		$firstLogId = (int)$firstLogId->fetchColumn();
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $firstLogId]),
+			204,
+			'Undoing the remaining purchase, now that nothing later depends on it, is accepted'
+		);
+
+		$remaining = self::$db->query('SELECT id FROM stock WHERE product_id = ' . self::$ids['undo_compacted'])->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(0, $remaining, 'No stock entry is left');
+		self::assertSame(0.0, self::stockAmount(self::$ids['undo_compacted']), 'and the product has no stock on hand');
+	}
+
+	/**
+	 * Undoing the earlier of two compacted purchases while the later one is still live must
+	 * stay refused - the "no live subsequent booking" guard (fixed by #442) already covers
+	 * this, but it is worth pinning specifically for a compacted pair, since #457's fix
+	 * touches the same branch this guard protects.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesTheEarlierOfTwoCompactedPurchasesWhileTheLaterIsLive(): void
+	{
+		self::$ids['undo_compacted_refused'] = self::insertProduct('Coverage Undo Compacted Refused');
+
+		$firstPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
+			200,
+			'Two units are purchased'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
+			200,
+			'Three more, matching every grouping column, are purchased the same day'
+		);
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_refused']), 'The two purchases are compacted into one entry of five');
+
+		$firstLogId = (int)$firstPurchase[0]['id'];
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $firstLogId]),
+			400,
+			'Undoing the earlier compacted purchase while the later one is still live is refused'
+		);
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_refused']), 'and the stock is untouched');
+	}
+
+	/**
+	 * Regression guard for the #457 fix: an ordinary, never-compacted purchase must still be
+	 * deleted outright when undone, not left behind as a zero-amount row.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoingANonCompactedPurchaseStillDeletesItsRow(): void
+	{
+		self::$ids['undo_uncompacted'] = self::insertProduct('Coverage Undo Uncompacted Purchase');
+
+		$purchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_uncompacted']]),
+			200,
+			'Four units are purchased'
+		);
+		self::assertSame(4.0, self::stockAmount(self::$ids['undo_uncompacted']), 'Four units are on hand');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
+			204,
+			'Undoing the purchase is accepted'
+		);
+
+		$remaining = self::$db->query('SELECT id FROM stock WHERE product_id = ' . self::$ids['undo_uncompacted'])->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(0, $remaining, 'The stock row is deleted outright, not left as a zero-amount row');
+		self::assertSame(0.0, self::stockAmount(self::$ids['undo_uncompacted']), 'and no stock remains');
+	}
+
 	#[Depends('testCreatesFixtures')]
 	public function testUndoingAnUpwardInventoryCorrectionRemovesWhatItAdded(): void
 	{
