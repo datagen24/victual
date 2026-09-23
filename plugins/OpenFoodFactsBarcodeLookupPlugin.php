@@ -1,7 +1,6 @@
 <?php
 
 use Victual\Helpers\BaseBarcodeLookupPlugin;
-use GuzzleHttp\Client;
 
 /*
 	To use this plugin, configure it in data/config.php like this:
@@ -41,11 +40,19 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 
 		$productNameFieldLocalized = 'product_name_' . substr(VICTUAL_LOCALE, 0, 2);
 
-		$webClient = new Client(['http_errors' => false]);
-		$response = $webClient->request('GET', 'https://world.openfoodfacts.org/api/v2/product/' . preg_replace('/[^0-9]/', '', $barcode) . '?fields=product_name,image_url,' . $productNameFieldLocalized, ['headers' => ['User-Agent' => 'VictualOpenFoodFactsBarcodeLookupPlugin/1.0 (https://github.com/datagen24/victual)']]);
+		// Fetch() (issue #460) applies the same host policy, DNS-rebinding pin, redirect
+		// and proxy refusal, and timeout that services/StockService.php's picture download
+		// does (issue #459) - this compiled-in host resolves to Open Food Facts' own public
+		// addresses, so the policy passes as it always would for a legitimate destination.
+		$response = $this->Fetch(
+			'https://world.openfoodfacts.org/api/v2/product/' . preg_replace('/[^0-9]/', '', $barcode) . '?fields=product_name,image_url,' . $productNameFieldLocalized,
+			['headers' => ['User-Agent' => 'VictualOpenFoodFactsBarcodeLookupPlugin/1.0 (https://github.com/datagen24/victual)']]
+		);
 		$statusCode = $response->getStatusCode();
 
-		// Guzzle throws exceptions for connection errors, so nothing to do on that here
+		// Fetch() sets http_errors: false, so a connection-level failure (DNS, TCP, TLS) is
+		// still the only thing that throws here - an HTTP error status comes back as an
+		// ordinary response, handled by the status check below.
 
 		if ($statusCode < 200 || $statusCode >= 300)
 		{
