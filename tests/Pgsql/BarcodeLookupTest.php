@@ -418,22 +418,19 @@ class BarcodeLookupTest extends TestCase
 
 	/**
 	 * The stored picture's file name is built from __barcode
-	 * (services/StockService.php:1036), so __barcode is a file name class as well as an
-	 * identifier. S14 asks for it to be filtered to [0-9A-Za-z_-]; the validation gate does
-	 * not look at it at all.
+	 * (services/StockService.php:1036), so __barcode is a file name component as well as an
+	 * identifier. The validation gate refuses one that is not a safe file name component -
+	 * a directory separator, a leading dot, or a null byte - so that every barcode source
+	 * inherits the refusal rather than each one remembering it. Issue #243.
 	 */
 	#[DataProvider('escapingBarcodeProvider')]
-	public function testLookupDoesNotRefuseABarcodeThatWouldEscapeThePictureDirectory(string $barcode): void
+	public function testLookupRefusesABarcodeThatWouldEscapeThePictureDirectory(string $barcode): void
 	{
-		// DEFECT: helpers/BaseBarcodeLookupPlugin.php requires __barcode to be present and
-		// says nothing about its content. Downstream it is concatenated into a file name at
-		// services/StockService.php:1036 and written by
-		// services/Storage/FilesystemStorage.php:167, which joins the name onto the group
-		// folder with no IsValidFileName() check (helpers/extensions.php:468 exists and is
-		// not called here). Expected: refuse a __barcode outside [0-9A-Za-z_-].
-		$result = self::plugin(self::validOutput(['__barcode' => $barcode]))->Lookup(self::BARCODE);
-
-		self::assertSame($barcode, $result['__barcode'], 'current behaviour: __barcode is not constrained to a file name class');
+		$this->assertLookupRefuses(
+			self::validOutput(['__barcode' => $barcode]),
+			'Provided __barcode is not a valid file name component',
+			'__barcode is concatenated into a stored picture file name and must be a safe component'
+		);
 	}
 
 	/**

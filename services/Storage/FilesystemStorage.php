@@ -61,6 +61,8 @@ class FilesystemStorage extends FileStorage
 
 	public function Create(string $group, string $name, $source): void
 	{
+		self::AssertValidName($name);
+
 		$filePath = $this->GetFilePath($group, $name);
 
 		$fileHandle = fopen($filePath, 'xb');
@@ -91,6 +93,8 @@ class FilesystemStorage extends FileStorage
 
 	public function Write(string $group, string $name, $source): void
 	{
+		self::AssertValidName($name);
+
 		$filePath = $this->GetFilePath($group, $name);
 
 		$fileHandle = fopen($filePath, 'wb');

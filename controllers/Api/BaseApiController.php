@@ -9,6 +9,7 @@ use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\FieldPolicy;
 use Victual\Services\WireBooleans;
 use Victual\Services\Storage\FileTooLargeException;
+use Victual\Services\Storage\InvalidFileNameException;
 use LessQL\Result;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -185,6 +186,16 @@ class BaseApiController extends BaseController
 			// 413 rather than the 400 every other failure gets, because "this one was too
 			// big" is the one refusal a client can act on by sending less
 			return $this->GenericErrorResponse($response, $ex->getMessage(), 413);
+		}
+		catch (InvalidFileNameException $ex)
+		{
+			// Belt and braces: every files API route already refuses a bad name with
+			// IsValidFileName() before either storage backend is reached, so this is only
+			// reachable through a caller that bypasses that check (issue #243). Mapped to
+			// 400, same as EInvalidApiQuery, so a name that reached this far answers the
+			// way an invalid name always does rather than the generic 500 the catch below
+			// would give it.
+			return $this->GenericErrorResponse($response, $ex->getMessage(), 400);
 		}
 		catch (\Exception $ex)
 		{
