@@ -356,20 +356,34 @@ class BaseApiController extends BaseController
 	 * could binary-search stock.price with "?query[]=price>3&query[]=price<5" even though
 	 * the field itself never appears in a response.
 	 *
-	 * The message distinguishes the two refusals so a caller can tell "this field does not
-	 * exist" from "you may not query on this field"; the status code deliberately does not,
-	 * both are 400, since a distinct code would itself confirm the field exists.
+	 * Neither the status nor the message distinguishes the two refusals: both are 400 with
+	 * the exact same body, because a caller who could tell "this field does not exist"
+	 * apart from "you may not query on this field" could binary-search a redacted field's
+	 * mere existence, which is exactly what the redaction check exists to keep from them
+	 * (issue #255 - a distinct status was already withheld for this reason, but a distinct
+	 * message standing next to it gave away the same thing one line later). The field name
+	 * is deliberately left out of the message rather than echoed back: naming it would
+	 * still tell the two refusals apart on the wire for the one case that matters - a
+	 * caller probing the same field with several operators to see whether it is redacted
+	 * or absent gets the identical sentence every time, not merely a sentence of the same
+	 * shape with their own input reflected in it. The field name and which of the two
+	 * reasons applied both go to the server log instead (error_log, as ColumnTypesOf()
+	 * above already does - this fork has no injected logger below the HTTP layer yet - the
+	 * same split SchemaVersionMiddleware::DatabaseUnavailable() keeps between its body and
+	 * its log).
 	 */
 	private function AssertFieldExists(Request $request, array $columnTypes, string $field, string $entity): void
 	{
 		if (!array_key_exists($field, $columnTypes))
 		{
-			throw new HttpException($request, 'Invalid query: unknown field "' . $field . '"', 400);
+			error_log('Victual: query named field "' . $field . '" of entity "' . $entity . '", which does not exist');
+			throw new HttpException($request, 'Invalid query: field may not be used in "query" or "order"', 400);
 		}
 
 		if (in_array($field, FieldPolicy::GetInstance()->RedactedFieldsFor($entity), true))
 		{
-			throw new HttpException($request, 'Invalid query: field "' . $field . '" may not be used in "query" or "order"', 400);
+			error_log('Victual: query named field "' . $field . '" of entity "' . $entity . '", which is redacted for the current user');
+			throw new HttpException($request, 'Invalid query: field may not be used in "query" or "order"', 400);
 		}
 	}
 

@@ -446,21 +446,17 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * BaseApiController.php:359-361 says the status deliberately does not distinguish the two
-	 * refusals, "since a distinct code would itself confirm the field exists". That
-	 * property holds for the status and is asserted here.
-	 *
-	 * DEFECT (design, controllers/Api/BaseApiController.php:359-373): it does not hold for
-	 * the body. The two messages are different sentences naming different reasons, so a
-	 * caller without STOCK_PRICES_VIEW learns from "may not be used" that last_price is a
-	 * real column of product_barcodes and from "unknown field" that no_such_column is not -
-	 * which is exactly what withholding the status was meant to prevent. The docblock
-	 * above the method states the distinction as intended, so the two comments contradict
-	 * each other rather than one of them being a slip. Pinned rather than corrected:
-	 * application code is out of scope for this work, and the assertion below records the
-	 * behaviour as it is so a fix is a visible change rather than a silent one.
+	 * BaseApiController.php's AssertFieldExists() docblock now states this as intended: an
+	 * unknown field and a field redacted for the caller are the same refusal on the wire,
+	 * status and message both, because a caller who could tell them apart could
+	 * binary-search a redacted field's mere existence with the same technique
+	 * testAFieldRedactedForTheCallerMayNotBeFilteredOn() guards against directly - issue
+	 * #255, which found the message giving away what the status was withholding. Which
+	 * field was named is still in the message, since the caller supplied it themselves;
+	 * only which of the two reasons applied is withheld, into the server log instead of
+	 * the response body.
 	 */
-	public function testTheTwoFieldRefusalsShareAStatusButNotAMessage(): void
+	public function testTheTwoFieldRefusalsShareAStatusAndAMessage(): void
 	{
 		self::grant(['STOCK_VIEW', 'TASKS_VIEW']);
 
@@ -479,8 +475,8 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 
 			self::assertSame($unknown['status'], $redacted['status'],
 				'The status must not tell a caller which of the two refusals they hit');
-			self::assertNotSame($unknown['message'], $redacted['message'],
-				'DEFECT: the bodies do distinguish them, so the status withholding it achieves nothing');
+			self::assertSame($unknown['message'], $redacted['message'],
+				'Nor must the body - a distinct sentence would confirm the field exists exactly as a distinct status would');
 		}
 		finally
 		{
