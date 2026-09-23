@@ -1804,8 +1804,16 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	 * came from the proxy that sets it. Sweep finding S4: an unset trusted-proxy list
 	 * refuses everything rather than trusting everything, because a header-mode deployment
 	 * that has not named its proxy is not one whose header means anything.
+	 *
+	 * The request was refused, not failed, so both refusals answer with a 4xx rather than a
+	 * 500 - 401 for the unconfigured list (nothing here can trust any address, so the
+	 * caller has proven nothing), 403 for an address the list specifically does not include
+	 * (the identity might be genuine; the origin is what is refused). Neither body may
+	 * describe the deployment: no setting name, no header name, no configuration advice -
+	 * the same rule SchemaVersionMiddleware::DatabaseUnavailable() applies to a connection
+	 * failure.
 	 */
-	public function testTheProxyHeaderIsOnlyTrustedFromAConfiguredProxyAddress(): void
+	public function testTheProxyHeaderIsOnlyTrustedFromAnAddressTheDeploymentNames(): void
 	{
 		$usersBefore = (int)self::$db->query('SELECT count(*) FROM users')->fetchColumn();
 
@@ -1815,19 +1823,9 @@ class AuthStackTest extends PgsqlSchemaTestCase
 			'settings' => self::proxySettings()
 		]);
 
-		self::assertNotSame(200, $ungated['status'],
-			'an unconfigured trusted-proxy list must not let the header authenticate: ' . $ungated['body']);
-
-		// DEFECT: the refusal is a 500 carrying the setting's name and the trusted header's
-		// name to an unauthenticated caller (ReverseProxyAuthenticator.php:107 throws a plain
-		// \Exception, which ExceptionController.php:80-87 renders as a server fault). A
-		// request that did not prove who it is has been refused, not failed, so 401 is the
-		// answer - and SchemaVersionMiddleware.php:152-156 is this tree's own statement that a
-		// pre-authentication body does not describe the deployment. Pinned rather than
-		// asserted as correct: the current status is what a client sees today, and a change
-		// here should break this line and be looked at.
-		self::assertSame(500, $ungated['status'], 'current behaviour, see the DEFECT note above');
-		self::assertStringContainsString('REVERSE_PROXY_AUTH_TRUSTED_PROXIES is not configured', $ungated['body']);
+		self::assertSame(401, $ungated['status'],
+			'an unconfigured trusted-proxy list is refused, not endorsed and not a server fault: ' . $ungated['body']);
+		self::assertBodyDescribesNoDeploymentDetail($ungated['body']);
 
 		$fromElsewhere = self::send('GET', '/api/user', [
 			'headers' => ['REMOTE_USER' => 'authstack-proxy'],
@@ -1835,9 +1833,9 @@ class AuthStackTest extends PgsqlSchemaTestCase
 			'settings' => self::proxySettings(['REVERSE_PROXY_AUTH_TRUSTED_PROXIES' => '10.0.0.0/24'])
 		]);
 
-		self::assertNotSame(200, $fromElsewhere['status'],
+		self::assertSame(403, $fromElsewhere['status'],
 			'an address outside the list is not the proxy: ' . $fromElsewhere['body']);
-		self::assertStringContainsString('did not come from a trusted proxy', $fromElsewhere['body']);
+		self::assertBodyDescribesNoDeploymentDetail($fromElsewhere['body'], ['10.0.0.0/24', '203.0.113.9']);
 
 		$fromTheProxy = self::send('GET', '/api/user', [
 			'headers' => ['REMOTE_USER' => 'authstack-proxy'],
@@ -1855,11 +1853,9 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 	/**
 	 * A missing or ambiguous header is a misconfigured proxy rather than an anonymous
-	 * caller, and the authenticator says so instead of creating a user for it.
-	 *
-	 * The status is the one the DEFECT note above describes and is not asserted here; what
-	 * is asserted is the part that is a security property either way - that four different
-	 * malformed requests are all refused, and that not one of them left an account behind.
+	 * caller, and the authenticator says so instead of creating a user for it - with a 401,
+	 * since none of the four proves who the request is, and a body that says only that,
+	 * without naming the header or the environment variable it read.
 	 */
 	public function testAnAbsentOrAmbiguousProxyHeaderCreatesNobody(): void
 	{
@@ -1868,31 +1864,52 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		$server = ['REMOTE_ADDR' => '10.0.0.7'];
 
 		$absent = self::send('GET', '/api/user', ['server' => $server, 'settings' => $settings]);
-		self::assertNotSame(200, $absent['status'], $absent['body']);
-		self::assertStringContainsString('header is missing or invalid', $absent['body']);
+		self::assertSame(401, $absent['status'], $absent['body']);
+		self::assertBodyDescribesNoDeploymentDetail($absent['body']);
 
 		$empty = self::send('GET', '/api/user', [
 			'headers' => ['REMOTE_USER' => ''],
 			'server' => $server,
 			'settings' => $settings
 		]);
-		self::assertNotSame(200, $empty['status'], $empty['body']);
+		self::assertSame(401, $empty['status'], $empty['body']);
+		self::assertBodyDescribesNoDeploymentDetail($empty['body']);
 
 		$missingEnv = self::send('GET', '/api/user', [
 			'settings' => self::proxySettings(['REVERSE_PROXY_AUTH_USE_ENV' => 'true'])
 		]);
-		self::assertNotSame(200, $missingEnv['status'], $missingEnv['body']);
-		self::assertStringContainsString('env variable is missing', $missingEnv['body']);
+		self::assertSame(401, $missingEnv['status'], $missingEnv['body']);
+		self::assertBodyDescribesNoDeploymentDetail($missingEnv['body']);
 
 		$emptyEnv = self::send('GET', '/api/user', [
 			'server' => ['REMOTE_USER' => ''],
 			'settings' => self::proxySettings(['REVERSE_PROXY_AUTH_USE_ENV' => 'true'])
 		]);
-		self::assertNotSame(200, $emptyEnv['status'], $emptyEnv['body']);
-		self::assertStringContainsString('env variable is invalid', $emptyEnv['body']);
+		self::assertSame(401, $emptyEnv['status'], $emptyEnv['body']);
+		self::assertBodyDescribesNoDeploymentDetail($emptyEnv['body']);
 
 		self::assertSame($usersBefore, (int)self::$db->query('SELECT count(*) FROM users')->fetchColumn(),
 			'none of the four refusals created an account');
+	}
+
+	/**
+	 * Asserts a reverse-proxy refusal body names none of the settings or headers that
+	 * describe this deployment: no REVERSE_PROXY_AUTH* setting, no REMOTE_USER, no
+	 * TRUSTED_PROXIES, and none of the configured values the caller passes in (the
+	 * trusted-proxy range, the refused address).
+	 *
+	 * @param string[] $values Configured values the body must not contain either
+	 */
+	private static function assertBodyDescribesNoDeploymentDetail(string $body, array $values = []): void
+	{
+		self::assertStringNotContainsString('REVERSE_PROXY_AUTH', $body, $body);
+		self::assertStringNotContainsString('REMOTE_USER', $body, $body);
+		self::assertStringNotContainsString('TRUSTED_PROXIES', $body, $body);
+
+		foreach ($values as $value)
+		{
+			self::assertStringNotContainsString($value, $body, $body);
+		}
 	}
 
 	/**

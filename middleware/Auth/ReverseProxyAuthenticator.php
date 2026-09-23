@@ -5,6 +5,8 @@ namespace Victual\Middleware\Auth;
 use Victual\Services\DatabaseService;
 use Victual\Services\UsersService;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Exception\HttpForbiddenException;
+use Slim\Exception\HttpUnauthorizedException;
 
 /**
  * Recognises a request by the username an upstream reverse proxy has already
@@ -17,20 +19,21 @@ class ReverseProxyAuthenticator extends Authenticator
 {
 	/**
 	 * @return mixed The user row
-	 * @throws \Exception When the configured header/env variable is missing, empty or
-	 *                    ambiguous, or when the request did not come from a trusted proxy
+	 * @throws HttpUnauthorizedException When the configured header/env variable is
+	 *                                   missing, empty or ambiguous
+	 * @throws HttpForbiddenException When the request did not come from a trusted proxy
 	 */
 	public function Authenticate(Request $request)
 	{
 		if (VICTUAL_REVERSE_PROXY_AUTH_USE_ENV)
 		{
-			$username = self::UsernameFromEnvironment();
+			$username = self::UsernameFromEnvironment($request);
 		}
 		else
 		{
 			// The header is client-settable, so it is only worth anything if the request
 			// demonstrably came from the proxy that sets it. Sweep finding S4.
-			self::CheckRequestCameFromTrustedProxy();
+			self::CheckRequestCameFromTrustedProxy($request);
 
 			$username = self::UsernameFromHeader($request);
 		}
@@ -49,18 +52,18 @@ class ReverseProxyAuthenticator extends Authenticator
 		return $user;
 	}
 
-	private static function UsernameFromEnvironment(): string
+	private static function UsernameFromEnvironment(Request $request): string
 	{
 		if (!isset($_SERVER[VICTUAL_REVERSE_PROXY_AUTH_HEADER]))
 		{
-			throw new \Exception('ReverseProxyAuthMiddleware: ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' env variable is missing (could not be found in $_SERVER array)');
+			self::RefuseUnauthenticated($request, VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' env variable is missing (could not be found in $_SERVER array)');
 		}
 
 		$username = $_SERVER[VICTUAL_REVERSE_PROXY_AUTH_HEADER];
 
 		if (strlen($username) === 0)
 		{
-			throw new \Exception('ReverseProxyAuthMiddleware: ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' env variable is invalid');
+			self::RefuseUnauthenticated($request, VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' env variable is invalid');
 		}
 
 		return $username;
@@ -73,7 +76,7 @@ class ReverseProxyAuthenticator extends Authenticator
 		if (count($username) !== 1 || strlen($username[0]) === 0)
 		{
 			// Invalid configuration of the proxy
-			throw new \Exception('ReverseProxyAuthMiddleware: ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' header is missing or invalid');
+			self::RefuseUnauthenticated($request, VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' header is missing or invalid');
 		}
 
 		return $username[0];
@@ -96,22 +99,52 @@ class ReverseProxyAuthenticator extends Authenticator
 	 * REMOTE_ADDR is the end user rather than a proxy and requiring a proxy list would
 	 * break a correct configuration. USE_ENV is the mode to prefer.
 	 *
-	 * @throws \Exception When the list is unset or the request did not come from it
+	 * @throws HttpUnauthorizedException When the list is unset
+	 * @throws HttpForbiddenException When the request did not come from an address on it
 	 */
-	private static function CheckRequestCameFromTrustedProxy(): void
+	private static function CheckRequestCameFromTrustedProxy(Request $request): void
 	{
 		$trustedProxies = trim((string)VICTUAL_REVERSE_PROXY_AUTH_TRUSTED_PROXIES);
 
 		if ($trustedProxies === '')
 		{
-			throw new \Exception('ReverseProxyAuthMiddleware: REVERSE_PROXY_AUTH_TRUSTED_PROXIES is not configured, so the ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' header cannot be trusted. Set it to the address or CIDR range of your reverse proxy, or use REVERSE_PROXY_AUTH_USE_ENV instead.');
+			// An operator misconfiguration, not a hostile caller - but with no list to
+			// check the caller's address against, this is "no address is trusted", which
+			// is the same as no credential at all: 401.
+			self::RefuseUnauthenticated($request, 'REVERSE_PROXY_AUTH_TRUSTED_PROXIES is not configured, so the ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' header cannot be trusted. Set it to the address or CIDR range of your reverse proxy, or use REVERSE_PROXY_AUTH_USE_ENV instead.');
 		}
 
 		$remoteAddress = $_SERVER['REMOTE_ADDR'] ?? '';
 
 		if (!IsIpInCidrList($remoteAddress, $trustedProxies))
 		{
-			throw new \Exception('ReverseProxyAuthMiddleware: request did not come from a trusted proxy');
+			// The header might be entirely genuine, but this address is not on the list:
+			// 403, not 401, because it is the origin being refused, not the identity.
+			self::RefuseUntrustedProxy($request, 'request did not come from a trusted proxy (REMOTE_ADDR ' . $remoteAddress . ')');
 		}
+	}
+
+	/**
+	 * Logs the operator-facing detail and refuses with a 401 whose body says only that the
+	 * request was not authenticated - the same split SchemaVersionMiddleware::
+	 * DatabaseUnavailable() applies. error_log() rather than a PSR logger because an
+	 * Authenticator has none to ask for; it lands on the same stderr StderrLogger uses.
+	 */
+	private static function RefuseUnauthenticated(Request $request, string $detail): never
+	{
+		error_log('Victual: ReverseProxyAuthenticator refused a request: ' . $detail);
+
+		throw new HttpUnauthorizedException($request, 'Unauthorized');
+	}
+
+	/**
+	 * As RefuseUnauthenticated(), but a 403: the caller's address, not its claimed
+	 * identity, is why the request is refused.
+	 */
+	private static function RefuseUntrustedProxy(Request $request, string $detail): never
+	{
+		error_log('Victual: ReverseProxyAuthenticator refused a request: ' . $detail);
+
+		throw new HttpForbiddenException($request, 'Forbidden');
 	}
 }
