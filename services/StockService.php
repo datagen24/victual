@@ -1046,9 +1046,14 @@ class StockService extends BaseService
 								// whose colons curl's host:port:address form cannot express -
 								// does not follow redirects, and does not honour an
 								// HTTP_PROXY/HTTPS_PROXY environment override - a proxy would
-								// resolve the host itself and make the pin meaningless. A
-								// deployment behind a mandatory outbound proxy loses only this
-								// one already-fail-soft picture fetch, not the lookup itself.
+								// resolve the host itself and make the pin meaningless. Every
+								// barcode-lookup request goes through the same Fetch() and so
+								// ignores the environment proxy the same way, not only this
+								// picture fetch: a deployment behind a mandatory outbound
+								// proxy cannot use any barcode source at all, and this fetch
+								// failing soft (unlike a source's own request, which is not
+								// caught here) only means the picture step in particular does
+								// not fail the whole add.
 								$response = $plugin->Fetch($pluginOutput['__image_url']);
 
 								if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300)

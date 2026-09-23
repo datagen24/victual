@@ -419,10 +419,18 @@ Open Food Facts' own outbound request went to a compiled-in host through its own
 `GuzzleHttp\Client`, not through this policy - the paragraph above originally named
 that gap. `helpers/BaseBarcodeLookupPlugin.php::Fetch()` is now the one seam both
 `OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup()` and the picture download go
-through, so every barcode-lookup outbound request carries the same host policy, DNS-
-rebinding pin, redirect refusal, proxy refusal and timeout. Open Food Facts'
-compiled-in host resolves to public addresses, so routing it through the policy
-changes nothing about which requests succeed.
+through, so every barcode-lookup outbound request carries the same host policy,
+DNS-rebinding pin, redirect refusal, proxy refusal and timeout. Open Food Facts'
+compiled-in host resolves to public addresses, so the host policy itself refuses
+nothing new here.
+
+The proxy refusal is not host-specific, though, and is a real behaviour change
+worth naming precisely: an environment `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` is no
+longer honoured for *any* barcode-source request, the lookup included, not only the
+picture download as originally shipped in #459. A deployment that requires all
+outbound traffic through a proxy can no longer use a barcode source at all.
+Whether that is the correct trade-off, or whether such a deployment should be
+exempted, is a maintainer decision, not one this fix makes on its own.
 
 ### S16: remediation details
 

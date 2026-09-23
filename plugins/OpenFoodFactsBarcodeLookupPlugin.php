@@ -40,10 +40,16 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 
 		$productNameFieldLocalized = 'product_name_' . substr(VICTUAL_LOCALE, 0, 2);
 
-		// Fetch() (issue #460) applies the same host policy, DNS-rebinding pin, redirect
-		// and proxy refusal, and timeout that services/StockService.php's picture download
-		// does (issue #459) - this compiled-in host resolves to Open Food Facts' own public
-		// addresses, so the policy passes as it always would for a legitimate destination.
+		// Fetch() (issue #460) applies the same host policy, DNS-rebinding pin, redirect and
+		// proxy refusal, and timeout that services/StockService.php's picture download does
+		// (issue #459). This compiled-in host resolves to Open Food Facts' own public
+		// addresses, which is why the policy allows it - not evidence that the policy would
+		// allow any request; a host that resolved to a loopback, private or link-local
+		// address would still be refused here exactly as it is for the picture download.
+		// Every barcode-lookup request, this one included, ignores an environment
+		// HTTP_PROXY/HTTPS_PROXY/NO_PROXY (proxy: '' in Fetch()): a deployment behind a
+		// mandatory outbound proxy cannot use this plugin at all, not only its picture
+		// downloads.
 		$response = $this->Fetch(
 			'https://world.openfoodfacts.org/api/v2/product/' . preg_replace('/[^0-9]/', '', $barcode) . '?fields=product_name,image_url,' . $productNameFieldLocalized,
 			['headers' => ['User-Agent' => 'VictualOpenFoodFactsBarcodeLookupPlugin/1.0 (https://github.com/datagen24/victual)']]
