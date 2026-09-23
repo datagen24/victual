@@ -1033,9 +1033,13 @@ class StockService extends BaseService
 
 						if (!empty($fileExtension) && !empty($imageData))
 						{
-							$fileName = $pluginOutput['__barcode'] . '.' . $fileExtension;
-							FileStorage::GetInstance()->Write('productpictures', $fileName, (string)$imageData);
-							$productData['picture_file_name'] = $fileName;
+							// Not written yet: writing it here, before the transaction
+							// below, would leave an orphaned file in productpictures if
+							// the transaction then rolled back. It is written only after
+							// the transaction commits, once the product row it belongs to
+							// is durable.
+							$pictureFileName = $pluginOutput['__barcode'] . '.' . $fileExtension;
+							$pictureData = (string)$imageData;
 						}
 					}
 					catch (\Exception)
@@ -1091,6 +1095,23 @@ class StockService extends BaseService
 						}
 					}
 				});
+
+				// Written only now, after the transaction committed, and updated onto
+				// the durable product row directly - not as part of the transaction
+				// above, so a picture failure here still leaves the product without a
+				// picture rather than failing the whole add.
+				if (isset($pictureFileName) && isset($pictureData))
+				{
+					try
+					{
+						FileStorage::GetInstance()->Write('productpictures', $pictureFileName, $pictureData);
+						$newProductRow->update(['picture_file_name' => $pictureFileName]);
+					}
+					catch (\Exception)
+					{
+						// Ignore
+					}
+				}
 
 				$pluginOutput['id'] = $newProductRow->id;
 			}

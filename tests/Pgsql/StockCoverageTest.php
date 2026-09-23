@@ -3099,6 +3099,100 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The picture is downloaded/decoded before the transaction that writes the product, its
+	 * barcode and its conversion, but must not be written to storage until that transaction
+	 * has committed - otherwise a rollback (injected here via a trigger that raises on the
+	 * conversion insert) would leave an orphaned file in productpictures behind, unreferenced
+	 * by anything because the product row that would have named it never survives.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAFailedAddLeavesNoProductNoBarcodeAndNoOrphanedPicture(): void
+	{
+		$quIdPurchase = self::insertRow('quantity_units', ['name' => 'Coverage Fail Purchase', 'name_plural' => 'Coverage Fail Purchases']);
+		$quIdStock = self::insertRow('quantity_units', ['name' => 'Coverage Fail Stock', 'name_plural' => 'Coverage Fail Stocks']);
+
+		self::$db->exec(
+			'CREATE FUNCTION coverage_fail_conversion_insert() RETURNS trigger LANGUAGE plpgsql AS $$ '
+			. 'BEGIN IF NEW.from_qu_id = ' . $quIdPurchase . ' AND NEW.to_qu_id = ' . $quIdStock . ' THEN RAISE EXCEPTION \'injected\'; END IF; RETURN NEW; END $$;'
+			. 'CREATE TRIGGER coverage_fail_conversion_insert BEFORE INSERT ON quantity_unit_conversions '
+			. 'FOR EACH ROW EXECUTE FUNCTION coverage_fail_conversion_insert()'
+		);
+
+		$pluginFile = self::writeUserLookupPlugin(
+			'Coverage Failed Add ',
+			$quIdPurchase,
+			$quIdStock,
+			"'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
+		);
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025043?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(400, $response['status'], 'the injected conversion failure refuses the add: ' . $response['body']);
+
+			$product = self::$db->prepare('SELECT COUNT(*) FROM products WHERE name = ?');
+			$product->execute(['Coverage Failed Add 4000417025043']);
+			self::assertSame(0, (int)$product->fetchColumn(), 'no product row survives the rollback');
+
+			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE barcode = ?');
+			$barcode->execute(['4000417025043']);
+			self::assertSame(0, (int)$barcode->fetchColumn(), 'nor its barcode');
+
+			$picture = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025043.gif';
+			self::assertFileDoesNotExist($picture, 'and the picture is not written when the product it belongs to never survives');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_fail_conversion_insert ON quantity_unit_conversions; DROP FUNCTION coverage_fail_conversion_insert()');
+		}
+	}
+
+	/**
+	 * The post-commit picture write is wrapped in its own try/catch, same as the
+	 * pre-transaction download/decode above it: a write failure there must still leave the
+	 * product it belongs to in place, just without a picture, rather than surfacing as a
+	 * fatal error after the transaction already committed successfully.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPictureWriteFailureAfterCommitLeavesTheProductWithoutAPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin(
+			'Coverage Picture Write Failure ',
+			2,
+			2,
+			"'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
+		);
+
+		// Occupies the exact path FileStorage::Write would open for writing, as a
+		// directory rather than a file, so fopen(..., 'wb') fails regardless of
+		// permissions - the write fails deterministically without relying on filesystem
+		// ownership, which the test process (root) would otherwise bypass.
+		$storagePath = getenv('VICTUAL_DATAPATH') . '/storage/productpictures';
+		@mkdir($storagePath, 0777, true);
+		$blockingDirectory = $storagePath . '/4000417025050.gif';
+		mkdir($blockingDirectory);
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025050?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'a picture write failure does not fail the add, which already committed: ' . $response['body']);
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture, since writing it failed');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			@rmdir($blockingDirectory);
+		}
+	}
+
 	/** Writes a lookup plugin into the data directory and returns its path. */
 	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression): string
 	{
