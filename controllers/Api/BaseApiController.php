@@ -259,13 +259,19 @@ class BaseApiController extends BaseController
 	 * Returns the rows rather than the Result: LessQL's Result::jsonSerialize() is itself
 	 * fetchAll(), so this changes nothing about the response body.
 	 *
+	 * When QueryData() left an "offset" unapplied because no "limit" came with it (see its
+	 * docblock), it is applied here instead with array_slice() on the materialised rows:
+	 * LessQL's own getSuffix() (packages/morris/lessql/src/LessQL/Database.php) only emits
+	 * "OFFSET" as a suffix to a "LIMIT" it also emitted, so there is no way to ask it for
+	 * one without the other.
+	 *
 	 * @return \LessQL\Row[]
 	 */
 	protected function MaterialiseFiltered(Request $request, Result $data, array $query): array
 	{
 		try
 		{
-			return $data->fetchAll();
+			$rows = $data->fetchAll();
 		}
 		catch (\PDOException $ex)
 		{
@@ -284,6 +290,13 @@ class BaseApiController extends BaseController
 				$ex
 			);
 		}
+
+		if (isset($query['offset']) && !isset($query['limit']))
+		{
+			$rows = array_slice($rows, intval($query['offset']));
+		}
+
+		return $rows;
 	}
 
 	/** @var array<string, array<string, string>|null> Column types per table, for this request only; null = unreadable */
@@ -377,6 +390,14 @@ class BaseApiController extends BaseController
 	 * Applies the generic list query parameters to a LessQL result:
 	 * query[] (filter conditions, see FilterData), limit/offset (pagination)
 	 * and order ("field" or "field:asc|desc"; throws on any other sort order).
+	 *
+	 * "limit" alone, or "limit" with "offset", becomes a LessQL limit()/OFFSET clause as
+	 * usual. "offset" without "limit" is left unapplied here - LessQL's own SQL builder
+	 * (packages/morris/lessql/src/LessQL/Database.php's getSuffix()) only emits "OFFSET" as
+	 * a suffix to a "LIMIT" it also emitted, so there is no sentinel count that means "no
+	 * limit" on every engine: -1 is SQLite's spelling and PostgreSQL refuses it outright
+	 * ("LIMIT must not be negative"). MaterialiseFiltered() applies that offset instead,
+	 * with array_slice() on the fetched rows, once the statement without a LIMIT has run.
 	 */
 	protected function QueryData(Request $request, Result $data, array $query)
 	{
@@ -385,13 +406,8 @@ class BaseApiController extends BaseController
 			$data = $this->FilterData($request, $data, $query['query']);
 		}
 
-		if (isset($query['limit']) || isset($query['offset']))
+		if (isset($query['limit']))
 		{
-			if (!isset($query['limit']))
-			{
-				$query['limit'] = -1;
-			}
-
 			$data = $data->limit(intval($query['limit']), intval($query['offset'] ?? 0));
 		}
 
