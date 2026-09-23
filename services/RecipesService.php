@@ -110,12 +110,18 @@ class RecipesService extends BaseService
 
 		$transactionId = uniqid();
 
-		// Only which products the recipe names is read before any lock; recipes_pos_resolved
-		// itself - stock_amount above all - is re-read fresh under the lock below, so what
-		// this books is capped by current stock rather than a value read before the wait
-		// (issue #458, PR #471 follow-up): a concurrent consume that shrinks an ingredient's
-		// stock while this call queues on the lock is what the fresh read has to see.
-		$ingredientProductIds = array_map(fn($row) => (int)$row->product_id, $this->DB->recipes_pos()->where('recipe_id', $recipeId)->fetchAll());
+		// Only which products the recipe (and any recipe it nests - recipes_pos_resolved
+		// joins recipes_nestings_resolved, see db/pgsql/baseline/05_views_l3.sql) names is
+		// read before any lock; recipes_pos_resolved's other columns - stock_amount above
+		// all - are re-read fresh under the lock below, so what this books is capped by
+		// current stock rather than a value read before the wait (issue #458, PR #471
+		// follow-up): a concurrent consume that shrinks an ingredient's stock while this
+		// call queues on the lock is what the fresh read has to see. Reading recipes_pos
+		// alone here (as this used to) missed a nested recipe's ingredients entirely, so
+		// the consume loop below - which does read recipes_pos_resolved - could lock one of
+		// them late, inside ConsumeProduct(), out of the ascending order this whole scheme
+		// exists to guarantee.
+		$ingredientProductIds = array_map(fn($row) => (int)$row->product_id, $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll());
 
 		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $recipeId, &$transactionId)
 		{
