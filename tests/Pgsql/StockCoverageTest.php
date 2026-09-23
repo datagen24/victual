@@ -3525,6 +3525,42 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * A public IPv6 literal is fetched without a CURLOPT_RESOLVE entry. No DNS lookup
+	 * happens for a literal, so there is nothing to pin, and the host:port:address form
+	 * cannot express an IPv6 host, so the entry used to make the download fail.
+	 */
+	public function testAPublicIpv6LiteralIsFetchedWithoutAResolvePin(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Ipv6 Fetch ', 2, 2, "'https://[2001:4860:4860::8888]/products/x.png'");
+		$pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn(
+				'GET',
+				'/api/stock/barcodes/external-lookup/4000417025132?add=true',
+				['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin'],
+				['status' => 200, 'headers' => ['Content-Type' => ['image/png']], 'body_base64' => base64_encode($pngBytes)]
+			);
+			self::assertSame(200, $response['status'], 'lookup and add succeeded: ' . $response['body']);
+			self::assertTrue($response['request_made'], 'a public IPv6 literal is fetched');
+			self::assertArrayNotHasKey(CURLOPT_RESOLVE, $response['request_options']['curl'] ?? [], 'no resolve entry is built for an IPv6 literal');
+			self::assertFalse($response['request_options']['allow_redirects']);
+			self::assertSame('', $response['request_options']['proxy']);
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			self::assertSame('4000417025132.png', $created->fetchColumn(), 'the picture is stored');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			@unlink(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025132.png');
+		}
+	}
+
+	/**
 	 * A redirect is not an HTTP error to Guzzle, and allow_redirects is off, so a 3xx comes
 	 * back as an ordinary response. Before the status check, a URL whose path ends .jpg had
 	 * $fileExtension already decided as "jpg" from the path alone, so the redirect page's own

@@ -432,7 +432,9 @@ class BarcodeLookupTest extends TestCase
 			'percent' => ['4001234567%890'],
 			'double quote' => ['4001234567"890'],
 			'single quote' => ["4001234567'890"],
-			'non-ASCII' => ['400123456789é']
+			'non-ASCII' => ['400123456789é'],
+			// $ matches before a final newline; the check has to anchor with \z.
+			'trailing newline' => ["4001234567890\n"]
 		];
 	}
 

@@ -126,7 +126,8 @@ abstract class BaseBarcodeLookupPlugin
 		// as a hit stored under an empty barcode, and that behaviour predates and is outside
 		// this issue's scope.
 		$barcode = $pluginOutput['__barcode'];
-		if (!is_string($barcode) || !preg_match('/^[0-9A-Za-z_-]*$/', $barcode))
+		// \A and \z, not ^ and $: $ also matches before a final newline, so "123\n" would pass.
+		if (!is_string($barcode) || !preg_match('/\A[0-9A-Za-z_-]*\z/', $barcode))
 		{
 			throw new \Exception('Provided __barcode is not a valid file name component');
 		}

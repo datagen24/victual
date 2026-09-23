@@ -1054,7 +1054,15 @@ class StockService extends BaseService
 								$host = trim($urlParts['host'], '[]');
 								$port = $urlParts['port'] ?? ($scheme === 'https' ? 443 : 80);
 								$pinnedAddress = $validatedAddresses[0];
-								$resolveEntry = $host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress);
+
+								// An IPv6 literal host is never looked up, so there is nothing
+								// to pin, and its colons make curl's host:port:address entry
+								// unparseable. Every other host keeps the pin.
+								$curlOptions = [];
+								if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
+								{
+									$curlOptions[CURLOPT_RESOLVE] = [$host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress)];
+								}
 
 								$webClient = new Client();
 								$response = $webClient->request('GET', $pluginOutput['__image_url'], [
@@ -1075,7 +1083,7 @@ class StockService extends BaseService
 									// outbound proxy loses only this one already-fail-soft
 									// picture fetch, not the lookup itself.
 									'proxy' => '',
-									'curl' => [CURLOPT_RESOLVE => [$resolveEntry]],
+									'curl' => $curlOptions,
 								]);
 
 								if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300)
