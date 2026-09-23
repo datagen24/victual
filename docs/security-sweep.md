@@ -17,7 +17,7 @@ are hashed. S16's *body-schema validation* half is the other: the
 deliberately parked behind
 [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2.
 
-What is left open below is Low and Info: S13, S14, S15, S20, S22, S24, S26, and the two
+What is left open below is Low and Info: S13, S15, S20, S22, S24, S26, and the two
 Info findings S30 and S31 that belong to [19](plans/19-rbac.md). Each row says what was
 done and where it departed from the remediation proposed here. Wave 2's departures are
 worth reading, because two of them are places this document was written before the thing
