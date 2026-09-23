@@ -446,15 +446,12 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * BaseApiController.php's AssertFieldExists() docblock now states this as intended: an
-	 * unknown field and a field redacted for the caller are the same refusal on the wire,
-	 * status and message both, because a caller who could tell them apart could
-	 * binary-search a redacted field's mere existence with the same technique
-	 * testAFieldRedactedForTheCallerMayNotBeFilteredOn() guards against directly - issue
-	 * #255, which found the message giving away what the status was withholding. Which
-	 * field was named is still in the message, since the caller supplied it themselves;
-	 * only which of the two reasons applied is withheld, into the server log instead of
-	 * the response body.
+	 * "last_price" is the same field name in both calls below - unknown to "products"
+	 * (which has no such column) and redacted on "product_barcodes" (real, but withheld
+	 * from a caller without STOCK_PRICES_VIEW) - so an identical body is not merely two
+	 * sentences of the same shape with different input reflected back: it is the literal
+	 * same string, which is what a distinct status was already withheld to avoid confirming
+	 * (issue #255).
 	 */
 	public function testTheTwoFieldRefusalsShareAStatusAndAMessage(): void
 	{
@@ -463,14 +460,14 @@ class GenericQueryTest extends PgsqlSchemaTestCase
 		try
 		{
 			$unknown = $this->expectStatus(
-				fn () => self::listing('product_barcodes', ['query' => ['no_such_column>1']]),
+				fn () => self::listing('products', ['query' => ['last_price>1']]),
 				400,
-				'An unknown field is 400'
+				'"last_price" is not a column of "products" at all'
 			);
 			$redacted = $this->expectStatus(
 				fn () => self::listing('product_barcodes', ['query' => ['last_price>1']]),
 				400,
-				'A redacted field is the same 400'
+				'"last_price" is a real column of "product_barcodes", redacted for this caller'
 			);
 
 			self::assertSame($unknown['status'], $redacted['status'],
