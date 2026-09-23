@@ -125,6 +125,7 @@
 						data-target="#related-links">
 						<i class="fa-solid fa-ellipsis-v"></i>
 					</button>
+					@if($mode == 'edit')
 					<div class="related-links collapse d-md-flex order-2 width-xs-sm-100"
 						id="related-links">
 						<a class="btn btn-outline-primary btn-sm m-1 mt-md-0 mb-md-0 float-right show-as-dialog-link"
@@ -132,6 +133,7 @@
 							{{ $__t('Add') }}
 						</a>
 					</div>
+					@endif
 				</div>
 
 				<table id="qu-conversions-table"

@@ -391,6 +391,12 @@ class StockController extends BaseController
 			return $this->RenderPage($response, 'productform', [
 				'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 				'barcodes' => $this->DB->product_barcodes()->orderBy('barcode'),
+				// Kept separate from 'barcodes' above: the parent-product picker's
+				// productpicker component expects the aggregated 'barcodes' column of
+				// product_barcodes_comma_separated (every other page passing it that
+				// component uses this view directly), while this form's own barcode
+				// table needs the raw product_barcodes rows.
+				'productBarcodesCommaSeparated' => $this->DB->product_barcodes_comma_separated(),
 				'quantityunitsAll' => $quantityunits,
 				'quantityunitsReferenced' => $quantityunits,
 				'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
@@ -416,6 +422,7 @@ class StockController extends BaseController
 				'labelPrinters' => $printers,
 				'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 				'barcodes' => $this->DB->product_barcodes()->orderBy('barcode'),
+				'productBarcodesCommaSeparated' => $this->DB->product_barcodes_comma_separated(),
 				'quantityunitsAll' => $this->DB->quantity_units()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 				'quantityunitsReferenced' => $this->DB->quantity_units()->where('id IN (SELECT to_qu_id FROM cache__quantity_unit_conversions_resolved WHERE product_id = :1) OR NOT EXISTS(SELECT 1 FROM stock_log WHERE product_id = :1)', $product->id)->orderBy('name', 'COLLATE NOCASE'),
 				'shoppinglocations' => $this->DB->shopping_locations()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
