@@ -2489,7 +2489,10 @@ class StockService extends BaseService
 	 * then marks it undone = 1 with an undone_timestamp (bookings are never deleted).
 	 *
 	 * Reversal per transaction type:
-	 * - PURCHASE / positive INVENTORY_CORRECTION: the corresponding stock entry is deleted
+	 * - PURCHASE / SELF_PRODUCTION / positive INVENTORY_CORRECTION: this booking's own amount is
+	 *   subtracted from the corresponding stock entry, deleting it only if that reaches zero (a
+	 *   shared stock_id, from CompactStockEntries() merging same-day additions, can still hold
+	 *   other live bookings' units)
 	 * - CONSUME / negative INVENTORY_CORRECTION: the consumed amount is re-added as a stock entry
 	 * - TRANSFER_TO / TRANSFER_FROM: the amount is moved back (entries re-created/deleted as needed)
 	 * - PRODUCT_OPENED: the open flag/opened date are cleared and the original due date restored
@@ -2569,12 +2572,68 @@ class StockService extends BaseService
 		{
 			if ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || $logRow->transaction_type === self::TRANSACTION_TYPE_SELF_PRODUCTION || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
 			{
-				// Remove corresponding stock entry. Self-production reaches this same
-				// entry-creating shape as a purchase in AddProduct() (issue #121) - it is
-				// never opened or measured at creation, so no ADR-0022 coherence columns
-				// need clearing here, unlike the PRODUCT_OPENED/STOCK_MEASURED_OLD branches.
-				$stockRows = $this->DB->stock()->where('stock_id', $logRow->stock_id);
-				$stockRows->delete();
+				// Subtract only this booking's own contribution, the way TRANSFER_TO already
+				// does for a stock_id it shares with another location (below): CompactStockEntries()
+				// (issue #457) can merge several same-day additions that agree on every grouping
+				// column - product, due date, purchased date, price, open/opened_date, location,
+				// shopping location - onto one stock_id, summing their amounts into a single row
+				// and rewriting every stock_log row of the group to point at it. Deleting the whole
+				// row here, as before, would take every other merged addition's units with it.
+				//
+				// Matched by stock_id and location together (not stock_id alone): the CONSUME/
+				// negative-INVENTORY_CORRECTION branch below restores a fully-taken entry by
+				// creating a *new* stock row rather than incrementing the one still there, so more
+				// than one live row can already share a stock_id at the very same location without
+				// any compaction being involved (a later purchase-undo hitting that state is exactly
+				// testUndoAllowsAConsumeWithNoLaterDependents). Summing every row at this location
+				// and comparing the total, rather than trusting a single row's amount, covers both
+				// that case and the ordinary compacted-purchase one, where exactly one row matches.
+				// A location match uses "IS NOT DISTINCT FROM" because location_id is nullable and
+				// SQL's own "=" never matches NULL to NULL.
+				$stockRows = $this->DB->stock()->where('stock_id = :1 AND location_id IS NOT DISTINCT FROM :2', $logRow->stock_id, $logRow->location_id)->fetchAll();
+				if (count($stockRows) === 0)
+				{
+					throw new \Exception('Booking does not exist or was already undone');
+				}
+
+				$totalAmount = array_sum(array_map(fn($stockRow) => $stockRow->amount, $stockRows));
+				$newAmount = $totalAmount - $logRow->amount;
+
+				// stock.amount is a float column and CompactStockEntries() sums it in SQL, so an
+				// exact `== 0` comparison here would miss by a rounding hair (e.g. purchases of
+				// 0.1 and 0.2 merge to 0.30000000000000004) and leave a phantom near-zero row
+				// behind. round() to two places is this file's existing convention for comparing
+				// a float amount against a target (e.g. :590, :769, :893, :1851).
+				$roundedNewAmount = round($newAmount, 2);
+
+				if ($roundedNewAmount < 0)
+				{
+					// This booking's own amount is larger than what the matched row(s) currently
+					// hold - something else has already reduced the entry below this purchase's
+					// contribution - so there is nothing to correctly subtract it from.
+					throw new \Exception('Booking cannot be undone: its stock entry holds less than this booking added');
+				}
+
+				if ($roundedNewAmount == 0)
+				{
+					foreach ($stockRows as $stockRow)
+					{
+						$stockRow->delete();
+					}
+				}
+				elseif (count($stockRows) === 1)
+				{
+					$stockRows[0]->update([
+						'amount' => $newAmount
+					]);
+				}
+				else
+				{
+					// More than one row shares this stock_id and location, and what remains after
+					// removing this booking's amount cannot be attributed to a single one of them
+					// without guessing which row holds which purchase's units.
+					throw new \Exception('Booking cannot be undone: its stock entry is split across multiple rows in a way that cannot be unambiguously reversed');
+				}
 
 				// Update log entry
 				$this->MarkBookingUndone($logRow);
