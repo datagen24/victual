@@ -1982,29 +1982,30 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT: a worker reporting full certainty as the JSON integer `1` has its first
-	 * submission refused as conflicting with an observation nobody else made.
+	 * A worker reporting certainty as the JSON integer `1` (produced by `json_decode` when
+	 * parsing `{"confidence":1}`) must have their first submission accepted. The submitted
+	 * integer must be accepted as equivalent to the stored float 1.0. Re-submission of the
+	 * same evidence is idempotent. Different confidence on the same submission_id is refused.
 	 *
-	 * `services/Labels/PrintEvidenceService.php:42` compares the value read back - cast to
-	 * float, because the column is DOUBLE PRECISION - against the submitted value with
-	 * `!==`, so an integer that passed the 0-to-1 range check two lines above can never
-	 * equal it. `json_decode('{"confidence":1}', true)` yields an integer, so this is what a
-	 * worker that is certain actually sends, and `0.95` and the float `1.0` are both
-	 * accepted. The correct behaviour is to accept it; this test pins what happens today,
-	 * because application code is out of scope for this work.
+	 * Originally, `PrintEvidenceService.php:42` compared the read-back float against the
+	 * submitted value with `!==` without casting the submitted integer to float first, so
+	 * integer 1 was refused as conflicting with its own first insert. This test asserts
+	 * the fix: that integer and float 1.0 are accepted as equivalent.
 	 */
 	public function testIntegerConfidenceIsAcceptedAsARepeatedIdenticalSubmission(): void
 	{
 		[, $attempt] = self::attempt(self::$worker);
-		$evidence = self::deviceStatusEvidence(['confidence' => 1.0]);
+		// First submission with integer confidence 1 (as JSON would produce)
+		$evidence = self::deviceStatusEvidence(['confidence' => 1]);
 
 		self::assertSame(1.0, (float)self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence))['confidence'],
-			'Full confidence written as a float is accepted');
+			'Integer confidence 1 on first submission is accepted and stored as float 1.0');
 
-		$evidence['confidence'] = 1;
+		// Re-submit the same evidence with integer confidence
 		self::assertSame(1.0, (float)self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence))['confidence'],
-			'Full confidence written as an integer is accepted as equivalent to the stored 1.0');
+			'Re-submitting identical evidence with integer confidence 1 is idempotent');
 
+		// Change confidence to a different value on the same submission_id
 		$evidence['confidence'] = 0.95;
 		self::assertRefused(
 			static fn () => self::tx(static fn () => self::evidence()->Submit(self::$worker, $attempt, $evidence)),

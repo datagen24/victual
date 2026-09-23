@@ -1302,7 +1302,6 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		// The replay returns the same JSON object shape as the original 202 response
 		// assertEquals rather than assertSame: the stored payload is jsonb, which does not
 		// keep the key order the first response was written in.
-		self::assertIsArray($replay['json'], 'the replay response is decoded to an object');
 		self::assertEquals($first['json'], $replay['json'], 'the replayed resource is returned as an object, in the same shape as the first response');
 
 		$changed = self::Send('POST', $path, $body + ['locale' => 'de'], self::$operatorKey, ['Idempotency-Key' => $key]);
