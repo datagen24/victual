@@ -3,7 +3,8 @@
 **Goal:** Barcode scanning that actually resolves products bought in the US.
 **Depends on:** nothing. Independent of [04](04-seed-datasets.md), though it largely
 removes the motivation for shipping barcode data there.
-**Status:** deferred, [issue 80](https://github.com/datagen24/victual/issues/80); see below.
+**Status:** deferred, [issue 80](https://github.com/datagen24/victual/issues/80); see
+[Open questions](#open-questions).
 
 > **Deferred, not cancelled.** This plan is parked pending Q1's experiment: roughly twenty
 > real barcodes off the maintainer's own pantry, run against Open Food Facts and USDA
@@ -51,7 +52,8 @@ So the plugin must:
    zeros and check digit length
 4. return `null` otherwise
 
-That verification step is the whole plugin. It is easy to write and easy to leave out.
+That verification step is the whole plugin. It is a handful of lines, and skipping it
+reintroduces the wrong-product match described above.
 
 Also worth noting FDC is nutrition-first: it does not carry product images, so
 `__image_url` would be absent where OFF supplies one.
@@ -91,11 +93,12 @@ None. Plugins are server side and configured, not exposed.
 
 **Client impact: none on the wire, and one thing worth naming.** A client that scans a
 barcode gets a *different product back* once a new source is enabled — better data, not a
-contract change, but a change in behaviour that no manifest and no snapshot can see. Sweep
-**S14** is this plan's inheritance and is the reason the surface is worth caring about at
-all: every source added is another party choosing `__image_url`, so the filename class,
-the image extension allow-list and the refusal of loopback and private hosts land before
-the first new source, not after.
+contract change, but a change in behaviour that no manifest and no snapshot can see.
+
+Sweep **S14** is this plan's inheritance and is the reason the surface is worth caring
+about at all. Every source added that sets the optional `__image_url` is another party
+choosing it, so the filename class, the image extension allow-list and the refusal of
+loopback and private hosts land before the first new source, not after.
 
 ## Relationship to [04 seed datasets](04-seed-datasets.md)
 
@@ -116,7 +119,8 @@ is both regionally correct and always current. Fixing lookup is the better inves
 3. **Non-food items.** Neither source covers household goods well — cleaning products,
    batteries, toiletries. Open Products Facts is the OFF sibling for these and could be a
    third link in the chain.
-4. **Cache lookups?** Only worth it if scanning is noticeably slow. Easy to add later.
+4. **Cache lookups?** Only worth it if scanning is noticeably slow, and nothing here
+   prevents adding it after the fact.
 5. **What should happen on no match?** Today the product form opens with the barcode
    prefilled and nothing else. That is reasonable, and arguably a US user will hit it often
    enough that it is worth making the manual path pleasant rather than chasing perfect
