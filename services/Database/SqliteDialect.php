@@ -159,6 +159,16 @@ class SqliteDialect extends DatabaseDialect
 	}
 
 	/**
+	 * Takes no lock. Not an oversight, for the same reason as WithMigrationLock() and
+	 * WithPublicationLock() above: under ADR-0008 SQLite is not a concurrent runtime
+	 * engine, and the differential suite and a local dev boot that construct this dialect
+	 * are one process at a time, so there is no second stock booking to interleave with.
+	 */
+	public function LockProductStock(\PDO $pdo, int $productId): void
+	{
+	}
+
+	/**
 	 * Whether the error is "no such table", which on SQLite can only be told from the
 	 * message.
 	 *

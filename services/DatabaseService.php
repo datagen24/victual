@@ -308,6 +308,60 @@ class DatabaseService
 	}
 
 	/**
+	 * Serialises stock bookings of one product against each other (issue #458): takes
+	 * DatabaseDialect::LockProductStock()'s transaction scoped advisory lock, which every
+	 * StockService booking path calls before reading the stock state its decision depends
+	 * on, and holds until whichever transaction is currently open commits or rolls back -
+	 * see that method for why it is transaction rather than session scoped.
+	 *
+	 * Requires a transaction already open, and throws rather than silently taking a lock
+	 * that would provide no protection: a transaction scoped lock taken with no transaction
+	 * open releases as soon as the statement finishes, before the caller's very next line
+	 * runs, which is indistinguishable from not locking at all except that it looks like it
+	 * worked.
+	 *
+	 * @param int $productId
+	 * @return void
+	 * @throws \LogicException When called with no transaction open
+	 */
+	public function LockProductStock(int $productId): void
+	{
+		$pdo = $this->GetDbConnectionRaw();
+
+		if (!$pdo->inTransaction())
+		{
+			throw new \LogicException('LockProductStock() requires a transaction already open - a transaction scoped advisory lock taken outside one releases immediately and protects nothing');
+		}
+
+		$this->GetDialect()->LockProductStock($pdo, $productId);
+	}
+
+	/**
+	 * LockProductStock() for every product id in $productIds, in ascending order.
+	 *
+	 * The ascending order is load-bearing, not cosmetic: it is what a caller touching more
+	 * than one product in one transaction (MergeProducts(), RecipesService::ConsumeRecipe()
+	 * consuming several ingredients) uses to avoid deadlocking against another such caller
+	 * whose product set overlaps but was read in a different order. Two callers that both
+	 * lock ascending always request their first conflicting lock in the same order, so one
+	 * always waits behind the other rather than each holding what the other needs.
+	 *
+	 * @param int[] $productIds
+	 * @return void
+	 * @throws \LogicException When called with no transaction open
+	 */
+	public function LockProductsStock(array $productIds): void
+	{
+		$ids = array_unique(array_map('intval', $productIds));
+		sort($ids);
+
+		foreach ($ids as $id)
+		{
+			$this->LockProductStock($id);
+		}
+	}
+
+	/**
 	 * Registers work to run once, inside the outermost transaction, just before it commits.
 	 *
 	 * The problem this solves is that "once per transaction" has no other honest seam. The

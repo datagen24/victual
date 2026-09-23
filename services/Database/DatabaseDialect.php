@@ -256,6 +256,56 @@ abstract class DatabaseDialect
 	abstract public function WithPublicationLock(callable $work);
 
 	/**
+	 * Takes a transaction scoped advisory lock on one product's stock rows, closing the
+	 * read-then-write window every stock booking path opens between reading `stock` /
+	 * `stock_log` and deciding what to write (issue #458): two concurrent bookings of the
+	 * same product can otherwise both read the pre-write state, both pass whatever check
+	 * that state supports, and together do something neither read alone justified - an
+	 * over-consume past zero, or an undo racing the very booking its "any subsequent
+	 * booking" guard exists to catch.
+	 *
+	 * Deliberately transaction scoped (pg_advisory_xact_lock), not session scoped like
+	 * WithMigrationLock() and WithPublicationLock() above. Those wrap one call that owns
+	 * its whole lifetime; a stock booking does not - DatabaseService::InTransaction() lets
+	 * an inner call join whatever transaction its caller already opened (ConsumeRecipe()
+	 * calling ConsumeProduct() per ingredient, UndoTransaction() calling UndoBooking() per
+	 * line, OpenProduct() calling TransferProduct() when "move on open" is set), so a lock
+	 * taken by an inner call has to survive until the outermost commit or rollback, not
+	 * until the inner call returns. A transaction scoped lock does exactly that, taken from
+	 * anywhere in the call graph, released only when the transaction it was taken inside
+	 * ends - and calling it again for a product already locked in the same transaction is
+	 * a cheap no-op rather than a self-deadlock.
+	 *
+	 * Uses pg_advisory_xact_lock's two-integer form, keyed on a class id
+	 * (PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS) and the product id as the object
+	 * id. That form's lock identity is the 64-bit concatenation of the two integers, so it
+	 * only shares a keyspace with WithMigrationLock()'s and WithPublicationLock()'s
+	 * single-bigint locks when the class id is zero; a nonzero class id keeps this
+	 * incapable of colliding with either regardless of which product id is locked.
+	 *
+	 * A caller touching more than one product in the same transaction (MergeProducts(),
+	 * RecipesService::ConsumeRecipe() consuming several ingredients) must lock every
+	 * product id it will touch, in ascending order, before writing any of them - otherwise
+	 * two such callers touching an overlapping set in different orders can each hold one
+	 * lock the other needs and deadlock. See DatabaseService::LockProductsStock().
+	 *
+	 * Requires a transaction already open on $pdo: a transaction scoped lock taken with no
+	 * transaction open releases the instant the statement finishes, before the caller's
+	 * next statement runs, which would silently provide no protection at all rather than
+	 * fail loudly. DatabaseService::LockProductStock() is the caller-facing wrapper that
+	 * enforces this.
+	 *
+	 * SqliteDialect's version is a deliberate no-op, for the same reason as
+	 * WithMigrationLock()'s and WithPublicationLock()'s: under ADR-0008 SQLite is not a
+	 * concurrent runtime engine.
+	 *
+	 * @param \PDO $pdo The connection already inside the caller's transaction
+	 * @param int $productId
+	 * @return void
+	 */
+	abstract public function LockProductStock(\PDO $pdo, int $productId): void;
+
+	/**
 	 * Whether the given driver error means "that table does not exist", as opposed to any
 	 * other reason a query can fail.
 	 *
