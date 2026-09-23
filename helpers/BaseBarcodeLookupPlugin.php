@@ -106,9 +106,9 @@ abstract class BaseBarcodeLookupPlugin
 			throw new \Exception("Provided qu_id_stock ($quIdStock) is not a valid quantity unit id");
 		}
 
-		// A divisor in every conversion the caller makes with it
-		// (services/StockService.php:1057), so zero, blank, non-numeric and negative are
-		// all refused - not just the first two, which is what empty() alone catches.
+		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
+		// it, so zero, blank, non-numeric and negative are all refused - not just the
+		// first two, which is what empty() alone catches.
 		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
 		if (!is_numeric($quFactor) || (float)$quFactor <= 0)
 		{

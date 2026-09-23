@@ -214,7 +214,7 @@ class BarcodeLookupTest extends TestCase
 
 	/**
 	 * A name that is present but null or empty is refused rather than stored - see
-	 * services/StockService.php:1047, which would otherwise write the row as sent.
+	 * StockService::ExternalBarcodeLookup(), which would otherwise write the row as sent.
 	 */
 	#[DataProvider('emptyNameProvider')]
 	public function testLookupRefusesANameThatIsPresentButEmpty($name): void
@@ -295,9 +295,9 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Boundary: the purchase-to-stock factor is a divisor in every conversion the caller
-	 * makes with it (services/StockService.php:1057), so zero, blank and non-numeric are
-	 * all refused.
+	 * Boundary: the purchase-to-stock factor is a divisor in every conversion
+	 * StockService::ExternalBarcodeLookup() makes with it, so zero, blank and non-numeric
+	 * are all refused.
 	 */
 	#[DataProvider('unusableFactorProvider')]
 	public function testLookupRefusesAnUnusableConversionFactor($factor): void
