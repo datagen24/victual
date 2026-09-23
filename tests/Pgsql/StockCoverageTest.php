@@ -959,6 +959,66 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * location_id_from and location_id_to are passed to a service method typed as int.
+	 * RequireIntegerId() (controllers/Api/StockApiController.php) validates them before
+	 * the service method is called: it rejects non-integer values (including booleans,
+	 * arrays, floats, integers outside PHP_INT_MIN..PHP_INT_MAX, and strings with
+	 * decoration like whitespace or scientific notation) with a 400 error, leaving the
+	 * ledger untouched.
+	 */
+	#[Depends('testTransferRefusesMissingInputAndMissingEntities')]
+	public function testTransferWithNonIntegerLocationIdFromIsRefusedWithoutWriting(): void
+	{
+		$complete = ['amount' => 1, 'location_id_from' => self::$ids['freezer'], 'location_id_to' => self::$ids['pantry']];
+
+		foreach (['pantry', null, 1.5, '1.5', '99999999999999999999', true, [], '', '1e5', "5\n"] as $invalidValue)
+		{
+			$this->expectRefusalWithUntouchedLedger(
+				fn() => self::$stock->TransferProduct(self::request('POST', array_merge($complete, ['location_id_from' => $invalidValue])), new Response(), ['productId' => self::$ids['movable']]),
+				400,
+				"A transfer with location_id_from = " . json_encode($invalidValue) . " is refused"
+			);
+		}
+	}
+
+	/**
+	 * location_id_to validates the same way: rejects non-integer values before the
+	 * service method is called, leaving the ledger untouched.
+	 */
+	#[Depends('testTransferWithNonIntegerLocationIdFromIsRefusedWithoutWriting')]
+	public function testTransferWithNonIntegerLocationIdToIsRefusedWithoutWriting(): void
+	{
+		$complete = ['amount' => 1, 'location_id_from' => self::$ids['freezer'], 'location_id_to' => self::$ids['pantry']];
+
+		foreach (['pantry', null, 1.5, '1.5', '99999999999999999999', true, [], '', '1e5', "5\n"] as $invalidValue)
+		{
+			$this->expectRefusalWithUntouchedLedger(
+				fn() => self::$stock->TransferProduct(self::request('POST', array_merge($complete, ['location_id_to' => $invalidValue])), new Response(), ['productId' => self::$ids['movable']]),
+				400,
+				"A transfer with location_id_to = " . json_encode($invalidValue) . " is refused"
+			);
+		}
+	}
+
+	/**
+	 * A valid numeric string id still transfers successfully: integer-valued numeric
+	 * strings like "123" are accepted just as the integer 123 is.
+	 */
+	#[Depends('testTransferWithNonIntegerLocationIdToIsRefusedWithoutWriting')]
+	public function testTransferWithNumericStringLocationIdsSucceeds(): void
+	{
+		$this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', [
+				'amount' => 1,
+				'location_id_from' => (string)self::$ids['freezer'],
+				'location_id_to' => (string)self::$ids['pantry'],
+			]), new Response(), ['productId' => self::$ids['movable']]),
+			200,
+			'A transfer with numeric string location ids is accepted'
+		);
+	}
+
+	/**
 	 * Moving stock into and out of a freezer rewrites the entry's due date from the
 	 * product's freezing and thawing defaults - the one transfer effect that is not just
 	 * a change of location_id.
