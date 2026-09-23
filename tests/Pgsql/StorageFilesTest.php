@@ -836,21 +836,20 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	 * "/?*;:{}\\" and nothing else, so a null byte is a valid character in a file name and
 	 * all three routes accept one. Then:
 	 *
-	 * - on the filesystem backend the name reaches fopen(), which raises a ValueError.
-	 *   HandleApiCall() (controllers/Api/BaseApiController.php) now catches a ValueError
-	 *   from a caller-supplied value and answers 400, so this half of the defect (issue
-	 *   #244 item 1) is fixed; nothing is stored.
+	 * - on the filesystem backend the name reaches fopen(), which raises a ValueError. That
+	 *   is an \Error, and HandleApiCall's catch chain ends at \Exception, so nothing
+	 *   answers it: in production the request dies above the controller as a 500, from a
+	 *   caller supplied string, where an invalid name is a 400.
 	 * - on the database backend the driver truncates the name at the null byte, so the
 	 *   upload answers 204 and stores a row under a name the caller never sent - and the
 	 *   name the extension check was applied to is not the name that was stored. That is
 	 *   GROUP_ALLOWED_EXTENSIONS ("an upload of anything else is refused rather than
-	 *   stored") being bypassed, which the second half of this test demonstrates. This half
-	 *   is untouched by #244 and remains a defect.
+	 *   stored") being bypassed, which the second half of this test demonstrates.
 	 *
 	 * The correct behaviour is for IsValidFileName to refuse a name containing a null byte,
 	 * so that every route answers 400 on both backends. Pinned with assertions rather than
-	 * skipped, because the database backend's current answer is worse than a refusal and a
-	 * skipped test would stop reporting it.
+	 * skipped, because both current answers are worse than a refusal and a skipped test
+	 * would stop reporting them.
 	 */
 	#[DataProvider('backends')]
 	public function testANullByteInAFileNameIsNotRefused(string $backend): void
@@ -864,7 +863,17 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 
 		if ($backend === 'filesystem')
 		{
-			$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), $args), 400, 'The null byte reaching fopen() is refused rather than crashing the request');
+			$raised = null;
+			try
+			{
+				self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), $args);
+			}
+			catch (\ValueError $ex)
+			{
+				$raised = $ex;
+			}
+
+			self::assertNotNull($raised, 'Current behaviour, and a defect: the upload dies with an uncaught ValueError rather than answering 400');
 			self::assertSame([], self::DurableNames($backend, 'productpictures'), 'Nothing was stored');
 
 			return;

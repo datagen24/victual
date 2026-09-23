@@ -9,6 +9,7 @@
 @endif
 
 @section('content')
+@php $recipePictureFileName = ($mode == 'edit') ? $recipe->picture_file_name : null; @endphp
 <div class="row">
 	<div class="col">
 		<h2 class="title">@yield('title')</h2>
@@ -305,12 +306,12 @@
 									id="recipe-picture"
 									accept="image/*">
 								<label id="recipe-picture-label"
-									class="custom-file-label @if(empty($recipe->picture_file_name)) d-none @endif"
+									class="custom-file-label @if(empty($recipePictureFileName)) d-none @endif"
 									for="recipe-picture">
-									{{ $recipe->picture_file_name }}
+									{{ $recipePictureFileName }}
 								</label>
 								<label id="recipe-picture-label-none"
-									class="custom-file-label @if(!empty($recipe->picture_file_name)) d-none @endif"
+									class="custom-file-label @if(!empty($recipePictureFileName)) d-none @endif"
 									for="recipe-picture">
 									{{ $__t('No file selected') }}
 								</label>
@@ -322,9 +323,9 @@
 						</div>
 					</div>
 				</div>
-				@if(!empty($recipe->picture_file_name))
+				@if(!empty($recipePictureFileName))
 				<img id="current-recipe-picture"
-					src="{{ $U('/api/files/recipepictures/' . base64_encode($recipe->picture_file_name) . '?force_serve_as=picture&best_fit_width=400') }}"
+					src="{{ $U('/api/files/recipepictures/' . base64_encode($recipePictureFileName) . '?force_serve_as=picture&best_fit_width=400') }}"
 					class="img-fluid img-thumbnail mt-2 mb-5"
 					loading="lazy">
 				<p id="delete-current-recipe-picture-on-save-hint"
@@ -336,6 +337,7 @@
 			</div>
 		</div>
 
+		@if($mode == 'edit')
 		<div class="row">
 			<div class="col">
 				<div class="title-related-links">
@@ -347,11 +349,9 @@
 							title="{{ $__t('Grocycode is a unique referer to this %s in your Victual instance - print it onto a label and scan it like any other barcode', $__t('Recipe')) }}"></i>
 					</h4>
 					<p>
-						@if($mode == 'edit')
 						<img src="{{ $U('/recipe/' . $recipe->id . '/grocycode?size=60') }}"
 							class="float-lg-left"
 							loading="lazy">
-						@endif
 					</p>
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
@@ -360,6 +360,7 @@
 				</div>
 			</div>
 		</div>
+		@endif
 	</div>
 
 	@if($mode == 'edit')

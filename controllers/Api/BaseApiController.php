@@ -142,7 +142,6 @@ class BaseApiController extends BaseController
 	 * | EInvalidApiQuery | 400 |
 	 * | FileTooLargeException | 413 |
 	 * | PDOException | 400, with the driver's own words replaced |
-	 * | TypeError, ValueError | 400 - see below |
 	 * | \Exception | 400, exactly as before |
 	 *
 	 * The PDOException row is the one plan 11 left open when it noted that its drafted
@@ -153,14 +152,9 @@ class BaseApiController extends BaseController
 	 * whatever route it arrives by (see WithoutDriverText). It therefore needs no catch
 	 * clause of its own, and has none.
 	 *
-	 * TypeError and ValueError are caught narrowly rather than widening this to \Throwable:
-	 * both are what PHP throws when a caller-supplied value fails a scalar type
-	 * declaration or a coercion built-in refuses it (e.g. passing "abc" where a route
-	 * handler expects a float amount), which is a client mistake dressed up as an
-	 * internal one. Every other \Error - a call to an undefined method, an
-	 * uninitialized typed property - is this application being wrong about its own
-	 * types or state, and stays uncaught so it reaches the error middleware as a 500,
-	 * which is where a genuine server bug belongs.
+	 * \Error is deliberately not caught either, for the opposite reason. A TypeError is
+	 * this application being wrong about its own types, and answering 400 to it would file
+	 * a bug as a client mistake.
 	 */
 	protected function HandleApiCall(Response $response, callable $work): Response
 	{
@@ -191,10 +185,6 @@ class BaseApiController extends BaseController
 			// 413 rather than the 400 every other failure gets, because "this one was too
 			// big" is the one refusal a client can act on by sending less
 			return $this->GenericErrorResponse($response, $ex->getMessage(), 413);
-		}
-		catch (\TypeError | \ValueError $ex)
-		{
-			return $this->GenericErrorResponse($response, $ex->getMessage());
 		}
 		catch (\Exception $ex)
 		{

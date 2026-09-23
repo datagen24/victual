@@ -23,6 +23,24 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 class StockApiController extends BaseApiController
 {
 	/**
+	 * Refuses a body field that is going to be passed into a service method's float/int
+	 * parameter (AddProduct, ConsumeProduct, OpenProduct, TransferProduct,
+	 * InventoryProduct, EditStockEntry) with the same 400 every other invalid amount gets,
+	 * rather than letting a non-numeric value reach that parameter and raise a TypeError -
+	 * HandleApiCall() deliberately does not catch \Error (issue #244 item 1), so that
+	 * would otherwise be a 500.
+	 *
+	 * @throws \Exception When $requestBody[$field] is not numeric
+	 */
+	private function RequireNumericAmount(array $requestBody, string $field): void
+	{
+		if (!is_numeric($requestBody[$field]))
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a number');
+		}
+	}
+
+	/**
 	 * POST /api/stock/shoppinglist/add-missing-products - adds all products below their
 	 * minimum stock amount to the shopping list given by the numeric body field list_id
 	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
@@ -123,6 +141,8 @@ class StockApiController extends BaseApiController
 			{
 				throw new \Exception('An amount is required');
 			}
+
+			$this->RequireNumericAmount($requestBody, 'amount');
 
 			$bestBeforeDate = null;
 			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
@@ -307,6 +327,8 @@ class StockApiController extends BaseApiController
 				throw new \Exception('An amount is required');
 			}
 
+			$this->RequireNumericAmount($requestBody, 'amount');
+
 			$spoiled = false;
 			if (array_key_exists('spoiled', $requestBody))
 			{
@@ -456,6 +478,8 @@ class StockApiController extends BaseApiController
 				throw new \Exception('An amount is required');
 			}
 
+			$this->RequireNumericAmount($requestBody, 'amount');
+
 			$bestBeforeDate = null;
 			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
 			{
@@ -590,6 +614,8 @@ class StockApiController extends BaseApiController
 				throw new \Exception('An new amount is required');
 			}
 
+			$this->RequireNumericAmount($requestBody, 'new_amount');
+
 			$bestBeforeDate = null;
 			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
 			{
@@ -680,6 +706,8 @@ class StockApiController extends BaseApiController
 			{
 				throw new \Exception('An amount is required');
 			}
+
+			$this->RequireNumericAmount($requestBody, 'amount');
 
 			$specificStockEntryId = 'default';
 			if (array_key_exists('stock_entry_id', $requestBody) && !empty($requestBody['stock_entry_id']))
@@ -973,6 +1001,8 @@ class StockApiController extends BaseApiController
 			{
 				throw new \Exception('An amount is required');
 			}
+
+			$this->RequireNumericAmount($requestBody, 'amount');
 
 			if (!array_key_exists('location_id_from', $requestBody))
 			{

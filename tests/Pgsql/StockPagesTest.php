@@ -1351,6 +1351,7 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		[$form, $diagnostics] = self::renderCapturingDiagnostics(self::$recipes, 'RecipeEditForm', ['recipeId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $form, 'the create form is served');
 		self::assertStringContainsString("Victual.EditMode = 'create';", $form, 'in create mode, not edit');
+		self::assertSame([], $diagnostics, 'the create form reads $recipe only inside mode == edit guards, so it raises nothing');
 	}
 
 	// --- Phase 6: price redaction ------------------------------------------------------
