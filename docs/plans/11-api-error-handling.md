@@ -21,10 +21,11 @@ here, that the totals agreed at 86 apiece with two mismatches hidden inside them
 in both halves: it dropped one route on the way in and invented one spec-only path.
 
 The `ExposedEntity` allow-lists are read from the spec at runtime, so entity drift is
-impossible by construction, and every controller's error body carries `error_message` —
-`{ "error_message": … }` for `Error400`, with `error_details` alongside it in `Error500`.
-The structure is sound. What is not uniform is *which status code* that body arrives
-with, and it is not uniform in four separate ways.
+impossible by construction, and every API controller returns the same
+`{ "error_message": … }` body. The one addition is `error_details`, which
+`ExceptionController` attaches to an uncaught exception's body only when error details
+are displayed. The structure is sound. What is not uniform is *which status code* that
+body arrives with, and it is not uniform in four separate ways.
 
 **Permission checks land inside or outside a `try` at random.** `User::CheckPermission`
 throws a Slim `HttpForbiddenException`. Where the call sits above the `try`
@@ -641,7 +642,7 @@ operations as part of this plan (not left for
 [14](landed/14-contract-and-regression-scaffolding.md) to notice), and a changelog entry
 naming the nine.
 
-Response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
+API response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
 Success responses are untouched.
 
 The Home Assistant integration and the iOS app are the two consumers to think about.
