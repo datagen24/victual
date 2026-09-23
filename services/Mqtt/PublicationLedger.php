@@ -88,20 +88,6 @@ class PublicationLedger extends BaseService
 	}
 
 	/**
-	 * Empties the ledger, which is what a full retraction leaves behind.
-	 */
-	public function ForgetAll(): void
-	{
-		$this->AsBookkeeping(function ()
-		{
-			foreach ($this->DB->mqtt_published_entities() as $row)
-			{
-				$row->delete();
-			}
-		});
-	}
-
-	/**
 	 * Removes opt-in flag rows whose product has been deleted or deactivated.
 	 *
 	 * A data change rather than bookkeeping - the household's flag really is gone - but it is

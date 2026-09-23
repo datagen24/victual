@@ -53,14 +53,111 @@
 //   restoreassembly        put it back
 //   breakledger            rename the publication ledger's table out of the way
 //   restoreledger          put it back
+//   breakledgerwrite       make every ledger write raise, via a blocking trigger
+//   restoreledgerwrite     put it back
+//   breaklockacquire       swap in a dialect whose WithPublicationLock() fails to acquire
+//   breaklockrelease       swap in a dialect whose WithPublicationLock() fails to release
+//   restorelock            put the real dialect back
+//   seedledgerrow:<id>:<hash>  insert a ledger row directly, for an object id kind
+//                              PublishLocked() never writes (Retract() must not forget it)
+//   shutdownisolation      call DatabaseService's request-end logic directly with the MQTT
+//                          step forced to throw; result is whether the InfluxDB drain ran
 //
 // Result file: {"steps": {"<index>:<step>": <result>}, "ledger": {object id: hash},
 // "flags": [product id], "error": "<message>"}. Written to a file rather than stdout so that
 // a warning or a log line from the code under test cannot be mistaken for the result.
 
+use Victual\Services\Database\PostgresDialect;
 use Victual\Services\DatabaseService;
 use Victual\Services\Mqtt\MqttPublisher;
 use Victual\Services\Mqtt\MqttStatePublicationService;
+
+// The application classes below (LockFailureInjectingDialect extends PostgresDialect,
+// ThrowingMqttDatabaseService extends DatabaseService) are declared at the top level of this
+// file, so PHP resolves their "extends" the moment the file is parsed and executed -
+// regardless of which mode ('broker' or 'scenario') this invocation ends up running. The
+// autoloader has to be registered before that happens, so this bootstrap - previously done
+// only inside RunScenario() - runs unconditionally here instead. RunBroker() itself needs
+// none of it; it costs that mode one composer autoload registration and nothing else.
+define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
+define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
+
+require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
+require_once VICTUAL_DATAPATH . '/config.php';
+require_once VICTUAL_ROOT_PATH . '/config-dist.php';
+
+/**
+ * A PostgresDialect whose publication advisory lock genuinely fails to acquire or release,
+ * for testing that MqttStatePublicationService::Publish() honours its no-throw contract when
+ * WithPublicationLock() itself throws - the gap issue #463 part 1 describes, which #449 did
+ * not close because it only wrapped what runs *inside* the lock.
+ *
+ * Swapped in through DatabaseService's own $Dialect property (the seam GetDialect() already
+ * exposes and this file already uses via reflection for DbConnectionRaw), so no test-only
+ * branch is needed in production code: this is a real PostgresDialect subclass exercising a
+ * real SQL failure, the same style as #449's blocking trigger.
+ *
+ * Calling an undefined function is a genuine PDOException from PostgreSQL, not a fabricated
+ * stand-in for one - the same class of error a dropped connection raises at either call. For
+ * the release case the real pg_advisory_lock() runs first, so the body executes exactly as it
+ * would in production and only the unlock fails - which is also why the underlying session
+ * keeps the advisory lock for the rest of this subprocess: an unlock statement that never
+ * executes cannot release it. That is the leak WithPublicationLock()'s docblock and this
+ * fix's report describe; it is confined to this subprocess's own connection, which ends when
+ * the scenario does.
+ */
+class LockFailureInjectingDialect extends PostgresDialect
+{
+	public bool $FailAcquire = false;
+	public bool $FailRelease = false;
+
+	public function WithPublicationLock(callable $work)
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+		$lockFunction = $this->FailAcquire ? 'pg_advisory_lock_simulated_failure' : 'pg_advisory_lock';
+
+		$pdo->prepare('SELECT ' . $lockFunction . '(?)')->execute([self::PUBLICATION_ADVISORY_LOCK_KEY]);
+
+		try
+		{
+			return $work();
+		}
+		finally
+		{
+			$unlockFunction = $this->FailRelease ? 'pg_advisory_unlock_simulated_failure' : 'pg_advisory_unlock';
+
+			$pdo->prepare('SELECT ' . $unlockFunction . '(?)')->execute([self::PUBLICATION_ADVISORY_LOCK_KEY]);
+		}
+	}
+}
+
+/**
+ * A DatabaseService whose request-end MQTT step always throws, for testing issue #463 part
+ * 1's other half: that DatabaseService's shutdown handler isolates the MQTT publish from the
+ * InfluxDB drain that follows it, the way it already isolates FlushDbChangedTime() from both.
+ *
+ * PublishMqttForRequestEnd() and DrainInfluxForRequestEnd() are the seam
+ * RunRequestEndPublishes() added for exactly this: register_shutdown_function() only ever
+ * runs a closure at the real end of the PHP process, which nothing in a test can trigger on
+ * demand, so the method it calls is invoked directly instead (see 'shutdownisolation' below).
+ */
+class ThrowingMqttDatabaseService extends DatabaseService
+{
+	public static bool $InfluxDrainWasCalled = false;
+
+	protected function PublishMqttForRequestEnd(): bool
+	{
+		throw new \RuntimeException('simulated: the request-end MQTT publish throws');
+	}
+
+	protected function DrainInfluxForRequestEnd(): bool
+	{
+		self::$InfluxDrainWasCalled = true;
+
+		return true;
+	}
+}
 
 if (PHP_SAPI !== 'cli')
 {
@@ -327,12 +424,8 @@ function RunScenario(array $steps, string $resultFile): void
 		exit(1);
 	}
 
-	define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
-	define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
-
-	require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
-	require_once VICTUAL_DATAPATH . '/config.php';
-	require_once VICTUAL_ROOT_PATH . '/config-dist.php';
+	// The autoloader and application config are already loaded - see the top-level bootstrap
+	// this file needs for its own class declarations, above.
 
 	if (!defined('VICTUAL_USER_ID'))
 	{
@@ -354,6 +447,7 @@ function RunScenario(array $steps, string $resultFile): void
 	$renamed = false;
 	$ledgerRenamed = false;
 	$ledgerWriteBroken = false;
+	$lockDialectSwapped = false;
 
 	try
 	{
@@ -413,6 +507,37 @@ function RunScenario(array $steps, string $resultFile): void
 					$value = true;
 					break;
 
+				case 'breaklockacquire':
+					$dialect = new LockFailureInjectingDialect();
+					$dialect->FailAcquire = true;
+					(new ReflectionProperty(DatabaseService::class, 'Dialect'))->setValue(null, $dialect);
+					$lockDialectSwapped = true;
+					$value = true;
+					break;
+
+				case 'breaklockrelease':
+					$dialect = new LockFailureInjectingDialect();
+					$dialect->FailRelease = true;
+					(new ReflectionProperty(DatabaseService::class, 'Dialect'))->setValue(null, $dialect);
+					$lockDialectSwapped = true;
+					$value = true;
+					break;
+
+				case 'restorelock':
+					(new ReflectionProperty(DatabaseService::class, 'Dialect'))->setValue(null, null);
+					$lockDialectSwapped = false;
+					$value = true;
+					break;
+
+				case 'seedledgerrow':
+					[$objectId, $hash] = explode(':', $argument, 2);
+					$statement = $pdo->prepare(
+						'INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES (?, ?)'
+					);
+					$statement->execute([$objectId, $hash]);
+					$value = true;
+					break;
+
 				case 'rename':
 					$statement = $pdo->prepare("UPDATE products SET name = name || ' (renamed)' WHERE id = ?");
 					$statement->execute([(int)$argument]);
@@ -425,6 +550,23 @@ function RunScenario(array $steps, string $resultFile): void
 
 				case 'requestend':
 					$value = MqttStatePublicationService::PublishForRequestEnd();
+					break;
+
+				case 'shutdownisolation':
+					// Swaps in a DatabaseService whose MQTT step always throws, and calls the
+					// shutdown handler's request-end logic directly (see
+					// ThrowingMqttDatabaseService's docblock for why directly rather than
+					// through register_shutdown_function()). $value is whether the InfluxDB
+					// drain still ran despite that throw - the isolation issue #463 part 1 adds.
+					$instance = new ThrowingMqttDatabaseService();
+					(new ReflectionProperty(DatabaseService::class, 'instance'))->setValue(null, $instance);
+					$instance->MarkDataChanged();
+
+					$method = new ReflectionMethod(DatabaseService::class, 'RunRequestEndPublishes');
+					$method->setAccessible(true);
+					$method->invoke($instance);
+
+					$value = ThrowingMqttDatabaseService::$InfluxDrainWasCalled;
 					break;
 
 				case 'suppress':
@@ -494,6 +636,11 @@ function RunScenario(array $steps, string $resultFile): void
 		{
 			$pdo->exec('DROP TRIGGER IF EXISTS mqtt_published_entities_write_blocked ON mqtt_published_entities');
 			$pdo->exec('DROP FUNCTION IF EXISTS mqtt_ledger_write_blocked()');
+		}
+
+		if ($lockDialectSwapped)
+		{
+			(new ReflectionProperty(DatabaseService::class, 'Dialect'))->setValue(null, null);
 		}
 	}
 

@@ -615,45 +615,99 @@ class DatabaseService
 				// A failure here must never turn an otherwise successful request into an error
 			}
 
-			// The after-commit seam for plan 18: the end of the request is the first moment
-			// every transaction is provably closed, and the dirty flag is the same "really
-			// changed" test the changed time uses, so reads and bookkeeping writes cost
-			// nothing here. Named directly rather than through a listener registry because
-			// there is no boot event to register one at, and holding one in process memory
-			// between requests is what ADR-0007 forbids. Everything past this point catches
-			// its own failures.
-			//
-			// Two independent pieces of evidence that there is work to do, not one. The
-			// dirty flag covers everything that writes through this service; the outbox
-			// covers the InfluxDB events specifically, which are recorded at StockService's
-			// entrypoints and would otherwise be lost whenever nothing installed the query
-			// callback - a SQLite database with MQTT off, for instance.
-			//
-			// Asking the outbox costs one indexed query per request, and only when InfluxDB
-			// is configured on (HasBookings() returns false on a constant read otherwise).
-			// That is deliberate rather than merely tolerable: it is what lets a request
-			// that booked nothing deliver what an earlier failed attempt left behind, so a
-			// queue drains itself once the endpoint comes back rather than waiting for
-			// somebody to notice.
-			if (!self::$DataChanged && !BookingEventPublisher::HasBookings())
-			{
-				return;
-			}
-
-			// A snapshot published from inside a transaction that then rolls back is a lie
-			// that persists in a retained topic, and a time series point written for a
-			// booking that rolled back is a number nothing will ever correct. An open
-			// transaction here means something escaped InTransaction()'s rollback, so the
-			// honest thing is to skip both and say so.
-			if (self::$DbConnectionRaw !== null && self::$DbConnectionRaw->inTransaction())
-			{
-				error_log('Victual: skipped the after-commit MQTT publish and InfluxDB write because a database transaction was still open at the end of the request');
-
-				return;
-			}
-
-			MqttStatePublicationService::PublishForRequestEnd();
-			BookingEventPublisher::WriteForRequestEnd();
+			$this->RunRequestEndPublishes();
 		});
+	}
+
+	/**
+	 * The after-commit seam for plan 18: the end of the request is the first moment every
+	 * transaction is provably closed, and the dirty flag is the same "really changed" test
+	 * the changed time uses, so reads and bookkeeping writes cost nothing here. Named
+	 * directly rather than through a listener registry because there is no boot event to
+	 * register one at, and holding one in process memory between requests is what ADR-0007
+	 * forbids. Everything past the transaction check catches its own failures.
+	 *
+	 * Broken out of RegisterShutdownHandler()'s closure so a test can invoke it directly - a
+	 * closure registered with register_shutdown_function() only ever runs at the real end of
+	 * the PHP process, which is not something a test can trigger on demand.
+	 */
+	private function RunRequestEndPublishes(): void
+	{
+		// Two independent pieces of evidence that there is work to do, not one. The dirty
+		// flag covers everything that writes through this service; the outbox covers the
+		// InfluxDB events specifically, which are recorded at StockService's entrypoints and
+		// would otherwise be lost whenever nothing installed the query callback - a SQLite
+		// database with MQTT off, for instance.
+		//
+		// Asking the outbox costs one indexed query per request, and only when InfluxDB is
+		// configured on (HasBookings() returns false on a constant read otherwise). That is
+		// deliberate rather than merely tolerable: it is what lets a request that booked
+		// nothing deliver what an earlier failed attempt left behind, so a queue drains
+		// itself once the endpoint comes back rather than waiting for somebody to notice.
+		if (!self::$DataChanged && !BookingEventPublisher::HasBookings())
+		{
+			return;
+		}
+
+		// A snapshot published from inside a transaction that then rolls back is a lie that
+		// persists in a retained topic, and a time series point written for a booking that
+		// rolled back is a number nothing will ever correct. An open transaction here means
+		// something escaped InTransaction()'s rollback, so the honest thing is to skip both
+		// and say so.
+		if (self::$DbConnectionRaw !== null && self::$DbConnectionRaw->inTransaction())
+		{
+			error_log('Victual: skipped the after-commit MQTT publish and InfluxDB write because a database transaction was still open at the end of the request');
+
+			return;
+		}
+
+		// Isolated in its own try/catch, matching FlushDbChangedTime() above: a failure in
+		// one request-end step must never prevent the other. Without this, an uncaught
+		// throwable from the MQTT publish (see MqttStatePublicationService's own no-throw
+		// contract, which the publication lock could still escape) would skip the InfluxDB
+		// drain below it until some later request happened to trigger one.
+		try
+		{
+			$this->PublishMqttForRequestEnd();
+		}
+		catch (\Throwable $ex)
+		{
+			error_log('Victual: the request-end MQTT publish failed: ' . $ex->getMessage());
+		}
+
+		try
+		{
+			$this->DrainInfluxForRequestEnd();
+		}
+		catch (\Throwable $ex)
+		{
+			error_log('Victual: the request-end InfluxDB outbox drain failed: ' . $ex->getMessage());
+		}
+	}
+
+	/**
+	 * Calls MqttStatePublicationService::PublishForRequestEnd().
+	 *
+	 * A protected seam rather than a direct static call in RunRequestEndPublishes(), so a
+	 * test can override it to inject a failure and prove that the InfluxDB drain which
+	 * follows it survives that failure - the isolation this method exists for - without
+	 * needing a real database failure to reach this deep.
+	 *
+	 * @return bool True when a snapshot was published
+	 */
+	protected function PublishMqttForRequestEnd(): bool
+	{
+		return MqttStatePublicationService::PublishForRequestEnd();
+	}
+
+	/**
+	 * Calls BookingEventPublisher::WriteForRequestEnd(). See PublishMqttForRequestEnd() for
+	 * why this is a seam rather than a direct call.
+	 *
+	 * @return bool True when a batch was delivered
+	 */
+	protected function DrainInfluxForRequestEnd(): bool
+	{
+		return BookingEventPublisher::WriteForRequestEnd();
 	}
 }

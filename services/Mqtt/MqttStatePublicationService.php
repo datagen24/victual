@@ -122,16 +122,39 @@ class MqttStatePublicationService
 			return false;
 		}
 
-		// Everything from the read to the ledger update is one critical section. Two
-		// requests would otherwise interleave a read of the state with a write of it and
-		// leave the older snapshot retained - silently, since nothing failed and retained
-		// topics carry no ordering. The assembly is inside the lock, not just the publish:
-		// a lock around the publish alone lets both requests read before either writes,
-		// which is the same lost update with a smaller window.
-		return DatabaseService::GetInstance()->GetDialect()->WithPublicationLock(function () use ($fullRefresh)
+		try
 		{
-			return self::PublishLocked($fullRefresh);
-		});
+			// Everything from the read to the ledger update is one critical section. Two
+			// requests would otherwise interleave a read of the state with a write of it and
+			// leave the older snapshot retained - silently, since nothing failed and retained
+			// topics carry no ordering. The assembly is inside the lock, not just the publish:
+			// a lock around the publish alone lets both requests read before either writes,
+			// which is the same lost update with a smaller window.
+			return DatabaseService::GetInstance()->GetDialect()->WithPublicationLock(function () use ($fullRefresh)
+			{
+				return self::PublishLocked($fullRefresh);
+			});
+		}
+		catch (\Throwable $ex)
+		{
+			// WithPublicationLock() itself can throw: acquiring the advisory lock is a database
+			// call made before PublishLocked()'s own try, and releasing it is a database call
+			// made in a finally that runs even when PublishLocked() returned normally - so a
+			// connection that drops on either side of the body throws here regardless of
+			// whether anything was actually published. This class's whole contract is that a
+			// publish never throws, and the caller is a shutdown handler that must not either.
+			//
+			// A session-level advisory lock lives on the connection that took it, so a
+			// connection drop releases it with nobody having to clean up (WithPublicationLock()'s
+			// docblock). What is not safe is a live connection whose unlock statement fails for
+			// some other reason: the lock then stays held on the server until that connection
+			// closes, and every later publish blocks behind it. That risk exists in
+			// WithPublicationLock() itself and is unchanged by catching here - this catch only
+			// keeps the failure from escaping the no-throw contract.
+			error_log('Victual: the MQTT publication lock could not be acquired or released, nothing was published: ' . $ex->getMessage());
+
+			return false;
+		}
 	}
 
 	/**
@@ -309,10 +332,24 @@ class MqttStatePublicationService
 		// Per-product entities are only known from the ledger, which is exactly what it is for
 		$ledger = new PublicationLedger();
 
+		// Only the object ids this method knows how to build a retraction for are collected
+		// here. Everything else is left in the ledger below rather than forgotten alongside
+		// them: forgetting a row this method did not retract would drop the ledger's only
+		// record that the topic exists, and nothing would ever clear it again.
+		$retracted = [];
+
 		foreach (array_keys($ledger->GetPublished()) as $objectId)
 		{
 			if (!str_starts_with($objectId, StateSnapshotAssembler::PER_PRODUCT_OBJECT_ID_PREFIX))
 			{
+				// Not a kind this method retracts. Today Record() is only ever called from the
+				// per-product loop in PublishLocked(), so this does not happen - but if a
+				// second kind is ever recorded, forgetting it here without having retracted it
+				// would silently orphan its retained topic, which is exactly the failure the
+				// ledger exists to prevent.
+				error_log('Victual: Retract() does not know how to retract ledger object id "' . $objectId
+					. '", leaving it in the ledger');
+
 				continue;
 			}
 
@@ -320,6 +357,7 @@ class MqttStatePublicationService
 
 			$topics[$builder->GetProductDiscoveryTopic($productId)] = '';
 			$topics[$builder->GetProductStateTopic($productId)] = '';
+			$retracted[] = $objectId;
 		}
 
 		if (!(new MqttPublisher())->PublishBatch($topics))
@@ -327,7 +365,10 @@ class MqttStatePublicationService
 			return false;
 		}
 
-		$ledger->ForgetAll();
+		foreach ($retracted as $objectId)
+		{
+			$ledger->Forget($objectId);
+		}
 
 		return true;
 	}
