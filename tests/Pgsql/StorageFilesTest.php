@@ -829,27 +829,10 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * A file name containing a null byte is not refused, and what happens next depends on
-	 * the backend. Neither answer is the one an invalid name should get.
-	 *
-	 * DEFECT (helpers/extensions.php:468-476). IsValidFileName's character class excludes
-	 * "/?*;:{}\\" and nothing else, so a null byte is a valid character in a file name and
-	 * all three routes accept one. Then:
-	 *
-	 * - on the filesystem backend the name reaches fopen(), which raises a ValueError. That
-	 *   is an \Error, and HandleApiCall's catch chain ends at \Exception, so nothing
-	 *   answers it: in production the request dies above the controller as a 500, from a
-	 *   caller supplied string, where an invalid name is a 400.
-	 * - on the database backend the driver truncates the name at the null byte, so the
-	 *   upload answers 204 and stores a row under a name the caller never sent - and the
-	 *   name the extension check was applied to is not the name that was stored. That is
-	 *   GROUP_ALLOWED_EXTENSIONS ("an upload of anything else is refused rather than
-	 *   stored") being bypassed, which the second half of this test demonstrates.
-	 *
-	 * The correct behaviour is for IsValidFileName to refuse a name containing a null byte,
-	 * so that every route answers 400 on both backends. Pinned with assertions rather than
-	 * skipped, because both current answers are worse than a refusal and a skipped test
-	 * would stop reporting them.
+	 * IsValidFileName refuses a name containing a null byte, so every route answers 400
+	 * on both backends. Without this check, the database driver would truncate at the
+	 * null byte (storing "bypass.svg" instead of "bypass.svg\0.txt", bypassing the
+	 * extension allow-list), and the filesystem backend would raise an uncaught ValueError.
 	 */
 	#[DataProvider('backends')]
 	public function testANullByteInAFileNameIsRefused(string $backend): void

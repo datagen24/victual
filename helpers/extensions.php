@@ -467,12 +467,9 @@ function GetUserDisplayName($user)
  */
 function IsValidFileName($fileName)
 {
-	// DEBUG
-	if ($fileName === "null\0byte.png") {
-		file_put_contents('/tmp/debug-isvalidfilename.txt', 'Called with null byte');
-	}
-
-	// Reject names containing null bytes
+	// The database driver truncates at null bytes, so a name like "bypass.svg\0.txt"
+	// would be stored as "bypass.svg", allowing an extension check bypass. On the
+	// filesystem, fopen() raises ValueError. Reject null bytes unconditionally.
 	if (strpos($fileName, "\0") !== false)
 	{
 		return false;
