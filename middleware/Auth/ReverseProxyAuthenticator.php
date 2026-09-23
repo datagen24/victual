@@ -108,11 +108,9 @@ class ReverseProxyAuthenticator extends Authenticator
 
 		if ($trustedProxies === '')
 		{
-			// An operator misconfiguration, not a hostile caller - but nothing here can
-			// tell those apart, and the caller's request still proved nothing about who
-			// it is, which is what 401 reports. 403 is kept for the one case where the
-			// caller is specifically who this deployment's trusted-proxy list is about:
-			// an address it names as untrusted, below.
+			// An operator misconfiguration, not a hostile caller - but with no list to
+			// check the caller's address against, this is "no address is trusted", which
+			// is the same as no credential at all: 401.
 			self::RefuseUnauthenticated($request, 'REVERSE_PROXY_AUTH_TRUSTED_PROXIES is not configured, so the ' . VICTUAL_REVERSE_PROXY_AUTH_HEADER . ' header cannot be trusted. Set it to the address or CIDR range of your reverse proxy, or use REVERSE_PROXY_AUTH_USE_ENV instead.');
 		}
 
@@ -120,25 +118,17 @@ class ReverseProxyAuthenticator extends Authenticator
 
 		if (!IsIpInCidrList($remoteAddress, $trustedProxies))
 		{
-			// Here the caller's own address is the reason for the refusal - the header
-			// might be entirely genuine, but this request did not arrive from where the
-			// deployment says the proxy lives. 403, not 401: the identity is not in
-			// question here, the origin is.
+			// The header might be entirely genuine, but this address is not on the list:
+			// 403, not 401, because it is the origin being refused, not the identity.
 			self::RefuseUntrustedProxy($request, 'request did not come from a trusted proxy (REMOTE_ADDR ' . $remoteAddress . ')');
 		}
 	}
 
 	/**
-	 * Logs the operator-facing detail and refuses the request with a 401 whose body says
-	 * only that it was not authenticated.
-	 *
-	 * The detail names settings and header values that describe this deployment, which is
-	 * exactly what must not reach a caller who has not proven who they are - the same rule
-	 * SchemaVersionMiddleware::DatabaseUnavailable() applies to a connection failure. It is
-	 * written with error_log() rather than through a PSR logger for the same reason that
-	 * method is: an Authenticator is constructed with nothing but the DI container, and
-	 * has no logger of its own to ask for (see BaseMiddleware, which is exactly as bare).
-	 * error_log() lands on the same stderr StderrLogger writes to.
+	 * Logs the operator-facing detail and refuses with a 401 whose body says only that the
+	 * request was not authenticated - the same split SchemaVersionMiddleware::
+	 * DatabaseUnavailable() applies. error_log() rather than a PSR logger because an
+	 * Authenticator has none to ask for; it lands on the same stderr StderrLogger uses.
 	 */
 	private static function RefuseUnauthenticated(Request $request, string $detail): never
 	{

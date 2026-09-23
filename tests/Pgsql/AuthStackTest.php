@@ -1810,7 +1810,8 @@ class AuthStackTest extends PgsqlSchemaTestCase
 	 * caller has proven nothing), 403 for an address the list specifically does not include
 	 * (the identity might be genuine; the origin is what is refused). Neither body may
 	 * describe the deployment: no setting name, no header name, no configuration advice -
-	 * the same rule SchemaVersionMiddleware.php:152-156 applies to a connection failure.
+	 * the same rule SchemaVersionMiddleware::DatabaseUnavailable() applies to a connection
+	 * failure.
 	 */
 	public function testTheProxyHeaderIsOnlyTrustedFromAnAddressTheDeploymentNames(): void
 	{
@@ -1893,8 +1894,8 @@ class AuthStackTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Asserts a reverse-proxy refusal body names none of the settings or headers that
-	 * describe this deployment - the second half of the DEFECT this replaces (see
-	 * testTheProxyHeaderIsOnlyTrustedFromAnAddressTheDeploymentNames()).
+	 * describe this deployment: no REVERSE_PROXY_AUTH* setting, no REMOTE_USER, no
+	 * TRUSTED_PROXIES.
 	 */
 	private static function assertBodyDescribesNoDeploymentDetail(string $body): void
 	{
