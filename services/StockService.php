@@ -264,7 +264,9 @@ class StockService extends BaseService
 	 *
 	 * Writes one new stock entry plus one corresponding stock_log booking - or, with $stockLabelType = 2,
 	 * one entry/booking pair with amount 1 per unit (each with its own stock_id) so every unit gets its own label.
-	 * Depending on the label type and the label printer feature flags, label printing webhooks are triggered.
+	 * With FEATURE_FLAG_LABELS enabled and a label type of 1 or 2, each new stock entry gets a stock_entry label
+	 * and a print job for the default printer, issued inside the booking transaction (IssueStockEntryLabel()),
+	 * so a label that cannot be issued rolls the whole booking back.
 	 * Does not merge the new entry with another that now happens to match it - that is a maintenance
 	 * command's job, not this method's, per ADR-0033 decision 1 (2026-09-27).
 	 *
@@ -2242,9 +2244,11 @@ class StockService extends BaseService
 	 * Unopened stock entries are processed in default consume order; an entry covering more than the
 	 * remaining amount is split (the unopened rest gets a new stock entry with a new stock_id). Each
 	 * touched entry gets open = 1, opened_date = today and - when the product has "default due days
-	 * after opened" - a shortened due date (never later than the original one; a label reprint webhook
-	 * may be triggered on a date change). One TRANSACTION_TYPE_PRODUCT_OPENED booking is written per
-	 * touched entry; the stock amount itself is unchanged. When the product has "move on open" set,
+	 * after opened" - a shortened due date (never later than the original one; with FEATURE_FLAG_LABELS
+	 * and the product's auto_reprint_stock_label set, a date change sends a revised print of the entry's
+	 * label, but only if it already carries a live one - see ReviseStockEntryLabelIfLive()).
+	 * One TRANSACTION_TYPE_PRODUCT_OPENED booking is written per touched entry; the stock amount
+	 * itself is unchanged. When the product has "move on open" set,
 	 * the opened entry is additionally transferred to its default consume location. When the user
 	 * setting "shopping_list_auto_add_below_min_stock_amount" is enabled, missing products are added
 	 * to the configured shopping list afterwards.
@@ -2738,7 +2742,9 @@ class StockService extends BaseService
 	 * TRANSACTION_TYPE_TRANSFER_TO (positive amount, destination location).
 	 * With the product freezing feature enabled, moving into a freezer re-dates the entry using
 	 * "default due days after freezing" (-1 = never expires) and moving out of a freezer using
-	 * "default due days after thawing"; a label reprint webhook may be triggered on a date change.
+	 * "default due days after thawing". With FEATURE_FLAG_LABELS and the product's auto_reprint_stock_label
+	 * set, a date change sends a revised print of the entry's label, but only if it already carries a live
+	 * one - see ReviseStockEntryLabelIfLive().
 	 *
 	 * @param int $productId
 	 * @param float $amount Amount in the product's stock quantity unit

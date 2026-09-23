@@ -987,11 +987,11 @@ run_open_container_measurement_tests() {
 	rm -rf "$datapath"
 	write_pgsql_config "$datapath"
 
-	# The phase writes through StockService, whose booking paths run label webhook payload
-	# construction and BookingEventPublisher's outbox insert; neither needs this directory,
-	# but the phase also exercises the product write path (RefuseTareEnable), which goes
-	# through GenericEntityApiController and, like the other API-driven phases, wants
-	# somewhere to serialise HTMLPurifier's definition cache.
+	# The phase writes through StockService, whose booking paths insert BookingEventPublisher's
+	# outbox row (and, with labels enabled, label print jobs) in the database; neither needs
+	# this directory, but the phase also exercises the product write path (RefuseTareEnable),
+	# which goes through GenericEntityApiController and, like the other API-driven phases,
+	# wants somewhere to serialise HTMLPurifier's definition cache.
 	mkdir -p "$datapath/viewcache"
 
 	say ""
