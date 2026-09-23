@@ -242,14 +242,16 @@ class StockService extends BaseService
 		// 7; only the arithmetic goes. Per-entry measurement (OpenProduct(), MeasureStockEntry())
 		// is the replacement mechanism.
 
+		// Check that the location exists if one was supplied
+		if ($locationId !== null && !$this->LocationExists($locationId))
+		{
+			throw new \Exception('Location does not exist');
+		}
+
 		//Set the default due date, if none is supplied
 		if ($bestBeforeDate == null)
 		{
-			if ($locationId !== null && !$this->LocationExists($locationId))
-			{
-				throw new \Exception('Location does not exist');
-			}
-			else
+			if ($locationId !== null)
 			{
 				$location = $this->DB->locations()->where('id', $locationId)->fetch();
 			}

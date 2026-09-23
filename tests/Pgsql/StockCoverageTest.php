@@ -455,35 +455,18 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:246-251): the "location does not exist" check sits
-	 * inside the branch that derives a default due date, so a purchase that supplies a due
-	 * date never reaches it and books a stock entry pointing at a location id that does not
-	 * exist. `stock.location_id` carries no foreign key, so the row is accepted and the
-	 * entry is then invisible to every location-scoped read. Correct behaviour is to
-	 * validate the location for every purchase, as ConsumeProduct() and TransferProduct()
-	 * already do.
-	 *
-	 * Contained in a transaction that is rolled back, so the dangling row this pins does
-	 * not reach the rest of the class.
+	 * A purchase naming a location that does not exist is refused whether or not a
+	 * best_before_date is supplied. The location check runs unconditionally like it does
+	 * in ConsumeProduct() and TransferProduct(), and the ledger is untouched.
 	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
-	public function testPurchaseAcceptsAMissingLocationWhenADueDateIsSupplied(): void
+	public function testPurchaseRefusesAMissingLocationEvenWhenADueDateIsSupplied(): void
 	{
-		self::$db->beginTransaction();
-
-		try
-		{
-			$rows = $this->expectStatus(
-				fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => 987654, 'best_before_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => self::$ids['staple']]),
-				200,
-				'Current behaviour: a due date skips the location check'
-			);
-			self::assertSame(987654, (int)$rows[0]['location_id'], 'The booking records a location that does not exist');
-		}
-		finally
-		{
-			self::$db->rollBack();
-		}
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => 987654, 'best_before_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => self::$ids['staple']]),
+			400,
+			'A purchase naming a location that does not exist is refused even when a due date is supplied'
+		);
 	}
 
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
