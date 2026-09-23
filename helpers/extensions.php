@@ -461,12 +461,23 @@ function GetUserDisplayName($user)
 
 /**
  * Returns true when $fileName is a plain "name.extension" file name without
- * path separators or other forbidden characters (/ ? * ; : { } \).
+ * path separators or other forbidden characters (/ ? * ; : { } \ and null bytes).
  *
  * @return bool
  */
 function IsValidFileName($fileName)
 {
+	// DEBUG
+	if ($fileName === "null\0byte.png") {
+		file_put_contents('/tmp/debug-isvalidfilename.txt', 'Called with null byte');
+	}
+
+	// Reject names containing null bytes
+	if (strpos($fileName, "\0") !== false)
+	{
+		return false;
+	}
+
 	if (preg_match('=^[^/?*;:{}\\\\]+\.[^/?*;:{}\\\\]+$=', $fileName))
 	{
 		return true;
