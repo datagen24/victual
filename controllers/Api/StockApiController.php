@@ -23,12 +23,9 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 class StockApiController extends BaseApiController
 {
 	/**
-	 * Refuses a body field that is going to be passed into a service method's float/int
-	 * parameter (AddProduct, ConsumeProduct, OpenProduct, TransferProduct,
-	 * InventoryProduct, EditStockEntry) with the same 400 every other invalid amount gets,
-	 * rather than letting a non-numeric value reach that parameter and raise a TypeError -
-	 * HandleApiCall() deliberately does not catch \Error (issue #244 item 1), so that
-	 * would otherwise be a 500.
+	 * Refuses a non-numeric body field before it reaches a service method's float/int
+	 * parameter: passing it through unchecked would raise a TypeError there, and
+	 * HandleApiCall() deliberately leaves \Error uncaught, which would be a 500.
 	 *
 	 * @throws \Exception When $requestBody[$field] is not numeric
 	 */
