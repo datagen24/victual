@@ -425,33 +425,19 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:221, controllers/Api/StockApiController.php:175):
-	 * `amount` is passed straight into a `float` parameter, so a non-numeric amount raises
-	 * a PHP TypeError. TypeError is an Error, not an Exception, so HandleApiCall()
-	 * (controllers/Api/BaseApiController.php:189) does not catch it and the client gets a
-	 * 500 from the error middleware instead of the stated refusal every other invalid
-	 * amount gets. Correct behaviour is the same 400 "amount" refusal.
-	 *
-	 * Pinned rather than skipped, because the important half of the contract does hold:
-	 * nothing is written. If the refusal is ever fixed this test fails and is updated to
-	 * expect the 400.
+	 * `amount` is passed straight into a `float` parameter (services/StockService.php:221),
+	 * so a non-numeric amount raises a PHP TypeError. HandleApiCall()
+	 * (controllers/Api/BaseApiController.php) now catches TypeError/ValueError from
+	 * caller-supplied values and answers the same 400 every other invalid amount gets.
 	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
-	public function testPurchaseWithNonNumericAmountFailsWithoutWriting(): void
+	public function testPurchaseWithNonNumericAmountIsRefusedWithoutWriting(): void
 	{
-		$before = self::ledger();
-
-		try
-		{
-			self::$stock->AddProduct(self::request('POST', ['amount' => 'a handful']), new Response(), ['productId' => self::$ids['staple']]);
-			self::fail('A non-numeric amount must not be accepted');
-		}
-		catch (\TypeError $error)
-		{
-			self::assertStringContainsString('float', $error->getMessage(), 'The current failure is the uncaught float coercion');
-		}
-
-		self::assertSame($before, self::ledger(), 'A non-numeric amount writes nothing either way');
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 'a handful']), new Response(), ['productId' => self::$ids['staple']]),
+			400,
+			'A non-numeric amount is refused'
+		);
 	}
 
 	/**
@@ -536,7 +522,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	#[Depends('testConsumeTakesOnlyTheNamedEntryAtTheNamedLocation')]
 	public function testConsumeRefusesInvalidQuantitiesAndWritesNothing(): void
 	{
-		foreach ([0, -1, '0'] as $amount)
+		foreach ([0, -1, '0', 'a handful'] as $amount)
 		{
 			$this->expectRefusalWithUntouchedLedger(
 				fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => $amount]), new Response(), ['productId' => self::$ids['staple']]),
@@ -2537,19 +2523,16 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------------------------------------
 
 	/**
-	 * DEFECT (controllers/Api/StockApiController.php:818-822): unlike every other stock
-	 * read that can fail, LocationStockEntries() does not wrap its work in HandleApiCall(),
-	 * so StockService::GetLocationStockEntries()'s "Location does not exist" leaves the
-	 * controller as a bare \Exception and reaches the client as a 500 rather than the 400
-	 * error response the other by-id reads answer with. Correct behaviour is the same 400.
-	 * Pinned on the current behaviour; nothing is written either way.
+	 * LocationStockEntries() wraps its work in HandleApiCall() like every other by-id
+	 * stock read, so StockService::GetLocationStockEntries()'s "Location does not exist"
+	 * answers the same 400 the other by-id reads answer with instead of escaping as a 500.
 	 */
 	// The predecessor is the purchase that puts the spare product's six units in the pantry
 	// - its default location - because that is the stock this read has to find. Nothing in
 	// this class consumes that product, so the pantry is still not empty however the rest of
 	// the class is ordered.
 	#[Depends('testPurchasePerUnitLabelTypeWritesOneStockEntryPerUnit')]
-	public function testLocationStockEntriesFailsUnhandledForALocationThatDoesNotExist(): void
+	public function testLocationStockEntriesRefusesALocationThatDoesNotExist(): void
 	{
 		$entries = $this->expectStatus(
 			fn() => self::$stock->LocationStockEntries(self::request(), new Response(), ['locationId' => self::$ids['pantry']]),
@@ -2560,15 +2543,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 		$before = self::ledger();
 
-		try
-		{
-			self::$stock->LocationStockEntries(self::request(), new Response(), ['locationId' => 987654]);
-			self::fail('A location id that does not exist must not be answered with a list');
-		}
-		catch (\Exception $exception)
-		{
-			self::assertSame('Location does not exist', $exception->getMessage(), 'Current behaviour: the refusal escapes the controller unhandled');
-		}
+		$this->expectStatus(
+			fn() => self::$stock->LocationStockEntries(self::request(), new Response(), ['locationId' => 987654]),
+			400,
+			'A location id that does not exist is refused'
+		);
 
 		self::assertSame($before, self::ledger(), 'and nothing was written');
 	}
@@ -2973,17 +2952,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (controllers/Api/BaseApiController.php:705-706): a request that types itself
-	 * application/json but carries no body at all parses to null, and
-	 * GetParsedAndFilteredRequestBody() then runs `foreach ($requestBody as ...)` over it.
-	 * The client still gets the 400 the route's own null check raises, so the refusal
-	 * itself is correct - but each one is preceded by a PHP warning, which is a diagnostic
-	 * in the response or the log for an input a client can send at any time. Correct
-	 * behaviour is to return the null (or an empty array) without iterating it.
-	 *
-	 * Asserted here on the status, which is the part of the contract that holds; the
-	 * warning is recorded in the hand-back rather than pinned, because the suite's own
-	 * failOnWarning would turn a fixed warning into a failing test for the wrong reason.
+	 * A request that types itself application/json but carries no body at all parses to
+	 * null. GetParsedAndFilteredRequestBody() (controllers/Api/BaseApiController.php)
+	 * returns that null without iterating it, so each route's own null check produces the
+	 * documented 400 with no PHP warning along the way.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testEveryWriteRouteRefusesAnEmptyJsonBody(): void

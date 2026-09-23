@@ -230,19 +230,33 @@ class RecipesController extends BaseController
 		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		$recipeId = $args['recipeId'];
 
+		if ($recipeId == 'new')
+		{
+			return $this->RenderPage($response, 'recipeform', [
+				'recipePositions' => [],
+				'mode' => 'create',
+				'products' => $this->DB->products()->orderBy('name', 'COLLATE NOCASE'),
+				'quantityunits' => $this->DB->quantity_units(),
+				'recipes' => $this->DB->recipes()->where('type', RecipesService::RECIPE_TYPE_NORMAL)->orderBy('name', 'COLLATE NOCASE'),
+				'recipeNestings' => [],
+				'userfields' => UserfieldsService::GetInstance()->GetFields('recipes'),
+				'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
+				// An unsaved recipe has no id to mint a label against.
+				'labelPrinters' => []
+			]);
+		}
+
 		return $this->RenderPage($response, 'recipeform', [
 			'recipe' => $this->DB->recipes($recipeId),
 			'recipePositions' => $this->DB->recipes_pos()->where('recipe_id', $recipeId),
-			'mode' => $recipeId == 'new' ? 'create' : 'edit',
+			'mode' => 'edit',
 			'products' => $this->DB->products()->orderBy('name', 'COLLATE NOCASE'),
 			'quantityunits' => $this->DB->quantity_units(),
 			'recipes' => $this->DB->recipes()->where('type', RecipesService::RECIPE_TYPE_NORMAL)->orderBy('name', 'COLLATE NOCASE'),
 			'recipeNestings' => $this->DB->recipes_nestings()->where('recipe_id', $recipeId),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('recipes'),
 			'quantityUnitConversionsResolved' => $this->DB->cache__quantity_unit_conversions_resolved(),
-			// Only the edit form offers a print action: an unsaved recipe has no id to mint
-			// a label against.
-			'labelPrinters' => ($recipeId != 'new' && VICTUAL_FEATURE_FLAG_LABELS)
+			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
 				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
 				: []
 		]);

@@ -703,6 +703,12 @@ class BaseApiController extends BaseController
 		$htmlColumns = $entity === null ? [] : (self::HTML_RENDERED_COLUMNS[$entity] ?? []);
 
 		$requestBody = $request->getParsedBody();
+
+		if ($requestBody === null)
+		{
+			return null;
+		}
+
 		foreach ($requestBody as $key => &$value)
 		{
 			// HTMLPurifier removes boolean values (true/false) and arrays, so explicitly keep them
