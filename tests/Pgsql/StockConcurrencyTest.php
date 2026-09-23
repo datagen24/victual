@@ -10,6 +10,7 @@ use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Services\ApiKeyService;
 use Victual\Services\Database\PostgresDialect;
+use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -57,7 +58,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		// PgsqlSchemaTestCase::Boot()) defaults to 9000, so that is the id granted here -
 		// matching StockCoverageTest's own fixture user.
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'stockconcurrency-caller', 'fixture')");
-		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'STOCK_PURCHASE', 'STOCK_CONSUME', 'STOCK_EDIT')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'STOCK_PURCHASE', 'STOCK_CONSUME', 'STOCK_EDIT', 'STOCK_OPEN')");
 
 		$statement = self::$db->prepare('INSERT INTO locations (name) VALUES (?) RETURNING id');
 		$statement->execute(['Concurrency Pantry']);
@@ -102,6 +103,21 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		$statement->execute([$productId]);
 
 		return (float)$statement->fetchColumn();
+	}
+
+	/**
+	 * A location configured as a weighable vessel (tare_weight = 0, tare_qu_id = the
+	 * fixture stock unit), for WeighLocation() scenarios. Zero tare and a gross reading
+	 * that just needs to be >= 0 keeps the arithmetic irrelevant to what these tests
+	 * assert - they exercise the "who is stocked here" recheck, which runs before any
+	 * unit conversion.
+	 */
+	private static function insertVesselLocation(): int
+	{
+		$statement = self::$db->prepare('INSERT INTO locations (name, tare_weight, tare_qu_id) VALUES (?, 0, 2) RETURNING id');
+		$statement->execute(['Concurrency Vessel ' . bin2hex(random_bytes(4))]);
+
+		return (int)$statement->fetchColumn();
 	}
 
 	/**
@@ -410,6 +426,225 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		self::assertSame(204, $result['status'], 'The recipe consume completes once its queued ingredient lock is released, rather than deadlocking: ' . $result['body']);
 		self::assertSame(4.0, self::stockAmount($productLow), 'Both ingredients were consumed once each');
 		self::assertSame(4.0, self::stockAmount($productHigh), 'Both ingredients were consumed once each');
+	}
+
+	// ------------------------------------------------------------------------------
+	// 4. The re-checks the lock exists to make honest: each of these throws only
+	// because it re-read fresh state after the lock rather than trusting what was read
+	// before it. Same two-connection pattern as above; each scenario's own comment names
+	// the exact services/StockService.php line its refusal reaches.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * EditStockEntry() fetches the row once before opening its transaction (to learn the
+	 * product id to lock), then re-fetches it under the lock and refuses if it is gone
+	 * (StockService.php:799) rather than trusting the first, pre-lock read. Connection B
+	 * removes the entry outright while the edit is queued behind B's lock.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testEditStockEntryFindsTheRowGoneAfterQueuingBehindALock(): void
+	{
+		$productId = self::insertProduct('Concurrency Edit Row Vanished');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 1,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+
+		$stockRow = self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetch(PDO::FETCH_ASSOC);
+		self::assertIsArray($stockRow, 'setup: the purchase created a stock row');
+		$entryId = (int)$stockRow['id'];
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		$subprocess = self::startSubprocess('PUT', '/api/stock/entry/' . $entryId, ['amount' => 1, 'open' => false, 'purchased_date' => self::PAST_DATE]);
+
+		self::waitForAdvisoryWaiter();
+
+		$connB->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The edit is refused once, under the lock, it finds the row gone: ' . $result['body']);
+	}
+
+	/**
+	 * MeasureStockEntry() re-fetches its row under the lock the same way EditStockEntry()
+	 * does, and refuses if it is gone (StockService.php:933). Connection B removes the
+	 * entry outright while the measurement is queued behind B's lock.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testMeasureStockEntryFindsTheRowGoneAfterQueuingBehindALock(): void
+	{
+		$productId = self::insertProduct('Concurrency Measure Row Vanished');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 1,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+
+		$stockRow = self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetch(PDO::FETCH_ASSOC);
+		self::assertIsArray($stockRow, 'setup: the purchase created a stock row');
+		$entryId = (int)$stockRow['id'];
+
+		$openResponse = self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $openResponse->getStatusCode(), 'setup: opening the one unit must succeed: ' . (string)$openResponse->getBody());
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/entry/' . $entryId . '/measure', ['amount' => 0.5, 'qu_id' => 2]);
+
+		self::waitForAdvisoryWaiter();
+
+		$connB->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The measurement is refused once, under the lock, it finds the row gone: ' . $result['body']);
+	}
+
+	/**
+	 * WeighLocation() re-checks "who is stocked here" under the lock (StockService.php's
+	 * WeighLocation, the "No product is stocked at this location" branch, :2523), because
+	 * the product id it locked came from an unlocked read taken before the transaction
+	 * opened. Connection B empties the vessel entirely while the weighing is queued
+	 * behind B's lock on the product that used to be there.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testWeighLocationFindsNoProductLeftAfterQueuingBehindALock(): void
+	{
+		$vesselId = self::insertVesselLocation();
+		$productId = self::insertProduct('Concurrency Weigh Emptied');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 3,
+			'location_id' => $vesselId,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/locations/' . $vesselId . '/weigh', ['gross_amount' => 5]);
+
+		self::waitForAdvisoryWaiter();
+
+		$connB->prepare('DELETE FROM stock WHERE product_id = ? AND location_id = ?')->execute([$productId, $vesselId]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The weighing is refused once, under the lock, the vessel is found empty: ' . $result['body']);
+	}
+
+	/**
+	 * The other half of WeighLocation()'s recheck: "more than one product is stocked
+	 * here" (:2527). Connection B stocks a second, different product at the same vessel
+	 * while the weighing is queued behind B's lock on the first product.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testWeighLocationFindsASecondProductAfterQueuingBehindALock(): void
+	{
+		$vesselId = self::insertVesselLocation();
+		$productId = self::insertProduct('Concurrency Weigh Crowded');
+		$otherProductId = self::insertProduct('Concurrency Weigh Crowded Other');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 3,
+			'location_id' => $vesselId,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/locations/' . $vesselId . '/weigh', ['gross_amount' => 5]);
+
+		self::waitForAdvisoryWaiter();
+
+		$connB->prepare(
+			'INSERT INTO stock (product_id, amount, stock_id, location_id, best_before_date, purchased_date) VALUES (?, 1, ?, ?, ?, ?)'
+		)->execute([$otherProductId, 'concurrency-weigh-crowded-' . bin2hex(random_bytes(4)), $vesselId, self::FAR_FUTURE_DATE, self::PAST_DATE]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The weighing is refused once, under the lock, a second product is found stocked there: ' . $result['body']);
+	}
+
+	/**
+	 * UndoBooking() re-fetches its own booking row under the lock and refuses if it is
+	 * already undone (StockService.php:2625) - the second occurrence of "Booking does not
+	 * exist or was already undone", reached only through the post-lock re-read (the first,
+	 * at :2614/:2625's sibling before the lock, is what an ordinary already-undone booking
+	 * hits without any race). Connection B undoes the booking itself - marking it undone
+	 * and removing its stock entry, exactly what a genuine concurrent undo of the same
+	 * booking would do - while this undo is queued behind B's lock.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testUndoFindsTheBookingAlreadyUndoneAfterQueuingBehindALock(): void
+	{
+		$productId = self::insertProduct('Concurrency Double Undo');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 2,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $productId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+		$purchaseBooking = json_decode((string)$purchaseResponse->getBody(), true)[0];
+		$bookingId = (int)$purchaseBooking['id'];
+		$stockId = $purchaseBooking['stock_id'];
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/bookings/' . $bookingId . '/undo');
+
+		self::waitForAdvisoryWaiter();
+
+		$connB->prepare("UPDATE stock_log SET undone = 1, undone_timestamp = now() WHERE id = ?")->execute([$bookingId]);
+		$connB->prepare('DELETE FROM stock WHERE stock_id = ?')->execute([$stockId]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The second undo is refused once, under the lock, it sees the booking already undone: ' . $result['body']);
+	}
+
+	/**
+	 * DatabaseService::LockProductStock() refuses outright, rather than silently taking a
+	 * lock that would protect nothing, when no transaction is open on the connection - see
+	 * that method's own comment (DatabaseService.php:333). Called directly, no subprocess
+	 * or second connection needed: this is a precondition check, not a race.
+	 */
+	public function testLockProductStockOutsideATransactionThrowsLogicException(): void
+	{
+		self::assertFalse(self::$db->inTransaction(), 'precondition: no transaction is open on the schema connection');
+
+		$productId = self::insertProduct('Concurrency Lock Guard');
+
+		$this->expectException(\LogicException::class);
+		$this->expectExceptionMessage('LockProductStock() requires a transaction already open');
+
+		DatabaseService::GetInstance()->LockProductStock($productId);
 	}
 
 	/**
