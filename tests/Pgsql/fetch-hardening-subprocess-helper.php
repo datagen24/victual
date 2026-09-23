@@ -87,6 +87,10 @@ namespace
 			'connect_timeout' => \GuzzleHttp\Client::$LastOptions['connect_timeout'] ?? null,
 			'on_headers_is_callable' => is_callable($onHeaders),
 			'curl' => \GuzzleHttp\Client::$LastOptions['curl'] ?? null,
+			// Present only if Fetch() itself ever started setting one; a caller-supplied
+			// 'verify' must never reach here at all now that $options is an allow-list of
+			// 'headers' alone.
+			'verify' => \GuzzleHttp\Client::$LastOptions['verify'] ?? null,
 		],
 		'on_headers_results' => $onHeadersResults,
 	]);

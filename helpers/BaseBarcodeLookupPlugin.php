@@ -257,23 +257,22 @@ abstract class BaseBarcodeLookupPlugin
 	 *                    anything Fetch() throws, so it propagates through Lookup() to the
 	 *                    API controller as the same "plugin error" 400 response any other
 	 *                    ExecuteLookup() exception produces.
-	 * @param array $options Guzzle request options layered on top of the ones this method
-	 *                       sets - in practice only 'headers' => ['User-Agent' => '...'] for
-	 *                       a source that wants to identify itself distinctly, as Open Food
-	 *                       Facts does. 'allow_redirects', 'proxy', 'timeout',
-	 *                       'connect_timeout', 'on_headers' and 'curl' are this method's
-	 *                       alone: whatever $options carries under those keys is discarded
-	 *                       after the merge, not merged with this method's own values,
-	 *                       because each is exactly the setting a caller would need to
-	 *                       defeat the policy above (a redirect off the pinned address, a
-	 *                       proxy that resolves the host itself, an unbounded whole-request
-	 *                       or connect wait - 'timeout' => 0 is Guzzle's own spelling of "no
-	 *                       limit" - a size guard that never runs, or a raw CURLOPT_PROXY /
-	 *                       CURLOPT_FOLLOWLOCATION / CURLOPT_RESOLVE / CURLOPT_CONNECT_TO /
-	 *                       CURLOPT_MAXFILESIZE_LARGE slipped in under 'curl'). No caller
-	 *                       needs any of these today, and refusing all of 'curl' - not
-	 *                       attempting to allow-list which curl options are "safe" - is the
-	 *                       simpler of the two ways to close that off.
+	 * @param array $options An allow-list, not a Guzzle options bag to merge: the only key
+	 *                       read is 'headers' => ['User-Agent' => '...'], for a source that
+	 *                       wants to identify itself distinctly, as Open Food Facts does.
+	 *                       Anything else $options carries is ignored outright, rather than
+	 *                       merged in and then having the settings below overwritten back to
+	 *                       their fixed values - a deny-list naming what a caller may not
+	 *                       override has to name every dangerous option, and Guzzle has more
+	 *                       than the ones this method already fixes: 'verify' => false would
+	 *                       disable TLS certificate verification, and 'sink' / 'stream' /
+	 *                       'decode_content' would each change how the response is handled,
+	 *                       none of which a deny-list here would have thought to strip. An
+	 *                       allow-list of the one option a caller legitimately needs closes
+	 *                       all of that at once. An unrecognised key is silently ignored
+	 *                       rather than throwing: neither current caller passes one today,
+	 *                       and a future one that does gets exactly the behaviour it would
+	 *                       get from this method not existing yet, not a fatal surprise.
 	 * @return ResponseInterface
 	 * @throws OutboundHostRefusedException When $url's scheme or resolved host is refused
 	 * @throws \GuzzleHttp\Exception\GuzzleException On a connection-level failure
@@ -310,46 +309,23 @@ abstract class BaseBarcodeLookupPlugin
 		{
 			$headers['User-Agent'] = self::DefaultUserAgent();
 		}
-		unset($options['headers']);
 
-		// 'allow_redirects', 'proxy' and 'curl' are removed from $options before the merge
-		// below (rather than merged and then overwritten) so a caller cannot supply any
-		// shape of these three that survives even transiently - array_replace_recursive
-		// merges nested arrays key-by-key, so a caller's own 'curl' => [CURLOPT_RESOLVE =>
-		// ...] would otherwise sit in $requestOptions until the explicit overwrite below,
-		// and a caller's 'curl' => [CURLOPT_PROXY => ...] has no corresponding key in this
-		// method's own 'curl' array to be overwritten by at all. connect_timeout, on_headers
-		// and timeout are the same kind of caller-cannot-touch-this setting: a caller's own
-		// on_headers would replace, not run alongside, the size guard below, and a caller's
-		// 'timeout' => 0 is Guzzle's spelling of "no limit at all".
-		unset($options['allow_redirects'], $options['proxy'], $options['curl'], $options['connect_timeout'], $options['on_headers'], $options['timeout']);
-
-		$requestOptions = array_replace_recursive(
-			[
-				'http_errors' => false,
-			],
-			$options,
-			[
-				'headers' => $headers,
-				// Fixed by this method, never by a caller: a redirect off the validated,
-				// pinned address, a proxy resolving the host itself, a raw curl option
-				// (CURLOPT_PROXY, CURLOPT_FOLLOWLOCATION, CURLOPT_CONNECT_TO, a second
-				// CURLOPT_RESOLVE), an unbounded connect wait, an unbounded whole-request
-				// wait, or a response of unbounded size would each be a way to defeat this
-				// method's policy without touching OutboundHostPolicy directly.
-				'allow_redirects' => false,
-				'proxy' => '',
-				'timeout' => self::FETCH_TIMEOUT_SECONDS,
-				'connect_timeout' => self::FETCH_CONNECT_TIMEOUT_SECONDS,
-				'on_headers' => self::MaxResponseSizeGuard(),
-				// CURLOPT_MAXFILESIZE_LARGE (backstop for a response that never declares
-				// Content-Length - MaxResponseSizeGuard() above only ever sees one that was
-				// actually sent) and, for every host but an IPv6 literal, CURLOPT_RESOLVE.
-				'curl' => $curlOptions,
-			]
-		);
-
-		return (new Client())->request('GET', $url, $requestOptions);
+		// Every other request option is this method's alone, not $options' - see the
+		// @param docblock above for why an allow-list of 'headers' replaces what used to be
+		// a deny-list of the individual settings below.
+		return (new Client())->request('GET', $url, [
+			'headers' => $headers,
+			'http_errors' => false,
+			'allow_redirects' => false,
+			'proxy' => '',
+			'timeout' => self::FETCH_TIMEOUT_SECONDS,
+			'connect_timeout' => self::FETCH_CONNECT_TIMEOUT_SECONDS,
+			'on_headers' => self::MaxResponseSizeGuard(),
+			// CURLOPT_MAXFILESIZE_LARGE (backstop for a response that never declares
+			// Content-Length - MaxResponseSizeGuard() above only ever sees one that was
+			// actually sent) and, for every host but an IPv6 literal, CURLOPT_RESOLVE.
+			'curl' => $curlOptions,
+		]);
 	}
 
 	/**

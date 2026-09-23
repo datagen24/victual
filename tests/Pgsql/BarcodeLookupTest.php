@@ -974,14 +974,19 @@ class BarcodeLookupTest extends TestCase
 	/**
 	 * Fetch() is the one chokepoint every barcode-lookup outbound request goes through
 	 * (issue #460), which is only true if a caller cannot hand it options that undo the
-	 * policy it enforces. A caller-supplied 'allow_redirects' => true (a redirect off the
-	 * pinned address), 'proxy' => '...' (the proxy resolves the host itself, making the pin
-	 * meaningless), 'timeout' => 0 or 'connect_timeout' => 0 (Guzzle's own spelling of "no
-	 * limit", for the whole request and the connect phase respectively) or
+	 * policy it enforces. $options is an allow-list of 'headers' alone (CodeRabbit's review
+	 * of #472/#473: a deny-list of the settings Fetch() already knew about still forwarded
+	 * any other Guzzle option straight through, including ones with no connection to
+	 * anything named above - 'verify' => false would disable TLS certificate verification
+	 * entirely), so every one of 'allow_redirects' => true (a redirect off the pinned
+	 * address), 'proxy' => '...' (the proxy resolves the host itself, making the pin
+	 * meaningless), 'timeout' => 0 / 'connect_timeout' => 0 (Guzzle's own spelling of "no
+	 * limit", for the whole request and the connect phase respectively),
 	 * 'curl' => [CURLOPT_FOLLOWLOCATION => true] (the same redirect-following defeat by a
-	 * different route) must all be discarded rather than merged, however plausible the
-	 * reason a caller might pass them looks. No current caller passes any of these; this
-	 * proves Fetch() does not merely happen to be safe because of that.
+	 * different route) and 'verify' => false must be ignored outright rather than merged,
+	 * however plausible the reason a caller might pass any of them looks. No current caller
+	 * passes any of these; this proves Fetch() does not merely happen to be safe because of
+	 * that.
 	 */
 	public function testFetchIgnoresACallerSuppliedAllowRedirectsProxyAndCurlOverride(): void
 	{
@@ -998,6 +1003,7 @@ class BarcodeLookupTest extends TestCase
 				'timeout' => 0,
 				'connect_timeout' => 0,
 				'curl' => [CURLOPT_FOLLOWLOCATION => true],
+				'verify' => false,
 			]
 		);
 
@@ -1007,6 +1013,7 @@ class BarcodeLookupTest extends TestCase
 		self::assertSame(5.0, (float)$result['request_options']['connect_timeout'], 'a caller cannot remove the connect timeout');
 		self::assertArrayNotHasKey(CURLOPT_FOLLOWLOCATION, $result['request_options']['curl'] ?? [], 'a caller-supplied curl option is discarded entirely, not merged with the pin');
 		self::assertArrayHasKey(CURLOPT_RESOLVE, $result['request_options']['curl'] ?? [], "Fetch()'s own DNS-rebinding pin still applies");
+		self::assertNotSame(false, $result['request_options']['verify'], "a caller cannot disable TLS certificate verification - Guzzle's own default (true) applies since Fetch() never even looks at this key");
 	}
 
 	/**
@@ -1043,7 +1050,7 @@ class BarcodeLookupTest extends TestCase
 	 * against a substituted GuzzleHttp\Client and an injected resolver - no real network
 	 * call and no real DNS lookup either.
 	 *
-	 * @return array{request_options: array{allow_redirects: ?bool, proxy: ?string, connect_timeout: ?float, on_headers_is_callable: bool, curl: ?array}, on_headers_results: array<string, string>}
+	 * @return array{request_options: array{allow_redirects: ?bool, proxy: ?string, timeout: ?float, connect_timeout: ?float, on_headers_is_callable: bool, curl: ?array, verify: mixed}, on_headers_results: array<string, string>}
 	 */
 	private static function fetchHardening(string $url, array $hostResolverAddresses, array $options, array $onHeadersContentLengths = []): array
 	{
