@@ -1927,7 +1927,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	 * transaction. Pinned rather than skipped, because the current answer is what callers
 	 * see today.
 	 */
-	public function testAnInvalidFieldNameRefusesAfterWritingTheValidKeysBeforeIt()
+	public function testAnInvalidFieldNameRefusesAndWritesNothing()
 	{
 		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9603'");
 
@@ -1942,9 +1942,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		}
 
 		self::assertSame(
-			'3',
+			false,
 			self::$db->query("SELECT value FROM userfield_values WHERE field_id = 9602 AND object_id = '9603'")->fetchColumn(),
-			'DEFECT: the refusal left the earlier key written'
+			'the invalid key refused the whole call, leaving the valid key before it unwritten too'
 		);
 
 		self::$db->exec("DELETE FROM userfield_values WHERE object_id = '9603'");

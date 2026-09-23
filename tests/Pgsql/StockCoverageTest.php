@@ -3135,45 +3135,190 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:1047-1063): when a looked-up product's purchase and
-	 * stock units differ, the products INSERT lands first and the database's own
-	 * products_default_qu_conversions_INS trigger immediately creates the 1:1 conversion for
-	 * that unit pair; the explicit insert of the plugin's __qu_factor_purchase_to_stock then
-	 * duplicates it and is refused by qu_conversions_custom_constraint_INS. Nothing here runs
-	 * in a transaction, so the product and its barcode stay behind while the factor the
-	 * lookup found is lost, and the client is told only that "the database rejected this
-	 * request".
-	 *
-	 * Correct behaviour is either to update the conversion the trigger created or to wrap the
-	 * three writes in one transaction so the refusal leaves nothing. Pinned on the current
-	 * behaviour, including the half-write, which is the part that matters.
+	 * When a looked-up product's purchase and stock units differ, the products INSERT fires
+	 * products_default_qu_conversions_INS, which creates the 1:1 conversion for that unit
+	 * pair only when no conversion (including a global, product_id IS NULL one) already
+	 * resolves it. The plugin's __qu_factor_purchase_to_stock is written onto that
+	 * trigger-created row when it exists, and the product, its barcode and the conversion are
+	 * all written in one transaction so a failure leaves nothing behind.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
-	public function testAddingALookedUpProductWhosePurchaseUnitDiffersLeavesAHalfWrittenProduct(): void
+	public function testAddingALookedUpProductWhosePurchaseUnitDiffersSucceedsWithOneConversion(): void
 	{
 		$pluginFile = self::writeUserLookupPlugin('Coverage Differing Units ', 3, 2, 'null');
 
 		try
 		{
 			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025012?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
-			self::assertSame(400, $response['status'], 'Current behaviour: the add is refused');
+			self::assertSame(200, $response['status'], 'the add succeeds instead of refusing after already writing the product');
 
 			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
 			$product->execute(['Coverage Differing Units 4000417025012']);
 			$productId = $product->fetchColumn();
-			self::assertNotFalse($productId, 'but the product row was already written and stays behind');
+			self::assertNotFalse($productId, 'the product row was written');
 
 			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ?');
 			$barcode->execute([$productId]);
 			self::assertSame(1, (int)$barcode->fetchColumn(), 'together with its barcode');
 
-			$factor = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
-			$factor->execute([$productId]);
-			self::assertSame(1.0, (float)$factor->fetchColumn(), 'while the conversion is the trigger default, not the factor the lookup found');
+			$conversions = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = 3 AND to_qu_id = 2');
+			$conversions->execute([$productId]);
+			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertCount(1, $factors, 'exactly one purchase->stock conversion, not the trigger default plus a duplicate');
+			self::assertSame(6.0, (float)$factors[0], 'carrying the factor the lookup plugin found, not the trigger default of 1');
 		}
 		finally
 		{
 			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * products_default_qu_conversions_INS creates the product-specific 1:1 conversion only
+	 * "when no default QU conversion apply" (db/pgsql/baseline/06_triggers_a.sql), i.e. it
+	 * checks quantity_unit_conversions_resolved, which a global (product_id IS NULL)
+	 * conversion between the same two units already satisfies. When one exists, the trigger
+	 * inserts nothing, so the add must insert the product-specific conversion itself instead
+	 * of updating a row that was never created.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAddingALookedUpProductSucceedsWhenAGlobalConversionAlreadyCoversTheUnits(): void
+	{
+		$quIdPurchase = self::insertRow('quantity_units', ['name' => 'Coverage Global Purchase', 'name_plural' => 'Coverage Global Purchases']);
+		$quIdStock = self::insertRow('quantity_units', ['name' => 'Coverage Global Stock', 'name_plural' => 'Coverage Global Stocks']);
+		self::$db->prepare('INSERT INTO quantity_unit_conversions (from_qu_id, to_qu_id, factor, product_id) VALUES (?, ?, 4, NULL)')
+			->execute([$quIdPurchase, $quIdStock]);
+
+		$pluginFile = self::writeUserLookupPlugin('Coverage Global Conversion ', $quIdPurchase, $quIdStock, 'null');
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025036?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'a pre-existing global conversion between the units does not stop the add from succeeding');
+
+			$product = self::$db->prepare('SELECT id FROM products WHERE name = ?');
+			$product->execute(['Coverage Global Conversion 4000417025036']);
+			$productId = $product->fetchColumn();
+			self::assertNotFalse($productId, 'the product row was written');
+
+			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE product_id = ?');
+			$barcode->execute([$productId]);
+			self::assertSame(1, (int)$barcode->fetchColumn(), 'together with its barcode');
+
+			$conversions = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
+			$conversions->execute([$productId, $quIdPurchase, $quIdStock]);
+			$factors = $conversions->fetchAll(\PDO::FETCH_COLUMN);
+			self::assertCount(1, $factors, 'exactly one product-specific purchase->stock conversion, inserted since the trigger created none');
+			self::assertSame(6.0, (float)$factors[0], 'carrying the factor the lookup plugin found, not the pre-existing global factor of 4');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * The barcode this case's injected trigger fails on - a fixed, test-owned literal
+	 * (never request or database-sourced), so interpolating it into the trigger function's
+	 * body below carries no injection risk.
+	 */
+	private const FAILED_ADD_BARCODE = '4000417025043';
+
+	/**
+	 * The picture is downloaded/decoded before the transaction that writes the product, its
+	 * barcode and its conversion, but must not be written to storage until that transaction
+	 * has committed - otherwise a rollback (injected here via a trigger that raises on the
+	 * barcode insert, a separate statement after the product insert has succeeded) would
+	 * leave the product behind, or an orphaned file in productpictures unreferenced by
+	 * anything.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAFailedAddLeavesNoProductNoBarcodeAndNoOrphanedPicture(): void
+	{
+		// Fails the product_barcodes INSERT, a separate statement that runs only after the
+		// products INSERT before it has already succeeded. A trigger on
+		// quantity_unit_conversions instead would fire from inside that same INSERT (via
+		// products_default_qu_conversions_INS) and only prove that PostgreSQL rolls back a
+		// single failed statement on its own, which needs no transaction of ours - this has
+		// to fail a later, separate statement to prove the multi-write atomicity.
+		self::$db->exec(
+			"CREATE FUNCTION coverage_fail_barcode_insert() RETURNS trigger LANGUAGE plpgsql AS \$\$ "
+			. "BEGIN IF NEW.barcode = '" . self::FAILED_ADD_BARCODE . "' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END \$\$;"
+			. 'CREATE TRIGGER coverage_fail_barcode_insert BEFORE INSERT ON product_barcodes '
+			. 'FOR EACH ROW EXECUTE FUNCTION coverage_fail_barcode_insert()'
+		);
+
+		$pluginFile = self::writeUserLookupPlugin(
+			'Coverage Failed Add ',
+			2,
+			2,
+			"'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
+		);
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . self::FAILED_ADD_BARCODE . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(400, $response['status'], 'the injected barcode-insert failure refuses the add: ' . $response['body']);
+
+			$product = self::$db->prepare('SELECT COUNT(*) FROM products WHERE name = ?');
+			$product->execute(['Coverage Failed Add ' . self::FAILED_ADD_BARCODE]);
+			self::assertSame(0, (int)$product->fetchColumn(), 'no product row survives the rollback, even though its own INSERT succeeded');
+
+			$barcode = self::$db->prepare('SELECT COUNT(*) FROM product_barcodes WHERE barcode = ?');
+			$barcode->execute([self::FAILED_ADD_BARCODE]);
+			self::assertSame(0, (int)$barcode->fetchColumn(), 'nor its barcode');
+
+			$picture = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/' . self::FAILED_ADD_BARCODE . '.gif';
+			self::assertFileDoesNotExist($picture, 'and the picture is not written when the product it belongs to never survives');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			self::$db->exec('DROP TRIGGER coverage_fail_barcode_insert ON product_barcodes; DROP FUNCTION coverage_fail_barcode_insert()');
+		}
+	}
+
+	/**
+	 * The post-commit picture write is wrapped in its own try/catch, same as the
+	 * pre-transaction download/decode above it: a write failure there must still leave the
+	 * product it belongs to in place, just without a picture, rather than surfacing as a
+	 * fatal error after the transaction already committed successfully.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPictureWriteFailureAfterCommitLeavesTheProductWithoutAPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin(
+			'Coverage Picture Write Failure ',
+			2,
+			2,
+			"'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'"
+		);
+
+		// Occupies the exact path FileStorage::Write would open for writing, as a
+		// directory rather than a file, so fopen(..., 'wb') fails regardless of
+		// permissions - the write fails deterministically without relying on filesystem
+		// ownership, which the test process (root) would otherwise bypass.
+		$storagePath = getenv('VICTUAL_DATAPATH') . '/storage/productpictures';
+		@mkdir($storagePath, 0777, true);
+		$blockingDirectory = $storagePath . '/4000417025050.gif';
+		mkdir($blockingDirectory);
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/4000417025050?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'a picture write failure does not fail the add, which already committed: ' . $response['body']);
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture, since writing it failed');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			@rmdir($blockingDirectory);
 		}
 	}
 

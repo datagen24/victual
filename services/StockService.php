@@ -1033,9 +1033,13 @@ class StockService extends BaseService
 
 						if (!empty($fileExtension) && !empty($imageData))
 						{
-							$fileName = $pluginOutput['__barcode'] . '.' . $fileExtension;
-							FileStorage::GetInstance()->Write('productpictures', $fileName, (string)$imageData);
-							$productData['picture_file_name'] = $fileName;
+							// Not written yet: writing it here, before the transaction
+							// below, would leave an orphaned file in productpictures if
+							// the transaction then rolled back. It is written only after
+							// the transaction commits, once the product row it belongs to
+							// is durable.
+							$pictureFileName = $pluginOutput['__barcode'] . '.' . $fileExtension;
+							$pictureData = (string)$imageData;
 						}
 					}
 					catch (\Exception)
@@ -1044,22 +1048,69 @@ class StockService extends BaseService
 					}
 				}
 
-				$newProductRow = $this->DB->products()->createRow($productData);
-				$newProductRow->save();
-
-				$this->DB->product_barcodes()->createRow([
-					'product_id' => $newProductRow->id,
-					'barcode' => $pluginOutput['__barcode']
-				])->save();
-
-				if ($pluginOutput['qu_id_stock'] != $pluginOutput['qu_id_purchase'])
+				DatabaseService::GetInstance()->InTransaction(function () use ($productData, $pluginOutput, &$newProductRow)
 				{
-					$this->DB->quantity_unit_conversions()->createRow([
+					$newProductRow = $this->DB->products()->createRow($productData);
+					$newProductRow->save();
+
+					$this->DB->product_barcodes()->createRow([
 						'product_id' => $newProductRow->id,
-						'from_qu_id' => $pluginOutput['qu_id_purchase'],
-						'to_qu_id' => $pluginOutput['qu_id_stock'],
-						'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+						'barcode' => $pluginOutput['__barcode']
 					])->save();
+
+					if ($pluginOutput['qu_id_stock'] != $pluginOutput['qu_id_purchase'])
+					{
+						// products_default_qu_conversions_INS only creates the 1:1
+						// purchase->stock conversion for this product when no conversion
+						// (including a global, product_id IS NULL one) already resolves
+						// that unit pair. When it did create one, set the plugin's factor
+						// onto that row instead of inserting a second one for the same
+						// pair, which qu_conversions_custom_constraint_INS refuses as a
+						// duplicate. When it did not - a global conversion already covers
+						// the pair - insert the product-specific conversion ourselves, as
+						// the old code did; that is accepted because the constraint keys
+						// on (from_qu_id, to_qu_id, product_id) and a global row's
+						// product_id is NULL, not this product's id.
+						$conversionRow = $this->DB->quantity_unit_conversions()->where(
+							'product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3',
+							$newProductRow->id,
+							$pluginOutput['qu_id_purchase'],
+							$pluginOutput['qu_id_stock']
+						)->fetch();
+
+						if ($conversionRow !== null)
+						{
+							$conversionRow->update([
+								'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+							]);
+						}
+						else
+						{
+							$this->DB->quantity_unit_conversions()->createRow([
+								'product_id' => $newProductRow->id,
+								'from_qu_id' => $pluginOutput['qu_id_purchase'],
+								'to_qu_id' => $pluginOutput['qu_id_stock'],
+								'factor' => $pluginOutput['__qu_factor_purchase_to_stock'],
+							])->save();
+						}
+					}
+				});
+
+				// Written only now, after the transaction committed, and updated onto
+				// the durable product row directly - not as part of the transaction
+				// above, so a picture failure here still leaves the product without a
+				// picture rather than failing the whole add.
+				if (isset($pictureFileName) && isset($pictureData))
+				{
+					try
+					{
+						FileStorage::GetInstance()->Write('productpictures', $pictureFileName, $pictureData);
+						$newProductRow->update(['picture_file_name' => $pictureFileName]);
+					}
+					catch (\Exception)
+					{
+						// Ignore
+					}
 				}
 
 				$pluginOutput['id'] = $newProductRow->id;
