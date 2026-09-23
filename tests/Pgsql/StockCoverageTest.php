@@ -3337,6 +3337,259 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	// ------------------------------------------------------------------------------
+	// Issue #459 (sweep finding S14, docs/security-sweep.md): the picture extension
+	// allow-list and the outbound host policy, exercised end to end through the real
+	// StockApiController route and StockService::ExternalBarcodeLookup(), with
+	// tests/Pgsql/barcodelookup-picture-subprocess-helper.php substituting GuzzleHttp\Client
+	// so that a "permitted" case proves itself without a real network call, and a "refused"
+	// case proves the refusal by recording that request() was never invoked at all - the
+	// distinguishing fact a connection failure alone could not establish.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * An SVG payload is the shape a stored-XSS attempt would take (an SVG can carry a
+	 * <script>), which is exactly why it is not on the allow-list. The URL's own path names
+	 * the extension, so the fix skips the fetch entirely rather than downloading a file it
+	 * is going to discard - asserted here by request_made being false even though the host
+	 * itself (a public literal address) would otherwise be allowed.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testADisallowedExtensionNamedInTheUrlSkipsTheFetchAndLeavesNoPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Bad Extension ', 2, 2, "'https://93.184.216.34/payload.svg'");
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn('GET', '/api/stock/barcodes/external-lookup/4000417025071?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'the product is still created: ' . $response['body']);
+			self::assertFalse($response['request_made'], 'an extension outside the allow-list is refused before any fetch is attempted');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture');
+			self::assertFileDoesNotExist(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025071.svg', 'nothing was ever written to disk under the disallowed extension');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * A payload with no extension in its path and a disallowed Content-Type still has to be
+	 * fetched to learn that - the allow-list check happens after the response, but before
+	 * anything is stored.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testADisallowedContentTypeFallbackLeavesNoPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Bad Content Type ', 2, 2, "'https://93.184.216.34/payload'");
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn(
+				'GET',
+				'/api/stock/barcodes/external-lookup/4000417025088?add=true',
+				['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin'],
+				['status' => 200, 'headers' => ['Content-Type' => ['text/html']], 'body_base64' => base64_encode('<html>not an image</html>')]
+			);
+			self::assertSame(200, $response['status'], 'the product is still created: ' . $response['body']);
+			self::assertTrue($response['request_made'], 'the path names no extension, so the fetch has to happen to read Content-Type');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture: text/html is not on the image allow-list');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * The SSRF half of S14. A loopback __image_url is refused before any request is made -
+	 * request_made stays false, which is the only way to tell "refused" apart from "the
+	 * request happened and merely failed", since both would otherwise leave the product
+	 * without a picture.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testALoopbackImageUrlIsRefusedWithNoOutboundRequestAndNoPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Loopback ', 2, 2, "'http://127.0.0.1:9/x.jpg'");
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn('GET', '/api/stock/barcodes/external-lookup/4000417025095?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'the product is still created: ' . $response['body']);
+			self::assertFalse($response['request_made'], 'a loopback host is refused before GuzzleHttp\\Client::request() is ever called');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * The private-address twin of the loopback case, using a different RFC 1918 range so the
+	 * two are not testing the same CIDR check twice.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPrivateAddressImageUrlIsRefusedWithNoOutboundRequestAndNoPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Private Address ', 2, 2, "'http://192.168.1.1/x.jpg'");
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn('GET', '/api/stock/barcodes/external-lookup/4000417025101?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(200, $response['status'], 'the product is still created: ' . $response['body']);
+			self::assertFalse($response['request_made'], 'a private-range host is refused before any request is made');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * The happy path with the fix in place: a permitted host and a permitted extension still
+	 * produce a stored picture. GuzzleHttp\Client is substituted so this proves itself
+	 * without a real network call, and the request options prove the request would have been
+	 * pinned to the validated address (CURLOPT_RESOLVE) and would not have followed a
+	 * redirect - both required by issue #459's DNS-rebinding and redirect guards.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testAPermittedHostAndExtensionAreStillFetchedAndStored(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Permitted Fetch ', 2, 2, "'https://93.184.216.34/products/x.png'");
+
+		// A minimal, valid one pixel PNG.
+		$pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn(
+				'GET',
+				'/api/stock/barcodes/external-lookup/4000417025118?add=true',
+				['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin'],
+				['status' => 200, 'headers' => ['Content-Type' => ['image/png']], 'body_base64' => base64_encode($pngBytes)]
+			);
+			self::assertSame(200, $response['status'], 'lookup and add succeeded: ' . $response['body']);
+			self::assertTrue($response['request_made'], 'a permitted host and extension are actually fetched');
+			self::assertSame('GET https://93.184.216.34/products/x.png', $response['request_uri']);
+			self::assertFalse($response['request_options']['allow_redirects'], 'the fetch must not follow a redirect');
+
+			$resolveOptions = $response['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
+			self::assertNotEmpty($resolveOptions, 'the request is pinned to the address the host policy validated (DNS-rebinding guard)');
+			self::assertStringContainsString('93.184.216.34:443:93.184.216.34', $resolveOptions[0], 'the pinned entry names the exact validated address');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is created');
+			self::assertSame('4000417025118.png', $row['picture_file_name'], 'and the picture is stored under the barcode with the allowed extension');
+
+			$picture = getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025118.png';
+			self::assertFileExists($picture);
+			self::assertSame($pngBytes, file_get_contents($picture), 'the exact bytes the (substituted) fetch returned were written');
+		}
+		finally
+		{
+			@unlink($pluginFile);
+			@unlink(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025118.png');
+		}
+	}
+
+	/**
+	 * A __barcode outside issue #459's [0-9A-Za-z_-] allow-list is refused before any of the
+	 * add logic runs at all - the same route, driven with a barcode a scanner would never
+	 * actually produce.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testADisallowedBarcodeCharacterIsRefused(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Bad Barcode ', 2, 2, "''");
+
+		try
+		{
+			$response = self::send('GET', '/api/stock/barcodes/external-lookup/' . rawurlencode('bad barcode') . '?add=true', ['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin']);
+			self::assertSame(400, $response['status'], 'a space is outside the __barcode allow-list: ' . $response['body']);
+			self::assertStringContainsString('Provided __barcode is not a valid file name component', $response['body']);
+		}
+		finally
+		{
+			@unlink($pluginFile);
+		}
+	}
+
+	/**
+	 * Runs $spec through barcodelookup-picture-subprocess-helper.php (send()'s sibling),
+	 * whose substituted GuzzleHttp\Client both cans the picture-fetch response and records
+	 * whether, and how, it was called.
+	 *
+	 * @return array{status: int, body: string, request_made: bool, request_uri: ?string, request_options: array}
+	 */
+	private static function sendWithPictureFetchStandIn(string $method, string $path, array $settingOverrides = [], array $guzzle = []): array
+	{
+		$spec = array_filter(
+			['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey], 'guzzle' => $guzzle],
+			fn ($value) => $value !== null && $value !== []
+		);
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env = array_merge($inherited, [
+			'RBAC_TEST_SCHEMA' => self::Schema(),
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+		], $settingOverrides);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/barcodelookup-picture-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		$start = strrpos($output, '{"status"');
+		$result = $start === false ? null : json_decode(substr($output, $start), true);
+		self::assertIsArray($result, "the picture-fetch helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
+		$result['stderr'] = $errors;
+
+		return $result;
+	}
+
 	/** Writes a lookup plugin into the data directory and returns its path. */
 	private static function writeUserLookupPlugin(string $namePrefix, int $quIdPurchase, int $quIdStock, string $imageUrlExpression): string
 	{

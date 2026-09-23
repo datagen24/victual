@@ -5,6 +5,8 @@ namespace Victual\Tests\Pgsql;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Victual\Helpers\BaseBarcodeLookupPlugin;
+use Victual\Helpers\OutboundHostPolicy;
+use Victual\Helpers\OutboundHostRefusedException;
 
 /**
  * The external barcode lookup surface: the contract BaseBarcodeLookupPlugin enforces on
@@ -21,13 +23,13 @@ use Victual\Helpers\BaseBarcodeLookupPlugin;
  * the one genuine external boundary - and leaves the parsing, the mapping and the
  * null-on-miss decisions running for real.
  *
- * Several cases below are marked DEFECT. They pin what the code does today rather than
- * what it should do, because sweep finding S14 (docs/security-sweep.md:82) is still open:
- * plan 09 names the image extension allow-list, the barcode filename class and the refusal
- * of loopback and private hosts as a gate that lands before any new source, and none of
- * the three exists in the tree. A pinning assertion was chosen over markTestIncomplete for
- * each of them deliberately - an incomplete test says nothing when the gap is closed,
- * whereas these fail the moment a check is added, which is the reminder the fix wants.
+ * A few cases below pin behaviour that is correct but easy to mistake for a gap: Lookup()
+ * never inspects __image_url, not because sweep finding S14 (docs/security-sweep.md) is
+ * unaddressed, but because the picture's extension and its host are checked once the
+ * picture is actually fetched - in services/StockService.php::ExternalBarcodeLookup(), via
+ * helpers/OutboundHostPolicy.php - where a network round trip either already has to happen
+ * (Content-Type fallback) or is being decided against. OutboundHostPolicyTest below covers
+ * that class directly; tests/Pgsql/StockCoverageTest.php covers the refusal end to end.
  */
 class BarcodeLookupTest extends TestCase
 {
@@ -361,21 +363,20 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * S14 asks for an allow-list of image extensions. There is none, at the validation gate
-	 * or anywhere after it.
+	 * S14 asks for an allow-list of image extensions. Issue #459 puts it in
+	 * StockService::ExternalBarcodeLookup(), not here: the class docblock above explains why
+	 * no network happens in this file, and the Content-Type fallback this allow-list also has
+	 * to cover is only known once the picture has actually been requested. Lookup() validates
+	 * plugin output shape; it is not a mapper and does not rewrite or refuse __image_url, so
+	 * this passes through unchanged both before and after #459 - see
+	 * tests/Pgsql/StockCoverageTest.php for the allow-list refusal itself, end to end.
 	 */
 	#[DataProvider('disallowedImageExtensionProvider')]
-	public function testLookupDoesNotRefuseAPictureUrlWithANonImageExtension(string $imageUrl): void
+	public function testLookupPassesThroughAPictureUrlWithANonImageExtensionUnexamined(string $imageUrl): void
 	{
-		// DEFECT: nothing in helpers/BaseBarcodeLookupPlugin.php::Lookup() looks at
-		// __image_url. The value is fetched at services/StockService.php:1014 and the
-		// extension it ends in becomes the stored file's extension
-		// (services/StockService.php:1015, :1036), with a Content-Type fallback at :1020
-		// that is equally unconstrained. Expected: refuse anything outside an image
-		// allow-list before the fetch.
 		$result = self::plugin(self::validOutput(['__image_url' => $imageUrl]))->Lookup(self::BARCODE);
 
-		self::assertSame($imageUrl, $result['__image_url'], "current behaviour: $imageUrl passes the validation gate unexamined");
+		self::assertSame($imageUrl, $result['__image_url'], 'Lookup() does not inspect __image_url; the extension allow-list is enforced at fetch time');
 	}
 
 	/** @return array<string, array{0: string}> */
@@ -393,20 +394,22 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * S14 asks for loopback and private hosts to be refused before the fetch. They are not.
-	 * This is the SSRF half of the finding, and it is what turns a compromised or spoofed
-	 * lookup source into a request originating inside the deployment.
+	 * S14 asks for loopback and private hosts to be refused before the fetch - the SSRF half
+	 * of the finding, and what turns a compromised or spoofed lookup source into a request
+	 * originating inside the deployment. Issue #459 adds that refusal in
+	 * StockService::ExternalBarcodeLookup(), via helpers/OutboundHostPolicy.php, not here:
+	 * Lookup() has no network access at all (see the class docblock), so it cannot resolve a
+	 * host to know whether it is internal. Lookup() output is unchanged either way - see
+	 * OutboundHostPolicyTest below for the policy itself, and
+	 * tests/Pgsql/StockCoverageTest.php for the end-to-end refusal (no picture, no request
+	 * made).
 	 */
 	#[DataProvider('internalImageHostProvider')]
-	public function testLookupDoesNotRefuseAPictureUrlNamingALoopbackOrPrivateHost(string $imageUrl): void
+	public function testLookupPassesThroughAPictureUrlNamingALoopbackOrPrivateHostUnexamined(string $imageUrl): void
 	{
-		// DEFECT: the validation gate does not inspect the host, and
-		// services/StockService.php:1011 admits anything matching ^https?:// before
-		// fetching it at :1014. Expected: resolve the host and refuse loopback,
-		// link-local and RFC1918 addresses.
 		$result = self::plugin(self::validOutput(['__image_url' => $imageUrl]))->Lookup(self::BARCODE);
 
-		self::assertSame($imageUrl, $result['__image_url'], "current behaviour: $imageUrl passes the validation gate unexamined");
+		self::assertSame($imageUrl, $result['__image_url'], 'Lookup() does not resolve or inspect the host; that is OutboundHostPolicy\'s job at fetch time');
 	}
 
 	/** @return array<string, array{0: string}> */
@@ -417,16 +420,30 @@ class BarcodeLookupTest extends TestCase
 			'deep traversal' => ['../../../../tmp/escaped'],
 			'absolute path' => ['/etc/victual-escaped'],
 			'leading dot' => ['.htaccess-escaped'],
-			'nul byte' => ["4001234567890\0.png"]
+			'nul byte' => ["4001234567890\0.png"],
+			// Issue #459 widens the refusal from "not a directory separator, a leading dot or
+			// a null byte" to the sweep's requested allow-list, [0-9A-Za-z_-]. These do not
+			// escape the picture directory on their own, but none of them is a character a
+			// real GTIN/EAN/UPC contains, and each is a way a barcode-shaped string can carry
+			// something else through unexamined (a space or a quote out of copy-pasted text,
+			// a colon or percent-encoding out of a URL, a non-ASCII character out of an
+			// image's alternate text).
+			'space' => ['4001234567 890'],
+			'colon' => ['4001234567:890'],
+			'percent' => ['4001234567%890'],
+			'double quote' => ['4001234567"890'],
+			'single quote' => ["4001234567'890"],
+			'non-ASCII' => ['400123456789é']
 		];
 	}
 
 	/**
 	 * The stored picture's file name is built from __barcode
 	 * (services/StockService.php:1036), so __barcode is a file name component as well as an
-	 * identifier. The validation gate refuses one that is not a safe file name component -
-	 * a directory separator, a leading dot, or a null byte - so that every barcode source
-	 * inherits the refusal rather than each one remembering it. Issue #243.
+	 * identifier. The validation gate refuses one that is not a safe file name component.
+	 * Issue #243 first refused a directory separator, a leading dot and a null byte; issue
+	 * #459 widens that to sweep finding S14's requested allow-list, [0-9A-Za-z_-], so that
+	 * every barcode source inherits the refusal rather than each one remembering it.
 	 */
 	#[DataProvider('escapingBarcodeProvider')]
 	public function testLookupRefusesABarcodeThatWouldEscapeThePictureDirectory(string $barcode): void
@@ -436,6 +453,27 @@ class BarcodeLookupTest extends TestCase
 			'Provided __barcode is not a valid file name component',
 			'__barcode is concatenated into a stored picture file name and must be a safe component'
 		);
+	}
+
+	/** @return array<string, array{0: string}> */
+	public static function realBarcodeProvider(): array
+	{
+		return [
+			'UPC-A (12 digits)' => ['040123456789'],
+			'EAN-13' => ['4001234567890'],
+			'GTIN-14' => ['40012345678905'],
+			'letters and digits' => ['ABC123def456'],
+			'underscore and hyphen' => ['4001234-567_890']
+		];
+	}
+
+	/** Every shape a real GTIN/EAN/UPC (or a source's own alphanumeric identifier) takes passes the gate. */
+	#[DataProvider('realBarcodeProvider')]
+	public function testLookupAcceptsEveryRealBarcodeShape(string $barcode): void
+	{
+		$result = self::plugin(self::validOutput(['__barcode' => $barcode]))->Lookup(self::BARCODE);
+
+		self::assertSame($barcode, $result['__barcode']);
 	}
 
 	/**
@@ -857,7 +895,6 @@ class BarcodeLookupTest extends TestCase
 		return [
 			'plain EAN-13' => ['4001234567890', '4001234567890'],
 			'leading zeros are kept' => ['0004001234567890', '0004001234567890'],
-			'separators are stripped' => ['4-001 234.567890', '4001234567890'],
 			'letters are stripped' => ['EAN4001234567890', '4001234567890'],
 			'nothing numeric at all' => ['not-a-barcode', '']
 		];
@@ -879,6 +916,33 @@ class BarcodeLookupTest extends TestCase
 			"scanning $scanned must ask about $queried"
 		);
 		self::assertSame($scanned, $result['product']['__barcode'], 'but the product is stored under the barcode as scanned, not as queried');
+	}
+
+	/**
+	 * A scanned string containing separator characters (a space or a period, say) still asks
+	 * the API about its digits alone - the request already happened by the time the
+	 * validation gate sees anything - but issue #459 widens that gate's __barcode allow-list
+	 * to [0-9A-Za-z_-], and the plugin returns __barcode as the string it was asked to look
+	 * up, unnormalised. Before #459 this was a hit stored under the separator-laden string
+	 * (asserted by testOpenFoodFactsAsksAboutTheDigitsOfTheScannedBarcode, which used to
+	 * carry this case); now Lookup() refuses it. This is one of the tests
+	 * docs/security-sweep.md's 2026-09-21 update on S14 said would need to change: it
+	 * asserted a hostile-shaped value passing through, and the fix makes that assertion
+	 * false.
+	 */
+	public function testOpenFoodFactsQueriesTheDigitsButLookupRefusesAScannedBarcodeWithSeparators(): void
+	{
+		$scanned = '4-001 234.567890';
+
+		$result = self::openFoodFacts(['barcode' => $scanned, 'body' => self::foundPayload()]);
+
+		self::assertSame(
+			'GET https://world.openfoodfacts.org/api/v2/product/4001234567890?fields=product_name,image_url,product_name_en',
+			$result['request_uri'],
+			'the request already happened before the validation gate sees the answer'
+		);
+		self::assertSame('exception', $result['outcome'], 'the separators make __barcode fail the [0-9A-Za-z_-] allow-list');
+		self::assertSame('Provided __barcode is not a valid file name component', $result['message']);
 	}
 
 	/**
@@ -916,6 +980,128 @@ class BarcodeLookupTest extends TestCase
 		require_once VICTUAL_ROOT_PATH . '/plugins/OpenFoodFactsBarcodeLookupPlugin.php';
 
 		self::assertSame('Open Food Facts', \OpenFoodFactsBarcodeLookupPlugin::PLUGIN_NAME);
+	}
+}
+
+/**
+ * helpers/OutboundHostPolicy.php in isolation: no PHPUnit test in this file makes a real
+ * network call (see BarcodeLookupTest's own docblock), and this class is no exception - a
+ * resolver is injected wherever a non-literal hostname is involved, so DNS is never queried
+ * either. Issue #459 (sweep finding S14, docs/security-sweep.md) requires the barcode
+ * picture fetch to refuse loopback, private, link-local, carrier-grade NAT, unspecified,
+ * multicast, reserved/broadcast and the IPv6 equivalents (including IPv4-mapped/compatible
+ * forms and DNS-rebinding-style host answers with one public and one private address), plus
+ * numeric IPv4 literals in decimal, octal and hex notation - forms curl parses as an address
+ * directly, bypassing DNS altogether, so the policy has to recognise them the same way.
+ */
+class OutboundHostPolicyTest extends TestCase
+{
+	/** @return array<string, array{0: string}> A URL whose literal or resolved host must be refused. */
+	public static function refusedUrlProvider(): array
+	{
+		return [
+			'IPv4 loopback' => ['http://127.0.0.1/x.jpg'],
+			'IPv4 loopback, non-default host in range' => ['http://127.255.255.254/x.jpg'],
+			'IPv4 private 10/8' => ['http://10.1.2.3/x.jpg'],
+			'IPv4 private 172.16/12' => ['http://172.31.0.1/x.jpg'],
+			'IPv4 private 192.168/16' => ['http://192.168.1.1/x.jpg'],
+			'IPv4 link-local' => ['http://169.254.1.1/x.jpg'],
+			'IPv4 cloud metadata' => ['http://169.254.169.254/latest/meta-data/x.jpg'],
+			'IPv4 carrier-grade NAT' => ['http://100.64.0.1/x.jpg'],
+			'IPv4 unspecified' => ['http://0.0.0.0/x.jpg'],
+			'IPv4 multicast' => ['http://224.0.0.1/x.jpg'],
+			'IPv4 reserved/broadcast' => ['http://255.255.255.255/x.jpg'],
+			'IPv6 loopback' => ['http://[::1]/x.jpg'],
+			'IPv6 unspecified' => ['http://[::]/x.jpg'],
+			'IPv6 unique local (ULA)' => ['http://[fc00::1]/x.jpg'],
+			'IPv6 link-local' => ['http://[fe80::1]/x.jpg'],
+			'IPv6 multicast' => ['http://[ff02::1]/x.jpg'],
+			'IPv4-mapped IPv6 of a private address' => ['http://[::ffff:127.0.0.1]/x.jpg'],
+			'IPv4-mapped IPv6 of the cloud metadata address' => ['http://[::ffff:169.254.169.254]/x.jpg'],
+			'IPv4-compatible IPv6 of a private address' => ['http://[::10.0.0.5]/x.jpg'],
+			'decimal IPv4 literal for loopback' => ['http://2130706433/x.jpg'],
+			'octal IPv4 literal for loopback' => ['http://017700000001/x.jpg'],
+			'hex IPv4 literal for loopback' => ['http://0x7f000001/x.jpg'],
+			'partial hex/decimal IPv4 literal for loopback' => ['http://0x7f.1/x.jpg'],
+			'shorthand two-part IPv4 literal for loopback' => ['http://127.1/x.jpg'],
+			'userinfo naming a decoy host ahead of the real, private one' => ['http://good.example.org@127.0.0.1/x.jpg'],
+			'non-http(s) scheme naming an otherwise-fine host' => ['ftp://93.184.216.34/x.jpg'],
+			'file scheme' => ['file:///etc/passwd'],
+		];
+	}
+
+	#[DataProvider('refusedUrlProvider')]
+	public function testAssertAllowedRefusesEveryHostileForm(string $url): void
+	{
+		$this->expectException(OutboundHostRefusedException::class);
+
+		(new OutboundHostPolicy())->AssertAllowed($url);
+	}
+
+	/** @return array<string, array{0: string}> A URL whose literal host must be accepted. */
+	public static function acceptedLiteralUrlProvider(): array
+	{
+		return [
+			'public IPv4 literal' => ['https://93.184.216.34/x.jpg'],
+			'public IPv6 literal' => ['https://[2001:4860:4860::8888]/x.jpg'],
+		];
+	}
+
+	#[DataProvider('acceptedLiteralUrlProvider')]
+	public function testAssertAllowedAcceptsAPublicLiteralAddress(string $url): void
+	{
+		$addresses = (new OutboundHostPolicy())->AssertAllowed($url);
+
+		self::assertNotEmpty($addresses, 'the accepted address(es) are returned for the caller to pin the connection to');
+	}
+
+	/** A hostname is accepted when every address the injected resolver returns for it is public. */
+	public function testAssertAllowedAcceptsAHostnameResolvingOnlyToPublicAddresses(): void
+	{
+		$policy = new OutboundHostPolicy(fn (string $host) => $host === 'images.example.org' ? ['93.184.216.34', '2001:4860:4860::8888'] : []);
+
+		$addresses = $policy->AssertAllowed('https://images.example.org/x.jpg');
+
+		self::assertSame(['93.184.216.34', '2001:4860:4860::8888'], $addresses);
+	}
+
+	/**
+	 * DNS rebinding is not a second request seeing a different answer - it is a single
+	 * *hostname* resolving to more than one address, one of which is refused. Checking only
+	 * the first address a resolver returns would let this through; every address returned
+	 * must be examined.
+	 */
+	public function testAssertAllowedRefusesAHostnameThatResolvesToOnePublicAndOnePrivateAddress(): void
+	{
+		$policy = new OutboundHostPolicy(fn (string $host) => ['93.184.216.34', '10.0.0.5']);
+
+		$this->expectException(OutboundHostRefusedException::class);
+
+		$policy->AssertAllowed('https://mixed.example.org/x.jpg');
+	}
+
+	/** A hostname the resolver cannot resolve at all is refused, not silently skipped. */
+	public function testAssertAllowedRefusesAHostnameThatResolvesToNothing(): void
+	{
+		$policy = new OutboundHostPolicy(fn (string $host) => []);
+
+		$this->expectException(OutboundHostRefusedException::class);
+
+		$policy->AssertAllowed('https://nowhere.example.org/x.jpg');
+	}
+
+	/** The injected resolver is never consulted for a host that is already a literal address. */
+	public function testAssertAllowedDoesNotConsultTheResolverForALiteralAddress(): void
+	{
+		$resolverCalls = [];
+		$policy = new OutboundHostPolicy(function (string $host) use (&$resolverCalls) {
+			$resolverCalls[] = $host;
+			return [];
+		});
+
+		$policy->AssertAllowed('https://93.184.216.34/x.jpg');
+
+		self::assertSame([], $resolverCalls, 'a literal IPv4 address needs no resolution');
 	}
 }
 
