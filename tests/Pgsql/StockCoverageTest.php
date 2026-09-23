@@ -3100,20 +3100,21 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The picture is downloaded/decoded before the transaction that writes the product, its
-	 * barcode and its conversion, but must not be written to storage until that transaction
-	 * has committed - otherwise a rollback (injected here via a trigger that raises on the
-	 * conversion insert) would leave an orphaned file in productpictures behind, unreferenced
-	 * by anything because the product row that would have named it never survives.
-	 */
-	#[Depends('testCreatesTheSubprocessApiKey')]
-	/**
 	 * The barcode this case's injected trigger fails on - a fixed, test-owned literal
 	 * (never request or database-sourced), so interpolating it into the trigger function's
 	 * body below carries no injection risk.
 	 */
 	private const FAILED_ADD_BARCODE = '4000417025043';
 
+	/**
+	 * The picture is downloaded/decoded before the transaction that writes the product, its
+	 * barcode and its conversion, but must not be written to storage until that transaction
+	 * has committed - otherwise a rollback (injected here via a trigger that raises on the
+	 * barcode insert, a separate statement after the product insert has succeeded) would
+	 * leave the product behind, or an orphaned file in productpictures unreferenced by
+	 * anything.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAFailedAddLeavesNoProductNoBarcodeAndNoOrphanedPicture(): void
 	{
 		// Fails the product_barcodes INSERT, a separate statement that runs only after the
