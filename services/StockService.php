@@ -3,6 +3,8 @@
 namespace Victual\Services;
 
 use Victual\Helpers\Grocycode;
+use Victual\Helpers\OutboundHostPolicy;
+use Victual\Helpers\OutboundHostRefusedException;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Storage\FileStorage;
 use GuzzleHttp\Client;
@@ -66,6 +68,17 @@ class StockService extends BaseService
 
 	/** Transfer between locations: addition side at the destination location (positive amount, correlated with _FROM) */
 	const TRANSACTION_TYPE_TRANSFER_TO = 'transfer_to';
+
+	/**
+	 * Extensions ExternalBarcodeLookup() will store a downloaded or inline barcode picture
+	 * under, matched case-insensitively against the URL path, the data: URI's declared type,
+	 * or (when neither names one) the response's Content-Type - sweep finding S14
+	 * (docs/security-sweep.md). "jpeg" is kept as its own entry rather than normalised to
+	 * "jpg": both already occur today (a URL path commonly ends ".jpg", a Content-Type of
+	 * image/jpeg produces the subtype "jpeg") and either is a safe, unambiguous file
+	 * extension, so there is no reason to rewrite one into the other.
+	 */
+	const ALLOWED_PICTURE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
 	/**
 	 * Adds all products which are below their minimum stock amount to the given shopping list.
@@ -1012,28 +1025,72 @@ class StockService extends BaseService
 					{
 						if (preg_match('/^https?:\/\//', $pluginOutput['__image_url']))
 						{
-							$webClient = new Client();
-							$response = $webClient->request('GET', $pluginOutput['__image_url'], ['headers' => ['User-Agent' => 'Victual/' . ApplicationService::GetInstance()->GetInstalledVersion()->Version . ' (https://github.com/datagen24/victual)']]);
-							$fileExtension = pathinfo(parse_url($pluginOutput['__image_url'], PHP_URL_PATH), PATHINFO_EXTENSION);
+							// The extension may already be known from the URL's path. When it
+							// is, and it fails the allow-list below, there is no reason to
+							// fetch anything at all - checked first, so a disallowed
+							// extension never reaches the host check or the network.
+							$fileExtension = strtolower(pathinfo(parse_url($pluginOutput['__image_url'], PHP_URL_PATH), PATHINFO_EXTENSION));
 
-							// Fallback to Content-Type header if file extension is missing
-							if (strlen($fileExtension) == 0 && $response->hasHeader('Content-Type'))
+							if ($fileExtension !== '' && !in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true))
 							{
-								$fileExtension = explode('+', explode('/', $response->getHeader('Content-Type')[0])[1])[0];
+								$fileExtension = '';
 							}
+							else
+							{
+								// __image_url is chosen by the barcode source, not by this
+								// deployment - sweep finding S14 (docs/security-sweep.md)
+								// requires its host to be resolved and refused before the
+								// fetch when it is, or resolves to, a loopback, private,
+								// link-local or otherwise internal address. Every address the
+								// host resolves to is checked; one of the addresses returned
+								// is then pinned for the request itself (CURLOPT_RESOLVE), so
+								// a second, different DNS answer at request time cannot be
+								// used instead of the one just validated (DNS rebinding).
+								$hostPolicy = new OutboundHostPolicy();
+								$validatedAddresses = $hostPolicy->AssertAllowed($pluginOutput['__image_url']);
 
-							$imageData = $response->getBody();
+								$urlParts = parse_url($pluginOutput['__image_url']);
+								$scheme = strtolower($urlParts['scheme']);
+								$host = trim($urlParts['host'], '[]');
+								$port = $urlParts['port'] ?? ($scheme === 'https' ? 443 : 80);
+								$pinnedAddress = $validatedAddresses[0];
+								$resolveEntry = $host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress);
+
+								$webClient = new Client();
+								$response = $webClient->request('GET', $pluginOutput['__image_url'], [
+									'headers' => ['User-Agent' => 'Victual/' . ApplicationService::GetInstance()->GetInstalledVersion()->Version . ' (https://github.com/datagen24/victual)'],
+									'allow_redirects' => false,
+									'curl' => [CURLOPT_RESOLVE => [$resolveEntry]],
+								]);
+
+								// Fallback to Content-Type header if the URL's path gave no extension
+								if ($fileExtension === '' && $response->hasHeader('Content-Type'))
+								{
+									$fileExtension = strtolower(explode('+', explode('/', $response->getHeader('Content-Type')[0])[1])[0]);
+
+									if (!in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true))
+									{
+										$fileExtension = '';
+									}
+								}
+
+								if ($fileExtension !== '')
+								{
+									$imageData = $response->getBody();
+								}
+							}
 						}
 						elseif (preg_match('/data:image\/(\w+?);base64,([A-Za-z0-9+\/]*={0,2})$/', $pluginOutput['__image_url'], $matches))
 						{
-							$fileExtension = $matches[1];
-							if (!($imageData = base64_decode($matches[2])))
+							$fileExtension = strtolower($matches[1]);
+
+							if (in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true) && !($imageData = base64_decode($matches[2])))
 							{
 								unset($imageData);
 							}
 						}
 
-						if (!empty($fileExtension) && !empty($imageData))
+						if (!empty($fileExtension) && !empty($imageData) && in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true))
 						{
 							// Not written yet: writing it here, before the transaction
 							// below, would leave an orphaned file in productpictures if
@@ -1046,7 +1103,8 @@ class StockService extends BaseService
 					}
 					catch (\Exception)
 					{
-						// Ignore
+						// Ignore - includes OutboundHostRefusedException, a plain \Exception
+						// subclass: the picture step fails soft, same as a download error.
 					}
 				}
 
