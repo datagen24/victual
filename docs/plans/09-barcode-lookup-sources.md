@@ -93,11 +93,12 @@ None. Plugins are server side and configured, not exposed.
 
 **Client impact: none on the wire, and one thing worth naming.** A client that scans a
 barcode gets a *different product back* once a new source is enabled — better data, not a
-contract change, but a change in behaviour that no manifest and no snapshot can see. Sweep
-**S14** is this plan's inheritance and is the reason the surface is worth caring about at
-all. Every source added is another party choosing `__image_url`, so the filename class,
-the image extension allow-list and the refusal of loopback and private hosts land before
-the first new source, not after.
+contract change, but a change in behaviour that no manifest and no snapshot can see.
+
+Sweep **S14** is this plan's inheritance and is the reason the surface is worth caring
+about at all. Every source added that sets the optional `__image_url` is another party
+choosing it, so the filename class, the image extension allow-list and the refusal of
+loopback and private hosts land before the first new source, not after.
 
 ## Relationship to [04 seed datasets](04-seed-datasets.md)
 
