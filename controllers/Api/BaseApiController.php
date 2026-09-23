@@ -259,19 +259,13 @@ class BaseApiController extends BaseController
 	 * Returns the rows rather than the Result: LessQL's Result::jsonSerialize() is itself
 	 * fetchAll(), so this changes nothing about the response body.
 	 *
-	 * When QueryData() left an "offset" unapplied because no "limit" came with it (see its
-	 * docblock), it is applied here instead with array_slice() on the materialised rows:
-	 * LessQL's own getSuffix() (packages/morris/lessql/src/LessQL/Database.php) only emits
-	 * "OFFSET" as a suffix to a "LIMIT" it also emitted, so there is no way to ask it for
-	 * one without the other.
-	 *
 	 * @return \LessQL\Row[]
 	 */
 	protected function MaterialiseFiltered(Request $request, Result $data, array $query): array
 	{
 		try
 		{
-			$rows = $data->fetchAll();
+			return $data->fetchAll();
 		}
 		catch (\PDOException $ex)
 		{
@@ -290,13 +284,6 @@ class BaseApiController extends BaseController
 				$ex
 			);
 		}
-
-		if (isset($query['offset']) && !isset($query['limit']))
-		{
-			$rows = array_slice($rows, intval($query['offset']));
-		}
-
-		return $rows;
 	}
 
 	/** @var array<string, array<string, string>|null> Column types per table, for this request only; null = unreadable */
@@ -391,13 +378,10 @@ class BaseApiController extends BaseController
 	 * query[] (filter conditions, see FilterData), limit/offset (pagination)
 	 * and order ("field" or "field:asc|desc"; throws on any other sort order).
 	 *
-	 * "limit" alone, or "limit" with "offset", becomes a LessQL limit()/OFFSET clause as
-	 * usual. "offset" without "limit" is left unapplied here - LessQL's own SQL builder
-	 * (packages/morris/lessql/src/LessQL/Database.php's getSuffix()) only emits "OFFSET" as
-	 * a suffix to a "LIMIT" it also emitted, so there is no sentinel count that means "no
-	 * limit" on every engine: -1 is SQLite's spelling and PostgreSQL refuses it outright
-	 * ("LIMIT must not be negative"). MaterialiseFiltered() applies that offset instead,
-	 * with array_slice() on the fetched rows, once the statement without a LIMIT has run.
+	 * "offset" without "limit" used PHP_INT_MAX rather than -1 as the count LessQL's
+	 * limit() is given: -1 is SQLite's spelling of "no limit" and PostgreSQL refuses it
+	 * outright ("LIMIT must not be negative"), where a LIMIT of bigint's maximum value is
+	 * accepted by both and is, in practice, no limit at all.
 	 */
 	protected function QueryData(Request $request, Result $data, array $query)
 	{
@@ -406,9 +390,9 @@ class BaseApiController extends BaseController
 			$data = $this->FilterData($request, $data, $query['query']);
 		}
 
-		if (isset($query['limit']))
+		if (isset($query['limit']) || isset($query['offset']))
 		{
-			$data = $data->limit(intval($query['limit']), intval($query['offset'] ?? 0));
+			$data = $data->limit(isset($query['limit']) ? intval($query['limit']) : PHP_INT_MAX, intval($query['offset'] ?? 0));
 		}
 
 		if (isset($query['order']))
