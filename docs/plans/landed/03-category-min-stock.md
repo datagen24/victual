@@ -53,11 +53,12 @@ Inactive products are excluded, matching the existing branches' `IFNULL(p.active
 (Q4) — but the exclusion belongs in the join, not in an outer `WHERE`. A group whose only
 members are inactive, and a group with no members at all, are both short by their entire
 minimum; an outer filter would drop the group from the result instead, which is the same
-answer as "fully stocked". Group minimums and per product minimums are independent: a
-product below its own minimum is short regardless of its group, and a group below its
-minimum is short regardless of its members (Q2). A member's opened stock is discounted
-where that member sets `treat_opened_as_out_of_stock` (Q5); an inactive group reports
-nothing (Q6).
+answer as "fully stocked".
+
+Group minimums and per product minimums are independent: a product below its own minimum
+is short regardless of its group, and a group below its minimum is short regardless of its
+members (Q2). A member's opened stock is discounted where that member sets
+`treat_opened_as_out_of_stock` (Q5); an inactive group reports nothing (Q6).
 
 **Amounts are summed in each member's own stock quantity unit, with no conversion.** A
 group minimum is therefore only meaningful for members measured comparably — two litres of
@@ -92,12 +93,14 @@ That action has a prerequisite the rest of this plan does not: **the products ha
 the page.** `StockController::Overview()` lists `is_in_stock_or_below_min_stock = 1` unless
 the user has turned on `stock_overview_show_all_out_of_stock_products`, and a product at zero
 stock with no minimum of its own is exactly the row that flag excludes — which is the main
-case a group minimum exists for. Filtering client-side cannot reveal a row that was never
-rendered, so the overview's own query has to include the active members of short groups. The
-same applies to the location and status filters, whose hidden cells are *empty* for a
-zero-stock row: a filter left over from earlier in the session hides the row that was just
-added for it. The group action therefore clears the other filters before applying itself,
-the way the existing clear-filter button does.
+case a group minimum exists for.
+
+Filtering client-side cannot reveal a row that was never rendered, so the overview's own
+query has to include the active members of short groups. The same applies to the location
+and status filters, whose hidden cells are *empty* for a zero-stock row: a filter left over
+from earlier in the session hides the row that was just added for it. The group action
+therefore clears the other filters before applying itself, the way the existing clear-filter
+button does.
 
 Those added rows get no new status token and no row styling. The product is not below *its*
 minimum, and saying it is would put one fact under another fact's name — the group list
@@ -184,23 +187,25 @@ from it.
 **The migration number moved twice while this was being written.** The plan was scoped
 against a table that gave 0267 to plan 23; 0267 went to the split-entry average price fix
 (PR #77) and 0268 to this, so plan 23 is now 0269 and plan 22 is 0270–0271. Those two plans'
-bodies and the status table moved with it. The rule that decided the direction is worth
-stating once: the number that is about to have a *file* behind it takes the lowest free slot
-and unwritten drafts move up, because the alternative puts a file above a hole that nothing
-is working to close and `check-migrations.php` then refuses the branch until unscheduled
-plans land. The same edit also corrected both plans' "one pair"/"two pairs" wording, which
-predated ADR-0008's freeze and would have had them writing `.sqlite.sql` files
-`check-migrations.php` now refuses.
+bodies and the status table moved with it.
+
+The rule that decided the direction is worth stating once: the number that is about to have
+a *file* behind it takes the lowest free slot, and unwritten drafts move up. The alternative
+puts a file above a hole that nothing is working to close, and `check-migrations.php` then
+refuses the branch until unscheduled plans land. The same edit also corrected both plans'
+"one pair"/"two pairs" wording, which predated ADR-0008's freeze and would have had them
+writing `.sqlite.sql` files `check-migrations.php` now refuses.
 
 **The overview needed a server-side change the plan did not anticipate.** Naming the short
 groups is only useful if their members are on the page, and `StockController::Overview()`
 lists `is_in_stock_or_below_min_stock = 1` — which excludes a product at zero stock with no
 minimum of its own, the exact member a group minimum exists to get bought. The clause was
-widened with the active members of short groups, in the restrictive branch only. Two related
-things fall out of it: the added rows carry no status token and no row styling, because the
-product is not below *its* minimum, and the group action clears the other filters before
-applying itself, because a zero-stock row has an empty hidden location cell and an empty
-hidden status cell and a filter left over from earlier in the session would hide it.
+widened with the active members of short groups, in the restrictive branch only.
+
+Two related things fall out of it. The added rows carry no status token and no row styling,
+because the product is not below *its* minimum. The group action clears the other filters
+before applying itself, because a zero-stock row has an empty hidden location cell and an
+empty hidden status cell, and a filter left over from earlier in the session would hide it.
 
 **`is_partly_in_stock` was dropped.** The view has four columns — `id`, `name`,
 `min_stock_amount`, `amount_missing`. `stock_missing_products` carries the flag and nothing
@@ -210,10 +215,13 @@ maintain forever in exchange for nothing.
 **Verification is a PostgreSQL-only phase, not a difftest seed**, and the reason is
 structural rather than a preference. `difftest.php` seeds SQLite and copies the tables into
 PostgreSQL through the importer's common-column logic; `product_groups.min_stock_amount`
-exists on one side only, so it arrives at its `DEFAULT 0` for every row and every group is
-trivially not short. A seed there would pass while asserting nothing. `run-tests.sh
-groupminstock` makes its own groups and products and asserts exact shortfalls (25
-assertions), and `.devtools/frontend/group-min-stock.js` — invoked by the `frontend-security`
-job, not merely placed beside the other probes — enters a fractional minimum through the
-form, reopens it, and clicks a short group to check the row it filters to is there. That
-browser check was confirmed to fail when the controller widening is removed.
+exists on one side only, so it arrives at its `DEFAULT 0` for every row, and every group
+registers as not short no matter what it actually holds. A seed there would pass while
+asserting nothing.
+
+`run-tests.sh groupminstock` makes its own groups and products and asserts exact shortfalls
+(25 assertions). `.devtools/frontend/group-min-stock.js` — invoked by the
+`frontend-security` job, not merely placed beside the other probes — enters a fractional
+minimum through the form, reopens it, and clicks a short group to check the row it filters
+to is there. That browser check was confirmed to fail when the controller widening is
+removed.
