@@ -204,6 +204,40 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		return [$process, $pipes];
 	}
 
+	/**
+	 * Starts compact-stock-subprocess-helper.php, which calls
+	 * StockService::CompactStockEntries($productId) directly with no ambient lock or
+	 * transaction already open - the one call shape none of StockService's own HTTP-driven
+	 * callers produce (see that helper's own comment). Not started via startSubprocess():
+	 * there is no request spec, no API key, and the result carries no response body.
+	 *
+	 * @return array{0: resource, 1: array}
+	 */
+	private static function startCompactSubprocess(int $productId): array
+	{
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env = array_merge($inherited, [
+			'RBAC_TEST_SCHEMA' => self::Schema(),
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+		]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/compact-stock-subprocess-helper.php', (string)$productId],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+
+		return [$process, $pipes];
+	}
+
 	/** @return array{status: int, body: string} */
 	private static function finishSubprocess(array $processAndPipes): array
 	{
@@ -647,11 +681,18 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 * A booking that committed while compaction waited would be silently overwritten -
 	 * stock.amount set back to a total that no longer includes what the booking consumed.
 	 *
+	 * Driven through compact-stock-subprocess-helper.php rather than an HTTP endpoint:
+	 * every one of StockService's own callers (AddProduct, EditStockEntry, WeighLocation)
+	 * already locks the product before calling CompactStockEntries(), so the stale read
+	 * this fix closes cannot go stale when reached through any of them - the ambient lock
+	 * already protects it, which is also why this scenario cannot be demonstrated failing
+	 * through EditStockEntry or any other existing endpoint (verified: driving it that way
+	 * passes identically with the fix reverted). CompactStockEntries() is public with a
+	 * $productId = null sweep-every-product form, so it is called directly here exactly as
+	 * a maintenance sweep or any future caller without its own lock would.
+	 *
 	 * Two identical-attribute stock rows are inserted directly (bypassing AddProduct's own
-	 * auto-compaction, so they sit uncompacted exactly as a real split would) and
-	 * EditStockEntry() - the same real HTTP path a purchase or edit already drives - is
-	 * used to trigger a real CompactStockEntries() call under the lock: it always compacts
-	 * after applying its own edit.
+	 * auto-compaction, so they sit uncompacted exactly as a real split would).
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testCompactStockEntriesReflectsAConcurrentConsumeRatherThanAStaleTotal(): void
@@ -665,31 +706,21 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		// state, location, shopping location, note) so the two rows are one compactable
 		// group, differing only in amount and stock_id.
 		$insertStock = self::$db->prepare(
-			'INSERT INTO stock (product_id, amount, stock_id, best_before_date, purchased_date, location_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id'
+			'INSERT INTO stock (product_id, amount, stock_id, best_before_date, purchased_date, location_id) VALUES (?, ?, ?, ?, ?, ?)'
 		);
 		$insertStock->execute([$productId, 3, $stockIdA, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
-		$entryAId = (int)$insertStock->fetchColumn();
 		$insertStock->execute([$productId, 5, $stockIdB, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
 
 		$connB = self::secondConnection();
 		$connB->beginTransaction();
 		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
 
-		// A no-op edit of entry A (same amount, same everything) - its only purpose is to
-		// drive a real CompactStockEntries($productId) call, which EditStockEntry() always
-		// makes after applying its own write, under the same lock this test contends on.
-		$subprocess = self::startSubprocess('PUT', '/api/stock/entry/' . $entryAId, [
-			'amount' => 3,
-			'open' => false,
-			'purchased_date' => self::PAST_DATE,
-			'best_before_date' => self::FAR_FUTURE_DATE,
-			'location_id' => self::$locationId,
-		]);
+		$subprocess = self::startCompactSubprocess($productId);
 
 		self::waitForAdvisoryWaiter();
 
-		// Connection B's competing booking: consumes 2 of entry B's 5 units while the edit
-		// (and the compaction it will trigger) is queued behind B's lock.
+		// Connection B's competing booking: consumes 2 of entry B's 5 units while
+		// compaction is queued behind B's lock.
 		$connB->prepare('UPDATE stock SET amount = amount - 2 WHERE stock_id = ?')->execute([$stockIdB]);
 		$connB->prepare(
 			"INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, used_date, stock_id, transaction_type, price, user_id) VALUES (?, -2, ?, ?, current_date, ?, 'consume', 0, 9600)"
@@ -698,7 +729,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$result = self::finishSubprocess($subprocess);
 
-		self::assertSame(200, $result['status'], 'The edit (and the compaction it triggers) succeeds: ' . $result['body']);
+		self::assertSame(200, $result['status'], 'Compaction succeeds: ' . ($result['error_message'] ?? $result['body'] ?? ''));
 		self::assertSame(6.0, self::stockAmount($productId), 'Compaction summed the entries as they stood after B\'s consume (3 + 3), not the stale pre-lock total (3 + 5 = 8)');
 
 		$rowCount = (int)self::$db->query('SELECT COUNT(*) FROM stock WHERE product_id = ' . $productId)->fetchColumn();
