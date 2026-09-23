@@ -401,8 +401,8 @@ function RunScenario(array $steps, string $resultFile): void
 
 				case 'breakledgerwrite':
 					$pdo->exec('CREATE FUNCTION mqtt_ledger_write_blocked() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION \'ledger write blocked\'; END $$');
-					$pdo->exec('CREATE TRIGGER mqtt_published_entities_write_blocked BEFORE INSERT OR UPDATE ON mqtt_published_entities FOR EACH ROW EXECUTE FUNCTION mqtt_ledger_write_blocked()');
 					$ledgerWriteBroken = true;
+					$pdo->exec('CREATE TRIGGER mqtt_published_entities_write_blocked BEFORE INSERT OR UPDATE ON mqtt_published_entities FOR EACH ROW EXECUTE FUNCTION mqtt_ledger_write_blocked()');
 					$value = true;
 					break;
 
@@ -493,6 +493,7 @@ function RunScenario(array $steps, string $resultFile): void
 		if ($ledgerWriteBroken)
 		{
 			$pdo->exec('DROP TRIGGER IF EXISTS mqtt_published_entities_write_blocked ON mqtt_published_entities');
+			$pdo->exec('DROP FUNCTION IF EXISTS mqtt_ledger_write_blocked()');
 		}
 	}
 
