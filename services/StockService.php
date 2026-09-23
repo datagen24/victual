@@ -2599,7 +2599,22 @@ class StockService extends BaseService
 				$totalAmount = array_sum(array_map(fn($stockRow) => $stockRow->amount, $stockRows));
 				$newAmount = $totalAmount - $logRow->amount;
 
-				if ($newAmount == 0)
+				// stock.amount is a float column and CompactStockEntries() sums it in SQL, so an
+				// exact `== 0` comparison here would miss by a rounding hair (e.g. purchases of
+				// 0.1 and 0.2 merge to 0.30000000000000004) and leave a phantom near-zero row
+				// behind. round() to two places is this file's existing convention for comparing
+				// a float amount against a target (e.g. :590, :769, :893, :1851).
+				$roundedNewAmount = round($newAmount, 2);
+
+				if ($roundedNewAmount < 0)
+				{
+					// This booking's own amount is larger than what the matched row(s) currently
+					// hold - something else has already reduced the entry below this purchase's
+					// contribution - so there is nothing to correctly subtract it from.
+					throw new \Exception('Booking cannot be undone: its stock entry holds less than this booking added');
+				}
+
+				if ($roundedNewAmount == 0)
 				{
 					foreach ($stockRows as $stockRow)
 					{

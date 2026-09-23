@@ -2242,6 +2242,147 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(0.0, self::stockAmount(self::$ids['undo_uncompacted']), 'and no stock remains');
 	}
 
+	/**
+	 * stock.amount is DOUBLE PRECISION (db/pgsql/baseline/01_tables.sql:319) and
+	 * CompactStockEntries() sums it with SQL SUM(), which can leave a compacted row a
+	 * few ULPs off an exact decimal (e.g. summing 0.1 and 0.2 as doubles gives
+	 * 0.30000000000000004, not 0.3). An exact `$newAmount == 0` comparison would miss that
+	 * by a hair and leave a phantom near-zero row behind forever. Ordinary decimal purchase
+	 * amounts do not reliably reproduce that residue here, because every write of a PHP
+	 * float into this column already passes through PHP's own float-to-string conversion
+	 * (default 14 significant digits) on its way into a parameterized query, which happens
+	 * to launder plain sums like 0.1 + 0.2 back to a clean decimal before this branch ever
+	 * sees them. So this test injects the kind of residue an unluckier SUM() (or a future
+	 * write path that does not launder) can leave, via a raw UPDATE using a literal SQL
+	 * float rather than a bound parameter - the same reason the negative-remainder test
+	 * below reaches its case with a raw UPDATE. The residue (1e-10) is far larger than a
+	 * double's own arithmetic error (~1e-16) so it is not itself an artifact of this test,
+	 * and far smaller than the two-decimal-place rounding this fix applies.
+	 *
+	 * The fix rounds to two places before comparing, matching this file's existing
+	 * convention (StockService.php:590 etc).
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoingBothCompactedPurchasesLeavesNoPhantomRowFromFloatResidue(): void
+	{
+		self::$ids['undo_compacted_residue'] = self::insertProduct('Coverage Undo Compacted Float Residue');
+
+		$firstPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
+			200,
+			'Two units are purchased'
+		);
+		$secondPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
+			200,
+			'Three more, matching every grouping column, are purchased the same day'
+		);
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_residue']), 'The two purchases are compacted into one entry of five');
+
+		// Simulates a SUM()-over-doubles residue: a literal SQL float (not a bound parameter,
+		// which this codebase's write paths launder to ~14 significant digits) leaves the row
+		// 1e-10 above the exact total the two purchases (2 + 3) added.
+		self::$db->exec('UPDATE stock SET amount = 5.0000000001 WHERE product_id = ' . self::$ids['undo_compacted_residue']);
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$secondPurchase[0]['id']]),
+			204,
+			'Undoing the second (three-unit) purchase is accepted'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$firstPurchase[0]['id']]),
+			204,
+			'Undoing the first (two-unit) purchase afterwards is accepted'
+		);
+
+		$remaining = self::$db->query('SELECT id, amount FROM stock WHERE product_id = ' . self::$ids['undo_compacted_residue'])->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(0, $remaining, 'No phantom near-zero row from the float residue is left behind');
+		self::assertSame(0.0, self::stockAmount(self::$ids['undo_compacted_residue']), 'and the product has no stock on hand');
+	}
+
+	/**
+	 * Reaches UndoBooking's purchase-branch refusal for a remaining amount that would go
+	 * negative. This state is not reachable through any documented API path - the guard
+	 * above already refuses whenever a live later booking on the same stock_id could have
+	 * reduced it below this one's own contribution - so the fixture forces it directly with
+	 * a raw UPDATE, standing in for an out-of-band correction (e.g. a direct database edit,
+	 * or a future booking type this guard does not yet know about) that left the entry
+	 * holding less than what this purchase originally added.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesAPurchaseWhoseEntryHoldsLessThanItAdded(): void
+	{
+		self::$ids['undo_negative_remainder'] = self::insertProduct('Coverage Undo Negative Remainder');
+
+		$purchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_negative_remainder']]),
+			200,
+			'Two units are purchased'
+		);
+
+		// Simulates an out-of-band reduction of the entry to less than this purchase's own
+		// amount, without going through any UndoBooking-guarded path.
+		self::$db->prepare('UPDATE stock SET amount = 0.5 WHERE product_id = ?')->execute([self::$ids['undo_negative_remainder']]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
+			400,
+			'Undoing a purchase whose entry now holds less than it added is refused'
+		);
+		self::assertSame(0.5, self::stockAmount(self::$ids['undo_negative_remainder']), 'and the forced state is untouched');
+	}
+
+	/**
+	 * Reaches UndoBooking's "more than one row shares this stock_id and location" refusal.
+	 * Two compacted purchases (2 + 3, matching every grouping column) land on one row of 5.
+	 * A partial consume of 1 (row becomes 4) is then undone, which - like the CONSUME undo
+	 * branch always does - recreates the taken amount as a *new* row (1) rather than
+	 * incrementing the row that is still there, leaving two live rows (4 and 1) sharing the
+	 * purchases' stock_id and location. Undoing the second (3-unit) purchase now has no
+	 * single row it can unambiguously subtract 3 from (5 - 3 = 2, split unknowably between
+	 * the two rows), so it must refuse rather than guess.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesAPurchaseSplitAcrossMultipleRowsItCannotUnambiguouslyReverse(): void
+	{
+		self::$ids['undo_ambiguous_split'] = self::insertProduct('Coverage Undo Ambiguous Split');
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
+			200,
+			'Two units are purchased'
+		);
+		$secondPurchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
+			200,
+			'Three more, matching every grouping column, are purchased the same day'
+		);
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'The two purchases are compacted into one entry of five');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
+			200,
+			'One unit is consumed, partially reducing the compacted row'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$consume[0]['id']]),
+			204,
+			'Undoing that consume recreates the unit as a second, separate row'
+		);
+
+		$rows = self::$db->query('SELECT id, amount FROM stock WHERE product_id = ' . self::$ids['undo_ambiguous_split'] . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(2, $rows, 'Two rows now share the purchases\' stock_id and location');
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'and their amounts still total five');
+
+		$secondLogId = (int)$secondPurchase[0]['id'];
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $secondLogId]),
+			400,
+			'Undoing the second purchase, now split unknowably across two rows, is refused'
+		);
+		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'and the stock is untouched');
+	}
+
 	#[Depends('testCreatesFixtures')]
 	public function testUndoingAnUpwardInventoryCorrectionRemovesWhatItAdded(): void
 	{
