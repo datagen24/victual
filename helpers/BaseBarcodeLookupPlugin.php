@@ -79,6 +79,14 @@ abstract class BaseBarcodeLookupPlugin
 
 		// $pluginOutput contains all needed properties here
 
+		// Of the required properties, the four ids/factor below are all value-checked;
+		// name is not, so a source that found a product with no name would otherwise pass
+		// straight through to the row services/StockService.php writes.
+		if (empty($pluginOutput['name']))
+		{
+			throw new \Exception('Provided name is empty');
+		}
+
 		// Check if referenced entity ids are valid
 		$locationId = $pluginOutput['location_id'];
 		if (FindObjectInArrayByPropertyValue($this->Locations, 'id', $locationId) === null)
@@ -98,10 +106,13 @@ abstract class BaseBarcodeLookupPlugin
 			throw new \Exception("Provided qu_id_stock ($quIdStock) is not a valid quantity unit id");
 		}
 
+		// A divisor in every conversion StockService::ExternalBarcodeLookup() makes with
+		// it, so zero, blank, non-numeric and negative are all refused - not just the
+		// first two, which is what empty() alone catches.
 		$quFactor = $pluginOutput['__qu_factor_purchase_to_stock'];
-		if (empty($quFactor) || !is_numeric($quFactor))
+		if (!is_numeric($quFactor) || (float)$quFactor <= 0)
 		{
-			throw new \Exception('Provided __qu_factor_purchase_to_stock is empty or not a number');
+			throw new \Exception('Provided __qu_factor_purchase_to_stock must be a number greater than zero');
 		}
 
 		return $pluginOutput;

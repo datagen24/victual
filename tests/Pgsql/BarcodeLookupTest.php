@@ -213,19 +213,26 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Present-but-null satisfies the requirement, because the check is for the key rather
-	 * than for a value. Pinned because a product named null is what the caller would then
-	 * write - see services/StockService.php:1047.
+	 * A name that is present but null or empty is refused rather than stored - see
+	 * StockService::ExternalBarcodeLookup(), which would otherwise write the row as sent.
 	 */
-	public function testLookupAcceptsARequiredPropertyThatIsPresentButNull(): void
+	#[DataProvider('emptyNameProvider')]
+	public function testLookupRefusesANameThatIsPresentButEmpty($name): void
 	{
-		// DEFECT: helpers/BaseBarcodeLookupPlugin.php:74 uses array_key_exists, so a source
-		// that found a product with no name passes validation and the caller stores a row
-		// with a null name. The four id/factor properties are value-checked below; name is
-		// the one required property with no value check at all.
-		$result = self::plugin(self::validOutput(['name' => null]))->Lookup(self::BARCODE);
+		$this->assertLookupRefuses(
+			self::validOutput(['name' => $name]),
+			'Provided name is empty',
+			'a name property that array_key_exists() sees but has no value is not a name'
+		);
+	}
 
-		self::assertNull($result['name'], 'current behaviour: a null name is accepted by the validation gate');
+	/** @return array<string, array{0: mixed}> */
+	public static function emptyNameProvider(): array
+	{
+		return [
+			'null' => [null],
+			'empty string' => ['']
+		];
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -288,16 +295,16 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Boundary: the purchase-to-stock factor is a divisor in every conversion the caller
-	 * makes with it (services/StockService.php:1057), so zero, blank and non-numeric are
-	 * all refused.
+	 * Boundary: the purchase-to-stock factor is a divisor in every conversion
+	 * StockService::ExternalBarcodeLookup() makes with it, so zero, blank and non-numeric
+	 * are all refused.
 	 */
 	#[DataProvider('unusableFactorProvider')]
 	public function testLookupRefusesAnUnusableConversionFactor($factor): void
 	{
 		$this->assertLookupRefuses(
 			self::validOutput(['__qu_factor_purchase_to_stock' => $factor]),
-			'Provided __qu_factor_purchase_to_stock is empty or not a number',
+			'Provided __qu_factor_purchase_to_stock must be a number greater than zero',
 			'a factor that is empty or not a number cannot convert anything'
 		);
 	}
@@ -314,18 +321,16 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * A negative factor is numeric and not empty, so it passes. Pinned rather than
-	 * asserted as correct.
+	 * A negative factor is numeric and not empty, but has no meaning as a conversion and
+	 * is refused, same as zero.
 	 */
-	public function testLookupAcceptsANegativeConversionFactor(): void
+	public function testLookupRefusesANegativeConversionFactor(): void
 	{
-		// DEFECT: helpers/BaseBarcodeLookupPlugin.php:102 tests only empty() and
-		// is_numeric(), so -6 is accepted and reaches quantity_unit_conversions.factor
-		// (services/StockService.php:1061). A negative conversion factor has no meaning;
-		// the check should be > 0.
-		$result = self::plugin(self::validOutput(['__qu_factor_purchase_to_stock' => -6]))->Lookup(self::BARCODE);
-
-		self::assertSame(-6, $result['__qu_factor_purchase_to_stock'], 'current behaviour: a negative factor is accepted');
+		$this->assertLookupRefuses(
+			self::validOutput(['__qu_factor_purchase_to_stock' => -6]),
+			'Provided __qu_factor_purchase_to_stock must be a number greater than zero',
+			'a negative factor would reach quantity_unit_conversions.factor with no meaning'
+		);
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -773,37 +778,39 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Boundary: a 404 whose body is not JSON at all - which is what a CDN error page is.
-	 * It is still a miss, but only by accident.
+	 * A server error is a miss even when its body is shaped like a hit: the client is
+	 * built with http_errors off, so nothing but the status check stands between a 5xx
+	 * body and a written product.
 	 */
-	public function testOpenFoodFactsTreatsAnUnparseableBodyAsAMiss(): void
+	public function testOpenFoodFactsTreatsAServerErrorAsAMissWhateverItsBody(): void
 	{
-		// DEFECT: plugins/OpenFoodFactsBarcodeLookupPlugin.php:43 reads $data->status
-		// without checking that json_decode() produced an object, so an HTML error page
-		// reaches the null branch through two PHP diagnostics rather than a decision. Under
-		// a production error handler that converts notices to exceptions the lookup would
-		// raise instead of missing. Expected: check the decode, then decide.
-		$result = self::openFoodFacts(['status' => 502, 'body' => '<html><body>Bad Gateway</body></html>']);
+		$result = self::openFoodFacts(['status' => 500, 'body' => self::foundPayload()]);
 
-		self::assertSame('miss', $result['outcome'], 'current behaviour: an unparseable body ends as a miss');
-		self::assertNotSame([], $result['diagnostics'], 'current behaviour: it gets there by reading a property on null');
+		self::assertSame('miss', $result['outcome'], 'a 500 is a miss. ' . json_encode($result['diagnostics']));
+		self::assertSame([], $result['diagnostics']);
+	}
+
+	/**
+	 * Boundary: a 200 whose body is not JSON at all - which is what a CDN or captive
+	 * portal page is. It is a miss by a deliberate check, not by accident.
+	 */
+	public function testOpenFoodFactsTreatsAnUnparseableBodyAsAMissWithoutDiagnostics(): void
+	{
+		$result = self::openFoodFacts(['status' => 200, 'body' => '<html><body>Bad Gateway</body></html>']);
+
+		self::assertSame('miss', $result['outcome'], 'an unparseable body is a miss. ' . json_encode($result['diagnostics']));
+		self::assertSame([], $result['diagnostics'], 'json_decode() producing a non-object is checked before anything reads a property off it');
 	}
 
 	/**
 	 * A payload that claims a hit but carries none of the fields the plugin maps.
 	 */
-	public function testOpenFoodFactsBuildsANamelessProductWhenThePayloadOmitsTheMappedFields(): void
+	public function testOpenFoodFactsTreatsAPayloadWithNoProductObjectAsAMiss(): void
 	{
-		// DEFECT: plugins/OpenFoodFactsBarcodeLookupPlugin.php:71 reads
-		// $data->product->product_name unguarded, so status 1 with no product object
-		// produces a product whose name is null. The base class accepts it (see
-		// testLookupAcceptsARequiredPropertyThatIsPresentButNull) and the caller stores it.
-		// Expected: a payload missing product_name is a miss.
 		$result = self::openFoodFacts(['body' => json_encode(['code' => self::BARCODE, 'status' => 1])]);
 
-		self::assertSame('hit', $result['outcome'], 'current behaviour: still reported as a hit. ' . json_encode($result['diagnostics']));
-		self::assertNull($result['product']['name'], 'current behaviour: with a null name');
-		self::assertNotSame([], $result['diagnostics'], 'reached through PHP diagnostics rather than a check');
+		self::assertSame('miss', $result['outcome'], 'status 1 with no product object to map is a miss. ' . json_encode($result['diagnostics']));
+		self::assertSame([], $result['diagnostics'], 'the missing product object is checked before anything reads a property off it');
 	}
 
 	/**
@@ -878,22 +885,14 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Boundary: an empty barcode. The plugin still makes the call, against a URL with no
-	 * code in it at all.
+	 * Boundary: an empty barcode. There is nothing to ask about, so the plugin makes no
+	 * call rather than spending a round trip on a URL with no code in it.
 	 */
-	public function testOpenFoodFactsStillCallsOutForAnEmptyBarcode(): void
+	public function testOpenFoodFactsMakesNoRequestForAnEmptyBarcode(): void
 	{
-		// DEFECT: plugins/OpenFoodFactsBarcodeLookupPlugin.php:37 interpolates the stripped
-		// barcode with no emptiness check, so an empty scan becomes a request for
-		// /api/v2/product/ - a wasted round trip on every empty read from a scanner.
-		// Expected: an empty barcode is a miss without a request.
 		$result = self::openFoodFacts(['barcode' => '', 'body' => json_encode(['status' => 0])]);
 
-		self::assertSame(
-			'GET https://world.openfoodfacts.org/api/v2/product/?fields=product_name,image_url,product_name_en',
-			$result['request_uri'],
-			'current behaviour: an empty barcode is still sent'
-		);
+		self::assertNull($result['request_uri'], 'an empty barcode is a miss without a request');
 		self::assertSame('miss', $result['outcome']);
 	}
 
