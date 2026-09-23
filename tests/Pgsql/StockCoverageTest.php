@@ -2054,54 +2054,79 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:2503): the "has subsequent dependent bookings"
-	 * guard is written as
-	 * `(correlation_id IS NOT NULL OR correlation_id != :3)`, and for an uncorrelated
-	 * later booking - which is what an ordinary consume is - both sides are false or NULL,
-	 * so the guard never fires. Undoing the purchase then deletes the whole stock entry by
-	 * stock_id, taking the units the later consume did not touch with it, and leaves that
-	 * consume standing as a live booking against stock that no longer exists.
-	 *
-	 * Correct behaviour is the same refusal the correlated case gets (see the test above).
-	 * Pinned rather than skipped so the repair has a failing test to turn green; the
-	 * damage is contained in a rolled back transaction.
+	 * The "has subsequent dependent bookings" guard used to be written as
+	 * `(correlation_id IS NOT NULL OR correlation_id != :3)`, which is only ever true for
+	 * a *correlated* later booking. An ordinary consume has no correlation_id, so both
+	 * sides were false or NULL and the guard never fired for it: undoing the purchase
+	 * deleted the whole stock entry by stock_id, taking the units the later consume never
+	 * touched with it, and left that consume standing as a live booking against stock
+	 * that no longer existed (issue #240). The guard is now a plain stock_id/id/undone
+	 * check, so an uncorrelated later booking refuses the undo exactly like a correlated
+	 * one already did.
 	 */
 	#[Depends('testUndoRefusesABookingThatACorrelatedLaterBookingDependsOn')]
-	public function testUndoingAPurchaseUnderneathALaterConsumeDestroysTheRemainingStock(): void
+	public function testUndoRefusesABookingThatALaterUncorrelatedBookingDependsOn(): void
 	{
 		self::$ids['undo_gap'] = self::insertProduct('Coverage Undo Gap');
-		self::$db->beginTransaction();
 
-		try
-		{
-			$purchase = $this->expectStatus(
-				fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap']]),
-				200,
-				'Four units are purchased'
-			);
-			$consume = $this->expectStatus(
-				fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => self::$ids['undo_gap']]),
-				200,
-				'One unit is consumed'
-			);
-			self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'Three units are left');
+		$purchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap']]),
+			200,
+			'Four units are purchased'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => self::$ids['undo_gap']]),
+			200,
+			'One unit is consumed'
+		);
+		self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'Three units are left');
 
-			$this->expectStatus(
-				fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
-				204,
-				'Current behaviour: the purchase is undone although a later consume depends on it'
-			);
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
+			400,
+			'Undoing the purchase underneath a later consume of the same entry is refused'
+		);
+		self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'and the remaining stock is untouched');
+	}
 
-			self::assertSame(0.0, self::stockAmount(self::$ids['undo_gap']), 'and the three untouched units disappear with the entry');
+	/**
+	 * A booking with no later dependents of its own can still be undone even though it
+	 * sits under an earlier one: only bookings *after* the one being undone count.
+	 */
+	#[Depends('testUndoRefusesABookingThatALaterUncorrelatedBookingDependsOn')]
+	public function testUndoAllowsAConsumeWithNoLaterDependents(): void
+	{
+		self::$ids['undo_gap_consume'] = self::insertProduct('Coverage Undo Gap Consume');
 
-			$consumeStillLive = self::$db->prepare('SELECT undone FROM stock_log WHERE id = ?');
-			$consumeStillLive->execute([(int)$consume[0]['id']]);
-			self::assertSame(0, (int)$consumeStillLive->fetchColumn(), 'while the consume booking stays live against stock that is gone');
-		}
-		finally
-		{
-			self::$db->rollBack();
-		}
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 10, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap_consume']]),
+			200,
+			'Ten units are purchased'
+		);
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 3]), new Response(), ['productId' => self::$ids['undo_gap_consume']]),
+			200,
+			'Three units are consumed'
+		);
+		self::assertSame(7.0, self::stockAmount(self::$ids['undo_gap_consume']), 'Seven units are left');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$consume[0]['id']]),
+			204,
+			'Undoing the consume, which has no later dependents, is accepted'
+		);
+		self::assertSame(10.0, self::stockAmount(self::$ids['undo_gap_consume']), 'and all ten units are back');
+
+		$purchaseId = self::$db->prepare("SELECT id FROM stock_log WHERE product_id = ? AND transaction_type = 'purchase'");
+		$purchaseId->execute([self::$ids['undo_gap_consume']]);
+		$purchaseId = (int)$purchaseId->fetchColumn();
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $purchaseId]),
+			204,
+			'An already-undone dependent does not block undoing the purchase underneath it'
+		);
+		self::assertSame(0.0, self::stockAmount(self::$ids['undo_gap_consume']), 'and the purchase itself is now undone too');
 	}
 
 	#[Depends('testCreatesFixtures')]
