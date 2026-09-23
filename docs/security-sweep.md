@@ -885,12 +885,12 @@ Recorded so the findings read in proportion.
 - **The label-printer webhook is gone.** Plan [32](plans/landed/32-label-kinds.md) deleted
   `VICTUAL_LABEL_PRINTER_WEBHOOK` with its three companion settings and
   `FEATURE_FLAG_LABEL_PRINTER` (ADR-0019 item 7 step 3), and every kind that used to print
-  through it now issues a job through the label subsystem instead. `helpers/WebhookRunner.php`
-  is unused by anything in the tree as of this writing — InfluxDB event delivery
+  through it now issues a job through the label subsystem instead. `helpers/WebhookRunner.php`,
+  left with no caller by that change — InfluxDB event delivery
   (`services/Influx/InfluxEventWriter.php`) calls GuzzleHttp directly rather than through it,
-  which corrects an earlier record here that assumed otherwise. It is kept rather than deleted,
-  because removing a class nothing calls is a separate cleanup from retiring the webhook path
-  itself. **Printing** uses constants for host/port; **plugin loading** takes the class name
+  which corrects an earlier record here that assumed otherwise — was deleted as a separate
+  cleanup on 2026-09-23 (see [plan 32's Executed section](plans/landed/32-label-kinds.md#piece-e--delete-the-webhook)).
+  **Printing** uses constants for host/port; **plugin loading** takes the class name
   from config, not the request. No user-configurable outbound URL exists, so no SSRF beyond
   S14.
 - **The label subsystem adds a stored outbound destination and no outbound capability**, which is a distinction worth keeping rather than collapsing. `label_printers.connection` is an address an administrator writes and a *worker* dials; Victual never connects to a printer and never connects to a worker, because the transport is a pull API and Victual is the server (ADR-0019 decision item 2). Writing it requires `PERMISSION_ADMIN` and reading it does too. With the webhook now gone, this is the tree's only outbound surface toward a label printer.
