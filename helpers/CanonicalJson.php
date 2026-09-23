@@ -226,21 +226,35 @@ class CanonicalJson
 	}
 
 	/**
-	 * A PHP integer, refused when it does not survive the round trip through a double.
+	 * Whether a PHP integer survives the round trip through a double.
 	 *
 	 * RFC 8785's number model is IEEE-754 binary64, so an integer it cannot represent has no
-	 * canonical form and is an error rather than something to round. The test is exact
-	 * representability rather than the safe-integer range, because 2^53 is representable and
-	 * 2^53+1 is not - a range check would reject the first or accept the second.
+	 * canonical form. The test is exact representability rather than the safe-integer range,
+	 * because 2^53 is representable and 2^53+1 is not - a range check would reject the first
+	 * or accept the second.
 	 *
 	 * It is spelled as a decimal comparison rather than as `(int)(float)$value !== $value`
 	 * because that cast is undefined above PHP_INT_MAX: converting PHP_INT_MAX to a double
 	 * gives 2^63, and converting *that* back is a warning and an implementation-defined
 	 * result rather than the mismatch the check wants to observe.
+	 *
+	 * The single accepted-set definition: anything that digests a value through this class
+	 * refuses exactly what this predicate refuses, and nothing that registers upstream of a
+	 * digest (`DriverRegistryService::ValidateDefinition()`) may accept an integer this
+	 * predicate would later refuse. Written once and called from both places rather than
+	 * sampled against a second copy.
+	 */
+	public static function IsRepresentableInteger(int $value): bool
+	{
+		return sprintf('%.0F', (float)$value) === (string)$value;
+	}
+
+	/**
+	 * A PHP integer, refused when it does not survive the round trip through a double.
 	 */
 	private static function EncodeInteger(int $value): string
 	{
-		if (sprintf('%.0F', (float)$value) !== (string)$value)
+		if (!self::IsRepresentableInteger($value))
 		{
 			throw new ECanonicalizationFailed('Integer ' . $value . ' is not exactly representable as a double');
 		}

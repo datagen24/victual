@@ -142,6 +142,17 @@ class LabelsApiController extends BaseApiController
 				$status = in_array($error->errorCode, ['idempotency_conflict', 'idempotency_in_progress', 'already_claimed'], true) ? 409 : 422;
 				return $this->ApiResponse($response->withStatus($status), ['field' => $error->field, 'code' => $error->errorCode, 'error_message' => $error->getMessage()]);
 			}
+			catch (\Victual\Helpers\ECanonicalizationFailed $error)
+			{
+				// Same named refusal LabelTemplatesApiController::Dispatch() answers for the
+				// identical derivation failure (MediaProfileService::Ensure() digesting a
+				// combination's geometry) - one failure, one shape, regardless of which route
+				// reaches it. Left uncaught here, this fell through to HandleApiCall()'s
+				// generic \Exception clause and answered a bare 400 with no field or code,
+				// which is a different, undocumented shape from the one victual.openapi.json
+				// already declares for this route (422 only; see issue #462).
+				return $this->ApiResponse($response->withStatus(422), ['field' => 'document', 'code' => 'not_canonicalizable', 'error_message' => $error->getMessage()]);
+			}
 		});
 	}
 

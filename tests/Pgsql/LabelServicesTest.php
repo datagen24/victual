@@ -2324,6 +2324,79 @@ class LabelServicesTest extends PgsqlSchemaTestCase
 			'None of those registrations wrote a driver');
 	}
 
+	/**
+	 * Issue #462: a geometry integer canonical JSON will later refuse (anything not exactly
+	 * representable as an IEEE-754 double, `CanonicalJson::EncodeInteger()`) is refused at
+	 * registration instead of registering and only failing when `MediaProfileService::Ensure()`
+	 * digests the derived profile - a different, later failure reaching a different person
+	 * than the one who registered the driver.
+	 *
+	 * 9007199254740993 is 2^53 + 1, the first integer a double cannot represent exactly
+	 * (2^53 itself still round-trips). Every geometry integer the digested profile document
+	 * carries is checked: `resolution_x`, `resolution_y`, `printable_width_um`, and
+	 * `printable_length_um` in both its shapes - a fixed scalar and a `min`/`max` pair.
+	 */
+	public function testUnrepresentableGeometryIsRefusedAndWritesNothing(): void
+	{
+		$worker = self::secondWorker();
+		$before = (int)self::$db->query('SELECT COUNT(*) FROM label_drivers')->fetchColumn();
+		$unrepresentable = 9007199254740993; // 2^53 + 1
+
+		foreach (['resolution_x', 'resolution_y', 'printable_width_um'] as $field) {
+			self::assertRefused(static fn () => self::tx(static fn () => self::drivers()->Register($worker, [
+				self::driverWith(static function (array &$d) use ($field, $unrepresentable): void {
+					$d['driver_id'] = 'fixture.unrepresentable.' . $field;
+					$d['capability_document']['combinations'][0][$field] = $unrepresentable;
+				}),
+			])), $field, 'invalid_definition', "A $field beyond canonical JSON's representable range");
+		}
+
+		self::assertRefused(static fn () => self::tx(static fn () => self::drivers()->Register($worker, [
+			self::driverWith(static function (array &$d) use ($unrepresentable): void {
+				$d['driver_id'] = 'fixture.unrepresentable.fixed-length';
+				$d['capability_document']['combinations'][0]['printable_length_um'] = $unrepresentable;
+			}),
+		])), 'printable_length_um', 'invalid_definition', 'A fixed media length beyond representability');
+
+		self::assertRefused(static fn () => self::tx(static fn () => self::drivers()->Register($worker, [
+			self::driverWith(static function (array &$d) use ($unrepresentable): void {
+				$d['driver_id'] = 'fixture.unrepresentable.length-max';
+				$d['capability_document']['combinations'][0]['printable_length_um'] = ['min' => 1000, 'max' => $unrepresentable];
+			}),
+		])), 'printable_length_um', 'invalid_definition', 'A ranged media length whose max is beyond representability');
+
+		self::assertRefused(static fn () => self::tx(static fn () => self::drivers()->Register($worker, [
+			self::driverWith(static function (array &$d) use ($unrepresentable): void {
+				$d['driver_id'] = 'fixture.unrepresentable.length-min';
+				$d['capability_document']['combinations'][0]['printable_length_um'] = ['min' => $unrepresentable, 'max' => $unrepresentable + 1];
+			}),
+		])), 'printable_length_um', 'invalid_definition', 'A ranged media length whose min is beyond representability');
+
+		self::assertSame($before, (int)self::$db->query('SELECT COUNT(*) FROM label_drivers')->fetchColumn(),
+			'None of the unrepresentable-geometry refusals wrote a driver');
+	}
+
+	/** The boundary: 2^53 itself is exactly representable as a double, so it still registers. */
+	public function testLargestRepresentableGeometryStillRegisters(): void
+	{
+		$worker = self::secondWorker();
+		$largest = 9007199254740992; // 2^53
+
+		self::tx(static fn () => self::drivers()->Register($worker, [
+			self::driverWith(static function (array &$d) use ($largest): void {
+				$d['driver_id'] = 'fixture.boundary-geometry';
+				$d['capability_document']['combinations'][0]['resolution_x'] = $largest;
+				$d['capability_document']['combinations'][0]['resolution_y'] = $largest;
+				$d['capability_document']['combinations'][0]['printable_width_um'] = $largest;
+				$d['capability_document']['combinations'][0]['printable_length_um'] = ['min' => 1000, 'max' => $largest];
+			}),
+		]));
+
+		self::assertSame(1, (int)self::$db->query(
+			"SELECT COUNT(*) FROM label_drivers WHERE driver_id = 'fixture.boundary-geometry'"
+		)->fetchColumn(), 'A geometry integer at the representable boundary registers');
+	}
+
 	// --- The shared service contract -------------------------------------------------------
 
 	/**

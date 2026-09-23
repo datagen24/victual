@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Labels;
 
+use Victual\Helpers\CanonicalJson;
+
 class DriverRegistryService extends LabelService
 {
     public const AXES = ['model','media','resolution_x','resolution_y','color_mode'];
@@ -95,10 +97,21 @@ class DriverRegistryService extends LabelService
                 if (!is_int($entry[$key]) || $entry[$key] < 1) {
                     $this->Refuse($key, 'invalid_definition', 'Geometry must be positive');
                 }
+                if (!CanonicalJson::IsRepresentableInteger($entry[$key])) {
+                    $this->Refuse($key, 'invalid_definition', 'Geometry must be exactly representable as a double');
+                }
             }
             $length = $entry['printable_length_um'];
             if (!(is_int($length) && $length > 0) && !(is_array($length) && is_int($length['min'] ?? null) && is_int($length['max'] ?? null) && $length['min'] > 0 && $length['max'] >= $length['min'])) {
                 $this->Refuse('printable_length_um', 'invalid_definition', 'Invalid media length');
+            }
+            // The digested profile carries either a single fixed length or a min/max pair
+            // (MediaProfileService::Document()) - both branches, not just the scalar one,
+            // must satisfy the same representability test the digest itself later applies.
+            foreach (is_array($length) ? [$length['min'], $length['max']] : [$length] as $lengthValue) {
+                if (!CanonicalJson::IsRepresentableInteger($lengthValue)) {
+                    $this->Refuse('printable_length_um', 'invalid_definition', 'Geometry must be exactly representable as a double');
+                }
             }
             $this->Provenance($entry);
         }

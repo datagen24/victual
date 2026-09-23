@@ -1987,28 +1987,46 @@ class LabelApiTest extends PgsqlSchemaTestCase
 
 	/**
 	 * A capability document holding a number the digest rule cannot encode is refused with a
-	 * code naming the document, rather than becoming a 500 at the moment somebody previews.
+	 * code naming the document, rather than becoming a 500 at the moment somebody previews -
+	 * and, per issue #462, the print route now answers the exact same named refusal rather
+	 * than the generic 400 it fell through to before.
 	 *
 	 * RFC 8785 refuses an integer by exact representability rather than by range: 2^53 is
-	 * representable and 2^53+1 is not. The driver registry checks that `printable_width_um`
-	 * is a positive integer and nothing more, so such a value registers and is only refused
-	 * when a media profile is derived from it - which is what this pins.
+	 * representable and 2^53+1 is not. Registration itself now refuses such a value
+	 * (`DriverRegistryService::ValidateDefinition()`, regression-tested in
+	 * `LabelServicesTest::testUnrepresentableGeometryIsRefusedAndWritesNothing()`), so the
+	 * only way left to reach the digest-time failure this test is about is a row that
+	 * bypassed that check - matching an installation upgrading with one already on file, per
+	 * the issue's "nothing corrupted today, but nothing revalidates it either" note. This
+	 * writes the unencodable value directly to `label_drivers` rather than through
+	 * `Register()`, which is deliberate and is what proves the failure still exists and
+	 * still reaches both routes the same way.
 	 */
 	#[Depends('testWorkerRegistersItsDriverVersions')]
 	#[Depends('testSavingAndPublishingADraftProducesADefaultVersion')]
-	public function testACapabilityDocumentThatHasNoCanonicalFormIsRefusedWhenAProfileIsDerived(): void
+	public function testACapabilityDocumentThatHasNoCanonicalFormIsRefusedTheSameWayOnBothRoutes(): void
 	{
 		$driver = self::Driver();
 		$driver['driver_id'] = 'labelapi.unencodable';
-		$driver['capability_document']['combinations'][0]['printable_width_um'] = 9007199254740993;
 
 		// A registration declares the whole set a worker advertises, so the versions the rest
-		// of this suite prints on are sent again alongside the new one.
+		// of this suite prints on are sent again alongside the new one. The definition itself
+		// is valid geometry - Register() would now refuse the unencodable value outright.
 		$second = self::Driver();
 		$second['schema_version'] = '2.0';
 		$registered = self::Send('POST', '/api/labels/register', ['drivers' => [self::Driver(), $second, $driver]], self::$workerKey);
 		self::assertSame(200, $registered['status'], $registered['body']);
 		self::assertSame(3, (int)self::$db->query('SELECT count(*) FROM label_worker_capabilities WHERE worker_id = ' . self::$workerId)->fetchColumn());
+
+		// Corrupt the stored row directly, bypassing DriverRegistryService entirely - the
+		// only way left to reach MediaProfileService::Ensure()'s own derivation failure now
+		// that registration validates this.
+		$capability = json_decode((string)self::$db->query(
+			"SELECT capability_document FROM label_drivers WHERE driver_id = 'labelapi.unencodable' AND schema_version = '1.0'"
+		)->fetchColumn(), true, 512, JSON_THROW_ON_ERROR);
+		$capability['combinations'][0]['printable_width_um'] = 9007199254740993;
+		self::$db->prepare("UPDATE label_drivers SET capability_document = ?::jsonb WHERE driver_id = 'labelapi.unencodable' AND schema_version = '1.0'")
+			->execute([json_encode($capability, JSON_THROW_ON_ERROR)]);
 
 		$created = self::Send('POST', '/api/labels/printers',
 			self::PrinterBody(self::$workerId, ['name' => 'Labelapi unencodable printer', 'driver_id' => 'labelapi.unencodable']), self::$adminKey);
@@ -2022,11 +2040,23 @@ class LabelApiTest extends PgsqlSchemaTestCase
 			['kind' => 'sample', 'printer_id' => $printerId], self::$adminKey);
 		self::AssertRefusal($preview, 422, 'document', 'not_canonicalizable');
 
-		// The print route reaches the same derivation and refuses too, so the value cannot
-		// slip through on the path that would have produced a physical label.
+		// The print route reaches the exact same derivation failure and, since #462's fix,
+		// answers the exact same named refusal - not a generic 400 with no field or code.
+		// The catch for it in LabelsApiController::Operate() sits outside
+		// InRequestTransaction(), so the label LabelIdentityService::Issue() mints before
+		// ResolvePrinter() ever reaches the failing digest, the print_jobs row CreateJob()
+		// would write afterwards, and the idempotency record IdempotencyService::Record()
+		// would write on success must all roll back together - this pins that they do.
+		$before = self::Counts();
+		$idempotencyKeysBefore = (int)self::$db->query('SELECT count(*) FROM label_idempotency_keys')->fetchColumn();
+
 		$print = self::Send('POST', '/api/labels/location/' . self::$targets['location'] . '/print',
-			['import_epoch' => 0, 'printer_id' => $printerId], self::$operatorKey);
-		self::assertGreaterThanOrEqual(400, $print['status'], $print['body']);
+			['import_epoch' => 0, 'printer_id' => $printerId], self::$operatorKey, ['Idempotency-Key' => 'labelapi-unencodable-' . bin2hex(random_bytes(4))]);
+		self::AssertRefusal($print, 422, 'document', 'not_canonicalizable');
+
+		self::assertSame($before, self::Counts(), 'a refused print leaves no label, print job or outbox event behind');
+		self::assertSame($idempotencyKeysBefore, (int)self::$db->query('SELECT count(*) FROM label_idempotency_keys')->fetchColumn(),
+			'a refused print records no idempotency key either, so a retry is not treated as a replay of nothing');
 
 		self::assertSame($profiles, (int)self::$db->query('SELECT count(*) FROM label_media_profiles')->fetchColumn(),
 			'a profile that cannot be digested is not stored undigested');
