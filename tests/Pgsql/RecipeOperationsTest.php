@@ -419,7 +419,7 @@ class RecipeOperationsTest extends PgsqlSchemaTestCase
 	 * household reading its stock journal sees "1" where the recipe that produced the entry
 	 * should be. Pinned rather than corrected, since application code is out of scope here.
 	 */
-	public function testTheSelfProductionNoteIsBookedAsOneRatherThanTheRecipeName(): void
+	public function testTheSelfProductionNoteIsBookedAsTheRecipeName(): void
 	{
 		$recipeId = self::insertRecipe('Recipe Named For Its Note', [
 			'product_id' => self::$ids['loaf'],
@@ -436,9 +436,8 @@ class RecipeOperationsTest extends PgsqlSchemaTestCase
 			fn ($row) => (int)$row['product_id'] === self::$ids['loaf']
 		));
 
-		self::assertNotSame('Recipe Named For Its Note', $produced[0]['note'],
-			'DEFECT: the recipe name never reaches the note it was meant to be');
-		self::assertSame('1', $produced[0]['note'], 'What is stored instead is the argument in front of it');
+		self::assertSame('Recipe Named For Its Note', $produced[0]['note'],
+			'The recipe name is stored in the stock_log note field when self-producing a product');
 	}
 
 	/**

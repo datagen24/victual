@@ -144,7 +144,7 @@ class RecipesService extends BaseService
 		{
 			$product = $this->DB->products()->where('id = :1', $productId)->fetch();
 			$recipeResolvedRow = $this->DB->recipes_resolved()->where('recipe_id = :1', $recipeId)->fetch();
-			StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, true, $recipe->name);
+			StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
 		}
 	}
 
