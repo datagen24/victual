@@ -717,19 +717,15 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT: a code with no id parses, and GetId() answers null.
-	 *
-	 * docs/grocycode.md names three mandatory parts, and StockService::FindProductByBarcode
-	 * (services/StockService.php:1493-1500) treats Validate() as "this is a product
-	 * reference" and then looks the id up - so a scanned "grcy:p" reaches a product query
-	 * with a null id instead of being refused as a malformed barcode.
-	 *
-	 * Pinned rather than marked incomplete: the current answer is what every caller sees
-	 * today, and a test that skipped would stop saying so.
+	 * Grocycode refuses codes with no id part or an empty id part, as docs/grocycode.md
+	 * specifies three mandatory parts: grcy:type:id. A scanned "grcy:p" with no id or
+	 * "grcy:p:" with an empty id is rejected rather than reaching a product query with
+	 * a null id.
 	 */
 	public function testGrocycodeRefusesACodeWithNoId()
 	{
 		self::assertFalse(Grocycode::Validate('grcy:p'), 'a code with no id part is refused');
+		self::assertFalse(Grocycode::Validate('grcy:p:'), 'a code with an empty id part is refused');
 
 		$this->expectException(\Exception::class);
 		$this->expectExceptionMessage('Not a Grocycode');
