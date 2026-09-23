@@ -635,6 +635,247 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 * that method's own comment (DatabaseService.php:333). Called directly, no subprocess
 	 * or second connection needed: this is a precondition check, not a race.
 	 */
+	// ------------------------------------------------------------------------------
+	// 5. PR #471 follow-up (CodeRabbit review of the issue #458 fix): three more
+	// read-then-write windows the initial fix left open, each with its own two-connection
+	// or queue-then-release scenario.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * CompactStockEntries() used to read stock_splits (total_amount, stock_id_group,
+	 * id_group) before locking the product, then write that stale total under the lock.
+	 * A booking that committed while compaction waited would be silently overwritten -
+	 * stock.amount set back to a total that no longer includes what the booking consumed.
+	 *
+	 * Two identical-attribute stock rows are inserted directly (bypassing AddProduct's own
+	 * auto-compaction, so they sit uncompacted exactly as a real split would) and
+	 * EditStockEntry() - the same real HTTP path a purchase or edit already drives - is
+	 * used to trigger a real CompactStockEntries() call under the lock: it always compacts
+	 * after applying its own edit.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testCompactStockEntriesReflectsAConcurrentConsumeRatherThanAStaleTotal(): void
+	{
+		$productId = self::insertProduct('Concurrency Compact Stale Total');
+
+		$stockIdA = 'concurrency-compact-a-' . bin2hex(random_bytes(4));
+		$stockIdB = 'concurrency-compact-b-' . bin2hex(random_bytes(4));
+
+		// Identical on every stock_splits GROUP BY column (product, dates, price, open
+		// state, location, shopping location, note) so the two rows are one compactable
+		// group, differing only in amount and stock_id.
+		$insertStock = self::$db->prepare(
+			'INSERT INTO stock (product_id, amount, stock_id, best_before_date, purchased_date, location_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id'
+		);
+		$insertStock->execute([$productId, 3, $stockIdA, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
+		$entryAId = (int)$insertStock->fetchColumn();
+		$insertStock->execute([$productId, 5, $stockIdB, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+
+		// A no-op edit of entry A (same amount, same everything) - its only purpose is to
+		// drive a real CompactStockEntries($productId) call, which EditStockEntry() always
+		// makes after applying its own write, under the same lock this test contends on.
+		$subprocess = self::startSubprocess('PUT', '/api/stock/entry/' . $entryAId, [
+			'amount' => 3,
+			'open' => false,
+			'purchased_date' => self::PAST_DATE,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'location_id' => self::$locationId,
+		]);
+
+		self::waitForAdvisoryWaiter();
+
+		// Connection B's competing booking: consumes 2 of entry B's 5 units while the edit
+		// (and the compaction it will trigger) is queued behind B's lock.
+		$connB->prepare('UPDATE stock SET amount = amount - 2 WHERE stock_id = ?')->execute([$stockIdB]);
+		$connB->prepare(
+			"INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, used_date, stock_id, transaction_type, price, user_id) VALUES (?, -2, ?, ?, current_date, ?, 'consume', 0, 9600)"
+		)->execute([$productId, self::FAR_FUTURE_DATE, self::PAST_DATE, $stockIdB]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(200, $result['status'], 'The edit (and the compaction it triggers) succeeds: ' . $result['body']);
+		self::assertSame(6.0, self::stockAmount($productId), 'Compaction summed the entries as they stood after B\'s consume (3 + 3), not the stale pre-lock total (3 + 5 = 8)');
+
+		$rowCount = (int)self::$db->query('SELECT COUNT(*) FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		self::assertSame(1, $rowCount, 'The two entries compacted into one, as stock_splits still grouped them after B\'s amount-only change');
+	}
+
+	/**
+	 * ConsumeProduct() and OpenProduct() with $allowSubproductSubstitution can read and
+	 * write a sub product's own stock rows while only the parent's product id was locked,
+	 * so a direct consume of the sub product raced them. SubstitutionLockSet() now locks
+	 * the parent and every sub product together, upfront, before either reads anything.
+	 *
+	 * Connection B stands in for a direct consume of the sub product - the plain,
+	 * non-substituting booking that would normally just lock the sub product's own id.
+	 * The parent's substituting consume has to wait for that same lock as part of its
+	 * upfront ascending pair, so it sees B's committed consume rather than a stale total,
+	 * and refuses rather than reading past what B left.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testSubstitutingConsumeIsSerialisedAgainstADirectConsumeOfTheSubProduct(): void
+	{
+		$parentId = self::insertProduct('Concurrency Substitution Parent');
+		$subId = self::insertProduct('Concurrency Substitution Child');
+		self::$db->prepare('UPDATE products SET parent_product_id = ? WHERE id = ?')->execute([$parentId, $subId]);
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 2,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $subId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchasing the sub product must succeed: ' . (string)$purchaseResponse->getBody());
+
+		$subStockRow = self::$db->query('SELECT stock_id FROM stock WHERE product_id = ' . $subId)->fetch(PDO::FETCH_ASSOC);
+		self::assertIsArray($subStockRow, 'setup: the purchase created a stock row for the sub product');
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		// Locks only the sub product - exactly what a plain, non-substituting
+		// ConsumeProduct($subId) would lock on its own.
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $subId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/products/' . $parentId . '/consume', [
+			'amount' => 2,
+			'allow_subproduct_substitution' => true,
+		]);
+
+		self::waitForAdvisoryWaiter();
+
+		// Connection B's competing booking: a direct consume of one unit of the sub
+		// product, committed while the parent's substituting consume is queued behind B's
+		// lock on that same sub product.
+		$connB->prepare('UPDATE stock SET amount = amount - 1 WHERE stock_id = ?')->execute([$subStockRow['stock_id']]);
+		$connB->prepare(
+			"INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, used_date, stock_id, transaction_type, price, user_id) VALUES (?, -1, ?, ?, current_date, ?, 'consume', 0, 9600)"
+		)->execute([$subId, self::FAR_FUTURE_DATE, self::PAST_DATE, $subStockRow['stock_id']]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(400, $result['status'], 'The substituting consume is refused once, under the lock, only one unit is left to substitute: ' . $result['body']);
+		self::assertSame(1.0, self::stockAmount($subId), 'Only connection B\'s one unit was consumed - the refused substituting consume drew nothing');
+	}
+
+	/**
+	 * The other half of the substitution locking fix: OpenProduct()'s move_on_open
+	 * transfer of a sub product entry, and any other caller that also locks a parent plus
+	 * its sub products upfront (ascending), can only ever queue behind each other -  never
+	 * deadlock - because both acquire the same lock set in the same order. Connection B
+	 * holds that whole ascending pair (mimicking another substituting booking of the same
+	 * family already in flight) while the open is queued, then releases it.
+	 *
+	 * PostgreSQL reports a real deadlock as SQLSTATE 40P01; its absence from the response
+	 * (a clean 200) and the entry actually having moved is the assertion that no lock
+	 * order inversion occurred.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testOpenProductMoveOnOpenCompletesAfterQueuingBehindTheSubstitutionLockSet(): void
+	{
+		$targetLocationId = self::insertVesselLocation();
+		$parentId = self::insertProduct('Concurrency Substitution Move Parent');
+		$subId = self::insertProduct('Concurrency Substitution Move Child');
+		self::$db->prepare('UPDATE products SET parent_product_id = ? WHERE id = ?')->execute([$parentId, $subId]);
+		self::$db->prepare('UPDATE products SET move_on_open = 1, default_consume_location_id = ? WHERE id = ?')->execute([$targetLocationId, $parentId]);
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 1,
+			'location_id' => self::$locationId,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $subId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchasing the sub product must succeed: ' . (string)$purchaseResponse->getBody());
+		$subStockRow = self::$db->query('SELECT stock_id FROM stock WHERE product_id = ' . $subId)->fetch(PDO::FETCH_ASSOC);
+		self::assertIsArray($subStockRow, 'setup: the purchase created a stock row for the sub product');
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$lockSet = [$parentId, $subId];
+		sort($lockSet);
+		foreach ($lockSet as $lockedId)
+		{
+			$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $lockedId]);
+		}
+
+		$subprocess = self::startSubprocess('POST', '/api/stock/products/' . $parentId . '/open', [
+			'amount' => 1,
+			'stock_entry_id' => $subStockRow['stock_id'],
+			'allow_subproduct_substitution' => true,
+		]);
+
+		self::waitForAdvisoryWaiter();
+
+		// Nothing else to do: releasing the ascending pair is the whole point, exactly as
+		// in the recipe lock-ordering test above.
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(200, $result['status'], 'The open (and its move_on_open transfer) completes once the queued lock set is released, rather than deadlocking: ' . $result['body']);
+		self::assertStringNotContainsString('40P01', $result['body'] . $result['stderr'], 'no PostgreSQL deadlock was detected on either side');
+
+		$movedRow = self::$db->query('SELECT location_id, open FROM stock WHERE stock_id = \'' . $subStockRow['stock_id'] . '\'')->fetch(PDO::FETCH_ASSOC);
+		self::assertSame($targetLocationId, (int)$movedRow['location_id'], 'The sub product entry moved to the parent\'s default consume location');
+		self::assertSame(1, (int)$movedRow['open'], 'and was opened');
+	}
+
+	/**
+	 * ConsumeRecipe() used to compute each ingredient's capped consume amount from
+	 * recipes_pos_resolved read before the lock. A concurrent consume that shrinks an
+	 * ingredient's stock while the recipe waits on the lock left the cap based on a stock
+	 * level that no longer existed: the recipe would then ask ConsumeProduct() for more
+	 * than was actually left, and ConsumeProduct()'s own (already lock-protected) amount
+	 * check would refuse it - failing the *whole* recipe consume over one ingredient whose
+	 * shortfall the recipe's own capping was supposed to absorb.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testConsumeRecipeCapsToStockLeftAfterAConcurrentConsumeRatherThanFailing(): void
+	{
+		$ingredientId = self::insertProduct('Concurrency Recipe Cap Ingredient');
+
+		$purchaseResponse = self::$stock->AddProduct(self::request('POST', [
+			'amount' => 3,
+			'best_before_date' => self::FAR_FUTURE_DATE,
+			'purchased_date' => self::PAST_DATE,
+		]), new Response(), ['productId' => $ingredientId]);
+		self::assertSame(200, $purchaseResponse->getStatusCode(), 'setup: purchase must succeed: ' . (string)$purchaseResponse->getBody());
+		$stockRow = self::$db->query('SELECT stock_id FROM stock WHERE product_id = ' . $ingredientId)->fetch(PDO::FETCH_ASSOC);
+		self::assertIsArray($stockRow, 'setup: the purchase created a stock row');
+
+		$recipeStatement = self::$db->prepare('INSERT INTO recipes (name) VALUES (?) RETURNING id');
+		$recipeStatement->execute(['Concurrency Recipe Cap']);
+		$recipeId = (int)$recipeStatement->fetchColumn();
+		// Wants 2, but connection B below leaves only 1 in stock before the recipe's own
+		// lock-protected read runs.
+		self::$db->prepare('INSERT INTO recipes_pos (recipe_id, product_id, amount) VALUES (?, ?, 2)')->execute([$recipeId, $ingredientId]);
+
+		$connB = self::secondConnection();
+		$connB->beginTransaction();
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $ingredientId]);
+
+		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $recipeId . '/consume');
+
+		self::waitForAdvisoryWaiter();
+
+		// Connection B's competing booking: consumes 2 of the 3 units, leaving 1 - less
+		// than the recipe's uncapped want of 2 - while the recipe consume is queued.
+		$connB->prepare('UPDATE stock SET amount = amount - 2 WHERE stock_id = ?')->execute([$stockRow['stock_id']]);
+		$connB->prepare(
+			"INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, used_date, stock_id, transaction_type, price, user_id) VALUES (?, -2, ?, ?, current_date, ?, 'consume', 0, 9600)"
+		)->execute([$ingredientId, self::FAR_FUTURE_DATE, self::PAST_DATE, $stockRow['stock_id']]);
+		$connB->commit();
+
+		$result = self::finishSubprocess($subprocess);
+
+		self::assertSame(204, $result['status'], 'The recipe succeeds, capped to the one unit actually left, rather than failing over asking for the pre-lock amount of two: ' . $result['body']);
+		self::assertSame(0.0, self::stockAmount($ingredientId), 'The recipe consumed exactly the one remaining unit - not two, and not zero');
+	}
+
 	public function testLockProductStockOutsideATransactionThrowsLogicException(): void
 	{
 		self::assertFalse(self::$db->inTransaction(), 'precondition: no transaction is open on the schema connection');
