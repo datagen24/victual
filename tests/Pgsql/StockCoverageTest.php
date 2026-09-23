@@ -2054,54 +2054,79 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/StockService.php:2503): the "has subsequent dependent bookings"
-	 * guard is written as
-	 * `(correlation_id IS NOT NULL OR correlation_id != :3)`, and for an uncorrelated
-	 * later booking - which is what an ordinary consume is - both sides are false or NULL,
-	 * so the guard never fires. Undoing the purchase then deletes the whole stock entry by
-	 * stock_id, taking the units the later consume did not touch with it, and leaves that
-	 * consume standing as a live booking against stock that no longer exists.
-	 *
-	 * Correct behaviour is the same refusal the correlated case gets (see the test above).
-	 * Pinned rather than skipped so the repair has a failing test to turn green; the
-	 * damage is contained in a rolled back transaction.
+	 * The "has subsequent dependent bookings" guard used to be written as
+	 * `(correlation_id IS NOT NULL OR correlation_id != :3)`, which is only ever true for
+	 * a *correlated* later booking. An ordinary consume has no correlation_id, so both
+	 * sides were false or NULL and the guard never fired for it: undoing the purchase
+	 * deleted the whole stock entry by stock_id, taking the units the later consume never
+	 * touched with it, and left that consume standing as a live booking against stock
+	 * that no longer existed (issue #240). The guard is now a plain stock_id/id/undone
+	 * check, so an uncorrelated later booking refuses the undo exactly like a correlated
+	 * one already did.
 	 */
 	#[Depends('testUndoRefusesABookingThatACorrelatedLaterBookingDependsOn')]
-	public function testUndoingAPurchaseUnderneathALaterConsumeDestroysTheRemainingStock(): void
+	public function testUndoRefusesABookingThatALaterUncorrelatedBookingDependsOn(): void
 	{
 		self::$ids['undo_gap'] = self::insertProduct('Coverage Undo Gap');
-		self::$db->beginTransaction();
 
-		try
-		{
-			$purchase = $this->expectStatus(
-				fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap']]),
-				200,
-				'Four units are purchased'
-			);
-			$consume = $this->expectStatus(
-				fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => self::$ids['undo_gap']]),
-				200,
-				'One unit is consumed'
-			);
-			self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'Three units are left');
+		$purchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap']]),
+			200,
+			'Four units are purchased'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => self::$ids['undo_gap']]),
+			200,
+			'One unit is consumed'
+		);
+		self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'Three units are left');
 
-			$this->expectStatus(
-				fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
-				204,
-				'Current behaviour: the purchase is undone although a later consume depends on it'
-			);
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
+			400,
+			'Undoing the purchase underneath a later consume of the same entry is refused'
+		);
+		self::assertSame(3.0, self::stockAmount(self::$ids['undo_gap']), 'and the remaining stock is untouched');
+	}
 
-			self::assertSame(0.0, self::stockAmount(self::$ids['undo_gap']), 'and the three untouched units disappear with the entry');
+	/**
+	 * A booking with no later dependents of its own can still be undone even though it
+	 * sits under an earlier one: only bookings *after* the one being undone count.
+	 */
+	#[Depends('testUndoRefusesABookingThatALaterUncorrelatedBookingDependsOn')]
+	public function testUndoAllowsAConsumeWithNoLaterDependents(): void
+	{
+		self::$ids['undo_gap_consume'] = self::insertProduct('Coverage Undo Gap Consume');
 
-			$consumeStillLive = self::$db->prepare('SELECT undone FROM stock_log WHERE id = ?');
-			$consumeStillLive->execute([(int)$consume[0]['id']]);
-			self::assertSame(0, (int)$consumeStillLive->fetchColumn(), 'while the consume booking stays live against stock that is gone');
-		}
-		finally
-		{
-			self::$db->rollBack();
-		}
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 10, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_gap_consume']]),
+			200,
+			'Ten units are purchased'
+		);
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 3]), new Response(), ['productId' => self::$ids['undo_gap_consume']]),
+			200,
+			'Three units are consumed'
+		);
+		self::assertSame(7.0, self::stockAmount(self::$ids['undo_gap_consume']), 'Seven units are left');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$consume[0]['id']]),
+			204,
+			'Undoing the consume, which has no later dependents, is accepted'
+		);
+		self::assertSame(10.0, self::stockAmount(self::$ids['undo_gap_consume']), 'and all ten units are back');
+
+		$purchaseId = self::$db->prepare("SELECT id FROM stock_log WHERE product_id = ? AND transaction_type = 'purchase'");
+		$purchaseId->execute([self::$ids['undo_gap_consume']]);
+		$purchaseId = (int)$purchaseId->fetchColumn();
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $purchaseId]),
+			204,
+			'An already-undone dependent does not block undoing the purchase underneath it'
+		);
+		self::assertSame(0.0, self::stockAmount(self::$ids['undo_gap_consume']), 'and the purchase itself is now undone too');
 	}
 
 	#[Depends('testCreatesFixtures')]
@@ -2783,6 +2808,99 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$measuredOld['id']]),
 			400,
 			'Undoing a measurement of an entry that no longer exists is refused'
+		);
+	}
+
+	/**
+	 * The three scenarios above each add a later consume on the same stock entry to make it
+	 * "gone", which is exactly what UndoBooking's "no later booking depends on this" guard
+	 * now catches first (issue #240) - the branch-specific "does the row I'd restore still
+	 * exist" checks below it never run. Reaching each of those checks honestly needs the row
+	 * gone for a reason the guard cannot see: removed directly, with nothing later logged
+	 * against the entry at all.
+	 *
+	 * Not run inside a rolled-back transaction (unlike the raw-SQL row deletion further
+	 * up this file): the edit and measurement cases each undo a correlated pair whose NEW
+	 * half succeeds before the OLD half hits its missing-row check and throws, and
+	 * UndoBooking's own transaction only rolls that first write back when it is genuinely
+	 * the outermost one - an ambient transaction here would swallow that guarantee and
+	 * leave the NEW half wrongly marked undone.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesEachBranchsOwnMissingStockRowCheck(): void
+	{
+		// 1. TRANSACTION_TYPE_TRANSFER_TO (StockService.php:2560): the destination row.
+		$transferred = self::insertProduct('Coverage Transfer Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$ids['pantry'], 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $transferred]),
+			200,
+			'Two units are stocked'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$ids['pantry'], 'location_id_to' => self::$ids['freezer']]), new Response(), ['productId' => $transferred]),
+			200,
+			'Both units are moved to the freezer'
+		);
+		$transferTo = array_values(array_filter($transfer, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_TRANSFER_TO))[0];
+		self::$db->prepare('DELETE FROM stock WHERE stock_id = ? AND location_id = ?')->execute([$transferTo['stock_id'], self::$ids['freezer']]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$transferTo['id']]),
+			400,
+			'Undoing a transfer whose destination row was removed outright is refused'
+		);
+
+		// 2. TRANSACTION_TYPE_STOCK_EDIT_OLD (StockService.php:2641): the edited row.
+		$edited = self::insertProduct('Coverage Edit Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $edited]),
+			200,
+			'Two units are stocked'
+		);
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$entryId->execute([$edited]);
+		$entryId = (int)$entryId->fetchColumn();
+		$edit = $this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 2, 'open' => false, 'purchased_date' => self::CLOSED_MONTH_DATE, 'note' => 'edited']), new Response(), ['entryId' => $entryId]),
+			200,
+			'The entry is edited'
+		);
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			400,
+			'Undoing an edit whose row was removed outright is refused'
+		);
+
+		// 3. TRANSACTION_TYPE_STOCK_MEASURED_OLD (StockService.php:2684): the measured row.
+		$measured = self::insertProduct('Coverage Measured Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $measured]),
+			200,
+			'One unit is stocked'
+		);
+		$measuredEntryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$measuredEntryId->execute([$measured]);
+		$measuredEntryId = (int)$measuredEntryId->fetchColumn();
+		$this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $measured]),
+			200,
+			'It is opened'
+		);
+		$measurement = $this->expectStatus(
+			fn() => self::$stock->MeasureStockEntry(self::request('POST', ['amount' => 0.4, 'qu_id' => 2]), new Response(), ['entryId' => $measuredEntryId]),
+			200,
+			'and measured in its own stock unit'
+		);
+		$measuredOld = array_values(array_filter($measurement, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_MEASURED_OLD))[0];
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$measuredEntryId]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$measuredOld['id']]),
+			400,
+			'Undoing a measurement whose row was removed outright is refused'
 		);
 	}
 

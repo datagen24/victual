@@ -2499,8 +2499,11 @@ class StockService extends BaseService
 		}
 
 		// A booking can only be undone when it is the newest (not yet undone) one of its stock entry -
-		// otherwise later bookings would reference stock state this undo would remove
-		$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id != :2 AND (correlation_id IS NOT NULL OR correlation_id != :3) AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id, $logRow->correlation_id)->count() > 0;
+		// otherwise later bookings would reference stock state this undo would remove. This is a plain
+		// stock_id/id/undone check: a booking's own correlated half never reaches here as a "subsequent"
+		// booking, because the group-undo branch above already marks it undone (in id-descending order)
+		// before this member's own check runs.
+		$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id)->count() > 0;
 		if ($hasSubsequentBookings)
 		{
 			throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
