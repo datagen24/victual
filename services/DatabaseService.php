@@ -652,17 +652,7 @@ class DatabaseService
 				return;
 			}
 
-			try
-			{
-				MqttStatePublicationService::PublishForRequestEnd();
-			}
-			catch (\Throwable $ex)
-			{
-				// Defence in depth: the service documents that nothing throws, but log any
-				// failure that escapes its own handling so it is visible.
-				error_log('Victual: MQTT state publication failed at request end: ' . $ex->getMessage());
-			}
-
+			MqttStatePublicationService::PublishForRequestEnd();
 			BookingEventPublisher::WriteForRequestEnd();
 		});
 	}
