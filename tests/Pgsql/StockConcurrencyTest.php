@@ -53,8 +53,11 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		self::$stock = new StockApiController(self::$container);
 		self::$recipes = new RecipesApiController(self::$container);
 
-		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9600, 'stockconcurrency-caller', 'fixture')");
-		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'STOCK_PURCHASE', 'STOCK_CONSUME', 'STOCK_EDIT')");
+		// VICTUAL_USER_ID (the identity direct controller calls act as, per
+		// PgsqlSchemaTestCase::Boot()) defaults to 9000, so that is the id granted here -
+		// matching StockCoverageTest's own fixture user.
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'stockconcurrency-caller', 'fixture')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'STOCK_PURCHASE', 'STOCK_CONSUME', 'STOCK_EDIT')");
 
 		$statement = self::$db->prepare('INSERT INTO locations (name) VALUES (?) RETURNING id');
 		$statement->execute(['Concurrency Pantry']);
