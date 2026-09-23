@@ -38,6 +38,50 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
+	 * Validates a body field is an integer (or integer-valued numeric string) before it
+	 * reaches a service method's int parameter: passing unchecked values like large
+	 * integer strings or floats would raise a TypeError there, and HandleApiCall()
+	 * deliberately leaves \Error uncaught, which would be a 500.
+	 *
+	 * Refuses booleans, arrays and null first, because filter_var() reads true as 1.
+	 * Then uses FILTER_VALIDATE_INT to reject floats with a fraction, scientific
+	 * notation ("1e5"), leading zeros ("05"), and integers outside PHP_INT_MIN..PHP_INT_MAX.
+	 * Strings with leading or trailing whitespace are refused separately, because
+	 * filter_var() would trim them and accept "5\n". Accepts integers (123, -1), JSON
+	 * numbers with no fractional part (2.0), and plain integer strings ("123", "-1",
+	 * and "+5", which filter_var() reads as 5).
+	 *
+	 * @return int The validated integer from $requestBody[$field]
+	 * @throws \Exception When $requestBody[$field] is not a valid integer value
+	 */
+	private function RequireIntegerId(array $requestBody, string $field): int
+	{
+		$value = $requestBody[$field];
+
+		// Reject booleans, arrays, and null before filter_var
+		if (is_bool($value) || is_array($value) || $value === null)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be an integer');
+		}
+
+		// For strings, reject if trimming changes the value (detects leading/trailing whitespace)
+		if (is_string($value) && trim($value) !== $value)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be an integer');
+		}
+
+		// filter_var() validates and converts in one step; it rejects floats, scientific
+		// notation, leading zeros and out-of-range values
+		$validated = filter_var($value, FILTER_VALIDATE_INT);
+		if ($validated === false)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be an integer');
+		}
+
+		return $validated;
+	}
+
+	/**
 	 * POST /api/stock/shoppinglist/add-missing-products - adds all products below their
 	 * minimum stock amount to the shopping list given by the numeric body field list_id
 	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
@@ -1006,10 +1050,14 @@ class StockApiController extends BaseApiController
 				throw new \Exception('A transfer from location is required');
 			}
 
+			$locationIdFrom = $this->RequireIntegerId($requestBody, 'location_id_from');
+
 			if (!array_key_exists('location_id_to', $requestBody))
 			{
 				throw new \Exception('A transfer to location is required');
 			}
+
+			$locationIdTo = $this->RequireIntegerId($requestBody, 'location_id_to');
 
 			$specificStockEntryId = 'default';
 
@@ -1018,7 +1066,7 @@ class StockApiController extends BaseApiController
 				$specificStockEntryId = $requestBody['stock_entry_id'];
 			}
 
-			$transactionId = StockService::GetInstance()->TransferProduct($args['productId'], $requestBody['amount'], $requestBody['location_id_from'], $requestBody['location_id_to'], $specificStockEntryId);
+			$transactionId = StockService::GetInstance()->TransferProduct($args['productId'], $requestBody['amount'], $locationIdFrom, $locationIdTo, $specificStockEntryId);
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
 		});
