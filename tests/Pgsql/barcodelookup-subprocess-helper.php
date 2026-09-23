@@ -17,14 +17,16 @@
 // and the null-on-miss decisions all run for real.
 //
 // Fetch() also resolves the request's host through OutboundHostPolicy (issue #459), which
-// defaults to a real DNS lookup. host_resolver_addresses (below) is passed as the fourth,
-// injectable BaseBarcodeLookupPlugin constructor argument precisely so that stays offline
-// too, except in the one test that asks for real DNS on purpose (see
-// BarcodeLookupTest::testOpenFoodFactsCompiledHostResolvesToPublicAddressesForReal).
+// defaults to a real DNS lookup. host_resolver_addresses (below) is always passed as the
+// fourth, injectable BaseBarcodeLookupPlugin constructor argument precisely so that stays
+// offline too - no test in this file performs a real DNS lookup or a real network request;
+// BarcodeLookupTest::testOpenFoodFactsRequestIsPinnedWhenTheResolverAnswersAPublicAddress
+// and ...RefusedRatherThanFailingSoftWhenTheResolverAnswersAPrivateAddress exercise the
+// host policy itself, each with its own canned resolver answer, exactly as
+// OutboundHostPolicyTest does directly.
 //
 // Spec keys: barcode, locale, status, body, locations, quantity_units, user_settings,
-// host_resolver_addresses (array of IPs the compiled-in host "resolves" to; omit or set
-// null for a real DNS lookup instead).
+// host_resolver_addresses (required array of IPs the compiled-in host "resolves" to).
 // Prints one JSON object: outcome ("hit" | "miss" | "exception"), product, message,
 // request_uri, request_headers, request_options (allow_redirects, proxy, timeout, and the
 // curl CURLOPT_RESOLVE entry - the same seam options
@@ -84,9 +86,8 @@ namespace
 
 	$toObjects = fn (array $rows) => array_map(fn ($row) => (object)$row, $rows);
 
-	$hostResolver = array_key_exists('host_resolver_addresses', $spec) && $spec['host_resolver_addresses'] !== null
-		? fn (string $host) => $spec['host_resolver_addresses']
-		: null;
+	// Always injected, never null: this file makes no real DNS lookup, ever.
+	$hostResolver = fn (string $host) => $spec['host_resolver_addresses'];
 
 	$plugin = new OpenFoodFactsBarcodeLookupPlugin(
 		$toObjects($spec['locations']),

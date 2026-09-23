@@ -922,17 +922,53 @@ class BarcodeLookupTest extends TestCase
 
 	/**
 	 * Issue #460 requires routing Open Food Facts' compiled-in host through
-	 * OutboundHostPolicy to still work, which is a claim about DNS - not about the network
-	 * request, which is faked throughout this file regardless. This is the one test in this
-	 * file that does not inject a canned resolver answer, so OutboundHostPolicy performs a
-	 * real forward lookup of world.openfoodfacts.org; everything after that (the HTTP
-	 * request itself) stays offline exactly as every other test here does.
+	 * OutboundHostPolicy to still work - not to be confused with the network request itself,
+	 * which is faked throughout this file. No test here ever performs a real DNS lookup: a
+	 * canned resolver answer stands in for one (BaseBarcodeLookupPlugin's fourth constructor
+	 * argument, injected by barcodelookup-subprocess-helper.php from this spec's
+	 * host_resolver_addresses key), exactly as OutboundHostPolicyTest injects one directly.
+	 * This case names its own address, distinct from testOpenFoodFactsRequestGoesThroughTheSharedFetchSeam's
+	 * default, to make plain that the policy result follows whatever the resolver answers,
+	 * not something specific to that one address.
 	 */
-	public function testOpenFoodFactsCompiledHostResolvesToPublicAddressesForReal(): void
+	public function testOpenFoodFactsRequestIsPinnedWhenTheResolverAnswersAPublicAddress(): void
 	{
-		$result = self::openFoodFacts(['body' => self::foundPayload(), 'host_resolver_addresses' => null]);
+		$result = self::openFoodFacts([
+			'body' => self::foundPayload(),
+			'host_resolver_addresses' => ['203.0.113.9']
+		]);
 
-		self::assertSame('hit', $result['outcome'], 'a real DNS lookup of the compiled-in host must not be refused by the host policy: ' . json_encode($result));
+		self::assertSame('hit', $result['outcome'], 'a resolver answer the host policy allows must not be refused: ' . json_encode($result));
+
+		$resolveOptions = $result['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
+		self::assertNotEmpty($resolveOptions);
+		self::assertStringContainsString('world.openfoodfacts.org:443:203.0.113.9', $resolveOptions[0], 'pinned to the address this test\'s resolver answered, not the default from other tests in this file');
+	}
+
+	/**
+	 * The other side of the case above: a resolver answering with a private address for the
+	 * compiled-in host is refused exactly as it would be for any other source, before any
+	 * request is made. Unlike the barcode picture download (services/StockService.php),
+	 * ExecuteLookup() does not catch Fetch()'s OutboundHostRefusedException - neither this
+	 * method nor Lookup() (helpers/BaseBarcodeLookupPlugin.php) wraps it - so a refusal here
+	 * does not fail soft into a miss; it propagates as an uncaught exception, which
+	 * services/StockService.php::ExternalBarcodeLookup() also does not catch around
+	 * $plugin->Lookup($barcode). In production this reaches the API controller as the same
+	 * "plugin error" 400 response any other ExecuteLookup() exception produces (see
+	 * StockCoverageTest::testExternalBarcodeLookupReturnsAndOptionallyCreatesTheFoundProduct's
+	 * "error" barcode case) - appropriate here, since a lookup that cannot ask its source
+	 * anything has nothing to report as a miss.
+	 */
+	public function testOpenFoodFactsRequestIsRefusedRatherThanFailingSoftWhenTheResolverAnswersAPrivateAddress(): void
+	{
+		$result = self::openFoodFacts([
+			'body' => self::foundPayload(),
+			'host_resolver_addresses' => ['10.0.0.5']
+		]);
+
+		self::assertSame('exception', $result['outcome'], 'a private resolver answer must refuse the request rather than proceeding: ' . json_encode($result));
+		self::assertStringContainsString('resolves to refused address', $result['message']);
+		self::assertNull($result['request_uri'], 'refused before GuzzleHttp\\Client::request() is ever reached');
 	}
 
 	/** @return array<string, array{0: string, 1: string}> */
