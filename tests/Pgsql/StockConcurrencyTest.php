@@ -137,31 +137,42 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Blocks the calling PHP process (not the database) until some other backend is
-	 * actually waiting on an advisory lock, or fails the test after $timeoutSeconds. This
-	 * is the "bounded poll of pg_stat_activity for a waiting backend" the issue asks for -
-	 * a readiness check driven by the database's own view of who is blocked, not a fixed
-	 * sleep guessed to be long enough.
+	 * waiting, specifically, on the stock booking advisory lock for $productId, or fails
+	 * the test after $timeoutSeconds. This is the "bounded poll of pg_locks for a waiting
+	 * backend" the issue asks for - a readiness check driven by the database's own view of
+	 * who is blocked on which lock, not a fixed sleep guessed to be long enough.
+	 *
+	 * Scoped to $productId (classid/objid, not just "waiting on any advisory lock
+	 * cluster-wide") because more than one of these tests runs a two-connection scenario
+	 * against its own product id, and an unscoped check could match a different test's
+	 * waiter rather than this one's.
+	 *
+	 * @return int The waiting backend's pid, so a caller that also needs to inspect what
+	 *             that specific backend already holds (pg_locks WHERE pid = ...) does not
+	 *             have to re-derive it.
 	 */
-	private static function waitForAdvisoryWaiter(float $timeoutSeconds = 10.0): void
+	private static function waitForAdvisoryWaiter(int $productId, float $timeoutSeconds = 10.0): int
 	{
+		$waiterCheck = self::$db->prepare(
+			'SELECT pid FROM pg_locks WHERE locktype = \'advisory\' AND NOT granted AND classid = ? AND objid = ? LIMIT 1'
+		);
 		$deadline = microtime(true) + $timeoutSeconds;
 
 		do
 		{
-			$count = (int)self::$db->query(
-				"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND pid <> pg_backend_pid()"
-			)->fetchColumn();
+			$waiterCheck->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
+			$pid = $waiterCheck->fetchColumn();
 
-			if ($count > 0)
+			if ($pid !== false)
 			{
-				return;
+				return (int)$pid;
 			}
 
 			usleep(20000);
 		}
 		while (microtime(true) < $deadline);
 
-		self::fail('Timed out waiting for a backend to block on the stock booking advisory lock');
+		self::fail('Timed out waiting for a backend to block on the stock booking advisory lock for product ' . $productId);
 	}
 
 	/**
@@ -314,7 +325,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/stock/bookings/' . $bookingId . '/undo');
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		// Connection B's competing booking: a one-unit consume of the same entry,
 		// committed while the undo above is queued behind B's lock.
@@ -376,7 +387,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		// test set up its fixture - exactly what connection B is about to take first.
 		$subprocess = self::startSubprocess('POST', '/api/stock/products/' . $productId . '/consume', ['amount' => 2]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		// Connection B's competing booking: the first consume, taking the whole entry.
 		$connB->prepare(
@@ -455,7 +466,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $recipeId . '/consume');
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productHigh);
 
 		// Nothing else to do: releasing the lock is the whole point. Committing an empty
 		// transaction of B's own is enough to give the queued consume the lock back.
@@ -503,7 +514,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('PUT', '/api/stock/entry/' . $entryId, ['amount' => 1, 'open' => false, 'purchased_date' => self::PAST_DATE]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		$connB->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
 		$connB->commit();
@@ -543,7 +554,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/stock/entry/' . $entryId . '/measure', ['amount' => 0.5, 'qu_id' => 2]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		$connB->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
 		$connB->commit();
@@ -580,7 +591,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/stock/locations/' . $vesselId . '/weigh', ['gross_amount' => 5]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		$connB->prepare('DELETE FROM stock WHERE product_id = ? AND location_id = ?')->execute([$productId, $vesselId]);
 		$connB->commit();
@@ -616,7 +627,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/stock/locations/' . $vesselId . '/weigh', ['gross_amount' => 5]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		$connB->prepare(
 			'INSERT INTO stock (product_id, amount, stock_id, location_id, best_before_date, purchased_date) VALUES (?, 1, ?, ?, ?, ?)'
@@ -658,7 +669,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/stock/bookings/' . $bookingId . '/undo');
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		$connB->prepare("UPDATE stock_log SET undone = 1, undone_timestamp = now() WHERE id = ?")->execute([$bookingId]);
 		$connB->prepare('DELETE FROM stock WHERE stock_id = ?')->execute([$stockId]);
@@ -723,7 +734,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startCompactSubprocess($productId);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($productId);
 
 		// Connection B's competing booking: consumes 2 of entry B's 5 units while
 		// compaction is queued behind B's lock.
@@ -782,7 +793,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 			'allow_subproduct_substitution' => true,
 		]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($subId);
 
 		// Connection B's competing booking: a direct consume of one unit of the sub
 		// product, committed while the parent's substituting consume is queued behind B's
@@ -845,7 +856,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 			'allow_subproduct_substitution' => true,
 		]);
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($lockSet[0]);
 
 		// Nothing else to do: releasing the ascending pair is the whole point, exactly as
 		// in the recipe lock-ordering test above.
@@ -897,7 +908,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $recipeId . '/consume');
 
-		self::waitForAdvisoryWaiter();
+		self::waitForAdvisoryWaiter($ingredientId);
 
 		// Connection B's competing booking: consumes 2 of the 3 units, leaving 1 - less
 		// than the recipe's uncapped want of 2 - while the recipe consume is queued.
@@ -975,14 +986,11 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $outerRecipeId . '/consume');
 
-		self::waitForAdvisoryWaiter();
-
-		// The recipe subprocess is the only other backend taking these locks, so whichever
-		// backend is now waiting on an advisory lock is it.
-		$blockedPid = (int)self::$db->query(
-			"SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND pid <> pg_backend_pid()"
-		)->fetchColumn();
-		self::assertGreaterThan(0, $blockedPid, 'A backend other than this test is waiting on an advisory lock');
+		// Scoped to the outer id specifically - not "waiting on any advisory lock
+		// cluster-wide" - so this can only match the recipe subprocess blocked on the
+		// exact lock connection B holds, never an unrelated waiter. Returns that backend's
+		// pid directly, reused below rather than re-derived from pg_stat_activity.
+		$blockedPid = self::waitForAdvisoryWaiter($outerIngredientId);
 
 		$holdsNestedLock = self::$db->prepare(
 			'SELECT count(*) FROM pg_locks WHERE locktype = \'advisory\' AND classid = ? AND objid = ? AND granted AND pid = ?'
