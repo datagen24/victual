@@ -21,7 +21,7 @@ here, that the totals agreed at 86 apiece with two mismatches hidden inside them
 in both halves: it dropped one route on the way in and invented one spec-only path.
 
 The `ExposedEntity` allow-lists are read from the spec at runtime, so entity drift is
-impossible by construction, and every controller returns the same
+impossible by construction, and every API controller returns the same
 `{ "error_message": … }` body. The one addition is `error_details`, which
 `ExceptionController` attaches to an uncaught exception's body only when error details
 are displayed. The structure is sound. What is not uniform is *which status code* that
@@ -642,7 +642,7 @@ operations as part of this plan (not left for
 [14](landed/14-contract-and-regression-scaffolding.md) to notice), and a changelog entry
 naming the nine.
 
-Response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
+API response *bodies* are otherwise unchanged in shape: still `{ "error_message": … }`.
 Success responses are untouched.
 
 The Home Assistant integration and the iOS app are the two consumers to think about.
