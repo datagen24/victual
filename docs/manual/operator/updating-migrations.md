@@ -16,12 +16,12 @@ php bin/victual-migrate
 ```
 
 Brings the schema up to date and exits. On PostgreSQL it serializes concurrent runs on a
-session-level advisory lock, so two pods starting together are safe — the second simply
-waits for the first to finish rather than racing it. An application that finds the schema
+session-level advisory lock, so two pods starting together are safe — the second waits
+for the first to finish rather than racing it. An application that finds the schema
 out of date refuses to serve rather than guessing at what to do.
 
 The advisory lock lives on the connection that took it, so this command needs a direct
-connection to PostgreSQL or a session-mode pool slot — behind a transaction-mode pooler
+connection to PostgreSQL or a session-mode pool slot. Behind a transaction-mode pooler
 (the kind many managed Postgres providers default to), the unlock can land on a different
 backend than the one that took it and leak permanently. Point `bin/victual-migrate`
 specifically at a connection that does not multiplex transactions across backends if your
@@ -29,9 +29,9 @@ database sits behind one.
 
 For an installation with no deployment init step to run this automatically,
 `MIGRATE_ON_ROOT_REQUEST` ([Configuration](../configuration.md#database-migrations)) lets a
-request to `/` perform the migration instead — off by default, since a deployment normally
-runs this as its own init step (a Job or an initContainer ahead of the serving pods) rather
-than leaving it to whoever loads the page first.
+request to `/` perform the migration instead. It is off by default, since a deployment
+normally runs this as its own init step (a Job or an initContainer ahead of the serving
+pods) rather than leaving it to whoever loads the page first.
 
 ## Moving from SQLite
 
