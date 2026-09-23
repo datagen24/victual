@@ -585,8 +585,22 @@ class StockService extends BaseService
 				// Locked, then read (issue #458): reading the candidate entries and the
 				// aggregated-amount check before the lock would let two concurrent consumes
 				// both read the same pre-write state, both pass a check only one of them
-				// should, and together consume more than was in stock.
-				DatabaseService::GetInstance()->LockProductStock($productId);
+				// should, and together consume more than was in stock. With substitution
+				// on, GetProductStockEntries() below can return sub product rows too, so
+				// every sub product is locked in the same call, ascending, alongside
+				// $productId (PR #471 follow-up) - a lock taken on just $productId would
+				// leave a direct booking of the sub product unlocked against this one, and
+				// a nested multi-product caller (ConsumeRecipe()) locking sub products
+				// individually after its own ascending set would risk a lock order
+				// inversion against this call.
+				if ($allowSubproductSubstitution)
+				{
+					DatabaseService::GetInstance()->LockProductsStock($this->SubstitutionLockSet($productId));
+				}
+				else
+				{
+					DatabaseService::GetInstance()->LockProductStock($productId);
+				}
 
 				$productDetails = (object)$this->GetProductDetails($productId);
 
@@ -1641,6 +1655,34 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * $productId plus every sub product id GetProductStockEntries() and
+	 * GetProductStockEntriesForLocation() would draw into a substitution-aware read of it
+	 * (products_resolved, the same source those two methods use) - the set a
+	 * substitution-aware booking has to lock as one unit before touching any of them
+	 * (issue #458, PR #471 follow-up).
+	 *
+	 * A caller with substitution off never reads or writes another product's stock, so it
+	 * has no reason to call this: DatabaseService::LockProductStock($productId) alone is
+	 * correct there, and locking a whole family it never touches would only make it wait
+	 * on bookings of products it has nothing to do with.
+	 *
+	 * @param int $productId
+	 * @return int[] $productId and its sub product ids, in no particular order -
+	 *               DatabaseService::LockProductsStock() sorts them
+	 */
+	public function SubstitutionLockSet(int $productId): array
+	{
+		$subProductIds = array_map('intval', DatabaseService::GetInstance()->ExecuteDbQuery(
+			'SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ?',
+			[$productId]
+		)->fetchAll(\PDO::FETCH_COLUMN));
+
+		$subProductIds[] = $productId;
+
+		return $subProductIds;
+	}
+
+	/**
 	 * Returns the stock entries of a product in default consume order (stock_next_use view:
 	 * default consume location first, then opened first, then first due first, then first in first out) -
 	 * the first entry is the one to use next.
@@ -1875,7 +1917,18 @@ class StockService extends BaseService
 		// booking change what is actually unopened before this call decided against it.
 		DatabaseService::GetInstance()->InTransaction(function () use ($amount, $product, $productId, $allowSubproductSubstitution, $specificStockEntryId, $measurement, &$transactionId)
 		{
-			DatabaseService::GetInstance()->LockProductStock($productId);
+			// With substitution on, GetProductStockEntries() below can return sub product
+			// rows too, and "move on open" further down can transfer one of them - so every
+			// sub product is locked in the same call, ascending, alongside $productId
+			// (PR #471 follow-up on issue #458), for the same reason ConsumeProduct() does.
+			if ($allowSubproductSubstitution)
+			{
+				DatabaseService::GetInstance()->LockProductsStock($this->SubstitutionLockSet($productId));
+			}
+			else
+			{
+				DatabaseService::GetInstance()->LockProductStock($productId);
+			}
 
 			$productDetails = (object)$this->GetProductDetails($productId);
 			$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
@@ -3038,67 +3091,83 @@ class StockService extends BaseService
 	 */
 	public function CompactStockEntries($productId = null)
 	{
-		if ($productId == null)
+		// Only which products have anything to compact is read before any lock - what
+		// each one's groups actually are (total_amount, stock_id_group, id_group) is
+		// re-read fresh, under that product's own lock, below. Reading a group's contents
+		// this early and writing them after locking - as this used to - lets a booking
+		// that commits while compaction waits on the lock get silently overwritten:
+		// stock.amount would be set back to a total that no longer includes what the
+		// booking just consumed or added (issue #458, CodeRabbit follow-up on PR #471).
+		if ($productId !== null)
 		{
-			$splittedStockEntries = $this->DB->stock_splits();
+			$productIds = [(int)$productId];
 		}
 		else
 		{
-			$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $productId);
+			$productIds = array_map('intval', DatabaseService::GetInstance()->ExecuteDbQuery('SELECT DISTINCT product_id FROM stock_splits')->fetchAll(\PDO::FETCH_COLUMN));
 		}
 
-		foreach ($splittedStockEntries as $splittedStockEntry)
+		// Ascending, so compacting several products in one call cannot deadlock against
+		// another multi-product caller (MergeProducts(), ConsumeRecipe()) over an
+		// overlapping set.
+		sort($productIds);
+
+		foreach ($productIds as $oneProductId)
 		{
-			DatabaseService::GetInstance()->InTransaction(function () use ($splittedStockEntry)
+			DatabaseService::GetInstance()->InTransaction(function () use ($oneProductId)
 			{
-				// Each group is one product's rows (stock_splits.product_id), so one lock
-				// per group is enough - a caller compacting several products still locks
-				// them one group, and one product, at a time (issue #458).
-				DatabaseService::GetInstance()->LockProductStock($splittedStockEntry->product_id);
+				DatabaseService::GetInstance()->LockProductStock($oneProductId);
 
-				$stockIds = explode(',', $splittedStockEntry->stock_id_group);
-				foreach ($stockIds as $stockId)
+				// The re-read this fix is about: every group belonging to this product,
+				// current as of right now under the lock rather than from before it.
+				$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
+
+				foreach ($splittedStockEntries as $splittedStockEntry)
 				{
-					if ($stockId != $splittedStockEntry->stock_id_to_keep)
+					$stockIds = explode(',', $splittedStockEntry->stock_id_group);
+					foreach ($stockIds as $stockId)
 					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
 
-						// The split lineage moves with the stock_ids above, or it would point
-						// at an entry that no longer exists. Three statements, and the order
-						// is load-bearing.
-						//
-						// First the disappearing entry's own row goes rather than being
-						// rewritten: what survives the merge is one entry, and it keeps the
-						// origin it already had.
-						//
-						// Then the row, if any, that would be left describing the surviving
-						// entry as split off itself. The third statement is about to point
-						// everything that descended from the disappearing entry at the
-						// surviving one - which is right, because that is where the
-						// disappearing entry's bookings just went - and the surviving entry
-						// may be one of those descendants. Once its origin's bookings are its
-						// own, it is its own origin and the row says nothing; leaving it to be
-						// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
-						// and abort the whole compaction, and cleaning it up afterwards is not
-						// possible for the same reason - the constraint rejects the row the
-						// moment the update tries to write it, so no later DELETE can reach it.
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
+							// The split lineage moves with the stock_ids above, or it would point
+							// at an entry that no longer exists. Three statements, and the order
+							// is load-bearing.
+							//
+							// First the disappearing entry's own row goes rather than being
+							// rewritten: what survives the merge is one entry, and it keeps the
+							// origin it already had.
+							//
+							// Then the row, if any, that would be left describing the surviving
+							// entry as split off itself. The third statement is about to point
+							// everything that descended from the disappearing entry at the
+							// surviving one - which is right, because that is where the
+							// disappearing entry's bookings just went - and the surviving entry
+							// may be one of those descendants. Once its origin's bookings are its
+							// own, it is its own origin and the row says nothing; leaving it to be
+							// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
+							// and abort the whole compaction, and cleaning it up afterwards is not
+							// possible for the same reason - the constraint rejects the row the
+							// moment the update tries to write it, so no later DELETE can reach it.
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
+						}
 					}
-				}
 
-				$stockEntryIds = explode(',', $splittedStockEntry->id_group);
-				foreach ($stockEntryIds as $stockEntryId)
-				{
-					if ($stockEntryId != $splittedStockEntry->id_to_keep)
+					$stockEntryIds = explode(',', $splittedStockEntry->id_group);
+					foreach ($stockEntryIds as $stockEntryId)
 					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . $stockEntryId);
-					}
-					else
-					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
+						if ($stockEntryId != $splittedStockEntry->id_to_keep)
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . $stockEntryId);
+						}
+						else
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
+						}
 					}
 				}
 			});

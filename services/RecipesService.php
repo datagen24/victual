@@ -109,16 +109,33 @@ class RecipesService extends BaseService
 		}
 
 		$transactionId = uniqid();
-		$recipePositions = $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll();
 
-		DatabaseService::GetInstance()->InTransaction(function () use ($recipePositions, $recipeId, &$transactionId)
+		// Only which products the recipe names is read before any lock; recipes_pos_resolved
+		// itself - stock_amount above all - is re-read fresh under the lock below, so what
+		// this books is capped by current stock rather than a value read before the wait
+		// (issue #458, PR #471 follow-up): a concurrent consume that shrinks an ingredient's
+		// stock while this call queues on the lock is what the fresh read has to see.
+		$ingredientProductIds = array_map(fn($row) => (int)$row->product_id, $this->DB->recipes_pos()->where('recipe_id', $recipeId)->fetchAll());
+
+		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $recipeId, &$transactionId)
 		{
-			// A recipe can name several ingredient products, each of which ConsumeProduct()
-			// below will lock individually - locked here, upfront and in ascending order,
-			// so two recipes consumed concurrently over an overlapping ingredient set always
+			// A recipe can name several ingredient products, and ConsumeProduct() below
+			// always substitutes sub products for a recipe consume, so each ingredient's own
+			// sub products are part of the set too (SubstitutionLockSet()) - locked here,
+			// upfront and in ascending order, so two recipes (or a recipe and a direct
+			// consume of one ingredient's sub product) touching an overlapping set always
 			// request their first conflicting lock in the same order and queue rather than
 			// deadlock (issue #458).
-			DatabaseService::GetInstance()->LockProductsStock(array_map(fn($position) => $position->product_id, $recipePositions));
+			$lockSet = [];
+			foreach ($ingredientProductIds as $ingredientProductId)
+			{
+				$lockSet = array_merge($lockSet, StockService::GetInstance()->SubstitutionLockSet($ingredientProductId));
+			}
+			DatabaseService::GetInstance()->LockProductsStock($lockSet);
+
+			// Re-read now that every lock in the set above is held, so stock_amount
+			// reflects any booking that committed while this call waited on it.
+			$recipePositions = $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll();
 
 			foreach ($recipePositions as $recipePosition)
 			{
