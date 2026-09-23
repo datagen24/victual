@@ -412,9 +412,17 @@ real `StockApiController` route with a substituted `GuzzleHttp\Client`
 refused extension or host never reaches the network at all, that a redirect
 response is never stored as a picture, and that the fetch carries an explicit
 empty proxy. It also proves that a permitted host and extension are still
-fetched, pinned and stored. Open Food Facts' own outbound request goes to a
-compiled-in host and is not yet routed through this policy; that seam is
-[issue 460](https://github.com/datagen24/victual/issues/460).
+fetched, pinned and stored.
+
+**Update, 2026-09-23 ([issue 460](https://github.com/datagen24/victual/issues/460)):**
+Open Food Facts' own outbound request went to a compiled-in host through its own
+`GuzzleHttp\Client`, not through this policy - the paragraph above originally named
+that gap. `helpers/BaseBarcodeLookupPlugin.php::Fetch()` is now the one seam both
+`OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup()` and the picture download go
+through, so every barcode-lookup outbound request carries the same host policy, DNS-
+rebinding pin, redirect refusal, proxy refusal and timeout. Open Food Facts'
+compiled-in host resolves to public addresses, so routing it through the policy
+changes nothing about which requests succeed.
 
 ### S16: remediation details
 
