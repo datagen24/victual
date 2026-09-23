@@ -356,19 +356,24 @@ class BaseApiController extends BaseController
 	 * could binary-search stock.price with "?query[]=price>3&query[]=price<5" even though
 	 * the field itself never appears in a response.
 	 *
-	 * The message distinguishes the two refusals so a caller can tell "this field does not
-	 * exist" from "you may not query on this field"; the status code deliberately does not,
-	 * both are 400, since a distinct code would itself confirm the field exists.
+	 * Neither the status nor the message distinguishes the two refusals: both are 400 with
+	 * the identical wording, since a distinct message would confirm a field's existence
+	 * exactly as a distinct status would (issue #255). The field name is still echoed back
+	 * - it is the caller's own input, so it says nothing they do not already know, whichever
+	 * reason applies - but which of the two reasons applied, and the entity, go only to the
+	 * server log (error_log, as ColumnTypesOf() above already does).
 	 */
 	private function AssertFieldExists(Request $request, array $columnTypes, string $field, string $entity): void
 	{
 		if (!array_key_exists($field, $columnTypes))
 		{
-			throw new HttpException($request, 'Invalid query: unknown field "' . $field . '"', 400);
+			error_log('Victual: query named field "' . $field . '" of entity "' . $entity . '", which does not exist');
+			throw new HttpException($request, 'Invalid query: field "' . $field . '" may not be used in "query" or "order"', 400);
 		}
 
 		if (in_array($field, FieldPolicy::GetInstance()->RedactedFieldsFor($entity), true))
 		{
+			error_log('Victual: query named field "' . $field . '" of entity "' . $entity . '", which is redacted for the current user');
 			throw new HttpException($request, 'Invalid query: field "' . $field . '" may not be used in "query" or "order"', 400);
 		}
 	}
