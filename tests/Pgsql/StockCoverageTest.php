@@ -2812,6 +2812,99 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * The three scenarios above each add a later consume on the same stock entry to make it
+	 * "gone", which is exactly what UndoBooking's "no later booking depends on this" guard
+	 * now catches first (issue #240) - the branch-specific "does the row I'd restore still
+	 * exist" checks below it never run. Reaching each of those checks honestly needs the row
+	 * gone for a reason the guard cannot see: removed directly, with nothing later logged
+	 * against the entry at all.
+	 *
+	 * Not run inside a rolled-back transaction (unlike the raw-SQL row deletion further
+	 * up this file): the edit and measurement cases each undo a correlated pair whose NEW
+	 * half succeeds before the OLD half hits its missing-row check and throws, and
+	 * UndoBooking's own transaction only rolls that first write back when it is genuinely
+	 * the outermost one - an ambient transaction here would swallow that guarantee and
+	 * leave the NEW half wrongly marked undone.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesEachBranchsOwnMissingStockRowCheck(): void
+	{
+		// 1. TRANSACTION_TYPE_TRANSFER_TO (StockService.php:2560): the destination row.
+		$transferred = self::insertProduct('Coverage Transfer Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$ids['pantry'], 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $transferred]),
+			200,
+			'Two units are stocked'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$ids['pantry'], 'location_id_to' => self::$ids['freezer']]), new Response(), ['productId' => $transferred]),
+			200,
+			'Both units are moved to the freezer'
+		);
+		$transferTo = array_values(array_filter($transfer, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_TRANSFER_TO))[0];
+		self::$db->prepare('DELETE FROM stock WHERE stock_id = ? AND location_id = ?')->execute([$transferTo['stock_id'], self::$ids['freezer']]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$transferTo['id']]),
+			400,
+			'Undoing a transfer whose destination row was removed outright is refused'
+		);
+
+		// 2. TRANSACTION_TYPE_STOCK_EDIT_OLD (StockService.php:2641): the edited row.
+		$edited = self::insertProduct('Coverage Edit Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $edited]),
+			200,
+			'Two units are stocked'
+		);
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$entryId->execute([$edited]);
+		$entryId = (int)$entryId->fetchColumn();
+		$edit = $this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 2, 'open' => false, 'purchased_date' => self::CLOSED_MONTH_DATE, 'note' => 'edited']), new Response(), ['entryId' => $entryId]),
+			200,
+			'The entry is edited'
+		);
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$entryId]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			400,
+			'Undoing an edit whose row was removed outright is refused'
+		);
+
+		// 3. TRANSACTION_TYPE_STOCK_MEASURED_OLD (StockService.php:2684): the measured row.
+		$measured = self::insertProduct('Coverage Measured Row Vanished');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $measured]),
+			200,
+			'One unit is stocked'
+		);
+		$measuredEntryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$measuredEntryId->execute([$measured]);
+		$measuredEntryId = (int)$measuredEntryId->fetchColumn();
+		$this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $measured]),
+			200,
+			'It is opened'
+		);
+		$measurement = $this->expectStatus(
+			fn() => self::$stock->MeasureStockEntry(self::request('POST', ['amount' => 0.4, 'qu_id' => 2]), new Response(), ['entryId' => $measuredEntryId]),
+			200,
+			'and measured in its own stock unit'
+		);
+		$measuredOld = array_values(array_filter($measurement, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_MEASURED_OLD))[0];
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$measuredEntryId]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$measuredOld['id']]),
+			400,
+			'Undoing a measurement whose row was removed outright is refused'
+		);
+	}
+
+	/**
 	 * A booking against a sub product whose whole entry is taken converts the remaining
 	 * amount back into the parent's unit before looking at the next entry.
 	 */
