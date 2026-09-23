@@ -353,6 +353,7 @@ function RunScenario(array $steps, string $resultFile): void
 	$result = ['steps' => [], 'ledger' => [], 'flags' => [], 'error' => null];
 	$renamed = false;
 	$ledgerRenamed = false;
+	$ledgerWriteBroken = false;
 
 	try
 	{
@@ -395,6 +396,20 @@ function RunScenario(array $steps, string $resultFile): void
 				case 'restoreledger':
 					$pdo->exec('ALTER TABLE mqtt_published_entities_hidden RENAME TO mqtt_published_entities');
 					$ledgerRenamed = false;
+					$value = true;
+					break;
+
+				case 'breakledgerwrite':
+					$pdo->exec('CREATE FUNCTION mqtt_ledger_write_blocked() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION \'ledger write blocked\'; END $$');
+					$pdo->exec('CREATE TRIGGER mqtt_published_entities_write_blocked BEFORE INSERT OR UPDATE ON mqtt_published_entities FOR EACH ROW EXECUTE FUNCTION mqtt_ledger_write_blocked()');
+					$ledgerWriteBroken = true;
+					$value = true;
+					break;
+
+				case 'restoreledgerwrite':
+					$pdo->exec('DROP TRIGGER mqtt_published_entities_write_blocked ON mqtt_published_entities');
+					$pdo->exec('DROP FUNCTION mqtt_ledger_write_blocked()');
+					$ledgerWriteBroken = false;
 					$value = true;
 					break;
 
@@ -473,6 +488,11 @@ function RunScenario(array $steps, string $resultFile): void
 		if ($ledgerRenamed)
 		{
 			$pdo->exec('ALTER TABLE mqtt_published_entities_hidden RENAME TO mqtt_published_entities');
+		}
+
+		if ($ledgerWriteBroken)
+		{
+			$pdo->exec('DROP TRIGGER IF EXISTS mqtt_published_entities_write_blocked ON mqtt_published_entities');
 		}
 	}
 

@@ -503,19 +503,43 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 	 * publish nothing. Asserted as it currently behaves rather than skipped, so that fixing it
 	 * fails here and says so; the fix is application code and out of scope for this work.
 	 */
-	public function testALedgerReadFailureEscapesThePublishContractThatSaysNothingThrows(): void
+	public function testALedgerReadFailureLogsAndReturnsFalseWithoutThrowing(): void
 	{
 		$result = self::RunScenario(
 			['reset', 'breakledger', 'state', 'restoreledger'],
 			self::BrokerSettings(self::$brokerPort)
 		);
 
-		self::assertNotNull($result['error'],
-			'the ledger read is not guarded the way the snapshot read beside it is');
-		self::assertStringContainsString('mqtt_published_entities', (string)$result['error'],
-			'and what escapes is the database error itself');
-		self::assertArrayNotHasKey('2:state', $result['steps'],
-			'so the publish never returned a value at all, rather than returning false');
+		self::assertNull($result['error'],
+			'a ledger read failure must not throw out of the service');
+		self::assertFalse($result['steps']['2:state'],
+			'it reports that the publish failed');
+		self::assertSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'and publishes nothing at all');
+		self::assertSame([], $result['ledger'], 'and records nothing');
+	}
+
+	/**
+	 * A ledger write failure happens after the broker has already accepted the batch, so the
+	 * messages are published but unrecorded. This is still a failure to return false and not
+	 * throw, and the next publish will retry the recording.
+	 */
+	public function testALedgerWriteFailureLogsAndReturnsFalseWithoutThrowing(): void
+	{
+		$result = self::RunScenario(
+			['reset', 'flag:' . self::PRODUCT_STAYS, 'breakledgerwrite', 'full', 'restoreledgerwrite'],
+			self::BrokerSettings(self::$brokerPort),
+			self::$brokerLog
+		);
+
+		self::assertNull($result['error'],
+			'a ledger write failure must not throw out of the service');
+		self::assertFalse($result['steps']['3:full'],
+			'it reports that the publish failed even though the broker accepted it');
+		self::assertNotSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'the messages were published to the broker');
+		self::assertSame([], $result['ledger'],
+			'but the ledger was not updated, so the next publish will retry it');
 	}
 
 	// ---------------------------------------------------------------------------------
