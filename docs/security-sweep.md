@@ -17,7 +17,7 @@ are hashed. S16's *body-schema validation* half is the other: the
 deliberately parked behind
 [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2.
 
-What is left open below is Low and Info: S13, S14, S15, S20, S22, S24, S26, and the two
+What is left open below is Low and Info: S13, S15, S20, S22, S24, S26, and the two
 Info findings S30 and S31 that belong to [19](plans/19-rbac.md). Each row says what was
 done and where it departed from the remediation proposed here. Wave 2's departures are
 worth reading, because two of them are places this document was written before the thing
@@ -325,7 +325,7 @@ beside a planted account. `tests/Pgsql/BootstrapAdminTest.php` holds both halves
 | # | Sev | Finding | Where | Fix |
 |---|---|---|---|---|
 | S13 | **Low** | **`update.sh` wipes the install and unpacks an unsigned upstream Grocy zip.** `rm -rf !(data\|update.sh)` then `wget https://releases.grocy.info/latest` and `unzip -o` — no checksum, no signature, and it is upstream Grocy, so it would destroy the fork's schema. Already flagged as homeless in the rigor review (H3). | `update.sh` | Delete it (15's non-breaking table). |
-| S14 | **Low** — *understated; corrected 2026-09-21, see the update above this table* | **Barcode lookup uses an unchecked picture filename and plugin-supplied URL.** The original assessment understated both risks. See the correction above and the [original assessment below](#s14-original-assessment). | `services/StockService.php::ExternalBarcodeLookup`, `plugins/OpenFoodFactsBarcodeLookupPlugin.php` | Filter `__barcode` to `[0-9A-Za-z_-]`, allow-list `$fileExtension` to image types, refuse loopback/private hosts before fetching. |
+| S14 | **Low** — *fixed* | **Barcode lookup uses an unchecked picture filename and plugin-supplied URL.** The original assessment understated both risks; corrected 2026-09-21, see the update above this table and the [original assessment below](#s14-original-assessment). | `services/StockService.php::ExternalBarcodeLookup`, `helpers/BaseBarcodeLookupPlugin.php`, `plugins/OpenFoodFactsBarcodeLookupPlugin.php` | **Fixed 2026-09-23 with [issue 459](https://github.com/datagen24/victual/issues/459).** `__barcode`, `$fileExtension` and the fetch host are all now checked before use. See [remediation details](#s14-remediation-details). |
 | S15 | **Low** | **Regex filter operator (`§`) runs caller-supplied patterns per row.** `SqliteDialect` registers `regexp` as `mb_ereg($pattern, $value)`; PostgreSQL's `~` is equally exposed. An authenticated caller can ReDoS a list endpoint. Not injection — the pattern is bound. Still open: [14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2 landed 2026-09-17 without touching this — it is response-contract testing, not filter input validation, and stayed out of that piece's scope on purpose. | `services/Database/SqliteDialect.php`, `controllers/Api/BaseApiController.php` filter parsing | Cap pattern length and reject nested quantifiers, or restrict `§` to admins. |
 | S16 | **Low** — *half fixed* | **Generic PUT/POST has no column allow-list.** `GenericEntityApiController::AddObject/EditObject` hand the whole body to `createRow`/`update`. `users`, `user_permissions`, `sessions` are not exposed and `api_keys` is `NoEdit`, so no escalation — but a `MASTER_DATA_EDIT` user can rewrite `id` and `row_created_timestamp` on any exposed row and create `userfields` with `entity = 'users'`. | `controllers/Api/GenericEntityApiController.php` | Strip server-owned columns and validate write bodies against the OpenAPI schema. Column stripping landed on 2026-09-04; schema validation and the `userfields` concern remain open. See [remediation details](#s16-remediation-details). |
 | S17 | **Low** — *fixed* | **iCal sharing links return 401, and the calendar key is instance-wide.** A fresh auth middleware has no route name, so it misses the calendar branch. Key lookup also ignores the user. See [original finding details](#s17-original-finding-details). | `middleware/Auth/ApiKeyAuthMiddleware.php`, `services/ApiKeyService.php::GetOrCreateApiKey` | **Fixed 2026-09-04 with 15-C1.** Resolve the route inside authentication and scope calendar keys per user. A booted-instance check confirmed that sharing links return 200. See [remediation details](#s17-remediation-details). |
@@ -351,6 +351,70 @@ The original assessment said Slim decodes the path before routing, so `/` cannot
 reach `$args`. It concluded that filenames were limited to odd names inside
 `productpictures/` and that SSRF required a spoofed lookup service. Those conclusions
 understated the risks. Plan 09 adds more lookup sources and should inherit the fix.
+
+### S14: remediation details
+
+The proposed fix was to tighten `__barcode` to `[0-9A-Za-z_-]`, allow-list
+`$fileExtension` to image types, and resolve and refuse the fetch host before
+requesting `__image_url`, guarding against DNS rebinding.
+
+**Fixed 2026-09-23 with [issue 459](https://github.com/datagen24/victual/issues/459)**,
+in three parts:
+
+- [Issue 243](https://github.com/datagen24/victual/issues/243) (PR 443) first narrowed
+  `helpers/BaseBarcodeLookupPlugin.php::Lookup()`'s `__barcode` check to refuse a
+  directory separator, a null byte and a leading dot. 459 widens it to the requested
+  allow-list, `^[0-9A-Za-z_-]*$` — every real GTIN/EAN/UPC passes; the empty string
+  stays accepted, since `DemoBarcodeLookupPlugin` documents an empty scan as a hit
+  stored under an empty barcode, predating and outside this finding's scope.
+- `StockService::ExternalBarcodeLookup()` now maps the picture's extension — from the
+  URL's path, a `data:image/<type>` URI, or (only once a request already had to
+  happen) the response's `Content-Type` — through
+  `StockService::ALLOWED_PICTURE_EXTENSIONS` (`jpg`, `jpeg`, `png`, `gif`, `webp`,
+  matched case-insensitively; `image/jpeg`'s `jpeg` subtype is kept rather than
+  renamed to `jpg`, since both are already unambiguous extensions in the tree). A
+  disallowed extension named in the URL skips the fetch outright; a disallowed
+  `Content-Type` fallback is refused after the fetch that had to happen to read it.
+  Either way the picture step still fails soft — the product is created without a
+  picture, as before.
+- A new `helpers/OutboundHostPolicy.php` resolves `__image_url`'s host before any
+  request. Refused IPv4 ranges: loopback; private (RFC 1918); link-local, including
+  the `169.254.169.254` cloud metadata address; carrier-grade NAT (`100.64.0.0/10`);
+  IETF protocol assignments (`192.0.0.0/24`); benchmarking (`198.18.0.0/15`);
+  unspecified; multicast; and reserved/broadcast. Refused IPv6 ranges: unique local
+  `fc00::/7`; link-local `fe80::/10`; deprecated site-local `fec0::/10`; `::1`; `::`;
+  6to4 `2002::/16`; the NAT64 local-use prefix `64:ff9b:1::/48`; and any
+  IPv4-mapped/compatible IPv6 form - including the NAT64 well-known prefix
+  `64:ff9b::/96` - of a refused IPv4 address. It recognises
+  decimal/octal/hex-notation IPv4 literals (`http://2130706433/`, `http://0x7f.1/`)
+  the way curl itself parses a URL host. It checks every address a hostname
+  resolves to, not just the first, so one public and one private answer is refused;
+  its resolver is injectable, so tests need no real DNS. `ExternalBarcodeLookup()`
+  pins the actual request to the validated address via Guzzle's `CURLOPT_RESOLVE`, a
+  DNS-rebinding guard: a second, different DNS answer at request time cannot be
+  substituted. It also disables redirect following (so a same-status response,
+  never a followed redirect, is what a caller sees) and disables Guzzle's default
+  environment-proxy honouring (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`) with an
+  explicit empty proxy, since a proxy would resolve the host itself and make the
+  pinned address moot. A response outside 2xx - a redirect, since redirects are not
+  followed, or an error page `http_errors` let through - is never used as the
+  picture, whatever extension the URL implied. Non-`http(s)` schemes stay refused,
+  as before. AGENTS.md's "no user-configurable outbound URLs" is respected: the
+  policy is fixed in code, not a setting.
+
+`tests/Pgsql/OutboundHostPolicyTest.php` covers the policy directly: every refused
+range, the numeric-literal and userinfo bypasses, and a resolver answering with a
+mix of public and private addresses.
+
+`tests/Pgsql/StockCoverageTest.php` drives the
+real `StockApiController` route with a substituted `GuzzleHttp\Client`
+(`tests/Pgsql/barcodelookup-picture-subprocess-helper.php`). It proves that a
+refused extension or host never reaches the network at all, that a redirect
+response is never stored as a picture, and that the fetch carries an explicit
+empty proxy. It also proves that a permitted host and extension are still
+fetched, pinned and stored. Open Food Facts' own outbound request goes to a
+compiled-in host and is not yet routed through this policy; that seam is
+[issue 460](https://github.com/datagen24/victual/issues/460).
 
 ### S16: remediation details
 

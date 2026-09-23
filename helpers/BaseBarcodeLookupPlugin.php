@@ -118,8 +118,16 @@ abstract class BaseBarcodeLookupPlugin
 		// __barcode is not just an identifier: services/StockService.php builds the stored
 		// picture's file name from it directly, so every source has to agree on what a safe
 		// file name component looks like, checked once here rather than by each source.
+		// Issue #243 first refused a directory separator, a null byte and a leading dot;
+		// issue #459 widens that to sweep finding S14's requested allow-list
+		// (docs/security-sweep.md, S14 row), [0-9A-Za-z_-], which every real GTIN/EAN/UPC
+		// satisfies and which also subsumes the earlier, narrower checks. The empty string
+		// stays accepted - DemoBarcodeLookupPlugin::ExecuteLookup() documents an empty scan
+		// as a hit stored under an empty barcode, and that behaviour predates and is outside
+		// this issue's scope.
 		$barcode = $pluginOutput['__barcode'];
-		if (!is_string($barcode) || str_contains($barcode, '/') || str_contains($barcode, '\\') || str_contains($barcode, "\0") || str_starts_with($barcode, '.'))
+		// \A and \z, not ^ and $: $ also matches before a final newline, so "123\n" would pass.
+		if (!is_string($barcode) || !preg_match('/\A[0-9A-Za-z_-]*\z/', $barcode))
 		{
 			throw new \Exception('Provided __barcode is not a valid file name component');
 		}

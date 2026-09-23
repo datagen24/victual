@@ -75,6 +75,7 @@
 		</testsuite>
 		<testsuite name="barcodelookup">
 			<file>tests/Pgsql/BarcodeLookupTest.php</file>
+			<file>tests/Pgsql/OutboundHostPolicyTest.php</file>
 		</testsuite>
 		<testsuite name="storagefiles">
 			<file>tests/Pgsql/StorageFilesTest.php</file>
