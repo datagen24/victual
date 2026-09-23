@@ -9,7 +9,6 @@ use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\FieldPolicy;
 use Victual\Services\WireBooleans;
 use Victual\Services\Storage\FileTooLargeException;
-use Victual\Services\Storage\InvalidFileNameException;
 use LessQL\Result;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -186,11 +185,6 @@ class BaseApiController extends BaseController
 			// 413 rather than the 400 every other failure gets, because "this one was too
 			// big" is the one refusal a client can act on by sending less
 			return $this->GenericErrorResponse($response, $ex->getMessage(), 413);
-		}
-		catch (InvalidFileNameException $ex)
-		{
-			// Same 400 as every other invalid-input refusal, not the generic 500 below.
-			return $this->GenericErrorResponse($response, $ex->getMessage(), 400);
 		}
 		catch (\Exception $ex)
 		{
