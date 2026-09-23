@@ -378,28 +378,40 @@ in three parts:
   Either way the picture step still fails soft — the product is created without a
   picture, as before.
 - A new `helpers/OutboundHostPolicy.php` resolves `__image_url`'s host before any
-  request and refuses one of these ranges: loopback; private (RFC 1918); link-local,
-  including the `169.254.169.254` cloud metadata address; carrier-grade NAT
-  (`100.64.0.0/10`); unspecified; multicast; reserved/broadcast; or an IPv6
-  equivalent (`fc00::/7`, `fe80::/10`, `::1`, `::`, or an IPv4-mapped/compatible IPv6
-  form of any refused IPv4 address). It recognises decimal/octal/hex-notation IPv4
-  literals (`http://2130706433/`, `http://0x7f.1/`) the way curl itself parses a URL
-  host. It checks every address a hostname resolves to, not just the first, so one
-  public and one private answer is refused; its resolver is injectable, so tests
-  need no real DNS. `ExternalBarcodeLookup()` pins the actual request to the
-  validated address via Guzzle's `CURLOPT_RESOLVE`, a DNS-rebinding guard: a second,
-  different DNS answer at request time cannot be substituted. It also disables
-  redirect following. Non-`http(s)` schemes stay refused, as before. AGENTS.md's "no
-  user-configurable outbound URLs" is respected: the policy is fixed in code, not a
-  setting.
+  request. Refused IPv4 ranges: loopback; private (RFC 1918); link-local, including
+  the `169.254.169.254` cloud metadata address; carrier-grade NAT (`100.64.0.0/10`);
+  IETF protocol assignments (`192.0.0.0/24`); benchmarking (`198.18.0.0/15`);
+  unspecified; multicast; and reserved/broadcast. Refused IPv6 ranges: unique local
+  `fc00::/7`; link-local `fe80::/10`; deprecated site-local `fec0::/10`; `::1`; `::`;
+  6to4 `2002::/16`; the NAT64 local-use prefix `64:ff9b:1::/48`; and any
+  IPv4-mapped/compatible IPv6 form - including the NAT64 well-known prefix
+  `64:ff9b::/96` - of a refused IPv4 address. It recognises
+  decimal/octal/hex-notation IPv4 literals (`http://2130706433/`, `http://0x7f.1/`)
+  the way curl itself parses a URL host. It checks every address a hostname
+  resolves to, not just the first, so one public and one private answer is refused;
+  its resolver is injectable, so tests need no real DNS. `ExternalBarcodeLookup()`
+  pins the actual request to the validated address via Guzzle's `CURLOPT_RESOLVE`, a
+  DNS-rebinding guard: a second, different DNS answer at request time cannot be
+  substituted. It also disables redirect following (so a same-status response,
+  never a followed redirect, is what a caller sees) and disables Guzzle's default
+  environment-proxy honouring (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`) with an
+  explicit empty proxy, since a proxy would resolve the host itself and make the
+  pinned address moot. A response outside 2xx - a redirect, since redirects are not
+  followed, or an error page `http_errors` let through - is never used as the
+  picture, whatever extension the URL implied. Non-`http(s)` schemes stay refused,
+  as before. AGENTS.md's "no user-configurable outbound URLs" is respected: the
+  policy is fixed in code, not a setting.
 
-`tests/Pgsql/BarcodeLookupTest.php::OutboundHostPolicyTest` covers the policy
-directly: every refused range, the numeric-literal and userinfo bypasses, and a
-resolver answering with a mix of public and private addresses.
-`tests/Pgsql/StockCoverageTest.php` drives the real `StockApiController` route with a
-substituted `GuzzleHttp\Client`
-(`tests/Pgsql/barcodelookup-picture-subprocess-helper.php`) to prove that a refused
-extension or host never reaches the network at all, and that a permitted one is still
+`tests/Pgsql/OutboundHostPolicyTest.php` covers the policy directly: every refused
+range, the numeric-literal and userinfo bypasses, and a resolver answering with a
+mix of public and private addresses.
+
+`tests/Pgsql/StockCoverageTest.php` drives the
+real `StockApiController` route with a substituted `GuzzleHttp\Client`
+(`tests/Pgsql/barcodelookup-picture-subprocess-helper.php`). It proves that a
+refused extension or host never reaches the network at all, that a redirect
+response is never stored as a picture, and that the fetch carries an explicit
+empty proxy. It also proves that a permitted host and extension are still
 fetched, pinned and stored. Open Food Facts' own outbound request goes to a
 compiled-in host and is not yet routed through this policy; that seam is
 [issue 460](https://github.com/datagen24/victual/issues/460).

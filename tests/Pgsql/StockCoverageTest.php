@@ -3475,8 +3475,10 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * The happy path with the fix in place: a permitted host and a permitted extension still
 	 * produce a stored picture. GuzzleHttp\Client is substituted so this proves itself
 	 * without a real network call, and the request options prove the request would have been
-	 * pinned to the validated address (CURLOPT_RESOLVE) and would not have followed a
-	 * redirect - both required by issue #459's DNS-rebinding and redirect guards.
+	 * pinned to the validated address (CURLOPT_RESOLVE), would not have followed a redirect,
+	 * and would not have honoured an HTTP_PROXY/HTTPS_PROXY environment variable - Guzzle's
+	 * curl handler picks one of those up by default, which would let the proxy resolve the
+	 * host instead of the pinned address, making CURLOPT_RESOLVE worthless.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testAPermittedHostAndExtensionAreStillFetchedAndStored(): void
@@ -3498,6 +3500,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			self::assertTrue($response['request_made'], 'a permitted host and extension are actually fetched');
 			self::assertSame('GET https://93.184.216.34/products/x.png', $response['request_uri']);
 			self::assertFalse($response['request_options']['allow_redirects'], 'the fetch must not follow a redirect');
+			self::assertSame('', $response['request_options']['proxy'], 'an explicit empty proxy overrides any HTTP_PROXY/HTTPS_PROXY in the environment');
 
 			$resolveOptions = $response['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
 			self::assertNotEmpty($resolveOptions, 'the request is pinned to the address the host policy validated (DNS-rebinding guard)');
@@ -3518,6 +3521,44 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		{
 			@unlink($pluginFile);
 			@unlink(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025118.png');
+		}
+	}
+
+	/**
+	 * A redirect is not an HTTP error to Guzzle, and allow_redirects is off, so a 3xx comes
+	 * back as an ordinary response. Before the status check, a URL whose path ends .jpg had
+	 * $fileExtension already decided as "jpg" from the path alone, so the redirect page's own
+	 * body - here an HTML error page, exactly the shape a stored-XSS attempt could take -
+	 * would have been written out as the picture. A 2xx status is now required before the
+	 * body is used at all.
+	 */
+	#[Depends('testCreatesTheSubprocessApiKey')]
+	public function testARedirectResponseForAnImageExtensionUrlLeavesNoPicture(): void
+	{
+		$pluginFile = self::writeUserLookupPlugin('Coverage Redirect ', 2, 2, "'https://93.184.216.34/products/x.jpg'");
+
+		try
+		{
+			$response = self::sendWithPictureFetchStandIn(
+				'GET',
+				'/api/stock/barcodes/external-lookup/4000417025125?add=true',
+				['VICTUAL_STOCK_BARCODE_LOOKUP_PLUGIN' => 'CoverageBarcodeLookupPlugin'],
+				['status' => 302, 'headers' => ['Location' => ['https://attacker.example/x.jpg']], 'body_base64' => base64_encode('<html>redirecting...</html>')]
+			);
+			self::assertSame(200, $response['status'], 'the product is still created: ' . $response['body']);
+			self::assertTrue($response['request_made'], 'the URL names a permitted extension and host, so the fetch happens');
+
+			$data = json_decode($response['body'], true);
+			$created = self::$db->prepare('SELECT id, picture_file_name FROM products WHERE id = ?');
+			$created->execute([$data['id']]);
+			$row = $created->fetch(\PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, 'the product itself is still created');
+			self::assertNull($row['picture_file_name'], 'but without a picture: a 302 is not a 2xx, whatever extension the URL implied');
+			self::assertFileDoesNotExist(getenv('VICTUAL_DATAPATH') . '/storage/productpictures/4000417025125.jpg', 'the redirect page body was never written out as the picture');
+		}
+		finally
+		{
+			@unlink($pluginFile);
 		}
 	}
 

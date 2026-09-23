@@ -1059,24 +1059,49 @@ class StockService extends BaseService
 								$webClient = new Client();
 								$response = $webClient->request('GET', $pluginOutput['__image_url'], [
 									'headers' => ['User-Agent' => 'Victual/' . ApplicationService::GetInstance()->GetInstalledVersion()->Version . ' (https://github.com/datagen24/victual)'],
+									// A redirect (3xx) is not an HTTP error to Guzzle and would
+									// otherwise come back as an ordinary response here, since
+									// allow_redirects is off; without the status check below, a
+									// .jpg URL answering 302 with an HTML body would have that
+									// body stored as the picture.
 									'allow_redirects' => false,
+									// Pinning the connection to the validated address
+									// (CURLOPT_RESOLVE, above) is worthless if a proxy - picked
+									// up from HTTP_PROXY/HTTPS_PROXY/NO_PROXY by default - does
+									// its own DNS resolution instead. An explicit empty proxy
+									// overrides the environment (curl's own documented
+									// behaviour) rather than merely omitting the option, which
+									// would still inherit it. A deployment behind a mandatory
+									// outbound proxy loses only this one already-fail-soft
+									// picture fetch, not the lookup itself.
+									'proxy' => '',
 									'curl' => [CURLOPT_RESOLVE => [$resolveEntry]],
 								]);
 
-								// Fallback to Content-Type header if the URL's path gave no extension
-								if ($fileExtension === '' && $response->hasHeader('Content-Type'))
+								if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300)
 								{
-									$fileExtension = strtolower(explode('+', explode('/', $response->getHeader('Content-Type')[0])[1])[0]);
-
-									if (!in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true))
+									// Fallback to Content-Type header if the URL's path gave no extension
+									if ($fileExtension === '' && $response->hasHeader('Content-Type'))
 									{
-										$fileExtension = '';
+										$fileExtension = strtolower(explode('+', explode('/', $response->getHeader('Content-Type')[0])[1])[0]);
+
+										if (!in_array($fileExtension, self::ALLOWED_PICTURE_EXTENSIONS, true))
+										{
+											$fileExtension = '';
+										}
+									}
+
+									if ($fileExtension !== '')
+									{
+										$imageData = $response->getBody();
 									}
 								}
-
-								if ($fileExtension !== '')
+								else
 								{
-									$imageData = $response->getBody();
+									// A non-2xx response (a redirect, since allow_redirects is
+									// off, or an error page http_errors let through) is never a
+									// picture, whatever extension the URL implied.
+									$fileExtension = '';
 								}
 							}
 						}

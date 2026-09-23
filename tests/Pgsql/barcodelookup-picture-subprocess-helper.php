@@ -22,8 +22,9 @@
 // response Client::request() returns when it is called at all.
 //
 // Output: request-subprocess-helper.php's {status, body} plus request_made (bool),
-// request_uri, request_options (the "curl" and "allow_redirects" entries in particular,
-// which is where the resolved-address pin and the redirect refusal are asserted).
+// request_uri, request_options ("curl", "allow_redirects" and "proxy" in particular,
+// which is where the resolved-address pin, the redirect refusal and the proxy bypass
+// guard are each asserted).
 
 namespace GuzzleHttp
 {
@@ -157,6 +158,7 @@ namespace
 		'request_options' => [
 			'allow_redirects' => \GuzzleHttp\Client::$LastOptions['allow_redirects'] ?? null,
 			'curl' => \GuzzleHttp\Client::$LastOptions['curl'] ?? null,
+			'proxy' => \GuzzleHttp\Client::$LastOptions['proxy'] ?? null,
 		],
 	]);
 }

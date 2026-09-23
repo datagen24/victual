@@ -189,20 +189,36 @@ final class OutboundHostPolicy
 			'169.254.0.0/16',  // link-local, including the 169.254.169.254 cloud metadata address
 			'172.16.0.0/12',   // RFC 1918 private
 			'192.168.0.0/16',  // RFC 1918 private
+			'192.0.0.0/24',    // IETF protocol assignments (RFC 6890)
+			'198.18.0.0/15',   // benchmarking (RFC 2544)
 			'224.0.0.0/4',     // multicast
 			'240.0.0.0/4',     // reserved, including 255.255.255.255/32 broadcast
 		];
 	}
 
-	/** @return array<int, string> CIDR ranges (addr/n) this policy refuses for IPv6. */
+	/**
+	 * CIDR ranges (addr/n) this policy refuses outright for IPv6 - as opposed to the
+	 * embedded-IPv4 forms ExtractEmbeddedIpv4() and IsRefusedIpv6() check by their IPv4
+	 * address instead. 2002::/16 (6to4) is refused wholesale rather than by its embedded
+	 * address: 6to4 is deprecated (RFC 7526), and unlike a NAT64 well-known prefix its
+	 * embedded address names the tunnel's own relay, not a final destination whose
+	 * reachability this policy would otherwise decide on its own terms.
+	 *
+	 * @return array<int, string>
+	 */
 	private static function RefusedIpv6Ranges(): array
 	{
 		return [
-			'::/128',      // unspecified
-			'::1/128',     // loopback
-			'fc00::/7',    // unique local (ULA)
-			'fe80::/10',   // link-local
-			'ff00::/8',    // multicast
+			'::/128',         // unspecified
+			'::1/128',        // loopback
+			'64:ff9b:1::/48', // NAT64, local use (RFC 8215) - refused wholesale; RFC 6052's
+			                  // variable-length embedding for a /48 prefix is not the simple
+			                  // fixed-offset form ExtractEmbeddedIpv4() decodes for /96.
+			'2002::/16',      // 6to4 (RFC 3056, deprecated by RFC 7526)
+			'fc00::/7',       // unique local (ULA)
+			'fe80::/10',      // link-local
+			'fec0::/10',      // site-local (deprecated, RFC 3879)
+			'ff00::/8',       // multicast
 		];
 	}
 
@@ -264,6 +280,15 @@ final class OutboundHostPolicy
 			{
 				return inet_ntop($embedded);
 			}
+		}
+
+		// NAT64 well-known prefix (RFC 6052): 64:ff9b::/96 embeds the IPv4 destination in its
+		// last 32 bits exactly as the mapped form above does, so it is checked against the
+		// same IPv4 rules rather than refused wholesale.
+		$nat64Prefix = @inet_pton('64:ff9b::');
+		if ($nat64Prefix !== false && substr($binary, 0, 12) === substr($nat64Prefix, 0, 12))
+		{
+			return inet_ntop(substr($binary, 12, 4));
 		}
 
 		return null;
