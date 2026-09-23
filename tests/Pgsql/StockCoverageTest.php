@@ -2333,6 +2333,41 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * Reaches UndoBooking's "no row at all shares this stock_id and location" refusal - the
+	 * `count($stockRows) === 0` branch. Also not reachable through any documented API path:
+	 * every write path that could remove the stock row (undoing a later dependent booking,
+	 * a transfer) is already caught by the "no live subsequent booking" guard above, so the
+	 * fixture forces it directly with a raw DELETE, standing in for an out-of-band removal
+	 * of the row (e.g. a direct database edit) that leaves a live purchase booking with
+	 * nothing left to subtract its amount from.
+	 */
+	#[Depends('testCreatesFixtures')]
+	public function testUndoRefusesAPurchaseWhoseEntryWasRemovedOutright(): void
+	{
+		self::$ids['undo_row_gone'] = self::insertProduct('Coverage Undo Row Gone');
+
+		$purchase = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['undo_row_gone']]),
+			200,
+			'Two units are purchased'
+		);
+
+		// Simulates an out-of-band removal of the entry, without going through any
+		// UndoBooking-guarded path.
+		self::$db->prepare('DELETE FROM stock WHERE product_id = ?')->execute([self::$ids['undo_row_gone']]);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$purchase[0]['id']]),
+			400,
+			'Undoing a purchase whose entry was removed outright is refused'
+		);
+
+		$stillLive = self::$db->prepare('SELECT undone FROM stock_log WHERE id = ?');
+		$stillLive->execute([(int)$purchase[0]['id']]);
+		self::assertSame(0, (int)$stillLive->fetchColumn(), 'The booking stays live rather than being marked undone');
+	}
+
+	/**
 	 * Reaches UndoBooking's "more than one row shares this stock_id and location" refusal.
 	 * Two compacted purchases (2 + 3, matching every grouping column) land on one row of 5.
 	 * A partial consume of 1 (row becomes 4) is then undone, which - like the CONSUME undo
