@@ -976,7 +976,8 @@ class BarcodeLookupTest extends TestCase
 	 * (issue #460), which is only true if a caller cannot hand it options that undo the
 	 * policy it enforces. A caller-supplied 'allow_redirects' => true (a redirect off the
 	 * pinned address), 'proxy' => '...' (the proxy resolves the host itself, making the pin
-	 * meaningless), 'connect_timeout' => 0 (an unbounded connect wait) or
+	 * meaningless), 'timeout' => 0 or 'connect_timeout' => 0 (Guzzle's own spelling of "no
+	 * limit", for the whole request and the connect phase respectively) or
 	 * 'curl' => [CURLOPT_FOLLOWLOCATION => true] (the same redirect-following defeat by a
 	 * different route) must all be discarded rather than merged, however plausible the
 	 * reason a caller might pass them looks. No current caller passes any of these; this
@@ -994,6 +995,7 @@ class BarcodeLookupTest extends TestCase
 				'headers' => ['User-Agent' => 'FetchHardeningTest/1.0'],
 				'allow_redirects' => true,
 				'proxy' => 'http://proxy.example:3128',
+				'timeout' => 0,
 				'connect_timeout' => 0,
 				'curl' => [CURLOPT_FOLLOWLOCATION => true],
 			]
@@ -1001,6 +1003,7 @@ class BarcodeLookupTest extends TestCase
 
 		self::assertFalse($result['request_options']['allow_redirects'], 'a caller cannot re-enable following redirects');
 		self::assertSame('', $result['request_options']['proxy'], 'a caller cannot re-enable an outbound proxy');
+		self::assertSame(10.0, (float)$result['request_options']['timeout'], 'a caller cannot remove the whole-request timeout');
 		self::assertSame(5.0, (float)$result['request_options']['connect_timeout'], 'a caller cannot remove the connect timeout');
 		self::assertArrayNotHasKey(CURLOPT_FOLLOWLOCATION, $result['request_options']['curl'] ?? [], 'a caller-supplied curl option is discarded entirely, not merged with the pin');
 		self::assertArrayHasKey(CURLOPT_RESOLVE, $result['request_options']['curl'] ?? [], "Fetch()'s own DNS-rebinding pin still applies");

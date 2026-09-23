@@ -17,7 +17,8 @@
 // this makes no real DNS lookup either.
 //
 // Spec: {url, options, host_resolver_addresses, on_headers_content_lengths}. Prints
-// {request_options: {allow_redirects, proxy, connect_timeout, curl}, on_headers_results} -
+// {request_options: {allow_redirects, proxy, timeout, connect_timeout, curl},
+// on_headers_results} -
 // the options a caller must not be able to override, plus, for each entry in
 // on_headers_content_lengths, whether invoking the recorded on_headers callback with a
 // response carrying that Content-Length throws ("outcome": "threw"|"passed").
@@ -82,6 +83,7 @@ namespace
 		'request_options' => [
 			'allow_redirects' => \GuzzleHttp\Client::$LastOptions['allow_redirects'] ?? null,
 			'proxy' => \GuzzleHttp\Client::$LastOptions['proxy'] ?? null,
+			'timeout' => \GuzzleHttp\Client::$LastOptions['timeout'] ?? null,
 			'connect_timeout' => \GuzzleHttp\Client::$LastOptions['connect_timeout'] ?? null,
 			'on_headers_is_callable' => is_callable($onHeaders),
 			'curl' => \GuzzleHttp\Client::$LastOptions['curl'] ?? null,

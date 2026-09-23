@@ -260,19 +260,20 @@ abstract class BaseBarcodeLookupPlugin
 	 * @param array $options Guzzle request options layered on top of the ones this method
 	 *                       sets - in practice only 'headers' => ['User-Agent' => '...'] for
 	 *                       a source that wants to identify itself distinctly, as Open Food
-	 *                       Facts does. 'allow_redirects', 'proxy', 'connect_timeout',
-	 *                       'on_headers' and 'curl' are this method's alone: whatever
-	 *                       $options carries under those keys is discarded after the merge,
-	 *                       not merged with this method's own values, because each is
-	 *                       exactly the setting a caller would need to defeat the policy
-	 *                       above (a redirect off the pinned address, a proxy that resolves
-	 *                       the host itself, an unbounded connect wait, a size guard that
-	 *                       never runs, or a raw CURLOPT_PROXY / CURLOPT_FOLLOWLOCATION /
-	 *                       CURLOPT_RESOLVE / CURLOPT_CONNECT_TO / CURLOPT_MAXFILESIZE_LARGE
-	 *                       slipped in under 'curl'). No caller needs any of these today, and
-	 *                       refusing all of 'curl' - not attempting to allow-list which curl
-	 *                       options are "safe" - is the simpler of the two ways to close that
-	 *                       off.
+	 *                       Facts does. 'allow_redirects', 'proxy', 'timeout',
+	 *                       'connect_timeout', 'on_headers' and 'curl' are this method's
+	 *                       alone: whatever $options carries under those keys is discarded
+	 *                       after the merge, not merged with this method's own values,
+	 *                       because each is exactly the setting a caller would need to
+	 *                       defeat the policy above (a redirect off the pinned address, a
+	 *                       proxy that resolves the host itself, an unbounded whole-request
+	 *                       or connect wait - 'timeout' => 0 is Guzzle's own spelling of "no
+	 *                       limit" - a size guard that never runs, or a raw CURLOPT_PROXY /
+	 *                       CURLOPT_FOLLOWLOCATION / CURLOPT_RESOLVE / CURLOPT_CONNECT_TO /
+	 *                       CURLOPT_MAXFILESIZE_LARGE slipped in under 'curl'). No caller
+	 *                       needs any of these today, and refusing all of 'curl' - not
+	 *                       attempting to allow-list which curl options are "safe" - is the
+	 *                       simpler of the two ways to close that off.
 	 * @return ResponseInterface
 	 * @throws OutboundHostRefusedException When $url's scheme or resolved host is refused
 	 * @throws \GuzzleHttp\Exception\GuzzleException On a connection-level failure
@@ -317,15 +318,15 @@ abstract class BaseBarcodeLookupPlugin
 		// merges nested arrays key-by-key, so a caller's own 'curl' => [CURLOPT_RESOLVE =>
 		// ...] would otherwise sit in $requestOptions until the explicit overwrite below,
 		// and a caller's 'curl' => [CURLOPT_PROXY => ...] has no corresponding key in this
-		// method's own 'curl' array to be overwritten by at all. connect_timeout and
-		// on_headers are the same kind of caller-cannot-touch-this setting: a caller's own
-		// on_headers would replace, not run alongside, the size guard below.
-		unset($options['allow_redirects'], $options['proxy'], $options['curl'], $options['connect_timeout'], $options['on_headers']);
+		// method's own 'curl' array to be overwritten by at all. connect_timeout, on_headers
+		// and timeout are the same kind of caller-cannot-touch-this setting: a caller's own
+		// on_headers would replace, not run alongside, the size guard below, and a caller's
+		// 'timeout' => 0 is Guzzle's spelling of "no limit at all".
+		unset($options['allow_redirects'], $options['proxy'], $options['curl'], $options['connect_timeout'], $options['on_headers'], $options['timeout']);
 
 		$requestOptions = array_replace_recursive(
 			[
 				'http_errors' => false,
-				'timeout' => self::FETCH_TIMEOUT_SECONDS,
 			],
 			$options,
 			[
@@ -333,11 +334,12 @@ abstract class BaseBarcodeLookupPlugin
 				// Fixed by this method, never by a caller: a redirect off the validated,
 				// pinned address, a proxy resolving the host itself, a raw curl option
 				// (CURLOPT_PROXY, CURLOPT_FOLLOWLOCATION, CURLOPT_CONNECT_TO, a second
-				// CURLOPT_RESOLVE), an unbounded connect wait, or a response of unbounded
-				// size would each be a way to defeat this method's policy without touching
-				// OutboundHostPolicy directly.
+				// CURLOPT_RESOLVE), an unbounded connect wait, an unbounded whole-request
+				// wait, or a response of unbounded size would each be a way to defeat this
+				// method's policy without touching OutboundHostPolicy directly.
 				'allow_redirects' => false,
 				'proxy' => '',
+				'timeout' => self::FETCH_TIMEOUT_SECONDS,
 				'connect_timeout' => self::FETCH_CONNECT_TIMEOUT_SECONDS,
 				'on_headers' => self::MaxResponseSizeGuard(),
 				// CURLOPT_MAXFILESIZE_LARGE (backstop for a response that never declares
