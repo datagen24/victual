@@ -467,18 +467,20 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * not reach the rest of the class.
 	 */
 	#[Depends('testPurchaseCarriesEveryOptionalBodyFieldOntoTheLedger')]
-	public function testPurchaseAcceptsAMissingLocationWhenADueDateIsSupplied(): void
+	public function testPurchaseRefusesAMissingLocationEvenWhenADueDateIsSupplied(): void
 	{
 		self::$db->beginTransaction();
 
 		try
 		{
-			$rows = $this->expectStatus(
+			$this->expectStatus(
 				fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => 987654, 'best_before_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => self::$ids['staple']]),
-				200,
-				'Current behaviour: a due date skips the location check'
+				400,
+				'A missing location is refused even when a due date is supplied'
 			);
-			self::assertSame(987654, (int)$rows[0]['location_id'], 'The booking records a location that does not exist');
+			// Verify nothing was written
+			$ledger = self::$db->stock_log()->where('product_id = :1', self::$ids['staple'])->fetchAll();
+			self::assertEmpty($ledger, 'No stock entry was written');
 		}
 		finally
 		{
