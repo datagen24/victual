@@ -818,7 +818,10 @@ class StockApiController extends BaseApiController
 	public function LocationStockEntries(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		return $this->FilteredApiResponse($request, $response, StockService::GetInstance()->GetLocationStockEntries($args['locationId']), $request->getQueryParams());
+		return $this->HandleApiCall($response, function () use ($request, $response, $args)
+		{
+			return $this->FilteredApiResponse($request, $response, StockService::GetInstance()->GetLocationStockEntries($args['locationId']), $request->getQueryParams());
+		});
 	}
 
 	/**

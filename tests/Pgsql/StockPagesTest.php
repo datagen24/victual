@@ -1336,34 +1336,21 @@ class StockPagesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT. GET /recipe/new is linked from the recipes page
-	 * (views/recipes.blade.php:61) and RecipesController::RecipeEditForm() documents
-	 * recipeId as "either a recipe id or the literal 'new' for create mode" and computes
-	 * mode from exactly that. It nonetheless passes the literal through to
-	 * $this->DB->recipes($recipeId) first (controllers/RecipesController.php:234), which
-	 * on PostgreSQL is SELECT * FROM recipes WHERE id = 'new' - SQLSTATE 22P02. So the
-	 * create form is unreachable and the link 500s.
-	 *
-	 * StockController::ProductEditForm() shows the shape the correct behaviour has: it
-	 * branches on 'new' before touching the database. Pinned rather than fixed, and
-	 * marked incomplete so the run reports it.
+	 * GET /recipe/new is linked from the recipes page (views/recipes.blade.php:61) and
+	 * RecipesController::RecipeEditForm() documents recipeId as "either a recipe id or the
+	 * literal 'new' for create mode". It now branches on that literal before touching the
+	 * database, the shape StockController::ProductEditForm() already has, so the create
+	 * form renders instead of the literal reaching $this->DB->recipes() as an id and
+	 * raising a PDOException (SQLSTATE 22P02 on the integer column).
 	 */
 	#[Depends('testFixturesAreCreated')]
-	public function testRecipeCreateFormCannotBeReached(): void
+	public function testRecipeCreateFormRenders(): void
 	{
 		self::assumeRole('ADMIN');
 
-		try
-		{
-			self::recipesPage('RecipeEditForm', ['recipeId' => 'new']);
-			self::fail('GET /recipe/new rendered - the defect below has been fixed, so this test should be replaced by the positive assertion');
-		}
-		catch (\PDOException $exception)
-		{
-			self::assertStringContainsString('invalid input syntax for type integer', $exception->getMessage(), 'the literal create marker reaches the query as an id');
-		}
-
-		self::markTestIncomplete('GET /recipe/new raises a PDOException instead of rendering the create form');
+		[$form, $diagnostics] = self::renderCapturingDiagnostics(self::$recipes, 'RecipeEditForm', ['recipeId' => 'new'], [], E_ALL);
+		self::assertStringContainsString('</html>', $form, 'the create form is served');
+		self::assertStringContainsString("Victual.EditMode = 'create';", $form, 'in create mode, not edit');
 	}
 
 	// --- Phase 6: price redaction ------------------------------------------------------

@@ -6,6 +6,7 @@ use Victual\Controllers\Users\User;
 use Victual\Services\DatabaseService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Exception\HttpNotFoundException;
 
 /**
  * The label designer's two pages.
@@ -46,7 +47,7 @@ class LabelTemplatesController extends BaseController
 
 		if (!$template)
 		{
-			return $this->GenericErrorResponse($response, 'Label template not found', 404);
+			throw new HttpNotFoundException($request);
 		}
 
 		// The printers are here so a preview can name one: a preview renders against a real

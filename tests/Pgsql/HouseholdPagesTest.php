@@ -1113,22 +1113,19 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (controllers/LabelTemplatesController.php:38): opening a template id that
-	 * does not exist is meant to answer 404 - the method says so - but it calls
-	 * $this->GenericErrorResponse(), which is defined on BaseApiController and not on the
-	 * BaseController this class extends. So the one branch that exists to produce a clean
-	 * "not found" is an undefined method call, and an administrator following a stale link
-	 * gets a 500 from the error middleware instead of the 404 the code intends.
-	 *
-	 * Pinned rather than skipped, so the fix is visible as this test changing: the correct
-	 * behaviour is a 404 response.
+	 * Opening a template id that does not exist answers 404, as
+	 * LabelTemplatesController::TemplateEditor() throws a Slim HttpNotFoundException for
+	 * it - the idiom the other page controllers extending BaseController use - rather than
+	 * calling GenericErrorResponse(), which is defined on BaseApiController and not on
+	 * BaseController.
 	 */
-	public function testTemplateEditorForAnUnknownTemplateFailsInsteadOfAnswering404(): void
+	public function testTemplateEditorForAnUnknownTemplateAnswers404(): void
 	{
-		$this->expectException(\Error::class);
-		$this->expectExceptionMessage('GenericErrorResponse');
-
-		self::$labelTemplates->TemplateEditor(self::request(), self::response(), ['templateId' => '999999']);
+		$this->expectStatus(
+			fn () => self::$labelTemplates->TemplateEditor(self::request(), self::response(), ['templateId' => '999999']),
+			404,
+			'GET /labeltemplate/{id} for an id that does not exist'
+		);
 	}
 
 	public function testLabelPrintJobPagesAreAdministrationOnly(): void
