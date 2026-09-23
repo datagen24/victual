@@ -66,9 +66,9 @@ Five pieces in three dependency groups. A alone; B and C after A; D after C; E l
   reviewable.
 - One retirement trigger per target table, the shape of `retire_location_labels`: on
   `DELETE` of a product, stock entry, recipe, chore or battery, the live label for it is
-  retired with a `retirement_snapshot` of `id` and `name`. For a stock entry, the snapshot
-  also carries the product name and the entry's `best_before_date` and `amount`, which is
-  what a person holding a retired label most needs to see.
+  retired with a `retirement_snapshot` of `id` and `name`. A stock entry has no name of its
+  own, so its snapshot carries `id`, the product name and the entry's `best_before_date` and
+  `amount` instead, which is what a person holding a retired label most needs to see.
 - `labels_one_live_per_target` already covers `(kind, target_id)`; nothing to add.
 - Consuming a stock entry to zero does not delete its row, so its label stays live and
   resolves to an entry with `amount = 0`. That is correct: the jar is still on the shelf
