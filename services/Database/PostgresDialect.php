@@ -41,6 +41,20 @@ class PostgresDialect extends DatabaseDialect
 	 */
 	const PUBLICATION_ADVISORY_LOCK_KEY = 1986943824;
 
+	/**
+	 * The class id LockProductStock() takes its advisory lock's two-integer form on, with
+	 * the product id as the object id.
+	 *
+	 * A class id of its own rather than 0 (which would make the lock identity just the
+	 * product id) is what keeps this keyspace from ever overlapping
+	 * MIGRATION_ADVISORY_LOCK_KEY's or PUBLICATION_ADVISORY_LOCK_KEY's single-bigint locks:
+	 * pg_advisory_xact_lock(classid, objid)'s identity is those two 32-bit integers
+	 * concatenated into one 64-bit value, which only coincides with a single-bigint lock's
+	 * identity when classid is 0. It is the ASCII bytes of "vicS" ("vic" for the same
+	 * reason as the other two, "S" for stock), 0x76696353.
+	 */
+	const STOCK_BOOKING_ADVISORY_LOCK_CLASS = 1986618195;
+
 	/** @var bool True while a data change has been recorded but not yet written to the changed time table */
 	private $DbChangedPending = false;
 
@@ -308,6 +322,22 @@ class PostgresDialect extends DatabaseDialect
 		{
 			$pdo->prepare('SELECT pg_advisory_unlock(?)')->execute([self::PUBLICATION_ADVISORY_LOCK_KEY]);
 		}
+	}
+
+	/**
+	 * pg_advisory_xact_lock(classid, objid) on STOCK_BOOKING_ADVISORY_LOCK_CLASS and
+	 * $productId. Transaction scoped: it releases automatically at the commit or rollback
+	 * of whichever transaction is open on $pdo when this runs, wherever in the call graph
+	 * that was, and blocks until it can be taken rather than failing - a booking waits for
+	 * the one ahead of it rather than refusing.
+	 *
+	 * See DatabaseDialect::LockProductStock() for why this is transaction rather than
+	 * session scoped and why the two-integer form is what keeps it from colliding with
+	 * MIGRATION_ADVISORY_LOCK_KEY or PUBLICATION_ADVISORY_LOCK_KEY.
+	 */
+	public function LockProductStock(\PDO $pdo, int $productId): void
+	{
+		$pdo->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([self::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
 	}
 
 	/**

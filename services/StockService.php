@@ -306,6 +306,11 @@ class StockService extends BaseService
 			// land as one.
 			DatabaseService::GetInstance()->InTransaction(function () use ($productId, $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note, $productDetails, &$transactionId)
 			{
+				// Serialises against every other booking of this product (issue #458) -
+				// including the CompactStockEntries() call below, which reads and rewrites
+				// this product's stock rows.
+				DatabaseService::GetInstance()->LockProductStock($productId);
+
 				if ($stockLabelType == 2)
 				{
 					// Label per unit => single stock entry per unit
@@ -579,32 +584,8 @@ class StockService extends BaseService
 			throw new \Exception('Location does not exist');
 		}
 
-		$productDetails = (object)$this->GetProductDetails($productId);
-
 		if ($transactionType === self::TRANSACTION_TYPE_CONSUME || $transactionType === self::TRANSACTION_TYPE_INVENTORY_CORRECTION)
 		{
-			if ($locationId === null)
-			{
-				// Consume from any location
-				$potentialStockEntries = $this->GetProductStockEntries($productId, false, $allowSubproductSubstitution);
-			}
-			else
-			{
-				// Consume only from the supplied location
-				$potentialStockEntries = $this->GetProductStockEntriesForLocation($productId, $locationId, false, $allowSubproductSubstitution);
-			}
-
-			if ($specificStockEntryId !== 'default')
-			{
-				$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
-			}
-
-			$productStockAmount = $productDetails->stock_amount_aggregated;
-			if (round($amount, 2) > round($productStockAmount, 2))
-			{
-				throw new \Exception('Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)');
-			}
-
 			if ($transactionId === null)
 			{
 				$transactionId = uniqid();
@@ -612,8 +593,52 @@ class StockService extends BaseService
 
 			// One booking per touched stock entry, each paired with a delete or an amount
 			// update - so `stock` and `stock_log` can only ever agree if all of them land.
-			DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $productId, $spoiled, $transactionType, $recipeId, $allowSubproductSubstitution, $productDetails, &$transactionId)
+			DatabaseService::GetInstance()->InTransaction(function () use ($amount, $productId, $spoiled, $transactionType, $recipeId, $allowSubproductSubstitution, $locationId, $specificStockEntryId, &$transactionId)
 			{
+				// Locked, then read (issue #458): reading the candidate entries and the
+				// aggregated-amount check before the lock would let two concurrent consumes
+				// both read the same pre-write state, both pass a check only one of them
+				// should, and together consume more than was in stock. With substitution
+				// on, GetProductStockEntries() below can return sub product rows too, so
+				// every sub product is locked in the same call, ascending, alongside
+				// $productId (PR #471 follow-up) - a lock taken on just $productId would
+				// leave a direct booking of the sub product unlocked against this one, and
+				// a nested multi-product caller (ConsumeRecipe()) locking sub products
+				// individually after its own ascending set would risk a lock order
+				// inversion against this call.
+				if ($allowSubproductSubstitution)
+				{
+					DatabaseService::GetInstance()->LockProductsStock($this->SubstitutionLockSet($productId));
+				}
+				else
+				{
+					DatabaseService::GetInstance()->LockProductStock($productId);
+				}
+
+				$productDetails = (object)$this->GetProductDetails($productId);
+
+				if ($locationId === null)
+				{
+					// Consume from any location
+					$potentialStockEntries = $this->GetProductStockEntries($productId, false, $allowSubproductSubstitution);
+				}
+				else
+				{
+					// Consume only from the supplied location
+					$potentialStockEntries = $this->GetProductStockEntriesForLocation($productId, $locationId, false, $allowSubproductSubstitution);
+				}
+
+				if ($specificStockEntryId !== 'default')
+				{
+					$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
+				}
+
+				$productStockAmount = $productDetails->stock_amount_aggregated;
+				if (round($amount, 2) > round($productStockAmount, 2))
+				{
+					throw new \Exception('Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)');
+				}
+
 				foreach ($potentialStockEntries as $stockEntry)
 				{
 					if ($amount == 0)
@@ -774,25 +799,9 @@ class StockService extends BaseService
 			throw new \Exception('Stock does not exist');
 		}
 
+		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
 		$transactionId = uniqid();
-
-		// Whether the edited state still permits the measurement (if any) this entry already
-		// carries. round() guards the float amount comparison the CHECK itself does exactly.
-		$staysCoherent = boolval($open) && round($amount, 2) == 1.0;
-
-		$measurementBefore = [
-			'opened_amount' => $stockRow->opened_amount,
-			'opened_qu_id' => $stockRow->opened_qu_id,
-			'opened_tare' => $stockRow->opened_tare,
-			'opened_measured_at' => $stockRow->opened_measured_at,
-		];
-		$measurementAfter = $staysCoherent ? $measurementBefore : [
-			'opened_amount' => null,
-			'opened_qu_id' => null,
-			'opened_tare' => null,
-			'opened_measured_at' => null,
-		];
 
 		// An eighth transactional entrypoint, added by plan 18's review rather than by
 		// plan 13, which wrapped the seven stock *booking* paths and left this one out.
@@ -802,10 +811,39 @@ class StockService extends BaseService
 		// question by adding a ninth write - the outbox event - that has to commit with the
 		// rest or not at all.
 		DatabaseService::GetInstance()->InTransaction(function () use (
-			$stockRow, $correlationId, $transactionId, $amount, $bestBeforeDate, $locationId,
-			$shoppingLocationId, $price, $open, $purchasedDate, $note, $measurementBefore, $measurementAfter
+			$stockRowId, $productId, $correlationId, $transactionId, $amount, $bestBeforeDate, $locationId,
+			$shoppingLocationId, $price, $open, $purchasedDate, $note
 		)
 		{
+			// Locked, then re-read (issue #458): the row fetched above this transaction can
+			// have been changed, or the entry removed outright, by a concurrent booking
+			// before this lock was taken.
+			DatabaseService::GetInstance()->LockProductStock($productId);
+
+			$stockRow = $this->DB->stock()->where('id = :1', $stockRowId)->fetch();
+			if ($stockRow === null)
+			{
+				throw new \Exception('Stock does not exist');
+			}
+
+			// Whether the edited state still permits the measurement (if any) this entry
+			// already carries. round() guards the float amount comparison the CHECK itself
+			// does exactly.
+			$staysCoherent = boolval($open) && round($amount, 2) == 1.0;
+
+			$measurementBefore = [
+				'opened_amount' => $stockRow->opened_amount,
+				'opened_qu_id' => $stockRow->opened_qu_id,
+				'opened_tare' => $stockRow->opened_tare,
+				'opened_measured_at' => $stockRow->opened_measured_at,
+			];
+			$measurementAfter = $staysCoherent ? $measurementBefore : [
+				'opened_amount' => null,
+				'opened_qu_id' => null,
+				'opened_tare' => null,
+				'opened_measured_at' => null,
+			];
+
 			$logOldRowForStockUpdate = $this->DB->stock_log()->createRow(array_merge([
 				'product_id' => $stockRow->product_id,
 				'amount' => $stockRow->amount,
@@ -903,27 +941,39 @@ class StockService extends BaseService
 			throw new \Exception('Stock does not exist');
 		}
 
-		if ($stockRow->open != 1 || round($stockRow->amount, 2) != 1.0)
-		{
-			throw new \Exception('Only a single opened container (open, amount = 1) can be measured');
-		}
-
-		$resolved = $this->ResolveMeasurement($stockRow->product_id, $measurement);
-
+		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
 		$transactionId = uniqid();
 
-		$measurementBefore = [
-			'opened_amount' => $stockRow->opened_amount,
-			'opened_qu_id' => $stockRow->opened_qu_id,
-			'opened_tare' => $stockRow->opened_tare,
-			'opened_measured_at' => $stockRow->opened_measured_at,
-		];
-
 		DatabaseService::GetInstance()->InTransaction(function () use (
-			$stockRow, $correlationId, $transactionId, $measurementBefore, $resolved
+			$stockRowId, $productId, $correlationId, $transactionId, $measurement
 		)
 		{
+			// Locked, then re-read (issue #458): the coherence check below (open = 1,
+			// amount = 1) has to see the committed state of any booking that touched this
+			// entry first, not the possibly stale row fetched above this transaction.
+			DatabaseService::GetInstance()->LockProductStock($productId);
+
+			$stockRow = $this->DB->stock()->where('id = :1', $stockRowId)->fetch();
+			if ($stockRow === null)
+			{
+				throw new \Exception('Stock does not exist');
+			}
+
+			if ($stockRow->open != 1 || round($stockRow->amount, 2) != 1.0)
+			{
+				throw new \Exception('Only a single opened container (open, amount = 1) can be measured');
+			}
+
+			$resolved = $this->ResolveMeasurement($stockRow->product_id, $measurement);
+
+			$measurementBefore = [
+				'opened_amount' => $stockRow->opened_amount,
+				'opened_qu_id' => $stockRow->opened_qu_id,
+				'opened_tare' => $stockRow->opened_tare,
+				'opened_measured_at' => $stockRow->opened_measured_at,
+			];
+
 			$logOldRow = $this->DB->stock_log()->createRow(array_merge([
 				'product_id' => $stockRow->product_id,
 				'amount' => $stockRow->amount,
@@ -1696,6 +1746,34 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * $productId plus every sub product id GetProductStockEntries() and
+	 * GetProductStockEntriesForLocation() would draw into a substitution-aware read of it
+	 * (products_resolved, the same source those two methods use) - the set a
+	 * substitution-aware booking has to lock as one unit before touching any of them
+	 * (issue #458, PR #471 follow-up).
+	 *
+	 * A caller with substitution off never reads or writes another product's stock, so it
+	 * has no reason to call this: DatabaseService::LockProductStock($productId) alone is
+	 * correct there, and locking a whole family it never touches would only make it wait
+	 * on bookings of products it has nothing to do with.
+	 *
+	 * @param int $productId
+	 * @return int[] $productId and its sub product ids, in no particular order -
+	 *               DatabaseService::LockProductsStock() sorts them
+	 */
+	public function SubstitutionLockSet(int $productId): array
+	{
+		$subProductIds = array_map('intval', DatabaseService::GetInstance()->ExecuteDbQuery(
+			'SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ?',
+			[$productId]
+		)->fetchAll(\PDO::FETCH_COLUMN));
+
+		$subProductIds[] = $productId;
+
+		return $subProductIds;
+	}
+
+	/**
 	 * Returns the stock entries of a product in default consume order (stock_next_use view:
 	 * default consume location first, then opened first, then first due first, then first in first out) -
 	 * the first entry is the one to use next.
@@ -1813,53 +1891,59 @@ class StockService extends BaseService
 			throw new \Exception('Product does not exist or is inactive');
 		}
 
-		$productDetails = (object)$this->GetProductDetails($productId);
-
-		if ($price === null)
+		// The whole decision has to be made and acted on under one lock (issue #458):
+		// reading stock_amount, deciding whether and by how much to add or consume, and
+		// booking that difference are one read-then-write unit. Locking only around the
+		// AddProduct()/ConsumeProduct() delegation below - as this used to - still lets a
+		// concurrent booking change stock_amount between the read above and the lock,
+		// so the correction is computed against state that is no longer current by the
+		// time it is applied.
+		return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $newAmount, $bestBeforeDate, $locationId, $price, $shoppingLocationId, $purchasedDate, $stockLabelType, $note)
 		{
-			$price = $productDetails->last_price;
-		}
+			DatabaseService::GetInstance()->LockProductStock($productId);
 
-		if ($shoppingLocationId === null)
-		{
-			$shoppingLocationId = $productDetails->last_shopping_location_id;
-		}
+			$productDetails = (object)$this->GetProductDetails($productId);
 
-		if ($purchasedDate == null)
-		{
-			$purchasedDate = date('Y-m-d');
-		}
-
-		// Product-level tare weight handling (the gross-reading passthrough this used to
-		// describe) is retired under ADR-0022 decisions 4 and 7 (2026-09-14); see AddProduct()
-		// and ConsumeProduct(). $newAmount is always the net counted total now.
-		if ($newAmount == $productDetails->stock_amount)
-		{
-			throw new \Exception('The new amount cannot equal the current stock amount');
-		}
-		elseif ($newAmount > $productDetails->stock_amount)
-		{
-			$bookingAmount = $newAmount - $productDetails->stock_amount;
-
-			// The correction is one delegated booking today, but the boundary belongs to the
-			// entrypoint: "an inventory correction is atomic" should not depend on what it delegates to.
-			return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $bookingAmount, $bestBeforeDate, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note)
+			$resolvedPrice = $price;
+			if ($resolvedPrice === null)
 			{
-				return $this->AddProduct($productId, $bookingAmount, $bestBeforeDate, self::TRANSACTION_TYPE_INVENTORY_CORRECTION, $purchasedDate, $price, $locationId, $shoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
-			});
-		}
-		elseif ($newAmount < $productDetails->stock_amount)
-		{
-			$bookingAmount = $productDetails->stock_amount - $newAmount;
+				$resolvedPrice = $productDetails->last_price;
+			}
 
-			// See above.
-			return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $bookingAmount)
+			$resolvedShoppingLocationId = $shoppingLocationId;
+			if ($resolvedShoppingLocationId === null)
 			{
+				$resolvedShoppingLocationId = $productDetails->last_shopping_location_id;
+			}
+
+			$resolvedPurchasedDate = $purchasedDate;
+			if ($resolvedPurchasedDate == null)
+			{
+				$resolvedPurchasedDate = date('Y-m-d');
+			}
+
+			// Product-level tare weight handling (the gross-reading passthrough this used to
+			// describe) is retired under ADR-0022 decisions 4 and 7 (2026-09-14); see AddProduct()
+			// and ConsumeProduct(). $newAmount is always the net counted total now.
+			if ($newAmount == $productDetails->stock_amount)
+			{
+				throw new \Exception('The new amount cannot equal the current stock amount');
+			}
+			elseif ($newAmount > $productDetails->stock_amount)
+			{
+				$bookingAmount = $newAmount - $productDetails->stock_amount;
+
+				return $this->AddProduct($productId, $bookingAmount, $bestBeforeDate, self::TRANSACTION_TYPE_INVENTORY_CORRECTION, $resolvedPurchasedDate, $resolvedPrice, $locationId, $resolvedShoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
+			}
+			elseif ($newAmount < $productDetails->stock_amount)
+			{
+				$bookingAmount = $productDetails->stock_amount - $newAmount;
+
 				return $this->ConsumeProduct($productId, $bookingAmount, false, self::TRANSACTION_TYPE_INVENTORY_CORRECTION);
-			});
-		}
+			}
 
-		return null;
+			return null;
+		});
 	}
 
 	/**
@@ -1912,56 +1996,72 @@ class StockService extends BaseService
 			throw new \Exception('Product can\'t be opened');
 		}
 
-		$productDetails = (object)$this->GetProductDetails($productId);
-		$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
-		$potentialStockEntries = $this->GetProductStockEntries($productId, true, $allowSubproductSubstitution);
-
-		if ($amount > $productStockAmountUnopened)
-		{
-			throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
-		}
-
-		if ($specificStockEntryId !== 'default')
-		{
-			$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
-		}
-
-		$resolvedMeasurement = null;
-		if ($measurement !== null)
-		{
-			// Coherence (ADR-0022 decision 8): a measurement describes exactly one container,
-			// so this call has to name that one entry and open exactly one unit of it. The
-			// entry also has to already hold >= 1 unit, or opening it fully would leave an
-			// amount other than 1 - see 0275.pgsql.sql's coherence CHECK, and the spike's
-			// prerequisite 5 (.spike-adr22/RESULTS.md#prerequisite-5-container-identity).
-			if ($specificStockEntryId === 'default')
-			{
-				throw new \Exception('A measurement requires opening a specific stock entry');
-			}
-
-			if (round($amount, 2) != 1.0)
-			{
-				throw new \Exception('A measurement requires opening exactly one unit');
-			}
-
-			$targetEntry = FindObjectInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
-			if ($targetEntry === null || round($targetEntry->amount, 2) < 1.0)
-			{
-				throw new \Exception('This stock entry cannot be opened as a single measured container');
-			}
-
-			$resolvedMeasurement = $this->ResolveMeasurement($productId, $measurement);
-		}
-
 		if ($transactionId === null)
 		{
 			$transactionId = uniqid();
 		}
 
 		// The booking and the stock entry it describes (and the split-off rest entry) have to
-		// land together, or the ledger records an opening that stock does not show.
-		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntries, $amount, $product, $productDetails, $productId, $allowSubproductSubstitution, $specificStockEntryId, $resolvedMeasurement, &$transactionId)
+		// land together, or the ledger records an opening that stock does not show. The
+		// unopened-amount check and the candidate entries below move inside the lock for the
+		// same reason (issue #458): reading them before the lock would let a concurrent
+		// booking change what is actually unopened before this call decided against it.
+		DatabaseService::GetInstance()->InTransaction(function () use ($amount, $product, $productId, $allowSubproductSubstitution, $specificStockEntryId, $measurement, &$transactionId)
 		{
+			// With substitution on, GetProductStockEntries() below can return sub product
+			// rows too, and "move on open" further down can transfer one of them - so every
+			// sub product is locked in the same call, ascending, alongside $productId
+			// (PR #471 follow-up on issue #458), for the same reason ConsumeProduct() does.
+			if ($allowSubproductSubstitution)
+			{
+				DatabaseService::GetInstance()->LockProductsStock($this->SubstitutionLockSet($productId));
+			}
+			else
+			{
+				DatabaseService::GetInstance()->LockProductStock($productId);
+			}
+
+			$productDetails = (object)$this->GetProductDetails($productId);
+			$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
+			$potentialStockEntries = $this->GetProductStockEntries($productId, true, $allowSubproductSubstitution);
+
+			if ($amount > $productStockAmountUnopened)
+			{
+				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
+			}
+
+			if ($specificStockEntryId !== 'default')
+			{
+				$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
+			}
+
+			$resolvedMeasurement = null;
+			if ($measurement !== null)
+			{
+				// Coherence (ADR-0022 decision 8): a measurement describes exactly one container,
+				// so this call has to name that one entry and open exactly one unit of it. The
+				// entry also has to already hold >= 1 unit, or opening it fully would leave an
+				// amount other than 1 - see 0275.pgsql.sql's coherence CHECK, and the spike's
+				// prerequisite 5 (.spike-adr22/RESULTS.md#prerequisite-5-container-identity).
+				if ($specificStockEntryId === 'default')
+				{
+					throw new \Exception('A measurement requires opening a specific stock entry');
+				}
+
+				if (round($amount, 2) != 1.0)
+				{
+					throw new \Exception('A measurement requires opening exactly one unit');
+				}
+
+				$targetEntry = FindObjectInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
+				if ($targetEntry === null || round($targetEntry->amount, 2) < 1.0)
+				{
+					throw new \Exception('This stock entry cannot be opened as a single measured container');
+				}
+
+				$resolvedMeasurement = $this->ResolveMeasurement($productId, $measurement);
+			}
+
 			foreach ($potentialStockEntries as $stockEntry)
 			{
 				if ($amount == 0)
@@ -2297,30 +2397,35 @@ class StockService extends BaseService
 		// field stays on the wire at zero per decision 7, and weighing a vessel goes through
 		// the location-scoped tare in WeighLocation() below instead, which corrects one stock
 		// entry after the transfer has already moved the (untared) amount.
-		$productDetails = (object)$this->GetProductDetails($productId);
-
-		$productStockAmountAtFromLocation = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationIdFrom)->sum('amount');
-		$potentialStockEntriesAtFromLocation = $this->GetProductStockEntriesForLocation($productId, $locationIdFrom);
-
-		if ($amount > $productStockAmountAtFromLocation)
-		{
-			throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
-		}
-
-		if ($specificStockEntryId !== 'default')
-		{
-			$potentialStockEntriesAtFromLocation = FindAllObjectsInArrayByPropertyValue($potentialStockEntriesAtFromLocation, 'stock_id', $specificStockEntryId);
-		}
-
 		if ($transactionId === null)
 		{
 			$transactionId = uniqid();
 		}
 
 		// Both bookings of an entry plus the stock row itself have to land together, or the
-		// stock ends up split across the two locations.
-		DatabaseService::GetInstance()->InTransaction(function () use ($potentialStockEntriesAtFromLocation, $amount, $productDetails, $productId, $locationIdFrom, $locationIdTo, &$transactionId)
+		// stock ends up split across the two locations. The source-location amount check and
+		// the candidate entries below move inside the lock for the same reason (issue #458):
+		// reading them before the lock would let a concurrent booking change what is
+		// actually at the source location before this call decided against it.
+		DatabaseService::GetInstance()->InTransaction(function () use ($amount, $productId, $locationIdFrom, $locationIdTo, $specificStockEntryId, &$transactionId)
 		{
+			DatabaseService::GetInstance()->LockProductStock($productId);
+
+			$productDetails = (object)$this->GetProductDetails($productId);
+
+			$productStockAmountAtFromLocation = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationIdFrom)->sum('amount');
+			$potentialStockEntriesAtFromLocation = $this->GetProductStockEntriesForLocation($productId, $locationIdFrom);
+
+			if ($amount > $productStockAmountAtFromLocation)
+			{
+				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
+			}
+
+			if ($specificStockEntryId !== 'default')
+			{
+				$potentialStockEntriesAtFromLocation = FindAllObjectsInArrayByPropertyValue($potentialStockEntriesAtFromLocation, 'stock_id', $specificStockEntryId);
+			}
+
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
 			{
 				if ($amount == 0)
@@ -2543,36 +2648,60 @@ class StockService extends BaseService
 		}
 		$productId = reset($productIds);
 
-		$productDetails = (object)$this->GetProductDetails($productId);
-		$stockQuId = $productDetails->product->qu_id_stock;
-
-		$conversion = $this->DB->cache__quantity_unit_conversions_resolved()
-			->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productId, $location->tare_qu_id, $stockQuId)
-			->fetch();
-		if ($conversion === null)
+		// Everything from here on reads and rewrites this one product's stock rows -
+		// compacting, counting the survivors, editing the one that remains - and has to see
+		// one consistent, locked snapshot of them (issue #458): a concurrent booking of the
+		// same product between any of these reads and the final edit could otherwise leave
+		// this correction acting on a row count or amount that is no longer current.
+		return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $locationId, $netInTareUnit, $location)
 		{
-			throw new \Exception('The location\'s tare unit cannot be converted to this product\'s stock unit');
-		}
+			DatabaseService::GetInstance()->LockProductStock($productId);
 
-		$newAmount = $netInTareUnit * $conversion->factor;
+			// Re-checked under the lock: a concurrent transfer into or out of this location
+			// could have changed which (or how many) products are stocked here since the
+			// unlocked read above.
+			$stockAtLocation = $this->DB->stock()->where('location_id = :1', $locationId)->fetchAll();
+			$productIdsAtLocation = array_unique(array_map(fn($row) => $row->product_id, $stockAtLocation));
+			if (count($productIdsAtLocation) === 0)
+			{
+				throw new \Exception('No product is stocked at this location');
+			}
+			if (count($productIdsAtLocation) > 1 || reset($productIdsAtLocation) != $productId)
+			{
+				throw new \Exception('More than one product is stocked at this location, so it cannot be weighed as a single vessel');
+			}
 
-		// A measured entry describes exactly one container (ADR-0022 decision 8's coherence
-		// argument, applied here to a vessel rather than to an opened purchased container):
-		// compaction first, so that ordinary backstock-fed refills - which each mint a new row
-		// via TransferProduct() - collapse into the one row this correction can set the amount
-		// of, rather than leaving the weighing refused by an accident of how many transfers
-		// happened to run before it.
-		$this->CompactStockEntries($productId);
+			$productDetails = (object)$this->GetProductDetails($productId);
+			$stockQuId = $productDetails->product->qu_id_stock;
 
-		$stockRows = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationId)->fetchAll();
-		if (count($stockRows) !== 1)
-		{
-			throw new \Exception('This location does not hold exactly one stock entry to weigh');
-		}
-		$stockRow = $stockRows[0];
+			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()
+				->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productId, $location->tare_qu_id, $stockQuId)
+				->fetch();
+			if ($conversion === null)
+			{
+				throw new \Exception('The location\'s tare unit cannot be converted to this product\'s stock unit');
+			}
 
-		return $this->EditStockEntry($stockRow->id, $newAmount, $stockRow->best_before_date, $locationId,
-			$stockRow->shopping_location_id, $stockRow->price, $stockRow->open, $stockRow->purchased_date, $stockRow->note);
+			$newAmount = $netInTareUnit * $conversion->factor;
+
+			// A measured entry describes exactly one container (ADR-0022 decision 8's coherence
+			// argument, applied here to a vessel rather than to an opened purchased container):
+			// compaction first, so that ordinary backstock-fed refills - which each mint a new row
+			// via TransferProduct() - collapse into the one row this correction can set the amount
+			// of, rather than leaving the weighing refused by an accident of how many transfers
+			// happened to run before it.
+			$this->CompactStockEntries($productId);
+
+			$stockRows = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationId)->fetchAll();
+			if (count($stockRows) !== 1)
+			{
+				throw new \Exception('This location does not hold exactly one stock entry to weigh');
+			}
+			$stockRow = $stockRows[0];
+
+			return $this->EditStockEntry($stockRow->id, $newAmount, $stockRow->best_before_date, $locationId,
+				$stockRow->shopping_location_id, $stockRow->price, $stockRow->open, $stockRow->purchased_date, $stockRow->note);
+		});
 	}
 
 	/**
@@ -2616,21 +2745,41 @@ class StockService extends BaseService
 
 	public function UndoBooking($bookingId, $skipCorrelatedBookings = false)
 	{
-		$logRow = $this->DB->stock_log()->where('id = :1 AND undone = 0', $bookingId)->fetch();
-		if ($logRow == null)
+		// The whole thing - the "does it exist", "any subsequent booking depends on it" and
+		// per-branch "does the row it would restore still exist" checks, and the reversal
+		// itself - has to run under one lock (issue #458). The subsequent-bookings guard in
+		// particular exists to stop a later booking's write from landing between this
+		// check and this undo's own write; checking it before any lock or transaction opens
+		// (as this used to) does not stop that at all, since a consume racing between the
+		// check and the purchase branch's delete() below books against an entry this undo
+		// is about to remove.
+		DatabaseService::GetInstance()->InTransaction(function () use ($bookingId, $skipCorrelatedBookings)
 		{
-			throw new \Exception('Booking does not exist or was already undone');
-		}
-
-		// Undo all correlated bookings first, in order from newest first to the oldest
-		if (!$skipCorrelatedBookings && !empty($logRow->correlation_id))
-		{
-			$correlatedBookings = $this->DB->stock_log()->where('undone = 0 AND correlation_id = :1', $logRow->correlation_id)->orderBy('id', 'DESC')->fetchAll();
-
-			// The correlated bookings (a stock edit's old/new pair, a transfer's from/to pair)
-			// are only meaningful undone as a set.
-			DatabaseService::GetInstance()->InTransaction(function () use ($correlatedBookings, $logRow)
+			$logRow = $this->DB->stock_log()->where('id = :1 AND undone = 0', $bookingId)->fetch();
+			if ($logRow == null)
 			{
+				throw new \Exception('Booking does not exist or was already undone');
+			}
+
+			DatabaseService::GetInstance()->LockProductStock($logRow->product_id);
+
+			// Re-read under the lock: a concurrent booking or undo of this product could
+			// have already undone this row, or changed the state the checks below depend
+			// on, between the unlocked read above and the lock being taken.
+			$logRow = $this->DB->stock_log()->where('id = :1 AND undone = 0', $bookingId)->fetch();
+			if ($logRow == null)
+			{
+				throw new \Exception('Booking does not exist or was already undone');
+			}
+
+			// Undo all correlated bookings first, in order from newest first to the oldest
+			if (!$skipCorrelatedBookings && !empty($logRow->correlation_id))
+			{
+				$correlatedBookings = $this->DB->stock_log()->where('undone = 0 AND correlation_id = :1', $logRow->correlation_id)->orderBy('id', 'DESC')->fetchAll();
+
+				// The correlated bookings (a stock edit's old/new pair, a transfer's from/to
+				// pair) are only meaningful undone as a set - already covered by the outer
+				// transaction and lock this call opened above.
 				foreach ($correlatedBookings as $correlatedBooking)
 				{
 					$this->UndoBooking($correlatedBooking->id, true);
@@ -2640,27 +2789,24 @@ class StockService extends BaseService
 				// commit together or not at all, so a rolled back undo leaves no event
 				// behind and a crash after the commit still delivers one.
 				BookingEventPublisher::RecordTransaction($logRow->transaction_id);
-			});
 
-			return;
-		}
+				return;
+			}
 
-		// A booking can only be undone when it is the newest (not yet undone) one of its stock entry -
-		// otherwise later bookings would reference stock state this undo would remove. This is a plain
-		// stock_id/id/undone check: a booking's own correlated half never reaches here as a "subsequent"
-		// booking, because the group-undo branch above already marks it undone (in id-descending order)
-		// before this member's own check runs.
-		$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id)->count() > 0;
-		if ($hasSubsequentBookings)
-		{
-			throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
-		}
+			// A booking can only be undone when it is the newest (not yet undone) one of its stock entry -
+			// otherwise later bookings would reference stock state this undo would remove. This is a plain
+			// stock_id/id/undone check: a booking's own correlated half never reaches here as a "subsequent"
+			// booking, because the group-undo branch above already marks it undone (in id-descending order)
+			// before this member's own check runs.
+			$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id)->count() > 0;
+			if ($hasSubsequentBookings)
+			{
+				throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
+			}
 
-		// Every branch below reverses the booking's effect on `stock` and only then marks the
-		// booking undone - a failure between those two writes would leave a booking whose
-		// undone flag disagrees with the stock it was supposed to restore.
-		DatabaseService::GetInstance()->InTransaction(function () use ($logRow, $skipCorrelatedBookings)
-		{
+			// Every branch below reverses the booking's effect on `stock` and only then marks the
+			// booking undone - a failure between those two writes would leave a booking whose
+			// undone flag disagrees with the stock it was supposed to restore.
 			if ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || $logRow->transaction_type === self::TRANSACTION_TYPE_SELF_PRODUCTION || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
 			{
 				// Subtract only this booking's own contribution, the way TRANSFER_TO already
@@ -2947,6 +3093,14 @@ class StockService extends BaseService
 		// bookings are undone all together or not at all.
 		DatabaseService::GetInstance()->InTransaction(function () use ($transactionBookings, $transactionId)
 		{
+			// A transaction id can group bookings of more than one product (a recipe
+			// consumption books every ingredient under one transaction id), so every
+			// product touched is locked in ascending order before any of them is undone -
+			// otherwise two transactions undone concurrently over an overlapping product
+			// set, read in different orders, could deadlock rather than one simply waiting
+			// for the other (issue #458).
+			DatabaseService::GetInstance()->LockProductsStock(array_map(fn($booking) => $booking->product_id, $transactionBookings));
+
 			foreach ($transactionBookings as $transactionBooking)
 			{
 				$this->UndoBooking($transactionBooking->id, true);
@@ -2993,6 +3147,12 @@ class StockService extends BaseService
 
 		DatabaseService::GetInstance()->InTransaction(function () use ($productIdToKeep, $productIdToRemove)
 		{
+			// Both products' stock rows are read and rewritten below, so both are locked,
+			// in ascending order, before either is touched (issue #458) - the ascending
+			// order is what keeps a merge running concurrently with another one over an
+			// overlapping product pair from deadlocking instead of simply queuing.
+			DatabaseService::GetInstance()->LockProductsStock([$productIdToKeep, $productIdToRemove]);
+
 			$productToKeep = $this->DB->products($productIdToKeep);
 			$productToRemove = $this->DB->products($productIdToRemove);
 			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productToRemove->id, $productToRemove->qu_id_stock, $productToKeep->qu_id_stock)->fetch();
@@ -3081,62 +3241,83 @@ class StockService extends BaseService
 	 */
 	public function CompactStockEntries($productId = null)
 	{
-		if ($productId == null)
+		// Only which products have anything to compact is read before any lock - what
+		// each one's groups actually are (total_amount, stock_id_group, id_group) is
+		// re-read fresh, under that product's own lock, below. Reading a group's contents
+		// this early and writing them after locking - as this used to - lets a booking
+		// that commits while compaction waits on the lock get silently overwritten:
+		// stock.amount would be set back to a total that no longer includes what the
+		// booking just consumed or added (issue #458, CodeRabbit follow-up on PR #471).
+		if ($productId !== null)
 		{
-			$splittedStockEntries = $this->DB->stock_splits();
+			$productIds = [(int)$productId];
 		}
 		else
 		{
-			$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $productId);
+			$productIds = array_map('intval', DatabaseService::GetInstance()->ExecuteDbQuery('SELECT DISTINCT product_id FROM stock_splits')->fetchAll(\PDO::FETCH_COLUMN));
 		}
 
-		foreach ($splittedStockEntries as $splittedStockEntry)
+		// Ascending, so compacting several products in one call cannot deadlock against
+		// another multi-product caller (MergeProducts(), ConsumeRecipe()) over an
+		// overlapping set.
+		sort($productIds);
+
+		foreach ($productIds as $oneProductId)
 		{
-			DatabaseService::GetInstance()->InTransaction(function () use ($splittedStockEntry)
+			DatabaseService::GetInstance()->InTransaction(function () use ($oneProductId)
 			{
-				$stockIds = explode(',', $splittedStockEntry->stock_id_group);
-				foreach ($stockIds as $stockId)
-				{
-					if ($stockId != $splittedStockEntry->stock_id_to_keep)
-					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+				DatabaseService::GetInstance()->LockProductStock($oneProductId);
 
-						// The split lineage moves with the stock_ids above, or it would point
-						// at an entry that no longer exists. Three statements, and the order
-						// is load-bearing.
-						//
-						// First the disappearing entry's own row goes rather than being
-						// rewritten: what survives the merge is one entry, and it keeps the
-						// origin it already had.
-						//
-						// Then the row, if any, that would be left describing the surviving
-						// entry as split off itself. The third statement is about to point
-						// everything that descended from the disappearing entry at the
-						// surviving one - which is right, because that is where the
-						// disappearing entry's bookings just went - and the surviving entry
-						// may be one of those descendants. Once its origin's bookings are its
-						// own, it is its own origin and the row says nothing; leaving it to be
-						// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
-						// and abort the whole compaction, and cleaning it up afterwards is not
-						// possible for the same reason - the constraint rejects the row the
-						// moment the update tries to write it, so no later DELETE can reach it.
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
-					}
-				}
+				// The re-read this fix is about: every group belonging to this product,
+				// current as of right now under the lock rather than from before it.
+				$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
 
-				$stockEntryIds = explode(',', $splittedStockEntry->id_group);
-				foreach ($stockEntryIds as $stockEntryId)
+				foreach ($splittedStockEntries as $splittedStockEntry)
 				{
-					if ($stockEntryId != $splittedStockEntry->id_to_keep)
+					$stockIds = explode(',', $splittedStockEntry->stock_id_group);
+					foreach ($stockIds as $stockId)
 					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . $stockEntryId);
+						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
+
+							// The split lineage moves with the stock_ids above, or it would point
+							// at an entry that no longer exists. Three statements, and the order
+							// is load-bearing.
+							//
+							// First the disappearing entry's own row goes rather than being
+							// rewritten: what survives the merge is one entry, and it keeps the
+							// origin it already had.
+							//
+							// Then the row, if any, that would be left describing the surviving
+							// entry as split off itself. The third statement is about to point
+							// everything that descended from the disappearing entry at the
+							// surviving one - which is right, because that is where the
+							// disappearing entry's bookings just went - and the surviving entry
+							// may be one of those descendants. Once its origin's bookings are its
+							// own, it is its own origin and the row says nothing; leaving it to be
+							// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
+							// and abort the whole compaction, and cleaning it up afterwards is not
+							// possible for the same reason - the constraint rejects the row the
+							// moment the update tries to write it, so no later DELETE can reach it.
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
+						}
 					}
-					else
+
+					$stockEntryIds = explode(',', $splittedStockEntry->id_group);
+					foreach ($stockEntryIds as $stockEntryId)
 					{
-						DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
+						if ($stockEntryId != $splittedStockEntry->id_to_keep)
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . $stockEntryId);
+						}
+						else
+						{
+							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
+						}
 					}
 				}
 			});
