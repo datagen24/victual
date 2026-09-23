@@ -1299,17 +1299,10 @@ class LabelApiTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $replay['status'], 'a replay is the stored resource, not a new one: ' . $replay['body']);
 		self::assertSame($before['print_jobs'], self::Counts()['print_jobs'], 'a replay prints nothing a second time');
 
-		// DEFECT: the replay answers the stored payload as a JSON *string* rather than as the
-		// object the first call answered, so a client cannot parse the two the same way -
-		// which is the whole point of a replay. IdempotencyService::Begin() builds
-		// `$existing + ['response' => json_decode(...)]` and PHP's `+` keeps the left-hand
-		// value for a duplicate key, so the decoded value is discarded and the raw jsonb
-		// column text is what reaches ApiResponse(). services/Labels/IdempotencyService.php:68.
-		// Pinned rather than skipped, so that fixing it fails here and this comment is found.
-		self::assertIsString($replay['json'], 'current behaviour: the replay body is a JSON string');
+		// The replay returns the same JSON object shape as the original 202 response
 		// assertEquals rather than assertSame: the stored payload is jsonb, which does not
 		// keep the key order the first response was written in.
-		self::assertEquals($first['json'], json_decode($replay['json'], true), 'the replayed resource is the one the first call created');
+		self::assertEquals($first['json'], $replay['json'], 'the replayed resource is returned as an object, in the same shape as the first response');
 
 		$changed = self::Send('POST', $path, $body + ['locale' => 'de'], self::$operatorKey, ['Idempotency-Key' => $key]);
 		self::AssertRefusal($changed, 409, 'idempotency_key', 'idempotency_conflict');
