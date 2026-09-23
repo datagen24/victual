@@ -674,7 +674,7 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 		self::assertNull($result['error'],
 			'the isolation must absorb the throw - it must not escape RunRequestEndPublishes()');
 		self::assertTrue($result['steps']['0:shutdownisolation'],
-			'the InfluxDB drain ran even though the MQTT step immediately above it threw');
+			'the MQTT step ran and threw, and the InfluxDB drain after it still ran');
 	}
 
 	// ---------------------------------------------------------------------------------

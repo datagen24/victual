@@ -145,9 +145,12 @@ class LockFailureInjectingDialect extends PostgresDialect
 class ThrowingMqttDatabaseService extends DatabaseService
 {
 	public static bool $InfluxDrainWasCalled = false;
+	public static bool $MqttStepWasCalled = false;
 
 	protected function PublishMqttForRequestEnd(): bool
 	{
+		self::$MqttStepWasCalled = true;
+
 		throw new \RuntimeException('simulated: the request-end MQTT publish throws');
 	}
 
@@ -566,7 +569,10 @@ function RunScenario(array $steps, string $resultFile): void
 					$method->setAccessible(true);
 					$method->invoke($instance);
 
-					$value = ThrowingMqttDatabaseService::$InfluxDrainWasCalled;
+					// Both, not just the drain: a gate added before the MQTT call would otherwise let
+					// this pass without the isolation ever being exercised.
+					$value = ThrowingMqttDatabaseService::$MqttStepWasCalled
+						&& ThrowingMqttDatabaseService::$InfluxDrainWasCalled;
 					break;
 
 				case 'suppress':
