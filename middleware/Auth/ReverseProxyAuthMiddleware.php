@@ -24,8 +24,11 @@ class ReverseProxyAuthMiddleware extends BaseAuthMiddleware
 	 * otherwise trusts the username supplied by the reverse proxy.
 	 *
 	 * @return mixed The user row
-	 * @throws \Exception When the configured header/env variable is missing, empty
-	 *                    or ambiguous, or when the request did not come from a trusted proxy
+	 * @throws \Slim\Exception\HttpUnauthorizedException When the configured header/env
+	 *                    variable is missing, empty or ambiguous, or the trusted-proxy list
+	 *                    is unconfigured
+	 * @throws \Slim\Exception\HttpForbiddenException When the request did not come from a
+	 *                    trusted proxy
 	 */
 	protected function AuthenticateRequest(Request $request)
 	{
