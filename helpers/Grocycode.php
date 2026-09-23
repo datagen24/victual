@@ -138,6 +138,11 @@ class Grocycode
 		}
 
 		$this->id = array_pop($parts);
+		if ($this->id === null || $this->id === '')
+		{
+			throw new \Exception('Not a Grocycode');
+		}
+
 		$this->extra_data = array_reverse($parts);
 	}
 
