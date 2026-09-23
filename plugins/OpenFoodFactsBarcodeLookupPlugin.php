@@ -27,7 +27,7 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 	 *                     qu_id_stock, __qu_factor_purchase_to_stock (always 1),
 	 *                     __barcode and __image_url (validated/completed by
 	 *                     BaseBarcodeLookupPlugin::Lookup()), or null when the API
-	 *                     returns 404, the body is not a decision to map (not JSON, not a
+	 *                     answers anything but 2xx, the body is not a decision to map (not JSON, not a
 	 *                     hit, or a hit with no product object), or nothing was scanned
 	 */
 	protected function ExecuteLookup($barcode)
@@ -47,9 +47,10 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 
 		// Guzzle throws exceptions for connection errors, so nothing to do on that here
 
-		if ($statusCode == 404)
+		if ($statusCode < 200 || $statusCode >= 300)
 		{
-			// Nothing found for the given barcode
+			// A 404 is the API's "nothing found for the given barcode". Any other status
+			// outside 2xx is an error page whose body is no answer either, whatever it says
 			return null;
 		}
 

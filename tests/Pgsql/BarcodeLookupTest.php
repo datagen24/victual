@@ -778,12 +778,25 @@ class BarcodeLookupTest extends TestCase
 	}
 
 	/**
-	 * Boundary: a 404 whose body is not JSON at all - which is what a CDN error page is.
-	 * It is a miss by a deliberate check, not by accident.
+	 * A server error is a miss even when its body is shaped like a hit: the client is
+	 * built with http_errors off, so nothing but the status check stands between a 5xx
+	 * body and a written product.
+	 */
+	public function testOpenFoodFactsTreatsAServerErrorAsAMissWhateverItsBody(): void
+	{
+		$result = self::openFoodFacts(['status' => 500, 'body' => self::foundPayload()]);
+
+		self::assertSame('miss', $result['outcome'], 'a 500 is a miss. ' . json_encode($result['diagnostics']));
+		self::assertSame([], $result['diagnostics']);
+	}
+
+	/**
+	 * Boundary: a 200 whose body is not JSON at all - which is what a CDN or captive
+	 * portal page is. It is a miss by a deliberate check, not by accident.
 	 */
 	public function testOpenFoodFactsTreatsAnUnparseableBodyAsAMissWithoutDiagnostics(): void
 	{
-		$result = self::openFoodFacts(['status' => 502, 'body' => '<html><body>Bad Gateway</body></html>']);
+		$result = self::openFoodFacts(['status' => 200, 'body' => '<html><body>Bad Gateway</body></html>']);
 
 		self::assertSame('miss', $result['outcome'], 'an unparseable body is a miss. ' . json_encode($result['diagnostics']));
 		self::assertSame([], $result['diagnostics'], 'json_decode() producing a non-object is checked before anything reads a property off it');
