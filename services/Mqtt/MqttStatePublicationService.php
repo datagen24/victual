@@ -172,17 +172,18 @@ class MqttStatePublicationService
 			$assembler = new StateSnapshotAssembler();
 			$entities = $assembler->AssemblePerProductEntities();
 			$orphanedFlags = $assembler->GetOrphanedFlagProductIds();
+			$publishedBefore = $ledger->GetPublished();
 		}
 		catch (\Throwable $ex)
 		{
 			// Assembling can throw on purpose - AssertNoForbiddenKeys() does - and refusing
-			// to publish is the right outcome when it does
-			error_log('Victual: could not assemble the MQTT state snapshot, nothing was published: ' . $ex->getMessage());
+			// to publish is the right outcome when it does. Reading the ledger can also fail -
+			// a database hiccup at request end must never turn an otherwise successful request
+			// into an error, just as the assembly path logs and returns false.
+			error_log('Victual: could not assemble the MQTT state snapshot or read its ledger, nothing was published: ' . $ex->getMessage());
 
 			return false;
 		}
-
-		$publishedBefore = $ledger->GetPublished();
 
 		$record = [];
 		foreach ($entities as $objectId => $entity)
@@ -227,19 +228,33 @@ class MqttStatePublicationService
 			return false;
 		}
 
-		foreach ($record as $objectId => $hash)
+		try
 		{
-			$ledger->Record($objectId, $hash);
-		}
+			foreach ($record as $objectId => $hash)
+			{
+				$ledger->Record($objectId, $hash);
+			}
 
-		foreach ($forget as $objectId)
+			foreach ($forget as $objectId)
+			{
+				$ledger->Forget($objectId);
+			}
+
+			// Only now that their entities are retracted: a flag row for a product that no longer
+			// exists has nothing left to describe
+			$ledger->DropFlags($orphanedFlags);
+		}
+		catch (\Throwable $ex)
 		{
-			$ledger->Forget($objectId);
-		}
+			// The ledger writes happen after the broker has accepted the batch, so at this point
+			// the messages are already published. A failure to record that is an inconsistency
+			// rather than a complete loss, and it must not turn an otherwise successful request
+			// into an error - the next publish will try again, matching the design that a failed
+			// publish is retried rather than recorded as done.
+			error_log('Victual: could not update the MQTT ledger after publishing: ' . $ex->getMessage());
 
-		// Only now that their entities are retracted: a flag row for a product that no longer
-		// exists has nothing left to describe
-		$ledger->DropFlags($orphanedFlags);
+			return false;
+		}
 
 		return true;
 	}

@@ -487,35 +487,29 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT: a publish whose *ledger* read fails throws out of the service, where a publish
-	 * whose *snapshot* read fails does not.
+	 * A publish whose ledger read fails logs and returns false, just as a publish whose
+	 * snapshot read fails does.
 	 *
-	 * The class says "Nothing here throws" (services/Mqtt/MqttStatePublicationService.php:27)
+	 * The class says "Nothing here throws" (services/Mqtt/MqttStatePublicationService.php:27),
 	 * and it is the property the whole after-commit seam rests on: the trigger runs from
-	 * DatabaseService's shutdown handler (services/DatabaseService.php:655), which does not
-	 * wrap the call the way it wraps the changed-time flush eight lines above it. Two
-	 * database reads happen one after the other in PublishLocked() - the snapshot at :165,
-	 * inside a try that logs and returns false, and the ledger at :185, outside it - and only
-	 * the first is caught. Both fail the same way when the database goes away between the
-	 * commit and the end of the request, which is the one moment this code runs in.
-	 *
-	 * The expected behaviour is the one the neighbouring path already has: log, return false,
-	 * publish nothing. Asserted as it currently behaves rather than skipped, so that fixing it
-	 * fails here and says so; the fix is application code and out of scope for this work.
+	 * DatabaseService's shutdown handler, which does not wrap the call the way it wraps the
+	 * changed-time flush. A database hiccup at request end must never turn an otherwise
+	 * successful request into an error, and a failed ledger read is a failure like any other.
 	 */
-	public function testALedgerReadFailureEscapesThePublishContractThatSaysNothingThrows(): void
+	public function testALedgerReadFailureLogsAndReturnsFalseWithoutThrowing(): void
 	{
 		$result = self::RunScenario(
 			['reset', 'breakledger', 'state', 'restoreledger'],
 			self::BrokerSettings(self::$brokerPort)
 		);
 
-		self::assertNotNull($result['error'],
-			'the ledger read is not guarded the way the snapshot read beside it is');
-		self::assertStringContainsString('mqtt_published_entities', (string)$result['error'],
-			'and what escapes is the database error itself');
-		self::assertArrayNotHasKey('2:state', $result['steps'],
-			'so the publish never returned a value at all, rather than returning false');
+		self::assertNull($result['error'],
+			'a ledger read failure must not throw out of the service');
+		self::assertFalse($result['steps']['2:state'],
+			'it reports that the publish failed');
+		self::assertSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'and publishes nothing at all');
+		self::assertSame([], $result['ledger'], 'and records nothing');
 	}
 
 	// ---------------------------------------------------------------------------------

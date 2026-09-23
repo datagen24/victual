@@ -652,7 +652,18 @@ class DatabaseService
 				return;
 			}
 
-			MqttStatePublicationService::PublishForRequestEnd();
+			try
+			{
+				MqttStatePublicationService::PublishForRequestEnd();
+			}
+			catch (\Exception $ex)
+			{
+				// A failure here must never turn an otherwise successful request into an error.
+				// MqttStatePublicationService::PublishForRequestEnd() documents that nothing
+				// throws - this is defence in depth, honoring the contract even if the
+				// implementation changes.
+			}
+
 			BookingEventPublisher::WriteForRequestEnd();
 		});
 	}
