@@ -238,7 +238,13 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		return [$process, $pipes];
 	}
 
-	/** @return array{status: int, body: string} */
+	/**
+	 * @return array{status: int, stderr: string, body?: string, error_message?: string}
+	 *         "stderr" is always present (this method's own addition below). "body" comes
+	 *         from request-subprocess-helper.php; "error_message" (and no "body") comes
+	 *         from compact-stock-subprocess-helper.php on a thrown exception - the two
+	 *         helpers this method services, never both at once.
+	 */
 	private static function finishSubprocess(array $processAndPipes): array
 	{
 		[$process, $pipes] = $processAndPipes;
@@ -919,25 +925,16 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	 * prevent (coordinator review of 6092d2d7).
 	 *
 	 * The outer recipe's own ingredient is given the higher product id and the nested
-	 * recipe's ingredient the lower one, so a buggy upfront set - built from recipes_pos,
-	 * containing only the outer ingredient - locks them in exactly the wrong order relative
-	 * to a second, correctly-ascending locker. Connection B is that second locker: it takes
-	 * the low (nested) id first, then the high (outer) id, the same ascending order the fix
-	 * requires of the recipe itself.
-	 *
-	 * With the bug: the recipe locks only the outer (high) id upfront and consumes it
-	 * before ever touching the nested ingredient's lock, so by the time connection B - which
-	 * grabs the nested (low) id immediately, since the recipe has not touched it yet - tries
-	 * for the outer id, the recipe already holds it and blocks trying for the nested id
-	 * connection B just took: a genuine cycle, which PostgreSQL's deadlock detector breaks
-	 * by aborting one side with SQLSTATE 40P01.
-	 * With the fix: the recipe locks the nested (low) id first, so connection B's own first
-	 * (nested-id) acquisition simply queues behind the recipe's whole transaction and
-	 * proceeds once it commits - no cycle, no deadlock, on either side.
-	 *
-	 * Synchronised by a bounded poll of pg_locks for a lock this test's own class has been
-	 * granted to some other backend (the recipe subprocess is the only other one taking
-	 * these locks), rather than a fixed wait - a readiness check, not a timing assumption.
+	 * recipe's ingredient the lower one. Connection B takes only the outer (high) id's lock
+	 * first, then the recipe consume is started: with the fix, its single upfront
+	 * LockProductsStock() call acquires the nested (low) id - uncontended - before it ever
+	 * reaches the outer id, where it then queues behind connection B. So once the recipe's
+	 * backend is observed queued on the outer lock, it must already hold the nested one -
+	 * asserted directly via pg_locks (granted = true for that backend's pid), not inferred
+	 * from whether a deadlock happened to occur. On the pre-fix lock set (recipes_pos alone,
+	 * containing only the outer ingredient) the recipe queues on the same outer lock without
+	 * ever having touched the nested one first, so this assertion fails deterministically -
+	 * see the commit message for that failing run.
 	 */
 	#[Depends('testCreatesTheSubprocessApiKey')]
 	public function testConsumeRecipeLocksANestedIngredientAscendingRatherThanInvertingTheOrder(): void
@@ -969,61 +966,39 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		self::$db->prepare('INSERT INTO recipes_pos (recipe_id, product_id, amount) VALUES (?, ?, 1)')->execute([$outerRecipeId, $outerIngredientId]);
 		self::$db->prepare('INSERT INTO recipes_nestings (recipe_id, includes_recipe_id, servings) VALUES (?, ?, 1)')->execute([$outerRecipeId, $nestedRecipeId]);
 
-		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $outerRecipeId . '/consume');
-
-		// Wait for the recipe subprocess to actually hold one of this test's two locks -
-		// it is the only other backend taking them - before connection B starts its own
-		// ascending acquisition, so the two genuinely overlap rather than racing.
-		$grantedCheck = self::$db->prepare(
-			'SELECT count(*) FROM pg_locks WHERE locktype = \'advisory\' AND classid = ? AND objid IN (?, ?) AND granted AND pid <> pg_backend_pid()'
-		);
-		$deadline = microtime(true) + 10.0;
-		$granted = 0;
-		do
-		{
-			$grantedCheck->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $nestedIngredientId, $outerIngredientId]);
-			$granted = (int)$grantedCheck->fetchColumn();
-
-			if ($granted > 0)
-			{
-				break;
-			}
-
-			usleep(20000);
-		}
-		while (microtime(true) < $deadline);
-		self::assertGreaterThan(0, $granted, 'Timed out waiting for the recipe subprocess to hold either lock');
-
 		$connB = self::secondConnection();
 		$connB->beginTransaction();
-		$deadlockOnB = null;
+		// Only the outer (high) id - never the nested one - so the recipe subprocess's own
+		// acquisition order is what determines whether it already holds the nested lock by
+		// the time it queues here.
+		$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $outerIngredientId]);
 
-		try
-		{
-			// Ascending, exactly as LockProductsStock() requires: the low (nested) id
-			// first, then the high (outer) id.
-			$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $nestedIngredientId]);
-			$connB->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $outerIngredientId]);
-			$connB->commit();
-		}
-		catch (\PDOException $exception)
-		{
-			$deadlockOnB = $exception;
-			if ($connB->inTransaction())
-			{
-				$connB->rollBack();
-			}
-		}
+		$subprocess = self::startSubprocess('POST', '/api/recipes/' . $outerRecipeId . '/consume');
+
+		self::waitForAdvisoryWaiter();
+
+		// The recipe subprocess is the only other backend taking these locks, so whichever
+		// backend is now waiting on an advisory lock is it.
+		$blockedPid = (int)self::$db->query(
+			"SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND pid <> pg_backend_pid()"
+		)->fetchColumn();
+		self::assertGreaterThan(0, $blockedPid, 'A backend other than this test is waiting on an advisory lock');
+
+		$holdsNestedLock = self::$db->prepare(
+			'SELECT count(*) FROM pg_locks WHERE locktype = \'advisory\' AND classid = ? AND objid = ? AND granted AND pid = ?'
+		);
+		$holdsNestedLock->execute([PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $nestedIngredientId, $blockedPid]);
+		self::assertGreaterThan(
+			0,
+			(int)$holdsNestedLock->fetchColumn(),
+			'The recipe already holds the nested (low id) lock while queued on the outer (high id) one, proving the ascending set was acquired low-to-high rather than the nested id being locked late, out of order'
+		);
+
+		$connB->commit();
 
 		$result = self::finishSubprocess($subprocess);
 
-		if ($deadlockOnB !== null)
-		{
-			self::fail('Connection B - locking ascending, exactly as the recipe itself should - hit a PostgreSQL error, consistent with a lock order inversion: ' . $deadlockOnB->getMessage());
-		}
-
-		self::assertStringNotContainsString('40P01', $result['body'] . $result['stderr'], 'no PostgreSQL deadlock was detected on the recipe side either');
-		self::assertSame(204, $result['status'], 'The recipe completes once the ascending locks it and connection B both need are no longer contended, with no deadlock on either side: ' . $result['body']);
+		self::assertSame(204, $result['status'], 'The recipe completes once connection B releases the outer lock it was queued on: ' . $result['body']);
 		self::assertSame(1.0, self::stockAmount($nestedIngredientId), 'The nested ingredient was consumed once');
 		self::assertSame(1.0, self::stockAmount($outerIngredientId), 'The outer ingredient was consumed once');
 	}
