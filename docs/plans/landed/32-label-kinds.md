@@ -410,6 +410,10 @@ deleting a helper nothing calls are two different cleanups, and only the first w
 plan's to do. `docs/security-sweep.md` now says so directly instead of repeating the InfluxDB
 claim.
 
+**Deleted 2026-09-23.** `helpers/WebhookRunner.php` was removed with the four
+`HelperUnitsTest` cases and the loopback listener that existed only to exercise it, after a
+search of PHP, `public/viewjs`, the Blade views, `bin/` and the configuration found no caller.
+
 Documentation: the manual's "Label printer webhook" settings section and its
 `FEATURE_FLAG_LABEL_PRINTER` row are gone. `docs/manual/operator/label-printing.md`'s
 "two independent paths" framing, "What still uses the older webhook" paragraph and "The

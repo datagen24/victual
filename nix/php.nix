@@ -102,9 +102,9 @@ phpWithoutShell.passthru.buildEnv {
       # below means "removing it breaks something a request can reach", not "somebody once
       # thought it was needed".
       curl # guzzlehttp/guzzle picks its cURL handler when this is loaded: the barcode
-      # lookup (plugins/OpenFoodFactsBarcodeLookupPlugin.php), StockService, the outgoing
-      # webhook (helpers/WebhookRunner.php) and the InfluxDB writer
-      # (services/Influx/InfluxEventWriter.php). HTTPS for all of them is libcurl's own TLS.
+      # lookup (plugins/OpenFoodFactsBarcodeLookupPlugin.php), StockService and the InfluxDB
+      # writer (services/Influx/InfluxEventWriter.php). HTTPS for all of them is libcurl's
+      # own TLS.
       dom # ezyang/htmlpurifier's Lexer::create() chooses DOMLex when DOMDocument exists and
       # falls back to DirectLex when it does not. Every API write that carries rich text
       # goes through it, and a sanitiser on that boundary should run the lexer it is

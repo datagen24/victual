@@ -9,36 +9,9 @@
 // StderrLogger writes to php://stderr, which has to belong to a process whose stderr the
 // test can read.
 //
-// Two shapes, decided by the SAPI:
-//
 //   php helperunits-subprocess-helper.php <base64 json spec>
-//       Runs one task and prints one JSON object on stdout.
 //
-//   php -S 127.0.0.1:<port> helperunits-subprocess-helper.php
-//       The local stand-in WebhookRunner posts to. It appends one JSON line per request
-//       to the file named by HELPERUNITS_WEBHOOK_LOG and answers 204. AGENTS.md:40 keeps
-//       this tree free of user-configurable outbound URLs, so the runner is never pointed
-//       at anything but this loopback listener.
-
-if (PHP_SAPI === 'cli-server')
-{
-	$log = getenv('HELPERUNITS_WEBHOOK_LOG');
-
-	$record = [
-		'method' => $_SERVER['REQUEST_METHOD'] ?? '',
-		'path' => parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH),
-		'content_type' => $_SERVER['CONTENT_TYPE'] ?? '',
-		'body' => file_get_contents('php://input')
-	];
-
-	if ($log !== false && $log !== '')
-	{
-		file_put_contents($log, json_encode($record) . "\n", FILE_APPEND | LOCK_EX);
-	}
-
-	http_response_code(204);
-	return;
-}
+// runs one task and prints one JSON object on stdout.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));

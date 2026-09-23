@@ -149,9 +149,10 @@ class InfluxEventWriter
 
 			return true;
 		}
-		// GuzzleException rather than RequestException, for the reason WebhookRunner records:
-		// ConnectException extends TransferException, not RequestException, so a DNS failure
-		// or a connect timeout would otherwise escape - and those are the likely failures here
+		// GuzzleException, the interface every Guzzle exception implements, rather than
+		// RequestException: ConnectException extends TransferException, not RequestException,
+		// so a DNS failure or a connect timeout would otherwise escape - and those are the
+		// likely failures here
 		catch (GuzzleException $ex)
 		{
 			return $this->Reject($ex->getMessage());
