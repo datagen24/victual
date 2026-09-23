@@ -22,8 +22,10 @@ in both halves: it dropped one route on the way in and invented one spec-only pa
 
 The `ExposedEntity` allow-lists are read from the spec at runtime, so entity drift is
 impossible by construction, and every controller returns the same
-`{ "error_message": … }` body. The structure is sound. What is not uniform is *which status code* that body arrives
-with, and it is not uniform in four separate ways.
+`{ "error_message": … }` body. The one addition is `error_details`, which
+`ExceptionController` attaches to an uncaught exception's body only when error details
+are displayed. The structure is sound. What is not uniform is *which status code* that
+body arrives with, and it is not uniform in four separate ways.
 
 **Permission checks land inside or outside a `try` at random.** `User::CheckPermission`
 throws a Slim `HttpForbiddenException`. Where the call sits above the `try`
