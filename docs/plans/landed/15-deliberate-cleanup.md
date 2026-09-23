@@ -29,9 +29,9 @@ rather than complete — see C8 and C10's own Executed notes below.
 
 Every item here is individually too small to justify a plan, and none has a forcing
 function that would ever pull it off the backlog on its own. They also share a property
-that makes batching them the right call: about half of them are **breaking**, and breaking
-changes want to happen together, once, with a changelog entry, rather than dribbling out
-attached to unrelated features.
+that makes batching them the right call: four of them, B1–B4, are **breaking**, and
+breaking changes want to happen together, once, with a changelog entry, rather than
+dribbling out attached to unrelated features.
 
 The review response to [05](../05-store-shopping-lists.md) Q4 already established this for
 the `shopping_locations` → `stores` rename: park it on an explicit "breaking changes,
