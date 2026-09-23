@@ -16,6 +16,7 @@ use Victual\Services\Storage\FileSizeLimit;
 use Victual\Services\Storage\FileStorage;
 use Victual\Services\Storage\FilesystemStorage;
 use Victual\Services\Storage\FileTooLargeException;
+use Victual\Services\Storage\InvalidFileNameException;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -267,7 +268,10 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 				$refused = $ex;
 			}
 
-			self::assertNotNull($refused, "$hostileName must be refused on the $backend backend rather than stored");
+			// The name check, not some later failure: for sub/nested.txt on the filesystem
+			// backend, fopen() on the missing sub/ directory would throw too, and would pass
+			// an assertion that only asked for any throwable.
+			self::assertInstanceOf(InvalidFileNameException::class, $refused, "$hostileName must be refused by the name check on the $backend backend rather than stored");
 		}
 
 		self::assertFileDoesNotExist($escaped, 'The traversal never reached the storage root');

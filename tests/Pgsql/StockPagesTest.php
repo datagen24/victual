@@ -1305,6 +1305,7 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('</html>', $productForm, 'the page is still served');
 		self::assertSame([], $productDiagnostics, 'GET /product/new renders with no PHP diagnostics');
 		self::assertStringNotContainsString('/product//grocycode', $productForm, 'the now edit-only Grocycode block does not render with a null product id');
+		self::assertStringContainsString('data-additional-searchdata="' . strtolower(self::NAME_BARCODE) . ',"', $productForm, 'the parent-product picker carries the comma-separated barcodes, not the raw product_barcodes rows');
 
 		[$unitForm, $unitDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'QuantityUnitEditForm', ['quantityunitId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $unitForm, 'the page is still served');

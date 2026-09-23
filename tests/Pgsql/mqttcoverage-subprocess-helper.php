@@ -493,6 +493,7 @@ function RunScenario(array $steps, string $resultFile): void
 		if ($ledgerWriteBroken)
 		{
 			$pdo->exec('DROP TRIGGER IF EXISTS mqtt_published_entities_write_blocked ON mqtt_published_entities');
+			$pdo->exec('DROP FUNCTION IF EXISTS mqtt_ledger_write_blocked()');
 		}
 	}
 
