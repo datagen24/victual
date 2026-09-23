@@ -229,7 +229,9 @@ abstract class BaseBarcodeLookupPlugin
 	 *    addresses and their IPv6 equivalents (helpers/OutboundHostPolicy.php).
 	 *  - The request is pinned to the address OutboundHostPolicy validated
 	 *    (CURLOPT_RESOLVE), so a second, different DNS answer at request time cannot be
-	 *    substituted for the one just checked (DNS rebinding).
+	 *    substituted for the one just checked (DNS rebinding) - except for an IPv6 literal
+	 *    host, which is never looked up (there is nothing to pin) and whose colons curl's
+	 *    host:port:address form cannot express in the first place.
 	 *  - Redirects are not followed (allow_redirects: false) and the environment's
 	 *    HTTP_PROXY/HTTPS_PROXY/NO_PROXY are not honoured (proxy: '') - either one would
 	 *    let something other than the validated, pinned address decide where the request
@@ -285,7 +287,17 @@ abstract class BaseBarcodeLookupPlugin
 		$host = trim($urlParts['host'], '[]');
 		$port = $urlParts['port'] ?? ($scheme === 'https' ? 443 : 80);
 		$pinnedAddress = $validatedAddresses[0];
-		$resolveEntry = $host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress);
+
+		// An IPv6 literal host (e.g. https://[2001:4860:4860::8888]/x) is never looked up -
+		// $host is already the address - so there is nothing to pin, and curl's
+		// host:port:address form cannot express a colon-laden host anyway (the fetch would
+		// simply fail). Every other host still gets the pin.
+		$curlOptions = [CURLOPT_MAXFILESIZE_LARGE => self::FETCH_MAX_RESPONSE_BYTES];
+		if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
+		{
+			$resolveEntry = $host . ':' . $port . ':' . (str_contains($pinnedAddress, ':') ? "[$pinnedAddress]" : $pinnedAddress);
+			$curlOptions[CURLOPT_RESOLVE] = [$resolveEntry];
+		}
 
 		// DefaultUserAgent() is only computed when nothing in $options already supplies one -
 		// it resolves the installed version through ApplicationService, which needs a
@@ -328,13 +340,10 @@ abstract class BaseBarcodeLookupPlugin
 				'proxy' => '',
 				'connect_timeout' => self::FETCH_CONNECT_TIMEOUT_SECONDS,
 				'on_headers' => self::MaxResponseSizeGuard(),
-				'curl' => [
-					CURLOPT_RESOLVE => [$resolveEntry],
-					// Backstop for a response that never declares Content-Length (chunked
-					// transfer, or a server that omits the header) - MaxResponseSizeGuard()
-					// above only ever sees a Content-Length that was actually sent.
-					CURLOPT_MAXFILESIZE_LARGE => self::FETCH_MAX_RESPONSE_BYTES,
-				],
+				// CURLOPT_MAXFILESIZE_LARGE (backstop for a response that never declares
+				// Content-Length - MaxResponseSizeGuard() above only ever sees one that was
+				// actually sent) and, for every host but an IPv6 literal, CURLOPT_RESOLVE.
+				'curl' => $curlOptions,
 			]
 		);
 
