@@ -458,6 +458,53 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 			'and its orphaned opt-in flag is dropped, after its topics were retracted');
 	}
 
+	/**
+	 * The latent gap issue #463 part 2 describes: RetractLocked() only knows how to build a
+	 * retraction for the "product_" prefix, but before this fix it forgot every ledger row
+	 * regardless of kind. Record() is only ever called from the per-product loop today, so no
+	 * other kind exists yet - this pins the behaviour for the day one does, by seeding a row
+	 * directly the way PublishLocked() never does.
+	 *
+	 * Forgetting a row that was never retracted would drop the ledger's only record that its
+	 * retained topic exists, so nothing could ever clear it again - precisely the stale-retained-
+	 * topic failure the ledger exists to prevent. The fix keeps the row instead of the whole-ledger
+	 * ForgetAll() this replaced.
+	 */
+	public function testRetractionForgetsOnlyTheRowsItRetracted(): void
+	{
+		self::RunScenario(
+			['reset', 'flag:' . self::PRODUCT_STAYS, 'full'],
+			self::BrokerSettings(self::$brokerPort),
+			self::$brokerLog
+		);
+
+		$seeded = self::RunScenario(
+			['seedledgerrow:mystery_object:deadbeef'],
+			self::BrokerSettings(self::$refusedPort)
+		);
+
+		self::assertNull($seeded['error']);
+		self::assertSame(
+			['mystery_object', 'product_' . self::PRODUCT_STAYS],
+			array_keys($seeded['ledger']),
+			'both the seeded row and the earlier publish are in the ledger to begin with'
+		);
+
+		$result = self::RunScenario(['retract'], self::BrokerSettings(self::$brokerPort), self::$brokerLog);
+
+		self::assertNull($result['error'], 'an unretractable ledger row must not throw out of the service');
+		self::assertTrue($result['steps']['0:retract'], 'the retraction still succeeds for the kind it knows');
+
+		$batch = self::ReadBatch(self::$brokerLog);
+
+		self::assertArrayHasKey('homeassistant/sensor/victual/product_' . self::PRODUCT_STAYS . '/config',
+			$batch['topics'], 'the product entity is retracted as normal');
+
+		self::assertSame(['mystery_object'], array_keys($result['ledger']),
+			'the product row is forgotten because it was retracted, and the unknown-kind row is'
+				. ' kept because it was not - forgetting it would orphan its retained topic forever');
+	}
+
 	// ---------------------------------------------------------------------------------
 	// The snapshot cannot be assembled
 	// ---------------------------------------------------------------------------------
@@ -540,6 +587,94 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 			'the messages were published to the broker');
 		self::assertSame([], $result['ledger'],
 			'but the ledger was not updated, so the next publish will retry it');
+	}
+
+	// ---------------------------------------------------------------------------------
+	// The publication lock itself (issue #463 part 1)
+	// ---------------------------------------------------------------------------------
+
+	/**
+	 * The gap #449 left: everything *inside* WithPublicationLock() honours the no-throw
+	 * contract, but WithPublicationLock() itself - the advisory lock around the whole
+	 * assemble-publish-record cycle - did not. A connection that cannot even take the lock
+	 * (services/Database/PostgresDialect.php:297-311, called before its own try) threw a
+	 * PDOException straight out of Publish(), which the request-end trigger called unwrapped
+	 * (services/DatabaseService.php:655), which skipped BookingEventPublisher::WriteForRequestEnd()
+	 * on the line after it.
+	 *
+	 * This is the half of that gap Publish() itself can be tested for in isolation: a lock that
+	 * cannot be acquired must publish nothing and must not throw.
+	 */
+	public function testALockAcquisitionFailureLogsAndReturnsFalseWithoutThrowing(): void
+	{
+		$result = self::RunScenario(
+			['reset', 'flag:' . self::PRODUCT_STAYS, 'breaklockacquire', 'full', 'restorelock'],
+			self::BrokerSettings(self::$brokerPort)
+		);
+
+		self::assertNull($result['error'],
+			'a lock acquisition failure must not throw out of the service');
+		self::assertFalse($result['steps']['3:full'],
+			'it reports that the publish failed');
+		self::assertSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'and never contacts the broker at all - the assembly and publish never ran');
+		self::assertSame([], $result['ledger'], 'and records nothing');
+	}
+
+	/**
+	 * The other half of the same gap: WithPublicationLock() releases the lock in a finally that
+	 * runs even when the body succeeded, and that release is a database call too. A connection
+	 * that drops between the body finishing and the unlock statement throws from the finally,
+	 * which discards the body's own return value and propagates instead - so by the time
+	 * Publish() sees it, the broker has already accepted the batch and the ledger has already
+	 * been updated, and the failure is only in the lock's own bookkeeping.
+	 *
+	 * The class's contract - never throw - has to hold even here: the caller sees a failed
+	 * publish it will not retry into a worse state, even though the work underneath it in fact
+	 * completed.
+	 */
+	public function testALockReleaseFailureLogsAndReturnsFalseEvenThoughThePublishSucceeded(): void
+	{
+		$result = self::RunScenario(
+			['reset', 'flag:' . self::PRODUCT_STAYS, 'breaklockrelease', 'full', 'restorelock'],
+			self::BrokerSettings(self::$brokerPort),
+			self::$brokerLog
+		);
+
+		self::assertNull($result['error'],
+			'a lock release failure must not throw out of the service');
+		self::assertFalse($result['steps']['3:full'],
+			'it reports failure - the caller cannot tell this apart from a publish that never ran');
+		self::assertNotSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'even though the messages really were published to the broker');
+		self::assertArrayHasKey('product_' . self::PRODUCT_STAYS, $result['ledger'],
+			'and the ledger really was updated - only the lock release itself failed');
+	}
+
+	/**
+	 * The reason both halves above matter beyond MqttStatePublicationService itself:
+	 * DatabaseService's shutdown handler calls the MQTT request-end publish and then
+	 * BookingEventPublisher::WriteForRequestEnd() on the next line
+	 * (services/DatabaseService.php, formerly :655-656), and on master neither call is
+	 * wrapped - unlike FlushDbChangedTime() just above them. An uncaught throwable from the
+	 * MQTT step (which the lock could produce before this fix, and which any future bug in it
+	 * could still produce) would skip the InfluxDB drain entirely, leaving that request's
+	 * outbox rows undelivered until some later request happened to trigger a drain of its own.
+	 *
+	 * Driven through RunRequestEndPublishes() directly with the MQTT step forced to throw
+	 * (ThrowingMqttDatabaseService in the subprocess helper), because register_shutdown_function()
+	 * only ever fires at the real end of a PHP process - nothing a test can trigger on demand -
+	 * and because forcing an actual advisory-lock failure to survive both this isolation and
+	 * MqttStatePublicationService::Publish()'s own catch at once would not tell them apart.
+	 */
+	public function testTheInfluxDrainStillRunsWhenTheRequestEndMqttStepThrows(): void
+	{
+		$result = self::RunScenario(['shutdownisolation'], self::BrokerSettings(self::$refusedPort));
+
+		self::assertNull($result['error'],
+			'the isolation must absorb the throw - it must not escape RunRequestEndPublishes()');
+		self::assertTrue($result['steps']['0:shutdownisolation'],
+			'the MQTT step ran and threw, and the InfluxDB drain after it still ran');
 	}
 
 	// ---------------------------------------------------------------------------------
