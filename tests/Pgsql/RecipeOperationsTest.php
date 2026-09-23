@@ -411,13 +411,13 @@ class RecipeOperationsTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * DEFECT (services/RecipesService.php:147). The AddProduct() call passes twelve
-	 * arguments to an eleven parameter method
-	 * (services/StockService.php:221): the recipe name intended as the booking's note lands
-	 * one place to the left of where $note is, so the note is stored as the boolean true -
-	 * "1" on the wire and in the ledger - and $recipe->name is dropped on the floor. A
-	 * household reading its stock journal sees "1" where the recipe that produced the entry
-	 * should be. Pinned rather than corrected, since application code is out of scope here.
+	 * When a recipe is consumed (self-produced), the recipe's name is recorded as the
+	 * stock_log note, allowing a household reading its stock journal to see which recipe
+	 * produced each self-production entry. Originally, services/RecipesService.php:147
+	 * passed twelve arguments to an eleven-parameter method, placing the recipe name one
+	 * parameter position to the left, so it was discarded and "1" (boolean true) was
+	 * stored as the note instead. The fix removes the stray parameter so the recipe name
+	 * is correctly passed as the note parameter.
 	 */
 	public function testTheSelfProductionNoteIsBookedAsTheRecipeName(): void
 	{
