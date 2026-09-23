@@ -25,6 +25,53 @@ abstract class BaseBarcodeLookupPlugin
 	private const FETCH_TIMEOUT_SECONDS = 10.0;
 
 	/**
+	 * How long Fetch() waits for the TCP/TLS handshake alone, in seconds, before giving up -
+	 * distinct from FETCH_TIMEOUT_SECONDS, which bounds the whole request including the
+	 * response body. A source that accepts a connection but never completes the handshake
+	 * would otherwise consume the full request timeout doing nothing.
+	 */
+	private const FETCH_CONNECT_TIMEOUT_SECONDS = 5.0;
+
+	/**
+	 * The largest response body Fetch() reads, in bytes (10 MiB) - a source's own JSON
+	 * response and a barcode picture alike. Enforced twice: MaxResponseSizeGuard() (below)
+	 * rejects a declared Content-Length above this before the body downloads at all, and
+	 * CURLOPT_MAXFILESIZE_LARGE is the backstop for a response that never declares one
+	 * (chunked transfer, or a server that simply omits the header).
+	 */
+	private const FETCH_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+	/**
+	 * Guzzle's 'on_headers' callback: called once the response's headers have arrived but
+	 * before its body downloads. Throwing here aborts the transfer - Guzzle surfaces the
+	 * exception as (or wrapped in) a GuzzleHttp\Exception\RequestException, which both of
+	 * Fetch()'s current callers already treat as an ordinary fetch failure: the barcode
+	 * picture download catches \Exception around the whole fetch and proceeds without a
+	 * picture (unchanged - it already fails soft on any fetch exception, including this
+	 * one); OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() does not catch it at all, so
+	 * it propagates to Lookup()'s caller uncaught, reaching the API controller as the same
+	 * "plugin error" 400 response any other ExecuteLookup() exception produces - true of
+	 * every exception Fetch() can throw, not something this guard changes.
+	 *
+	 * A response with no Content-Length header at all (empty string from getHeaderLine())
+	 * is passed through here - CURLOPT_MAXFILESIZE_LARGE is what catches that shape instead.
+	 */
+	private static function MaxResponseSizeGuard(): \Closure
+	{
+		return static function (ResponseInterface $response): void
+		{
+			$contentLength = $response->getHeaderLine('Content-Length');
+
+			if ($contentLength !== '' && (int)$contentLength > self::FETCH_MAX_RESPONSE_BYTES)
+			{
+				throw new \RuntimeException(
+					"Response Content-Length ($contentLength bytes) exceeds Fetch()'s " . self::FETCH_MAX_RESPONSE_BYTES . '-byte cap'
+				);
+			}
+		};
+	}
+
+	/**
 	 * The User-Agent Fetch() sends when a caller does not supply its own - the barcode
 	 * picture download's, unchanged from issue #459. A source that wants to identify
 	 * itself distinctly (Open Food Facts does) passes its own via $options.
@@ -187,22 +234,43 @@ abstract class BaseBarcodeLookupPlugin
 	 *    HTTP_PROXY/HTTPS_PROXY/NO_PROXY are not honoured (proxy: '') - either one would
 	 *    let something other than the validated, pinned address decide where the request
 	 *    actually goes.
+	 *  - The connection has its own 5-second timeout (FETCH_CONNECT_TIMEOUT_SECONDS),
+	 *    separate from the whole-request 10-second one (FETCH_TIMEOUT_SECONDS), and the
+	 *    response body is capped at 10 MiB (FETCH_MAX_RESPONSE_BYTES) - rejected as soon as
+	 *    a Content-Length above the cap is seen (MaxResponseSizeGuard(), before the body
+	 *    downloads at all) or, failing that, by CURLOPT_MAXFILESIZE_LARGE once the transfer
+	 *    itself exceeds it.
 	 *  - HTTP errors never throw (http_errors: false); the caller reads the status itself.
-	 *    Open Food Facts' 404-is-a-miss handling and the picture download's 2xx check both
-	 *    depend on getting a response object back rather than a caught exception.
 	 *
-	 * @param string $url An http(s) URL. A scheme this seam does not allow, or a host it
-	 *                    refuses, surfaces as OutboundHostRefusedException - callers that
-	 *                    already treat any \Exception from a fetch as a miss (both current
-	 *                    callers do) need no change to keep doing that; OpenFoodFacts and
-	 *                    other future sources.
-	 * @param array $options Guzzle request options merged on top of the ones this method
-	 *                       sets - most usefully 'headers' => ['User-Agent' => '...'] for a
-	 *                       source that wants to identify itself distinctly, as Open Food
-	 *                       Facts does. Values here are layered under this method's own
-	 *                       array_merge, so a caller cannot use this to defeat
-	 *                       allow_redirects, proxy or curl (a caller-supplied 'curl' array
-	 *                       is merged with, not replacing, the CURLOPT_RESOLVE pin).
+	 * @param string $url An http(s) URL. A scheme this seam does not allow, a host it
+	 *                    refuses, or a response outside its size cap all surface as an
+	 *                    exception (OutboundHostRefusedException for the first two; a
+	 *                    GuzzleHttp\Exception\RequestException, wrapping
+	 *                    MaxResponseSizeGuard()'s \RuntimeException, for the third). The two
+	 *                    current callers handle a fetch exception differently, and this
+	 *                    method changes neither: the barcode picture download
+	 *                    (services/StockService.php::ExternalBarcodeLookup()) catches
+	 *                    \Exception around the whole fetch and proceeds without a picture;
+	 *                    OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() does not catch
+	 *                    anything Fetch() throws, so it propagates through Lookup() to the
+	 *                    API controller as the same "plugin error" 400 response any other
+	 *                    ExecuteLookup() exception produces.
+	 * @param array $options Guzzle request options layered on top of the ones this method
+	 *                       sets - in practice only 'headers' => ['User-Agent' => '...'] for
+	 *                       a source that wants to identify itself distinctly, as Open Food
+	 *                       Facts does. 'allow_redirects', 'proxy', 'connect_timeout',
+	 *                       'on_headers' and 'curl' are this method's alone: whatever
+	 *                       $options carries under those keys is discarded after the merge,
+	 *                       not merged with this method's own values, because each is
+	 *                       exactly the setting a caller would need to defeat the policy
+	 *                       above (a redirect off the pinned address, a proxy that resolves
+	 *                       the host itself, an unbounded connect wait, a size guard that
+	 *                       never runs, or a raw CURLOPT_PROXY / CURLOPT_FOLLOWLOCATION /
+	 *                       CURLOPT_RESOLVE / CURLOPT_CONNECT_TO / CURLOPT_MAXFILESIZE_LARGE
+	 *                       slipped in under 'curl'). No caller needs any of these today, and
+	 *                       refusing all of 'curl' - not attempting to allow-list which curl
+	 *                       options are "safe" - is the simpler of the two ways to close that
+	 *                       off.
 	 * @return ResponseInterface
 	 * @throws OutboundHostRefusedException When $url's scheme or resolved host is refused
 	 * @throws \GuzzleHttp\Exception\GuzzleException On a connection-level failure
@@ -231,23 +299,44 @@ abstract class BaseBarcodeLookupPlugin
 		}
 		unset($options['headers']);
 
+		// 'allow_redirects', 'proxy' and 'curl' are removed from $options before the merge
+		// below (rather than merged and then overwritten) so a caller cannot supply any
+		// shape of these three that survives even transiently - array_replace_recursive
+		// merges nested arrays key-by-key, so a caller's own 'curl' => [CURLOPT_RESOLVE =>
+		// ...] would otherwise sit in $requestOptions until the explicit overwrite below,
+		// and a caller's 'curl' => [CURLOPT_PROXY => ...] has no corresponding key in this
+		// method's own 'curl' array to be overwritten by at all. connect_timeout and
+		// on_headers are the same kind of caller-cannot-touch-this setting: a caller's own
+		// on_headers would replace, not run alongside, the size guard below.
+		unset($options['allow_redirects'], $options['proxy'], $options['curl'], $options['connect_timeout'], $options['on_headers']);
+
 		$requestOptions = array_replace_recursive(
 			[
 				'http_errors' => false,
-				'allow_redirects' => false,
-				'proxy' => '',
 				'timeout' => self::FETCH_TIMEOUT_SECONDS,
-				'curl' => [CURLOPT_RESOLVE => [$resolveEntry]],
 			],
 			$options,
-			['headers' => $headers]
+			[
+				'headers' => $headers,
+				// Fixed by this method, never by a caller: a redirect off the validated,
+				// pinned address, a proxy resolving the host itself, a raw curl option
+				// (CURLOPT_PROXY, CURLOPT_FOLLOWLOCATION, CURLOPT_CONNECT_TO, a second
+				// CURLOPT_RESOLVE), an unbounded connect wait, or a response of unbounded
+				// size would each be a way to defeat this method's policy without touching
+				// OutboundHostPolicy directly.
+				'allow_redirects' => false,
+				'proxy' => '',
+				'connect_timeout' => self::FETCH_CONNECT_TIMEOUT_SECONDS,
+				'on_headers' => self::MaxResponseSizeGuard(),
+				'curl' => [
+					CURLOPT_RESOLVE => [$resolveEntry],
+					// Backstop for a response that never declares Content-Length (chunked
+					// transfer, or a server that omits the header) - MaxResponseSizeGuard()
+					// above only ever sees a Content-Length that was actually sent.
+					CURLOPT_MAXFILESIZE_LARGE => self::FETCH_MAX_RESPONSE_BYTES,
+				],
+			]
 		);
-
-		// array_replace_recursive would append a second CURLOPT_RESOLVE array entry from
-		// $options rather than replacing this method's own pin, since both are numerically
-		// keyed; overwritten explicitly so the pin this call just validated is always the
-		// one actually used, whatever $options[curl] contained.
-		$requestOptions['curl'][CURLOPT_RESOLVE] = [$resolveEntry];
 
 		return (new Client())->request('GET', $url, $requestOptions);
 	}

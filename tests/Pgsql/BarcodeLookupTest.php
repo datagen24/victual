@@ -971,6 +971,109 @@ class BarcodeLookupTest extends TestCase
 		self::assertNull($result['request_uri'], 'refused before GuzzleHttp\\Client::request() is ever reached');
 	}
 
+	/**
+	 * Fetch() is the one chokepoint every barcode-lookup outbound request goes through
+	 * (issue #460), which is only true if a caller cannot hand it options that undo the
+	 * policy it enforces. A caller-supplied 'allow_redirects' => true (a redirect off the
+	 * pinned address), 'proxy' => '...' (the proxy resolves the host itself, making the pin
+	 * meaningless), 'connect_timeout' => 0 (an unbounded connect wait) or
+	 * 'curl' => [CURLOPT_FOLLOWLOCATION => true] (the same redirect-following defeat by a
+	 * different route) must all be discarded rather than merged, however plausible the
+	 * reason a caller might pass them looks. No current caller passes any of these; this
+	 * proves Fetch() does not merely happen to be safe because of that.
+	 */
+	public function testFetchIgnoresACallerSuppliedAllowRedirectsProxyAndCurlOverride(): void
+	{
+		$result = self::fetchHardening(
+			'https://world.openfoodfacts.org/x.jpg',
+			['203.0.113.9'],
+			[
+				// A User-Agent, so DefaultUserAgent() (which resolves the installed version
+				// through a database connection this lightweight process does not have) is
+				// never reached - unrelated to what this test is actually about.
+				'headers' => ['User-Agent' => 'FetchHardeningTest/1.0'],
+				'allow_redirects' => true,
+				'proxy' => 'http://proxy.example:3128',
+				'connect_timeout' => 0,
+				'curl' => [CURLOPT_FOLLOWLOCATION => true],
+			]
+		);
+
+		self::assertFalse($result['request_options']['allow_redirects'], 'a caller cannot re-enable following redirects');
+		self::assertSame('', $result['request_options']['proxy'], 'a caller cannot re-enable an outbound proxy');
+		self::assertSame(5.0, (float)$result['request_options']['connect_timeout'], 'a caller cannot remove the connect timeout');
+		self::assertArrayNotHasKey(CURLOPT_FOLLOWLOCATION, $result['request_options']['curl'] ?? [], 'a caller-supplied curl option is discarded entirely, not merged with the pin');
+		self::assertArrayHasKey(CURLOPT_RESOLVE, $result['request_options']['curl'] ?? [], "Fetch()'s own DNS-rebinding pin still applies");
+	}
+
+	/**
+	 * The response-size cap (issue #460, added on CodeRabbit's review of #472): Fetch()
+	 * always installs its own 'on_headers' callback and CURLOPT_MAXFILESIZE_LARGE, and a
+	 * caller cannot replace either (proven above for on_headers implicitly, since it is one
+	 * of the keys unset before the merge - this test additionally proves the installed
+	 * callback actually enforces the cap it claims to). Invoking the recorded on_headers
+	 * with a response Content-Length at or under 10 MiB does not throw; strictly over it
+	 * does, before the body would have downloaded at all.
+	 */
+	public function testFetchsOnHeadersGuardEnforcesTheTenMebibyteCap(): void
+	{
+		$tenMebibytes = 10 * 1024 * 1024;
+
+		$result = self::fetchHardening(
+			'https://world.openfoodfacts.org/x.jpg',
+			['203.0.113.9'],
+			['headers' => ['User-Agent' => 'FetchHardeningTest/1.0']],
+			[$tenMebibytes, $tenMebibytes + 1]
+		);
+
+		self::assertTrue($result['request_options']['on_headers_is_callable'], 'Fetch() always installs its own on_headers callback');
+		self::assertArrayHasKey(CURLOPT_MAXFILESIZE_LARGE, $result['request_options']['curl'] ?? [], 'and the curl-level backstop for a response with no Content-Length at all');
+		self::assertSame($tenMebibytes, $result['request_options']['curl'][CURLOPT_MAXFILESIZE_LARGE] ?? null);
+
+		self::assertSame('passed', $result['on_headers_results'][(string)$tenMebibytes], 'exactly the cap is not "above" it');
+		self::assertSame('threw', $result['on_headers_results'][(string)($tenMebibytes + 1)], 'one byte over the cap is rejected before the body downloads');
+	}
+
+	/**
+	 * Runs fetch-hardening-subprocess-helper.php, which calls BaseBarcodeLookupPlugin::Fetch()
+	 * directly (via a concrete OpenFoodFactsBarcodeLookupPlugin instance) with $options,
+	 * against a substituted GuzzleHttp\Client and an injected resolver - no real network
+	 * call and no real DNS lookup either.
+	 *
+	 * @return array{request_options: array{allow_redirects: ?bool, proxy: ?string, connect_timeout: ?float, on_headers_is_callable: bool, curl: ?array}, on_headers_results: array<string, string>}
+	 */
+	private static function fetchHardening(string $url, array $hostResolverAddresses, array $options, array $onHeadersContentLengths = []): array
+	{
+		$spec = [
+			'url' => $url,
+			'host_resolver_addresses' => $hostResolverAddresses,
+			'options' => $options,
+			'on_headers_content_lengths' => $onHeadersContentLengths,
+		];
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$environment = array_merge($inherited, ['VICTUAL_ROOT' => VICTUAL_ROOT_PATH]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/fetch-hardening-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$environment
+		);
+
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		$result = json_decode($output, true);
+		self::assertIsArray($result, "fetch-hardening-subprocess-helper.php printed no JSON. stdout: $output\nstderr: $errors");
+
+		return $result;
+	}
+
 	/** @return array<string, array{0: string, 1: string}> */
 	public static function barcodeToQueriedCodeProvider(): array
 	{
