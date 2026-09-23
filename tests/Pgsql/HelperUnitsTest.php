@@ -434,6 +434,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertFalse(IsValidFileName('..\\windows\\system32.dll'), 'a backslash is refused too');
 		self::assertFalse(IsValidFileName('noextension'));
 		self::assertFalse(IsValidFileName('semi;colon.png'));
+		self::assertFalse(IsValidFileName("null\0byte.png"), 'a null byte is refused');
 		self::assertFalse(IsValidFileName(''));
 	}
 

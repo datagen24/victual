@@ -461,12 +461,20 @@ function GetUserDisplayName($user)
 
 /**
  * Returns true when $fileName is a plain "name.extension" file name without
- * path separators or other forbidden characters (/ ? * ; : { } \).
+ * path separators or other forbidden characters (/ ? * ; : { } \ and null bytes).
  *
  * @return bool
  */
 function IsValidFileName($fileName)
 {
+	// The database driver truncates at null bytes, so a name like "bypass.svg\0.txt"
+	// would be stored as "bypass.svg", allowing an extension check bypass. On the
+	// filesystem, fopen() raises ValueError. Reject null bytes unconditionally.
+	if (strpos($fileName, "\0") !== false)
+	{
+		return false;
+	}
+
 	if (preg_match('=^[^/?*;:{}\\\\]+\.[^/?*;:{}\\\\]+$=', $fileName))
 	{
 		return true;

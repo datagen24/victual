@@ -829,69 +829,34 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * A file name containing a null byte is not refused, and what happens next depends on
-	 * the backend. Neither answer is the one an invalid name should get.
-	 *
-	 * DEFECT (helpers/extensions.php:468-476). IsValidFileName's character class excludes
-	 * "/?*;:{}\\" and nothing else, so a null byte is a valid character in a file name and
-	 * all three routes accept one. Then:
-	 *
-	 * - on the filesystem backend the name reaches fopen(), which raises a ValueError. That
-	 *   is an \Error, and HandleApiCall's catch chain ends at \Exception, so nothing
-	 *   answers it: in production the request dies above the controller as a 500, from a
-	 *   caller supplied string, where an invalid name is a 400.
-	 * - on the database backend the driver truncates the name at the null byte, so the
-	 *   upload answers 204 and stores a row under a name the caller never sent - and the
-	 *   name the extension check was applied to is not the name that was stored. That is
-	 *   GROUP_ALLOWED_EXTENSIONS ("an upload of anything else is refused rather than
-	 *   stored") being bypassed, which the second half of this test demonstrates.
-	 *
-	 * The correct behaviour is for IsValidFileName to refuse a name containing a null byte,
-	 * so that every route answers 400 on both backends. Pinned with assertions rather than
-	 * skipped, because both current answers are worse than a refusal and a skipped test
-	 * would stop reporting them.
+	 * IsValidFileName refuses a name containing a null byte, so every route answers 400
+	 * on both backends. Without this check, the database driver would truncate at the
+	 * null byte (storing "bypass.svg" instead of "bypass.svg\0.txt", bypassing the
+	 * extension allow-list), and the filesystem backend would raise an uncaught ValueError.
 	 */
 	#[DataProvider('backends')]
-	public function testANullByteInAFileNameIsNotRefused(string $backend): void
+	public function testANullByteInAFileNameIsRefused(string $backend): void
 	{
 		self::Storage($backend, ['productpictures', 'userfiles']);
 		self::grant(['MASTER_DATA_EDIT', 'STOCK_VIEW']);
 
-		self::assertTrue(IsValidFileName("null\0byte.png"), 'Current behaviour, and the root of the defect: a null byte passes the file name check');
+		self::assertFalse(IsValidFileName("null\0byte.png"), 'A null byte is not part of a valid file name');
 
-		$args = ['group' => 'productpictures', 'fileName' => base64_encode("null\0byte.png")];
+		// On both backends, an upload with a null byte in the filename is refused
+		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), ['group' => 'productpictures', 'fileName' => base64_encode("null\0byte.png")]), 400, 'Uploading with a null byte in the filename is refused');
+		self::assertSame([], self::DurableNames($backend, 'productpictures'), 'Nothing was stored');
 
-		if ($backend === 'filesystem')
-		{
-			$raised = null;
-			try
-			{
-				self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), $args);
-			}
-			catch (\ValueError $ex)
-			{
-				$raised = $ex;
-			}
+		// Specifically, the defect in the database backend: a filename with a null byte
+		// that has a deceptive extension (e.g., "bypass.svg\0.txt") is refused, and nothing
+		// is stored, even though before the fix the extension check would have seen "txt"
+		// (the truncated name).
+		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', '<svg xmlns="http://www.w3.org/2000/svg"/>'), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode("bypass.svg\0.txt")]), 400, 'Even with a deceptive extension, a null byte in the filename is refused');
+		self::assertSame([], self::DurableNames($backend, 'userfiles'), 'Nothing was stored');
 
-			self::assertNotNull($raised, 'Current behaviour, and a defect: the upload dies with an uncaught ValueError rather than answering 400');
-			self::assertSame([], self::DurableNames($backend, 'productpictures'), 'Nothing was stored');
-
-			return;
-		}
-
-		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', self::$png), new Response(), $args), 204, 'Current behaviour, and a defect: the upload reports success');
-		self::assertSame(['null'], self::DurableNames($backend, 'productpictures'), 'and stored the file under the truncation of the name, which is not the name that was sent');
-
-		// The consequence, in the group whose allow list is explicitly about keeping out
-		// the formats a browser executes in this origin: the extension check sees "txt"
-		// and the store ends up holding an .svg.
-		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', '<svg xmlns="http://www.w3.org/2000/svg"/>'), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode("bypass.svg\0.txt")]), 204, 'Current behaviour, and the point of the defect: the extension check passes on "txt"');
-		self::assertSame(['bypass.svg'], self::DurableNames($backend, 'userfiles'), 'and an extension userfiles deliberately excludes is what was stored');
-
-		// Negative control: the same file under its own name is refused, which is what the
-		// group allow list is supposed to do in both cases.
-		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', '<svg xmlns="http://www.w3.org/2000/svg"/>'), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode('honest.svg')]), 400, 'The same file under its own name is refused');
-		self::assertSame(['bypass.svg'], self::DurableNames($backend, 'userfiles'), 'and stores nothing');
+		// Negative control: the same SVG under its own name is still refused by the
+		// userfiles allow list.
+		$this->expectStatus(fn () => self::$files->UploadFile(self::requestWithRawBody('PUT', '<svg xmlns="http://www.w3.org/2000/svg"/>'), new Response(), ['group' => 'userfiles', 'fileName' => base64_encode('honest.svg')]), 400, 'SVG is still refused in userfiles');
+		self::assertSame([], self::DurableNames($backend, 'userfiles'), 'Nothing was stored');
 	}
 
 	/**
