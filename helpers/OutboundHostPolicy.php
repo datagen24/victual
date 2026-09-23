@@ -299,12 +299,10 @@ final class OutboundHostPolicy
 		[$subnet, $bits] = explode('/', $cidr);
 		$bits = (int)$bits;
 
-		$ipLong = ip2long($ip);
-		$subnetLong = ip2long($subnet);
-		if ($ipLong === false || $subnetLong === false)
-		{
-			return false;
-		}
+		// Both are valid IPv4: $ip passed filter_var() or came from inet_ntop(), and $cidr
+		// is one of this class's constants.
+		$ipLong = (int)ip2long($ip);
+		$subnetLong = (int)ip2long($subnet);
 
 		$mask = $bits === 0 ? 0 : (~0 << (32 - $bits)) & 0xFFFFFFFF;
 
@@ -316,12 +314,10 @@ final class OutboundHostPolicy
 		[$subnet, $bits] = explode('/', $cidr);
 		$bits = (int)$bits;
 
-		$ipBinary = @inet_pton($ip);
-		$subnetBinary = @inet_pton($subnet);
-		if ($ipBinary === false || $subnetBinary === false)
-		{
-			return false;
-		}
+		// Both are valid IPv6: $ip passed filter_var() and $cidr is one of this class's
+		// constants, so inet_pton() cannot fail here.
+		$ipBinary = (string)inet_pton($ip);
+		$subnetBinary = (string)inet_pton($subnet);
 
 		$fullBytes = intdiv($bits, 8);
 		$remainderBits = $bits % 8;
@@ -353,11 +349,7 @@ final class OutboundHostPolicy
 	 */
 	private static function ParseNumericIpv4(string $host): ?string
 	{
-		if ($host === '')
-		{
-			return null;
-		}
-
+		// An empty host reaches the loop below as a single empty part and is refused there.
 		$parts = explode('.', $host);
 
 		if (end($parts) === '' && count($parts) > 1)
@@ -435,11 +427,8 @@ final class OutboundHostPolicy
 			$ipv4 += $numbers[$i] * (256 ** (3 - $i));
 		}
 
-		if ($ipv4 < 0 || $ipv4 > 4294967295)
-		{
-			return null;
-		}
-
+		// No range check here: every part was bounded above, so the total cannot leave
+		// 0..2^32-1.
 		return long2ip($ipv4);
 	}
 }
