@@ -27,10 +27,18 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 	 *                     qu_id_stock, __qu_factor_purchase_to_stock (always 1),
 	 *                     __barcode and __image_url (validated/completed by
 	 *                     BaseBarcodeLookupPlugin::Lookup()), or null when the API
-	 *                     returns 404 or no matching product (status != 1)
+	 *                     returns 404, the body is not a decision to map (not JSON, not a
+	 *                     hit, or a hit with no product object), or nothing was scanned
 	 */
 	protected function ExecuteLookup($barcode)
 	{
+		if ($barcode === '')
+		{
+			// Nothing to ask about - every other case below is a real API round trip, and
+			// an empty scan is not one of them.
+			return null;
+		}
+
 		$productNameFieldLocalized = 'product_name_' . substr(VICTUAL_LOCALE, 0, 2);
 
 		$webClient = new Client(['http_errors' => false]);
@@ -39,10 +47,20 @@ class OpenFoodFactsBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 
 		// Guzzle throws exceptions for connection errors, so nothing to do on that here
 
-		$data = json_decode(mb_convert_encoding($response->getBody(), 'UTF-8', 'UTF-8'));
-		if ($statusCode == 404 || $data->status != 1)
+		if ($statusCode == 404)
 		{
 			// Nothing found for the given barcode
+			return null;
+		}
+
+		$data = json_decode(mb_convert_encoding($response->getBody(), 'UTF-8', 'UTF-8'));
+
+		// A body that is not a JSON object (a CDN error page, say), a status other than 1,
+		// or a status of 1 with no product object to map are all misses - checked here,
+		// once, rather than let each read below reach one of them through a PHP notice on
+		// its way to the same null.
+		if (!is_object($data) || !isset($data->status) || $data->status != 1 || !isset($data->product) || !is_object($data->product))
+		{
 			return null;
 		}
 		else
