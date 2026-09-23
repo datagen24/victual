@@ -214,7 +214,7 @@
 					@foreach($users as $user)
 					<option @if($mode=='edit'
 						&&
-						in_array($user->id, explode(',', $chore->assignment_config))) selected="selected" @endif value="{{ $user->id }}">{{ $user->display_name }}</option>
+						in_array($user->id, explode(',', $chore->assignment_config ?? ''))) selected="selected" @endif value="{{ $user->id }}">{{ $user->display_name }}</option>
 					@endforeach
 				</select>
 				<div class="invalid-feedback">{{ $__t('This assignment type requires that at least one is assigned') }}</div>
@@ -320,17 +320,17 @@
 							data-trigger="hover click"
 							title="{{ $__t('Grocycode is a unique referer to this %s in your Victual instance - print it onto a label and scan it like any other barcode', $__t('Chore')) }}"></i>
 					</h4>
+					@if($mode == 'edit')
 					<p>
-						@if($mode == 'edit')
 						<img src="{{ $U('/chore/' . $chore->id . '/grocycode?size=60') }}"
 							class="float-lg-left"
 							loading="lazy">
-						@endif
 					</p>
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
 							href="{{ $U('/chore/' . $chore->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
 					</p>
+					@endif
 				</div>
 			</div>
 		</div>

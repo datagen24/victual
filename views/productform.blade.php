@@ -96,8 +96,12 @@
 			$hint = $__t('Not possible because this product is already used as a parent product in another product');
 			}
 			@endphp
+			{{-- 'barcodes' shadows the outer $barcodes (raw product_barcodes rows, for
+			this form's own barcode table below) with the comma-separated shape
+			components.productpicker expects. --}}
 			@include('components.productpicker', array(
 			'products' => $products,
+			'barcodes' => $productBarcodesCommaSeparated,
 			'prefillById' => $prefillById,
 			'disallowAllProductWorkflows' => true,
 			'isRequired' => false,
@@ -803,9 +807,11 @@
 							<th class="@if(!$pricesVisible) d-none @endif">{{ $__t('Last price') }}</th>
 							<th>{{ $__t('Note') }}</th>
 
+							@if($mode == 'edit')
 							@include('components.userfields_thead', array(
 							'userfields' => $productBarcodeUserfields
 							))
+							@endif
 						</tr>
 					</thead>
 					<tbody class="d-none">
@@ -954,17 +960,17 @@
 							data-trigger="hover click"
 							title="{{ $__t('Grocycode is a unique referer to this %s in your Victual instance - print it onto a label and scan it like any other barcode', $__t('Product')) }}"></i>
 					</h4>
+					@if($mode == 'edit')
 					<p>
-						@if($mode == 'edit')
 						<img src="{{ $U('/product/' . $product->id . '/grocycode?size=60') }}"
 							class="float-lg-left"
 							loading="lazy">
-						@endif
 					</p>
 					<p>
 						<a class="btn btn-outline-primary btn-sm"
 							href="{{ $U('/product/' . $product->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
 					</p>
+					@endif
 				</div>
 			</div>
 		</div>
@@ -1081,7 +1087,7 @@
 								<label id="product-picture-label"
 									class="custom-file-label @if(empty($product->picture_file_name)) d-none @endif"
 									for="product-picture">
-									{{ $product->picture_file_name }}
+									{{ $product->picture_file_name ?? '' }}
 								</label>
 								<label id="product-picture-label-none"
 									class="custom-file-label @if(!empty($product->picture_file_name)) d-none @endif"

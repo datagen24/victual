@@ -159,7 +159,7 @@
 						<label id="user-picture-label"
 							class="custom-file-label @if(empty($user->picture_file_name)) d-none @endif"
 							for="user-picture">
-							{{ $user->picture_file_name }}
+							{{ $user->picture_file_name ?? '' }}
 						</label>
 						<label id="user-picture-label-none"
 							class="custom-file-label @if(!empty($user->picture_file_name)) d-none @endif"

@@ -1273,66 +1273,43 @@ class StockPagesTest extends PgsqlSchemaTestCase
 	// --- Defects found while covering these pages ----------------------------------------
 
 	/**
-	 * DEFECT. GET /product/new and GET /quantityunit/new are the create routes
+	 * GET /product/new and GET /quantityunit/new are the create routes
 	 * (StockController::ProductEditForm() and ::QuantityUnitEditForm() both branch on the
-	 * literal 'new' and render with mode 'create'), and both templates dereference
-	 * variables the create branch does not pass:
+	 * literal 'new' and render with mode 'create'). Both templates used to dereference
+	 * variables the create branch does not pass - edit-only blocks hidden with a d-none
+	 * class instead of skipped with @if($mode == 'edit') the way the same templates guard
+	 * their other edit-only blocks, so Blade still evaluated what was inside:
 	 *
-	 *   views/productform.blade.php:807   $productBarcodeUserfields, in the barcode table's
-	 *                                     @include of components.userfields_thead
-	 *   views/productform.blade.php:966   $product->id, in the Grocycode "Download" link
-	 *   views/productform.blade.php:1084  $product->picture_file_name, in the file label
-	 *   views/quantityunitform.blade.php:131  $quantityUnit->id, in the "Add conversion" link
+	 *   views/productform.blade.php       $productBarcodeUserfields in the barcode table's
+	 *                                     @include of components.userfields_thead; $product->id
+	 *                                     in the Grocycode "Download" link; $product->picture_file_name
+	 *                                     in the file label
+	 *   views/quantityunitform.blade.php  $quantityUnit->id in the "Add conversion" link
 	 *
-	 * The blocks are only hidden with a d-none class (productform.blade.php:946 for the
-	 * Grocycode row, :1082 for the picture label), not skipped with @if($mode == 'edit')
-	 * the way the same templates guard their other edit-only blocks - the grocycode image
-	 * at :959 is inside such a guard and raises nothing - so they are still evaluated.
+	 * Plus a second, separate defect on the product page: the create branch passed the raw
+	 * product_barcodes rows as 'barcodes' (controllers/StockController.php), which leaks via
+	 * Blade's @include scope sharing into the reused components.productpicker.blade.php,
+	 * which expects the comma-separated view's 'barcodes' column and calls strtolower() on
+	 * the null it gets instead.
 	 *
-	 * The product form's first diagnostic is a second, separate defect on the same page:
-	 * the create branch passes the raw product_barcodes rows as 'barcodes'
-	 * (controllers/StockController.php:393, and :418 for the edit branch), while
-	 * views/components/productpicker.blade.php:71 expects the comma separated view's
-	 * 'barcodes' column and calls strtolower() on the null it gets instead. It is captured
-	 * and asserted here rather than left to leak, because a pinned list that omitted it
-	 * would pass whether the deprecation was there or not.
-	 *
-	 * Correct behaviour is for the create branch to render no diagnostic at all. This test
-	 * pins what happens today rather than asserting the fix, because application code is
-	 * out of scope for this work; it is marked incomplete so the run says so out loud
-	 * instead of looking like a passing assertion about warnings being fine.
+	 * Correct behaviour is for both create forms to render with zero PHP diagnostics under
+	 * E_ALL, and for the now edit-only blocks (the Grocycode download link, the "Add
+	 * conversion" link) not to render at all in create mode rather than render broken.
 	 */
 	#[Depends('testFixturesAreCreated')]
-	public function testCreateFormsDereferenceVariablesTheyWereNotGiven(): void
+	public function testCreateFormsRenderWithoutDereferencingVariablesTheyWereNotGiven(): void
 	{
 		self::assumeRole('ADMIN');
 
 		[$productForm, $productDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'ProductEditForm', ['productId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $productForm, 'the page is still served');
-		self::assertSame(
-			[
-				'strtolower(): Passing null to parameter #1 ($string) of type string is deprecated',
-				'Undefined variable $productBarcodeUserfields',
-				'Undefined variable $product',
-				'Attempt to read property "id" on null',
-				'Undefined variable $product',
-				'Attempt to read property "picture_file_name" on null'
-			],
-			$productDiagnostics,
-			'DEFECT: GET /product/new emits these six diagnostics and no others'
-		);
-		self::assertStringContainsString('/product//grocycode?download=true', $productForm, 'DEFECT: and renders the broken link that follows from the null id');
+		self::assertSame([], $productDiagnostics, 'GET /product/new renders with no PHP diagnostics');
+		self::assertStringNotContainsString('/product//grocycode', $productForm, 'the now edit-only Grocycode block does not render with a null product id');
 
 		[$unitForm, $unitDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'QuantityUnitEditForm', ['quantityunitId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $unitForm, 'the page is still served');
-		self::assertSame(
-			['Undefined variable $quantityUnit', 'Attempt to read property "id" on null'],
-			$unitDiagnostics,
-			'DEFECT: GET /quantityunit/new reads the unit it has not been given, and nothing else warns'
-		);
-		self::assertStringContainsString('/quantityunitconversion/new?embedded&amp;qu-unit="', $unitForm, 'DEFECT: and renders the link with no unit in it');
-
-		self::markTestIncomplete('Create forms emit PHP diagnostics: ' . implode('; ', array_unique(array_merge($productDiagnostics, $unitDiagnostics))));
+		self::assertSame([], $unitDiagnostics, 'GET /quantityunit/new renders with no PHP diagnostics');
+		self::assertStringNotContainsString('qu-unit=', $unitForm, 'the now edit-only "Add conversion" link does not render with no unit in it');
 	}
 
 	/**

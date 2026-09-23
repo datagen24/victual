@@ -356,17 +356,21 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Renders a page that is known to raise PHP warnings, handing them back for assertion.
+	 * Renders a page, handing back any PHP diagnostics it raised for assertion instead of
+	 * letting PHPUnit's handler turn them into a failed run (phpunit.xml sets
+	 * failOnWarning="true", correctly - a warning is a defect).
 	 *
-	 * phpunit.xml sets failOnWarning="true" and that is correct - a warning is a defect.
-	 * The three create forms below have one, application code is out of scope for this
-	 * work, and a captured warning that is then asserted is the opposite of a silenced
-	 * one: the defect is pinned, named, and these assertions fail the day it is fixed.
+	 * The default mask is E_ALL rather than the weaker E_WARNING: masking this helper to a
+	 * severity does not forward out-of-mask diagnostics to the handler that was installed
+	 * before it, so a mask narrower than E_ALL can leave a diagnostic unassert-able and
+	 * unnoticed. Asserting the full list under E_ALL is what guarantees nothing is
+	 * swallowed. Callers that need to isolate a single severity (e.g. E_DEPRECATED) may
+	 * still narrow it explicitly.
 	 *
 	 * @param int $mask The diagnostics to capture; anything else keeps reaching PHPUnit.
 	 * @return array{0: string, 1: string[]}
 	 */
-	private static function renderCapturingWarnings(callable $work, string $what, int $mask = E_WARNING): array
+	private static function renderCapturingWarnings(callable $work, string $what, int $mask = E_ALL): array
 	{
 		$warnings = [];
 		set_error_handler(function (int $number, string $message) use (&$warnings): bool
@@ -490,35 +494,31 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 
 	public function testChoreEditFormCarriesTheChoreItEditsAndTheCreateFormCarriesNone(): void
 	{
-		// DEFECT: views/choreform.blade.php:217 calls explode(',', $chore->assignment_config)
-		// on the edit form. assignment_config is nullable and is null for every chore whose
-		// assignment type is the default "no assignment", so opening such a chore raises a
-		// deprecation once per user in the household - and will be a TypeError when PHP
-		// removes the null coercion. The correct behaviour is to coalesce to '' (or to skip
-		// the in_array when there is no assignment), as the sibling checks on this form do.
-		[$edit, $deprecations] = self::renderCapturingWarnings(
+		// views/choreform.blade.php explode(',', $chore->assignment_config) on the edit
+		// form used to raise a deprecation once per user in the household for a chore
+		// whose assignment type is the default "no assignment" (assignment_config is
+		// nullable and null in that case), and would be a TypeError once PHP removes the
+		// null coercion. The chore's assignment_config is coalesced to '' before the
+		// explode(), so a chore with no assignment renders clean under E_ALL.
+		[$edit, $editDiagnostics] = self::renderCapturingWarnings(
 			fn () => self::$chores->ChoreEditForm(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']]),
 			'GET /chore/{id}',
-			E_DEPRECATED
+			E_ALL
 		);
 		self::assertStringContainsString('Chore overdue', $edit, 'the edit form is populated from the row it edits');
 		self::assertStringNotContainsString('Chore due today', $edit, 'and carries no other chore');
-		self::assertSame(
-			['explode(): Passing null to parameter #2 ($string) of type string is deprecated'],
-			array_values(array_unique($deprecations)),
-			'DEFECT: the chore edit form explodes a null assignment_config'
-		);
+		self::assertSame([], $editDiagnostics, 'the edit form for a chore with no assignment renders with no PHP diagnostics');
 
-		// DEFECT: views/choreform.blade.php:332 reads $chore->id for the grocycode
-		// "Download" link, outside the @if($mode == 'edit') guard that wraps the barcode
-		// image immediately above it. So GET /chore/new raises two warnings and renders a
-		// download link to /chore//grocycode. The correct behaviour is the guard covering
-		// both, as it does on the battery form; pinned here rather than fixed, because
-		// application code is out of scope for this work.
-		[$create, $warnings] = self::renderCapturingWarnings(fn () => self::$chores->ChoreEditForm(self::request(), self::response(), ['choreId' => 'new']), 'GET /chore/new');
+		// views/choreform.blade.php read $chore->id for the grocycode "Download" link,
+		// outside the @if($mode == 'edit') guard that wraps the barcode image immediately
+		// above it, so GET /chore/new raised two warnings and rendered a download link to
+		// /chore//grocycode. The guard now covers both, as it already does on the battery
+		// form, so the whole Grocycode block - image and download link - is absent in
+		// create mode instead of rendering broken.
+		[$create, $createDiagnostics] = self::renderCapturingWarnings(fn () => self::$chores->ChoreEditForm(self::request(), self::response(), ['choreId' => 'new']), 'GET /chore/new', E_ALL);
 		self::assertStringNotContainsString('Chore overdue', $create, 'the create form starts empty');
-		self::assertSame(['Undefined variable $chore', 'Attempt to read property "id" on null'], $warnings, 'DEFECT: the chore create form reads the chore it has not got');
-		self::assertStringContainsString('/chore//grocycode?download=true', $create, 'DEFECT: and renders the broken link that follows from it');
+		self::assertSame([], $createDiagnostics, 'the chore create form renders with no PHP diagnostics');
+		self::assertStringNotContainsString('/chore//grocycode', $create, 'and renders no Grocycode block at all in create mode');
 	}
 
 	public function testChoreEditFormRefusesACallerWithoutChoresView(): void
@@ -830,14 +830,15 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('The dishwasher', $edit, 'the form carries the item it edits');
 		self::assertStringNotContainsString('The oven', $edit, 'and no other item');
 
-		// DEFECT: views/equipmentform.blade.php:87 prints
+		// views/equipmentform.blade.php used to print
 		// $equipment->instruction_manual_file_name unguarded, while the three sites around
-		// it test it with empty()/!empty() - which tolerate a missing variable. So
-		// GET /equipment/new raises two warnings. The correct behaviour is the same guard
-		// the neighbouring lines have.
-		[$create, $warnings] = self::renderCapturingWarnings(fn () => self::$equipment->EditForm(self::request(), self::response(), ['equipmentId' => 'new']), 'GET /equipment/new');
+		// it test it with empty()/!empty() - which tolerate a missing variable. The bare
+		// read is now null-coalesced the same way, rather than removed: the instruction
+		// manual label is toggled visible by public/viewjs/equipmentform.js's file input
+		// "change" handler independent of mode, so it has to stay in the create-mode DOM.
+		[$create, $diagnostics] = self::renderCapturingWarnings(fn () => self::$equipment->EditForm(self::request(), self::response(), ['equipmentId' => 'new']), 'GET /equipment/new', E_ALL);
 		self::assertStringNotContainsString('The dishwasher', $create);
-		self::assertSame(['Undefined variable $equipment', 'Attempt to read property "instruction_manual_file_name" on null'], $warnings, 'DEFECT: the equipment create form reads the item it has not got');
+		self::assertSame([], $diagnostics, 'the equipment create form renders with no PHP diagnostics');
 	}
 
 	/** The same recorded read policy as the battery pages - see that test's comment. */
@@ -987,11 +988,13 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		$other = self::render(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 9001]), 'GET /user/9001');
 		self::assertStringContainsString('household-other', $other);
 
-		// DEFECT: views/userform.blade.php:162 prints $user->picture_file_name unguarded,
-		// where the lines around it use empty()/!empty(); GET /user/new raises two
-		// warnings. The correct behaviour is the same guard the neighbouring lines have.
-		[, $warnings] = self::renderCapturingWarnings(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 'GET /user/new');
-		self::assertSame(['Undefined variable $user', 'Attempt to read property "picture_file_name" on null'], $warnings, 'DEFECT: the user create form reads the user it has not got');
+		// views/userform.blade.php used to print $user->picture_file_name unguarded, where
+		// the lines around it use empty()/!empty(). The bare read is now null-coalesced
+		// the same way, rather than removed: public/viewjs/userform.js's file input
+		// "change" handler toggles the picture label visible independent of mode, so it
+		// has to stay in the create-mode DOM.
+		[, $diagnostics] = self::renderCapturingWarnings(fn () => self::$users->UserEditForm(self::request(), self::response(), ['userId' => 'new']), 'GET /user/new', E_ALL);
+		self::assertSame([], $diagnostics, 'the user create form renders with no PHP diagnostics');
 
 		// USERS_EDIT_SELF alone: own form yes, somebody else's no, creating no.
 		self::grant(['USERS_EDIT_SELF']);

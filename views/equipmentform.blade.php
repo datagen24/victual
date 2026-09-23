@@ -84,7 +84,7 @@
 								<label id="instruction-manual-label"
 									class="custom-file-label @if(empty($equipment->instruction_manual_file_name)) d-none @endif"
 									for="instruction-manual">
-									{{ $equipment->instruction_manual_file_name }}
+									{{ $equipment->instruction_manual_file_name ?? '' }}
 								</label>
 								<label id="instruction-manual-label-none"
 									class="custom-file-label @if(!empty($equipment->instruction_manual_file_name)) d-none @endif"
