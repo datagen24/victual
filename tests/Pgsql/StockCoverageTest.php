@@ -3501,6 +3501,15 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			self::assertSame('GET https://93.184.216.34/products/x.png', $response['request_uri']);
 			self::assertFalse($response['request_options']['allow_redirects'], 'the fetch must not follow a redirect');
 			self::assertSame('', $response['request_options']['proxy'], 'an explicit empty proxy overrides any HTTP_PROXY/HTTPS_PROXY in the environment');
+			// Issue #460: the picture download no longer builds its own Guzzle client - it
+			// calls $plugin->Fetch(), the same seam OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup()
+			// goes through (see BarcodeLookupTest::testOpenFoodFactsRequestGoesThroughTheSharedFetchSeam
+			// for that caller's half of this proof). A timeout is Fetch()'s own addition -
+			// nothing set one here before issue #460 - so its presence is evidence of the
+			// seam, not just of this call's own options.
+			// (float) restores the int/float distinction JSON round-tripping a whole-number
+			// timeout (10.0) through the subprocess helper loses.
+			self::assertSame(10.0, (float)$response['request_options']['timeout'], 'Fetch() sets a timeout for every request it makes');
 
 			$resolveOptions = $response['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
 			self::assertNotEmpty($resolveOptions, 'the request is pinned to the address the host policy validated (DNS-rebinding guard)');

@@ -663,7 +663,7 @@ class BarcodeLookupTest extends TestCase
 
 	/**
 	 * @param array<string, mixed> $spec
-	 * @return array{outcome: string, product: ?array, message: ?string, request_uri: ?string, request_headers: array, client_config: array, diagnostics: array}
+	 * @return array{outcome: string, product: ?array, message: ?string, request_uri: ?string, request_headers: array, request_options: array, client_config: array, diagnostics: array}
 	 */
 	private static function openFoodFacts(array $spec): array
 	{
@@ -674,7 +674,11 @@ class BarcodeLookupTest extends TestCase
 			'body' => '{}',
 			'locations' => [['id' => 2, 'name' => 'Fridge'], ['id' => 5, 'name' => 'Pantry']],
 			'quantity_units' => [['id' => 2, 'name' => 'Piece'], ['id' => 3, 'name' => 'Pack']],
-			'user_settings' => ['product_presets_location_id' => -1, 'product_presets_qu_id' => -1]
+			'user_settings' => ['product_presets_location_id' => -1, 'product_presets_qu_id' => -1],
+			// A canned, public answer for Fetch()'s host policy (issue #460), so every test
+			// but the one that deliberately asks for real DNS (pass null here) stays
+			// offline - see barcodelookup-subprocess-helper.php's own docblock.
+			'host_resolver_addresses' => ['93.184.216.34']
 		], $spec);
 
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -887,7 +891,48 @@ class BarcodeLookupTest extends TestCase
 			'the endpoint is not configurable and must stay that way'
 		);
 		self::assertStringStartsWith('VictualOpenFoodFactsBarcodeLookupPlugin/', $result['request_headers']['User-Agent'], 'Open Food Facts requires an identifying User-Agent');
-		self::assertFalse($result['client_config']['http_errors'], 'a 404 must reach the status check rather than raising');
+		self::assertFalse($result['request_options']['http_errors'], 'a 404 must reach the status check rather than raising');
+	}
+
+	/**
+	 * Issue #460: OpenFoodFactsBarcodeLookupPlugin::ExecuteLookup() no longer builds its own
+	 * GuzzleHttp\Client - it calls $this->Fetch(), the same seam
+	 * services/StockService.php::ExternalBarcodeLookup()'s picture download goes through
+	 * (see tests/Pgsql/StockCoverageTest.php's
+	 * testAPermittedHostAndExtensionAreStillFetchedAndStored for that caller's half of this
+	 * proof). Every option below is Fetch()'s doing, not anything OpenFoodFactsBarcodeLookupPlugin
+	 * asks for itself; 'timeout' in particular did not exist anywhere before issue #460, so
+	 * its presence here cannot be explained by the plugin's own pre-#460 request building.
+	 */
+	public function testOpenFoodFactsRequestGoesThroughTheSharedFetchSeam(): void
+	{
+		$result = self::openFoodFacts(['body' => self::foundPayload()]);
+
+		self::assertFalse($result['request_options']['allow_redirects'], 'Fetch() does not follow redirects');
+		self::assertSame('', $result['request_options']['proxy'], 'Fetch() overrides any HTTP_PROXY/HTTPS_PROXY in the environment');
+		// JSON round-tripping a whole-number float (10.0) through the subprocess helper
+		// loses the distinction from an int (10) - a (float) cast restores it for the
+		// comparison without weakening it to a loose assertEquals().
+		self::assertSame(10.0, (float)$result['request_options']['timeout'], 'Fetch() sets a timeout, which nothing set before issue #460');
+
+		$resolveOptions = $result['request_options']['curl'][CURLOPT_RESOLVE] ?? [];
+		self::assertNotEmpty($resolveOptions, 'Fetch() pins the request to the address OutboundHostPolicy validated');
+		self::assertStringContainsString('world.openfoodfacts.org:443:93.184.216.34', $resolveOptions[0], 'pinned to the canned resolver answer this test supplied, naming the real compiled-in host');
+	}
+
+	/**
+	 * Issue #460 requires routing Open Food Facts' compiled-in host through
+	 * OutboundHostPolicy to still work, which is a claim about DNS - not about the network
+	 * request, which is faked throughout this file regardless. This is the one test in this
+	 * file that does not inject a canned resolver answer, so OutboundHostPolicy performs a
+	 * real forward lookup of world.openfoodfacts.org; everything after that (the HTTP
+	 * request itself) stays offline exactly as every other test here does.
+	 */
+	public function testOpenFoodFactsCompiledHostResolvesToPublicAddressesForReal(): void
+	{
+		$result = self::openFoodFacts(['body' => self::foundPayload(), 'host_resolver_addresses' => null]);
+
+		self::assertSame('hit', $result['outcome'], 'a real DNS lookup of the compiled-in host must not be refused by the host policy: ' . json_encode($result));
 	}
 
 	/** @return array<string, array{0: string, 1: string}> */
