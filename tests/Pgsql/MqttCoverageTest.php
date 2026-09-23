@@ -512,6 +512,29 @@ class MqttCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame([], $result['ledger'], 'and records nothing');
 	}
 
+	/**
+	 * A ledger write failure happens after the broker has already accepted the batch, so the
+	 * messages are published but unrecorded. This is still a failure to return false and not
+	 * throw, and the next publish will retry the recording.
+	 */
+	public function testALedgerWriteFailureLogsAndReturnsFalseWithoutThrowing(): void
+	{
+		$result = self::RunScenario(
+			['reset', 'flag:' . self::PRODUCT_STAYS, 'breakledgerwrite', 'full', 'restoreledgerwrite'],
+			self::BrokerSettings(self::$brokerPort),
+			self::$brokerLog
+		);
+
+		self::assertNull($result['error'],
+			'a ledger write failure must not throw out of the service');
+		self::assertFalse($result['steps']['3:full'],
+			'it reports that the publish failed even though the broker accepted it');
+		self::assertNotSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'the messages were published to the broker');
+		self::assertSame([], $result['ledger'],
+			'but the ledger was not updated, so the next publish will retry it');
+	}
+
 	// ---------------------------------------------------------------------------------
 	// The transport
 	// ---------------------------------------------------------------------------------

@@ -656,12 +656,11 @@ class DatabaseService
 			{
 				MqttStatePublicationService::PublishForRequestEnd();
 			}
-			catch (\Exception $ex)
+			catch (\Throwable $ex)
 			{
-				// A failure here must never turn an otherwise successful request into an error.
-				// MqttStatePublicationService::PublishForRequestEnd() documents that nothing
-				// throws - this is defence in depth, honoring the contract even if the
-				// implementation changes.
+				// Defence in depth: the service documents that nothing throws, but log any
+				// failure that escapes its own handling so it is visible.
+				error_log('Victual: MQTT state publication failed at request end: ' . $ex->getMessage());
 			}
 
 			BookingEventPublisher::WriteForRequestEnd();
