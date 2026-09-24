@@ -1,6 +1,6 @@
 # ADR-0029: Stock locations reference existing locations
 
-- **Status:** Accepted (2026-09-24); all four acceptance prerequisites met.
+- **Status:** Accepted (2026-09-24). All four acceptance prerequisites are met. Datagen24 accepted decisions 1–8 on that date, satisfying prerequisite 4; its earlier “Open” notation below is superseded by this status. Acceptance is recorded in [PR #476](https://github.com/datagen24/victual/pull/476).
 - **Decider:** datagen24
 - **Recorded:** 2026-09-23
 - **Referenced by:** [issue 461](https://github.com/datagen24/victual/issues/461)
