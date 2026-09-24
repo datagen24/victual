@@ -6,16 +6,38 @@ experiments. It changes no application PHP, migration, or production schema.
 
 ## Reproduce
 
-Use a disposable PostgreSQL 16 container with pgTAP. The local experiment used the existing
-`localhost/victual-pg:16-pgtap` image and PostgreSQL 16.15 on aarch64 Debian.
+Use Podman and Python 3 from the repository root. Build the disposable PostgreSQL 16
+image with pgTAP from the repository's Dockerfile; the build needs registry and Debian
+package access. The original experiment used `localhost/victual-pg:16-pgtap` and
+PostgreSQL 16.15 on aarch64 Debian.
 
 ```sh
-podman run -d --name victual-461-spike \
-  -e POSTGRES_HOST_AUTH_METHOD=trust localhost/victual-pg:16-pgtap
-python3 .spike-adr29/probe.py
-python3 .spike-adr29/source_probe.py
-podman rm -f victual-461-spike
+(
+  set -eu
+  podman build -f .devtools/pgtap/postgres.Dockerfile \
+    -t localhost/victual-adr29:16-pgtap .
+  podman run -d --name victual-461-spike \
+    -e POSTGRES_HOST_AUTH_METHOD=trust localhost/victual-adr29:16-pgtap
+  trap 'podman rm -f victual-461-spike >/dev/null' EXIT
+  attempt=0
+  until podman exec victual-461-spike \
+    pg_isready -h 127.0.0.1 -U postgres -t 1 >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+      echo 'PostgreSQL did not become ready after 30 attempts' >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  python3 .spike-adr29/probe.py
+  python3 .spike-adr29/source_probe.py
+)
 ```
+
+The readiness check uses TCP to avoid accepting the image's temporary initialization
+server, which listens on a Unix socket. It stops after 30 failed attempts; each database
+check has a one-second timeout. The subshell stops on failure and removes its container
+on exit, including when readiness fails.
 
 Do not point these scripts at an installation. `probe.py` creates and drops its own
 `adr29_probe` schema inside the named disposable container. `constraint.sql` creates
@@ -24,6 +46,11 @@ read-only and changes only in-memory copies. `ADR29_CONTAINER` selects a differe
 container name when needed.
 
 ## Results
+
+The revised reproduction block passed on 2026-09-24 in the same working copy, based on
+`ed81edd3`. The image build reused the local build cache; a fresh container passed the
+readiness check, all PostgreSQL probes, and both SQLite fixture probes. The exit trap
+removed the container. This rerun did not test uncached registry or package downloads.
 
 All 12 pgTAP assertions passed. They exercise valid and invalid inserts and updates,
 referenced deletion and key update, nulls, history, unused deletion, validated constraint
