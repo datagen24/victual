@@ -40,6 +40,19 @@ def k3s_spec():
     return deployment["spec"]["template"]["spec"]
 
 
+# The registries a target may name, and nothing else: podman and compose a local build, k3s
+# the release on GHCR (ADR-0030). Only these prefixes are removed, so two images that differ
+# anywhere else in their repository path still compare unequal.
+REGISTRIES = ("localhost/", "ghcr.io/datagen24/")
+
+
+def image_without_registry(image):
+    for registry in REGISTRIES:
+        if image.startswith(registry):
+            return image[len(registry):]
+    return image
+
+
 def normalised(spec):
     """The pod spec with the differences the two targets legitimately have removed."""
     spec = copy.deepcopy(spec)
@@ -47,7 +60,7 @@ def normalised(spec):
     spec.pop("restartPolicy", None)
     for container in spec.get("initContainers", []) + spec.get("containers", []):
         container.pop("imagePullPolicy", None)
-        container["image"] = container["image"].rsplit("/", 1)[-1]
+        container["image"] = image_without_registry(container["image"])
         for port in container.get("ports", []):
             port.pop("hostPort", None)
     return spec

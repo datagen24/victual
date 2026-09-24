@@ -80,8 +80,17 @@ def _kube_container(path, object_name):
     return doc, pod, container
 
 
+# The registries a target may name, and nothing else: podman and compose a local build, k3s
+# the release on GHCR (ADR-0030). Only these prefixes are removed, so two images that differ
+# anywhere else in their repository path still compare unequal.
+REGISTRIES = ("localhost/", "ghcr.io/datagen24/")
+
+
 def _image_without_registry(image):
-    return image.rsplit("/", 1)[-1]
+    for registry in REGISTRIES:
+        if image.startswith(registry):
+            return image[len(registry):]
+    return image
 
 
 def _kube_descriptor(path, object_name):

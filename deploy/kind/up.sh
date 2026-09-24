@@ -7,7 +7,7 @@
 #   deploy/kind/up.sh down       delete the namespace (the database goes with it)
 #
 # Needs: a kind cluster (KIND_CLUSTER, default `kind-cluster`), and the images already in
-# podman — `nix/build-in-podman.sh images` builds and loads all four. kind's podman
+# podman — `nix/build-in-podman.sh images` builds and loads all six. kind's podman
 # provider is still marked experimental, hence KIND_EXPERIMENTAL_PROVIDER.
 set -euo pipefail
 
@@ -26,7 +26,7 @@ if [ "${1:-up}" = down ]; then
 	exit 0
 fi
 
-for image in victual-app victual-web victual-migrate victual-mcp; do
+for image in victual-app victual-web victual-migrate victual-mcp victual-label-renderer victual-label-worker; do
 	log "loading localhost/$image:$VERSION into kind cluster $CLUSTER"
 	kind load docker-image "localhost/$image:$VERSION" --name "$CLUSTER"
 done
