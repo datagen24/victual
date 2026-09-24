@@ -39,6 +39,23 @@ secretGenerator:
     options:
       disableNameSuffixHash: true
 
+# deploy/k3s names the published GHCR images. kind runs the local build instead:
+# up.sh loads `localhost/victual-*` into the cluster, and these overrides point the base at
+# them, so a kind run tests the working tree rather than the last release.
+images:
+  - name: ghcr.io/datagen24/victual-app
+    newName: localhost/victual-app
+  - name: ghcr.io/datagen24/victual-web
+    newName: localhost/victual-web
+  - name: ghcr.io/datagen24/victual-migrate
+    newName: localhost/victual-migrate
+  - name: ghcr.io/datagen24/victual-mcp
+    newName: localhost/victual-mcp
+  - name: ghcr.io/datagen24/victual-label-renderer
+    newName: localhost/victual-label-renderer
+  - name: ghcr.io/datagen24/victual-label-worker
+    newName: localhost/victual-label-worker
+
 patches:
   - target:
       kind: ConfigMap

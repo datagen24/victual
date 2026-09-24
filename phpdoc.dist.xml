@@ -26,7 +26,7 @@
 	</paths>
 
 	<!-- Mirrors version.json; bump both together on a release -->
-	<version number="0.1.1-MVP">
+	<version number="0.2.0-MVP">
 		<api>
 			<!--
 				The four PSR-4 roots from composer.json (Victual\Controllers, Victual\Services,

@@ -81,7 +81,7 @@ name: victual-labels
 
 services:
   renderer:
-    image: localhost/victual-label-renderer:0.1.1-MVP
+    image: localhost/victual-label-renderer:0.2.0-MVP
     profiles: ["manual"]
     # Drains the queue rather than rendering one label per run, exactly as the CronJob's
     # arguments do on Kubernetes.
@@ -105,7 +105,7 @@ services:
     networks: ["victual"]
 
   worker:
-    image: localhost/victual-label-worker:0.1.1-MVP
+    image: localhost/victual-label-worker:0.2.0-MVP
     profiles: ["manual"]
     # No `restart:` key, and that is the point of this file. The claim loop breaks on an
     # empty queue and the process exits 0 — and only there, never mid-attempt, so it exits
