@@ -90,7 +90,7 @@ jobs:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: cachix/install-nix-action@v27
         with:
@@ -349,11 +349,11 @@ jobs:
 
       - name: Upload the image streams
         if: inputs.artifact-name != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact-name }}
           # A re-run of the release keeps the failed attempt's artifacts in the same run,
-          # and v4 refuses an existing name without this.
+          # and upload-artifact refuses an existing name without this.
           overwrite: true
           path: ${{ runner.temp }}/images
           retention-days: 1
