@@ -945,6 +945,7 @@
 			},
 			"delete": {
 				"summary": "Deletes a single object of the given entity",
+				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -2706,6 +2707,7 @@
 		"/stock/products/{productId}/add": {
 			"post": {
 				"summary": "Adds the given amount of the given product to stock",
+				"description": "A non-null stock location must exist, including one selected from the product default. A concurrent location deletion causes a readable HTTP 400 refusal and rolls back the booking.",
 				"tags": [
 					"Stock"
 				],
@@ -4514,6 +4516,7 @@
 		"/stock/bookings/{bookingId}/undo": {
 			"post": {
 				"summary": "Undoes a booking",
+				"description": "Returns HTTP 400 if undo would restore stock to a deleted non-null historical location. The complete undo, including correlated bookings, is rolled back.",
 				"tags": [
 					"Stock"
 				],
@@ -4623,6 +4626,7 @@
 		"/stock/transactions/{transactionId}/undo": {
 			"post": {
 				"summary": "Undoes a transaction",
+				"description": "Returns HTTP 400 if any booking would restore stock to a deleted non-null historical location. All bookings and side effects in the transaction undo are rolled back.",
 				"tags": [
 					"Stock"
 				],

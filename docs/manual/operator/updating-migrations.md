@@ -47,3 +47,35 @@ sanitizer's definition cache into `VIEWCACHE_PATH`
 ([Configuration](../configuration.md#view-cache)). A container image runs this at build
 time and mounts the result read-only; a checkout install does not need to run it at all —
 the cache builds itself lazily on first use if you do not.
+
+## Repairing stock location references
+
+Migration 0288 refuses stock whose non-null `location_id` does not exist. Its error
+reports the count and up to ten stock, product, and location identifiers. It does not
+delete stock or assign a replacement location. List every affected row before choosing
+an explicit repair:
+
+```sql
+SELECT s.id, s.product_id, s.location_id
+FROM stock s LEFT JOIN locations l ON l.id = s.location_id
+WHERE s.location_id IS NOT NULL AND l.id IS NULL
+ORDER BY s.id;
+```
+
+Back up the database and stop application writes before repairing records. Determine the
+physical location of each affected stock entry, then explicitly correct its reference
+or restore the missing location from reliable records. Keep quantities unchanged.
+Run the query again and rerun `php bin/victual-migrate` after resolving every result.
+Null stock locations are permitted; historical `stock_log` references are not constrained.
+
+The migration blocks writes while it validates references and creates the index and
+constraint. Schedule a quiet maintenance window. Its lock timeout is five seconds and
+its statement timeout is sixty seconds; these limits apply per lock and statement, not
+to the entire migration. A timeout rolls back the migration and its version record.
+Inspect active transactions before retrying; do not assume `NOT VALID` would release a
+lock before the migration transaction commits.
+
+After migration, deleting a location with stock returns a readable refusal. Move or
+consume the stock before deleting the location. Undo refuses any restoration to a deleted
+non-null historical location and rolls back the complete undo, including correlated
+bookings. It does not substitute the product's current default location.

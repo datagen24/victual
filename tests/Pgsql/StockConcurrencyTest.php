@@ -1033,4 +1033,70 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		$probe = self::finishSubprocess(self::startSubprocess('GET', '/api/stock'));
 		self::assertSame(200, $probe['status'], 'The subprocess identity can read stock: ' . $probe['body']);
 	}
+	/** Wait for the request to conflict with this transaction, without timing guesses. */
+	private static function waitForBlockedBy(int $pid): void
+	{
+		$statement = self::$db->prepare('SELECT count(*) FROM pg_locks WHERE NOT granted AND ? = ANY(pg_blocking_pids(pid))');
+		$deadline = microtime(true) + 10;
+		do
+		{
+			$statement->execute([$pid]);
+			if ((int)$statement->fetchColumn() > 0) { return; }
+			usleep(20000);
+		} while (microtime(true) < $deadline);
+		self::fail('The competing request did not wait for the held transaction');
+	}
+
+	public function testDeleteRaceReturnsStockExplanationAfterItsPrecheckPassed(): void
+	{
+		$location = (int)self::$db->query("INSERT INTO locations(name) VALUES('Delete race') RETURNING id")->fetchColumn();
+		$product = self::insertProduct('Delete race product');
+		$subprocess = null;
+		DatabaseService::GetInstance()->InTransaction(function () use ($location, $product, &$subprocess)
+		{
+			// Block DELETE after its stock precheck; then the booking wins the race.
+			self::$db->exec('SELECT id FROM locations WHERE id=' . $location . ' FOR UPDATE');
+			$subprocess = self::startSubprocess('DELETE', '/api/objects/locations/' . $location);
+			self::waitForBlockedBy((int)self::$db->query('SELECT pg_backend_pid()')->fetchColumn());
+			$response = self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'location_id' => $location]), new Response(), ['productId' => $product]);
+			self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+		});
+		$result = self::finishSubprocess($subprocess);
+		self::assertSame(400, $result['status']);
+		self::assertSame(['error_message' => 'Location has stock; move or consume it before deleting the location'], json_decode($result['body'], true));
+		self::assertSame(2.0, self::stockAmount($product));
+		self::assertSame(1, (int)self::$db->query('SELECT count(*) FROM locations WHERE id=' . $location)->fetchColumn());
+	}
+
+	public function testPurchaseRaceWithCommittedDeletionIsReadableAndAtomic(): void
+	{
+		$location = (int)self::$db->query("INSERT INTO locations(name) VALUES('Purchase race') RETURNING id")->fetchColumn();
+		$product = self::insertProduct('Purchase race product');
+		$peer = self::secondConnection();
+		$peer->beginTransaction();
+		$peer->exec('DELETE FROM locations WHERE id=' . $location);
+		$before = [];
+		foreach (['stock', 'stock_log', 'outbox', 'labels'] as $table)
+		{
+			$before[$table] = self::$db->query('SELECT * FROM ' . $table . ' ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC);
+		}
+		try
+		{
+			$subprocess = self::startSubprocess('POST', '/api/stock/products/' . $product . '/add', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'location_id' => $location]);
+			self::waitForBlockedBy((int)$peer->query('SELECT pg_backend_pid()')->fetchColumn());
+			$peer->commit();
+			$result = self::finishSubprocess($subprocess);
+			self::assertSame(400, $result['status']);
+			self::assertSame(['error_message' => 'Location does not exist'], json_decode($result['body'], true));
+			foreach ($before as $table => $rows)
+			{
+				self::assertSame($rows, self::$db->query('SELECT * FROM ' . $table . ' ORDER BY 1')->fetchAll(PDO::FETCH_ASSOC), $table . ' must not retain partial booking writes');
+			}
+		}
+		finally
+		{
+			if ($peer->inTransaction()) { $peer->rollBack(); }
+		}
+	}
+
 }

@@ -216,7 +216,23 @@ class GenericEntityApiController extends BaseApiController
 				return $this->GenericErrorResponse($response, 'Product group has child groups', 400);
 			}
 
-			$row->delete();
+			if ($args['entity'] == 'locations' && $this->DB->stock()->where('location_id', $row->id)->fetch() !== null)
+			{
+				return $this->GenericErrorResponse($response, \Victual\Services\Database\StockLocationConstraint::DELETE_MESSAGE);
+			}
+
+			try
+			{
+				$row->delete();
+			}
+			catch (\PDOException $ex)
+			{
+				if ($args['entity'] == 'locations' && \Victual\Services\Database\StockLocationConstraint::IsViolation($ex))
+				{
+					return $this->GenericErrorResponse($response, \Victual\Services\Database\StockLocationConstraint::DELETE_MESSAGE);
+				}
+				throw $ex;
+			}
 
 			return $this->EmptyApiResponse($response);
 		}

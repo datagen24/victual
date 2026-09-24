@@ -52,6 +52,7 @@ function Import(PDO $db, ?callable $progress = null, bool $force = true): void
 {
 	$source = new PDO('sqlite::memory:');
 	$source->exec("CREATE TABLE migrations (migration INTEGER); INSERT INTO migrations VALUES (265);
+		CREATE TABLE stock (id INTEGER, product_id INTEGER, location_id INTEGER);
 		CREATE TABLE locations (id INTEGER, name TEXT); INSERT INTO locations VALUES (1, 'Replacement')");
 	(new DatabaseImporter($source, $db, new PostgresDialect(), $progress))->Import($force, false);
 }

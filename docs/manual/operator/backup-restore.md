@@ -62,3 +62,15 @@ Point-in-time recovery, replication, and continuous backup are properties of how
 PostgreSQL itself (streaming replication, WAL archiving, a managed provider's own backup
 service) rather than anything Victual configures or is aware of. Choose those the way you
 would for any other PostgreSQL-backed application.
+
+## SQLite source location errors
+
+`bin/victual-db-import` checks stock location references in the SQLite source before
+replacing target data. The error names affected stock, product, and location identifiers
+and includes a query listing every invalid reference. Back up the source, choose an
+explicit repair for each reference, and retry. `--force` does not bypass this check.
+Null stock locations and deleted locations in booking history remain valid input.
+
+Preflight and copying read one source snapshot. A copy failure rolls back target
+truncation and copied rows. The CLI migrates the target schema before importing; an
+import refusal does not roll back that earlier schema migration.

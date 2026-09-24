@@ -186,6 +186,13 @@ class BaseApiController extends BaseController
 			// big" is the one refusal a client can act on by sending less
 			return $this->GenericErrorResponse($response, $ex->getMessage(), 413);
 		}
+		catch (\PDOException $ex)
+		{
+			$message = \Victual\Services\Database\StockLocationConstraint::IsViolation($ex)
+				? 'Location does not exist'
+				: $ex->getMessage();
+			return $this->GenericErrorResponse($response, $message);
+		}
 		catch (\Exception $ex)
 		{
 			return $this->GenericErrorResponse($response, $ex->getMessage());

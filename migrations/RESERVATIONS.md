@@ -72,14 +72,18 @@ have recorded it.
 | 0285 | **retired**, a no-op (`SELECT 1`) — was plan 22's; see the 2026-09-18 note below | in this tree |
 | 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in `master` |
 | 0287 | [issue #208](https://github.com/datagen24/victual/issues/208) (plan 02's Victual-side auth) — `api_keys.read_only` | in this tree |
-| 0288 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0289 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0288 | [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md), [issue 461](https://github.com/datagen24/victual/issues/461) — stock location foreign key | in this tree |
+| 0289 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0290 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is
 about numbers that have, and a branch that has not merged is still deciding what its
 migration says. What changed is that `login_attempts` lost its `ip_address` column — see that
 file for why a per-address count is the proxy's job and not this application's.
+
+Renumbered 2026-09-24: issue 461 takes 0288 under the lowest-free-slot rule.
+Plan 22's unwritten claims move to 0289–0290; neither had a file on disk.
 
 Renumbered 2026-09-19, the lowest-free-slot rule once more. Issue #208 was written saying
 "0289 as of 2026-09-19", counting plan 22's two claims as taken; but a written 0289 above
