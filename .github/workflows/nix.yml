@@ -11,6 +11,12 @@
 # than substituted, since nix/php.nix overrides the derivation to drop the PEAR scripts and
 # the sendmail reference that put a shell in the runtime closure. A change that cannot
 # affect the images should not pay for that.
+#
+# The release workflow calls this one once per architecture (ADR-0030), so that the images
+# a tag publishes are the images that passed the boot test and the walk below, on the
+# architecture they were built for. Called that way it skips the path filter, runs on the
+# runner it is given, and hands the six image streams on as an artifact. It never holds a
+# registry credential: pushing is the caller's job, with a token this workflow does not see.
 
 name: nix
 
@@ -18,6 +24,16 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      runner:
+        description: The runner label to build on; its architecture is the images' architecture
+        type: string
+        default: ubuntu-latest
+      artifact-name:
+        description: When set, the six image streams are uploaded as an artifact of this name
+        type: string
+        default: ''
   pull_request:
     paths:
       - 'flake.nix'
@@ -63,13 +79,15 @@ on:
       - '!mcp/**/*.md'
 
 jobs:
+  # A release build is not filtered by path: a tag is built whatever its last commit touched.
   changes:
+    if: inputs.artifact-name == ''
     uses: ./.github/workflows/changes.yml
 
   flake:
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -312,6 +330,34 @@ jobs:
           python3 .devtools/nix/walk.py --base-url http://127.0.0.1:8080 \
             --password "$BOOTSTRAP_ADMIN_PASSWORD" \
             --known /=500 --known /mealplan=500
+
+      # Only after the walk: an image that has not served every page is not handed on. The
+      # streams are written from the same store paths the boot test loaded, so the bytes the
+      # release pushes are the bytes that were tested. All six, where the build step above
+      # names three, because the label and MCP images ship with a release too; nix flake
+      # check has already asserted each of them shell-free.
+      - name: Write the six image streams for the release
+        if: inputs.artifact-name != ''
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/images"
+          mkdir -p "$out"
+          for img in image-app image-web image-migrate image-label-renderer image-label-worker image-mcp; do
+            "$(nix build ".#$img" --no-link --print-out-paths --print-build-logs)" > "$out/${img#image-}.tar"
+          done
+          ls -l "$out"
+
+      - name: Upload the image streams
+        if: inputs.artifact-name != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          # A re-run of the release keeps the failed attempt's artifacts in the same run,
+          # and v4 refuses an existing name without this.
+          overwrite: true
+          path: ${{ runner.temp }}/images
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Container logs, if anything went wrong
         if: failure()

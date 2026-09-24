@@ -1,0 +1,181 @@
+# Publish a tagged release's images (ADR-0030).
+#
+# A `v*` tag placed on master builds the six Nix images for x86_64 and aarch64, boots and
+# walks each architecture's images through the `nix` workflow, pushes them to GHCR as one
+# multi-architecture tag per image, and creates the GitHub release with their digests.
+#
+# The tag is the maintainer's act, from the workstation, signed (docs/releases/README.md).
+# This workflow places nothing and decides nothing: it refuses a tag that disagrees with
+# version.json, that has no release record, or that is not on master, and otherwise
+# publishes exactly what the tag names.
+#
+# A pull request that changes this file runs the two builds and stops there, so the
+# aarch64 half is proven before a tag depends on it. Nothing is pushed from a pull request.
+
+name: release
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        run: echo "version=$(jq -r .Version version.json)" >> "$GITHUB_OUTPUT"
+
+      # The three refusals. Each is a mistake that is cheap to make at a terminal and
+      # expensive to discover after the images are public.
+      - name: The tag is version.json's, has a record, and is on master
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [ "$tag" != "v$VERSION" ]; then
+            echo "tag $tag does not match version.json's Version ($VERSION); expected v$VERSION" >&2
+            exit 1
+          fi
+          record="docs/releases/$VERSION.md"
+          if [ ! -f "$record" ]; then
+            echo "no release record at $record" >&2
+            exit 1
+          fi
+          if ! grep -qF "($VERSION.md)" docs/releases/README.md; then
+            echo "docs/releases/README.md does not list $VERSION" >&2
+            exit 1
+          fi
+          git fetch -q origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "tag $tag points at $GITHUB_SHA, which is not on master" >&2
+            exit 1
+          fi
+          echo "v$VERSION: record present, commit on master"
+
+  images:
+    needs: identity
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    uses: ./.github/workflows/nix.yml
+    with:
+      runner: ${{ matrix.runner }}
+      artifact-name: images-${{ matrix.arch }}
+
+  publish:
+    needs: [identity, images]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digests: ${{ steps.manifest.outputs.digests }}
+    env:
+      VERSION: ${{ needs.identity.outputs.version }}
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: images-*
+          path: images
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # One tag per architecture first. The loaded name is the flake's `victual-<c>:<version>`
+      # for both architectures, so each is retagged and removed before the next is loaded.
+      - name: Push each architecture
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            for tar in images/images-$arch/*.tar; do
+              component=$(basename "$tar" .tar)
+              local_ref="victual-$component:$VERSION"
+              remote_ref="$REGISTRY/victual-$component:$VERSION-$arch"
+              docker load --input "$tar"
+              actual=$(docker image inspect --format '{{.Architecture}}' "$local_ref")
+              if [ "$actual" != "$arch" ]; then
+                echo "$tar is $actual, expected $arch" >&2
+                exit 1
+              fi
+              docker tag "$local_ref" "$remote_ref"
+              docker push "$remote_ref"
+              docker rmi "$local_ref" "$remote_ref" >/dev/null
+            done
+          done
+
+      - name: Join them into one tag per image
+        id: manifest
+        run: |
+          set -euo pipefail
+          : > digests.txt
+          for component in app web migrate label-renderer label-worker mcp; do
+            ref="$REGISTRY/victual-$component:$VERSION"
+            docker buildx imagetools create --tag "$ref" "$ref-amd64" "$ref-arm64"
+            digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+            echo "$ref@$digest" >> digests.txt
+          done
+          cat digests.txt
+          {
+            echo 'digests<<EOF'
+            cat digests.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [identity, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.identity.outputs.version }}
+      DIGESTS: ${{ needs.publish.outputs.digests }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The record is linked rather than copied: its relative links resolve in the
+      # repository and would not in a release body.
+      - name: Create or update the GitHub release
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          {
+            echo "The release record is [docs/releases/$VERSION.md](https://github.com/$GITHUB_REPOSITORY/blob/$tag/docs/releases/$VERSION.md)."
+            echo
+            echo "Images, for linux/amd64 and linux/arm64. Pull by digest to get exactly these bytes:"
+            echo
+            echo '```'
+            printf '%s\n' "$DIGESTS"
+            echo '```'
+          } > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes-file notes.md
+          else
+            gh release create "$tag" --verify-tag --title "Victual $VERSION" --notes-file notes.md
+          fi
