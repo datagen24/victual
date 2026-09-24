@@ -2774,6 +2774,14 @@ class StockService extends BaseService
 				throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
 			}
 
+			if ($logRow->transaction_type === self::TRANSACTION_TYPE_CONSUME
+				|| ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount < 0)
+				|| $logRow->transaction_type === self::TRANSACTION_TYPE_TRANSFER_FROM
+				|| $logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_EDIT_OLD)
+			{
+				$this->LockUndoLocation($logRow->location_id);
+			}
+
 			// Every branch below reverses the booking's effect on `stock` and only then marks the
 			// booking undone - a failure between those two writes would leave a booking whose
 			// undone flag disagrees with the stock it was supposed to restore.
@@ -2911,6 +2919,7 @@ class StockService extends BaseService
 						'purchased_date' => $logRow->purchased_date,
 						'stock_id' => $logRow->stock_id,
 						'price' => $logRow->price,
+						'location_id' => $logRow->location_id,
 						'opened_date' => $logRow->opened_date,
 						'note' => $logRow->note,
 						'shopping_location_id' => $logRow->shopping_location_id
@@ -3401,6 +3410,27 @@ class StockService extends BaseService
 			'opened_tare' => $tare,
 			'opened_measured_at' => date('Y-m-d H:i:s'),
 		];
+	}
+
+	/** Protects a historical restore location until the outer undo transaction ends. */
+	private function LockUndoLocation($locationId): void
+	{
+		if ($locationId === null)
+		{
+			return;
+		}
+		$database = DatabaseService::GetInstance();
+		$sql = 'SELECT id FROM locations WHERE id = ?';
+		if ($database->GetDialect()->GetName() === 'pgsql')
+		{
+			$sql .= ' FOR KEY SHARE';
+		}
+		$statement = $database->GetDbConnectionRaw()->prepare($sql);
+		$statement->execute([$locationId]);
+		if ($statement->fetchColumn() === false)
+		{
+			throw new \Exception('Cannot undo booking: original location no longer exists');
+		}
 	}
 
 	/**

@@ -105,5 +105,10 @@
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
 		</testsuite>
+		<testsuite name="stocklocations">
+			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
+			<file>tests/Pgsql/StockLocationImportTest.php</file>
+			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>

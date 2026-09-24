@@ -16,6 +16,10 @@ Views are listed here too where they carry logic (recursive CTEs, the resolved v
 most views are already asked the differential phases' own question and are not repeated
 here.
 
+The [stock location constraint tests](017-stock-location-reference.sql) cover migration
+0288's restrictive foreign key, nullable stock, unconstrained history, and import trigger
+suppression against the full schema.
+
 ## The list
 
 Migrations 0001-0255 are SQLite-only history that PostgreSQL never runs (it loads the

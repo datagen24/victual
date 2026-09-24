@@ -98,9 +98,46 @@ class DatabaseImporter
 	 */
 	public function Import(bool $force = false, bool $applyRowMigrations = true): array
 	{
+		// A caller's existing read transaction already supplies the snapshot. Own and
+		// release one only when necessary; validation and every copy read share it.
+		$ownsSnapshot = !$this->Source->inTransaction();
+		if ($ownsSnapshot)
+		{
+			$this->Source->beginTransaction();
+		}
+		try
+		{
+			return $this->ImportSnapshot($force, $applyRowMigrations);
+		}
+		finally
+		{
+			if ($ownsSnapshot && $this->Source->inTransaction())
+			{
+				$this->Source->rollBack();
+			}
+		}
+	}
+
+	private function AssertStockLocations(): void
+	{
+		$query = 'SELECT s.id, s.product_id, s.location_id FROM stock s LEFT JOIN locations l ON l.id = s.location_id WHERE s.location_id IS NOT NULL AND l.id IS NULL';
+		$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') dangling')->fetchColumn();
+		if ($count > 0)
+		{
+			$sample = $this->Source->query($query . ' ORDER BY s.id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+			throw new \RuntimeException('Import refused: ' . $count . ' source stock rows reference missing locations. '
+				. 'Sample (id, product_id, location_id): ' . json_encode($sample) . '. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check. List all references: '
+				. $query . ' ORDER BY s.id;');
+		}
+	}
+
+	private function ImportSnapshot(bool $force, bool $applyRowMigrations): array
+	{
 		$tables = $this->GetCommonTables();
 
 		$this->AssertSchemaVersionsMatch();
+		$this->AssertStockLocations();
 
 		$report = [];
 
