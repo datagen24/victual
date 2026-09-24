@@ -352,6 +352,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}
+          # A re-run of the release keeps the failed attempt's artifacts in the same run,
+          # and v4 refuses an existing name without this.
+          overwrite: true
           path: ${{ runner.temp }}/images
           retention-days: 1
           if-no-files-found: error
