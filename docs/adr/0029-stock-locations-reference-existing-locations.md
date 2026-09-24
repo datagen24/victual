@@ -1,6 +1,6 @@
 # ADR-0029: Stock locations reference existing locations
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-24); all four acceptance prerequisites met.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-23
 - **Referenced by:** [issue 461](https://github.com/datagen24/victual/issues/461)
