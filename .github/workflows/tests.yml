@@ -32,7 +32,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -155,7 +155,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 8.4 is the fork's real language floor, and composer.json/PrerequisiteChecker
       # declare it too since 15-C7.
@@ -168,7 +168,7 @@ jobs:
           coverage: pcov
 
       - name: Cache Composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages
           key: composer-${{ hashFiles('composer.lock') }}
@@ -307,7 +307,7 @@ jobs:
       # The revision is the one flake.lock pins, so this checks the binary the images are
       # built from rather than whatever is on the renderer's main branch today.
       - name: Check out the pinned renderer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: datagen24/victual-label-renderer
           ref: f05c432f7857f976e0223296f968d641fa401254
@@ -403,7 +403,7 @@ jobs:
       # reach is part of reading the failure.
       - name: Upload the coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-clover
           path: clover.xml
@@ -439,7 +439,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -448,7 +448,7 @@ jobs:
           coverage: none
 
       - name: Cache Composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages
           key: composer-${{ hashFiles('composer.lock') }}
@@ -502,7 +502,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 8.5, not the 8.4 the suite job uses. This one boots the application through
       # public/index.php, where PrerequisiteChecker enforces REQUIRED_PHP_VERSION (8.4,
@@ -514,7 +514,7 @@ jobs:
           extensions: pdo_pgsql, gd, intl, zip, mbstring, fileinfo, ctype
 
       - name: Cache Composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages
           key: composer-frontend-${{ hashFiles('composer.lock') }}
@@ -717,7 +717,7 @@ jobs:
       # found a real sink or a broken seed.
       - name: Upload the probe report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: s29-payload
           path: .devtools/frontend/s29-payload-ci.json
@@ -738,9 +738,9 @@ jobs:
       run:
         working-directory: mcp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # The major nix/mcp.nix builds and ships (nodejs_24), so CI tests what runs.
           node-version: 24
@@ -756,7 +756,7 @@ jobs:
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Only the dev image now. This job used to build the `Dockerfile`'s `production`
       # target as well and assert five things about it; ADR-0013 was accepted on
