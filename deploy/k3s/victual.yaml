@@ -31,9 +31,10 @@
 #   1. Create the two database roles with deploy/postgres/roles.sql.
 #   2. Put their passwords in the two Secrets below, and the database's address in the
 #      ConfigMap. The values in this file are placeholders and will not connect.
-#   3. Get the three images somewhere the node can pull them from, and change `image:` to
-#      match. The names below are what `nix run .#load` produces; on a single-node k3s,
-#      `k3s ctr images import` of the same stream is enough and needs no registry.
+#   3. The images below are the ones a release tag publishes to GHCR for amd64 and arm64
+#      (ADR-0030, .github/workflows/release.yml); a node pulls them by the version tag. To
+#      run a local build instead, point `image:` at what `nix run .#load` produces, or use
+#      a kustomize `images:` override as deploy/kind/kustomization.yaml does.
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -153,7 +154,7 @@ spec:
         # See deploy/podman/victual.yaml for why migration is a startup step and why this
         # is the only container holding a role that can run DDL.
         - name: migrate
-          image: localhost/victual-migrate:0.1.1-MVP
+          image: ghcr.io/datagen24/victual-migrate:0.2.0-MVP
           envFrom:
             - configMapRef:
                 name: victual-config
@@ -176,7 +177,7 @@ spec:
 
       containers:
         - name: app
-          image: localhost/victual-app:0.1.1-MVP
+          image: ghcr.io/datagen24/victual-app:0.2.0-MVP
           ports:
             - name: fastcgi
               containerPort: 9000
@@ -219,7 +220,7 @@ spec:
             stopSignal: SIGQUIT
 
         - name: web
-          image: localhost/victual-web:0.1.1-MVP
+          image: ghcr.io/datagen24/victual-web:0.2.0-MVP
           ports:
             - name: http
               containerPort: 8080

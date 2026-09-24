@@ -13,8 +13,10 @@ manifests, and this is the same argument with a third target. What is compared i
 workload *is*: which image, which arguments, which key, which uid, which filesystem, which
 capabilities, which memory ceiling, which tmpfs. What is allowed to differ is enumerated
 here rather than left to judgement - the API base, because podman reaches a published host
-port and Kubernetes reaches a Service; and `imagePullPolicy: Never`, because podman loads
-its images locally and has no registry to consult.
+port and Kubernetes reaches a Service; `imagePullPolicy: Never`, because podman loads
+its images locally and has no registry to consult; and the image's registry, because k3s
+pulls the release from GHCR (ADR-0030) where the other two name a local build. The image
+name and tag are compared.
 
 The Compose half is not decoration. `check_deploy_manifest.py` globs `deploy/**/*.yaml` and
 reads Kubernetes objects; a Compose file has no `kind` and no container list it can find, so
@@ -78,12 +80,25 @@ def _kube_container(path, object_name):
     return doc, pod, container
 
 
+# The registries a target may name, and nothing else: podman and compose a local build, k3s
+# the release on GHCR (ADR-0030). Only these prefixes are removed, so two images that differ
+# anywhere else in their repository path still compare unequal.
+REGISTRIES = ("localhost/", "ghcr.io/datagen24/")
+
+
+def _image_without_registry(image):
+    for registry in REGISTRIES:
+        if image.startswith(registry):
+            return image[len(registry):]
+    return image
+
+
 def _kube_descriptor(path, object_name):
     doc, pod, container = _kube_container(path, object_name)
     security = pod["securityContext"]
     tmp = [v for v in pod["volumes"] if v["name"] == "tmp"][0]
     return {
-        "image": container["image"],
+        "image": _image_without_registry(container["image"]),
         "args": _normalised_args(container["args"]),
         "user": f"{security['runAsUser']}:{security['runAsGroup']}",
         "read_only_root": container["securityContext"]["readOnlyRootFilesystem"],
@@ -100,7 +115,7 @@ def _compose_descriptor(service_name):
     (tmpfs,) = service["tmpfs"]
     size = re.search(r"size=(\d+[kmgKMG])", tmpfs).group(1)
     return {
-        "image": service["image"],
+        "image": _image_without_registry(service["image"]),
         "args": _normalised_args(service["command"]),
         "user": service["user"],
         "read_only_root": service["read_only"],

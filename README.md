@@ -28,8 +28,9 @@ goals.
 
 ## Current state
 
-**Latest release: [0.1.1-MVP](docs/releases/0.1.1-MVP.md), 2026-09-19**, tagged
-`v0.1.1-MVP`; the first was [0.1.0-MVP](docs/releases/0.1.0-MVP.md) the same day. The
+**Latest release: [0.2.0-MVP](docs/releases/0.2.0-MVP.md), 2026-09-24**, tagged
+`v0.2.0-MVP`, with images on GHCR for amd64 and arm64; the first was
+[0.1.0-MVP](docs/releases/0.1.0-MVP.md) on 2026-09-19. The
 version line stays at 0.x while the release soaks in the household it was built for; 1.0
 follows that, not a date. There is no release schedule, and a tag is placed only on a commit
 that was verified working. As of the release:

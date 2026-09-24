@@ -83,7 +83,7 @@ spec:
     # that could be supplied by either would make "which role is this container" depend on
     # list order.
     - name: migrate
-      image: localhost/victual-migrate:0.1.1-MVP
+      image: localhost/victual-migrate:0.2.0-MVP
       imagePullPolicy: Never
       envFrom:
         - configMapRef:
@@ -107,7 +107,7 @@ spec:
 
   containers:
     - name: app
-      image: localhost/victual-app:0.1.1-MVP
+      image: localhost/victual-app:0.2.0-MVP
       imagePullPolicy: Never
       ports:
         - name: fastcgi
@@ -162,7 +162,7 @@ spec:
         stopSignal: SIGQUIT
 
     - name: web
-      image: localhost/victual-web:0.1.1-MVP
+      image: localhost/victual-web:0.2.0-MVP
       imagePullPolicy: Never
       ports:
         - name: http

@@ -5,7 +5,9 @@ the same pod as a Deployment. Two files that are meant to be one thing drift the
 somebody fixes a probe in one of them, so this compares what the pod *is* - its containers,
 probes, limits, security context, credentials and volumes - and allows only the differences
 each target needs: a laptop wants `hostPort` and `imagePullPolicy: Never`, a cluster wants an
-`os` for `lifecycle.stopSignal`.
+`os` for `lifecycle.stopSignal`, and the two name the same image in different registries -
+podman a local build under `localhost/`, k3s the release on GHCR (ADR-0030). The image name
+and tag must still agree.
 
 The credential half is plan 20 verification 8 at manifest level: the migrate role's Secret
 may be named by the migrate initContainer and by nothing else. check_deploy_manifest.py
@@ -38,6 +40,19 @@ def k3s_spec():
     return deployment["spec"]["template"]["spec"]
 
 
+# The registries a target may name, and nothing else: podman and compose a local build, k3s
+# the release on GHCR (ADR-0030). Only these prefixes are removed, so two images that differ
+# anywhere else in their repository path still compare unequal.
+REGISTRIES = ("localhost/", "ghcr.io/datagen24/")
+
+
+def image_without_registry(image):
+    for registry in REGISTRIES:
+        if image.startswith(registry):
+            return image[len(registry):]
+    return image
+
+
 def normalised(spec):
     """The pod spec with the differences the two targets legitimately have removed."""
     spec = copy.deepcopy(spec)
@@ -45,6 +60,7 @@ def normalised(spec):
     spec.pop("restartPolicy", None)
     for container in spec.get("initContainers", []) + spec.get("containers", []):
         container.pop("imagePullPolicy", None)
+        container["image"] = image_without_registry(container["image"])
         for port in container.get("ports", []):
             port.pop("hostPort", None)
     return spec
@@ -61,6 +77,14 @@ def secrets_named(container):
 class PodParityTest(unittest.TestCase):
     def test_the_two_manifests_describe_the_same_pod(self):
         self.assertEqual(normalised(podman_spec()), normalised(k3s_spec()))
+
+    def test_each_target_names_its_own_registry(self):
+        for target, spec, registry in (
+            ("podman", podman_spec(), "localhost/"),
+            ("k3s", k3s_spec(), "ghcr.io/datagen24/"),
+        ):
+            for container in spec.get("initContainers", []) + spec["containers"]:
+                self.assertTrue(container["image"].startswith(registry), f"{target}: {container['image']}")
 
     def test_the_cluster_pod_names_an_os_for_stop_signal(self):
         # lifecycle.stopSignal is refused for a pod that does not say what OS it is for
