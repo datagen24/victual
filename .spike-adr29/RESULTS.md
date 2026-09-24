@@ -14,13 +14,15 @@ PostgreSQL 16.15 on aarch64 Debian.
 ```sh
 (
   set -eu
+  container="${ADR29_CONTAINER:-victual-461-spike}"
+  export ADR29_CONTAINER="$container"
   podman build -f .devtools/pgtap/postgres.Dockerfile \
     -t localhost/victual-adr29:16-pgtap .
-  podman run -d --name victual-461-spike \
+  podman run -d --name "$container" \
     -e POSTGRES_HOST_AUTH_METHOD=trust localhost/victual-adr29:16-pgtap
-  trap 'podman rm -f victual-461-spike >/dev/null' EXIT
+  trap 'podman rm -f "$container" >/dev/null' EXIT
   attempt=0
-  until podman exec victual-461-spike \
+  until podman exec "$container" \
     pg_isready -h 127.0.0.1 -U postgres -t 1 >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 30 ]; then
@@ -48,9 +50,11 @@ container name when needed.
 ## Results
 
 The revised reproduction block passed on 2026-09-24 in the same working copy, based on
-`ed81edd3`. The image build reused the local build cache; a fresh container passed the
-readiness check, all PostgreSQL probes, and both SQLite fixture probes. The exit trap
-removed the container. This rerun did not test uncached registry or package downloads.
+`d0c9ea43`, with the container-name correction. Runs with `ADR29_CONTAINER` unset and
+set to `victual-461-review-override` both passed readiness, all PostgreSQL probes, and
+both SQLite fixture probes. The image builds reused the local build cache. The exit
+traps removed both fresh containers. These runs did not test uncached registry or
+package downloads.
 
 All 12 pgTAP assertions passed. They exercise valid and invalid inserts and updates,
 referenced deletion and key update, nulls, history, unused deletion, validated constraint
