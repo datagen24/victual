@@ -82,6 +82,7 @@ choice and rationale.
 | [0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) | A timestamp a write route cannot read is refused, and the readable set is widened | **Proposed**, three acceptance prerequisites, none met; **supersedes nothing** - [0027](0027-timestamps-are-local-strings-documented-booleans-are-booleans.md) is Proposed, and its decision 2's *description* of the silent ignore is corrected in place by the same change | issue [231](https://github.com/datagen24/victual/issues/231), [17](../plans/17-ecosystem-clients.md) |
 | [0029](0029-stock-locations-reference-existing-locations.md) | Stock locations reference existing locations | **Accepted** 2026-09-24; all four acceptance prerequisites met | [issue 461](https://github.com/datagen24/victual/issues/461) |
 | [0030](0030-released-images-are-published-to-ghcr.md) | A release tag publishes the Nix images to GHCR for amd64 and arm64 | **Proposed**; answers [0013](0013-nix-built-container-images.md) open questions 1 and 4; three acceptance prerequisites, none met | [releases](../releases/README.md), `.github/workflows/release.yml` |
+| [0031](0031-barcode-identity-is-canonical-and-reserved.md) | A barcode's identity is canonical, scoped, and reserved while contested | **Proposed**; authorises wire changes W1–W6 under [0005](0005-wire-contract-is-the-invariant.md); six acceptance prerequisites, none met | [34](../plans/34-barcode-identity-and-scan-resolution.md), [issue 483](https://github.com/datagen24/victual/issues/483) |
 
 ## Review and implementation notes
 
