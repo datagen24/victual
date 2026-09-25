@@ -527,6 +527,13 @@ the page that resolves them.
    Leaving it unset means a store-less scan of a sticker answers `store_required` until
    a default exists.
 
+   > **Response:** (datagen24, 2026-09-24) Add an installation country, set during
+   > onboarding ([issue 484](https://github.com/datagen24/victual/issues/484)) or by an
+   > environment variable. The default pattern comes from that country. Plan 09's US
+   > lookup source and the default units of measure use the same setting, tracked in
+   > [issue 486](https://github.com/datagen24/victual/issues/486). Until it exists, the
+   > default pattern stays unset.
+
 2. **A decoded sticker value in a booking.** `/api/scan` returns `decoded_value`. Should
    the purchase form use a decoded price as the unit price, and should the consume form
    use a decoded weight as the amount? Both change booking behaviour, and neither is

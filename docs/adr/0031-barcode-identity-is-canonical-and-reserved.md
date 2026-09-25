@@ -242,6 +242,9 @@ purifier and key hashing. That step takes the registry lock exclusively.
 ## Open questions
 
 1. **Installation default pattern.** Victual has no installation country setting, so
-   issue 483's "seeded from the country convention" has no input. Plan 34's question 1
-   asks whether to seed the default from the configured currency, ship it unset, or
-   require the administrator to choose one.
+   issue 483's "seeded from the country convention" has no input. The maintainer's
+   answer to plan 34's question 1 is to add an installation country, set during
+   onboarding or by an environment variable
+   ([issue 486](https://github.com/datagen24/victual/issues/486)). The default pattern
+   stays unset until that setting exists. This record's decisions do not depend on it,
+   because decision 6 already treats the default pattern as optional.
