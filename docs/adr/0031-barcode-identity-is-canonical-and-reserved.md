@@ -46,8 +46,9 @@ of the five matchers.
    - `identifier_type` is `gtin`, `restricted` or `opaque`.
    - `scope_shopping_location_id` is the issuing store for `restricted`, and null otherwise.
    - `barcode` holds the canonical value: 14 digits for a GTIN; for a restricted number,
-     its prefix and item reference with the value digits masked; for an opaque code, its
-     trimmed text.
+     its 14-digit zero-padded form with the value, verifier and check digits masked, so a
+     12-digit sticker and its 13-digit leading-zero reading share one value; for an
+     opaque code, its trimmed text.
 
 2. **Carrier is recorded and excluded from identity.** `carrier` records what the scanner
    reported, for example `ean_upc`, `upc_e`, `gs1_128`, `qr` or `code39`. The same
@@ -124,9 +125,14 @@ of the five matchers.
     - `GET /api/scan` exposes the resolver.
     - The six by-barcode routes call the same resolver and keep their own operation
       permissions and response contracts.
-    - Authorisation is checked before a status is chosen. A caller without read
-      permission for the matched kind receives a generic 403 that names no entity and
-      carries no contents, retirement snapshot or candidate list.
+    - Authorisation is checked before a status is chosen, and before the lookup
+      wherever the code itself determines the kind. A product-barcode code requires
+      `STOCK_VIEW`, and a Grocycode requires its type's read permission; both are
+      checked before any row is read, so a denial does not reveal whether the code is
+      registered. Only a `vctl:` label is authorised after lookup, because its uid does
+      not reveal its kind; the uid's 64 random bits make that difference impractical to
+      enumerate. A caller without the read permission receives a generic 403 that names
+      no entity and carries no contents, retirement snapshot or candidate list.
     - Price fields stay subject to `STOCK_PRICES_VIEW`.
 
 11. **Wire changes authorised by this record.** [ADR-0005](0005-wire-contract-is-the-invariant.md)
@@ -143,7 +149,9 @@ of the five matchers.
       malformed input, and 409 for a collision with an active row or a reserved identity.
     - **W4:** `GET /api/scan` is new, with the statuses and bodies plan 34 specifies.
     - **W5:** the six by-barcode routes resolve every equivalent form of a registered
-      code. Their status codes and body shapes are unchanged.
+      code that a URL path segment can carry. Their status codes and body shapes are
+      unchanged. A form containing `/`, GS or another control character, such as a GS1
+      element string with FNC1, resolves only through `GET /api/scan`.
     - **W6:** a new read-and-write entity `barcode_patterns` is added. New administrator
       routes are added to list and resolve conflict groups and to preview and apply a
       pattern migration.
@@ -151,8 +159,9 @@ of the five matchers.
 ## Consequences
 
 The same package resolves to the same product whether it is scanned as UPC-A, EAN-13,
-GTIN-14, hinted UPC-E, an AIM-prefixed symbol, or a GS1 element string. Clients stop
-matching barcodes themselves, and the 12↔13 retry in `victual-kit` can be removed.
+GTIN-14, hinted UPC-E, an AIM-prefixed symbol, or a GS1 element string. The by-barcode
+routes cover every form a path segment can carry; `/api/scan` covers the rest. Clients
+stop matching barcodes themselves, and the 12↔13 retry in `victual-kit` can be removed.
 
 Every stored GTIN reads back as 14 digits (W1). A client that displays the stored value
 shows leading zeros that the person did not type; `scanned_as` holds what they typed.

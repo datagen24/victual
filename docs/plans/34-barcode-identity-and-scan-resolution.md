@@ -71,7 +71,8 @@ row-rewriting steps (the purifier, the API key hashing) after proving the copy e
   validates no check digit and has no caller.
 - **Camera scanner.** `camerabarcodescanner.js` does not list `UPC_A` or `UPC_E`.
 - **Route shape.** The by-barcode routes take the code as a path segment, so a code
-  containing `/` or the GS separator cannot reach them.
+  containing `/` or the GS separator cannot reach them. This plan keeps those routes
+  and routes such codes through `/api/scan` instead; see "Resolver and routes".
 
 ## Scope
 
@@ -185,11 +186,15 @@ The function applies these steps in order:
    failure returns `invalid_check_digit` with `identifier_type = gtin`, and the
    function never falls through to `opaque`. Without the `upc_e` hint, 8 digits are
    GTIN-8.
-6. **Match restricted-circulation patterns.** For GTIN-shaped input, each candidate
-   pattern whose length matches and whose literal digits match is applied.
-   - A match yields `restricted`. The canonical value is the code with `P` and `W`
-     positions and the `V` and `C` digits replaced by `0`, so repeat stickers share a
-     canonical value.
+6. **Match restricted-circulation patterns.** Pattern matching works on the 14-digit
+   form. The input is left-padded with zeros to 14 digits, and each candidate pattern's
+   layout is left-padded with literal `0` positions to 14 characters. A 12-digit UPC-A
+   sticker and its 13-digit leading-zero reading therefore match the same layout at the
+   same positions. A pattern applies when every literal digit of its padded layout
+   matches.
+   - A match yields `restricted`. The canonical value is the padded 14-digit code with
+     the `P` and `W` positions and the `V` and `C` digits replaced by `0`. Repeat
+     stickers, and both widths of one sticker, share a canonical value.
    - `decoded_value` is the value digits divided by `10^decimals`.
    - A failing verifier digit is `invalid_check_digit`.
 7. **Otherwise use the other types.** GTIN-shaped input is `gtin`, with its canonical
@@ -210,7 +215,7 @@ A pattern is an immutable `barcode_patterns` row with these fields:
 
 | Field | Meaning |
 |---|---|
-| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The common US random-weight layout is `2IIIIIPPPPPC`. |
+| `layout` | One character per digit position of the 12- or 13-digit form. A literal digit is a required prefix, `I` an item reference digit, `P` a price digit, `W` a weight digit, `V` the price/weight verifier digit, and `C` the check digit. The common US random-weight layout is `2IIIIIPPPPPC`. Matching pads it to 14 characters (canonicalisation step 6). |
 | `value_kind` | `price` or `weight` |
 | `decimals` | implied decimal places of the value field |
 | `weight_unit` | `g`, `kg`, `lb` or `oz`; required for `weight` |
@@ -270,9 +275,17 @@ commit, a rollback or a pooled connection:
 | Object | Lock |
 |---|---|
 | Registry | `pg_advisory_xact_lock_shared(K_REGISTRY)` or `pg_advisory_xact_lock(K_REGISTRY)` |
-| Identity | `pg_advisory_xact_lock(K(identity))`, with `K` = `hashtextextended(identifier_type || '|' || coalesce(scope::text, '') || '|' || canonical, K_SEED)` |
+| Identity | `pg_advisory_xact_lock(K(identity))`, with `K` defined below |
 | Conflict group | `SELECT … FROM barcode_conflict_groups WHERE id = ANY(...) ORDER BY id FOR UPDATE` |
 | Barcode rows | the row locks the write statements take |
+
+The identity key is:
+
+```sql
+K(identity) = hashtextextended(
+  identifier_type || '|' || coalesce(scope_shopping_location_id::text, '') || '|' || canonical,
+  K_SEED)
+```
 
 `K_REGISTRY` and `K_SEED` are fixed constants, chosen distinct from
 `LabelIdentityService::IMPORT_LOCK`. A hash collision between two identities only makes
@@ -352,10 +365,15 @@ actions jsonb)` in this sequence:
 3. Take `SELECT … FOR UPDATE` on the group. If its `version` differs from
    `expected_version`, or its membership changed, return a stale 409 with the current
    state.
-4. Apply the actions. Each resulting active row must satisfy the reservation and index
-   checks, and the group's own reservation is released last, inside the same
-   transaction.
-5. Set `state = 'resolved'`, bump `version`, and commit.
+4. Release the group's reservation by setting `state = 'resolved'` and bumping
+   `version`. The identity locks from step 2 and the group row lock from step 3 are
+   still held. No other writer can take the identity until commit, and no other
+   resolution can pass the version check.
+5. Apply the actions. Each resulting active row must satisfy the index check and the
+   reservation check against every *other* open group. The group being resolved no
+   longer reserves its identity, so the kept row can be activated.
+6. Commit. If any action fails, the whole transaction rolls back, including step 4, and
+   the group stays open at its old version.
 
 The resolution actions, per ADR-0031 decision 9:
 
@@ -407,7 +425,25 @@ resolver. It runs these steps:
 3. Otherwise, canonicalise the code with the candidate patterns and look up the
    resulting identities among active rows. Quarantined or pending rows with the
    identity produce `quarantined`.
-4. Check authorisation for the matched kind before choosing any status.
+
+**Authorisation happens before the lookup wherever the code itself reveals the kind.**
+This avoids a 403-versus-404 difference that would tell a caller whether a code is
+registered (CWE-203). The generic entity read routes work the same way:
+`EntityReadPolicy::Check` runs before any row is read.
+
+- **Product barcodes.** Every non-label, non-Grocycode code can only resolve to a
+  product, so a caller without `STOCK_VIEW` receives 403 before canonicalisation or
+  lookup. This covers a registered code, an unknown code, a quarantined identity and
+  an invalid check digit alike.
+- **Grocycodes.** The type letter (`p`, `r`, `c`, `b`) names the kind, so its read
+  permission is checked before the id is looked up.
+- **`vctl:` labels.** The kind is known only after the uid is looked up, so the
+  permission for the matched kind is checked after lookup and before any status is
+  chosen. A caller can then tell a live label of a kind they can't read (403) from an
+  unknown uid (404). This remaining difference discloses nothing an attacker can
+  enumerate: a uid is 64 random bits (ADR-0011), and guessing one is impractical.
+
+After authorisation, the resolver chooses the status.
 
 **`GET /api/scan?code=&carrier=&shopping_location_id=`** answers:
 
@@ -421,7 +457,7 @@ resolver. It runs these steps:
 | `retired_label` | 410 | per ADR-0011 |
 | `invalid_check_digit` | 422 | none |
 | `malformed` | 400 | none |
-| denied | 403 | a generic denial with no kind, id, name, contents, snapshot or candidates |
+| denied | 403 | a generic denial with no kind, id, name, contents, snapshot or candidates; for product barcodes and Grocycodes, returned before lookup, so it says nothing about whether the code exists |
 
 The kind payloads and the read permission each kind requires:
 
@@ -441,7 +477,22 @@ Price fields in any payload stay redacted without `STOCK_PRICES_VIEW`, including
 permission (`STOCK_PURCHASE`, `STOCK_CONSUME`, `STOCK_TRANSFER`, `STOCK_INVENTORY`,
 `STOCK_OPEN`, or `STOCK_VIEW` for details). They keep their existing status codes and
 response bodies (ADR-0031 W5), so a resolver status maps onto their current 400
-responses. They still take the code as a path segment.
+responses.
+
+These routes still take the code as a path segment, and that limits which forms they
+can accept. A code containing `/`, the GS separator (0x1D) or another control
+character cannot be carried in a path segment. That excludes a GS1 element string with
+FNC1, for example. Such codes are resolvable **only through `/api/scan`**, whose query
+parameter can carry any byte after URL-encoding. The all-forms guarantee is therefore
+split:
+
+- **`/api/scan`** resolves every equivalent form.
+- **The six by-barcode routes** resolve every equivalent form that fits a path segment:
+  plain digits of every GTIN width, AIM-prefixed digits, and `(01)` element strings
+  without GS.
+
+Clients that scan GS1 DataMatrix or GS1-128 use `/api/scan`, and then call the
+by-barcode operation with the resolved product's canonical barcode.
 
 **Administrator routes:**
 
@@ -549,6 +600,8 @@ the page that resolves them.
   - a hinted 7-digit value being `malformed`;
   - `]E0`, `]C1` and `(01)…(17)…` inputs;
   - a failing check digit being `invalid_check_digit` and never `opaque`;
+  - a 12-digit restricted sticker and its 13-digit leading-zero reading match the same
+    pattern and produce the same canonical value;
   - each pattern field, including the four- and five-digit verifiers and a prefix
     mismatch;
   - `pg_proc.provolatile = 'i'`.
@@ -561,6 +614,9 @@ the page that resolves them.
   - an update to a referenced `barcode_patterns` row is refused.
 - **`tests/Pgsql`, concurrency on two connections:**
   - an insert racing a resolution of the same identity leaves one active row;
+  - a `keep` resolution activates the kept row even though the group's identity was
+    reserved until step 4, and a failure in a later action rolls the group back to open
+    at its old version;
   - two resolutions correcting competing rows to different canonical values leave one
     winner and one stale 409;
   - an update moving row A into identity X racing an insert of X leaves one active row,
@@ -583,6 +639,9 @@ the page that resolves them.
 - **Contract tests:**
   - every `/api/scan` status and HTTP code;
   - every kind, matched and denied;
+  - a caller without `STOCK_VIEW` receives the same 403 for a registered product
+    barcode, an unknown code, a quarantined identity and an invalid check digit;
+  - a `grcy:r:` code is denied before lookup for a caller without `RECIPES_VIEW`;
   - a denial carries no identity, contents or snapshot, including for retired,
     quarantined and ambiguous results;
   - price redaction without `STOCK_PRICES_VIEW`;
@@ -596,6 +655,7 @@ the page that resolves them.
     and the merge preview.
 - **Parity.** `21-barcodes-and-undo.js` passes with W1–W6 recorded as approved
   differences. Parity supplements the tests above; it does not replace them.
-- **End to end.** One package resolves to the same product whether it is scanned as
-  UPC-A, EAN-13, GTIN-14, hinted UPC-E, `]E0…` or `(01)…(17)…`, through `/api/scan` and
-  through all six by-barcode routes.
+- **End to end.** One package resolves to the same product through `/api/scan` whether
+  it is scanned as UPC-A, EAN-13, GTIN-14, hinted UPC-E, `]E0…`, `(01)…(17)…`, or a GS1
+  element string containing GS. It also resolves through all six by-barcode routes in
+  every one of those forms that fits a path segment.
