@@ -142,6 +142,7 @@ nav:
           - 0028 A timestamp a write route cannot read is refused: development/adr/0028-a-timestamp-a-write-route-cannot-read-is-refused.md
           - 0029 Stock locations reference existing locations: development/adr/0029-stock-locations-reference-existing-locations.md
           - 0030 A release tag publishes the Nix images to GHCR: development/adr/0030-released-images-are-published-to-ghcr.md
+          - 0031 A barcode's identity is canonical, scoped, and reserved while contested: development/adr/0031-barcode-identity-is-canonical-and-reserved.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
