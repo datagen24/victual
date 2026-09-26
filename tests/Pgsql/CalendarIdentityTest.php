@@ -142,8 +142,8 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	private function insertProduct(string $name, float $price): void
 	{
 		$stmt = self::$db->prepare('
-			INSERT INTO products (name, should_not_be_on_shopping_list, created_timestamp)
-			VALUES (?, 0, CURRENT_TIMESTAMP)
+			INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock)
+			VALUES (?, 1, 2, 2)
 		');
 		$stmt->execute([$name]);
 	}
