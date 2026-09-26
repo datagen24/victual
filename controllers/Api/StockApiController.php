@@ -82,6 +82,46 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
+	 * Validates a body field is the id of an existing, active row of $table - an id that
+	 * parses fine but names nothing is exactly as unreadable as one that does not parse at
+	 * all (issue #519), so both are refused rather than one silently falling through to a
+	 * default. Mirrors StockService::LocationExists()'s own "id = :1 AND active = 1" check,
+	 * which is private to that class and cannot be called from here.
+	 *
+	 * @return int The validated id from $requestBody[$field]
+	 * @throws \Exception When $requestBody[$field] is not an integer, or names no active row
+	 */
+	private function RequireExistingId(array $requestBody, string $field, string $table, string $label): int
+	{
+		$id = $this->RequireIntegerId($requestBody, $field);
+
+		if ($this->DB->$table()->where('id = :1', $id)->where('active = 1')->fetch() === null)
+		{
+			throw new \Exception(ucfirst($label) . ' does not exist');
+		}
+
+		return $id;
+	}
+
+	/**
+	 * Validates a body field is a valid ISO 8601 date (Y-m-d) before it reaches a service
+	 * method: falling through to a default on an unreadable value would silently overwrite
+	 * whatever the column already stored (issue #519) instead of refusing the request.
+	 *
+	 * @return string The validated Y-m-d date string from $requestBody[$field]
+	 * @throws \Exception When $requestBody[$field] is not a valid ISO date
+	 */
+	private function RequireIsoDate(array $requestBody, string $field): string
+	{
+		if (!is_string($requestBody[$field]) || !IsIsoDate($requestBody[$field]))
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a valid date (YYYY-MM-DD)');
+		}
+
+		return $requestBody[$field];
+	}
+
+	/**
 	 * POST /api/stock/shoppinglist/add-missing-products - adds all products below their
 	 * minimum stock amount to the shopping list given by the numeric body field list_id
 	 * (default 1). Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
@@ -496,9 +536,14 @@ class StockApiController extends BaseApiController
 	/**
 	 * PUT /api/stock/entry/{entryId} - edits a single stock entry.
 	 * Requires the STOCK_EDIT permission (403 otherwise).
-	 * Body fields: amount (required), open and purchased_date (both read
-	 * unconditionally), best_before_date (ISO date), price, location_id,
-	 * shopping_location_id and note.
+	 * Body fields: amount (required; a negative amount is refused). best_before_date,
+	 * price, location_id, shopping_location_id, open, purchased_date and note are all
+	 * optional - a key absent from the body keeps the entry's current value. A key that IS
+	 * present must be readable as its documented type (a valid date, a number, an id
+	 * naming an existing active location/shopping location, a real true/false, a string) or
+	 * the request is refused with 400 and nothing about the entry changes; null is never a
+	 * documented value for any of these fields and is refused the same way (audit findings
+	 * M19/M24, issues #519/#524).
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function EditStockEntry(Request $request, Response $response, array $args)
@@ -521,37 +566,66 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
-			$bestBeforeDate = null;
-			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
+			// Read once, purely to default an optional field the body omits to what is
+			// already stored (issue #524's partial-update contract): a missing key must
+			// never be read as an explicit null and erase good data (issue #519). A key
+			// that IS present is validated below regardless of what is already stored. When
+			// the id does not exist this is null and every default below goes unused -
+			// EditStockEntry() re-checks under its own lock and gives the existing "Stock
+			// does not exist" refusal.
+			$currentEntry = StockService::GetInstance()->GetStockEntry($args['entryId']);
+
+			$bestBeforeDate = $currentEntry?->best_before_date;
+			if (array_key_exists('best_before_date', $requestBody))
 			{
-				$bestBeforeDate = $requestBody['best_before_date'];
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
-			$price = null;
-			if (array_key_exists('price', $requestBody) && is_numeric($requestBody['price']))
+			$price = $currentEntry?->price;
+			if (array_key_exists('price', $requestBody))
 			{
+				if (!is_numeric($requestBody['price']))
+				{
+					throw new \Exception('The price must be a number');
+				}
 				$price = $requestBody['price'];
 			}
 
-			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && is_numeric($requestBody['location_id']))
+			$locationId = $currentEntry?->location_id;
+			if (array_key_exists('location_id', $requestBody))
 			{
-				$locationId = $requestBody['location_id'];
+				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
 
-			$shoppingLocationId = null;
-			if (array_key_exists('shopping_location_id', $requestBody) && is_numeric($requestBody['shopping_location_id']))
+			$shoppingLocationId = $currentEntry?->shopping_location_id;
+			if (array_key_exists('shopping_location_id', $requestBody))
 			{
-				$shoppingLocationId = $requestBody['shopping_location_id'];
+				$shoppingLocationId = $this->RequireExistingId($requestBody, 'shopping_location_id', 'shopping_locations', 'shopping location');
 			}
 
-			$note = null;
+			$open = $currentEntry?->open;
+			if (array_key_exists('open', $requestBody))
+			{
+				$open = WireBooleans::RequireBoolean($requestBody['open'], 'open flag');
+			}
+
+			$purchasedDate = $currentEntry?->purchased_date;
+			if (array_key_exists('purchased_date', $requestBody))
+			{
+				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
+			}
+
+			$note = $currentEntry?->note;
 			if (array_key_exists('note', $requestBody))
 			{
+				if (!is_string($requestBody['note']))
+				{
+					throw new \Exception('The note must be a string');
+				}
 				$note = $requestBody['note'];
 			}
 
-			$transactionId = StockService::GetInstance()->EditStockEntry($args['entryId'], $requestBody['amount'], $bestBeforeDate, $locationId, $shoppingLocationId, $price, $requestBody['open'], $requestBody['purchased_date'], $note);
+			$transactionId = StockService::GetInstance()->EditStockEntry($args['entryId'], $requestBody['amount'], $bestBeforeDate, $locationId, $shoppingLocationId, $price, $open, $purchasedDate, $note);
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
 		});

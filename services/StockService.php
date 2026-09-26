@@ -796,6 +796,17 @@ class StockService extends BaseService
 			throw new \Exception('Stock does not exist');
 		}
 
+		// A negative amount is never a valid edit (issue #492, audit finding H3): refused
+		// here, atomically, before anything is read or written, so every caller - the API
+		// controller and the internal WeighLocation() alike - gets the same refusal instead
+		// of a persisted negative stock row. Zero is deliberately left able to succeed here;
+		// zero-stock/zero-vessel semantics are their own, still-undecided question (see the
+		// H3 disposition in issue #487 and WeighLocation()'s own zero-amount write).
+		if ($amount < 0)
+		{
+			throw new \Exception('Amount can\'t be negative');
+		}
+
 		$productId = $stockRow->product_id;
 		$correlationId = uniqid();
 		$transactionId = uniqid();
