@@ -78,6 +78,24 @@
 			@php $additionalGroupCssClasses = ''; @endphp
 
 			@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			{{-- $pricesVisible, not the feature flag alone: a user holding only STOCK_VIEW
+			(no STOCK_PRICES_VIEW) reaches this form the same way ShoppingLocationEditForm,
+			ProductEditForm and every other *EditForm in StockController.php reach theirs -
+			on the domain's _VIEW permission, with the write itself gated separately at
+			PUT /api/stock/entry/{id} (STOCK_EDIT). So the form stays viewable and only the
+			price input is withheld, the same way productform.blade.php's barcode price is
+			(issue #176 item 4) rather than a d-none'd copy of the real value, which would
+			still leave it in the page source.
+
+			No field at all when it is withheld - not a hidden, zero-value stand-in - and
+			for the same reason on both branches below: stockentryform.js posts whatever is
+			in this input unconditionally on save, so a hidden value="0" here is not
+			cosmetic, it is a price this caller cannot see silently zeroed by their own next
+			edit (issue #512's review found exactly that in this fix's first version).
+			public/viewjs/stockentryform.js omits the price key entirely when this element
+			is absent, and PUT /api/stock/entry/{id} keeps the entry's stored price for a
+			body that omits the key (claude/sonnet_stock-edit-input-r487 / PR #530). --}}
+			@if($pricesVisible)
 			@php
 			if (empty($stockEntry->price))
 			{
@@ -98,16 +116,12 @@
 			'isRequired' => false,
 			'additionalCssClasses' => 'locale-number-input locale-number-currency'
 			))
+			@endif
 			@include('components.shoppinglocationpicker', array(
 			'label' => 'Store',
 			'shoppinglocations' => $shoppinglocations,
 			'prefillById' => $stockEntry->shopping_location_id
 			))
-			@else
-			<input type="hidden"
-				name="price"
-				id="price"
-				value="0">
 			@endif
 
 			@if(VICTUAL_FEATURE_FLAG_STOCK_LOCATION_TRACKING)
