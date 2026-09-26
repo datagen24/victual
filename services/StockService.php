@@ -67,6 +67,21 @@ class StockService extends BaseService
 	const TRANSACTION_TYPE_TRANSFER_TO = 'transfer_to';
 
 	/**
+	 * The tolerance a stock amount comparison in UndoBooking()/ConsumeProduct() treats as
+	 * "the same amount" or "zero", in the product's stock quantity unit. Maintainer decision
+	 * during the #487 remediation (Proposed ADR pending): replaces the round($x, 2) convention
+	 * those comparisons used, whose 0.005-unit threshold silently destroyed or fabricated real
+	 * small remainders - a 0.004 lot compacted into a larger entry, then separated again by an
+	 * undo, rounded to zero and was deleted outright rather than kept. 1e-9 is comfortably
+	 * above a double's own arithmetic error (~1e-16, and the ~1e-10 residue a SUM() over
+	 * doubles can leave - see #470) and comfortably below any amount a user or a device could
+	 * actually enter, so it distinguishes floating-point noise from a real quantity without
+	 * reintroducing the destructive rounding this replaces. Only the comparisons this PR
+	 * touches were converted; other round($x, 2) call sites in this file are a later pass.
+	 */
+	const AMOUNT_TOLERANCE = 1e-9;
+
+	/**
 	 * Extensions ExternalBarcodeLookup() will store a downloaded or inline barcode picture
 	 * under, matched case-insensitively against the URL path, the data: URI's declared type,
 	 * or (when neither names one) the response's Content-Type - sweep finding S14
@@ -643,10 +658,10 @@ class StockService extends BaseService
 						break;
 					}
 
-					if ($stockEntry->amount <= 0)
+					if ($stockEntry->amount < -self::AMOUNT_TOLERANCE)
 					{
-						// A persisted stock row should never be non-positive, but a defect
-						// elsewhere in the ledger (#489 C2) could still leave one, and
+						// A persisted stock row should never be genuinely negative, but a
+						// defect elsewhere in the ledger (#489 C2) could still leave one, and
 						// stock_next_use() carries no amount filter of its own. Taking it below
 						// would record `$stockEntry->amount * -1` - a *positive* amount under a
 						// 'consume' transaction_type - which books stock arriving, not leaving,
@@ -654,6 +669,17 @@ class StockService extends BaseService
 						// back the whole InTransaction() call, so no earlier iteration's write
 						// in this same loop is left half-applied.
 						throw new \Exception('Cannot consume: a candidate stock entry holds a non-positive amount and stock data needs correction');
+					}
+
+					if ($stockEntry->amount <= self::AMOUNT_TOLERANCE)
+					{
+						// A legitimate zero-amount row - WeighLocation() can leave one for a
+						// vessel whose gross reading equals its tare, and so can
+						// EditStockEntry(..., 0) - holds nothing to take. Skipping it (rather
+						// than refusing, which the guard above still does for a genuinely
+						// negative row) leaves it untouched and lets the loop continue to the
+						// next candidate for the requested amount.
+						continue;
 					}
 
 					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
@@ -2102,6 +2128,11 @@ class StockService extends BaseService
 						'best_before_date' => $stockEntry->best_before_date,
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
+						// The exact row this booking opened (#488, sibling of C1/M22): a split
+						// transfer can leave more than one row sharing this stock_id, amount
+						// and purchased_date at different locations, which made UndoBooking()'s
+						// old (stock_id, amount, purchased_date) match ambiguous.
+						'stock_row_id' => $stockEntry->id,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
@@ -2154,6 +2185,10 @@ class StockService extends BaseService
 						'best_before_date' => $stockEntry->best_before_date,
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
+						// See the whole-entry branch's own comment on stock_row_id above -
+						// $stockEntry is updated in place below (it becomes the opened
+						// portion), so its id is already the row this booking describes.
+						'stock_row_id' => $stockEntry->id,
 						'location_id' => $stockEntry->location_id,
 						'shopping_location_id' => $stockEntry->shopping_location_id,
 						'transaction_type' => self::TRANSACTION_TYPE_PRODUCT_OPENED,
@@ -2866,11 +2901,11 @@ class StockService extends BaseService
 				// stock.amount is a float column and CompactStockEntries() sums it in SQL, so an
 				// exact `== 0` comparison here would miss by a rounding hair (e.g. purchases of
 				// 0.1 and 0.2 merge to 0.30000000000000004) and leave a phantom near-zero row
-				// behind. round() to two places is this file's existing convention for comparing
-				// a float amount against a target (e.g. :590, :769, :893, :1851).
-				$roundedNewAmount = round($newAmount, 2);
-
-				if ($roundedNewAmount < 0)
+				// behind. Compared against AMOUNT_TOLERANCE rather than round()ed to two decimal
+				// places: that convention's 0.005-unit threshold could itself destroy a real
+				// small remainder, e.g. a 0.004 lot compacted into a larger purchase and then
+				// separated again by undoing the larger one alone (maintainer decision, #487).
+				if ($newAmount < -self::AMOUNT_TOLERANCE)
 				{
 					// This booking's own amount is larger than what the matched row(s) currently
 					// hold - something else has already reduced the entry below this purchase's
@@ -2878,7 +2913,7 @@ class StockService extends BaseService
 					throw new \Exception('Booking cannot be undone: its stock entry holds less than this booking added');
 				}
 
-				if ($roundedNewAmount == 0)
+				if ($newAmount <= self::AMOUNT_TOLERANCE)
 				{
 					foreach ($stockRows as $stockRow)
 					{
@@ -2971,14 +3006,18 @@ class StockService extends BaseService
 				// stock.amount is a float column and CompactStockEntries() sums it in SQL
 				// (see the PURCHASE branch's own comment above), so an exact `== 0`
 				// comparison here would miss a residue by a rounding hair and leave a
-				// phantom near-zero row at the destination behind (#470).
-				$roundedNewAmount = round($stockRow->amount - $logRow->amount, 2);
-				if ($roundedNewAmount < 0)
+				// phantom near-zero row at the destination behind (#470) - but comparing
+				// against AMOUNT_TOLERANCE rather than rounding to two decimals, so a real
+				// small remainder (e.g. a compacted 0.004 lot) is kept rather than deleted,
+				// and a shortfall of a few thousandths still refuses rather than silently
+				// clearing to zero (maintainer decision, #487).
+				$newAmount = $stockRow->amount - $logRow->amount;
+				if ($newAmount < -self::AMOUNT_TOLERANCE)
 				{
 					throw new \Exception('Booking cannot be undone: its destination stock entry holds less than this booking added');
 				}
 
-				if ($roundedNewAmount == 0)
+				if ($newAmount <= self::AMOUNT_TOLERANCE)
 				{
 					$stockRow->delete();
 				}
@@ -2986,7 +3025,7 @@ class StockService extends BaseService
 				{
 					// Remove corresponding amount back to stock
 					$stockRow->update([
-						'amount' => $stockRow->amount - $logRow->amount
+						'amount' => $newAmount
 					]);
 				}
 
@@ -3041,18 +3080,19 @@ class StockService extends BaseService
 				}
 				else
 				{
-					// Reviewed for the same class of defect as TRANSFER_TO above: rounded
-					// and refused rather than risking a negative row, even though undoing a
-					// FROM booking only ever adds back what it removed and so cannot reach a
-					// negative result unless the row was already invalid beforehand.
-					$roundedNewAmount = round($stockRow->amount - $logRow->amount, 2);
-					if ($roundedNewAmount < 0)
+					// Reviewed for the same class of defect as TRANSFER_TO above: compared
+					// against AMOUNT_TOLERANCE and refused rather than risking a negative row,
+					// even though undoing a FROM booking only ever adds back what it removed
+					// and so cannot reach a negative result unless the row was already invalid
+					// beforehand.
+					$newAmount = $stockRow->amount - $logRow->amount;
+					if ($newAmount < -self::AMOUNT_TOLERANCE)
 					{
 						throw new \Exception('Booking cannot be undone: its source stock entry holds less than this booking removed');
 					}
 
 					$stockRow->update([
-						'amount' => $stockRow->amount - $logRow->amount
+						'amount' => $newAmount
 					]);
 				}
 
@@ -3068,16 +3108,47 @@ class StockService extends BaseService
 				// coherence CHECK outright and abort this very undo -
 				// see .spike-adr22/RESULTS.md#prerequisite-6-undo.
 				//
-				// Matched null-safely on purchased_date (like location_id elsewhere in this
-				// method, it is nullable - ADR-0029) and via a single fetched row rather than
-				// an unchecked bulk update: `purchased_date = :3` never matches NULL to NULL
-				// in SQL, so a purchase with no purchased_date silently matched and updated
-				// zero rows here while the booking was still marked undone regardless (#504
-				// M4).
-				$stockRow = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date IS NOT DISTINCT FROM :3', $logRow->stock_id, $logRow->amount, $logRow->purchased_date)->fetch();
-				if ($stockRow === null)
+				// Matched on stock_row_id first (set by OpenProduct() for every booking from
+				// here on): a split transfer can leave a twin row sharing this booking's
+				// stock_id, amount and purchased_date at a different location - purchase 2 at
+				// A, transfer 1 to B (both rows keep the same stock_id), open 1 (either row's
+				// booking matches BOTH rows on those three columns alone) - so the old
+				// (stock_id, amount, purchased_date) match could reverse the untouched twin
+				// while the actually-opened row stayed open and the booking was marked undone
+				// regardless (#488, sibling of C1/M22). A booking recorded before stock_row_id
+				// was tracked for openings falls back to that triple plus `open = 1` and the
+				// booking's own location (both null-safe - ADR-0029, like purchased_date
+				// below), refusing unless exactly one row matches; `purchased_date = :3` never
+				// matched NULL to NULL either, so a purchase with no purchased_date used to
+				// match and update zero rows while the booking was still marked undone
+				// regardless (#504 M4).
+				if ($logRow->stock_row_id !== null)
 				{
-					throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+					// Existence alone is not enough: CompactStockEntries() can merge this row
+					// with another opened entry sharing every grouping column (including
+					// opened_date, e.g. two partial opens the same day) without deleting this
+					// row's own id, overwriting its amount with the group's sum. Comparing
+					// against AMOUNT_TOLERANCE catches that case regardless of which of the
+					// merged rows CompactStockEntries() happened to keep - #488's interim
+					// decision is to refuse rather than guess which portion to leave open.
+					$stockRow = $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
+					if ($stockRow === null || abs($stockRow->amount - $logRow->amount) > self::AMOUNT_TOLERANCE)
+					{
+						throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+					}
+				}
+				else
+				{
+					$candidateRows = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date IS NOT DISTINCT FROM :3 AND open = 1 AND location_id IS NOT DISTINCT FROM :4', $logRow->stock_id, $logRow->amount, $logRow->purchased_date, $logRow->location_id)->fetchAll();
+					if (count($candidateRows) === 0)
+					{
+						throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+					}
+					if (count($candidateRows) > 1)
+					{
+						throw new \Exception('Booking cannot be undone: more than one stock entry matches the one this booking opened and it cannot be unambiguously reversed');
+					}
+					$stockRow = $candidateRows[0];
 				}
 
 				$stockRow->update([
@@ -3125,8 +3196,12 @@ class StockService extends BaseService
 				// merge. If the row's amount has since moved away from that, restoring this
 				// booking's pre-edit amount over it would silently discard whatever else the
 				// merge folded in while leaving that other purchase's booking marked live.
+				// Compared against AMOUNT_TOLERANCE rather than rounded to two decimals: that
+				// convention's 0.005-unit threshold missed any merge that added less than
+				// 0.005 (e.g. a compacted 0.004 lot), letting the undo through to overwrite a
+				// row that in fact held another purchase's units too (maintainer decision, #487).
 				$correlatedNew = $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_STOCK_EDIT_NEW)->fetch();
-				if ($correlatedNew !== null && round($stockRow->amount, 2) != round($correlatedNew->amount, 2))
+				if ($correlatedNew !== null && abs($stockRow->amount - $correlatedNew->amount) > self::AMOUNT_TOLERANCE)
 				{
 					throw new \Exception('Booking cannot be undone: its stock entry has changed since this edit (likely merged with another entry) and the edit\'s own effect cannot be isolated');
 				}

@@ -6,6 +6,7 @@ use PDO;
 use Slim\Exception\HttpException;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
+use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
@@ -31,6 +32,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static \DI\Container $container;
 	private static StockApiController $stock;
+	private static RecipesApiController $recipes;
 	private static int $locationA;
 	private static int $locationB;
 
@@ -57,6 +59,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		self::$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
 		self::$container->set('UrlManager', new \Victual\Helpers\UrlManager(''));
 		self::$stock = new StockApiController(self::$container);
+		self::$recipes = new RecipesApiController(self::$container);
 
 		// VICTUAL_USER_ID (the identity direct controller calls act as, per
 		// PgsqlSchemaTestCase::Boot()) defaults to 9000 - matching StockCoverageTest's
@@ -143,6 +146,16 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		$statement = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) VALUES (?, ?, 2, 2, 2, 2) RETURNING id');
 		$statement->execute([$name, self::$locationA]);
+
+		return (int)$statement->fetchColumn();
+	}
+
+	private static function insertRow(string $table, array $columns): int
+	{
+		$names = implode(', ', array_keys($columns));
+		$placeholders = implode(', ', array_fill(0, count($columns), '?'));
+		$statement = self::$db->prepare("INSERT INTO $table ($names) VALUES ($placeholders) RETURNING id");
+		$statement->execute(array_values($columns));
 
 		return (int)$statement->fetchColumn();
 	}
@@ -560,10 +573,24 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$stockId = 'legacy-' . $product;
 		self::$db->prepare('INSERT INTO stock (product_id, amount, stock_id, location_id, best_before_date) VALUES (?, 2, ?, NULL, ?)')
 			->execute([$product, $stockId, self::FAR_FUTURE_DATE]);
-
 		$logId = self::$db->prepare('INSERT INTO stock_log (product_id, amount, stock_id, location_id, transaction_type, best_before_date, transaction_id, user_id) VALUES (?, 2, ?, NULL, ?, ?, ?, 9000) RETURNING id');
 		$logId->execute([$product, $stockId, StockService::TRANSACTION_TYPE_TRANSFER_TO, self::FAR_FUTURE_DATE, 'legacy-tx-' . $product]);
 		$logId = (int)$logId->fetchColumn();
+
+		// set_products_default_location_if_empty_stock(_log) are BEFORE INSERT triggers on
+		// both tables, so every NULL location_id above was already replaced with the
+		// product's own default location before either row was ever written. Neither fires
+		// on UPDATE, so this is the only way to actually persist a NULL location_id on both
+		// rows - what this test needs to exercise the null-safe match at all.
+		self::$db->prepare('UPDATE stock SET location_id = NULL WHERE stock_id = ?')->execute([$stockId]);
+		self::$db->prepare('UPDATE stock_log SET location_id = NULL WHERE id = ?')->execute([$logId]);
+
+		$stockLocation = self::$db->prepare('SELECT location_id FROM stock WHERE stock_id = ?');
+		$stockLocation->execute([$stockId]);
+		self::assertNull($stockLocation->fetchColumn(), 'Sanity: the stock row genuinely has a NULL location_id');
+		$logLocation = self::$db->prepare('SELECT location_id FROM stock_log WHERE id = ?');
+		$logLocation->execute([$logId]);
+		self::assertNull($logLocation->fetchColumn(), 'Sanity: the booking genuinely has a NULL location_id');
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $logId]),
@@ -658,15 +685,15 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * #488 C1's second repro: two purchases compact together, two partial opens follow,
-	 * then a third matching purchase compacts the unopened remainder. Undoing the second
-	 * open must not mark its booking undone while leaving the physically opened amount
-	 * unchanged - either it actually reverses that one unit (opened amount 3 -> 2), or it
-	 * refuses atomically with the ledger completely untouched. Both outcomes are accepted
-	 * here because which one is correct depends on whether the compaction this sequence
-	 * triggers actually touches the opened row's own identity - what must never happen is
-	 * the booking being marked undone while opened stock silently stays at 3, which is
-	 * the defect M22's sibling report in #488 describes.
+	 * #488 C1's second repro: two purchases compact together, two partial opens follow on
+	 * the same day (so the two opened portions also match every CompactStockEntries()
+	 * grouping column, including opened_date), then a third matching purchase triggers a
+	 * compaction pass that merges not only the unopened remainder but the two opened
+	 * portions too. Undoing the second open must never mark its booking undone while
+	 * leaving the physically opened amount unchanged (silently stuck at 3) - the interim
+	 * #488 decision, matching STOCK_EDIT_OLD's own compaction guard, is to refuse
+	 * atomically with the ledger completely untouched, since the merge has destroyed which
+	 * physical row corresponds to which opening.
 	 */
 	public function testUndoingAnOpenAfterAMatchingPurchaseCompactsTheRemainder(): void
 	{
@@ -705,20 +732,343 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		self::assertSame(3.0, self::openedAmount($product), 'Three units are opened before the undo');
 
-		$before = self::ledger();
-		$response = $this->respond(fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $secondOpen[0]['transaction_id']]));
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $secondOpen[0]['transaction_id']]),
+			400,
+			'Undoing the one-unit opening after the compaction merged it with the other opened portion is refused (#488 interim decision), not marked undone while opened stock silently stays at 3'
+		);
 
-		if ($response['status'] === 204)
-		{
-			self::assertSame(2.0, self::openedAmount($product), 'Undoing the one-unit opening actually reduced opened stock (#488 C1), not left it at 3');
-		}
-		else
-		{
-			self::assertSame(400, $response['status'], 'Any refusal must be an ordinary 400, not a crash: ' . json_encode($response['body']));
-			self::assertSame($before, self::ledger(), 'and must leave the ledger completely untouched');
-			self::assertSame(3.0, self::openedAmount($product), 'so opened stock stays consistent with the booking still being live');
-		}
+		self::assertSame(3.0, self::openedAmount($product), 'opened stock is unchanged by the refusal');
+		self::assertSame(9.0, self::stockAmount($product), 'and total stock is untouched');
+	}
 
-		self::assertSame(9.0, self::stockAmount($product), 'total stock is never destroyed either way');
+	// ------------------------------------------------------------------------------
+	// #489 M-checklist item 1 - a legitimate zero-amount row must be skipped, not refused
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * Purchases a positive row at A (earlier due date, so stock_next_use() offers it
+	 * first) and a vessel row that WeighLocation() reduces to exactly zero (gross reading
+	 * equals the vessel's tare weight) at an earlier due date still, so the zero row is
+	 * always the first candidate. ConsumeProduct() must skip that legitimate zero row
+	 * rather than refuse the whole consume, and must leave it untouched.
+	 */
+	public function testConsumeSkipsALegitimateZeroRowLeftByWeighLocation(): void
+	{
+		$product = self::insertProduct('Undo Zero Row Weigh');
+		// A distinct tare unit with its own explicit conversion to the product's stock unit
+		// (factor 1), the same way .devtools/pgsql/working-container-tests.php sets up its
+		// own tare-enabled fixtures - avoids relying on whether a from=to self-conversion is
+		// implicitly available.
+		$tareUnit = self::insertRow('quantity_units', ['name' => 'Zero Row Tare Unit ' . $product]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $tareUnit, 'to_qu_id' => 2, 'factor' => 1, 'product_id' => $product]);
+		$vessel = self::insertRow('locations', ['name' => 'Zero Row Vessel ' . $product, 'tare_weight' => 1.0, 'tare_qu_id' => $tareUnit]);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $vessel, 'best_before_date' => '2026-01-01', 'purchased_date' => '2026-01-01']), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased into the vessel, due first'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A, due later'
+		);
+
+		$this->expectStatus(
+			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 1.0]), new Response(), ['locationId' => $vessel]),
+			200,
+			'The vessel weighs exactly its own tare - net zero'
+		);
+		self::assertSame(0.0, self::stockAmountAtLocation($product, $vessel), 'Sanity: the vessel row is now exactly zero');
+
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'Consuming 1 succeeds by skipping the zero row and taking from A'
+		);
+
+		self::assertSame(0.0, self::stockAmountAtLocation($product, $vessel), 'The zero row is untouched, not deleted or made negative');
+		self::assertSame(4.0, self::stockAmountAtLocation($product, self::$locationA), 'and the positive row absorbed the consume');
+	}
+
+	/** Shared fixture for the remaining three zero-row-skip regressions: a row edited to exactly zero (due first), and a positive row (due later). */
+	private function purchaseWithAnEditedZeroRowAndAPositiveRow(string $productName): int
+	{
+		$product = self::insertProduct($productName);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$locationA, 'best_before_date' => '2026-01-01', 'purchased_date' => '2026-01-01']), new Response(), ['productId' => $product]),
+			200,
+			'Two units are purchased, due first'
+		);
+		$zeroEntryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$zeroEntryId->execute([$product]);
+		$zeroEntryId = (int)$zeroEntryId->fetchColumn();
+		$this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 0, 'open' => false, 'purchased_date' => '2026-01-01', 'best_before_date' => '2026-01-01']), new Response(), ['entryId' => $zeroEntryId]),
+			200,
+			'That entry is edited down to exactly zero'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five more units are purchased, due later'
+		);
+		self::assertSame(5.0, self::stockAmount($product), 'Sanity: on-hand is just the positive row, the zero row contributing nothing');
+
+		return $product;
+	}
+
+	public function testConsumeProductSkipsAnEditedZeroRow(): void
+	{
+		$product = $this->purchaseWithAnEditedZeroRowAndAPositiveRow('Undo Zero Row Consume');
+
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'Consuming 1 succeeds by skipping the zero row'
+		);
+
+		self::assertSame(4.0, self::stockAmount($product), 'One unit was taken from the positive row');
+		$zeroRows = self::$db->prepare('SELECT COUNT(*) FROM stock WHERE product_id = ? AND amount = 0');
+		$zeroRows->execute([$product]);
+		self::assertSame(1, (int)$zeroRows->fetchColumn(), 'The zero row still exists, untouched');
+	}
+
+	public function testInventoryProductSkipsAnEditedZeroRowWhenCorrectingDownward(): void
+	{
+		$product = $this->purchaseWithAnEditedZeroRowAndAPositiveRow('Undo Zero Row Inventory');
+
+		$this->expectStatus(
+			fn() => self::$stock->InventoryProduct(self::request('POST', ['new_amount' => 4]), new Response(), ['productId' => $product]),
+			200,
+			'Correcting inventory down from 5 to 4 succeeds by skipping the zero row'
+		);
+
+		self::assertSame(4.0, self::stockAmount($product), 'The correction reduced only the positive row');
+	}
+
+	public function testConsumeRecipeSkipsAnEditedZeroRow(): void
+	{
+		$product = $this->purchaseWithAnEditedZeroRowAndAPositiveRow('Undo Zero Row Recipe');
+
+		$recipeId = self::$db->prepare('INSERT INTO recipes (name) VALUES (?) RETURNING id');
+		$recipeId->execute(['Zero Row Recipe ' . $product]);
+		$recipeId = (int)$recipeId->fetchColumn();
+		self::$db->prepare('INSERT INTO recipes_pos (recipe_id, product_id, amount, qu_id) VALUES (?, ?, 1, 2)')->execute([$recipeId, $product]);
+
+		$this->expectStatus(
+			fn() => self::$recipes->ConsumeRecipe(self::request('POST'), new Response(), ['recipeId' => $recipeId]),
+			204,
+			'Consuming the recipe succeeds by skipping the zero row'
+		);
+
+		self::assertSame(4.0, self::stockAmount($product), 'The recipe consume took its one unit from the positive row');
+	}
+
+	// ------------------------------------------------------------------------------
+	// AMOUNT_TOLERANCE - a real small remainder (e.g. 0.004) must survive an undo;
+	// round(x, 2)'s 0.005-unit threshold treated it as zero (maintainer decision, #487)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * TRANSFER_TO undo must keep a real small remainder at the destination rather than
+	 * deleting it as if it were a float artifact. round(x, 2) rounded 0.004 to 0.00 and
+	 * deleted the row outright, destroying a live contribution.
+	 */
+	public function testUndoingAWholeRowTransferKeepsARealSmallRemainderAtTheDestination(): void
+	{
+		$product = self::insertProduct('Undo Transfer Real Remainder');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'All five are moved to B (whole-row transfer)'
+		);
+
+		// Simulates a real 0.004-unit lot having compacted onto this same row at B (e.g. a
+		// matching purchase there) - not a float artifact, a genuine small remainder.
+		self::$db->exec('UPDATE stock SET amount = 5.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted'
+		);
+
+		self::assertEqualsWithDelta(0.004, self::stockAmountAtLocation($product, self::$locationB), 1e-9, 'The real 0.004 remainder is kept at B, not deleted as if it were zero');
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationA), 'and the transferred five units are back at A');
+	}
+
+	/**
+	 * TRANSFER_TO undo must refuse when the destination holds less than this booking
+	 * added, not treat a small negative remainder as zero. round(-0.004, 2) is -0.0, which
+	 * compares equal to zero (not negative) in PHP, so this used to delete the row outright
+	 * and then let TRANSFER_FROM's undo rebuild the full amount at the source -
+	 * manufacturing 0.004 units that were never there.
+	 */
+	public function testUndoingAWholeRowTransferRefusesRatherThanManufacturingStockOnAShortfall(): void
+	{
+		$product = self::insertProduct('Undo Transfer Shortfall Refusal');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'All five are moved to B (whole-row transfer)'
+		);
+
+		// Simulates the destination entry having been reduced, out of band, to slightly
+		// less than what this transfer added - standing in for a defect elsewhere or a
+		// direct database edit, the same way StockCoverageTest.php forces its own
+		// out-of-band states.
+		self::$db->exec('UPDATE stock SET amount = 4.996 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			400,
+			'Undoing a transfer onto a destination short by 0.004 is refused, not rounded away to a clean delete-and-rebuild'
+		);
+	}
+
+	/**
+	 * The PURCHASE branch's own round($newAmount, 2) (#469) has the same defect: purchasing
+	 * 0.004 then a matching 3 compacts them to 3.004; undoing the 3-unit purchase alone
+	 * must leave the 0.004 purchase's units intact, not delete the row because 0.004 rounds
+	 * to zero at two decimal places.
+	 */
+	public function testUndoingAPurchaseKeepsARealSmallRemainderAfterCompaction(): void
+	{
+		$product = self::insertProduct('Undo Purchase Real Remainder');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'A 0.004-unit lot is purchased'
+		);
+		$large = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'Three matching units are purchased, compacting into one entry of 3.004'
+		);
+		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'Sanity: the two purchases are compacted');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$large[0]['id']]),
+			204,
+			'Undoing the three-unit purchase is accepted'
+		);
+
+		self::assertEqualsWithDelta(0.004, self::stockAmount($product), 1e-9, 'The 0.004-unit purchase\'s own units survive, not deleted because they round to zero');
+	}
+
+	/**
+	 * STOCK_EDIT_OLD's own compaction guard (#488 C1) must detect a merge that adds only
+	 * 0.004: round(x, 2) rounds 3.004 and 3 to the same two-decimal value, so the mismatch
+	 * went undetected and the undo would overwrite the merged row with the edit's pre-edit
+	 * amount, destroying the compacted-in purchase's contribution.
+	 */
+	public function testUndoingAnEditDetectsACompactionMergeSmallerThanTheOldRoundingThreshold(): void
+	{
+		$product = self::insertProduct('Undo Edit Small Merge');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'A 0.004-unit lot is purchased, due 2030-01-01'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => '2030-02-02', 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'Three units are purchased, due 2030-02-02 - kept separate by the differing due date'
+		);
+		self::assertCount(2, self::rows($product), 'Sanity: the differing due dates keep the two entries apart');
+
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND best_before_date = ?');
+		$entryId->execute([$product, '2030-02-02']);
+		$entryId = (int)$entryId->fetchColumn();
+
+		$edit = $this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 3, 'best_before_date' => '2030-01-01', 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['entryId' => $entryId]),
+			200,
+			'Its due date is edited to match the 0.004-unit lot, compacting them into 3.004'
+		);
+		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'Sanity: the edit\'s compaction merged the two entries');
+
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			400,
+			'Undoing the edit is refused: the 0.004-unit merge is detected even though it is below the old 0.005 rounding threshold'
+		);
+	}
+
+	// ------------------------------------------------------------------------------
+	// #488, sibling of C1/M22 - PRODUCT_OPENED undo must reverse the opened row, not an
+	// unopened twin sharing the same stock_id, amount and purchased_date
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * Purchase 2 at A, transfer 1 to B: TransferProduct()'s split branch does not mint a
+	 * new stock_id for the destination, so both rows now share stock_id, amount (1) and
+	 * purchased_date. Before the fix, PRODUCT_OPENED undo matched on exactly those three
+	 * columns, which could reverse the untouched twin instead of the row this booking
+	 * actually opened, leaving the real one open while marking the booking undone
+	 * regardless. Tested opening each of the two rows in turn (via the product's
+	 * default_consume_location_id, which stock_next_use() prioritises, to control
+	 * deterministically which one OpenProduct() picks), since the bug does not depend on
+	 * which one was opened.
+	 */
+	public function testUndoingAnOpenReversesTheOpenedRowNotItsUnopenedTwin(): void
+	{
+		foreach ([self::$locationA, self::$locationB] as $index => $openLocation)
+		{
+			$product = self::insertProduct('Undo Open Correct Twin ' . $index);
+			self::$db->prepare('UPDATE products SET default_consume_location_id = ? WHERE id = ?')->execute([$openLocation, $product]);
+
+			$this->expectStatus(
+				fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+				200,
+				"[$index] Two units are purchased at A"
+			);
+			$this->expectStatus(
+				fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+				200,
+				"[$index] One unit is split off to B - both rows now share the same stock_id and amount"
+			);
+
+			$stockIdStatement = self::$db->prepare('SELECT stock_id FROM stock WHERE product_id = ? LIMIT 1');
+			$stockIdStatement->execute([$product]);
+			$stockId = $stockIdStatement->fetchColumn();
+
+			$open = $this->expectStatus(
+				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockId]), new Response(), ['productId' => $product]),
+				200,
+				"[$index] The default-consume-location row is opened (stock_next_use() offers it first)"
+			);
+
+			$openedRow = self::$db->prepare('SELECT id, location_id FROM stock WHERE product_id = ? AND open = 1');
+			$openedRow->execute([$product]);
+			$openedRow = $openedRow->fetch(PDO::FETCH_ASSOC);
+			self::assertNotFalse($openedRow, "[$index] Sanity: exactly one row is open");
+			self::assertSame($openLocation, (int)$openedRow['location_id'], "[$index] Sanity: the intended row (its own default consume location) is the one that opened");
+
+			$this->expectStatus(
+				fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
+				204,
+				"[$index] Undoing the opening is accepted"
+			);
+
+			foreach (self::rows($product) as $row)
+			{
+				self::assertSame(0, (int)$row['open'], "[$index] Row {$row['id']} at location {$row['location_id']} must not be open after the undo (#488): " . json_encode($row));
+			}
+		}
 	}
 }
