@@ -27,6 +27,7 @@
 		</testsuite>
 		<testsuite name="credentialsplit">
 			<file>tests/Pgsql/CredentialSplitTest.php</file>
+			<file>tests/Pgsql/MigrationRunnerAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>

@@ -364,9 +364,39 @@ class DatabaseMigrationService extends BaseService
 	/**
 	 * Creates the "migrations" bookkeeping table (applied migration number plus
 	 * execution timestamp) when it does not exist yet.
+	 *
+	 * Looked up before it is created, the same way PostgresDialect::OnConnected() already
+	 * looks up the changed-time table before creating it: PostgreSQL checks CREATE on the
+	 * schema *before* it checks whether the table exists, so a bare
+	 * "CREATE TABLE IF NOT EXISTS" of a table that is already there still fails 42501 for a
+	 * role with no CREATE - exactly the role that serves ordinary requests
+	 * (deploy/postgres/roles.sql's victual_app, ADR-0010 property 3). That turned
+	 * SystemController::Root()'s MIGRATE_ON_ROOT_REQUEST fallback, and every other caller of
+	 * MigrateDatabase(), into a hard failure under the split-credential app role even when
+	 * the table was already there and nothing needed to change. Reading first costs that
+	 * role nothing beyond the USAGE/SELECT it already holds, and only a role that can
+	 * actually create the table is ever asked to.
+	 *
+	 * No race guard is needed the way OnConnected()'s read-then-create has one: this method
+	 * is only ever reached from RunMigrations(), always under WithMigrationLock(), so
+	 * nothing else can create the table between the read below and the write.
 	 */
 	private function EnsureMigrationsTable(DatabaseDialect $dialect)
 	{
+		try
+		{
+			DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1 FROM migrations LIMIT 0');
+
+			return;
+		}
+		catch (\PDOException $ex)
+		{
+			if (!$dialect->IsMissingTableError($ex))
+			{
+				throw $ex;
+			}
+		}
+
 		DatabaseService::GetInstance()->ExecuteDbStatement(
 			'CREATE TABLE IF NOT EXISTS migrations ('
 			. 'migration INTEGER NOT NULL PRIMARY KEY, '
@@ -551,19 +581,46 @@ class DatabaseMigrationService extends BaseService
 	 * Includes the given PHP migration file unless it was already applied. The special
 	 * EMERGENCY/DOALWAYS ids run on every start and are never recorded as applied;
 	 * regular migrations are recorded and increment $migrationCounter.
+	 *
+	 * The include and its version row share one transaction, the way
+	 * ExecuteSqlMigrationWhenNeeded() below shares one for its SQL. PostgreSQL DDL is
+	 * transactional, so a PHP migration that fails partway through - 0274 creating
+	 * storage_classes and then failing to add locations.storage_class_id because that
+	 * column already exists, say - leaves nothing behind, and a retry sees the same
+	 * starting state rather than a table the previous attempt orphaned. Before this, each
+	 * statement inside the include auto-committed on its own, so a failure partway left the
+	 * successful statements in place with no version row to show they ran, and a retry
+	 * failed on a second, different conflict (the orphaned CREATE TABLE) instead of the
+	 * original one.
+	 *
+	 * A PHP migration that opens its own nested transaction (DatabaseService::InTransaction(),
+	 * which 0266/0282/0283 use) is unaffected: InTransaction() already checks whether a
+	 * transaction is open and joins this one instead of starting and committing a second.
 	 */
 	private function ExecutePhpMigrationWhenNeeded(int $migrationId, string $phpFile, int &$migrationCounter)
 	{
 		$rowCount = DatabaseService::GetInstance()->ExecuteDbQuery('SELECT COUNT(*) FROM migrations WHERE migration = ' . $migrationId)->fetchColumn();
 		if ($rowCount == 0 || $migrationId == self::EMERGENCY_MIGRATION_ID || $migrationId == self::DOALWAYS_MIGRATION_ID)
 		{
-			include $phpFile;
+			DatabaseService::GetInstance()->GetDbConnectionRaw()->beginTransaction();
 
-			if ($migrationId != self::EMERGENCY_MIGRATION_ID && $migrationId != self::DOALWAYS_MIGRATION_ID)
+			try
 			{
-				DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO migrations (migration) VALUES (' . $migrationId . ')');
-				$migrationCounter++;
+				include $phpFile;
+
+				if ($migrationId != self::EMERGENCY_MIGRATION_ID && $migrationId != self::DOALWAYS_MIGRATION_ID)
+				{
+					DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO migrations (migration) VALUES (' . $migrationId . ')');
+					$migrationCounter++;
+				}
 			}
+			catch (\Exception $ex)
+			{
+				DatabaseService::GetInstance()->GetDbConnectionRaw()->rollback();
+				throw $ex;
+			}
+
+			DatabaseService::GetInstance()->GetDbConnectionRaw()->commit();
 		}
 	}
 
