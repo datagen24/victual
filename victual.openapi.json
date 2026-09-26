@@ -64,7 +64,7 @@
 					"Labels"
 				],
 				"summary": "Resolve an opaque label",
-				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. STOCK_VIEW authorizes location labels. Unauthorized and unknown labels both return 200 with status unknown; a denied caller performs no label lookup. No other entity kind is resolved in this release.",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES for battery. Unauthorized and unknown labels both return 200 with status unknown; a denied caller performs no label lookup.",
 				"parameters": [
 					{
 						"name": "code",
@@ -111,7 +111,15 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"stock_entry",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"target": {
 													"type": "object",
@@ -122,13 +130,16 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id: for stock_entry, this is stock.id (the row that GET /api/stock/entry/{entryId} takes), not the stock_id string"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name of the target entity"
 														},
 														"path": {
-															"type": "string"
+															"type": "string",
+															"description": "A location's tree path; for the other five kinds, mirrors name"
 														}
 													}
 												}
@@ -153,7 +164,15 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"stock_entry",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"snapshot": {
 													"type": "object",
@@ -163,10 +182,12 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id of the retired entity; for stock_entry, this is stock.id"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name at retirement time; for stock_entry this is product_name, and may differ from later product name changes"
 														}
 													}
 												},
@@ -11432,7 +11453,7 @@
 				"in": "query",
 				"name": "query[]",
 				"required": false,
-				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`§` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `§` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `æ` may additionally match `Æ` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
+				"description": "An array of filter conditions, each of them is a string in the form of `<field><condition><value>` where<br>`<field>` is a valid field name<br>`<condition>` is a comparison operator, one of<br>&nbsp;&nbsp;`=` equal<br>&nbsp;&nbsp;`!=` not equal<br>&nbsp;&nbsp;`~` contains, case insensitive for ASCII<br>&nbsp;&nbsp;`!~` does not contain, case insensitive for ASCII<br>&nbsp;&nbsp;`<` less<br>&nbsp;&nbsp;`>` greater<br>&nbsp;&nbsp;`<=` less or equal<br>&nbsp;&nbsp;`>=` greater or equal<br>&nbsp;&nbsp;`\u00a7` regular expression, case sensitive<br>`<value>` is the value to search for<br><br>`~`, `!~` and `\u00a7` need a text field and are answered `400` on any other type, including timestamps - substring matching a timestamp would mean rendering it to a string, and the two storage engines do not render one the same way.<br><br>Case folding for `~`/`!~` is guaranteed for ASCII only. Beyond ASCII it depends on the storage engine: SQLite folds nothing outside A-Z, while PostgreSQL folds according to the database collation, so a pattern such as `\u00e6` may additionally match `\u00c6` there.<br><br>A field named in `query` or `order` that the entity does not have is answered `400`.",
 				"schema": {
 					"type": "array",
 					"items": {
