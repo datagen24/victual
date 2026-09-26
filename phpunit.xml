@@ -30,6 +30,7 @@
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
+			<file>tests/Pgsql/ShoppingListScopeTest.php</file>
 		</testsuite>
 		<testsuite name="mealplan">
 			<file>tests/Pgsql/MealPlanRedactionTest.php</file>
