@@ -5,18 +5,24 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use ReflectionMethod;
 use ReflectionProperty;
+use Victual\Services\Database\PostgresDialect;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
  * Issue #487 findings H6 (#495) and M17 (#517): the migration runner's atomicity and its
- * behaviour under the restricted application role deploy/postgres/roles.sql grants.
+ * behaviour under the restricted application role deploy/postgres/roles.sql grants. Also
+ * covers the follow-up findings from Opus's validation of the first version of this fix
+ * (PR #526): catching \Exception rather than \Throwable left a \TypeError open a
+ * transaction and, through DatabaseDialect::WithMigrationLock()'s own cleanup, able to mask
+ * itself and leak the migration lock; and EMERGENCY/DOALWAYS ids, having no version row of
+ * their own, could have a swallowed database error reach commit() as a silent no-op.
  *
- * Both findings are about DatabaseMigrationService running DDL it should not, or failing to
- * undo DDL it already ran, so both live in one file against the real runner methods -
- * DatabaseMigrationService::ExecutePhpMigrationWhenNeeded() and ::EnsureMigrationsTable() -
- * reached by ReflectionMethod the way the audit's own probes did.
+ * Both original findings are about DatabaseMigrationService running DDL it should not, or
+ * failing to undo DDL it already ran, so both live in one file against the real runner
+ * methods - DatabaseMigrationService::ExecutePhpMigrationWhenNeeded() and
+ * ::EnsureMigrationsTable() - reached by ReflectionMethod the way the audit's own probes did.
  *
  * Does not extend PgsqlSchemaTestCase's usual pattern of one fully migrated schema per
  * class: both findings are about what happens *before* or *during* a migration run against
@@ -28,6 +34,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 {
+	/** An id no real migration file uses, for the \TypeError probes below. */
+	private const PROBE_MIGRATION_ID = 900001;
+
 	private static ?PDO $Pdo = null;
 
 	public static function setUpBeforeClass(): void
@@ -72,17 +81,11 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 			self::$Pdo->exec('CREATE TABLE migrations (migration integer NOT NULL PRIMARY KEY)');
 
 			// Fault injection: the column 0274 means to add is already there, exactly as
-			// issue #487's H6 reproduction set it up.
+			// issue #487's H6 reproduction set it up. Both attempts below fail on the ALTER,
+			// before 0274 ever reaches the LocalizationService/quantity_units read its happy
+			// path depends on (see the sibling retry-succeeds test for that), so this fixture
+			// needs nothing beyond migrations and locations.
 			self::$Pdo->exec('CREATE TABLE locations (id integer, storage_class_id integer)');
-
-			// 0274 unconditionally builds a LocalizationService, which best-effort-reads
-			// quantity_units for the separate quantity-unit translation set and silently
-			// swallows a missing-table failure (LocalizationService::LoadLocalizations()) -
-			// but that failed SELECT still aborts the *Postgres* transaction this fix wraps
-			// the migration in, which every statement after it would inherit. An empty table
-			// is enough: this is scaffolding the fault being tested does not touch, not a
-			// second thing under test.
-			self::$Pdo->exec('CREATE TABLE quantity_units (id integer, active integer, name text, name_plural text, plural_forms text)');
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
@@ -143,10 +146,14 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 			self::$Pdo->exec('CREATE TABLE migrations (migration integer NOT NULL PRIMARY KEY)');
 			self::$Pdo->exec('CREATE TABLE locations (id integer, storage_class_id integer)');
 
-			// See the sibling test for why this is here: 0274's happy path builds a
-			// LocalizationService, which best-effort-reads quantity_units and would
-			// otherwise abort the wrapping transaction on a missing table before ever
-			// reaching the statement that is actually under test.
+			// Unlike the sibling test, this one needs the retry to actually finish: once the
+			// ALTER succeeds, 0274's happy path builds a LocalizationService, which
+			// best-effort-reads quantity_units and silently swallows a missing-table failure
+			// at the PHP level (LocalizationService::LoadLocalizations()) - but that failed
+			// SELECT still aborts the *Postgres* transaction this fix wraps the migration in,
+			// which the seeding inserts after it would inherit as SQLSTATE 25P02. An empty
+			// table is enough; this is scaffolding the retry does not touch, not a second
+			// thing under test.
 			self::$Pdo->exec('CREATE TABLE quantity_units (id integer, active integer, name text, name_plural text, plural_forms text)');
 
 			$service = DatabaseMigrationService::GetInstance();
@@ -315,6 +322,381 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 
 			$this->DropProbeSchema($schema);
 		}
+	}
+
+	/**
+	 * Opus validation follow-up on H6: a PHP migration that throws something other than
+	 * \Exception - a \TypeError here, with no InTransaction() of its own - must still roll
+	 * back and must still release the real migration lock DatabaseDialect::WithMigrationLock()
+	 * takes. Before this fix (catching \Exception, not \Throwable), the \TypeError left the
+	 * transaction open and aborted; WithMigrationLock()'s own pg_advisory_unlock() then ran
+	 * inside that aborted transaction, failed with SQLSTATE 25P02, masked the \TypeError with
+	 * its own exception, and left the lock held on this connection.
+	 */
+	public function testTypeErrorFromAPlainPhpMigrationLeavesNoOpenTransactionAndAFreeMigrationLock(): void
+	{
+		$this->AssertMigrationFailureLeavesNoTransactionAndAFreeLock(<<<'PHP'
+<?php
+use Victual\Services\DatabaseService;
+
+$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+try
+{
+	$db->exec('SELECT * FROM migration_runner_probe_missing_table');
+}
+catch (\Throwable $ignored)
+{
+	// Deliberately swallowed, the way LocalizationService::LoadLocalizations() tolerates an
+	// unmigrated database - the transaction is left aborted regardless of whether PHP
+	// noticed.
+}
+
+throw new \TypeError('probe: plain migration TypeError after a swallowed database error');
+PHP);
+	}
+
+	/**
+	 * Opus validation follow-up on H6: the same proof as above, but for a migration shaped
+	 * like 0266/0282/0283 - all of its work inside DatabaseService::InTransaction(). Confirms
+	 * the nested InTransaction() call does not change the outcome: it joins the outer
+	 * transaction ExecutePhpMigrationWhenNeeded() opens rather than starting its own, so the
+	 * \TypeError is still caught by the one \Throwable handler that matters.
+	 */
+	public function testTypeErrorFromAnInTransactionWrappedPhpMigrationLeavesNoOpenTransactionAndAFreeMigrationLock(): void
+	{
+		$this->AssertMigrationFailureLeavesNoTransactionAndAFreeLock(<<<'PHP'
+<?php
+use Victual\Services\DatabaseService;
+
+DatabaseService::GetInstance()->InTransaction(function ()
+{
+	$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+	try
+	{
+		$db->exec('SELECT * FROM migration_runner_probe_missing_table');
+	}
+	catch (\Throwable $ignored)
+	{
+	}
+
+	throw new \TypeError('probe: InTransaction-wrapped migration TypeError after a swallowed database error');
+});
+PHP);
+	}
+
+	/**
+	 * Opus validation follow-up on H6, part (a): the always-run EMERGENCY/DOALWAYS ids get no
+	 * version row, so nothing would otherwise notice a database error their own code
+	 * swallowed - PostgreSQL turns a COMMIT of an aborted transaction into a rollback without
+	 * raising, so ExecutePhpMigrationWhenNeeded() would report success while every write the
+	 * run made was silently discarded. The SELECT 1 canary added for these ids must turn that
+	 * into a visible failure instead, with the run's own writes rolled back rather than kept.
+	 */
+	public function testAlwaysRunMigrationSwallowingADatabaseErrorFailsVisiblyInsteadOfSilentlyCommitting(): void
+	{
+		$schema = $this->CreateProbeSchema();
+		$probeFile = tempnam(sys_get_temp_dir(), 'migrun_probe_');
+		file_put_contents($probeFile, <<<'PHP'
+<?php
+use Victual\Services\DatabaseService;
+
+$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+$db->exec('CREATE TABLE migration_runner_probe_visible_writes (id integer)');
+
+try
+{
+	$db->exec('SELECT * FROM migration_runner_probe_missing_table');
+}
+catch (\Throwable $ignored)
+{
+	// Deliberately swallowed - the always-run 8888 fixup has no version row of its own to
+	// fail on in its place, which is exactly what this probe is checking for.
+}
+PHP);
+
+		try
+		{
+			self::$Pdo->exec('CREATE TABLE migrations (migration integer NOT NULL PRIMARY KEY)');
+
+			$service = DatabaseMigrationService::GetInstance();
+			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
+			$method->setAccessible(true);
+
+			$counter = 0;
+			$thrown = null;
+
+			try
+			{
+				$method->invokeArgs($service, [DatabaseMigrationService::DOALWAYS_MIGRATION_ID, $probeFile, &$counter]);
+			}
+			catch (\PDOException $ex)
+			{
+				$thrown = $ex;
+			}
+
+			$this->assertNotNull($thrown, 'a swallowed database error must still surface as a failure, not a silent successful commit');
+			$this->assertSame('25P02', $thrown->getCode(), 'the aborted-transaction canary should be what raises it');
+			$this->assertNull(
+				self::$Pdo->query("SELECT to_regclass('migration_runner_probe_visible_writes')")->fetchColumn(),
+				'the writes this run made before swallowing the error must not survive - PostgreSQL would otherwise silently roll back a COMMIT of an aborted transaction while this method reported success'
+			);
+		}
+		finally
+		{
+			unlink($probeFile);
+
+			if (self::$Pdo->inTransaction())
+			{
+				self::$Pdo->rollback();
+			}
+
+			$this->DropProbeSchema($schema);
+		}
+	}
+
+	/**
+	 * Opus validation follow-up on M17, part (c): SystemController::Root()'s
+	 * MIGRATE_ON_ROOT_REQUEST fallback, and bin/victual-migrate run as any pod's normal
+	 * startup step, call MigrateDatabase() under whichever role the caller's connection
+	 * holds. On a database the migrate role has already fully brought up to date, the serving
+	 * container's own role - victual_app, USAGE/SELECT/INSERT/UPDATE/DELETE only, no CREATE -
+	 * must be able to run the exact same call and see it succeed as a no-op rather than fail
+	 * on DDL it never needed. Builds its own throwaway database and the two roles
+	 * deploy/postgres/roles.sql defines, the way CredentialSplitTest does, and drives
+	 * bin/victual-migrate in subprocesses under each role - the only way to be a different
+	 * database role, since the connection settings are constants fixed once per process.
+	 */
+	public function testMigrateAsTheAppRoleOnAnAlreadyMigratedDatabaseSucceedsWithoutChangingTheSchema(): void
+	{
+		$database = 'victual_migrun_approle_' . bin2hex(random_bytes(4));
+		$dataPath = sys_get_temp_dir() . '/' . $database;
+		mkdir($dataPath, 0700, true);
+		$migratePassword = 'migrun-migrate-' . bin2hex(random_bytes(4));
+		$appPassword = 'migrun-app-' . bin2hex(random_bytes(4));
+
+		$admin = new PDO(
+			'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
+			getenv('PGUSER'),
+			getenv('PGPASSWORD'),
+			[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+		);
+
+		// victual_migrate/victual_app are cluster-wide roles. CredentialSplitTest uses the
+		// same names and drops them in its own tearDownAfterClass(), which - per phpunit.xml's
+		// file order in the credentialsplit testsuite - runs before this class's tests do;
+		// this is the same precondition check that class makes of itself.
+		$existing = $admin->query("SELECT string_agg(rolname, ', ') FROM pg_roles WHERE rolname IN ('victual_migrate', 'victual_app')")->fetchColumn();
+
+		if ($existing)
+		{
+			@rmdir($dataPath);
+			$this->markTestSkipped("the role(s) {$existing} already exist; refusing to reset them");
+
+			return;
+		}
+
+		$admin->exec('CREATE DATABASE ' . $database);
+		$rolesCreated = false;
+
+		try
+		{
+			$rolesEnv = getenv();
+			$rolesEnv['PGDATABASE'] = $database;
+
+			$rolesProcess = proc_open(
+				[
+					'psql', '--no-psqlrc', '--quiet',
+					'-v', 'ON_ERROR_STOP=1',
+					'-v', 'db=' . $database,
+					'-v', 'migrate_password=' . $migratePassword,
+					'-v', 'app_password=' . $appPassword,
+					'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
+				],
+				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+				$pipes,
+				null,
+				$rolesEnv
+			);
+			$this->assertIsResource($rolesProcess, 'psql could not be started');
+			$rolesOutput = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+			$this->assertSame(0, proc_close($rolesProcess), "deploy/postgres/roles.sql failed:\n" . $rolesOutput);
+			$rolesCreated = true;
+
+			// Fully migrated, as the migrate role - what the deploy's initContainer leaves a
+			// pod in before the app container ever starts.
+			[$migrateExit, $migrateOutput] = $this->RunMigrateAsRole($database, 'victual_migrate', $migratePassword, $dataPath . '/migrate');
+			$this->assertSame(0, $migrateExit, "the migrate role could not migrate:\n" . $migrateOutput);
+
+			$before = $this->FingerprintDatabase($database);
+
+			// The scenario this test exists for.
+			[$appExit, $appOutput] = $this->RunMigrateAsRole($database, 'victual_app', $appPassword, $dataPath . '/app');
+			$this->assertSame(0, $appExit, "the app role could not run MigrateDatabase() on an already-migrated database:\n" . $appOutput);
+
+			$this->assertSame($before, $this->FingerprintDatabase($database), 'no DDL should have run: the table list and the recorded migrations must be unchanged');
+		}
+		finally
+		{
+			$admin->exec('DROP DATABASE IF EXISTS ' . $database . ' WITH (FORCE)');
+
+			foreach (['migrate', 'app'] as $sub)
+			{
+				@unlink($dataPath . '/' . $sub . '/config.php');
+				@rmdir($dataPath . '/' . $sub);
+			}
+
+			@rmdir($dataPath);
+
+			foreach ($rolesCreated ? ['victual_app', 'victual_migrate'] : [] as $role)
+			{
+				try
+				{
+					$admin->exec('DROP ROLE IF EXISTS ' . $role);
+				}
+				catch (\PDOException $ex)
+				{
+				}
+			}
+		}
+	}
+
+	/**
+	 * Runs the given probe migration source through the real advisory lock
+	 * (DatabaseDialect::WithMigrationLock()) wrapping a reflected call to
+	 * ExecutePhpMigrationWhenNeeded(), then asserts the failure surfaced as a \TypeError
+	 * rather than being masked, that no transaction is left open on this connection, and that
+	 * a second, independent connection can immediately take the migration lock - proving
+	 * WithMigrationLock()'s own pg_advisory_unlock() ran successfully rather than failing
+	 * against a still-aborted transaction.
+	 */
+	private function AssertMigrationFailureLeavesNoTransactionAndAFreeLock(string $probeSource): void
+	{
+		$schema = $this->CreateProbeSchema();
+		$probeFile = tempnam(sys_get_temp_dir(), 'migrun_probe_');
+		file_put_contents($probeFile, $probeSource);
+
+		try
+		{
+			self::$Pdo->exec('CREATE TABLE migrations (migration integer NOT NULL PRIMARY KEY)');
+
+			$service = DatabaseMigrationService::GetInstance();
+			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
+			$method->setAccessible(true);
+			$dialect = DatabaseService::GetInstance()->GetDialect();
+
+			$thrown = null;
+
+			try
+			{
+				$dialect->WithMigrationLock(function () use ($service, $method, $probeFile)
+				{
+					$counter = 0;
+					$method->invokeArgs($service, [self::PROBE_MIGRATION_ID, $probeFile, &$counter]);
+				});
+			}
+			catch (\Throwable $ex)
+			{
+				$thrown = $ex;
+			}
+
+			$this->assertInstanceOf(\TypeError::class, $thrown, 'the real failure must surface, not be masked by a later error while releasing the lock');
+			$this->assertFalse(self::$Pdo->inTransaction(), 'no open transaction should remain after the failure');
+
+			$peer = new PDO(
+				'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
+				getenv('PGUSER'),
+				getenv('PGPASSWORD'),
+				[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+			);
+
+			$gotLock = false;
+
+			try
+			{
+				$gotLock = (bool)$peer->query('SELECT pg_try_advisory_lock(' . PostgresDialect::MIGRATION_ADVISORY_LOCK_KEY . ')')->fetchColumn();
+				$this->assertTrue($gotLock, 'the migration lock should have been released, not left held by the failed run');
+			}
+			finally
+			{
+				if ($gotLock)
+				{
+					$peer->exec('SELECT pg_advisory_unlock(' . PostgresDialect::MIGRATION_ADVISORY_LOCK_KEY . ')');
+				}
+			}
+		}
+		finally
+		{
+			unlink($probeFile);
+
+			// Whatever the assertions above found, leave the shared connection usable for
+			// whatever test runs next: a run against the unfixed code can leave it mid an
+			// aborted transaction with the lock still held.
+			if (self::$Pdo->inTransaction())
+			{
+				self::$Pdo->rollback();
+			}
+
+			try
+			{
+				self::$Pdo->exec('SELECT pg_advisory_unlock(' . PostgresDialect::MIGRATION_ADVISORY_LOCK_KEY . ')');
+			}
+			catch (\Throwable $ignored)
+			{
+			}
+
+			$this->DropProbeSchema($schema);
+		}
+	}
+
+	/** Runs bin/victual-migrate against $database as $role, in its own data path. */
+	private function RunMigrateAsRole(string $database, string $role, string $password, string $dataPath): array
+	{
+		mkdir($dataPath, 0700, true);
+
+		$env = getenv();
+		$env['VICTUAL_DB_DRIVER'] = 'pgsql';
+		$env['VICTUAL_DB_HOST'] = (string)getenv('PGHOST');
+		$env['VICTUAL_DB_PORT'] = (string)getenv('PGPORT');
+		$env['VICTUAL_DB_NAME'] = $database;
+		$env['VICTUAL_DB_USER'] = $role;
+		$env['VICTUAL_DB_PASSWORD'] = $password;
+		$env['VICTUAL_DATAPATH'] = $dataPath;
+
+		$process = proc_open(
+			[PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-migrate', '--quiet'],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+		$this->assertIsResource($process, 'bin/victual-migrate could not be started');
+
+		$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+
+		return [proc_close($process), $output];
+	}
+
+	/**
+	 * The set of table names and the migration bookkeeping in $database, for asserting a run
+	 * changed nothing. Connects as the suite's own superuser-equivalent PGUSER, never as
+	 * either role under test.
+	 */
+	private function FingerprintDatabase(string $database): array
+	{
+		$pdo = new PDO(
+			'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . $database,
+			getenv('PGUSER'),
+			getenv('PGPASSWORD'),
+			[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+		);
+
+		return [
+			'tables' => $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")->fetchAll(PDO::FETCH_COLUMN),
+			'maxMigration' => $pdo->query('SELECT MAX(migration) FROM migrations')->fetchColumn(),
+			'migrationCount' => (int)$pdo->query('SELECT count(*) FROM migrations')->fetchColumn(),
+		];
 	}
 
 	/**
