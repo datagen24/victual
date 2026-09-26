@@ -25,7 +25,6 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
-		self::$stockService = new StockService(self::PdoAsDatabase());
 
 		// Reset BaseService cached instances to avoid stale schema references across tests
 		// (issue #533: if a cached singleton holds a database connection to the old schema,
@@ -34,6 +33,9 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		$property = $reflection->getProperty('instances');
 		$property->setAccessible(true);
 		$property->setValue(null, []);
+
+		// Now create the service after clearing cached instances
+		self::$stockService = new StockService();
 	}
 
 	private static function productExists(int $productId): bool
