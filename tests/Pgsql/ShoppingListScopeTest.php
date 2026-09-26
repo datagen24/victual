@@ -30,7 +30,7 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		// (issue #533: if a cached singleton holds a database connection to the old schema,
 		// it will fail with "relation ... does not exist" on the fresh schema)
 		$reflection = new \ReflectionClass(\Victual\Services\BaseService::class);
-		$property = $reflection->getProperty('instances');
+		$property = $reflection->getProperty('Instances');
 		$property->setAccessible(true);
 		$property->setValue(null, []);
 
