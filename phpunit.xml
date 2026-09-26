@@ -104,6 +104,7 @@
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
+			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="stocklocations">
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>

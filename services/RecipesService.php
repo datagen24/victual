@@ -123,7 +123,20 @@ class RecipesService extends BaseService
 		// exists to guarantee.
 		$ingredientProductIds = array_map(fn($row) => (int)$row->product_id, $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll());
 
-		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $recipeId, &$transactionId)
+		// Which product (if any) this recipe produces, resolved before locking purely to
+		// learn its id for the lock set built below - this is structural configuration
+		// (which row self-production books into), not stock state, so unlike stock_amount
+		// below it does not need to be current at lock time; it is re-read inside the
+		// transaction, under the lock, before it is used for anything that is.
+		$outputProductRecipe = $this->DB->recipes()->where('id = :1', $recipeId)->fetch();
+		$outputProductId = $outputProductRecipe->product_id;
+		if ($outputProductRecipe->type == self::RECIPE_TYPE_MEALPLAN_SHADOW)
+		{
+			$outputMealPlanEntry = $this->DB->meal_plan()->where('id = :1', explode('#', $outputProductRecipe->name)[1])->fetch();
+			$outputProductId = $this->DB->recipes()->where('id = :1', $outputMealPlanEntry->recipe_id)->fetch()->product_id;
+		}
+
+		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $outputProductId, $recipeId, &$transactionId)
 		{
 			// A recipe can name several ingredient products, and ConsumeProduct() below
 			// always substitutes sub products for a recipe consume, so each ingredient's own
@@ -132,10 +145,22 @@ class RecipesService extends BaseService
 			// consume of one ingredient's sub product) touching an overlapping set always
 			// request their first conflicting lock in the same order and queue rather than
 			// deadlock (issue #458).
+			//
+			// The produced product, if any, joins the same ascending call rather than being
+			// left to the lock AddProduct() below takes on its own (issue #494/H5): consuming
+			// ingredients and booking the recipe's own output are now one transaction, so a
+			// pair of recipes whose ingredient and output sets overlap but swap roles (A's
+			// output is B's ingredient and vice versa) must still request their first
+			// conflicting lock in the same order, or the two could deadlock against each other
+			// instead of queuing.
 			$lockSet = [];
 			foreach ($ingredientProductIds as $ingredientProductId)
 			{
 				$lockSet = array_merge($lockSet, StockService::GetInstance()->SubstitutionLockSet($ingredientProductId));
+			}
+			if (!empty($outputProductId))
+			{
+				$lockSet[] = (int)$outputProductId;
 			}
 			DatabaseService::GetInstance()->LockProductsStock($lockSet);
 
@@ -156,26 +181,34 @@ class RecipesService extends BaseService
 					StockService::GetInstance()->ConsumeProduct($recipePosition->product_id, $amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', $recipeId, null, $transactionId, true, true);
 				}
 			}
-		});
 
-		$recipe = $this->DB->recipes()->where('id = :1', $recipeId)->fetch();
-		$productId = $recipe->product_id;
-		$amount = $recipe->desired_servings;
-		if ($recipe->type == self::RECIPE_TYPE_MEALPLAN_SHADOW)
-		{
-			// Use "Produces product" of the original recipe
-			$mealPlanEntry = $this->DB->meal_plan()->where('id = :1', explode('#', $recipe->name)[1])->fetch();
-			$recipe = $this->DB->recipes()->where('id = :1', $mealPlanEntry->recipe_id)->fetch();
+			// The recipe's own "produces product" is booked back in as self-production inside
+			// the same transaction as the ingredient consumption above (issue #494/H5): an
+			// output product that cannot be booked - inactive, for instance - must not leave
+			// the ingredients it was made from consumed. Re-read fresh under the lock, for the
+			// same reason the ingredient positions above are: recipes_resolved.costs_per_serving
+			// depends on ingredient prices a concurrent purchase could have changed while this
+			// call queued.
+			$recipe = $this->DB->recipes()->where('id = :1', $recipeId)->fetch();
 			$productId = $recipe->product_id;
-			$amount = $mealPlanEntry->recipe_servings;
-		}
+			$amount = $recipe->desired_servings;
+			if ($recipe->type == self::RECIPE_TYPE_MEALPLAN_SHADOW)
+			{
+				// Use "Produces product" of the original recipe
+				$mealPlanEntry = $this->DB->meal_plan()->where('id = :1', explode('#', $recipe->name)[1])->fetch();
+				$recipe = $this->DB->recipes()->where('id = :1', $mealPlanEntry->recipe_id)->fetch();
+				$productId = $recipe->product_id;
+				$amount = $mealPlanEntry->recipe_servings;
+			}
 
-		if (!empty($productId))
-		{
-			$product = $this->DB->products()->where('id = :1', $productId)->fetch();
-			$recipeResolvedRow = $this->DB->recipes_resolved()->where('recipe_id = :1', $recipeId)->fetch();
-			StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
-		}
+			if (!empty($productId))
+			{
+				$product = $this->DB->products()->where('id = :1', $productId)->fetch();
+				$recipeResolvedRow = $this->DB->recipes_resolved()->where('recipe_id = :1', $recipeId)->fetch();
+				$dummyTransactionId = null;
+				StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
+			}
+		});
 	}
 
 	/**
@@ -261,12 +294,19 @@ class RecipesService extends BaseService
 
 		$newName = LocalizationService::GetInstance()->__t('Copy of %s', $this->DB->recipes($recipeId)->name);
 
-		DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes (name, description, picture_file_name, base_servings, desired_servings, not_check_shoppinglist, type, product_id) SELECT :new_name, description, picture_file_name, base_servings, desired_servings, not_check_shoppinglist, type, product_id FROM recipes WHERE id = :recipe_id', ['recipe_id' => $recipeId, 'new_name' => $newName]);
-		$lastInsertId = $this->DB->lastInsertId();
-		DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes_pos (recipe_id, product_id, amount, note, qu_id, only_check_single_unit_in_stock, ingredient_group, not_check_stock_fulfillment, variable_amount, price_factor) SELECT :last_insert_id, product_id, amount, note, qu_id, only_check_single_unit_in_stock, ingredient_group, not_check_stock_fulfillment, variable_amount, price_factor FROM recipes_pos WHERE recipe_id = :recipe_id', ['recipe_id' => $recipeId, 'last_insert_id' => $lastInsertId]);
-		DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes_nestings (recipe_id, includes_recipe_id, servings) SELECT :last_insert_id, includes_recipe_id, servings FROM recipes_nestings WHERE recipe_id = :recipe_id', ['recipe_id' => $recipeId, 'last_insert_id' => $lastInsertId]);
+		// The three inserts are one copy (issue #494/H5): recipes_pos and recipes_nestings
+		// both key off the new recipe row's id and off the source recipe still existing, so a
+		// failure partway through - the second or third insert - must not leave the new
+		// recipe (or its ingredients without its nestings) committed on its own.
+		return DatabaseService::GetInstance()->InTransaction(function () use ($recipeId, $newName)
+		{
+			DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes (name, description, picture_file_name, base_servings, desired_servings, not_check_shoppinglist, type, product_id) SELECT :new_name, description, picture_file_name, base_servings, desired_servings, not_check_shoppinglist, type, product_id FROM recipes WHERE id = :recipe_id', ['recipe_id' => $recipeId, 'new_name' => $newName]);
+			$lastInsertId = $this->DB->lastInsertId();
+			DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes_pos (recipe_id, product_id, amount, note, qu_id, only_check_single_unit_in_stock, ingredient_group, not_check_stock_fulfillment, variable_amount, price_factor) SELECT :last_insert_id, product_id, amount, note, qu_id, only_check_single_unit_in_stock, ingredient_group, not_check_stock_fulfillment, variable_amount, price_factor FROM recipes_pos WHERE recipe_id = :recipe_id', ['recipe_id' => $recipeId, 'last_insert_id' => $lastInsertId]);
+			DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO recipes_nestings (recipe_id, includes_recipe_id, servings) SELECT :last_insert_id, includes_recipe_id, servings FROM recipes_nestings WHERE recipe_id = :recipe_id', ['recipe_id' => $recipeId, 'last_insert_id' => $lastInsertId]);
 
-		return $lastInsertId;
+			return $lastInsertId;
+		});
 	}
 
 	private function RecipeExists($recipeId)
