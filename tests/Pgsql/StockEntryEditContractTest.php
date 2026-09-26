@@ -46,7 +46,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9700, 'stock-entry-edit', 'fixture')");
 		self::$db->exec('INSERT INTO user_permissions (user_id, permission_id) '
-			. "SELECT 9700, id FROM permission_hierarchy WHERE name IN ('STOCK_EDIT', 'STOCK_VIEW')");
+			. "SELECT 9700, id FROM permission_hierarchy WHERE name IN ('STOCK_EDIT', 'STOCK_VIEW', 'STOCK_PRICES_VIEW')");
 
 		self::$key = bin2hex(random_bytes(25));
 		$stmt = self::$db->prepare('INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) '
@@ -119,15 +119,13 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		return (int)self::$db->query('SELECT count(*) FROM stock_log')->fetchColumn();
 	}
 
-	/** PUTs $body to /api/stock/entry/$entryId through the real middleware stack. @return array{status: int, body: string} */
-	private static function put(int $entryId, array $body): array
+	/** Sends $method to $path (with an optional body) through the real middleware stack. @return array{status: int, body: string} */
+	private static function send(string $method, string $path, ?array $body = null): array
 	{
-		$spec = [
-			'method' => 'PUT',
-			'path' => "/api/stock/entry/$entryId",
-			'headers' => ['VICTUAL-API-KEY' => self::$key],
-			'body' => $body,
-		];
+		$spec = array_filter(
+			['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$key], 'body' => $body],
+			fn ($value) => $value !== null
+		);
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
 			'RBAC_TEST_SCHEMA' => self::Schema(),
@@ -153,9 +151,24 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		proc_close($process);
 
 		$result = json_decode((string)$output, true);
-		self::assertIsArray($result, "the request helper printed no JSON for PUT /api/stock/entry/$entryId. stdout: $output\nstderr: $errors");
+		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
 
 		return $result;
+	}
+
+	/** PUTs $body to /api/stock/entry/$entryId. @return array{status: int, body: string} */
+	private static function put(int $entryId, array $body): array
+	{
+		return self::send('PUT', "/api/stock/entry/$entryId", $body);
+	}
+
+	/** GETs /api/stock/entry/$entryId and returns its decoded body. Asserts 200. */
+	private static function getEntry(int $entryId): array
+	{
+		$response = self::send('GET', "/api/stock/entry/$entryId");
+		self::assertSame(200, $response['status'], $response['body']);
+
+		return json_decode($response['body'], true, flags: JSON_THROW_ON_ERROR);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -264,6 +277,109 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame($before['shopping_location_id'], $after['shopping_location_id'], 'the refused shopping location edit changed nothing');
 	}
 
+	public function testInactiveLocationIsRefused(): void
+	{
+		$inactiveLocationId = (int)self::$db->query("INSERT INTO locations (name, active) VALUES ('EditInactive', 0) RETURNING id")->fetchColumn();
+		$entryId = self::seedStockRow();
+		$before = self::stockRow($entryId);
+
+		$response = self::put($entryId, ['amount' => 1, 'location_id' => $inactiveLocationId]);
+
+		self::assertSame(400, $response['status'], 'an inactive location is refused, the same as one that does not exist at all');
+		self::assertSame($before['location_id'], self::stockRow($entryId)['location_id'], 'the refused edit changed nothing');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Clearing a field: null for price/shopping_location_id/note, and "" for the store
+	// too, matching the web form's own "no store" option (issue #487 review of #519/#524)
+	// ------------------------------------------------------------------------------
+
+	public function testNullClearsPriceStoreAndNote(): void
+	{
+		$entryId = self::seedStockRow(['price' => 4.5, 'shopping_location_id' => self::$grocerId, 'note' => 'to be cleared']);
+
+		$response = self::put($entryId, ['amount' => 1, 'price' => null, 'shopping_location_id' => null, 'note' => null]);
+
+		self::assertSame(200, $response['status'], "null must clear price/store/note, not be refused: {$response['body']}");
+		$after = self::stockRow($entryId);
+		self::assertNull($after['price'], 'null clears the price');
+		self::assertNull($after['shopping_location_id'], 'null clears the store');
+		self::assertNull($after['note'], 'null clears the note');
+	}
+
+	public function testEmptyStringAlsoClearsTheStore(): void
+	{
+		$entryId = self::seedStockRow(['shopping_location_id' => self::$grocerId]);
+
+		// The web form's "no store" combobox option sends "" (public/viewjs/stockentryform.js).
+		$response = self::put($entryId, ['amount' => 1, 'shopping_location_id' => '']);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertNull(self::stockRow($entryId)['shopping_location_id'], '"" clears the store the same way null does');
+	}
+
+	// ------------------------------------------------------------------------------
+	// open accepts every form this API's own callers send (its GET response included),
+	// and refuses the two word strings that used to be silently misread
+	// ------------------------------------------------------------------------------
+
+	public function testOpenAcceptsIntegerAndDigitStringForms(): void
+	{
+		$closed = self::seedStockRow(['open' => 0]);
+		self::assertSame(200, self::put($closed, ['amount' => 1, 'open' => 1])['status'], 'open: 1 (integer) must be accepted');
+		self::assertSame(1, (int)self::stockRow($closed)['open']);
+
+		$closed2 = self::seedStockRow(['open' => 0]);
+		self::assertSame(200, self::put($closed2, ['amount' => 1, 'open' => '1'])['status'], 'open: "1" (string) must be accepted');
+		self::assertSame(1, (int)self::stockRow($closed2)['open']);
+
+		$open = self::seedStockRow(['open' => 1]);
+		self::assertSame(200, self::put($open, ['amount' => 1, 'open' => 0])['status'], 'open: 0 (integer) must be accepted');
+		self::assertSame(0, (int)self::stockRow($open)['open']);
+
+		$open2 = self::seedStockRow(['open' => 1]);
+		self::assertSame(200, self::put($open2, ['amount' => 1, 'open' => '0'])['status'], 'open: "0" (string) must be accepted');
+		self::assertSame(0, (int)self::stockRow($open2)['open']);
+	}
+
+	public function testOpenWordStringsAreRefused(): void
+	{
+		$entryId = self::seedStockRow(['open' => 0]);
+
+		$true = self::put($entryId, ['amount' => 1, 'open' => 'true']);
+		self::assertSame(400, $true['status'], 'the word string "true" is not a documented form');
+
+		$false = self::put($entryId, ['amount' => 1, 'open' => 'false']);
+		self::assertSame(400, $false['status'], 'the word string "false" is not a documented form');
+
+		self::assertSame(0, (int)self::stockRow($entryId)['open'], 'neither refusal changed the stored flag');
+	}
+
+	// ------------------------------------------------------------------------------
+	// A round trip: what GET answers is exactly what PUT must accept back, since a
+	// generated or hand-written client that reads an entry before editing it does this
+	// ------------------------------------------------------------------------------
+
+	public function testGetThenPutRoundTripSucceeds(): void
+	{
+		$entryId = self::seedStockRow(['price' => 3.25, 'shopping_location_id' => self::$grocerId, 'open' => 1, 'opened_date' => '2026-01-10']);
+
+		$entry = self::getEntry($entryId);
+
+		$response = self::put($entryId, [
+			'amount' => $entry['amount'],
+			'best_before_date' => $entry['best_before_date'],
+			'purchased_date' => $entry['purchased_date'],
+			'price' => $entry['price'],
+			'open' => $entry['open'],
+			'location_id' => $entry['location_id'],
+			'shopping_location_id' => $entry['shopping_location_id'],
+			'note' => $entry['note'],
+		]);
+
+		self::assertSame(200, $response['status'], "a GET response PUT straight back must be accepted, open included (it GETs as an integer): {$response['body']}");
+	}
+
 	// ------------------------------------------------------------------------------
 	// A fully-specified edit still works end to end
 	// ------------------------------------------------------------------------------
@@ -301,6 +417,19 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	// H3 (issue #492): EditStockEntry() refuses a negative amount atomically, at the
 	// service level, for every caller - not only this HTTP route.
 	// ------------------------------------------------------------------------------
+
+	public function testHttpPutRefusesANegativeAmount(): void
+	{
+		$entryId = self::seedStockRow(['amount' => 2]);
+		$before = self::stockRow($entryId);
+		$logsBefore = self::stockLogCount();
+
+		$response = self::put($entryId, ['amount' => -5]);
+
+		self::assertSame(400, $response['status'], 'a negative amount is refused over the real HTTP route too');
+		self::assertSame($before, self::stockRow($entryId), 'a refused edit leaves the row exactly as it was');
+		self::assertSame($logsBefore, self::stockLogCount(), 'a refused edit writes no ledger rows');
+	}
 
 	public function testServiceRefusesANegativeAmountAtomically(): void
 	{

@@ -78,6 +78,26 @@ class StockService extends BaseService
 	const ALLOWED_PICTURE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
 	/**
+	 * Marks an EditStockEntry() argument the caller's request did not supply: the method
+	 * resolves it against the entry's own row, re-read fresh under this method's own
+	 * product lock, rather than against a value read before this method was even called.
+	 *
+	 * A value a caller (StockApiController::EditStockEntry()) read before this method's
+	 * lock can already be stale by the time the lock is taken: a concurrent booking can
+	 * have opened the entry, moved it to another location, or changed its price in between.
+	 * Persisting that stale value would silently revert the concurrent change - a lost
+	 * update found in review of issues #519/#524's partial-update fix. Resolving "keep the
+	 * current value" here, against the locked re-read every other field of this method
+	 * already uses, closes that window instead of moving it.
+	 *
+	 * Distinct from null, which several arguments (price, shopping_location_id, note)
+	 * accept as a caller's explicit "clear this field" - a marker equal to a real,
+	 * documented value could never be told apart from that value. This one is not: no
+	 * argument's real value is ever this exact string.
+	 */
+	const KEEP_STORED_VALUE = "\0victual-stock-service-keep-stored-value\0";
+
+	/**
 	 * Adds all products which are below their minimum stock amount to the given shopping list.
 	 *
 	 * Amounts are in the product's stock quantity unit (rounded to 2 decimals); an already existing
@@ -892,6 +912,18 @@ class StockService extends BaseService
 			{
 				throw new \Exception('Stock does not exist');
 			}
+
+			// A field the caller's request did not supply is resolved here, against this
+			// locked, freshly re-read row - never against the unlocked read the controller
+			// took before calling in, which a concurrent booking can have moved past by now.
+			// See KEEP_STORED_VALUE's own comment.
+			$bestBeforeDate = $bestBeforeDate === self::KEEP_STORED_VALUE ? $stockRow->best_before_date : $bestBeforeDate;
+			$locationId = $locationId === self::KEEP_STORED_VALUE ? $stockRow->location_id : $locationId;
+			$shoppingLocationId = $shoppingLocationId === self::KEEP_STORED_VALUE ? $stockRow->shopping_location_id : $shoppingLocationId;
+			$price = $price === self::KEEP_STORED_VALUE ? $stockRow->price : $price;
+			$open = $open === self::KEEP_STORED_VALUE ? $stockRow->open : $open;
+			$purchasedDate = $purchasedDate === self::KEEP_STORED_VALUE ? $stockRow->purchased_date : $purchasedDate;
+			$note = $note === self::KEEP_STORED_VALUE ? $stockRow->note : $note;
 
 			// Whether the edited state still permits the measurement (if any) this entry
 			// already carries. round() guards the float amount comparison the CHECK itself

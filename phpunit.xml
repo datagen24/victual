@@ -91,6 +91,7 @@
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
 			<file>tests/Pgsql/RecipeSelfProductionLockOrderTest.php</file>
+			<file>tests/Pgsql/StockEntryEditLostUpdateTest.php</file>
 		</testsuite>
 		<testsuite name="demodata">
 			<file>tests/Pgsql/DemoDataTest.php</file>
