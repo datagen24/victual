@@ -19,11 +19,23 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 {
 	private static PDO $db;
 	private static int $locationId;
+	private static string $sessionKey = '';
 
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
 		self::$db = self::Pdo();
+
+		// Create a test user
+		self::$db->exec("INSERT INTO users (id, username, password) VALUES (9600, 'calendar-test', 'fixture')");
+
+		// Grant calendar permissions
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'BATTERIES')");
+
+		// Create a session for the test user
+		self::$sessionKey = 'calendar-test-session-' . uniqid();
+		$stmt = self::$db->prepare("INSERT INTO sessions (session_key, user_id, expires) VALUES (?, 9600, now() + interval '1 day')");
+		$stmt->execute([self::$sessionKey]);
 
 		// Create a test location (required for stock entries)
 		self::$db->exec("INSERT INTO locations (name) VALUES ('Test Location')");
@@ -88,7 +100,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 
 		// Assert: Sentinel-dated entries should not produce events (or be bounded)
 		// For now, we choose to exclude sentinel dates entirely
-		$this->assertNotContains('2999-12-31', $ical, 'Sentinel dates should not appear in iCal');
+		$this->assertStringNotContainsString('2999-12-31', $ical, 'Sentinel dates should not appear in iCal');
 		// Also check that the event UID doesn't span far into the future
 		$hasUnboundedEvent = preg_match('/DTSTART.*?2999/', $ical);
 		$this->assertFalse($hasUnboundedEvent, 'Should not have events spanning to year 2999');
@@ -171,7 +183,8 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	{
 		$spec = [
 			'method' => 'GET',
-			'path' => '/api/calendar/ical'
+			'path' => '/api/calendar/ical',
+			'cookie' => self::$sessionKey
 		];
 
 		$response = $this->dispatchRequest($spec);
