@@ -95,6 +95,7 @@
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
+			<file>tests/Pgsql/CalendarIdentityTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
