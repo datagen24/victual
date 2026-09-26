@@ -63,6 +63,7 @@
 		</testsuite>
 		<testsuite name="labelapi">
 			<file>tests/Pgsql/LabelApiTest.php</file>
+			<file>tests/Pgsql/LabelResolveSchemaTest.php</file>
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
