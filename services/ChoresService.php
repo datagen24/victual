@@ -262,39 +262,50 @@ class ChoresService extends BaseService
 		}
 
 		$scheduledExecutionTime = $this->DB->chores_current()->where('chore_id = :1', $chore->id)->fetch()->next_estimated_execution_time;
-		$logRow = $this->DB->chores_log()->createRow([
-			'chore_id' => $choreId,
-			'tracked_time' => $trackedTime,
-			'done_by_user_id' => $doneBy,
-			'skipped' => BoolToInt($skipped),
-			'scheduled_execution_time' => $scheduledExecutionTime
-		]);
-		$logRow->save();
-		$lastInsertId = $this->DB->lastInsertId();
 
-		if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id))
+		// The execution log entry, the linked stock consumption and the reschedule/assignment
+		// bookkeeping are one business operation (issue #494/H5): consuming the linked
+		// product can refuse (not enough stock), and a refusal must not leave the log entry
+		// it was meant to accompany committed on its own. StockService::ConsumeProduct() opens
+		// its own InTransaction() internally, which joins this one (DatabaseService::InTransaction()
+		// lets a nested call join rather than nest) rather than being able to commit or roll
+		// back independently of it.
+		return DatabaseService::GetInstance()->InTransaction(function () use ($choreId, $chore, $trackedTime, $doneBy, $skipped, $scheduledExecutionTime)
 		{
-			$transactionId = uniqid();
-			StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
-		}
-
-		if (!empty($chore->rescheduled_date))
-		{
-			$chore->update([
-				'rescheduled_date' => null
+			$logRow = $this->DB->chores_log()->createRow([
+				'chore_id' => $choreId,
+				'tracked_time' => $trackedTime,
+				'done_by_user_id' => $doneBy,
+				'skipped' => BoolToInt($skipped),
+				'scheduled_execution_time' => $scheduledExecutionTime
 			]);
-		}
+			$logRow->save();
+			$lastInsertId = $this->DB->lastInsertId();
 
-		if (!empty($chore->rescheduled_next_execution_assigned_to_user_id))
-		{
-			$chore->update([
-				'rescheduled_next_execution_assigned_to_user_id' => null
-			]);
-		}
+			if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id))
+			{
+				$transactionId = uniqid();
+				StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
+			}
 
-		$this->CalculateNextExecutionAssignment($choreId);
+			if (!empty($chore->rescheduled_date))
+			{
+				$chore->update([
+					'rescheduled_date' => null
+				]);
+			}
 
-		return $lastInsertId;
+			if (!empty($chore->rescheduled_next_execution_assigned_to_user_id))
+			{
+				$chore->update([
+					'rescheduled_next_execution_assigned_to_user_id' => null
+				]);
+			}
+
+			$this->CalculateNextExecutionAssignment($choreId);
+
+			return $lastInsertId;
+		});
 	}
 
 	/**
