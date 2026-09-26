@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -42,5 +43,19 @@ class SchemaIsolationFirstTest extends PgsqlSchemaTestCase
 		$row = $result->fetch(PDO::FETCH_ASSOC);
 
 		self::assertSame(1, (int)$row['count'], 'Product should exist in first schema');
+	}
+
+	/**
+	 * Cache a service singleton by instantiating it.
+	 *
+	 * This test deliberately instantiates StockService so it gets cached in BaseService::$Instances
+	 * with the first schema's connection. When SchemaIsolationSecondTest runs, if the reset is not
+	 * performed, it will receive this cached instance bound to the first schema (now dropped) and fail.
+	 */
+	public function testCacheServiceSingleton()
+	{
+		// Instantiate the service - this caches it for the process
+		$stock = StockService::GetInstance();
+		self::assertNotNull($stock, 'Service should be instantiable in first schema');
 	}
 }
