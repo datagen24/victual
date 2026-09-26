@@ -3122,6 +3122,7 @@ class StockService extends BaseService
 				// matched NULL to NULL either, so a purchase with no purchased_date used to
 				// match and update zero rows while the booking was still marked undone
 				// regardless (#504 M4).
+				$stockRow = null;
 				if ($logRow->stock_row_id !== null)
 				{
 					// Existence alone is not enough: CompactStockEntries() can merge this row
@@ -3132,23 +3133,43 @@ class StockService extends BaseService
 					// merged rows CompactStockEntries() happened to keep - #488's interim
 					// decision is to refuse rather than guess which portion to leave open.
 					$stockRow = $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
-					if ($stockRow === null || abs($stockRow->amount - $logRow->amount) > self::AMOUNT_TOLERANCE)
+					if ($stockRow !== null && abs($stockRow->amount - $logRow->amount) > self::AMOUNT_TOLERANCE)
 					{
-						throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+						$stockRow = null;
 					}
 				}
-				else
+
+				if ($stockRow === null)
 				{
+					// Falls back to the pre-stock_row_id match whenever that id no longer
+					// resolves to a row still holding exactly this booking's amount. Two
+					// different causes land here, and only one of them is safe to recover:
+					// a legacy booking with no stock_row_id at all is the ordinary case this
+					// fallback was written for; a move_on_open product's opening also
+					// transfers the same row to its default consume location in the same
+					// transaction (OpenProduct()'s own TransferProduct() call below), and a
+					// whole-row transfer's undo (processed first here, newest booking first)
+					// deletes that row at the destination and rebuilds it under a *new* id at
+					// the source - stock_row_id above is now stale, but the rebuilt row's own
+					// describing columns still match this booking exactly. A row a
+					// CompactStockEntries() merge folded into (the other #488 sibling, above)
+					// will not match here either, since its amount no longer equals what this
+					// booking recorded - so this fallback cannot accidentally recover that
+					// case, which must stay refused.
 					$candidateRows = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date IS NOT DISTINCT FROM :3 AND open = 1 AND location_id IS NOT DISTINCT FROM :4', $logRow->stock_id, $logRow->amount, $logRow->purchased_date, $logRow->location_id)->fetchAll();
-					if (count($candidateRows) === 0)
+					if (count($candidateRows) === 1)
 					{
-						throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+						$stockRow = $candidateRows[0];
 					}
-					if (count($candidateRows) > 1)
+					elseif (count($candidateRows) > 1)
 					{
 						throw new \Exception('Booking cannot be undone: more than one stock entry matches the one this booking opened and it cannot be unambiguously reversed');
 					}
-					$stockRow = $candidateRows[0];
+				}
+
+				if ($stockRow === null)
+				{
+					throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
 				}
 
 				$stockRow->update([

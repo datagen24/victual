@@ -1071,4 +1071,98 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			}
 		}
 	}
+
+	// ------------------------------------------------------------------------------
+	// #488, second Opus review - PRODUCT_OPENED undo for a move_on_open product
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * A move_on_open product's OpenProduct() call transfers the just-opened entry to its
+	 * default consume location inside the same transaction (OpenProduct()'s own
+	 * TransferProduct() call). Undoing that whole transaction processes the newest booking
+	 * first: the whole-row TRANSFER_TO undo deletes the row at the destination, and
+	 * TRANSFER_FROM's undo rebuilds it under a *new* id at the source - so by the time the
+	 * (oldest, processed last) PRODUCT_OPENED booking's own undo runs, its stock_row_id no
+	 * longer resolves to any row. The fix falls back to the pre-stock_row_id match (the
+	 * booking's own columns plus open = 1 and its location), which the rebuilt row still
+	 * satisfies exactly. Covers both a whole-entry open (the entire purchased row moves)
+	 * and a split open (only the opened portion moves, leaving an unopened remainder at A).
+	 */
+	private function moveOnOpenProductWithDefaultConsumeAtB(string $name): int
+	{
+		$product = self::insertProduct($name);
+		self::$db->prepare('UPDATE products SET move_on_open = 1, default_consume_location_id = ? WHERE id = ?')->execute([self::$locationB, $product]);
+		return $product;
+	}
+
+	public function testUndoingAMoveOnOpenWholeEntryOpeningRestoresTheClosedEntryAtItsOriginalLocation(): void
+	{
+		$product = $this->moveOnOpenProductWithDefaultConsumeAtB('Undo Move On Open Whole');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased at A'
+		);
+		$open = $this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'Opening it also moves it to B (move_on_open, default consume location B)'
+		);
+		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: the opened unit is now at B');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationA), 'Sanity: nothing remains at A');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
+			204,
+			'Undoing the whole open-and-move transaction is accepted'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'Exactly one entry survives, back at A');
+		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at its original location');
+		self::assertSame(0, (int)$rows[0]['open'], 'closed again');
+		self::assertSame(1.0, (float)$rows[0]['amount'], 'holding its original amount');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'nothing left at B');
+
+		$stillLive = self::$db->prepare('SELECT COUNT(*) FROM stock_log WHERE transaction_id = ? AND undone = 0');
+		$stillLive->execute([$open[0]['transaction_id']]);
+		self::assertSame(0, (int)$stillLive->fetchColumn(), 'every booking of the transaction (open + both transfer halves) is marked undone');
+	}
+
+	public function testUndoingAMoveOnOpenSplitOpeningRestoresTheClosedPortionAtItsOriginalLocation(): void
+	{
+		$product = $this->moveOnOpenProductWithDefaultConsumeAtB('Undo Move On Open Split');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Three units are purchased at A'
+		);
+		$open = $this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'Opening one unit splits the entry and moves only the opened unit to B'
+		);
+		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: the opened unit is now at B');
+		self::assertSame(2.0, self::stockAmountAtLocation($product, self::$locationA), 'Sanity: the unopened remainder stays at A');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
+			204,
+			'Undoing the whole open-and-move transaction is accepted'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(2, $rows, 'The unopened remainder and the rebuilt closed portion both exist at A');
+		foreach ($rows as $row)
+		{
+			self::assertSame(self::$locationA, (int)$row['location_id'], "Row {$row['id']} is back at A: " . json_encode($row));
+			self::assertSame(0, (int)$row['open'], "Row {$row['id']} is closed: " . json_encode($row));
+		}
+		self::assertSame(3.0, self::stockAmountAtLocation($product, self::$locationA), 'all three units are back at A');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'nothing left at B');
+
+		$stillLive = self::$db->prepare('SELECT COUNT(*) FROM stock_log WHERE transaction_id = ? AND undone = 0');
+		$stillLive->execute([$open[0]['transaction_id']]);
+		self::assertSame(0, (int)$stillLive->fetchColumn(), 'every booking of the transaction (open + both transfer halves) is marked undone');
+	}
 }
