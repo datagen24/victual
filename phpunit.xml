@@ -42,6 +42,7 @@
 		</testsuite>
 		<testsuite name="bootstrapadmin">
 			<file>tests/Pgsql/BootstrapAdminTest.php</file>
+			<file>tests/Pgsql/PasswordRotationTest.php</file>
 		</testsuite>
 		<testsuite name="uploadclamp">
 			<file>tests/Pgsql/FileSizeLimitTest.php</file>

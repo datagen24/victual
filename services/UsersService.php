@@ -36,12 +36,21 @@ class UsersService extends BaseService
 	/**
 	 * Verifies the given plaintext password against the user's stored hash.
 	 *
+	 * $throttle mirrors PasswordLogin::Process() against LoginThrottleService, keyed by
+	 * this user's username - the same counter a wrong login password feeds. It is opt-in
+	 * because most callers reach this only from behind an already-granted USERS_EDIT_SELF,
+	 * where guessing costs a valid credential to attempt at all; the forced-rotation bypass
+	 * in UsersApiController::EditUser() has no such barrier (issue #514's throttling
+	 * subclaim) and passes true. An empty submission is refused for free, exactly as
+	 * PasswordLogin treats an empty login password: it is not a guess and should not cost
+	 * one.
+	 *
 	 * @throws \Victual\Controllers\Users\PermissionMissingException Never - see below
 	 * @throws \Exception When the password does not match, so that the answer is the same
 	 *                    400 as any other refused edit rather than a 403, which would say
 	 *                    "you are allowed, but" about a credential check
 	 */
-	public function CheckCurrentPassword(int $userId, ?string $currentPassword): void
+	public function CheckCurrentPassword(int $userId, ?string $currentPassword, bool $throttle = false): void
 	{
 		$user = $this->DB->users($userId);
 
@@ -50,9 +59,32 @@ class UsersService extends BaseService
 			throw new \Exception('User does not exist');
 		}
 
-		if ($currentPassword === null || $currentPassword === '' || !password_verify($currentPassword, $user->password))
+		if ($currentPassword === null || $currentPassword === '')
 		{
 			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if ($throttle && !LoginThrottleService::GetInstance()->IsAttemptAllowed($user->username))
+		{
+			// Answered exactly like a wrong password - see PasswordLogin's own comment on
+			// DUMMY_PASSWORD_HASH: telling a guesser they hit the limit tells them the
+			// limit exists and roughly where it is.
+			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if (!password_verify($currentPassword, $user->password))
+		{
+			if ($throttle)
+			{
+				LoginThrottleService::GetInstance()->RecordFailedAttempt($user->username);
+			}
+
+			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if ($throttle)
+		{
+			LoginThrottleService::GetInstance()->ClearAttempts($user->username);
 		}
 	}
 
@@ -176,9 +208,20 @@ class UsersService extends BaseService
 	 * Updates a user's profile; the password is only changed (re-hashed with Argon2id)
 	 * when a non-empty one is given.
 	 *
+	 * A changed password revokes every other session of this account
+	 * (SessionService::RemoveOtherSessions()) - issue #513: without it, a session opened
+	 * with a compromised or bootstrap credential outlived the rotation meant to end its
+	 * access, and `must_change_password` cleared under it regardless. $actingSessionKey is
+	 * the session, if any, that authenticated the request making this change; it alone is
+	 * spared, so a self-service password change does not log its own author out. It is
+	 * null for an API-key-authenticated request and whenever the caller is not $userId
+	 * (an administrator resetting somebody else's password), in which case nothing of
+	 * $userId's own is excepted and every session of theirs is cleared. API keys are a
+	 * separate credential and are deliberately left alone here.
+	 *
 	 * @throws \Exception When the user does not exist
 	 */
-	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null)
+	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null, ?string $actingSessionKey = null)
 	{
 		if (!$this->UserExists($userId))
 		{
@@ -209,6 +252,8 @@ class UsersService extends BaseService
 				// in the same update as the password so the two cannot come apart.
 				'must_change_password' => 0
 			]);
+
+			SessionService::GetInstance()->RemoveOtherSessions($userId, $actingSessionKey);
 		}
 	}
 
