@@ -90,7 +90,7 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 	/** @return array<int, array<string, mixed>> */
 	private static function stockRows(int $productId): array
 	{
-		$statement = self::$db->prepare('SELECT amount, price, location_id FROM stock WHERE product_id = ? ORDER BY id');
+		$statement = self::$db->prepare('SELECT amount, price, location_id, open, opened_amount, opened_qu_id FROM stock WHERE product_id = ? ORDER BY id');
 		$statement->execute([$productId]);
 
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -112,6 +112,67 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		$row = $statement->fetch(PDO::FETCH_ASSOC);
 
 		return $row === false ? null : $row;
+	}
+
+	private static function productParent(int $productId): ?int
+	{
+		$statement = self::$db->prepare('SELECT parent_product_id FROM products WHERE id = ?');
+		$statement->execute([$productId]);
+		$value = $statement->fetchColumn();
+
+		return $value === null ? null : (int)$value;
+	}
+
+	/** @return array<string, mixed> */
+	private static function choreRow(int $choreId): array
+	{
+		$statement = self::$db->prepare('SELECT product_id, product_amount FROM chores WHERE id = ?');
+		$statement->execute([$choreId]);
+
+		return $statement->fetch(PDO::FETCH_ASSOC);
+	}
+
+	/** @return array<int, array<string, mixed>> */
+	private static function unitConversionRows(int $productId, int $fromQuId, int $toQuId): array
+	{
+		$statement = self::$db->prepare('SELECT factor FROM quantity_unit_conversions WHERE product_id = ? AND from_qu_id = ? AND to_qu_id = ?');
+		$statement->execute([$productId, $fromQuId, $toQuId]);
+
+		return $statement->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	private static function cacheRowCount(string $table, int $productId): int
+	{
+		$statement = self::$db->prepare("SELECT COUNT(*) FROM $table WHERE product_id = ?");
+		$statement->execute([$productId]);
+
+		return (int)$statement->fetchColumn();
+	}
+
+	/**
+	 * Calls MergeProducts(), asserting it throws, and returns the caught exception's message
+	 * for the caller to inspect further (e.g. that it is this method's own clean refusal, not
+	 * a raw database error). The assertion runs OUTSIDE the try/catch and the catch is
+	 * deliberately not "catch (\Exception)": PHPUnit's own assertion-failure exception is
+	 * itself an \Exception, so a self::fail() called from inside a try/catch(\Exception) block
+	 * would silently swallow itself - exactly the shape of bug this helper exists to avoid.
+	 */
+	private function expectMergeRefused(int $productIdToKeep, int $productIdToRemove, string $message): string
+	{
+		$caught = null;
+
+		try
+		{
+			StockService::GetInstance()->MergeProducts($productIdToKeep, $productIdToRemove);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+
+		self::assertNotNull($caught, $message);
+
+		return $caught->getMessage();
 	}
 
 	// ------------------------------------------------------------------------------
@@ -242,5 +303,275 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		$repointed = self::minStockRow($keep, $onlyOnRemoveLocation);
 		self::assertNotNull($repointed, 'Then: the removed product\'s only-on-remove minimum is still repointed to the kept product');
 		self::assertEqualsWithDelta(4.0, (float)$repointed['min_stock_amount'], 1e-9, 'Then: with no unit conversion in play, the amount is unchanged (factor 1)');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Opus validation of PR #540: quantity_unit_conversions duplicates
+	// ------------------------------------------------------------------------------
+
+	public function testMergeDropsTheRemovedProductsAutoCreatedUnitConversionInsteadOfConflictingWithTheKeptProducts(): void
+	{
+		$box = self::insertRow('quantity_units', ['name' => 'Merge Auto Box', 'name_plural' => 'Merge Auto Boxes']);
+
+		// Given: both products purchase in a box unit but stock in kilograms, with no global
+		// conversion between the two units - products_default_qu_conversions_INS therefore
+		// auto-creates the identical 1:1 box -> kg pair (and its auto-maintained inverse) on
+		// EACH product independently.
+		$keep = self::insertProduct('Merge Auto Conv Keep', [
+			'qu_id_purchase' => $box,
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge Auto Conv Remove', [
+			'qu_id_purchase' => $box,
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+
+		self::assertCount(1, self::unitConversionRows($keep, $box, self::$ids['kilogram']), 'Given: the kept product already auto-owns a box->kg conversion');
+		self::assertCount(1, self::unitConversionRows($remove, $box, self::$ids['kilogram']), 'Given: the removed product auto-owns the identical pair');
+
+		// When: the products (same stock unit, so factor 1) are merged.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: the merge completes instead of raising "QU conversion already exists"
+		// (qu_conversions_custom_constraint_UPD, db/pgsql/baseline/06_triggers_a.sql), and
+		// exactly one box->kg row survives for the kept product - not two, not zero.
+		self::assertFalse(self::productExists($remove), 'Then: the merge completes despite the auto-created conversion collision');
+		self::assertCount(1, self::unitConversionRows($keep, $box, self::$ids['kilogram']), 'Then: exactly one box->kg conversion survives for the kept product');
+		self::assertSame([], self::unitConversionRows($remove, $box, self::$ids['kilogram']), 'Then: nothing remains attributed to the removed product id');
+	}
+
+	public function testMergeKeepsTheKeptProductsOwnUnitConversionFactorOnConflict(): void
+	{
+		$box = self::insertRow('quantity_units', ['name' => 'Merge Conflict Box', 'name_plural' => 'Merge Conflict Boxes']);
+		$keep = self::insertProduct('Merge Conv Winner Keep');
+		$remove = self::insertProduct('Merge Conv Winner Remove');
+
+		// Given: both products separately define a custom box conversion for the same pair,
+		// with different factors.
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $box, 'to_qu_id' => 2, 'factor' => 5, 'product_id' => $keep]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $box, 'to_qu_id' => 2, 'factor' => 9, 'product_id' => $remove]);
+
+		// When: the products are merged.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: the kept product's own factor (5) survives; the removed product's conflicting
+		// row (factor 9) is dropped rather than overwriting it - the same dedupe-then-move
+		// rule product_substitutions already uses.
+		$survivors = self::unitConversionRows($keep, $box, 2);
+		self::assertCount(1, $survivors, 'Then: exactly one box conversion survives for the kept product');
+		self::assertEqualsWithDelta(5.0, (float)$survivors[0]['factor'], 1e-9, 'Then: the kept product\'s own factor wins, not the removed product\'s');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Opus validation of PR #540: chores
+	// ------------------------------------------------------------------------------
+
+	public function testMergeRepointsChoresAndConvertsProductAmountByTheUnitFactor(): void
+	{
+		$keep = self::insertProduct('Merge Chore Kg Product', [
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge Chore Gram Product', [
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => self::$ids['gram'], 'to_qu_id' => self::$ids['kilogram'], 'factor' => 0.001, 'product_id' => $remove]);
+
+		// Given: a chore that consumes 500 g of the removed product on execution.
+		$chore = self::insertRow('chores', [
+			'name' => 'Merge Chore ' . uniqid(),
+			'period_type' => 'manually',
+			'consume_product_on_execution' => 1,
+			'product_id' => $remove,
+			'product_amount' => 500,
+		]);
+
+		// When: the gram product is merged into the kilogram product.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: the chore now points at the kept product, with its amount converted the same
+		// way trg_cascade_change_qu_id_stock converts it for a single product's own unit
+		// change - left unrepointed, the chore's next execution would throw "Product does not
+		// exist or is inactive".
+		$after = self::choreRow($chore);
+		self::assertSame($keep, (int)$after['product_id'], 'Then: the chore is repointed to the kept product');
+		self::assertEqualsWithDelta(0.5, (float)$after['product_amount'], 1e-9, 'Then: product_amount is converted by the g->kg factor');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Opus validation of PR #540: products.parent_product_id
+	// ------------------------------------------------------------------------------
+
+	public function testMergeRepointsTheRemovedProductsChildProductsToTheKeptProduct(): void
+	{
+		$keep = self::insertProduct('Merge Parent Keep');
+		$remove = self::insertProduct('Merge Parent Remove');
+		$child1 = self::insertProduct('Merge Parent Child 1', ['parent_product_id' => $remove]);
+		$child2 = self::insertProduct('Merge Parent Child 2', ['parent_product_id' => $remove]);
+
+		// When: the products are merged (neither has a parent of its own).
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: both of the removed product's children now point at the kept product instead
+		// of a deleted row.
+		self::assertSame($keep, self::productParent($child1), 'Then: the first child is repointed to the kept product');
+		self::assertSame($keep, self::productParent($child2), 'Then: the second child is repointed to the kept product');
+	}
+
+	public function testMergeRefusesWhenRepointingWouldGiveTheKeptProductBothAParentAndChildren(): void
+	{
+		$grandparent = self::insertProduct('Merge Nesting Grandparent');
+		$keep = self::insertProduct('Merge Nesting Keep', ['parent_product_id' => $grandparent]);
+		$remove = self::insertProduct('Merge Nesting Remove');
+		$child = self::insertProduct('Merge Nesting Child', ['parent_product_id' => $remove]);
+
+		// Given: the kept product already has an unrelated parent, and the removed product has
+		// a child of its own - repointing that child to the kept product would give the kept
+		// product both a parent and a child at once, a three-level chain
+		// enfore_product_nesting_level does not itself catch for this shape of update (it
+		// checks the updated row's own children, not its new parent's).
+		self::assertSame($grandparent, self::productParent($keep));
+		self::assertSame($remove, self::productParent($child));
+
+		// When: the products are merged.
+		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: it would give the kept product both a parent and a child');
+
+		// Then: the refusal names the actual reason (not a raw trigger/constraint error), and
+		// nothing changed - both products, and the child's parent, are exactly as they were.
+		self::assertStringContainsString('nesting', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
+		self::assertSame($remove, self::productParent($child), 'Then: the child\'s parent is unchanged');
+		self::assertSame($grandparent, self::productParent($keep), 'Then: the kept product\'s own parent is unchanged');
+	}
+
+	public function testMergeClearsTheKeptProductsParentWhenItWasTheRemovedProductAndRepointsSiblings(): void
+	{
+		$remove = self::insertProduct('Merge Nesting Root Remove');
+		$keep = self::insertProduct('Merge Nesting Root Keep', ['parent_product_id' => $remove]);
+		$sibling = self::insertProduct('Merge Nesting Root Sibling', ['parent_product_id' => $remove]);
+
+		// Given: the kept product is itself one of the removed product's children, and the
+		// removed product has another child (a sibling of the kept product). This must NOT be
+		// refused by the nesting guard above: the kept product's own parent is cleared by this
+		// same merge, leaving room for it to become the sibling's new parent.
+		self::assertSame($remove, self::productParent($keep));
+
+		// When: the products are merged.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: the kept product is now a root (its parent, the removed product, is gone), and
+		// the sibling is repointed to the kept product rather than left dangling.
+		self::assertNull(self::productParent($keep), 'Then: the kept product\'s parent is cleared, not left pointing at the deleted removed product');
+		self::assertSame($keep, self::productParent($sibling), 'Then: the sibling is repointed to the kept product');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Opus validation of PR #540: refusing rather than silently corrupting
+	// ------------------------------------------------------------------------------
+
+	public function testMergeRefusesWhenStockUnitsDifferWithNoConversion(): void
+	{
+		$keep = self::insertProduct('Merge No Conversion Keep', [
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge No Conversion Remove', [
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		]);
+		// Deliberately no quantity_unit_conversions row between gram and kilogram.
+
+		StockService::GetInstance()->AddProduct($remove, 500, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$given = self::stockRows($remove);
+		self::assertCount(1, $given, 'Given: the fixture purchase books one stock row');
+
+		// When: merging is attempted with no conversion path between the two stock units.
+		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: the stock units differ and no conversion exists');
+
+		// Then: the refusal names the actual reason, and nothing changed - falling back to a
+		// factor of 1 (as this method used to) would instead have silently turned 500 g into
+		// "500 kg".
+		self::assertStringContainsString('unit conversion', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
+		self::assertSame($given, self::stockRows($remove), 'Then: the removed product\'s stock is untouched');
+		self::assertSame([], self::stockRows($keep), 'Then: nothing was moved to the kept product');
+	}
+
+	public function testMergeRefusesWhenARemovedMeasuredOpenContainerWouldBeRescaled(): void
+	{
+		$keep = self::insertProduct('Merge Measured Kg Product', [
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge Measured Gram Product', [
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => self::$ids['gram'], 'to_qu_id' => self::$ids['kilogram'], 'factor' => 0.001, 'product_id' => $remove]);
+
+		// Given: a single opened, measured container of the removed product (open = 1,
+		// amount = 1, a real opened_amount/opened_qu_id pair - migrations/0275.pgsql.sql's
+		// stock_measurement_coherence_check).
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($remove, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $remove)->fetchColumn();
+		$stock->OpenProduct($remove, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		$given = self::stockRows($remove);
+		self::assertCount(1, $given, 'Given: fixture sanity check');
+		self::assertSame(1, (int)$given[0]['open'], 'Given: the container is open');
+		self::assertEqualsWithDelta(1.0, (float)$given[0]['amount'], 1e-9, 'Given: a coherent single container (amount = 1)');
+		self::assertEqualsWithDelta(0.5, (float)$given[0]['opened_amount'], 1e-9, 'Given: the container has been measured, 0.5 g remaining');
+
+		// When: merging would rescale amount by a non-1 factor (0.001).
+		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: rescaling a measured container\'s amount away from 1 violates its coherence CHECK');
+
+		// Then: the refusal is this method's own clean message, not a raw 23514 check
+		// violation surfacing from the database - and nothing changed.
+		self::assertStringContainsString('measured open container', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw PDO/database exception message');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
+		self::assertSame($given, self::stockRows($remove), 'Then: the measured entry is untouched');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Opus validation of PR #540: stale cache rows (non-blocking)
+	// ------------------------------------------------------------------------------
+
+	public function testMergeDeletesTheRemovedProductsStaleAverageAndLastPurchasedCacheRows(): void
+	{
+		$keep = self::insertProduct('Merge Cache Keep');
+		$remove = self::insertProduct('Merge Cache Remove');
+
+		// Given: a purchase populates both caches for the removed product via stock_log_INS.
+		StockService::GetInstance()->AddProduct($remove, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 3.0, self::$ids['pantry']);
+		self::assertSame(1, self::cacheRowCount('cache__products_average_price', $remove), 'Given: the purchase populates the average-price cache');
+		self::assertSame(1, self::cacheRowCount('cache__products_last_purchased', $remove), 'Given: the purchase populates the last-purchased cache');
+
+		// When: the products are merged.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		// Then: the removed product's rows in both caches are gone, not left stale under a
+		// product id that no longer exists.
+		self::assertSame(0, self::cacheRowCount('cache__products_average_price', $remove), 'Then: the stale average-price cache row is deleted');
+		self::assertSame(0, self::cacheRowCount('cache__products_last_purchased', $remove), 'Then: the stale last-purchased cache row is deleted');
 	}
 }
