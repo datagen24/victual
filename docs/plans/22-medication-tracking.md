@@ -319,10 +319,13 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0288** (medication master data and subjects)
-  and **0289** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0290** (medication master data and subjects)
+  and **0291** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0289–0290 until 2026-09-26, when issue #487 remediation's view-correction migration
+    (WS-15, fixing issues 501, 505, 497 and the weekly-schedule half of 506) took 0289 under
+    the lowest-free-slot rule
   - 0287–0288 until 2026-09-19, when
     [issue 208](https://github.com/datagen24/victual/issues/208)'s `api_keys.read_only` took
     0287 as scheduled work

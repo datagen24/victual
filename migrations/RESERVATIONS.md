@@ -73,14 +73,22 @@ have recorded it.
 | 0286 | [plan 05](../docs/plans/05-store-shopping-lists.md) parts A and C, [issue 85](https://github.com/datagen24/victual/issues/85) — `shopping_lists.shopping_location_id`, `products.default_shopping_list_id`, `recipes.default_shopping_list_id` (wave 5) | in `master` |
 | 0287 | [issue #208](https://github.com/datagen24/victual/issues/208) (plan 02's Victual-side auth) — `api_keys.read_only` | in this tree |
 | 0288 | [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md), [issue 461](https://github.com/datagen24/victual/issues/461) — stock location foreign key | in this tree |
-| 0289 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0290 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0289 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (WS-15) — `stock_current`, `uihelper_stock_journal` and `chores_current` recreated from their latest definitions to fix issues [501](https://github.com/datagen24/victual/issues/501), [505](https://github.com/datagen24/victual/issues/505), [497](https://github.com/datagen24/victual/issues/497) and the weekly-schedule half of [506](https://github.com/datagen24/victual/issues/506) | in this tree |
+| 0290 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0291 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is
 about numbers that have, and a branch that has not merged is still deciding what its
 migration says. What changed is that `login_attempts` lost its `ip_address` column — see that
 file for why a per-address count is the proxy's job and not this application's.
+
+Renumbered 2026-09-26: issue [#487](https://github.com/datagen24/victual/issues/487)
+remediation's view-correction migration (WS-15, fixing issues 501, 505, 497 and the
+weekly-schedule half of 506) takes **0289** under the lowest-free-slot rule; plan 22's two
+unwritten claims move from 0289–0290 to **0290–0291**, keeping their own order.
+[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+The next unclaimed number is now **0292**.
 
 Renumbered 2026-09-24: issue 461 takes 0288 under the lowest-free-slot rule.
 Plan 22's unwritten claims move to 0289–0290; neither had a file on disk.

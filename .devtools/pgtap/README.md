@@ -20,6 +20,11 @@ The [stock location constraint tests](017-stock-location-reference.sql) cover mi
 0288's restrictive foreign key, nullable stock, unconstrained history, and import trigger
 suppression against the full schema.
 
+The [audit view-correction tests](018-audit-view-corrections.sql) cover migration 0289:
+`stock_current`'s mixed-factor opened aggregate, `uihelper_stock_journal`'s deleted-location
+history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
+schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
+
 ## The list
 
 Migrations 0001-0255 are SQLite-only history that PostgreSQL never runs (it loads the
@@ -48,6 +53,9 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `retire_recipe_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
 | `retire_chore_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
 | `retire_battery_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
+| `stock_current` (opened aggregate, mixed conversion factors) | view | 0289 | `018-audit-view-corrections.sql` |
+| `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
+| `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
 
 ## Completeness
 
@@ -66,6 +74,13 @@ through `stock_next_use` that silently wrote nothing before migration 0275; file
 tests a nesting check that only ever inspected one direction before migration 0277.
 `check-pgtap-coverage.php` is wired into `run-tests.sh`'s `pgtap` phase as a hard gate
 (see "Running the checker directly" below) now that the list has nothing left unnamed.
+
+File `018` covers three views migration 0289 recreates, not a function or trigger. That is
+why `check-pgtap-coverage.php` does not require it: that check reads
+`CREATE FUNCTION`/`CREATE TRIGGER`, not `CREATE VIEW`. It is listed here anyway, per this
+file's own rule above that a view carrying logic is listed "where it carries logic". Each of
+the three cases qualifies: a view whose own SQL previously produced a wrong value or an
+uncatchable error for a real input, not merely a projection of other tables.
 
 ## Running the checker directly
 
