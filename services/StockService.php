@@ -643,6 +643,19 @@ class StockService extends BaseService
 						break;
 					}
 
+					if ($stockEntry->amount <= 0)
+					{
+						// A persisted stock row should never be non-positive, but a defect
+						// elsewhere in the ledger (#489 C2) could still leave one, and
+						// stock_next_use() carries no amount filter of its own. Taking it below
+						// would record `$stockEntry->amount * -1` - a *positive* amount under a
+						// 'consume' transaction_type - which books stock arriving, not leaving,
+						// and raises on-hand amount instead of lowering it. Refusing here rolls
+						// back the whole InTransaction() call, so no earlier iteration's write
+						// in this same loop is left half-applied.
+						throw new \Exception('Cannot consume: a candidate stock entry holds a non-positive amount and stock data needs correction');
+					}
+
 					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
 					{
 						// A sub product will be used -> use QU conversions
@@ -2444,6 +2457,13 @@ class StockService extends BaseService
 						'best_before_date' => $stockEntry->best_before_date,
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
+						// The exact row this booking's amount came from/landed on - here, the
+						// same physical row on both halves, since a whole-entry transfer
+						// relocates it in place rather than creating a new one. Undo matches
+						// on this first (#489 C2 below), since a second split transfer into the
+						// same destination can leave more than one row sharing (stock_id,
+						// location), which made the old match ambiguous.
+						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
 						'opened_date' => $stockEntry->opened_date,
@@ -2452,7 +2472,15 @@ class StockService extends BaseService
 						'correlation_id' => $correlationId,
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
-						'note' => $stockEntry->note
+						'note' => $stockEntry->note,
+						// Mirrored (ADR-0022 decision 9, the same reason ConsumeProduct()'s own
+						// bookings mirror these) so TRANSFER_FROM undo can rebuild this entry
+						// with its measurement intact if the row has since left this location
+						// entirely (#522 M22).
+						'opened_amount' => $stockEntry->opened_amount,
+						'opened_qu_id' => $stockEntry->opened_qu_id,
+						'opened_tare' => $stockEntry->opened_tare,
+						'opened_measured_at' => $stockEntry->opened_measured_at
 					]);
 					$logRowForLocationFrom->save();
 
@@ -2462,6 +2490,7 @@ class StockService extends BaseService
 						'best_before_date' => $newBestBeforeDate,
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
+						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
 						'price' => $stockEntry->price,
 						'opened_date' => $stockEntry->opened_date,
@@ -2470,7 +2499,11 @@ class StockService extends BaseService
 						'correlation_id' => $correlationId,
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
-						'note' => $stockEntry->note
+						'note' => $stockEntry->note,
+						'opened_amount' => $stockEntry->opened_amount,
+						'opened_qu_id' => $stockEntry->opened_qu_id,
+						'opened_tare' => $stockEntry->opened_tare,
+						'opened_measured_at' => $stockEntry->opened_measured_at
 					]);
 					$logRowForLocationTo->save();
 
@@ -2492,6 +2525,7 @@ class StockService extends BaseService
 						'best_before_date' => $stockEntry->best_before_date,
 						'purchased_date' => $stockEntry->purchased_date,
 						'stock_id' => $stockEntry->stock_id,
+						'stock_row_id' => $stockEntry->id,
 						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_FROM,
 						'price' => $stockEntry->price,
 						'opened_date' => $stockEntry->opened_date,
@@ -2500,34 +2534,26 @@ class StockService extends BaseService
 						'correlation_id' => $correlationId,
 						'transaction_id' => $transactionId,
 						'user_id' => VICTUAL_USER_ID,
-						'note' => $stockEntry->note
+						'note' => $stockEntry->note,
+						'opened_amount' => $stockEntry->opened_amount,
+						'opened_qu_id' => $stockEntry->opened_qu_id,
+						'opened_tare' => $stockEntry->opened_tare,
+						'opened_measured_at' => $stockEntry->opened_measured_at
 					]);
 					$logRowForLocationFrom->save();
-
-					$logRowForLocationTo = $this->DB->stock_log()->createRow([
-						'product_id' => $stockEntry->product_id,
-						'amount' => $amount,
-						'best_before_date' => $newBestBeforeDate,
-						'purchased_date' => $stockEntry->purchased_date,
-						'stock_id' => $stockEntry->stock_id,
-						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
-						'price' => $stockEntry->price,
-						'opened_date' => $stockEntry->opened_date,
-						'location_id' => $locationIdTo,
-						'shopping_location_id' => $stockEntry->shopping_location_id,
-						'correlation_id' => $correlationId,
-						'transaction_id' => $transactionId,
-						'user_id' => VICTUAL_USER_ID,
-						'note' => $stockEntry->note
-					]);
-					$logRowForLocationTo->save();
 
 					// This is the existing stock entry -> remains at the source location with the rest amount
 					$stockEntry->update([
 						'amount' => $restStockAmount
 					]);
 
-					// The transferred amount gets into a new stock entry
+					// The transferred amount gets into a new stock entry - created (and
+					// saved, so its id is known) before the TRANSFER_TO booking below, so
+					// that booking can name the exact row its amount landed on (#489 C2; see
+					// the whole-entry branch's own comment on stock_row_id above). A measured
+					// entry cannot reach here: it must hold amount = 1 (the coherence CHECK),
+					// so $amount < $stockEntry->amount is only possible while unmeasured, and
+					// this new row's own opened_* columns are correctly left null.
 					$stockEntryNew = $this->DB->stock()->createRow([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $amount,
@@ -2542,6 +2568,29 @@ class StockService extends BaseService
 						'note' => $stockEntry->note
 					]);
 					$stockEntryNew->save();
+
+					$logRowForLocationTo = $this->DB->stock_log()->createRow([
+						'product_id' => $stockEntry->product_id,
+						'amount' => $amount,
+						'best_before_date' => $newBestBeforeDate,
+						'purchased_date' => $stockEntry->purchased_date,
+						'stock_id' => $stockEntry->stock_id,
+						'stock_row_id' => $stockEntryNew->id,
+						'transaction_type' => self::TRANSACTION_TYPE_TRANSFER_TO,
+						'price' => $stockEntry->price,
+						'opened_date' => $stockEntry->opened_date,
+						'location_id' => $locationIdTo,
+						'shopping_location_id' => $stockEntry->shopping_location_id,
+						'correlation_id' => $correlationId,
+						'transaction_id' => $transactionId,
+						'user_id' => VICTUAL_USER_ID,
+						'note' => $stockEntry->note,
+						'opened_amount' => $stockEntryNew->opened_amount,
+						'opened_qu_id' => $stockEntryNew->opened_qu_id,
+						'opened_tare' => $stockEntryNew->opened_tare,
+						'opened_measured_at' => $stockEntryNew->opened_measured_at
+					]);
+					$logRowForLocationTo->save();
 
 					$amount = 0;
 				}
@@ -2884,14 +2933,52 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_TRANSFER_TO)
 			{
-				$stockRow = $this->DB->stock()->where('stock_id = :1 AND location_id = :2', $logRow->stock_id, $logRow->location_id)->fetch();
-				if ($stockRow === null)
+				// A transfer that split a stock entry (TransferProduct()'s "else" branch)
+				// creates a new row at the destination rather than reusing one, so a second
+				// split transfer into the same (stock_id, location) leaves more than one row
+				// there. Matching by (stock_id, location) alone, as this used to, picked
+				// whichever row came back first and subtracted this booking's amount from
+				// it regardless of whether it was the row this booking actually created,
+				// driving it negative while the other live contribution at the same
+				// location went untouched (#489 C2). stock_row_id (set by TransferProduct()
+				// above for every booking from here on) names the exact row this booking
+				// landed on, so it is matched first. A booking recorded before stock_row_id
+				// was tracked for transfers falls back to (stock_id, location) alone, null-
+				// safely (ADR-0029 keeps both columns nullable) - but only when that pair is
+				// unambiguous, for the same reason.
+				if ($logRow->stock_row_id !== null)
 				{
-					throw new \Exception('Booking does not exist or was already undone');
+					$stockRow = $this->DB->stock()->where('id = :1 AND stock_id = :2 AND location_id IS NOT DISTINCT FROM :3', $logRow->stock_row_id, $logRow->stock_id, $logRow->location_id)->fetch();
+					if ($stockRow === null)
+					{
+						throw new \Exception('Booking cannot be undone: its destination stock entry no longer exists');
+					}
+				}
+				else
+				{
+					$candidateRows = $this->DB->stock()->where('stock_id = :1 AND location_id IS NOT DISTINCT FROM :2', $logRow->stock_id, $logRow->location_id)->fetchAll();
+					if (count($candidateRows) === 0)
+					{
+						throw new \Exception('Booking does not exist or was already undone');
+					}
+					if (count($candidateRows) > 1)
+					{
+						throw new \Exception('Booking cannot be undone: its destination holds more than one stock entry sharing this lot and cannot be unambiguously reversed');
+					}
+					$stockRow = $candidateRows[0];
 				}
 
-				$newAmount = $stockRow->amount - $logRow->amount;
-				if ($newAmount == 0)
+				// stock.amount is a float column and CompactStockEntries() sums it in SQL
+				// (see the PURCHASE branch's own comment above), so an exact `== 0`
+				// comparison here would miss a residue by a rounding hair and leave a
+				// phantom near-zero row at the destination behind (#470).
+				$roundedNewAmount = round($stockRow->amount - $logRow->amount, 2);
+				if ($roundedNewAmount < 0)
+				{
+					throw new \Exception('Booking cannot be undone: its destination stock entry holds less than this booking added');
+				}
+
+				if ($roundedNewAmount == 0)
 				{
 					$stockRow->delete();
 				}
@@ -2899,7 +2986,7 @@ class StockService extends BaseService
 				{
 					// Remove corresponding amount back to stock
 					$stockRow->update([
-						'amount' => $newAmount
+						'amount' => $stockRow->amount - $logRow->amount
 					]);
 				}
 
@@ -2908,10 +2995,31 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_TRANSFER_FROM)
 			{
-				// Add corresponding amount back to stock
-				$stockRow = $this->DB->stock()->where('stock_id = :1 AND location_id = :2', $logRow->stock_id, $logRow->location_id)->fetch();
+				// Symmetric with TRANSFER_TO above: prefer the exact source row this
+				// booking took from, when known, over the (stock_id, location) pair alone.
+				if ($logRow->stock_row_id !== null)
+				{
+					$stockRow = $this->DB->stock()->where('id = :1 AND stock_id = :2 AND location_id IS NOT DISTINCT FROM :3', $logRow->stock_row_id, $logRow->stock_id, $logRow->location_id)->fetch();
+				}
+				else
+				{
+					$candidateRows = $this->DB->stock()->where('stock_id = :1 AND location_id IS NOT DISTINCT FROM :2', $logRow->stock_id, $logRow->location_id)->fetchAll();
+					if (count($candidateRows) > 1)
+					{
+						throw new \Exception('Booking cannot be undone: its source holds more than one stock entry sharing this lot and cannot be unambiguously reversed');
+					}
+					$stockRow = $candidateRows[0] ?? null;
+				}
+
 				if ($stockRow === null)
 				{
+					// The whole entry moved away (TransferProduct()'s "if" branch relocates
+					// the row itself rather than splitting it) and TRANSFER_TO's undo above
+					// has already removed it from the destination - rebuild it here exactly
+					// as it was, including any measurement (ADR-0022 decision 9; #522 M22),
+					// which TransferProduct() mirrors onto this booking for exactly this
+					// purpose - the same fields ConsumeProduct()'s own bookings restore a
+					// fully-taken entry with, in the CONSUME branch above.
 					$stockRow = $this->DB->stock()->createRow([
 						'product_id' => $logRow->product_id,
 						'amount' => $logRow->amount * -1,
@@ -2921,13 +3029,28 @@ class StockService extends BaseService
 						'price' => $logRow->price,
 						'location_id' => $logRow->location_id,
 						'opened_date' => $logRow->opened_date,
+						'open' => $logRow->opened_date !== null,
 						'note' => $logRow->note,
-						'shopping_location_id' => $logRow->shopping_location_id
+						'shopping_location_id' => $logRow->shopping_location_id,
+						'opened_amount' => $logRow->opened_amount,
+						'opened_qu_id' => $logRow->opened_qu_id,
+						'opened_tare' => $logRow->opened_tare,
+						'opened_measured_at' => $logRow->opened_measured_at
 					]);
 					$stockRow->save();
 				}
 				else
 				{
+					// Reviewed for the same class of defect as TRANSFER_TO above: rounded
+					// and refused rather than risking a negative row, even though undoing a
+					// FROM booking only ever adds back what it removed and so cannot reach a
+					// negative result unless the row was already invalid beforehand.
+					$roundedNewAmount = round($stockRow->amount - $logRow->amount, 2);
+					if ($roundedNewAmount < 0)
+					{
+						throw new \Exception('Booking cannot be undone: its source stock entry holds less than this booking removed');
+					}
+
 					$stockRow->update([
 						'amount' => $stockRow->amount - $logRow->amount
 					]);
@@ -2944,8 +3067,20 @@ class StockService extends BaseService
 				// leaving a measurement in place while clearing `open` would violate the
 				// coherence CHECK outright and abort this very undo -
 				// see .spike-adr22/RESULTS.md#prerequisite-6-undo.
-				$stockRows = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date = :3', $logRow->stock_id, $logRow->amount, $logRow->purchased_date)->limit(1);
-				$stockRows->update([
+				//
+				// Matched null-safely on purchased_date (like location_id elsewhere in this
+				// method, it is nullable - ADR-0029) and via a single fetched row rather than
+				// an unchecked bulk update: `purchased_date = :3` never matches NULL to NULL
+				// in SQL, so a purchase with no purchased_date silently matched and updated
+				// zero rows here while the booking was still marked undone regardless (#504
+				// M4).
+				$stockRow = $this->DB->stock()->where('stock_id = :1 AND amount = :2 AND purchased_date IS NOT DISTINCT FROM :3', $logRow->stock_id, $logRow->amount, $logRow->purchased_date)->fetch();
+				if ($stockRow === null)
+				{
+					throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+				}
+
+				$stockRow->update([
 					'open' => 0,
 					'opened_date' => null,
 					'best_before_date' => $logRow->best_before_date, // Is only relevant when the product has "Default due days after opened", but also doesn't hurt for other products
@@ -2970,7 +3105,30 @@ class StockService extends BaseService
 
 				if ($stockRow == null)
 				{
-					throw new \Exception('Booking does not exist or was already undone');
+					// CompactStockEntries() (#488 C1) can delete the row this booking's
+					// stock_row_id names, if a later matching purchase or edit merged it into
+					// a different surviving row - the merge itself books nothing, so the "no
+					// later dependent booking" guard above cannot see it. Its units are not
+					// necessarily gone (they likely live on in whichever row absorbed them),
+					// so this says the entry is gone "in that state" rather than claiming the
+					// booking itself never existed.
+					throw new \Exception('Booking cannot be undone: its stock entry no longer exists in its edited state');
+				}
+
+				// The check above is blind to a merge that happens to keep this row's id
+				// alive (the other row in the merge was the one deleted): the row still
+				// exists, but CompactStockEntries() has overwritten its amount with the
+				// whole group's sum. The correlated STOCK_EDIT_NEW booking - written by the
+				// same edit that produced this OLD booking, and never touched since (the "no
+				// later dependent booking" guard above already refused if anything did) -
+				// records exactly what this row held immediately after the edit, before any
+				// merge. If the row's amount has since moved away from that, restoring this
+				// booking's pre-edit amount over it would silently discard whatever else the
+				// merge folded in while leaving that other purchase's booking marked live.
+				$correlatedNew = $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_STOCK_EDIT_NEW)->fetch();
+				if ($correlatedNew !== null && round($stockRow->amount, 2) != round($correlatedNew->amount, 2))
+				{
+					throw new \Exception('Booking cannot be undone: its stock entry has changed since this edit (likely merged with another entry) and the edit\'s own effect cannot be isolated');
 				}
 
 				$openedDate = $logRow->opened_date;
