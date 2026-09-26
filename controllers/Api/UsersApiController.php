@@ -203,16 +203,33 @@ class UsersApiController extends BaseApiController
 			$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
 
 			// Everything below that does not depend on the stored password hash runs ahead
-			// of CheckCurrentPassword() - username's presence, whether a change is even
-			// being attempted, and (for a flagged account) whether anything but the password
-			// is being changed - so a malformed or out-of-scope request is refused
-			// identically whatever the submitted current password happens to be. The
-			// validator found the previous order let a bundled rename answer differently
-			// depending on whether the guessed password was right (issue #514): a wrong
-			// rename with a correct guess reached "must only change the password" while the
-			// same rename with a wrong guess reached "did not match" - an oracle for the
-			// password itself, from a field the password check has nothing to do with.
+			// of CheckCurrentPassword() - username's presence, every field's type, whether a
+			// change is even being attempted, and (for a flagged account) whether anything
+			// but the password is being changed - so a malformed or out-of-scope request is
+			// refused identically whatever the submitted current password happens to be.
+			// Validator round 2 found the previous order let a bundled rename answer
+			// differently depending on whether the guessed password was right (issue #514):
+			// "must only change the password" for a correct guess, "did not match" for a
+			// wrong one - an oracle for the password itself, from a field the password check
+			// has nothing to do with.
 			$username = self::RequiredField($requestBody, 'username');
+
+			// Round 3: an array (or other non-string, non-null) value for a field
+			// UsersService::EditUser()/CheckCurrentPassword() type-hints as ?string reached
+			// a TypeError - an \Error, which HandleApiCall() deliberately does not catch -
+			// instead of the ordinary 400 every other malformed field gets. Because that
+			// crash happened only in $write, after a correct current_password had already
+			// cleared the throttle counter inside CheckCurrentPassword(), whether the crash
+			// happened at all told an attacker whether their guess was right, and did it for
+			// free (the throttle counter was already cleared by the time it happened).
+			foreach (['first_name', 'last_name', 'password', 'current_password', 'picture_file_name'] as $stringField)
+			{
+				self::RequireNullableString($requestBody, $stringField);
+			}
+
+			// Fetched once, here, and reused below for the omitted-picture_file_name write
+			// value and (when flagged) the field-scope check, rather than queried twice.
+			$stored = $this->DB->users($targetUserId);
 
 			// An account that has to change its password reaches this route through
 			// BaseAuthMiddleware's allowlist for that purpose alone. So it must actually change
@@ -238,7 +255,7 @@ class UsersApiController extends BaseApiController
 				// an authorization refusal, not a data one - the credential is never
 				// authorized to touch these fields while flagged, regardless of whether the
 				// password offered with the attempt is correct.
-				self::RefuseChangesBeyondThePassword($request, $this->DB, $targetUserId, $username, $requestBody);
+				self::RefuseChangesBeyondThePassword($request, $stored, $username, $requestBody);
 			}
 
 			if ($isSelf && !empty($requestBody['password'] ?? null))
@@ -251,7 +268,25 @@ class UsersApiController extends BaseApiController
 				UsersService::GetInstance()->CheckCurrentPassword($targetUserId, $requestBody['current_password'] ?? null, true);
 			}
 
-			$write = function () use ($isSelf, $username, $requestBody, $response, $request, $targetUserId, $actingSessionKey)
+			// An omitted picture_file_name keeps whatever is already stored, rather than
+			// silently nulling it out: the field-scope check above already reads an absent
+			// key as "no attempted change" (userform.js omits it unless a picture is being
+			// uploaded or deleted), but the write itself used to fall back to null the same
+			// way an omitted first_name or last_name does, erasing a stored picture on every
+			// ordinary form save that did not touch it - not only a flagged one, since this
+			// is the same code either way (validator round 3). first_name/last_name are not
+			// given the same treatment: unlike the picture, the form always submits both,
+			// even blank ("" rather than omitted), so there is no real "omitted" case for
+			// them to preserve, and an explicit null still nulls out the picture as before.
+			$pictureFileName = array_key_exists('picture_file_name', $requestBody)
+				? $requestBody['picture_file_name']
+				: $stored?->picture_file_name;
+
+			// Set only inside $write, and read only after the transaction wrapping it has
+			// committed - see the comment where it is read, below.
+			$newSessionKey = null;
+
+			$write = function () use ($isSelf, $username, $requestBody, $pictureFileName, $response, $request, $targetUserId, $actingSessionKey, &$newSessionKey)
 			{
 				if (!$isSelf) User::CheckMayAdminister($request, $targetUserId);
 
@@ -261,30 +296,56 @@ class UsersApiController extends BaseApiController
 					$requestBody['first_name'] ?? null,
 					$requestBody['last_name'] ?? null,
 					$requestBody['password'] ?? null,
-					$requestBody['picture_file_name'] ?? null,
+					$pictureFileName,
 					$actingSessionKey,
 					$isSelf
 				);
 
-				if ($newSessionKey !== null)
-				{
-					SessionCookie::Set($newSessionKey);
-				}
-
 				return $this->EmptyApiResponse($response);
 			};
 
-			if ($forcedRotationOnly)
-			{
+			$result = $forcedRotationOnly
 				// Not RolesService::Mutate(): that serializes a permission check with the
 				// grants that could change its answer, and there is no grant to race here -
 				// this path is authorized by the must_change_password flag and the current
 				// password alone, and never by USERS_EDIT_SELF.
-				return DatabaseService::GetInstance()->InTransaction($write);
+				? DatabaseService::GetInstance()->InTransaction($write)
+				: RolesService::GetInstance()->Mutate($request, ($isSelf ? User::PERMISSION_USERS_EDIT_SELF : User::PERMISSION_USERS_EDIT), $write);
+
+			// Only after the transaction has committed - InTransaction()/Mutate() call
+			// PDO::commit() after $write returns and before either of them returns to here,
+			// so reaching this line at all means the write is durable. Setting the cookie
+			// from inside $write, before commit, named a session a later failure could still
+			// undo: a deferred constraint or trigger fails only at COMMIT, PostgreSQL then
+			// rolls back the whole transaction automatically, and the validator's probe
+			// showed exactly that - a 400 with the password, flag and sessions all intact,
+			// but a Set-Cookie already sent for a session that was never actually created,
+			// logging the browser out of an account whose credential never changed
+			// (validator round 3).
+			if ($newSessionKey !== null)
+			{
+				SessionCookie::Set($newSessionKey);
 			}
 
-			return RolesService::GetInstance()->Mutate($request, ($isSelf ? User::PERMISSION_USERS_EDIT_SELF : User::PERMISSION_USERS_EDIT), $write);
+			return $result;
 		});
+	}
+
+	/**
+	 * Refuses (400) when $field is present in the body and is not a string: without this,
+	 * an array (or other non-string, non-null) value for a field UsersService::EditUser()
+	 * or CheckCurrentPassword() type-hints as ?string reached a TypeError instead of the
+	 * ordinary 400 every other malformed field gets - see EditUser()'s call site for why
+	 * that crash was also an oracle (validator round 3).
+	 *
+	 * @throws EInvalidApiQuery
+	 */
+	private static function RequireNullableString(array $requestBody, string $field): void
+	{
+		if (isset($requestBody[$field]) && !is_string($requestBody[$field]))
+		{
+			throw new EInvalidApiQuery($field . ' must be a string');
+		}
 	}
 
 	/**
@@ -292,13 +353,21 @@ class UsersApiController extends BaseApiController
 	 * asks to change anything but the password: $username - already validated required and
 	 * passed in rather than re-read, since the caller needs it before this to close the
 	 * oracle below - must equal what is stored, and so must first_name/last_name once an
-	 * empty string submitted for either is treated the same as the NULL a never-set one is
-	 * stored as (userform.js serializes a blank text input as "", never omits it or sends
-	 * null). picture_file_name is compared only when the body actually names it: the form
-	 * omits the field entirely unless a picture is being uploaded or deleted, so an absent
-	 * key means no attempted change, never an attempt to null out an existing picture
-	 * (validator round 2 - the previous version's strict comparison refused the form's own
-	 * unmodified resubmission whenever a name was NULL or a picture already existed).
+	 * empty string is treated as equal to NULL **on both sides of the comparison**: a
+	 * stored '' - which the create form, any edit-form save and
+	 * ReverseProxyAuthenticator's auto-provisioning can all produce - must match a
+	 * submitted "" exactly as a stored NULL does, or an account with '' names could never
+	 * resubmit its own unchanged values at all (validator round 3 - the round 2 fix
+	 * normalized only the submitted side, so a stored '' matched nothing, including an
+	 * identical resubmitted ""). picture_file_name is compared only when the body actually
+	 * names it: the form omits the field entirely unless a picture is being uploaded or
+	 * deleted, so an absent key means no attempted change, never an attempt to null out an
+	 * existing picture (validator round 2).
+	 *
+	 * $stored is nullable and read once by the caller (also used there to keep an omitted
+	 * picture_file_name unchanged) rather than fetched again here; a null $stored means
+	 * $userId does not exist, and every comparison below then refuses, which is correct -
+	 * EditUser() throws its own "User does not exist" once the caller proceeds regardless.
 	 *
 	 * Applies whether or not the caller holds USERS_EDIT_SELF - see EditUser()'s docblock -
 	 * and is answered as a 403 (HttpForbiddenException) rather than the usual 400: this is
@@ -307,17 +376,16 @@ class UsersApiController extends BaseApiController
 	 *
 	 * @throws HttpForbiddenException When the body asks to change anything but the password
 	 */
-	private static function RefuseChangesBeyondThePassword(Request $request, $db, int $userId, string $username, array $requestBody): void
+	private static function RefuseChangesBeyondThePassword(Request $request, $stored, string $username, array $requestBody): void
 	{
-		$stored = $db->users($userId);
 		$blankAsNull = fn($value) => $value === '' ? null : $value;
 
 		$pictureFileNameChanged = array_key_exists('picture_file_name', $requestBody)
-			&& $requestBody['picture_file_name'] !== $stored->picture_file_name;
+			&& $requestBody['picture_file_name'] !== $stored?->picture_file_name;
 
-		if ($username !== $stored->username
-			|| $blankAsNull($requestBody['first_name'] ?? null) !== $stored->first_name
-			|| $blankAsNull($requestBody['last_name'] ?? null) !== $stored->last_name
+		if ($username !== $stored?->username
+			|| $blankAsNull($requestBody['first_name'] ?? null) !== $blankAsNull($stored?->first_name)
+			|| $blankAsNull($requestBody['last_name'] ?? null) !== $blankAsNull($stored?->last_name)
 			|| $pictureFileNameChanged)
 		{
 			throw new HttpForbiddenException($request, 'This account may only change its password until the required password change is made');

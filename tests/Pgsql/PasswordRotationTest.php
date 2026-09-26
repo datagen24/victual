@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Services\ApiKeyService;
+use Victual\Services\SessionService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -11,10 +12,12 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * password changes (issue #513), and the narrow path a flagged
  * (`must_change_password`) account uses to resolve that flag (issue #514).
  *
- * Every request is its own process (tests/Pgsql/request-subprocess-helper.php) because
- * the authentication middleware define()s the acting user's constants and PHP cannot
- * redefine them - the same reason BootstrapAdminTest, which this class sits beside in
- * the `bootstrapadmin` testsuite, uses a process per request.
+ * Every request is its own process (tests/Pgsql/password-rotation-subprocess-helper.php,
+ * a copy of the shared request-subprocess-helper.php - see that file's own docblock for
+ * why it needs to be its own copy) because the authentication middleware define()s the
+ * acting user's constants and PHP cannot redefine them - the same reason
+ * BootstrapAdminTest, which this class sits beside in the `bootstrapadmin` testsuite,
+ * uses a process per request.
  *
  * What should be true now:
  *
@@ -52,6 +55,12 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const FLAGGED_ADMIN_ESCAPE = 9709;
 	private const ORACLE_UNFLAGGED = 9710;
 	private const PAGE_ZERO_GRANT = 9711;
+	private const DEFERRED_COMMIT_FAILURE = 9712;
+	private const ZERO_GRANT_BLANK_NAMES = 9713;
+	private const FLAGGED_ADMIN_BLANK_NAMES = 9714;
+	private const TYPE_ORACLE_UNFLAGGED = 9715;
+	private const PICTURE_PRESERVED = 9716;
+	private const PICTURE_EXPLICIT_NULL = 9717;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -116,6 +125,44 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 
 		self::createUser(self::PAGE_ZERO_GRANT, 'rotation-page-zero-grant', 'page-zero-grant-pw-1', mustChangePassword: true);
 		self::createSession('rotation-page-session', self::PAGE_ZERO_GRANT);
+
+		self::createUser(self::DEFERRED_COMMIT_FAILURE, 'rotation-deferred-commit-failure', 'deferred-pw-1', mustChangePassword: true);
+		self::createSession('rotation-deferred-commit-session', self::DEFERRED_COMMIT_FAILURE);
+
+		// '' names, not NULL: the create form, any edit-form save and
+		// ReverseProxyAuthenticator's auto-provisioning all store empty strings rather than
+		// leaving the columns NULL. Round 2's fix normalized only the submitted side of the
+		// field-scope comparison, so an account shaped exactly like this could not resubmit
+		// its own unchanged names at all, regardless of what it sent.
+		self::createUser(self::ZERO_GRANT_BLANK_NAMES, 'rotation-zero-grant-blank-names', 'blank-names-pw-1', mustChangePassword: true);
+		self::$db->exec("UPDATE users SET first_name = '', last_name = '' WHERE id = " . self::ZERO_GRANT_BLANK_NAMES);
+		self::createSession('rotation-zero-grant-blank-names-session', self::ZERO_GRANT_BLANK_NAMES);
+
+		self::createUser(self::FLAGGED_ADMIN_BLANK_NAMES, 'rotation-flagged-admin-blank-names', 'admin-blank-pw-1', mustChangePassword: true);
+		self::grantAdmin(self::FLAGGED_ADMIN_BLANK_NAMES);
+		self::$db->exec("UPDATE users SET first_name = '', last_name = '' WHERE id = " . self::FLAGGED_ADMIN_BLANK_NAMES);
+		self::createSession('rotation-flagged-admin-blank-names-session', self::FLAGGED_ADMIN_BLANK_NAMES);
+
+		// Unflagged and ADMIN, for the malformed-field-type oracle: CheckCurrentPassword()
+		// must never be reached with an array where a string belongs, whether or not the
+		// password guess accompanying it happens to be correct.
+		self::createUser(self::TYPE_ORACLE_UNFLAGGED, 'rotation-type-oracle-unflagged', 'type-oracle-pw-1');
+		self::grantAdmin(self::TYPE_ORACLE_UNFLAGGED);
+		self::createSession('rotation-type-oracle-session', self::TYPE_ORACLE_UNFLAGGED);
+
+		self::createUser(self::PICTURE_PRESERVED, 'rotation-picture-preserved', 'picture-pw-1', mustChangePassword: true);
+		self::$db->exec("UPDATE users SET picture_file_name = 'existing-picture.png' WHERE id = " . self::PICTURE_PRESERVED);
+		self::createSession('rotation-picture-preserved-session', self::PICTURE_PRESERVED);
+
+		// Unflagged, deliberately: an explicit null is a genuine attempted change, and a
+		// flagged bypass account making one is correctly refused by the field-scope rule -
+		// that is a different assertion (RefuseChangesBeyondThePassword) from the one this
+		// fixture tests, which is what EditUser() itself does with an explicit null once a
+		// write is actually authorized to happen.
+		self::createUser(self::PICTURE_EXPLICIT_NULL, 'rotation-picture-explicit-null', 'picture-null-pw-1');
+		self::grantAdmin(self::PICTURE_EXPLICIT_NULL);
+		self::$db->exec("UPDATE users SET picture_file_name = 'existing-picture.png' WHERE id = " . self::PICTURE_EXPLICIT_NULL);
+		self::createSession('rotation-picture-explicit-null-session', self::PICTURE_EXPLICIT_NULL);
 	}
 
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
@@ -161,13 +208,24 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * One request through the helper, against this class's schema.
+	 * One request through the helper, against this class's schema. Uses this test's own
+	 * password-rotation-subprocess-helper.php, a copy of the shared
+	 * request-subprocess-helper.php that also reports every setcookie() call
+	 * SessionCookie::Set()/Clear() made - captured by shadowing
+	 * Victual\Middleware\Auth\setcookie(), since headers_list() reports nothing at all
+	 * under the CLI SAPI this helper runs under (confirmed empirically: a passing database
+	 * check alongside a failing header check, in the same response), and native
+	 * setcookie() is not a PSR-7 response header, so nothing about the Slim response object
+	 * sees it either. Reading the new session key back from the database (as this class's
+	 * other tests do) proves the row exists; it does not prove the response told the
+	 * browser about it, which is the property validator round 3 asked to be tested
+	 * directly (see sessionCookieValue()).
 	 *
 	 * @param array<string, string> $settingOverrides VICTUAL_* overrides (e.g. the
 	 *                                                 throttle limit), passed as
 	 *                                                 environment variables because that
 	 *                                                 is what Setting() consults
-	 * @return array{status: int, body: string}
+	 * @return array{status: int, body: string, cookies: array<int, array{name: string, value: string, options: array}>}
 	 */
 	private static function request(array $spec, array $settingOverrides = []): array
 	{
@@ -189,7 +247,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		}
 
 		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[PHP_BINARY, __DIR__ . '/password-rotation-subprocess-helper.php', base64_encode(json_encode($spec))],
 			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
 			$pipes,
 			null,
@@ -205,6 +263,24 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertIsArray($decoded, "The helper printed no JSON (exit $exit). stdout: $output stderr: $errors");
 
 		return $decoded;
+	}
+
+	/**
+	 * The session key SessionCookie::Set() called setcookie() with, or null when it was
+	 * never called at all - a request refused before UsersService::EditUser() ever ran, or
+	 * one whose password change did not need a fresh session.
+	 */
+	private static function sessionCookieValue(array $response): ?string
+	{
+		foreach ($response['cookies'] ?? [] as $cookie)
+		{
+			if (($cookie['name'] ?? null) === SessionService::SESSION_COOKIE_NAME)
+			{
+				return $cookie['value'];
+			}
+		}
+
+		return null;
 	}
 
 	private static function sessionExists(string $sessionKey): bool
@@ -249,6 +325,24 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		$statement->execute([$userId]);
 
 		return (string)$statement->fetchColumn();
+	}
+
+	private static function storedFirstName(int $userId): ?string
+	{
+		$statement = self::$db->prepare('SELECT first_name FROM users WHERE id = ?');
+		$statement->execute([$userId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false ? null : $value;
+	}
+
+	private static function storedPictureFileName(int $userId): ?string
+	{
+		$statement = self::$db->prepare('SELECT picture_file_name FROM users WHERE id = ?');
+		$statement->execute([$userId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false ? null : $value;
 	}
 
 	private static function apiKeyCount(int $userId): int
@@ -338,13 +432,20 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertFalse(self::sessionExists('rotation-flagged-acting-session'), 'the acting session was opened while flagged and does not survive its own rotation');
 		self::assertFalse(self::sessionExists('rotation-flagged-other-session'), 'and neither does any other session of the account');
 
-		$oldCookieRefused = self::request(['method' => 'GET', 'path' => '/api/user', 'cookie' => 'rotation-flagged-acting-session']);
-		self::assertSame(401, $oldCookieRefused['status'], 'the old session key answers 401 afterwards');
-
 		// Exactly one session remains: the fresh one minted in the same response, the way
 		// a new login would. It authenticates like any other session.
 		$newSessionKey = self::soleSessionKey(self::SELF_ROTATE_FLAGGED);
 		self::assertNotSame('rotation-flagged-acting-session', $newSessionKey);
+
+		// The database row existing is not, by itself, evidence that the browser was ever
+		// told about it - only the response's own Set-Cookie header is (validator round 3:
+		// a test asserting only the database row would still pass even if
+		// SessionCookie::Set() were never called at all).
+		self::assertSame($newSessionKey, self::sessionCookieValue($change), 'the response names the fresh session in a Set-Cookie header: ' . json_encode($change['cookies'] ?? []));
+
+		$oldCookieRefused = self::request(['method' => 'GET', 'path' => '/api/user', 'cookie' => 'rotation-flagged-acting-session']);
+		self::assertSame(401, $oldCookieRefused['status'], 'the old session key answers 401 afterwards');
+
 		$newCookieWorks = self::request(['method' => 'GET', 'path' => '/api/user', 'cookie' => $newSessionKey]);
 		self::assertSame(200, $newCookieWorks['status'], 'the freshly minted session authenticates: ' . $newCookieWorks['body']);
 	}
@@ -728,6 +829,226 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		$page = self::request(['method' => 'GET', 'path' => '/user/' . self::PAGE_ZERO_GRANT, 'cookie' => 'rotation-page-session']);
 
 		self::assertSame(200, $page['status']);
+	}
+
+	/**
+	 * Given a zero-grant flagged account whose first_name/last_name are stored as ''
+	 * rather than NULL - the shape the create form, any edit-form save, or
+	 * ReverseProxyAuthenticator's auto-provisioning actually produce - when it completes
+	 * its forced change with a form-shaped body resubmitting those same '' values, then
+	 * the write succeeds. Round 2's field-scope fix normalized only the submitted side of
+	 * the comparison, so a stored '' matched nothing at all - not even an identical
+	 * resubmitted "" - and this exact account shape could not complete its forced change
+	 * through any body, a total lockout the validator's probe needed database surgery to
+	 * escape (validator round 3).
+	 */
+	public function testStoredBlankNamesDoNotLockAZeroGrantFlaggedAccountOutOfItsOwnRotation(): void
+	{
+		self::assertSame('', self::storedFirstName(self::ZERO_GRANT_BLANK_NAMES), 'the fixture starts with a stored empty string, not NULL');
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::ZERO_GRANT_BLANK_NAMES,
+			'cookie' => 'rotation-zero-grant-blank-names-session',
+			'body' => [
+				'username' => 'rotation-zero-grant-blank-names',
+				'first_name' => '',
+				'last_name' => '',
+				'password' => 'blank-names-pw-2',
+				'current_password' => 'blank-names-pw-1',
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertSame(0, self::flag(self::ZERO_GRANT_BLANK_NAMES));
+		self::assertTrue(password_verify('blank-names-pw-2', self::storedPasswordHash(self::ZERO_GRANT_BLANK_NAMES)));
+	}
+
+	/**
+	 * The same lockout, for a flagged account that also holds USERS_EDIT_SELF (ADMIN) -
+	 * the validator's own probe was specifically against a flagged administrator, whose
+	 * total lockout (403 for every body on every route) needed database surgery to
+	 * recover from.
+	 */
+	public function testStoredBlankNamesDoNotLockAFlaggedAdminOutOfItsOwnRotation(): void
+	{
+		self::assertSame('', self::storedFirstName(self::FLAGGED_ADMIN_BLANK_NAMES));
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::FLAGGED_ADMIN_BLANK_NAMES,
+			'cookie' => 'rotation-flagged-admin-blank-names-session',
+			'body' => [
+				'username' => 'rotation-flagged-admin-blank-names',
+				'first_name' => '',
+				'last_name' => '',
+				'password' => 'admin-blank-pw-2',
+				'current_password' => 'admin-blank-pw-1',
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertSame(0, self::flag(self::FLAGGED_ADMIN_BLANK_NAMES));
+		self::assertTrue(password_verify('admin-blank-pw-2', self::storedPasswordHash(self::FLAGGED_ADMIN_BLANK_NAMES)));
+	}
+
+	/**
+	 * Given a flagged self password change whose commit itself fails - a deferred
+	 * constraint trigger, here, standing in for whatever the validator's own probe used -
+	 * when the whole transaction rolls back, then the response is a failure, the stored
+	 * password/flag/sessions are exactly as they were, and critically no Set-Cookie was
+	 * sent at all: UsersService::EditUser() already ran and returned the fresh session key
+	 * before the commit was attempted, and setting the cookie from inside the transaction
+	 * (before this fix) named a session the rollback then undid, logging the browser out
+	 * of an account whose credential never actually changed (validator round 3).
+	 */
+	public function testCookieIsNotSetWhenTheCommitItselfFails(): void
+	{
+		$originalHash = self::storedPasswordHash(self::DEFERRED_COMMIT_FAILURE);
+
+		self::$db->exec('CREATE OR REPLACE FUNCTION rotation_test_block_new_session() RETURNS trigger AS $$
+			BEGIN
+				IF NEW.user_id = ' . self::DEFERRED_COMMIT_FAILURE . ' THEN
+					RAISE EXCEPTION \'rotation test: deferred commit failure\';
+				END IF;
+				RETURN NEW;
+			END;
+			$$ LANGUAGE plpgsql');
+		self::$db->exec('CREATE CONSTRAINT TRIGGER rotation_test_block_new_session_trigger
+			AFTER INSERT ON sessions
+			DEFERRABLE INITIALLY DEFERRED
+			FOR EACH ROW
+			EXECUTE FUNCTION rotation_test_block_new_session()');
+
+		try
+		{
+			// The delete and the password update both succeed inside the transaction; only
+			// the deferred trigger on the new session's INSERT fires, and only at COMMIT.
+			$change = self::request([
+				'method' => 'PUT',
+				'path' => '/api/users/' . self::DEFERRED_COMMIT_FAILURE,
+				'cookie' => 'rotation-deferred-commit-session',
+				'body' => [
+					'username' => 'rotation-deferred-commit-failure',
+					'password' => 'deferred-pw-2',
+					'current_password' => 'deferred-pw-1',
+				],
+			]);
+
+			self::assertGreaterThanOrEqual(400, $change['status'], $change['body']);
+			self::assertSame($originalHash, self::storedPasswordHash(self::DEFERRED_COMMIT_FAILURE), 'the failed commit changed nothing - the password is intact');
+			self::assertSame(1, self::flag(self::DEFERRED_COMMIT_FAILURE), 'and the flag is intact');
+			self::assertTrue(self::sessionExists('rotation-deferred-commit-session'), 'and the original session is intact - the whole transaction, delete included, rolled back');
+			self::assertSame(1, self::sessionCountFor(self::DEFERRED_COMMIT_FAILURE), 'no session was left behind - only the one already there before the request');
+
+			self::assertNull(self::sessionCookieValue($change), 'no Set-Cookie was sent for a session the rollback undid: ' . json_encode($change['cookies'] ?? []));
+		}
+		finally
+		{
+			self::$db->exec('DROP TRIGGER IF EXISTS rotation_test_block_new_session_trigger ON sessions');
+			self::$db->exec('DROP FUNCTION IF EXISTS rotation_test_block_new_session()');
+		}
+	}
+
+	/**
+	 * Given an ordinary (unflagged), fully-permitted self-edit whose first_name is a JSON
+	 * array rather than a string, when the current password submitted alongside it is
+	 * wrong, then the answer is 400, as any malformed field gets; when the current
+	 * password is instead correct, the answer is the SAME 400 - not a 500. Before this
+	 * fix, a correct guess let the array reach UsersService::EditUser()'s ?string
+	 * parameter and TypeError, a 500 whose body named the class and the /app path,
+	 * uncaught by HandleApiCall() (which deliberately never catches \Error) - and because
+	 * CheckCurrentPassword() had already cleared the throttle counter by the time that
+	 * crash happened, whether the crash happened at all told an attacker their guess was
+	 * right, for free (validator round 3).
+	 */
+	public function testMalformedFieldTypeAnswers400RegardlessOfPasswordCorrectness(): void
+	{
+		$originalHash = self::storedPasswordHash(self::TYPE_ORACLE_UNFLAGGED);
+
+		$wrongGuess = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::TYPE_ORACLE_UNFLAGGED,
+			'cookie' => 'rotation-type-oracle-session',
+			'body' => [
+				'username' => 'rotation-type-oracle-unflagged',
+				'first_name' => ['nested', 'array'],
+				'password' => 'type-oracle-pw-2',
+				'current_password' => 'not-the-password',
+			],
+		]);
+
+		$rightGuess = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::TYPE_ORACLE_UNFLAGGED,
+			'cookie' => 'rotation-type-oracle-session',
+			'body' => [
+				'username' => 'rotation-type-oracle-unflagged',
+				'first_name' => ['nested', 'array'],
+				'password' => 'type-oracle-pw-2',
+				'current_password' => 'type-oracle-pw-1',
+			],
+		]);
+
+		self::assertSame(400, $wrongGuess['status'], $wrongGuess['body']);
+		self::assertSame(400, $rightGuess['status'], 'a malformed field answers 400 even when the password is correct, not a 500 TypeError: ' . $rightGuess['body']);
+		self::assertSame($wrongGuess['status'], $rightGuess['status'], 'the status does not distinguish a right guess from a wrong one');
+		self::assertSame($wrongGuess['body'], $rightGuess['body'], 'nor does the body - both are refused on the malformed field alone');
+		self::assertStringContainsString('first_name', $rightGuess['body']);
+		self::assertTrue(password_verify('type-oracle-pw-1', self::storedPasswordHash(self::TYPE_ORACLE_UNFLAGGED)), 'neither attempt changed the stored password');
+	}
+
+	/**
+	 * Given a flagged account's own form save that omits picture_file_name entirely - what
+	 * userform.js does whenever no picture is being uploaded or deleted - when the change
+	 * succeeds, then the stored picture is untouched. Before this fix, the field-scope
+	 * check already read an absent key as "no attempted change" and let the write through,
+	 * but the write itself still fell back to null for the omitted field, the same way an
+	 * omitted first_name or last_name does - erasing the picture on every such save. This
+	 * is the same EditUser() write for a flagged and an unflagged self-edit alike, so an
+	 * ordinary (unflagged) account's own profile save that does not mention its picture
+	 * erases it exactly the same way; that half is not separately exercised here, only
+	 * fixed by the same change.
+	 */
+	public function testOmittedPictureFileNameKeepsTheStoredPictureRatherThanErasingIt(): void
+	{
+		self::assertSame('existing-picture.png', self::storedPictureFileName(self::PICTURE_PRESERVED));
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::PICTURE_PRESERVED,
+			'cookie' => 'rotation-picture-preserved-session',
+			'body' => [
+				'username' => 'rotation-picture-preserved',
+				'password' => 'picture-pw-2',
+				'current_password' => 'picture-pw-1',
+				// picture_file_name deliberately absent
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertSame('existing-picture.png', self::storedPictureFileName(self::PICTURE_PRESERVED), 'the stored picture survives a save that never mentioned it');
+	}
+
+	/** An explicit null is not "omitted": it still erases the stored picture, unchanged from before this round. */
+	public function testExplicitNullPictureFileNameStillErasesTheStoredPicture(): void
+	{
+		self::assertSame('existing-picture.png', self::storedPictureFileName(self::PICTURE_EXPLICIT_NULL));
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::PICTURE_EXPLICIT_NULL,
+			'cookie' => 'rotation-picture-explicit-null-session',
+			'body' => [
+				'username' => 'rotation-picture-explicit-null',
+				'password' => 'picture-null-pw-2',
+				'current_password' => 'picture-null-pw-1',
+				'picture_file_name' => null,
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertNull(self::storedPictureFileName(self::PICTURE_EXPLICIT_NULL), 'an explicit null still nulls the picture out');
 	}
 
 	/**
