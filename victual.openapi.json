@@ -2207,40 +2207,47 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"description": "amount is required. Every other property is optional: a property whose key is absent from the body keeps the entry's current value. A property that is present must be readable as the type documented below - null is not a documented value for any of them, and neither is a location_id/shopping_location_id that names no active row - or the request is refused with 400 and nothing about the entry changes.",
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The new amount"
+										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check."
 									},
 									"best_before_date": {
 										"type": "string",
 										"format": "date",
-										"description": "The due date of the product to add, when omitted, the current date is used"
+										"description": "The due date of this stock entry. Omitted keeps the entry's current due date."
 									},
 									"price": {
 										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price."
 									},
 									"open": {
 										"type": "boolean",
-										"description": "If the stock entry was already opened or not"
+										"description": "Whether the stock entry is opened. Omitted keeps the entry's current open state; opening it for the first time stamps today as its opened date."
 									},
 									"location_id": {
 										"type": "integer",
-										"description": "If omitted, the default location of the product is used"
+										"description": "Must name an existing, active location. Omitted keeps the entry's current location."
 									},
 									"shopping_location_id": {
 										"type": "integer",
-										"description": "If omitted, no store will be affected"
+										"description": "Must name an existing, active shopping location. Omitted keeps the entry's current shopping location."
 									},
 									"purchased_date": {
 										"type": "string",
 										"format": "date",
-										"description": "The date when this stock entry was purchased"
+										"description": "The date when this stock entry was purchased. Omitted keeps the entry's current purchased date."
+									},
+									"note": {
+										"type": "string",
+										"description": "A free-text note. Omitted keeps the entry's current note."
 									}
 								},
+								"required": [
+									"amount"
+								],
 								"example": {
-									"id": "2",
 									"amount": "1",
 									"best_before_date": "2021-07-19",
 									"purchased_date": "2020-01-01",

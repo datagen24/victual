@@ -54,6 +54,7 @@
 		</testsuite>
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
+			<file>tests/Pgsql/StockEntryEditContractTest.php</file>
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
