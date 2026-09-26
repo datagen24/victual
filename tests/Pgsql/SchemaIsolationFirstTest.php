@@ -20,11 +20,17 @@ class SchemaIsolationFirstTest extends PgsqlSchemaTestCase
 		self::$db = self::Pdo();
 
 		// Create required fixtures: location and quantity unit for product
-		self::$db->exec("INSERT INTO locations(id, name) VALUES (1, 'First Schema Location')");
-		self::$db->exec("INSERT INTO quantity_units(id, name, name_plural, description) VALUES (1, 'unit', 'units', 'default unit')");
+		self::$db->exec("INSERT INTO locations(name) VALUES ('First Schema Location')");
+		self::$db->exec("INSERT INTO quantity_units(name, name_plural, description) VALUES ('unit', 'units', 'default unit')");
+
+		// Get the IDs that were auto-generated
+		$loc = self::$db->query("SELECT id FROM locations WHERE name = 'First Schema Location'")->fetch(PDO::FETCH_ASSOC);
+		$qu = self::$db->query("SELECT id FROM quantity_units WHERE name = 'unit'")->fetch(PDO::FETCH_ASSOC);
+		$locId = (int)$loc['id'];
+		$quId = (int)$qu['id'];
 
 		// Create a product in the first schema
-		self::$db->exec("INSERT INTO products(id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (1, 'first-schema-product', 1, 1, 1)");
+		self::$db->exec("INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) VALUES ('first-schema-product', $locId, $quId, $quId)");
 	}
 
 	/**
