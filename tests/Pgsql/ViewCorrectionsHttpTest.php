@@ -7,7 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * HTTP-level regressions for issue #487 remediation (WS-15): migrations/0289.pgsql.sql's
+ * HTTP-level regressions for issue #487 remediation (PR #542): migrations/0289.pgsql.sql's
  * three view corrections, exercised the way a real request reaches them rather than only
  * through direct SQL. .devtools/pgtap/018-audit-view-corrections.sql covers the views'
  * own arithmetic in detail; this class covers the two symptoms issue #487 reports at the

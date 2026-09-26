@@ -1,4 +1,4 @@
--- Issue #487 remediation (WS-15), against the fully migrated application schema:
+-- Issue #487 remediation (PR #542), against the fully migrated application schema:
 -- migrations/0289.pgsql.sql recreates stock_current, uihelper_stock_journal and
 -- chores_current. Each case below reproduces the exact defect its issue describes and
 -- asserts the value the corrected view now returns, plus a negative control proving the

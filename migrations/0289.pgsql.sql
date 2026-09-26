@@ -1,4 +1,4 @@
--- Issue #487 remediation (WS-15): three views recreated from their latest definitions,
+-- Issue #487 remediation (PR #542): three views recreated from their latest definitions,
 -- each fixing one confirmed defect. The baseline in db/pgsql/baseline/ is deliberately not
 -- edited, for the reason migrations/0261.pgsql.sql gives: it is the state a fresh
 -- PostgreSQL database loads before 0256 onward runs, and none of these three views has been
