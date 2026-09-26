@@ -318,6 +318,29 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertNull(self::stockRow($entryId)['shopping_location_id'], '"" clears the store the same way null does');
 	}
 
+	public function testEmptyStringAlsoClearsThePrice(): void
+	{
+		$entryId = self::seedStockRow(['price' => 4.5]);
+
+		// master already treated "" as a clear for price; refusing it would be a regression.
+		$response = self::put($entryId, ['amount' => 1, 'price' => '']);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertNull(self::stockRow($entryId)['price'], '"" clears the price the same way null does');
+	}
+
+	public function testEmptyStringIsARealNoteNotACleared(): void
+	{
+		$entryId = self::seedStockRow(['note' => 'to be replaced']);
+
+		// Unlike price/shopping_location_id, "" is an ordinary note value here, not a clear
+		// idiom: the column is TEXT, and every reader already treats "" and NULL alike.
+		$response = self::put($entryId, ['amount' => 1, 'note' => '']);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertSame('', self::stockRow($entryId)['note'], '"" is stored as the empty string, not coerced to null');
+	}
+
 	// ------------------------------------------------------------------------------
 	// open accepts every form this API's own callers send (its GET response included),
 	// and refuses the two word strings that used to be silently misread
@@ -363,6 +386,7 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	public function testGetThenPutRoundTripSucceeds(): void
 	{
 		$entryId = self::seedStockRow(['price' => 3.25, 'shopping_location_id' => self::$grocerId, 'open' => 1, 'opened_date' => '2026-01-10']);
+		$before = self::stockRow($entryId);
 
 		$entry = self::getEntry($entryId);
 
@@ -378,6 +402,68 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		]);
 
 		self::assertSame(200, $response['status'], "a GET response PUT straight back must be accepted, open included (it GETs as an integer): {$response['body']}");
+		self::assertSame($before, self::stockRow($entryId), 'a round trip of every field must change nothing, not just answer 200');
+	}
+
+	// ------------------------------------------------------------------------------
+	// The documented schema, not just its prose, admits exactly what the server accepts
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * For open, price and shopping_location_id, whether Opis validates a candidate value
+	 * against the property's own schema must agree with whether this route actually
+	 * accepts that value - the same identity WireContractTest.php's
+	 * testTheDocumentedPatternIsTheOneTheParserGatesOn() proves for the timestamp fields'
+	 * pattern and ParseApiDateTime(), applied here to a oneOf/enum schema instead of a
+	 * regular expression. A description that says "0/1 and \"0\"/\"1\" are accepted" is not
+	 * the same claim as a `type` that admits them; this is what makes the two the same
+	 * claim (issue #487 review: "the memory rule is one definition of an accepted set").
+	 * Every value below is one the HTTP-level tests elsewhere in this file already prove
+	 * the server accepts or refuses.
+	 */
+	public function testOpenPriceAndShoppingLocationIdSchemasAdmitExactlyWhatTheServerAccepts(): void
+	{
+		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
+		$properties = $spec->paths->{'/stock/entry/{entryId}'}->put->requestBody->content->{'application/json'}->schema->properties;
+
+		// $value is re-encoded and $property's schema is re-decoded fresh on every call,
+		// the same defensive copy WireContractTest::validateAgainstMember() makes: Opis is
+		// not guaranteed to leave a reused schema object untouched between validations.
+		$validate = function ($value, $property, string $label, bool $shouldValidate): void
+		{
+			$result = (new \Opis\JsonSchema\Validator())->validate(
+				json_decode(json_encode($value)),
+				json_decode(json_encode($property))
+			);
+			self::assertSame($shouldValidate, $result->isValid(), "$label schema for " . var_export($value, true));
+		};
+
+		foreach ([
+			[true, true], [false, true],
+			[0, true], [1, true],
+			['0', true], ['1', true],
+			['true', false], ['false', false],
+			[null, false], [2, false], ['2', false], [1.5, false], ['', false],
+		] as [$value, $shouldValidate])
+		{
+			$validate($value, $properties->open, 'open', $shouldValidate);
+		}
+
+		foreach ([
+			[3.25, true], [0, true], [null, true], ['', true],
+			['abc', false], [[], false], [true, false],
+		] as [$value, $shouldValidate])
+		{
+			$validate($value, $properties->price, 'price', $shouldValidate);
+		}
+
+		foreach ([
+			[self::$grocerId, true], [null, true], ['', true],
+			['abc', false], [1.5, false], [true, false],
+		] as [$value, $shouldValidate])
+		{
+			$validate($value, $properties->shopping_location_id, 'shopping_location_id', $shouldValidate);
+		}
 	}
 
 	// ------------------------------------------------------------------------------

@@ -22,25 +22,28 @@ $('#save-stockentry-button').on('click', function(e)
 	var jsonForm = $('#stockentry-form').serializeJSON();
 	Victual.FrontendHelpers.BeginUiBusy("stockentry-form");
 
-	// Declared here (previously missing): an undeclared bare "price" assignment below is a
-	// global, and this page has an element with id="price" - the DOM's own named access on
-	// window then makes the unqualified read on jsonData.price below resolve to that
-	// element (wrapped by whatever last touched it) instead of a number, so a PUT with no
-	// price sent a jQuery object where the server expects null or a number. null here (not
-	// omitting the key below) is what actually clears a price the entry already has - the
-	// server keeps an omitted key's current value instead (issue #487 review of #519/#524).
-	var price = null;
-	if (jsonForm.price)
-	{
-		price = Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input);
-	}
-
 	var jsonData = {};
 	jsonData.amount = jsonForm.amount;
 	jsonData.best_before_date = Victual.Components.DateTimePicker.GetValue();
 	jsonData.purchased_date = Victual.Components.SecondaryDateTimePicker.GetValue();
 	jsonData.note = jsonForm.note;
-	jsonData.price = price;
+
+	// #price is missing from the page for a caller without STOCK_PRICES_VIEW (a sibling
+	// change removes the input for them); jsonForm.price is then undefined, and the key is
+	// omitted here entirely so the server keeps whatever price is already stored - sending
+	// null would clear a price this caller cannot even see. Where the input does exist,
+	// empty clears the stored price (the server's own "" idiom - see StockApiController)
+	// and a filled-in value is parsed as a number. This used to read a bare "price"
+	// identifier that was never declared: an undeclared global that, with an element
+	// id="price" on the page and nothing else in scope named "price", resolved through the
+	// DOM's own named access on window instead of failing, so an empty price sent a
+	// jQuery-wrapped object where the server expects a number, null or "" (issue #487
+	// review of #519/#524).
+	if ($('#price').length)
+	{
+		jsonData.price = jsonForm.price ? Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input) : null;
+	}
+
 	jsonData.open = $("#open").is(":checked");
 
 	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)

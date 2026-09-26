@@ -548,11 +548,12 @@ class StockApiController extends BaseApiController
 	 * refused with 400 and nothing about the entry changes (audit findings M19/M24, issues
 	 * #519/#524). price, shopping_location_id and note additionally accept an explicit null
 	 * to clear the field - the one supported way to remove a price, detach a store or blank
-	 * a note, since PATCH semantics mean omitting the key keeps it instead - and
-	 * shopping_location_id also accepts "" for the same reason as null, matching the form's
-	 * own "no store" option. best_before_date, location_id, purchased_date and open are not
-	 * nullable: every stock entry has a due date, a location and a purchased date, and open
-	 * is a NOT NULL column.
+	 * a note, since PATCH semantics mean omitting the key keeps it instead - and price and
+	 * shopping_location_id also accept "" for the same reason as null (matching, for
+	 * shopping_location_id, the form's own "no store" option); note does not, since "" is a
+	 * real note rather than the absence of one. best_before_date, location_id,
+	 * purchased_date and open are not nullable: every stock entry has a due date, a
+	 * location and a purchased date, and open is a NOT NULL column.
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function EditStockEntry(Request $request, Response $response, array $args)
@@ -581,13 +582,14 @@ class StockApiController extends BaseApiController
 				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
-			// null clears the price - the only way to remove one, since omitting the key
-			// keeps it (#487 correction 6; BaseApiController::GetParsedAndFilteredRequestBody()
-			// records the same idiom for the generic entity routes).
+			// null or "" clears the price - the only way to remove one, since omitting the
+			// key keeps it (#487 correction 6; BaseApiController::GetParsedAndFilteredRequestBody()
+			// records the same null idiom for the generic entity routes, and "" is what
+			// master itself already treated as a clear here).
 			$price = StockService::KEEP_STORED_VALUE;
 			if (array_key_exists('price', $requestBody))
 			{
-				if ($requestBody['price'] === null)
+				if ($requestBody['price'] === null || $requestBody['price'] === '')
 				{
 					$price = null;
 				}
