@@ -582,29 +582,46 @@ class DatabaseMigrationService extends BaseService
 	 * EMERGENCY/DOALWAYS ids run on every start and are never recorded as applied;
 	 * regular migrations are recorded and increment $migrationCounter.
 	 *
-	 * The include and its version row share one transaction, the way
-	 * ExecuteSqlMigrationWhenNeeded() below shares one for its SQL. PostgreSQL DDL is
-	 * transactional, so a PHP migration that fails partway through - 0274 creating
-	 * storage_classes and then failing to add locations.storage_class_id because that
-	 * column already exists, say - leaves nothing behind, and a retry sees the same
-	 * starting state rather than a table the previous attempt orphaned. Before this, each
-	 * statement inside the include auto-committed on its own, so a failure partway left the
-	 * successful statements in place with no version row to show they ran, and a retry
-	 * failed on a second, different conflict (the orphaned CREATE TABLE) instead of the
-	 * original one.
+	 * The include and its version row share one transaction, via
+	 * DatabaseService::InTransaction() - the same call 0266/0282/0283 already make from
+	 * inside their own migration file. PostgreSQL DDL is transactional, so a PHP migration
+	 * that fails partway through - 0274 creating storage_classes and then failing to add
+	 * locations.storage_class_id because that column already exists, say - leaves nothing
+	 * behind, and a retry sees the same starting state rather than a table the previous
+	 * attempt orphaned. Before this, each statement inside the include auto-committed on
+	 * its own, so a failure partway left the successful statements in place with no version
+	 * row to show they ran, and a retry failed on a second, different conflict (the
+	 * orphaned CREATE TABLE) instead of the original one.
 	 *
-	 * A PHP migration that opens its own nested transaction (DatabaseService::InTransaction(),
-	 * which 0266/0282/0283 use) is unaffected: InTransaction() already checks whether a
+	 * InTransaction() rather than a hand-rolled beginTransaction()/commit()/rollback() here,
+	 * for three things a narrower fix would miss. First, it catches \Throwable, not
+	 * \Exception: a \TypeError or other \Error thrown by a migration must still roll back,
+	 * or the transaction is left open for whatever runs on this connection next - including
+	 * DatabaseDialect::WithMigrationLock()'s own pg_advisory_unlock() in its finally, which
+	 * then fails against the still-open, aborted transaction and masks the original error
+	 * while leaving the lock held. Second, its rollback is guarded by inTransaction(),
+	 * which matters on a dialect where a failed statement can end the transaction on its
+	 * own rather than merely aborting it (see InTransaction()'s own docblock). Third, it is
+	 * what actually runs RegisterBeforeOutermostCommit() listeners before the commit that is
+	 * now genuinely outermost; a migration that registers one and gets a hand-rolled
+	 * commit() instead would have that listener fire before some later, unrelated
+	 * transaction rather than before this one. A PHP migration that calls InTransaction()
+	 * itself (0266, 0282, 0283) is unaffected: InTransaction() already checks whether a
 	 * transaction is open and joins this one instead of starting and committing a second.
+	 *
+	 * A PHP migration must not swallow a database error and continue, because it now shares
+	 * this one transaction: PostgreSQL aborts the whole transaction after any failed
+	 * statement, so every later statement in the same run fails too - including, for an
+	 * ordinary migration, the version INSERT below, which is what would surface a swallowed
+	 * failure. EMERGENCY/DOALWAYS get no such INSERT, so they get an explicit canary instead
+	 * - see the SELECT 1 below.
 	 */
 	private function ExecutePhpMigrationWhenNeeded(int $migrationId, string $phpFile, int &$migrationCounter)
 	{
 		$rowCount = DatabaseService::GetInstance()->ExecuteDbQuery('SELECT COUNT(*) FROM migrations WHERE migration = ' . $migrationId)->fetchColumn();
 		if ($rowCount == 0 || $migrationId == self::EMERGENCY_MIGRATION_ID || $migrationId == self::DOALWAYS_MIGRATION_ID)
 		{
-			DatabaseService::GetInstance()->GetDbConnectionRaw()->beginTransaction();
-
-			try
+			DatabaseService::GetInstance()->InTransaction(function () use ($migrationId, $phpFile, &$migrationCounter)
 			{
 				include $phpFile;
 
@@ -613,21 +630,29 @@ class DatabaseMigrationService extends BaseService
 					DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO migrations (migration) VALUES (' . $migrationId . ')');
 					$migrationCounter++;
 				}
-			}
-			catch (\Exception $ex)
-			{
-				DatabaseService::GetInstance()->GetDbConnectionRaw()->rollback();
-				throw $ex;
-			}
-
-			DatabaseService::GetInstance()->GetDbConnectionRaw()->commit();
+				else
+				{
+					// EMERGENCY/DOALWAYS get no version row to prove they ran, so a database
+					// error their own code swallowed would otherwise reach commit()
+					// silently: PostgreSQL turns a COMMIT of an aborted transaction into a
+					// rollback without raising, so InTransaction() would report success
+					// while every write the run made was discarded. A plain SELECT fails
+					// loudly (SQLSTATE 25P02) if anything above already aborted the
+					// transaction, giving these ids the same visible failure a regular
+					// migration already gets for free from its own INSERT INTO migrations.
+					DatabaseService::GetInstance()->ExecuteDbQuery('SELECT 1');
+				}
+			});
 		}
 	}
 
 	/**
-	 * Executes the given SQL migration in a transaction unless it was already applied,
-	 * with the same special-id and bookkeeping rules as ExecutePhpMigrationWhenNeeded()
-	 * (PHP migrations, in contrast, manage their own transactions).
+	 * Executes the given SQL migration in a transaction unless it was already applied, with
+	 * the same special-id and bookkeeping rules as ExecutePhpMigrationWhenNeeded() - which
+	 * wraps its include in a transaction via DatabaseService::InTransaction() rather than
+	 * the plain beginTransaction()/commit() this method uses directly, because a PHP
+	 * migration can itself call InTransaction() (0266, 0282, 0283), and the two calls need
+	 * to nest into one transaction rather than fight over two.
 	 */
 	private function ExecuteSqlMigrationWhenNeeded(int $migrationId, string $sql, int &$migrationCounter)
 	{
