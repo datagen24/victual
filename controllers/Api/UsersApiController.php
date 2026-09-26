@@ -7,6 +7,7 @@ use Victual\Services\ApiKeyService;
 use Victual\Services\UsersService;
 use Victual\Services\RolesService;
 use Victual\Services\DatabaseService;
+use Victual\Services\SessionService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -125,7 +126,9 @@ class UsersApiController extends BaseApiController
 	 * first_name, last_name, password (alternatively password_base64) and
 	 * picture_file_name. Requires USERS_EDIT_SELF when editing the own account,
 	 * USERS_EDIT otherwise (403 when missing), and in the second case that the target
-	 * holds nothing the caller does not.
+	 * holds nothing the caller does not. ForcedRotationOnly() below is the one exception:
+	 * a flagged account resolving its own forced change never holds USERS_EDIT_SELF - that
+	 * is what the flag means - so this route cannot wait for it.
 	 *
 	 * Changing one's own password additionally requires the current one, in the body field
 	 * current_password (or current_password_base64). Sweep finding S6: without it, a
@@ -137,10 +140,15 @@ class UsersApiController extends BaseApiController
 	public function EditUser(Request $request, Response $response, array $args)
 	{
 		$isSelf = $args['userId'] == VICTUAL_USER_ID;
+		$targetUserId = (int)$args['userId'];
+		$forcedRotationOnly = $isSelf && self::ForcedRotationOnly($targetUserId);
 
 		if ($isSelf)
 		{
-			User::CheckPermission($request, User::PERMISSION_USERS_EDIT_SELF);
+			if (!$forcedRotationOnly)
+			{
+				User::CheckPermission($request, User::PERMISSION_USERS_EDIT_SELF);
+			}
 		}
 		else
 		{
@@ -148,60 +156,136 @@ class UsersApiController extends BaseApiController
 			// USERS_EDIT used to be enough to rewrite an administrator's password - and
 			// USERS_CREATE resolves to USERS_EDIT, so creating users was enough too.
 			// Sweep finding S6.
-			User::CheckMayAdminister($request, (int)$args['userId']);
+			User::CheckMayAdminister($request, $targetUserId);
 		}
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-		return $this->HandleApiCall($response, function () use ($args, $isSelf, $requestBody, $response, $request)
+		// The session, if any, that authenticated this very request - read directly off the
+		// cookie rather than trusting anything computed earlier, since DefaultAuthMiddleware
+		// only ever authenticates a request by session cookie when that cookie names a live
+		// session, so its presence here already means it was this request's own credential.
+		// Passed through to UsersService::EditUser() so a password change can keep this one
+		// session alive while revoking every other (issue #513).
+		$actingSessionKey = $request->getCookieParams()[SessionService::SESSION_COOKIE_NAME] ?? null;
+
+		return $this->HandleApiCall($response, function () use ($isSelf, $forcedRotationOnly, $requestBody, $response, $request, $targetUserId, $actingSessionKey)
 		{
-			return RolesService::GetInstance()->Mutate($request, ($isSelf ? User::PERMISSION_USERS_EDIT_SELF : User::PERMISSION_USERS_EDIT), function () use ($args, $isSelf, $requestBody, $response, $request)
+			if ($requestBody === null)
 			{
-				if (!$isSelf) User::CheckMayAdminister($request, (int)$args['userId']);
-				if ($requestBody === null)
+				throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+			}
+
+			$requestBody = self::WithDecodedPassword($requestBody, 'password');
+			$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
+
+			// An account that has to change its password reaches this route through
+			// BaseAuthMiddleware's allowlist for that purpose alone. So it must actually change
+			// it: otherwise the one route left open is a way to rename the account - "admin"
+			// to something the operator does not know - without the change it exists for.
+			// And to something else: re-saving the printed or default password would clear
+			// the flag and leave that password in place. Found by CodeRabbit on PR #213.
+			if ($isSelf && UsersService::GetInstance()->MustChangePassword($targetUserId))
+			{
+				if (empty($requestBody['password'] ?? null))
 				{
-					throw new EInvalidApiQuery('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
+					throw new EInvalidApiQuery('This account must change its password: send the new password and current_password');
 				}
 
-				$requestBody = self::WithDecodedPassword($requestBody, 'password');
-				$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
-
-				// An account that has to change its password reaches this route through
-				// BaseAuthMiddleware's allowlist for that purpose alone. So it must actually change
-				// it: otherwise the one route left open is a way to rename the account - "admin"
-				// to something the operator does not know - without the change it exists for.
-				// And to something else: re-saving the printed or default password would clear
-				// the flag and leave that password in place. Found by CodeRabbit on PR #213.
-				if ($isSelf && UsersService::GetInstance()->MustChangePassword((int)$args['userId']))
+				if ($requestBody['password'] === ($requestBody['current_password'] ?? null))
 				{
-					if (empty($requestBody['password'] ?? null))
-					{
-						throw new EInvalidApiQuery('This account must change its password: send the new password and current_password');
-					}
-
-					if ($requestBody['password'] === ($requestBody['current_password'] ?? null))
-					{
-						throw new EInvalidApiQuery('The new password must differ from the current one');
-					}
+					throw new EInvalidApiQuery('The new password must differ from the current one');
 				}
+			}
 
-				if ($isSelf && !empty($requestBody['password'] ?? null))
-				{
-					UsersService::GetInstance()->CheckCurrentPassword((int)$args['userId'], $requestBody['current_password'] ?? null);
-				}
+			// Deliberately ahead of the transaction below, and not inside it: on the
+			// forced-rotation bypass a wrong guess here is throttled the same way a wrong
+			// login password is (LoginThrottleService), and that record has to survive even
+			// though this request goes on to be refused and everything the transaction would
+			// have written is rolled back with it. Everywhere else this check runs behind an
+			// already-granted USERS_EDIT_SELF, which a guesser needs a valid credential to
+			// hold in the first place; the bypass has no such gate (issue #514) - a
+			// zero-permission flagged account reaches it on the flag and the current password
+			// alone.
+			if ($isSelf && !empty($requestBody['password'] ?? null))
+			{
+				UsersService::GetInstance()->CheckCurrentPassword($targetUserId, $requestBody['current_password'] ?? null, $forcedRotationOnly);
+			}
+
+			// The bypass above authorises exactly one write - the password - and stands in
+			// for USERS_EDIT_SELF nowhere else; a flagged, ungranted account attempting to
+			// rename itself or change any other field alongside the mandated password
+			// change is refused with state unchanged, the same as it would be without this
+			// bypass at all.
+			if ($forcedRotationOnly)
+			{
+				self::RefuseChangesBeyondThePassword($this->DB, $targetUserId, $requestBody);
+			}
+
+			$write = function () use ($isSelf, $requestBody, $response, $request, $targetUserId, $actingSessionKey)
+			{
+				if (!$isSelf) User::CheckMayAdminister($request, $targetUserId);
 
 				UsersService::GetInstance()->EditUser(
-					$args['userId'],
+					$targetUserId,
 					self::RequiredField($requestBody, 'username'),
 					$requestBody['first_name'] ?? null,
 					$requestBody['last_name'] ?? null,
 					$requestBody['password'] ?? null,
-					$requestBody['picture_file_name'] ?? null
+					$requestBody['picture_file_name'] ?? null,
+					$actingSessionKey
 				);
 
 				return $this->EmptyApiResponse($response);
-			});
+			};
+
+			if ($forcedRotationOnly)
+			{
+				// Not RolesService::Mutate(): that serializes a permission check with the
+				// grants that could change its answer, and there is no grant to race here -
+				// this path is authorized by the must_change_password flag and the current
+				// password alone, and never by USERS_EDIT_SELF.
+				return DatabaseService::GetInstance()->InTransaction($write);
+			}
+
+			return RolesService::GetInstance()->Mutate($request, ($isSelf ? User::PERMISSION_USERS_EDIT_SELF : User::PERMISSION_USERS_EDIT), $write);
 		});
+	}
+
+	/**
+	 * Whether $userId may reach EditUser() only through the forced-rotation bypass: it is
+	 * flagged to change its password and does not hold USERS_EDIT_SELF, so the ordinary
+	 * permission gate can never pass for it (issue #514). Reads VICTUAL_USER_ID's resolved
+	 * permissions, so it is meaningful only when $userId is the caller - EditUser() above
+	 * calls it exactly there.
+	 */
+	private static function ForcedRotationOnly(int $userId): bool
+	{
+		return UsersService::GetInstance()->MustChangePassword($userId) && !User::HasPermissions(User::PERMISSION_USERS_EDIT_SELF);
+	}
+
+	/**
+	 * Refuses (leaving every stored field untouched) a forced-rotation-only write that asks
+	 * to change anything but the password: username must be resubmitted unchanged (it is a
+	 * required field on this endpoint regardless) and first_name/last_name/picture_file_name
+	 * must match what is already stored, treating an omitted field as an attempted null-out
+	 * exactly as EditUser() itself would. The account's own profile form always resubmits
+	 * its current values for fields it did not change, so this refuses only an actual
+	 * attempt to use the bypass for more than the rotation it exists for.
+	 *
+	 * @throws EInvalidApiQuery When the body asks to change anything but the password
+	 */
+	private static function RefuseChangesBeyondThePassword($db, int $userId, array $requestBody): void
+	{
+		$stored = $db->users($userId);
+
+		if (self::RequiredField($requestBody, 'username') !== $stored->username
+			|| ($requestBody['first_name'] ?? null) !== $stored->first_name
+			|| ($requestBody['last_name'] ?? null) !== $stored->last_name
+			|| ($requestBody['picture_file_name'] ?? null) !== $stored->picture_file_name)
+		{
+			throw new EInvalidApiQuery('This account may only change its password until the required password change is made');
+		}
 	}
 
 	/**

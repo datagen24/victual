@@ -139,6 +139,41 @@ class SessionService extends BaseService
 		$this->DB->sessions()->where('session_key', $sessionKey)->delete();
 	}
 
+	/**
+	 * Deletes every session of $userId except $exceptSessionKey (when given), so that a
+	 * password change can drop every session it invalidates while leaving the one that
+	 * proved the current password - a self-service change, made from a session of its own
+	 * - logged in.
+	 *
+	 * $exceptSessionKey is compared as a plain string against this user's own rows only,
+	 * so a key that does not belong to $userId (an administrator's own session while
+	 * resetting somebody else's password, or none at all for an API-key-authenticated
+	 * request) excepts nothing and every session of $userId is cleared - which is the
+	 * intended reading of "an administrator changing another user's password revokes all
+	 * of that user's sessions" (issue #513): there is no session of the target's own to
+	 * spare.
+	 *
+	 * Like IsValidSession()'s and RemoveExpiredSessions()'s bookkeeping, this restores the
+	 * database changed time afterwards: the write a password change itself makes is the
+	 * change a polling client should see, and clearing superseded sessions is a
+	 * consequence of it rather than a second one.
+	 */
+	public function RemoveOtherSessions(int $userId, ?string $exceptSessionKey = null): void
+	{
+		$dbModTime = DatabaseService::GetInstance()->GetDbChangedTime();
+
+		$query = $this->DB->sessions()->where('user_id', $userId);
+
+		if ($exceptSessionKey !== null)
+		{
+			$query = $query->where('session_key != :1', $exceptSessionKey);
+		}
+
+		$query->delete();
+
+		DatabaseService::GetInstance()->SetDbChangedTime($dbModTime);
+	}
+
 	private function GenerateKey()
 	{
 		return RandomString(50);
