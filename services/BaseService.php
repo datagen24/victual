@@ -33,4 +33,19 @@ class BaseService
 
 		return self::$Instances[$className];
 	}
+
+	/**
+	 * Test-only: clears the process-global singleton instance cache.
+	 *
+	 * PHPUnit test classes that run in the same process and each set up their own schema
+	 * need to reset cached instances before setup so that a second class does not reach
+	 * the first class's dropped schema through a reused service singleton.
+	 * Called from PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetInstancesForTest()
+	{
+		self::$Instances = [];
+	}
 }

@@ -5,8 +5,10 @@ namespace Victual\Tests\Support;
 use PDO;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
+use Victual\Services\BaseService;
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
+use Victual\Services\LocalizationService;
 
 /**
  * Base class for tier 1 (ADR-0025): a PostgreSQL schema of its own per test class,
@@ -31,6 +33,11 @@ abstract class PgsqlSchemaTestCase extends TestCase
 	public static function setUpBeforeClass(): void
 	{
 		static::Boot();
+
+		// Reset process-global singleton instance caches so a new test class does not
+		// reach a previous test class's dropped schema through cached service instances
+		BaseService::ResetInstancesForTest();
+		LocalizationService::ResetInstancesForTest();
 
 		self::$SchemaName = 'phpunit_' . bin2hex(random_bytes(8));
 
