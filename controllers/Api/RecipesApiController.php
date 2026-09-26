@@ -93,9 +93,14 @@ class RecipesApiController extends BaseApiController
 	/**
 	 * POST /api/recipes/{recipeId}/copy - copies the given recipe and returns
 	 * { "created_object_id": int } (200) or a 400 error response.
+	 * Requires PERMISSION_RECIPES_VIEW to read the source recipe and PERMISSION_RECIPES
+	 * to create the copy (403 otherwise).
 	 */
 	public function CopyRecipe(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
+		User::CheckPermission($request, User::PERMISSION_RECIPES);
+
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, [
