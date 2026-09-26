@@ -3096,10 +3096,17 @@ class StockService extends BaseService
 	 * Merges one product into another and deletes the removed product.
 	 *
 	 * Re-assigns stock, stock_log, barcodes, QU conversions, recipe positions/recipes, meal plan
-	 * entries and shopping list entries to the kept product inside a single database transaction
-	 * (rolled back on any error). Amounts are multiplied by the stock QU conversion factor from
-	 * the removed product's stock unit to the kept product's stock unit (factor 1 when no
-	 * conversion is defined).
+	 * entries, shopping list entries and location minimums to the kept product inside a single
+	 * database transaction (rolled back on any error). An amount column is multiplied by the
+	 * stock QU conversion factor from the removed product's stock unit to the kept product's
+	 * stock unit (factor 1 when no conversion is defined); a per-stock-unit price column is
+	 * divided by that same factor instead, so amount * price - the row's monetary value - is
+	 * unchanged by the merge (issue #503, M3: 500 g at 0.01/g was becoming 0.5 "kg" still priced
+	 * at 0.01/kg, a thousandfold understatement). product_barcodes.last_price and
+	 * recipes_pos.price_factor are deliberately left alone: the former is a total price for
+	 * that barcode's own (amount, qu_id) pair, which this method does not touch, and the latter
+	 * is a unitless cost multiplier, not a per-unit price (see the costs columns in
+	 * db/pgsql/baseline/05_views_l3.sql).
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
@@ -3141,10 +3148,22 @@ class StockService extends BaseService
 				$factor = $conversion->factor;
 			}
 
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// last_price is a total price for this row's own (amount, qu_id) - a barcode's
+			// typical purchase package, e.g. "500 g for $2.50" - not a per-stock-unit price:
+			// public/viewjs/purchase.js sets it from the #price field in "total price" mode
+			// right after prefilling that same field from the scanned barcode's own last_price
+			// (purchase.js:414-417), and neither amount nor qu_id on this same row is touched
+			// by this method. It is therefore left as-is, unlike stock.price/stock_log.price
+			// above.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_barcodes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// price_factor is a unitless cost multiplier applied on top of amount * price in
+			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
+			// price itself, so only amount - the ingredient quantity - is converted.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
@@ -3167,6 +3186,20 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.to_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.to_product_id = ' . $productIdToKeep . ' AND ps_keep.from_product_id = ps_remove.from_product_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET from_product_id = ' . $productIdToKeep . ' WHERE from_product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET to_product_id = ' . $productIdToKeep . ' WHERE to_product_id = ' . $productIdToRemove);
+
+			// product_location_min_stock carries a real FOREIGN KEY to products - unlike every
+			// other table this method touches, and unlike product_substitutions above, both of
+			// which do "application-level and trigger-level referential integrity, not
+			// FK-level" (migrations/0279.pgsql.sql) - so a removed product with a location
+			// minimum made the DELETE below fail outright with a foreign-key violation (issue
+			// #503, M3's second symptom). Repointing follows the same dedupe-then-move shape as
+			// product_substitutions above: a location where the kept product already has its
+			// own minimum keeps that row untouched - the removed product's is dropped rather
+			// than silently overwriting a minimum someone set deliberately on the surviving
+			// product - and min_stock_amount is converted by the same factor as every other
+			// amount above, so a surviving minimum still means the same physical quantity.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_location_min_stock plms_remove WHERE plms_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_location_min_stock plms_keep WHERE plms_keep.product_id = ' . $productIdToKeep . ' AND plms_keep.location_id = plms_remove.location_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_location_min_stock SET product_id = ' . $productIdToKeep . ', min_stock_amount = min_stock_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM products WHERE id = ' . $productIdToRemove);
 		});
