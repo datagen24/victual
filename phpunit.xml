@@ -92,6 +92,8 @@
 		</testsuite>
 		<testsuite name="dialectpolicy">
 			<file>tests/Pgsql/DialectPolicyTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
