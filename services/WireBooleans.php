@@ -178,4 +178,39 @@ final class WireBooleans
 
 		return $rows;
 	}
+
+	/**
+	 * Validates that $value is a real boolean - true or false - and refuses anything else,
+	 * including the strings "true"/"false" and 0/1. A controller reads a documented-boolean
+	 * request field through this rather than through boolval() or
+	 * filter_var($value, FILTER_VALIDATE_BOOLEAN): boolval("false") is true, and
+	 * filter_var("garbage", FILTER_VALIDATE_BOOLEAN) returns the same false its correct
+	 * answer for "false" does, so neither tells an explicit false apart from a value that
+	 * cannot be read at all - exactly the distinction a partial update needs kept (audit
+	 * findings M19/M24, issues #519/#524), the same way ADR-0028 decision 1 keeps a
+	 * timestamp a route cannot read from silently becoming a default.
+	 *
+	 * This is the write-side counterpart of Coerce()/CoerceRows() above: those turn a
+	 * stored 0/1 into the true/false a documented-boolean response promises, and this
+	 * refuses anything but true/false on the way in. Kept as its own function rather than a
+	 * mode flag on Coerce(), because a reader that tolerates 0/1 and a writer that refuses
+	 * everything but a real boolean are two different behaviours, and one function with a
+	 * flag for that would be a worse API than two small ones. Not a per-shape column table
+	 * like COLUMNS above: a caller already knows which single field it is validating, so
+	 * there is nothing a table would add here.
+	 *
+	 * @param mixed $value
+	 * @param string $fieldName Used only to build the exception message
+	 * @return bool
+	 * @throws \Exception When $value is not a real boolean
+	 */
+	public static function RequireBoolean($value, string $fieldName): bool
+	{
+		if (!is_bool($value))
+		{
+			throw new \Exception('The ' . $fieldName . ' must be true or false');
+		}
+
+		return $value;
+	}
 }
