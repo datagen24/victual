@@ -3,21 +3,27 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use Victual\Services\FieldPolicy;
 use Victual\Services\StockService;
+use Victual\Services\UsersService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * Second test class in the schema isolation suite. Verifies that service singletons
- * were reset and now use the second schema's connection, not the first schema's (which
- * no longer exists).
- *
- * Without the singleton reset fix, this test fails with "relation "products" does not exist"
- * because StockService was instantiated by the first test class and still holds a
- * connection to the first schema, which was dropped after that class ran.
+ * Regression coverage for issue #533. See SchemaIsolationFirstTest's docblock: this class is
+ * its peer, identical in shape and asserting the same three things about its own schema, so
+ * that whichever of the two runs second in a given registration is the one whose assertions
+ * would fail first if a process-global cache leaked the other's data.
  */
 class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 {
+	/** This class's marker value, inserted under the same keys SchemaIsolationFirstTest uses for its own. */
+	private const MARKER = 'schema-isolation-second';
+
+	/** SchemaIsolationFirstTest's marker value, which must never be visible from here. */
+	private const PEER_MARKER = 'schema-isolation-first';
+
 	private static PDO $db;
+	private static int $productId;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -25,57 +31,74 @@ class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 
 		self::$db = self::Pdo();
 
-		// Create required fixtures: location and quantity unit for product
-		self::$db->exec("INSERT INTO locations(name) VALUES ('Second Schema Location')");
-		self::$db->exec("INSERT INTO quantity_units(name, name_plural, description) VALUES ('unit', 'units', 'default unit')");
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'schema-isolation-caller', 'fixture')");
 
-		// Get the IDs that were auto-generated
-		$loc = self::$db->query("SELECT id FROM locations WHERE name = 'Second Schema Location'")->fetch(PDO::FETCH_ASSOC);
-		$qu = self::$db->query("SELECT id FROM quantity_units WHERE name = 'unit'")->fetch(PDO::FETCH_ASSOC);
-		$locId = (int)$loc['id'];
-		$quId = (int)$qu['id'];
+		$locationId = self::insertRow('locations', ['name' => self::MARKER . '-location']);
+		$quId = self::insertRow('quantity_units', ['name' => self::MARKER . '-unit']);
 
-		// Create a product in the second schema
-		self::$db->exec("INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) VALUES ('second-schema-product', $locId, $quId, $quId)");
+		self::$productId = self::insertRow('products', [
+			'name' => self::MARKER . '-product',
+			'location_id' => $locationId,
+			'qu_id_purchase' => $quId,
+			'qu_id_stock' => $quId,
+		]);
+
+		// Reused key (user_id, key): SchemaIsolationFirstTest inserts the same pair with its
+		// own value. UsersService::$UserSettingsCache is keyed on exactly this pair, so a
+		// leaked cache answers with the peer schema's value instead of an absent row.
+		self::insertRow('user_settings', ['user_id' => 9000, 'key' => 'schema_isolation_marker', 'value' => self::MARKER]);
+
+		// Reused key (permission_name, entity): SchemaIsolationFirstTest inserts the same
+		// pair, gating a different field. FieldPolicy::$RowsByEntity is keyed on entity
+		// alone, so a leaked cache reports the peer's field as redacted, not this one's.
+		self::insertRow('permission_fields', ['permission_name' => 'STOCK_PRICES_VIEW', 'entity' => 'schema_isolation_test', 'field' => self::MARKER . '-field']);
+	}
+
+	private static function insertRow(string $table, array $columns): int
+	{
+		$names = implode(', ', array_keys($columns));
+		$placeholders = implode(', ', array_fill(0, count($columns), '?'));
+		$statement = self::$db->prepare("INSERT INTO $table ($names) VALUES ($placeholders) RETURNING id");
+		$statement->execute(array_values($columns));
+
+		return (int)$statement->fetchColumn();
 	}
 
 	/**
-	 * Verify the product exists in the second schema.
+	 * A real write through the cached BaseService singleton (issue #533's own reproduction):
+	 * StockService::GetInstance() must reach this class's schema rather than a previous
+	 * class's dropped one - or, just as wrong and much quieter, a previous class's schema if
+	 * it were somehow still open.
 	 */
-	public function testProductExistsInSecondSchema()
+	public function testBooksStockThroughCachedSingleton(): void
 	{
-		$result = self::$db->query("SELECT COUNT(*) as count FROM products WHERE name = 'second-schema-product'");
-		$row = $result->fetch(PDO::FETCH_ASSOC);
+		$transactionId = null;
+		StockService::GetInstance()->AddProduct(self::$productId, 5, null, StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', 1.0, null, null, $transactionId);
 
-		self::assertSame(1, (int)$row['count'], 'Product should exist in second schema');
+		$amount = self::$db->query('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ' . self::$productId)->fetchColumn();
+		self::assertSame(5.0, (float)$amount, "the booking must land in this class's own schema");
 	}
 
 	/**
-	 * Verify that a service singleton reaches the second schema, not the first.
-	 *
-	 * This is the key test: without the singleton reset in PgsqlSchemaTestCase::setUpBeforeClass(),
-	 * StockService::GetInstance() would return an instance created by the first test class,
-	 * still holding the first schema's connection (now dropped), causing a "relation does not exist" error.
+	 * UsersService::$UserSettingsCache is keyed by (user id, setting key) alone, so a stale
+	 * entry for the same pair is indistinguishable from a fresh one except by its value.
 	 */
-	public function testServiceSingletonUsesSecondSchema()
+	public function testUserSettingIsOwnValue(): void
 	{
-		$stock = StockService::GetInstance();
+		$value = UsersService::GetInstance()->GetUserSetting(9000, 'schema_isolation_marker');
 
-		// Use reflection to access the protected $DB property
-		$reflection = new \ReflectionClass($stock);
-		$dbProperty = $reflection->getProperty('DB');
-		$dbProperty->setAccessible(true);
-		$db = $dbProperty->getValue($stock);
+		self::assertNotSame(self::PEER_MARKER, $value, "a leaked UsersService::\$UserSettingsCache entry would answer with the peer schema's value");
+		self::assertSame(self::MARKER, $value);
+	}
 
-		// Query for the product added in this (second) test class
-		$result = $db->products()->where('name = ?', 'second-schema-product')->fetch();
+	/**
+	 * FieldPolicy::$RowsByEntity is keyed by entity alone, so a stale entry for the same
+	 * entity is indistinguishable from a fresh one except by which field it names.
+	 */
+	public function testFieldPolicyIsOwnRow(): void
+	{
+		$redacted = FieldPolicy::GetInstance()->RedactedFieldsFor('schema_isolation_test');
 
-		self::assertNotNull($result, 'Service should reach second schema and find the product');
-		self::assertSame('second-schema-product', $result['name']);
-
-		// Verify the first schema's product is not visible
-		$result = $db->products()->where('name = ?', 'first-schema-product')->fetch();
-
-		self::assertNull($result, 'Service should not see first schema product');
+		self::assertSame([self::MARKER . '-field'], $redacted, "a leaked FieldPolicy::\$RowsByEntity entry would name the peer schema's field instead");
 	}
 }

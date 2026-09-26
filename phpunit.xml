@@ -112,6 +112,15 @@
 			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="stocklocations">
+			<!--
+				SchemaIsolationSecondTest/SchemaIsolationFirstTest (in that order - the
+				reverse of "dialectpolicy"'s registration of the same two files) are issue
+				#533's regression pair, reused here rather than behind a new run-tests.sh
+				phase so both possible class orders are exercised without adding one. See
+				SchemaIsolationFirstTest's docblock.
+			-->
+			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>

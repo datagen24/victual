@@ -5,7 +5,6 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\ApiKeyService;
 use Victual\Services\ChoresService;
-use Victual\Services\DatabaseService;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
@@ -79,32 +78,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::$apiKey = bin2hex(random_bytes(25));
 		$statement = self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, 9601, now() + interval '30 days', ?)");
 		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
-
-		// This suite's recipeoperations testsuite runs RecipeOperationsTest.php first, in the
-		// same PHPUnit process, and that class also constructs several BaseService
-		// singletons (StockService, RecipesService, and, transitively through them,
-		// UsersService and others). BaseService::GetInstance() caches one instance per class
-		// for the whole process, and BaseService::__construct() reads
-		// DatabaseService::GetDbConnection() once, at that first construction, into $this->DB.
-		// So every already-constructed singleton - not only the three fetched above - still
-		// holds the LessQL wrapper around RecipeOperationsTest.php's schema connection, which
-		// parent::tearDownAfterClass() has since dropped and reflected away. Every cached
-		// instance is repointed here rather than an explicit list of the ones this test
-		// happens to call directly, so a service reached only transitively (as
-		// ChoresService::CalculateNextExecutionAssignment() reaches UsersService) is covered
-		// too. Reused rather than fixed at the source: this is the same reflection
-		// PgsqlSchemaTestCase itself uses to repoint DatabaseService's own connection per
-		// class, applied to BaseService's singleton cache, because BaseService is outside
-		// this fix's reservation.
-		$freshConnection = DatabaseService::GetInstance()->GetDbConnection();
-		$instancesProperty = new \ReflectionProperty(\Victual\Services\BaseService::class, 'Instances');
-		$instancesProperty->setAccessible(true);
-		$dbProperty = new \ReflectionProperty(\Victual\Services\BaseService::class, 'DB');
-		$dbProperty->setAccessible(true);
-		foreach ($instancesProperty->getValue() as $service)
-		{
-			$dbProperty->setValue($service, $freshConnection);
-		}
 	}
 
 	// ------------------------------------------------------------------------------
