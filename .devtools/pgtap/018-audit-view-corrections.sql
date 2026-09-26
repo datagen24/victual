@@ -3,8 +3,16 @@
 -- chores_current. Each case below reproduces the exact defect its issue describes and
 -- asserts the value the corrected view now returns, plus a negative control proving the
 -- ordinary (already-correct) case is unaffected.
+--
+-- Order note: the #506 (M6) block runs before the #497 (H8) block on purpose, although H8
+-- is fixed first in migrations/0289.pgsql.sql. A regression in the H8 fix throws a raw
+-- PostgreSQL error (SQLSTATE 22008) that aborts the rest of this file's implicit
+-- transaction, the same way it aborts a real request; putting M6 ahead of H8 means a future
+-- H8 regression still lets M6's assertions report, instead of silently going unreported the
+-- way this file's own before-fix run demonstrated (PR #542's evidence: "Bad plan. You
+-- planned 10 tests but ran 5").
 
-SELECT plan(10);
+SELECT plan(11);
 
 -- ---------------------------------------------------------------------------------------
 -- #501 (audit M1): stock_current.amount_opened_aggregated applied one conversion factor
@@ -108,6 +116,41 @@ SELECT is(
 );
 
 -- ---------------------------------------------------------------------------------------
+-- #506 (audit M6, weekly-schedule half only - the chore-undo/stock-composition half is a
+-- separate change): the weekly branch read the chore's most recent chores_log row with no
+-- undone filter, unlike every other branch. A chore last (genuinely) tracked Monday
+-- 2026-01-05, with a later *undone* execution logged for 2026-02-01, must schedule its
+-- next occurrence from the live 2026-01-05 row (giving Monday 2026-01-12), not from the
+-- undone 2026-02-01 row (which would give Monday 2026-02-02). Placed ahead of the #497
+-- block below - see the order note at the top of this file.
+-- ---------------------------------------------------------------------------------------
+
+INSERT INTO chores (name, period_type, period_interval, period_config, active) VALUES
+	('Audit506 weekly', 'weekly', 1, 'monday', 1);
+INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
+	((SELECT id FROM chores WHERE name = 'Audit506 weekly'), '2026-01-05 09:00:00', 1, 0),
+	((SELECT id FROM chores WHERE name = 'Audit506 weekly'), '2026-02-01 09:00:00', 1, 1);
+
+SELECT is(
+	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly')),
+	'2026-01-12 09:00:00'::timestamp,
+	'#506: the weekly schedule is driven by the live (undone = 0) execution, not a later undone one'
+);
+
+-- Negative control: with only a live execution on the books, the weekly schedule computes
+-- the same way it always has.
+INSERT INTO chores (name, period_type, period_interval, period_config, active) VALUES
+	('Audit506 weekly control', 'weekly', 1, 'monday', 1);
+INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
+	((SELECT id FROM chores WHERE name = 'Audit506 weekly control'), '2026-01-05 09:00:00', 1, 0);
+
+SELECT is(
+	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly control')),
+	'2026-01-12 09:00:00'::timestamp,
+	'#506 negative control: a live weekly execution alone still drives the schedule'
+);
+
+-- ---------------------------------------------------------------------------------------
 -- #497 (audit H8): chores_current's yearly branch built the target date by concatenating
 -- text ('YYYY' from the target year, '-MM-DD' from start_date) and casting the result, so
 -- a 29 February anchor reaching a non-leap target year had no valid cast. Maintainer
@@ -142,6 +185,24 @@ SELECT is(
 	'#497: the same 29 February anchor is due 29 February again once the target year is itself a leap year'
 );
 
+-- Same anchor again, but the most recently tracked execution was itself last year's
+-- clamped 28th rather than the original 29th - the case a year-by-year increment from the
+-- last tracked date, instead of a re-derivation from start_date, would get permanently
+-- wrong: 2027-02-28 + 1 year is the unremarkable, valid '2028-02-28', so an implementation
+-- that walked forward from the last tracked date would never throw and would never notice
+-- 2028 is a leap year either. Re-deriving from start_date (as this fix does) still recovers
+-- 29 February.
+INSERT INTO chores (name, period_type, period_interval, period_days, start_date, active) VALUES
+	('Audit497 leap recovers after a clamped year', 'yearly', 1, 1, '2024-02-29 12:00:00', 1);
+INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
+	((SELECT id FROM chores WHERE name = 'Audit497 leap recovers after a clamped year'), '2027-02-28 12:00:00', 1, 0);
+
+SELECT is(
+	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 leap recovers after a clamped year')),
+	'2028-02-29 12:00:00'::timestamp,
+	'#497: a 29 February anchor recovers the 29th in the next leap year even when the last tracked execution was itself a clamped 28th'
+);
+
 -- Negative control: an ordinary (non-29-February) yearly anchor must compute exactly as
 -- before this migration.
 INSERT INTO chores (name, period_type, period_interval, period_days, start_date, active) VALUES
@@ -153,40 +214,6 @@ SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 ordinary')),
 	'2025-03-15 08:00:00'::timestamp,
 	'#497 negative control: an ordinary (non-29-February) yearly anchor is unaffected'
-);
-
--- ---------------------------------------------------------------------------------------
--- #506 (audit M6, weekly-schedule half only - the chore-undo/stock-composition half is a
--- separate change): the weekly branch read the chore's most recent chores_log row with no
--- undone filter, unlike every other branch. A chore last (genuinely) tracked Monday
--- 2026-01-05, with a later *undone* execution logged for 2026-02-01, must schedule its
--- next occurrence from the live 2026-01-05 row (giving Monday 2026-01-12), not from the
--- undone 2026-02-01 row (which would give Monday 2026-02-02).
--- ---------------------------------------------------------------------------------------
-
-INSERT INTO chores (name, period_type, period_interval, period_config, active) VALUES
-	('Audit506 weekly', 'weekly', 1, 'monday', 1);
-INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
-	((SELECT id FROM chores WHERE name = 'Audit506 weekly'), '2026-01-05 09:00:00', 1, 0),
-	((SELECT id FROM chores WHERE name = 'Audit506 weekly'), '2026-02-01 09:00:00', 1, 1);
-
-SELECT is(
-	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly')),
-	'2026-01-12 09:00:00'::timestamp,
-	'#506: the weekly schedule is driven by the live (undone = 0) execution, not a later undone one'
-);
-
--- Negative control: with only a live execution on the books, the weekly schedule computes
--- the same way it always has.
-INSERT INTO chores (name, period_type, period_interval, period_config, active) VALUES
-	('Audit506 weekly control', 'weekly', 1, 'monday', 1);
-INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
-	((SELECT id FROM chores WHERE name = 'Audit506 weekly control'), '2026-01-05 09:00:00', 1, 0);
-
-SELECT is(
-	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly control')),
-	'2026-01-12 09:00:00'::timestamp,
-	'#506 negative control: a live weekly execution alone still drives the schedule'
 );
 
 SELECT * FROM finish();

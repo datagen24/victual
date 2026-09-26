@@ -102,9 +102,10 @@ class ViewCorrectionsHttpTest extends PgsqlSchemaTestCase
 
 	/**
 	 * #497 (audit H8): GET /api/chores/{id} for a chore anchored 29 February used to throw
-	 * SQLSTATE 22008 out of chores_current for every non-leap target year - a 500 with no
-	 * workaround for the caller. Fixed by migrations/0289.pgsql.sql; this is the response a
-	 * caller actually receives, end to end through ChoresApiController::ChoreDetails() and
+	 * SQLSTATE 22008 out of chores_current for every non-leap target year - a 400 ("The
+	 * database rejected this request...") with no workaround for the caller, per this PR's
+	 * own before-fix run. Fixed by migrations/0289.pgsql.sql; this is the response a caller
+	 * actually receives, end to end through ChoresApiController::ChoreDetails() and
 	 * ChoresService::GetChoreDetails().
 	 */
 	public function testLeapDayYearlyChoreDetailsReturnNextEstimatedExecutionOn28February(): void
