@@ -22,18 +22,23 @@ $('#save-stockentry-button').on('click', function(e)
 	var jsonForm = $('#stockentry-form').serializeJSON();
 	Victual.FrontendHelpers.BeginUiBusy("stockentry-form");
 
-	if (jsonForm.price)
-	{
-		price = Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input);
-	}
-
 	var jsonData = {};
 	jsonData.amount = jsonForm.amount;
 	jsonData.best_before_date = Victual.Components.DateTimePicker.GetValue();
 	jsonData.purchased_date = Victual.Components.SecondaryDateTimePicker.GetValue();
 	jsonData.note = jsonForm.note;
-	jsonData.price = price;
 	jsonData.open = $("#open").is(":checked");
+
+	// The price input does not exist in the DOM at all when prices are not visible to this
+	// caller (views/stockentryform.blade.php), rather than being present with a zero value:
+	// PUT /api/stock/entry/{id} keeps the entry's stored price for a key the body omits, so
+	// sending a zero here would silently overwrite a price this caller never saw (issue
+	// #512). jsonForm.price is undefined in that case, so the key is left off jsonData
+	// entirely instead of being read into a bare, undeclared price variable.
+	if (jsonForm.price)
+	{
+		jsonData.price = Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input);
+	}
 
 	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
 	{
