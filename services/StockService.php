@@ -2204,7 +2204,7 @@ class StockService extends BaseService
 			throw new \Exception('Shopping list does not exist');
 		}
 
-		$productRow = $this->DB->shopping_list()->where('product_id = :1', $productId)->fetch();
+		$productRow = $this->DB->shopping_list()->where('product_id = :1 AND shopping_list_id = :2', $productId, $listId)->fetch();
 
 		// If no entry was found with for this product, we return gracefully
 		if ($productRow != null && !empty($productRow))
