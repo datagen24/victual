@@ -58,6 +58,7 @@
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
+			<file>tests/Pgsql/StockEntryFormPriceTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>

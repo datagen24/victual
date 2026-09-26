@@ -78,6 +78,15 @@
 			@php $additionalGroupCssClasses = ''; @endphp
 
 			@if(VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
+			{{-- $pricesVisible, not the feature flag alone: a user holding only STOCK_VIEW
+			(no STOCK_PRICES_VIEW) reaches this form the same way ShoppingLocationEditForm,
+			ProductEditForm and every other *EditForm in StockController.php reach theirs -
+			on the domain's _VIEW permission, with the write itself gated separately at
+			PUT /api/stock/entry/{id} (STOCK_EDIT). So the form stays viewable and only the
+			price input is withheld, the same way productform.blade.php's barcode price is
+			(issue #176 item 4) rather than a d-none'd copy of the real value, which would
+			still leave it in the page source. Issue #512. --}}
+			@if($pricesVisible)
 			@php
 			if (empty($stockEntry->price))
 			{
@@ -98,6 +107,12 @@
 			'isRequired' => false,
 			'additionalCssClasses' => 'locale-number-input locale-number-currency'
 			))
+			@else
+			<input type="hidden"
+				name="price"
+				id="price"
+				value="0">
+			@endif
 			@include('components.shoppinglocationpicker', array(
 			'label' => 'Store',
 			'shoppinglocations' => $shoppinglocations,
