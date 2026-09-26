@@ -5,6 +5,7 @@ namespace Victual\Controllers;
 use Victual\Controllers\Users\User;
 use Victual\Services\UserfieldsService;
 use Victual\Services\RolesService;
+use Victual\Services\UsersService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -45,7 +46,13 @@ class UsersController extends BaseController
 	/**
 	 * Serves the user create/edit form (route GET /user/{userId}).
 	 * Requires USERS_CREATE for creating, USERS_EDIT_SELF when editing the own
-	 * user and USERS_EDIT when editing others.
+	 * user and USERS_EDIT when editing others - except a flagged account viewing
+	 * its own id, which needs neither: BaseAuthMiddleware redirects exactly such an
+	 * account here (?changepw=true) to resolve must_change_password, and a flagged
+	 * account can hold no permissions at all, by definition of why the flag exists.
+	 * Refusing the page itself would trap it behind a redirect with no route off it
+	 * (issue #514, validator round 2) - the API side of the same bypass
+	 * (UsersApiController::EditUser()) still restricts the save to the password alone.
 	 *
 	 * @param array $args Route arguments; userId is either a user id or the literal 'new' for create mode
 	 */
@@ -63,7 +70,10 @@ class UsersController extends BaseController
 		{
 			if ($args['userId'] == VICTUAL_USER_ID)
 			{
-				User::CheckPermission($request, User::PERMISSION_USERS_EDIT_SELF);
+				if (!UsersService::GetInstance()->MustChangePassword((int)$args['userId']))
+				{
+					User::CheckPermission($request, User::PERMISSION_USERS_EDIT_SELF);
+				}
 			}
 			else
 			{

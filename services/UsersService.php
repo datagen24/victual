@@ -212,16 +212,33 @@ class UsersService extends BaseService
 	 * (SessionService::RemoveOtherSessions()) - issue #513: without it, a session opened
 	 * with a compromised or bootstrap credential outlived the rotation meant to end its
 	 * access, and `must_change_password` cleared under it regardless. $actingSessionKey is
-	 * the session, if any, that authenticated the request making this change; it alone is
-	 * spared, so a self-service password change does not log its own author out. It is
-	 * null for an API-key-authenticated request and whenever the caller is not $userId
-	 * (an administrator resetting somebody else's password), in which case nothing of
-	 * $userId's own is excepted and every session of theirs is cleared. API keys are a
-	 * separate credential and are deliberately left alone here.
+	 * the session, if any, that authenticated the request making this change; $isSelf is
+	 * whether that request's caller is $userId itself. An administrator resetting somebody
+	 * else's password passes $isSelf = false, and their own session - a different user's
+	 * row - is never excepted regardless of what $actingSessionKey names, so every one of
+	 * $userId's sessions clears.
 	 *
+	 * When $isSelf and the account was flagged before this call, the acting session is not
+	 * spared either (validator round 2 on issue #513): every session on a flagged account,
+	 * that one included, was opened under the very credential this rotation exists to get
+	 * away from, and none of them is the proof that the change is legitimate - the current
+	 * password submitted with this request is. So all of them are revoked, and when there
+	 * was a browser session to begin with ($actingSessionKey not null) a fresh one replaces
+	 * it, exactly as a new login would issue - the return value, non-null exactly then, for
+	 * the caller to set as the response's session cookie. An API-key-authenticated forced
+	 * change ($actingSessionKey null) revokes without minting a replacement: there was no
+	 * browser session to keep alive in the first place.
+	 *
+	 * An ordinary (unflagged) self password change keeps behaving as it always has: every
+	 * other session is revoked and the acting one - proven by the very request making the
+	 * change - is spared, so changing one's own password does not log that browser out.
+	 * API keys are a separate credential and are deliberately left alone throughout.
+	 *
+	 * @return string|null The new session key to set as the response's cookie in place of
+	 *                      the one just revoked, or null when no replacement was minted
 	 * @throws \Exception When the user does not exist
 	 */
-	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null, ?string $actingSessionKey = null)
+	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null, ?string $actingSessionKey = null, bool $isSelf = false): ?string
 	{
 		if (!$this->UserExists($userId))
 		{
@@ -238,23 +255,36 @@ class UsersService extends BaseService
 				'last_name' => $lastName,
 				'picture_file_name' => $pictureFileName
 			]);
-		}
-		else
-		{
-			$user->update([
-				'username' => $username,
-				'first_name' => $firstName,
-				'last_name' => $lastName,
-				'password' => password_hash($password, PASSWORD_ARGON2ID),
-				'picture_file_name' => $pictureFileName,
-				// Whatever it is now, it is not the seeded default any more - unless somebody
-				// deliberately set it back to that, which the next login will notice. Written
-				// in the same update as the password so the two cannot come apart.
-				'must_change_password' => 0
-			]);
 
-			SessionService::GetInstance()->RemoveOtherSessions($userId, $actingSessionKey);
+			return null;
 		}
+
+		$wasFlagged = (int)$user->must_change_password === 1;
+
+		$user->update([
+			'username' => $username,
+			'first_name' => $firstName,
+			'last_name' => $lastName,
+			'password' => password_hash($password, PASSWORD_ARGON2ID),
+			'picture_file_name' => $pictureFileName,
+			// Whatever it is now, it is not the seeded default any more - unless somebody
+			// deliberately set it back to that, which the next login will notice. Written
+			// in the same update as the password so the two cannot come apart.
+			'must_change_password' => 0
+		]);
+
+		$sessionService = SessionService::GetInstance();
+
+		if ($isSelf && $wasFlagged)
+		{
+			$sessionService->RemoveOtherSessions($userId, null);
+
+			return $actingSessionKey !== null ? $sessionService->CreateSession($userId) : null;
+		}
+
+		$sessionService->RemoveOtherSessions($userId, $actingSessionKey);
+
+		return null;
 	}
 
 	/** @var array<int|string, array<string, mixed>> Per-request settings cache: [user id => [key => value]] */
