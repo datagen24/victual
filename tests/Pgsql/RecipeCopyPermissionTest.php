@@ -53,8 +53,18 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		self::$keys['recipe-reader'] = self::issueKey(9501);
 		self::$keys['recipe-editor'] = self::issueKey(9502);
 
-		// Create test recipes
+		// Create test recipes with ingredients and nestings
 		self::$recipeIds['source'] = self::$db->query('INSERT INTO recipes(name) VALUES (\'source-recipe\') RETURNING id')->fetchColumn();
+		self::$recipeIds['nested'] = self::$db->query('INSERT INTO recipes(name) VALUES (\'nested-recipe\') RETURNING id')->fetchColumn();
+
+		// Add ingredient to source recipe (product_id 1 is a fixture product)
+		// Set only_check_single_unit_in_stock to bypass quantity unit conversion validation
+		$posStmt = self::$db->prepare('INSERT INTO recipes_pos(recipe_id, product_id, amount, only_check_single_unit_in_stock) VALUES (?, 1, 1.5, 1)');
+		$posStmt->execute([self::$recipeIds['source']]);
+
+		// Add nesting to source recipe
+		$nestStmt = self::$db->prepare('INSERT INTO recipes_nestings(recipe_id, includes_recipe_id, servings) VALUES (?, ?, 2)');
+		$nestStmt->execute([self::$recipeIds['source'], self::$recipeIds['nested']]);
 	}
 
 	/** Inserts a key row the way ApiKeyService::CreateApiKey() stores one, and returns its plaintext. */
@@ -119,48 +129,79 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 
 	public function testZeroGrantUserCannotCopy(): void
 	{
-		$beforeCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforePos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$beforeNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
 
 		$response = self::send('POST', '/api/recipes/' . self::$recipeIds['source'] . '/copy', null, self::$keys['zero-grants']);
 		self::assertSame(403, $response['status'], 'Zero-grant user should get 403 on copy');
 
-		$afterCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
-		self::assertSame($beforeCount, $afterCount, 'No recipe rows created on permission refusal');
+		$afterRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$afterPos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$afterNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
 
-		// Also verify no related rows were created
-		$posCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
-		self::assertSame(0, $posCount, 'No recipes_pos rows created');
-
-		$nestingCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
-		self::assertSame(0, $nestingCount, 'No recipes_nestings rows created');
+		self::assertSame(0, $afterRecipes - $beforeRecipes, 'No recipe rows created on permission refusal');
+		self::assertSame(0, $afterPos - $beforePos, 'No recipes_pos rows created on permission refusal');
+		self::assertSame(0, $afterNestings - $beforeNestings, 'No recipes_nestings rows created on permission refusal');
 	}
 
 	public function testReaderCannotCopy(): void
 	{
-		$beforeCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforePos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$beforeNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
 
 		// User 9501 can read but not create
 		$response = self::send('POST', '/api/recipes/' . self::$recipeIds['source'] . '/copy', null, self::$keys['recipe-reader']);
 		self::assertSame(403, $response['status'], 'Recipe reader without write permission should get 403 on copy');
 
-		$afterCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
-		self::assertSame($beforeCount, $afterCount, 'No recipe rows created on permission refusal');
+		$afterRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$afterPos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$afterNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
+
+		self::assertSame(0, $afterRecipes - $beforeRecipes, 'No recipe rows created on permission refusal');
+		self::assertSame(0, $afterPos - $beforePos, 'No recipes_pos rows created on permission refusal');
+		self::assertSame(0, $afterNestings - $beforeNestings, 'No recipes_nestings rows created on permission refusal');
 	}
 
 	public function testEditorCanCopy(): void
 	{
-		$beforeCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforeRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$beforePos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$beforeNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
 
 		// User 9502 has RECIPES permission (can create and read)
 		$response = self::send('POST', '/api/recipes/' . self::$recipeIds['source'] . '/copy', null, self::$keys['recipe-editor']);
 		self::assertSame(200, $response['status'], 'Recipe editor should get 200 on copy: ' . json_encode($response['body']));
 
-		$afterCount = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
-		self::assertSame($beforeCount + 1, $afterCount, 'One recipe row created by authorized copy');
+		$afterRecipes = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
+		$afterPos = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
+		$afterNestings = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
 
-		// Verify the response has created_object_id
+		self::assertSame(1, $afterRecipes - $beforeRecipes, 'One recipe row created by authorized copy');
+		self::assertSame(1, $afterPos - $beforePos, 'One ingredient row copied');
+		self::assertSame(1, $afterNestings - $beforeNestings, 'One nesting row copied');
+
+		// Verify the response has created_object_id and it points to the new recipe
 		self::assertIsArray($response['body'], 'Response body should be JSON object');
 		self::assertArrayHasKey('created_object_id', $response['body'], 'Response should include created_object_id');
-		self::assertTrue(is_int($response['body']['created_object_id']) || is_numeric($response['body']['created_object_id']), 'created_object_id should be integer or numeric');
+		$copiedId = $response['body']['created_object_id'];
+		self::assertTrue(is_int($copiedId) || is_numeric($copiedId), 'created_object_id should be integer or numeric');
+
+		// Verify the copied recipe exists and has the right ingredients/nestings
+		$recipeStmt = self::$db->prepare('SELECT id FROM recipes WHERE id = ?');
+		$recipeStmt->execute([(int)$copiedId]);
+		$copiedRecipe = $recipeStmt->fetch();
+		self::assertNotNull($copiedRecipe, 'Copied recipe exists');
+
+		$posStmt = self::$db->prepare('SELECT COUNT(*) FROM recipes_pos WHERE recipe_id = ?');
+		$posStmt->execute([(int)$copiedId]);
+		$copiedPos = (int)$posStmt->fetchColumn();
+		self::assertSame(1, $copiedPos, 'Copied recipe has the ingredient');
+
+		$nestStmt = self::$db->prepare('SELECT COUNT(*) FROM recipes_nestings WHERE recipe_id = ?');
+		$nestStmt->execute([(int)$copiedId]);
+		$copiedNestings = (int)$nestStmt->fetchColumn();
+		self::assertSame(1, $copiedNestings, 'Copied recipe has the nesting');
 	}
 }
