@@ -18,6 +18,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
 class CalendarIdentityTest extends PgsqlSchemaTestCase
 {
 	private static PDO $db;
+	private static int $locationId;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -26,6 +27,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 
 		// Create a test location (required for stock entries)
 		self::$db->exec("INSERT INTO locations (name) VALUES ('Test Location')");
+		self::$locationId = (int)self::$db->lastInsertId();
 	}
 
 	public function testIdenticalReadsYieldIdenticalUIDs()
@@ -77,9 +79,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Simulate a best_before_date of 2999-12-31 (sentinel value)
 		$stmt = self::$db->prepare('
 			INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date)
-			VALUES (?, 1, ?, ?, ?, 0, CURRENT_DATE)
+			VALUES (?, ?, ?, ?, ?, 0, CURRENT_DATE)
 		');
-		$stmt->execute([$productId, '2999-12-31', 5.0, 'cal-sentinel-' . uniqid()]);
+		$stmt->execute([$productId, self::$locationId, '2999-12-31', 5.0, 'cal-sentinel-' . uniqid()]);
 
 		// Act: Get iCal
 		$ical = $this->getIcalString();
@@ -119,9 +121,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Also insert a sentinel-dated entry
 		$stmt = self::$db->prepare('
 			INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date)
-			VALUES (?, 1, ?, ?, ?, 0, CURRENT_DATE)
+			VALUES (?, ?, ?, ?, ?, 0, CURRENT_DATE)
 		');
-		$stmt->execute([$productId, '2999-12-31', 3.0, 'cal-tz-sentinel-' . uniqid()]);
+		$stmt->execute([$productId, self::$locationId, '2999-12-31', 3.0, 'cal-tz-sentinel-' . uniqid()]);
 
 		// Act: Get iCal
 		$ical = $this->getIcalString();
@@ -143,9 +145,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	{
 		$stmt = self::$db->prepare('
 			INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock)
-			VALUES (?, 1, 2, 2)
+			VALUES (?, ?, 2, 2)
 		');
-		$stmt->execute([$name]);
+		$stmt->execute([$name, self::$locationId]);
 	}
 
 	/**
@@ -155,11 +157,11 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	{
 		$stmt = self::$db->prepare('
 			INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date)
-			VALUES (?, 1, ?, ?, ?, 0, CURRENT_DATE)
+			VALUES (?, ?, ?, ?, ?, 0, CURRENT_DATE)
 		');
 		// Generate a unique stock_id
 		$stockId = 'cal-test-' . uniqid();
-		$stmt->execute([$productId, $bestBeforeDate, $amount, $stockId]);
+		$stmt->execute([$productId, self::$locationId, $bestBeforeDate, $amount, $stockId]);
 	}
 
 	/**
