@@ -21,12 +21,14 @@
 	<testsuites>
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
+			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
 		</testsuite>
 		<testsuite name="credentialsplit">
 			<file>tests/Pgsql/CredentialSplitTest.php</file>
+			<file>tests/Pgsql/MigrationRunnerAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
@@ -86,6 +88,7 @@
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
+			<file>tests/Pgsql/RecipeSelfProductionLockOrderTest.php</file>
 		</testsuite>
 		<testsuite name="demodata">
 			<file>tests/Pgsql/DemoDataTest.php</file>
@@ -106,6 +109,7 @@
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
+			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="stocklocations">
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
