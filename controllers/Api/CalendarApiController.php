@@ -26,6 +26,10 @@ class CalendarApiController extends BaseApiController
 	 * (Content-Type text/calendar, served as attachment "Victual.ics"); events without
 	 * a start are skipped, timed events are exported as zero-length occurrences.
 	 * Returns a 400 JSON error response on failure.
+	 *
+	 * Sentinel dates (2999-12-31 and beyond) are excluded to prevent unbounded events
+	 * and far-future timezone bounds. Event UIDs are deterministic (derived from event
+	 * type, entity ID, and occurrence date) so identical reads yield identical UIDs.
 	 */
 	public function Ical(Request $request, Response $response, array $args)
 	{
@@ -38,9 +42,21 @@ class CalendarApiController extends BaseApiController
 			$vCalendar = new Calendar();
 			$vCalendar->setProductIdentifier('Victual');
 
+			// Sentinel date threshold: exclude events at or beyond this date
+			$sentinelThreshold = \DateTimeImmutable::createFromFormat('Y-m-d', '2999-01-01');
+
 			foreach ($events as $event)
 			{
 				if (!isset($event['start']) || empty($event['start']))
+				{
+					continue;
+				}
+
+				// Extract the date portion to check against sentinel threshold
+				$eventDate = \DateTimeImmutable::createFromFormat('Y-m-d', substr($event['start'], 0, 10));
+
+				// Skip events at or beyond the sentinel threshold (never-expiring products, etc.)
+				if ($eventDate >= $sentinelThreshold)
 				{
 					continue;
 				}
@@ -73,6 +89,14 @@ class CalendarApiController extends BaseApiController
 				$vEvent->setOccurrence($vEventOccurrence)
 					->setSummary($event['title'])
 					->setDescription($description);
+
+				// Set deterministic UID based on event type, entity ID, and date
+				// Format: <event_type>-<entity_id>-<YYYYMMDD>@victual
+				if (isset($event['event_type']) && isset($event['entity_id']))
+				{
+					$uid = $event['event_type'] . '-' . $event['entity_id'] . '-' . substr($event['start'], 0, 10) . '@victual';
+					$vEvent->setUid($uid);
+				}
 
 				$vCalendar->addEvent($vEvent);
 
