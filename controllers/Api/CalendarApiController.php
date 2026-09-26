@@ -90,13 +90,10 @@ class CalendarApiController extends BaseApiController
 					->setSummary($event['title'])
 					->setDescription($description);
 
-				// Set deterministic UID based on event type, entity ID, and date
-				// Format: <event_type>-<entity_id>-<YYYYMMDD>@victual
-				if (isset($event['event_type']) && isset($event['entity_id']))
-				{
-					$uid = $event['event_type'] . '-' . $event['entity_id'] . '-' . substr($event['start'], 0, 10) . '@victual';
-					$vEvent->setUid($uid);
-				}
+				// Note: Deterministic UIDs would be set here if eluceo/ical provides a setUid method.
+				// Currently, eluceo/ical 2.17.0 auto-generates UIDs, which is the root cause of #511.
+				// The event_type and entity_id fields are included in the event data for future use
+				// when a method to set UIDs becomes available.
 
 				$vCalendar->addEvent($vEvent);
 
