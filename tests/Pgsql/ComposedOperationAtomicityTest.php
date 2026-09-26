@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use Victual\Services\ApiKeyService;
 use Victual\Services\ChoresService;
 use Victual\Services\DatabaseService;
 use Victual\Services\RecipesService;
@@ -35,12 +36,19 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * services rather than HTTP - matching RecipeOperationsTest.php, the existing test of the
  * recipeoperations suite this file is registered in.
  *
- * Outbox assertions are included per row set but are necessarily weak in this suite:
- * BookingEventPublisher::RecordTransaction() only ever writes when VICTUAL_INFLUXDB_ENABLED is
- * true, config-dist.php defaults INFLUXDB_ENABLED to false, and nothing in this testsuite's
- * process turns it on - so the outbox table is empty before and after every case here
- * regardless of atomicity. The assertion is kept anyway: it still guards against a future
- * unconditional or non-transactional outbox write reaching a rolled back operation.
+ * Outbox coverage is separate from the direct-call cases above, and runs through the HTTP
+ * subprocess harness instead (request-subprocess-helper.php, the same one
+ * StockConcurrencyTest.php uses), because BookingEventPublisher::RecordTransaction() only ever
+ * enqueues an outbox row when the VICTUAL_INFLUXDB_ENABLED constant is true, config-dist.php
+ * defaults INFLUXDB_ENABLED to false, and a PHP constant cannot be redefined once set - so it
+ * can only be turned on for a fresh process, never for one test method sharing this class's
+ * process with every other. A direct-call assertion against the outbox table in this class
+ * would therefore see an empty table before and after every case regardless of atomicity, which
+ * is not a regression test; the testChoreExecution.../testRecipeConsume...OutboxRow...() cases
+ * below set VICTUAL_INFLUXDB_ENABLED=true on a subprocess instead, so the enqueue this fix's
+ * transaction wrapping protects can actually be observed succeeding or (correctly) not
+ * happening. RecipesService::CopyRecipe() never calls StockService, so it has no outbox
+ * behaviour to cover here.
  */
 class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 {
@@ -48,6 +56,7 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 	private static ChoresService $chores;
 	private static RecipesService $recipes;
 	private static StockService $stock;
+	private static string $apiKey = '';
 
 	/** Fixture ids shared by setUp, filled by testCreatesFixtures(). */
 	private static array $ids = [];
@@ -62,6 +71,14 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::$chores = ChoresService::GetInstance();
 		self::$recipes = RecipesService::GetInstance();
 		self::$stock = StockService::GetInstance();
+
+		// For the outbox subprocess cases only (see class docblock) - matching
+		// StockConcurrencyTest.php's own subprocess-driven API user, admin for simplicity.
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9601, 'composed-atomicity-api', 'fixture')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9601, id FROM permission_hierarchy WHERE name = 'ADMIN'");
+		self::$apiKey = bin2hex(random_bytes(25));
+		$statement = self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, 9601, now() + interval '30 days', ?)");
+		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
 
 		// This suite's recipeoperations testsuite runs RecipeOperationsTest.php first, in the
 		// same PHPUnit process, and that class also constructs several BaseService
@@ -182,6 +199,64 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		return (int)self::$db->query('SELECT COUNT(*) FROM outbox')->fetchColumn();
 	}
 
+	/**
+	 * Starts request-subprocess-helper.php with VICTUAL_INFLUXDB_ENABLED=true, so
+	 * BookingEventPublisher::RecordTransaction() actually enqueues an outbox row for whatever
+	 * this call books - see the class docblock for why this needs a subprocess rather than a
+	 * direct call. No INFLUXDB_URL/ORG/BUCKET: this harness builds its own minimal app rather
+	 * than requiring app.php (see request-subprocess-helper.php), so ConfigurationValidator's
+	 * check that those are set when INFLUXDB_ENABLED is true never runs here, and the request
+	 * ends (this method only asserts the enqueue, synchronous inside the booking's own
+	 * transaction) before DatabaseService's shutdown-handler drain - which this harness's
+	 * injected connection never registers in the first place - would ever try to reach one.
+	 *
+	 * Copies StockConcurrencyTest.php's own startSubprocess()/finishSubprocess(), which this
+	 * fix's reservation does not permit editing directly - see this class's docblock.
+	 *
+	 * @return array{status: int, stderr: string, body?: string}
+	 */
+	private static function requestWithInfluxEnabled(string $method, string $path, ?array $body = null): array
+	{
+		$spec = array_filter(
+			['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey], 'body' => $body],
+			fn ($value) => $value !== null
+		);
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env = array_merge($inherited, [
+			'RBAC_TEST_SCHEMA' => self::Schema(),
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			'VICTUAL_INFLUXDB_ENABLED' => 'true',
+		]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		$start = strrpos($output, '{"status"');
+		$result = $start === false ? null : json_decode(substr($output, $start), true);
+		self::assertIsArray($result, "the request helper printed no JSON. stdout: $output\nstderr: $errors");
+		$result['stderr'] = $errors;
+
+		return $result;
+	}
+
 	// ------------------------------------------------------------------------------
 	// Fixture graph
 	// ------------------------------------------------------------------------------
@@ -220,7 +295,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		]);
 
 		$watermark = self::highestStockLogId();
-		$outboxBefore = self::outboxCount();
 
 		try
 		{
@@ -236,7 +310,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 			'The refused consumption leaves no execution log entry behind - issue #494/H5');
 		self::assertSame(1.0, self::stockAmount($productId), 'Stock is untouched by the refusal');
 		self::assertSame([], self::stockLogSince($watermark), 'No stock_log row was written for the refused consumption');
-		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row survives the refusal');
 	}
 
 	/**
@@ -270,6 +343,69 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::assertSame(StockService::TRANSACTION_TYPE_CONSUME, $booked[0]['transaction_type']);
 	}
 
+	/**
+	 * The outbox half of testChoreExecutionWithInsufficientStockLeavesNoLogEntry(), run with
+	 * InfluxDB event writing turned on (see class docblock) so that
+	 * BookingEventPublisher::RecordTransaction() actually has something to enqueue if the
+	 * refused consumption were to reach it.
+	 */
+	public function testChoreExecutionRefusalEnqueuesNoOutboxRowWithInfluxEnabled(): void
+	{
+		$productId = self::insertProduct('Outbox Chore Insufficient Stock');
+		self::stockUp($productId, 1);
+
+		$choreId = self::insertRow('chores', [
+			'name' => 'Outbox Atomicity Chore Refused',
+			'period_type' => ChoresService::CHORE_PERIOD_TYPE_MANUALLY,
+			'consume_product_on_execution' => 1,
+			'product_id' => $productId,
+			'product_amount' => 2,
+		]);
+
+		$outboxBefore = self::outboxCount();
+
+		// An empty array body, not null: TrackChoreExecution() parses the body unconditionally
+		// (every field in it is optional, but GetParsedAndFilteredRequestBody() still requires
+		// a Content-Type: application/json), which request-subprocess-helper.php only sets
+		// when a body is present.
+		$result = self::requestWithInfluxEnabled('POST', '/api/chores/' . $choreId . '/execute', []);
+
+		self::assertSame(400, $result['status'], 'The chore execution is refused over the subprocess too: ' . $result['body']);
+		self::assertStringContainsString('cannot be > current stock amount', $result['body'],
+			'refused for the intended reason, not some other 400');
+		self::assertSame($outboxBefore, self::outboxCount(),
+			'No outbox row was enqueued for the refused consumption, with InfluxDB event writing turned on');
+	}
+
+	/**
+	 * The outbox half of testChoreExecutionWithSufficientStockCommitsBoth(): with InfluxDB
+	 * event writing turned on, the committed consumption does enqueue an outbox row - proving
+	 * the case above is a real refusal to enqueue, not an inability to enqueue at all.
+	 */
+	public function testChoreExecutionSuccessEnqueuesAnOutboxRowWithInfluxEnabled(): void
+	{
+		$productId = self::insertProduct('Outbox Chore Sufficient Stock');
+		self::stockUp($productId, 5);
+
+		$choreId = self::insertRow('chores', [
+			'name' => 'Outbox Atomicity Chore Succeeds',
+			'period_type' => ChoresService::CHORE_PERIOD_TYPE_MANUALLY,
+			'consume_product_on_execution' => 1,
+			'product_id' => $productId,
+			'product_amount' => 1,
+		]);
+
+		$outboxBefore = self::outboxCount();
+
+		$result = self::requestWithInfluxEnabled('POST', '/api/chores/' . $choreId . '/execute', []);
+
+		self::assertSame(200, $result['status'], 'The chore execution succeeds over the subprocess too: ' . $result['body']);
+
+		$newRows = self::$db->query('SELECT event_type FROM outbox ORDER BY id OFFSET ' . $outboxBefore)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertCount(1, $newRows, 'Exactly one outbox row was enqueued for the committed consumption');
+		self::assertSame('stock.transaction_booked', $newRows[0]);
+	}
+
 	// ------------------------------------------------------------------------------
 	// RecipesService::ConsumeRecipe()
 	// ------------------------------------------------------------------------------
@@ -296,7 +432,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::addIngredient($recipeId, $ingredientId, 1);
 
 		$watermark = self::highestStockLogId();
-		$outboxBefore = self::outboxCount();
 
 		try
 		{
@@ -312,7 +447,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 			'The refused self-production leaves the ingredient stock exactly as it was - issue #494/H5');
 		self::assertSame([], self::stockLogSince($watermark),
 			'Neither the ingredient consumption nor a self-production booking survives');
-		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row survives the refusal');
 
 		$recipeRow = self::$db->query('SELECT product_id FROM recipes WHERE id = ' . $recipeId)->fetch(PDO::FETCH_ASSOC);
 		self::assertSame($outputId, (int)$recipeRow['product_id'], 'The recipe row itself is unaffected by the refusal');
@@ -350,6 +484,70 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::assertSame([StockService::TRANSACTION_TYPE_CONSUME, StockService::TRANSACTION_TYPE_SELF_PRODUCTION], $types);
 	}
 
+	/**
+	 * The outbox half of testRecipeConsumeWithInactiveOutputLeavesIngredientUntouched(), run
+	 * with InfluxDB event writing turned on (see class docblock) so that
+	 * BookingEventPublisher::RecordTransaction() actually has something to enqueue if the
+	 * refused ingredient consumption were to reach it.
+	 */
+	public function testRecipeConsumeRefusalEnqueuesNoOutboxRowWithInfluxEnabled(): void
+	{
+		$ingredientId = self::insertProduct('Outbox Recipe Ingredient Refused');
+		$outputId = self::insertProduct('Outbox Recipe Inactive Output', ['active' => 0]);
+		self::stockUp($ingredientId, 2);
+
+		$recipeId = self::insertRecipe('Outbox Atomicity Recipe Refused', [
+			'product_id' => $outputId,
+			'base_servings' => 1,
+			'desired_servings' => 1,
+		]);
+		self::addIngredient($recipeId, $ingredientId, 1);
+
+		$outboxBefore = self::outboxCount();
+
+		$result = self::requestWithInfluxEnabled('POST', '/api/recipes/' . $recipeId . '/consume');
+
+		self::assertSame(400, $result['status'], 'The recipe consume is refused over the subprocess too: ' . $result['body']);
+		self::assertStringContainsString('does not exist or is inactive', $result['body'],
+			'refused for the intended reason, not some other 400');
+		self::assertSame($outboxBefore, self::outboxCount(),
+			'No outbox row was enqueued for the refused ingredient consumption, with InfluxDB event writing turned on');
+	}
+
+	/**
+	 * The outbox half of testRecipeConsumeWithActiveOutputCommitsBoth(): with InfluxDB event
+	 * writing turned on, the committed consumption and self-production do enqueue an outbox
+	 * row - proving the case above is a real refusal to enqueue, not an inability to enqueue
+	 * at all.
+	 */
+	public function testRecipeConsumeSuccessEnqueuesAnOutboxRowWithInfluxEnabled(): void
+	{
+		$ingredientId = self::insertProduct('Outbox Recipe Ingredient Succeeds');
+		$outputId = self::insertProduct('Outbox Recipe Active Output');
+		self::stockUp($ingredientId, 2);
+
+		$recipeId = self::insertRecipe('Outbox Atomicity Recipe Succeeds', [
+			'product_id' => $outputId,
+			'base_servings' => 1,
+			'desired_servings' => 1,
+		]);
+		self::addIngredient($recipeId, $ingredientId, 1);
+
+		$outboxBefore = self::outboxCount();
+
+		$result = self::requestWithInfluxEnabled('POST', '/api/recipes/' . $recipeId . '/consume');
+
+		self::assertSame(204, $result['status'], 'The recipe consume succeeds over the subprocess too: ' . $result['body']);
+
+		// Two rows, not one: the ingredient consumption and the self-production book under
+		// their own separate transaction ids (RecipesService.php's own long-standing
+		// "$dummyTransactionId" for AddProduct(), unrelated to this fix), and
+		// BookingEventPublisher enqueues one outbox row per transaction id.
+		$newRows = self::$db->query('SELECT event_type FROM outbox ORDER BY id OFFSET ' . $outboxBefore)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertCount(2, $newRows, 'One outbox row for the ingredient consumption and one for the self-production');
+		self::assertSame(['stock.transaction_booked', 'stock.transaction_booked'], $newRows);
+	}
+
 	// ------------------------------------------------------------------------------
 	// RecipesService::CopyRecipe()
 	// ------------------------------------------------------------------------------
@@ -384,7 +582,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		$recipesBefore = (int)self::$db->query('SELECT COUNT(*) FROM recipes')->fetchColumn();
 		$posBefore = (int)self::$db->query('SELECT COUNT(*) FROM recipes_pos')->fetchColumn();
 		$nestingsBefore = (int)self::$db->query('SELECT COUNT(*) FROM recipes_nestings')->fetchColumn();
-		$outboxBefore = self::outboxCount();
 
 		try
 		{
@@ -408,7 +605,6 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 			'recipes_nestings holds only the two rows this test seeded, not a third partial one');
 		self::assertFalse(self::$db->query('SELECT 1 FROM recipes WHERE id = ' . $expectedCopyId)->fetchColumn(),
 			'The specific id the copy would have used was never created');
-		self::assertSame($outboxBefore, self::outboxCount(), 'No outbox row survives the refusal');
 	}
 
 	/**
