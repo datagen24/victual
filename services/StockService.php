@@ -3117,8 +3117,11 @@ class StockService extends BaseService
 	 * (rescaling it would violate stock's measurement coherence CHECK, migrations/0275.pgsql.sql,
 	 * which requires amount = 1 on any measured row); or repointing the removed product's own
 	 * child products to the kept product would leave the kept product with both a parent of its
-	 * own and children of its own, which enfore_product_nesting_level does not otherwise
-	 * catch (see db/pgsql/baseline/06_triggers_a.sql).
+	 * own and children of its own. enfore_product_nesting_level (migrations/0277.pgsql.sql)
+	 * does reject that shape too - it fires BEFORE INSERT OR UPDATE and refuses a row's own
+	 * parent already having a parent - but only with a generic message and only once the
+	 * repoint below is already mid-transaction; refusing it here first gives a clear,
+	 * merge-specific message before anything is written.
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
@@ -3186,16 +3189,19 @@ class StockService extends BaseService
 				&& $productToKeep->parent_product_id != $productIdToRemove
 				&& $this->DB->products()->where('parent_product_id = :1', $productIdToRemove)->fetch() != null)
 			{
-				// enfore_product_nesting_level (db/pgsql/baseline/06_triggers_a.sql) allows
-				// only one level of nesting: a product with a parent cannot itself become a
-				// parent. It fires when a row is given a parent while that SAME row already
-				// has children, which is not the shape a merge creates here - repointing the
-				// removed product's children below would instead make the KEPT product a
-				// parent while it still has its own, unrelated parent, a three-level chain the
-				// trigger's own WHERE clause never sees (it looks at the updated row's own
-				// children, not at its new parent's). The exception excludes the kept
-				// product's parent being the removed product itself, which the block below
-				// clears in this same merge, leaving room for exactly that repoint.
+				// enfore_product_nesting_level (migrations/0277.pgsql.sql) allows only one
+				// level of nesting, checked both ways since that migration: a row cannot be
+				// given a parent that itself already has a parent, and a row cannot be given a
+				// parent while something else already treats the row itself as a parent. The
+				// repoint below (child.parent_product_id = $productIdToKeep) WOULD hit the
+				// first of those the moment the kept product has a parent of its own - the
+				// trigger does not miss this shape - but only mid-transaction, after the
+				// UPDATE statements above have already run, and only with its own generic
+				// "Unsupported product nesting level detected" message. Refusing here first
+				// gives a clear, merge-specific reason before anything is written at all. The
+				// exception excludes the kept product's parent being the removed product
+				// itself, which the block below clears in this same merge, leaving room for
+				// exactly that repoint.
 				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
 			}
 

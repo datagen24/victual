@@ -436,18 +436,26 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 
 		// Given: the kept product already has an unrelated parent, and the removed product has
 		// a child of its own - repointing that child to the kept product would give the kept
-		// product both a parent and a child at once, a three-level chain
-		// enfore_product_nesting_level does not itself catch for this shape of update (it
-		// checks the updated row's own children, not its new parent's).
+		// product both a parent and a child at once, a three-level chain.
+		// enfore_product_nesting_level (migrations/0277.pgsql.sql) DOES refuse this shape too
+		// (a row cannot be given a parent that itself already has one) - the guard exists to
+		// refuse before any row is touched with a clear, merge-specific message, not because
+		// the trigger would otherwise let it through. Without the guard, the trigger's own
+		// generic "Unsupported product nesting level detected" also contains the word
+		// "nesting", so asserting on that alone would not actually prove the guard ran -
+		// asserting the guard's own "Cannot merge" wording, and the absence of a SQLSTATE
+		// marker, is what tells them apart.
 		self::assertSame($grandparent, self::productParent($keep));
 		self::assertSame($remove, self::productParent($child));
 
 		// When: the products are merged.
 		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: it would give the kept product both a parent and a child');
 
-		// Then: the refusal names the actual reason (not a raw trigger/constraint error), and
-		// nothing changed - both products, and the child's parent, are exactly as they were.
-		self::assertStringContainsString('nesting', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		// Then: the refusal is this method's own clean message, not the generic trigger error
+		// that would otherwise surface mid-transaction, and nothing changed - both products,
+		// and the child's parent, are exactly as they were.
+		self::assertStringContainsString('Cannot merge', $message, 'Then: this is the guard\'s own message, not the trigger\'s generic one');
+		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw database exception message');
 		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
 		self::assertSame($remove, self::productParent($child), 'Then: the child\'s parent is unchanged');
 		self::assertSame($grandparent, self::productParent($keep), 'Then: the kept product\'s own parent is unchanged');
