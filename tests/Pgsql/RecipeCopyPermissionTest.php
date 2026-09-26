@@ -31,6 +31,9 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 	/** @var array<string,int> fixture recipe ids */
 	private static array $recipeIds = [];
 
+	/** @var int fixture product id */
+	private static int $productId;
+
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -53,14 +56,23 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		self::$keys['recipe-reader'] = self::issueKey(9501);
 		self::$keys['recipe-editor'] = self::issueKey(9502);
 
+		// Create location fixture for product
+		$locationId = self::$db->query('INSERT INTO locations(name) VALUES (\'test-location\') RETURNING id')->fetchColumn();
+
+		// Create product fixture with a quantity unit from the seeded schema
+		$quId = self::$db->query('SELECT MIN(id) FROM quantity_units')->fetchColumn();
+		$productStmt = self::$db->prepare('INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, ?, ?) RETURNING id');
+		$productStmt->execute(['test-product', $locationId, $quId, $quId]);
+		self::$productId = $productStmt->fetchColumn();
+
 		// Create test recipes with ingredients and nestings
 		self::$recipeIds['source'] = self::$db->query('INSERT INTO recipes(name) VALUES (\'source-recipe\') RETURNING id')->fetchColumn();
 		self::$recipeIds['nested'] = self::$db->query('INSERT INTO recipes(name) VALUES (\'nested-recipe\') RETURNING id')->fetchColumn();
 
-		// Add ingredient to source recipe (product_id 1 is a fixture product)
+		// Add ingredient to source recipe using the created product
 		// Set only_check_single_unit_in_stock to bypass quantity unit conversion validation
-		$posStmt = self::$db->prepare('INSERT INTO recipes_pos(recipe_id, product_id, amount, only_check_single_unit_in_stock) VALUES (?, 1, 1.5, 1)');
-		$posStmt->execute([self::$recipeIds['source']]);
+		$posStmt = self::$db->prepare('INSERT INTO recipes_pos(recipe_id, product_id, amount, only_check_single_unit_in_stock) VALUES (?, ?, 1.5, 1)');
+		$posStmt->execute([self::$recipeIds['source'], self::$productId]);
 
 		// Add nesting to source recipe
 		$nestStmt = self::$db->prepare('INSERT INTO recipes_nestings(recipe_id, includes_recipe_id, servings) VALUES (?, ?, 2)');
@@ -194,9 +206,14 @@ class RecipeCopyPermissionTest extends PgsqlSchemaTestCase
 		$copiedRecipe = $recipeStmt->fetch();
 		self::assertNotNull($copiedRecipe, 'Copied recipe exists');
 
-		$posStmt = self::$db->prepare('SELECT COUNT(*) FROM recipes_pos WHERE recipe_id = ?');
+		$posStmt = self::$db->prepare('SELECT product_id FROM recipes_pos WHERE recipe_id = ?');
 		$posStmt->execute([(int)$copiedId]);
-		$copiedPos = (int)$posStmt->fetchColumn();
+		$copiedProductId = (int)$posStmt->fetchColumn();
+		self::assertSame(self::$productId, $copiedProductId, 'Copied recipe has the same product_id');
+
+		$posCountStmt = self::$db->prepare('SELECT COUNT(*) FROM recipes_pos WHERE recipe_id = ?');
+		$posCountStmt->execute([(int)$copiedId]);
+		$copiedPos = (int)$posCountStmt->fetchColumn();
 		self::assertSame(1, $copiedPos, 'Copied recipe has the ingredient');
 
 		$nestStmt = self::$db->prepare('SELECT COUNT(*) FROM recipes_nestings WHERE recipe_id = ?');
