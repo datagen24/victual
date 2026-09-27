@@ -18,14 +18,28 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * Regression coverage for issue #533. See SchemaIsolationFirstTest's docblock: this class is
  * its peer, identical in shape and asserting the same three things about its own schema, so
  * that whichever of the two runs second in a given registration is the one whose assertions
- * would fail first if a process-global cache leaked the other's data. It also carries the
- * cross-class assertions for the two more caches SchemaIsolationFirstTest deliberately dirties
- * - BaseApiController's column-type cache and FileStorage's backend singleton - plus four
- * direct, single-class tests for DatabaseService's dirty-data flag, its before-commit-listener
- * queue, its cached dialect's own pending-change flag, DatabaseMigrationService's
- * applied-migrations memo, and LocalizationService's per-locale instance map (see each test's
- * own docblock for why those are not exercised through the class boundary the way the others
- * are: every one of them is unavoidably touched by this class's own MigrateDatabase() call).
+ * would fail first if a process-global cache leaked the other's data.
+ *
+ * This class also carries seven self-contained tests, one per remaining cache issue #533's
+ * audit found: BaseApiController's column-type cache, FileStorage's backend singleton,
+ * DatabaseService's dirty-data flag, its before-commit-listener queue, its cached dialect's
+ * own pending-change flag, DatabaseMigrationService's applied-migrations memo, and
+ * LocalizationService's per-locale instance map. Each dirties its own state, calls
+ * PgsqlSchemaTestCase::ResetSchemaBoundState() - the same protected method
+ * setUpBeforeClass() calls, not the class-specific reset method directly - and asserts the
+ * state is clean.
+ *
+ * Calling ResetSchemaBoundState() rather than (for example) DatabaseService::ResetForTest()
+ * is load-bearing, not a style choice: a second Opus validation of this PR found that calling
+ * the class-specific method directly never notices a call *missing from
+ * ResetSchemaBoundState() itself* - exactly the class of regression this whole file exists to
+ * catch. It also replaces the three tests' and FileStorage/BaseApiController's earlier,
+ * cross-class-boundary design (SchemaIsolationFirstTest dirtying, this class asserting clean),
+ * which the same validation found unreliable for BaseApiController and FileStorage - each is
+ * dirtied by only one of the two classes, so a missing reset was caught in only one of the two
+ * registered orders - and structurally impossible for the other three, which every class's own
+ * MigrateDatabase() call unavoidably touches regardless of any leak (see each test's own
+ * docblock below).
  */
 class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 {
@@ -118,56 +132,72 @@ class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * BaseApiController::$ColumnTypeCache has no public reader (ColumnTypesOf() is
-	 * private), so this reads it directly - the same reflection SchemaIsolationFirstTest
-	 * uses to dirty it in the first place.
+	 * Self-contained coverage of ResetSchemaBoundState()'s BaseApiController::ResetColumnTypeCacheForTest()
+	 * call. BaseApiController::$ColumnTypeCache has no public mutator or reader
+	 * (ColumnTypesOf() is private), so both the dirty and the read use reflection.
 	 */
-	public function testBaseApiControllerColumnTypeCacheStartsClean(): void
+	public function testBaseApiControllerColumnTypeCacheReset(): void
 	{
+		(new ReflectionProperty(BaseApiController::class, 'ColumnTypeCache'))->setValue(null, ['schema-isolation-sentinel-table' => ['sentinel_column' => 'sentinel_type']]);
+
+		self::ResetSchemaBoundState();
+
 		$cache = (new ReflectionProperty(BaseApiController::class, 'ColumnTypeCache'))->getValue();
-
-		self::assertSame([], $cache, 'BaseApiController::$ColumnTypeCache must not survive from a previous test class');
+		self::assertSame([], $cache, 'ResetSchemaBoundState() must clear BaseApiController::$ColumnTypeCache');
 	}
 
 	/**
-	 * FileStorage::$Instance has no public reader, so this reads it directly - the same
-	 * reflection SchemaIsolationFirstTest uses to dirty it in the first place.
-	 */
-	public function testFileStorageInstanceStartsClean(): void
-	{
-		$instance = (new ReflectionProperty(FileStorage::class, 'Instance'))->getValue();
-
-		self::assertNull($instance, 'FileStorage::$Instance must not survive from a previous test class');
-	}
-
-	/**
-	 * Direct coverage of DatabaseService::ResetForTest()'s dirty-data-flag clear, rather
-	 * than through the SchemaIsolationFirstTest/SecondTest class boundary the checks above
-	 * use.
+	 * Self-contained coverage of ResetSchemaBoundState()'s FileStorage::ResetInstanceForTest()
+	 * call.
 	 *
-	 * Not observable that way: MigrateDatabase() performs at least one tracked write of its
-	 * own (recording a migration's version, syncing a user-setting default) via
+	 * Dirtied through the real GetInstance() rather than an inert stdClass poked in by
+	 * reflection: an stdClass sentinel left the suite hanging the first time this was tried
+	 * for the LocalizationService test below - a caller that reaches the leaked value and
+	 * calls a real method on it (FilesystemStorage/DatabaseStorage both have several) hits
+	 * "call to undefined method" instead of a clean assertion failure. A real,
+	 * fully-constructed backend answers any such call normally even if this reset were ever
+	 * missing, which is the property a dirty value in a test like this needs. Read back by
+	 * reflection since FileStorage has no public reader.
+	 */
+	public function testFileStorageInstanceReset(): void
+	{
+		FileStorage::GetInstance();
+		self::assertNotNull((new ReflectionProperty(FileStorage::class, 'Instance'))->getValue(), 'sanity check: GetInstance() should have populated the singleton');
+
+		self::ResetSchemaBoundState();
+
+		$instance = (new ReflectionProperty(FileStorage::class, 'Instance'))->getValue();
+		self::assertNull($instance, 'ResetSchemaBoundState() must clear FileStorage::$Instance');
+	}
+
+	/**
+	 * Self-contained coverage of ResetSchemaBoundState()'s DatabaseService::ResetForTest()
+	 * call, specifically its dirty-data-flag clear.
+	 *
+	 * Not observable through the SchemaIsolationFirstTest/SecondTest class boundary the three
+	 * tests above use: MigrateDatabase() performs at least one tracked write of its own
+	 * (recording a migration's version, syncing a user-setting default) via
 	 * ExecuteDbStatement(), which marks the flag *set* as a correct, unavoidable side effect
 	 * of migrating a schema at all - true after every class's own setUpBeforeClass()
 	 * regardless of whether a leak happened, which makes "does this class start clean"
-	 * unanswerable through the class boundary. Testing the method directly is the reliable
-	 * alternative: mark it, call the reset, confirm it clears.
+	 * unanswerable through the class boundary.
 	 */
 	public function testDatabaseServiceDataChangedReset(): void
 	{
 		DatabaseService::GetInstance()->MarkDataChanged();
 
-		DatabaseService::ResetForTest();
+		self::ResetSchemaBoundState();
 
-		self::assertFalse(DatabaseService::GetInstance()->HasDataChanged(), 'ResetForTest() must clear the dirty-data flag');
+		self::assertFalse(DatabaseService::GetInstance()->HasDataChanged(), 'ResetSchemaBoundState() must clear the dirty-data flag');
 	}
 
 	/**
-	 * Direct coverage of DatabaseService::ResetForTest()'s dialect recreation, which is what
-	 * clears PostgresDialect's own pending-change flag (DbChangedPending) - instance state
-	 * on the one dialect object DatabaseService caches, cleared only by recreating it. Not
-	 * observable through the class boundary for the same reason as the test above:
-	 * MigrateDatabase()'s own tracked writes mark it too, on every class, leak or not.
+	 * Self-contained coverage of ResetSchemaBoundState()'s DatabaseService::ResetForTest()
+	 * call, specifically its dialect recreation - which is what clears PostgresDialect's own
+	 * pending-change flag (DbChangedPending), instance state on the one dialect object
+	 * DatabaseService caches, cleared only by recreating it. Not observable through the class
+	 * boundary for the same reason as the test above: MigrateDatabase()'s own tracked writes
+	 * mark it too, on every class, leak or not.
 	 */
 	public function testDatabaseServiceDialectPendingChangeReset(): void
 	{
@@ -178,23 +208,22 @@ class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 			'sanity check: MarkDbChanged() should have set the flag on the current dialect'
 		);
 
-		DatabaseService::ResetForTest();
+		self::ResetSchemaBoundState();
 
 		$dialectAfter = DatabaseService::GetInstance()->GetDialect();
 		$pending = (new ReflectionProperty($dialectAfter, 'DbChangedPending'))->getValue($dialectAfter);
-		self::assertFalse($pending, "ResetForTest() must clear the dialect's own pending-change flag");
+		self::assertFalse($pending, "ResetSchemaBoundState() must clear the dialect's own pending-change flag");
 	}
 
 	/**
-	 * Direct coverage of DatabaseService::ResetForTest()'s before-commit-listener clear,
-	 * rather than through the class boundary the two tests above also could not use it for.
+	 * Self-contained coverage of ResetSchemaBoundState()'s DatabaseService::ResetForTest()
+	 * call, specifically its before-commit-listener clear.
 	 *
 	 * Every class's own MigrateDatabase() call runs at least one PHP migration through
 	 * DatabaseService::InTransaction(), whose commit runs and clears whatever the listener
 	 * queue held at that moment (see DatabaseService::RunBeforeOutermostCommit()) - a side
 	 * effect that self-heals a leaked listener before this class's own tests could observe
-	 * one through the class boundary. Testing the method directly is the reliable
-	 * alternative: register a listener, call the reset, confirm it clears.
+	 * one through the class boundary.
 	 */
 	public function testDatabaseServiceBeforeCommitListenerReset(): void
 	{
@@ -202,54 +231,65 @@ class SchemaIsolationSecondTest extends PgsqlSchemaTestCase
 		{
 		}]);
 
-		DatabaseService::ResetForTest();
+		self::ResetSchemaBoundState();
 
 		$listeners = (new ReflectionProperty(DatabaseService::class, 'BeforeOutermostCommitListeners'))->getValue();
-		self::assertSame([], $listeners, 'ResetForTest() must clear any pending before-commit listener');
+		self::assertSame([], $listeners, 'ResetSchemaBoundState() must clear any pending before-commit listener');
 	}
 
 	/**
-	 * Direct coverage of LocalizationService::ResetInstancesForTest() itself, rather than
-	 * through the class boundary.
+	 * Self-contained coverage of ResetSchemaBoundState()'s LocalizationService::ResetInstancesForTest()
+	 * call.
 	 *
 	 * Migration 0274's own happy path constructs a LocalizationService instance (see
 	 * MigrationRunnerAtomicityTest's docblock), so every class's own MigrateDatabase() call
 	 * incidentally repopulates $InstanceMap['en'] with one bound to *that* class's own schema
 	 * before this class's tests could observe a leaked entry through the class boundary - the
-	 * same self-healing shape as the two DatabaseService tests above. Testing the method
-	 * directly is the reliable alternative: populate the map, call the reset, confirm it
-	 * clears.
+	 * same self-healing shape as the three DatabaseService tests above.
+	 *
+	 * Dirtied through the real GetInstance() rather than an inert stdClass poked in by
+	 * reflection. An stdClass sentinel here hung the suite the first time this was tried:
+	 * left in the map by a deliberately-disabled reset (to produce this file's before-fix
+	 * evidence), it survived into SchemaIsolationFirstTest's own setUpBeforeClass() - the
+	 * next class in the "stocklocations" registration - whose MigrateDatabase() call reached
+	 * migration 0274's own LocalizationService construction, found the map already
+	 * "populated", returned the stdClass in place of a real instance, and stalled rather than
+	 * failing cleanly the moment something called a real method on it. A real,
+	 * fully-constructed instance answers any such call normally even if this reset were ever
+	 * missing, which is the property a dirty value in a test like this needs - it no longer
+	 * matters whether whatever reaches the leaked value is this file's own next test method
+	 * or, worse, a later class's migration run.
 	 */
 	public function testLocalizationServiceInstanceMapReset(): void
 	{
-		(new ReflectionProperty(LocalizationService::class, 'InstanceMap'))->setValue(null, ['en' => new \stdClass()]);
+		LocalizationService::GetInstance();
+		self::assertNotEmpty((new ReflectionProperty(LocalizationService::class, 'InstanceMap'))->getValue(), 'sanity check: GetInstance() should have populated the map');
 
-		LocalizationService::ResetInstancesForTest();
+		self::ResetSchemaBoundState();
 
 		$instanceMap = (new ReflectionProperty(LocalizationService::class, 'InstanceMap'))->getValue();
-		self::assertSame([], $instanceMap, 'ResetInstancesForTest() must clear the per-locale instance map');
+		self::assertCount(0, $instanceMap, 'ResetSchemaBoundState() must clear the per-locale instance map');
 	}
 
 	/**
-	 * Direct coverage of DatabaseMigrationService::ResetCachesForTest() itself, rather than
-	 * through the class boundary.
+	 * Self-contained coverage of ResetSchemaBoundState()'s DatabaseMigrationService::ResetCachesForTest()
+	 * call.
 	 *
 	 * MigrateDatabase() already nulls $AppliedMigrationNumbers itself once it finishes (see
-	 * the comment on that assignment), and every class here calls it successfully during
-	 * its own setUpBeforeClass() - so a class that completes its setup normally never
-	 * observes a stale value regardless of whether PgsqlSchemaTestCase's own reset runs;
-	 * only a *previous* class whose setup threw before MigrateDatabase() reached that line
-	 * would leave one behind, which is what this reset guards against and which the normal
-	 * two-class lifecycle this file's other tests use cannot exercise. Testing the method
-	 * directly is the reliable alternative: dirty the memo, call the reset, confirm it clears.
+	 * the comment on that assignment), and every class here calls it successfully during its
+	 * own setUpBeforeClass() - so a class that completes its setup normally never observes a
+	 * stale value regardless of whether this reset runs; only a *previous* class whose setup
+	 * threw before MigrateDatabase() reached that line would leave one behind, which is what
+	 * this reset guards against and which the normal two-class lifecycle the tests above use
+	 * cannot exercise.
 	 */
-	public function testDatabaseMigrationServiceCacheResets(): void
+	public function testDatabaseMigrationServiceCacheReset(): void
 	{
 		(new ReflectionProperty(DatabaseMigrationService::class, 'AppliedMigrationNumbers'))->setValue(null, [999999999]);
 
-		DatabaseMigrationService::ResetCachesForTest();
+		self::ResetSchemaBoundState();
 
 		$value = (new ReflectionProperty(DatabaseMigrationService::class, 'AppliedMigrationNumbers'))->getValue();
-		self::assertNull($value, 'ResetCachesForTest() must clear the memoized applied-migrations list');
+		self::assertNull($value, 'ResetSchemaBoundState() must clear the memoized applied-migrations list');
 	}
 }

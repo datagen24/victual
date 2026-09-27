@@ -3,11 +3,8 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
-use ReflectionProperty;
-use Victual\Controllers\Api\BaseApiController;
 use Victual\Services\FieldPolicy;
 use Victual\Services\StockService;
-use Victual\Services\Storage\FileStorage;
 use Victual\Services\UsersService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -27,21 +24,20 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * case a missing-table error *would* have caught), so this pair covers both the loud and the
  * quiet failure modes in one place.
  *
- * This class additionally dirties two more process-global caches issue #533's audit found
- * that can be dirtied across a class boundary this way - BaseApiController's column-type
- * cache and FileStorage's backend singleton - so SchemaIsolationSecondTest can assert each
- * one starts clean; see the bottom of setUpBeforeClass() below and SchemaIsolationSecondTest's
- * corresponding assertions. Four more the same audit found - DatabaseService's dirty-data
- * flag, its before-commit listeners, its cached dialect's own pending-change flag,
- * DatabaseMigrationService's applied-migrations memo, and LocalizationService's per-locale
- * instance map - are not dirtied here: every one of those is unavoidably touched by
- * SchemaIsolationSecondTest's own migration run (MigrateDatabase() itself performs tracked
- * writes, so the dirty-data flag and the dialect's pending-change flag are legitimately true
- * after *every* class's own setup, leak or not; a PHP migration's own transaction clears any
- * pending before-commit listener; migration 0274's own happy path constructs a
- * LocalizationService instance), making a leak unobservable through the class boundary the
- * way UsersService's or FieldPolicy's leaks are. SchemaIsolationSecondTest covers those
- * directly instead.
+ * Issue #533's audit found five more process-global caches of the same shape
+ * (BaseApiController's column-type cache, FileStorage's backend singleton, DatabaseService's
+ * dirty-data flag/before-commit listeners/cached dialect, DatabaseMigrationService's
+ * applied-migrations memo, and LocalizationService's per-locale instance map). None of them
+ * is dirtied here: a second Opus validation of this PR found that dirtying them across the
+ * class boundary the way the three tests below do is either unreliable (BaseApiController and
+ * FileStorage are dirtied by only one of the two classes, so a missing reset was caught in
+ * only one of the two registered orders) or structurally impossible (DatabaseService's,
+ * DatabaseMigrationService's and LocalizationService's are unavoidably touched by every
+ * class's own MigrateDatabase() call regardless of any leak - see SchemaIsolationSecondTest's
+ * own docblock). All five are instead covered by self-contained tests on
+ * SchemaIsolationSecondTest that dirty the state, call the same
+ * PgsqlSchemaTestCase::ResetSchemaBoundState() setUpBeforeClass() calls, and assert it is
+ * clean - independent of class order because nothing about them depends on a peer class.
  *
  * Both possible orderings of this pair matter, and a phpunit.xml testsuite has one fixed
  * file order, so the pair is registered twice: as itself under "dialectpolicy", and reversed
@@ -98,29 +94,6 @@ class SchemaIsolationFirstTest extends PgsqlSchemaTestCase
 		// depends on it running first.
 		$transactionId = null;
 		StockService::GetInstance()->AddProduct(self::$productId, 3, null, StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', 1.0, null, null, $transactionId);
-
-		// From here down: deliberately dirties every other process-global cache issue #533's
-		// audit found that can be dirtied through the class boundary, so
-		// SchemaIsolationSecondTest has something to catch if PgsqlSchemaTestCase stopped
-		// resetting one of them. Not included: DatabaseService's dirty-data flag, its
-		// before-commit listeners and its cached dialect's own pending-change flag,
-		// DatabaseMigrationService's applied-migrations memo, and LocalizationService's
-		// per-locale instance map - every one of those is unavoidably touched by
-		// SchemaIsolationSecondTest's own migration run (MigrateDatabase() itself writes
-		// tracked data - a migration record, seeded defaults - which legitimately marks the
-		// dirty-data flag and the dialect's pending-change flag, while a PHP migration's own
-		// transaction clears any pending before-commit listener and migration 0274's own
-		// happy path constructs a LocalizationService), so it is true, or absent, after
-		// *every* class's own setup regardless of whether a leak happened - unobservable
-		// through the class boundary the way UsersService's or FieldPolicy's leaks are.
-		// SchemaIsolationSecondTest covers all four directly instead.
-
-		// BaseApiController::$ColumnTypeCache and FileStorage::$Instance have no public
-		// mutator that leaves them dirty without a real (and here, unnecessary) database
-		// table or a FILE_STORAGE=database configuration, so they are set directly - the
-		// same reflection PgsqlSchemaTestCase itself uses to install a connection.
-		(new ReflectionProperty(BaseApiController::class, 'ColumnTypeCache'))->setValue(null, ['schema-isolation-sentinel-table' => ['sentinel_column' => 'sentinel_type']]);
-		(new ReflectionProperty(FileStorage::class, 'Instance'))->setValue(null, new \stdClass());
 	}
 
 	private static function insertRow(string $table, array $columns): int
