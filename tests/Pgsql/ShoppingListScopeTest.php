@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use Victual\Services\ApiKeyService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -19,18 +20,25 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 	private static PDO $db;
 	private static StockService $stockService;
 
+	/** API key for the HTTP-level scenarios below; see the send() helper. */
+	private static string $apiKey = '';
+
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
-
-		// Reset BaseService cached instances to avoid stale schema references across tests
-		// (issue #533: if a cached singleton holds a database connection to the old schema,
-		// it will fail with "relation ... does not exist" on the fresh schema)
-		\Victual\Services\BaseService::ResetInstancesForTest();
-
 		self::$stockService = new StockService();
+
+		// A user and API key for the HTTP-level scenarios below, which drive the real
+		// middleware stack (including User::CheckPermission()) through
+		// tests/Pgsql/request-subprocess-helper.php rather than calling StockService directly.
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9500, 'shoppinglistscope-api', 'fixture')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9500, id FROM permission_hierarchy WHERE name = 'ADMIN'");
+
+		self::$apiKey = bin2hex(random_bytes(25));
+		$statement = self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, 9500, now() + interval '30 days', ?)");
+		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
 	}
 
 	private static function getShoppingListItems(int $listId, int $productId): array
@@ -38,6 +46,58 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		$stmt = self::$db->prepare('SELECT id, shopping_list_id, product_id, amount FROM shopping_list WHERE shopping_list_id = ? AND product_id = ? ORDER BY id');
 		$stmt->execute([$listId, $productId]);
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	/**
+	 * Drives a request through the real middleware stack in a process of its own
+	 * (tests/Pgsql/request-subprocess-helper.php): the authentication middleware define()s
+	 * the acting user's constants, and PHP cannot redefine them, so each request needs a
+	 * fresh process.
+	 *
+	 * @return array{status: int, body: string}
+	 */
+	private static function send(string $method, string $path, ?array $body = null): array
+	{
+		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey]];
+		if ($body !== null)
+		{
+			$spec['body'] = $body;
+		}
+
+		// $_SERVER carries non-scalar entries (argv among them) that proc_open's env
+		// conversion cannot stringify.
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env = array_merge($inherited, [
+			'RBAC_TEST_SCHEMA' => self::Schema(),
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+		]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		// A PHP diagnostic printed before the response would otherwise make this unparseable;
+		// the response object is the last thing the helper writes.
+		$start = strrpos($output, '{"status"');
+		$result = $start === false ? null : json_decode(substr($output, $start), true);
+		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
+
+		return $result;
 	}
 
 	/**
@@ -158,6 +218,114 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		self::assertCount(1, $listBItemsAfter, 'Product should still be on list B (unchanged)');
 		self::assertSame($listBItemsBefore[0]['id'], $listBItemsAfter[0]['id'], 'List B row id must be unchanged');
 		self::assertEqualsWithDelta(3.0, (float)$listBItemsAfter[0]['amount'], 0.001, 'List B item amount must be unchanged (still 3)');
+	}
+
+	/**
+	 * Same defect face as testRemoveProductNotOnListIsGraceful(), driven through the HTTP
+	 * route (POST /api/stock/shoppinglist/remove-product, routes.php:326) with list_id
+	 * omitted from the request body entirely. StockApiController::RemoveProductFromShoppingList
+	 * (~:922) defaults an omitted, zero or non-numeric list_id to list 1, so this exercises
+	 * that default path rather than an explicit service-level argument.
+	 */
+	public function testRemoveProductNotOnListIsGracefulOverHttpWithOmittedListId(): void
+	{
+		// Create a location for the product
+		$stmt = self::$db->prepare('INSERT INTO locations(name) VALUES (?) RETURNING id');
+		$stmt->execute(['Test Location 4']);
+		$locationId = (int)$stmt->fetchColumn();
+
+		// Create a product
+		$stmt = self::$db->prepare('INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, 2, 2) RETURNING id');
+		$stmt->execute(['Test Product 4', $locationId]);
+		$productId = (int)$stmt->fetchColumn();
+
+		// List B: where the product IS. Not list 1, so a mutation of list 1's (nonexistent)
+		// row versus list B's actual row is a provable distinction.
+		$listB = 2;
+		$stmt = self::$db->prepare('SELECT COUNT(*) FROM shopping_lists WHERE id = ?');
+		$stmt->execute([$listB]);
+		if ((int)$stmt->fetchColumn() === 0)
+		{
+			self::$db->exec("INSERT INTO shopping_lists(id, name) VALUES (2, 'Test List B (HTTP omitted)')");
+		}
+
+		// Add the product to list B only (amount 4)
+		self::$stockService->AddProductToShoppingList($productId, 4, 2, null, $listB);
+
+		$listBItemsBefore = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsBefore, 'Product should be on list B before the HTTP removal');
+		self::assertEqualsWithDelta(4.0, (float)$listBItemsBefore[0]['amount'], 0.001, 'List B item should have amount 4');
+
+		// POST with product_id only - no list_id key at all, so the controller's default
+		// (list 1) applies.
+		$response = self::send('POST', '/api/stock/shoppinglist/remove-product', ['product_id' => $productId]);
+		self::assertSame(204, $response['status'], 'Removal with an omitted list_id should return 204: ' . $response['body']);
+
+		// No row should exist on list 1, the default an omitted list_id falls back to
+		$list1Items = self::getShoppingListItems(1, $productId);
+		self::assertCount(0, $list1Items, 'No entry should exist for a product not on the default list 1');
+
+		// List B must be completely unchanged: same row id, same amount
+		$listBItemsAfter = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsAfter, 'Product should still be on list B (unchanged) after the HTTP removal');
+		self::assertSame($listBItemsBefore[0]['id'], $listBItemsAfter[0]['id'], 'List B row id must be unchanged');
+		self::assertEqualsWithDelta(4.0, (float)$listBItemsAfter[0]['amount'], 0.001, 'List B item amount must be unchanged (still 4)');
+	}
+
+	/**
+	 * Same defect face again, but with an explicit list_id in the request body naming a
+	 * list that does not hold the product - the branch of
+	 * StockApiController::RemoveProductFromShoppingList that takes the caller's list_id
+	 * verbatim, rather than the omitted-value default exercised above.
+	 */
+	public function testRemoveProductNotOnListIsGracefulOverHttpWithExplicitListId(): void
+	{
+		// Create a location for the product
+		$stmt = self::$db->prepare('INSERT INTO locations(name) VALUES (?) RETURNING id');
+		$stmt->execute(['Test Location 5']);
+		$locationId = (int)$stmt->fetchColumn();
+
+		// Create a product
+		$stmt = self::$db->prepare('INSERT INTO products(name, location_id, qu_id_purchase, qu_id_stock) VALUES (?, ?, 2, 2) RETURNING id');
+		$stmt->execute(['Test Product 5', $locationId]);
+		$productId = (int)$stmt->fetchColumn();
+
+		// List B: where the product IS. List C: an explicit removal target that does not
+		// hold the product.
+		$listB = 2;
+		$listC = 3;
+
+		foreach ([$listB => 'Test List B (HTTP explicit)', $listC => 'Test List C (HTTP explicit)'] as $id => $name)
+		{
+			$stmt = self::$db->prepare('SELECT COUNT(*) FROM shopping_lists WHERE id = ?');
+			$stmt->execute([$id]);
+			if ((int)$stmt->fetchColumn() === 0)
+			{
+				$insert = self::$db->prepare('INSERT INTO shopping_lists(id, name) VALUES (?, ?)');
+				$insert->execute([$id, $name]);
+			}
+		}
+
+		// Add the product to list B only (amount 6)
+		self::$stockService->AddProductToShoppingList($productId, 6, 2, null, $listB);
+
+		$listBItemsBefore = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsBefore, 'Product should be on list B before the HTTP removal');
+		self::assertEqualsWithDelta(6.0, (float)$listBItemsBefore[0]['amount'], 0.001, 'List B item should have amount 6');
+
+		// POST with an explicit list_id naming list C, where the product is not present
+		$response = self::send('POST', '/api/stock/shoppinglist/remove-product', ['product_id' => $productId, 'list_id' => $listC]);
+		self::assertSame(204, $response['status'], 'Removal with an explicit list_id for a list without the product should return 204: ' . $response['body']);
+
+		// No row should exist on list C
+		$listCItems = self::getShoppingListItems($listC, $productId);
+		self::assertCount(0, $listCItems, 'No entry should exist for a product not on the explicitly named list C');
+
+		// List B must be completely unchanged: same row id, same amount
+		$listBItemsAfter = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsAfter, 'Product should still be on list B (unchanged) after the HTTP removal');
+		self::assertSame($listBItemsBefore[0]['id'], $listBItemsAfter[0]['id'], 'List B row id must be unchanged');
+		self::assertEqualsWithDelta(6.0, (float)$listBItemsAfter[0]['amount'], 0.001, 'List B item amount must be unchanged (still 6)');
 	}
 
 	/**
