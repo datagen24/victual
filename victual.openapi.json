@@ -9437,7 +9437,7 @@
 							"integer",
 							"null"
 						],
-						"description": "How cold this location is kept, or null for unclassified - see StorageClass. When set, it is the sole writer of is_freezer: an update that sets this column also overwrites is_freezer from the class's treats_as_freezer, whatever value this same request otherwise submits for it. When null or absent, is_freezer stays independently editable."
+						"description": "How cold this location is kept, or null for unclassified - see StorageClass. is_freezer is independently editable when the location has no storage class after this request - whether none was ever set or this request clears it - and is derived from the class otherwise, overwriting whatever this same request submits for the flag. Editing a storage class's own treats_as_freezer re-derives is_freezer for every location currently carrying that class."
 					},
 					"tare_weight": {
 						"type": [
