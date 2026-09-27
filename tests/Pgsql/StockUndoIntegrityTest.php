@@ -41,19 +41,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		parent::setUpBeforeClass();
 
-		// Every BaseService subclass (StockService, UsersService, ApiKeyService, ...)
-		// caches its GetInstance() singleton - and the LessQL connection wrapper captured
-		// at its first construction - for the life of the PHP process
-		// (BaseService::$Instances). This testsuite now names two PgsqlSchemaTestCase
-		// classes that both touch StockService (this file and StockCoverageTest.php,
-		// which runs first): without this reset, StockService::GetInstance() here would
-		// return StockCoverageTest's already-constructed singleton, still bound to the
-		// schema its own tearDownAfterClass() already dropped ("relation products does
-		// not exist"). Clearing the cache forces every service singleton to be
-		// reconstructed against this class's own connection instead - the same reflection
-		// technique PgsqlSchemaTestCase already applies to DatabaseService's own two
-		// connection properties, extended to the per-service singletons it does not reset.
-		(new \ReflectionProperty(\Victual\Services\BaseService::class, 'Instances'))->setValue(null, []);
+		// The BaseService::$Instances reset this testsuite needed (issue #533: a second
+		// PgsqlSchemaTestCase class sharing this process with StockCoverageTest.php,
+		// which runs first, must not reach that class's already-dropped schema through a
+		// cached service singleton) is now PgsqlSchemaTestCase::setUpBeforeClass()'s own
+		// job via ResetSchemaBoundState() (PR #537), called just above. The reflection
+		// workaround this file carried before that landed is gone.
 
 		self::$db = self::Pdo();
 		self::$container = new \DI\Container();
