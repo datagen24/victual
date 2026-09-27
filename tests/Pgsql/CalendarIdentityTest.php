@@ -160,6 +160,42 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * #511 (maintainer decision, 2026-09-27): the UID is {type}-{id}@victual, with no
+	 * date component, precisely so that rescheduling the same entity - a chore's next
+	 * due date, here a product's best-before date - changes DTSTART without changing
+	 * UID. A calendar client keys on UID: same UID with a new DTSTART reads as "this
+	 * event moved"; a new UID reads as "the old event vanished, a new one appeared."
+	 */
+	public function testUidStaysStableWhenEntityDateChanges()
+	{
+		// Arrange: a product with an initial due date.
+		$this->insertProduct('Reschedulable Product', 6.0);
+		$productId = self::$db->lastInsertId();
+		$this->insertStockEntry($productId, 3.0, '2028-01-10');
+
+		// Act: read once, then move that same product's best-before date forward -
+		// the same kind of update a re-purchase or a manual edit performs - and read
+		// again.
+		$ical1 = $this->getIcalString();
+		self::$db->exec("UPDATE stock SET best_before_date = '2028-02-20' WHERE product_id = $productId");
+		$ical2 = $this->getIcalString();
+
+		$uid1 = $this->findUidForSummary($ical1, 'Reschedulable Product');
+		$uid2 = $this->findUidForSummary($ical2, 'Reschedulable Product');
+		$this->assertNotNull($uid1, 'Expected an event for the product before the date change');
+		$this->assertNotNull($uid2, 'Expected an event for the product after the date change');
+
+		// Assert: the UID is stable across the date change...
+		$this->assertSame($uid1, $uid2, "UID must stay stable when only the entity's date changes");
+
+		// ...and DTSTART actually moved, so a stable UID here is a meaningful
+		// assertion and not an artifact of nothing having changed.
+		$this->assertStringContainsString('DTSTART;VALUE=DATE:20280110', $ical1);
+		$this->assertStringContainsString('DTSTART;VALUE=DATE:20280220', $ical2);
+		$this->assertStringNotContainsString('DTSTART;VALUE=DATE:20280110', $ical2);
+	}
+
 	// ===== Helper methods =====
 
 	/**
@@ -255,5 +291,26 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			$uids = $matches[1];
 		}
 		return $uids;
+	}
+
+	/**
+	 * Find the UID of the VEVENT block whose SUMMARY contains $needle. Unlike
+	 * extractUids(), this correlates a UID to a specific entity's event rather than
+	 * returning every UID in the document - needed once the schema accumulates more
+	 * than one event across test methods.
+	 */
+	private function findUidForSummary(string $ical, string $needle): ?string
+	{
+		if (preg_match_all('/BEGIN:VEVENT\r?\n(.*?)END:VEVENT/s', $ical, $blocks))
+		{
+			foreach ($blocks[1] as $block)
+			{
+				if (str_contains($block, $needle) && preg_match('/UID:([^\r\n]+)/', $block, $uidMatch))
+				{
+					return $uidMatch[1];
+				}
+			}
+		}
+		return null;
 	}
 }

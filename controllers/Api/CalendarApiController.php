@@ -30,7 +30,8 @@ class CalendarApiController extends BaseApiController
 	 *
 	 * Sentinel dates (2999-12-31 and beyond) are excluded to prevent unbounded events
 	 * and far-future timezone bounds. Event UIDs are deterministic (derived from event
-	 * type, entity ID, and occurrence date) so identical reads yield identical UIDs.
+	 * type and entity ID only, no date) so identical reads yield identical UIDs and a
+	 * rescheduled entity keeps its UID across the date change (#511).
 	 */
 	public function Ical(Request $request, Response $response, array $args)
 	{
@@ -86,12 +87,16 @@ class CalendarApiController extends BaseApiController
 					$compareDate = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $event['start']);
 				}
 
-				// Create event with deterministic UID based on event type, entity ID, and date
-				// Format: <event_type>-<entity_id>-<YYYYMMDD>@victual
+				// Create event with a deterministic UID based on event type and entity ID
+				// only - no date component. Format: <event_type>-<entity_id>@victual.
+				// #511 (maintainer decision, 2026-09-27): a UID identifies the entity's
+				// calendar slot, not a specific occurrence of it, so rescheduling the
+				// entity (a chore's next due date, a product's best-before date) changes
+				// DTSTART without changing UID - the same event moved, not a new one.
 				$uid = null;
 				if (isset($event['event_type']) && isset($event['entity_id']))
 				{
-					$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '-' . substr($event['start'], 0, 10) . '@victual');
+					$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '@victual');
 				}
 
 				$vEvent = new Event($uid);
