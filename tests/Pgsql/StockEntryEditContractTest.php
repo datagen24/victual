@@ -406,63 +406,116 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// The documented schema, not just its prose, admits exactly what the server accepts
+	// The documented schema, not just its prose, agrees with the server itself - not
+	// with a second, independent hard-coded expectation of what the server does
 	// ------------------------------------------------------------------------------
 
 	/**
-	 * For open, price and shopping_location_id, whether Opis validates a candidate value
-	 * against the property's own schema must agree with whether this route actually
-	 * accepts that value - the same identity WireContractTest.php's
-	 * testTheDocumentedPatternIsTheOneTheParserGatesOn() proves for the timestamp fields'
-	 * pattern and ParseApiDateTime(), applied here to a oneOf/enum schema instead of a
-	 * regular expression. A description that says "0/1 and \"0\"/\"1\" are accepted" is not
-	 * the same claim as a `type` that admits them; this is what makes the two the same
-	 * claim (issue #487 review: "the memory rule is one definition of an accepted set").
-	 * Every value below is one the HTTP-level tests elsewhere in this file already prove
-	 * the server accepts or refuses.
+	 * For every candidate below, PUTs it to the real route and asserts that Opis
+	 * validating it against the property's own schema agrees with whether the route
+	 * actually accepted it (200) or refused it (400) - and that a refusal changed
+	 * nothing. This is what makes the schema's claim a claim about the server: an
+	 * earlier version of this test computed both sides from a hard-coded expectation
+	 * and compared them to each other, so no server change - and no documentation
+	 * drift - could ever fail it. Review found it had already drifted: the server
+	 * accepts several numeric-string forms (price via is_numeric(), shopping_location_id
+	 * via RequireIntegerId()'s filter_var()) this schema's `number`/`integer` types do
+	 * not admit. Those forms are real, intentional, and not modelled in the schema's
+	 * `type` - matching this document's own convention for every sibling stock-write
+	 * operation (POST .../add, .../inventory, .../transfer document price/location
+	 * fields as plain `number`/`integer`, and .../add's own example sends
+	 * `"price": "1.99"`, a string, against that `number` type) - so they are asserted
+	 * directly against the server as their own named cases, in
+	 * testPriceAndShoppingLocationIdAcceptTheirDocumentedNumericStringLeniency() below,
+	 * rather than folded into this sweep.
+	 *
+	 * `{}` is not a candidate here alongside `[]`: this file's request-subprocess-helper.php
+	 * round trip decodes every JSON object to a PHP associative array and re-encodes an
+	 * empty one as `[]`, so the two are not distinguishable through this harness - only
+	 * through it, not in general, since PHP's own json_decode()/json_encode() pair
+	 * collapses them for any empty container the same way.
 	 */
-	public function testOpenPriceAndShoppingLocationIdSchemasAdmitExactlyWhatTheServerAccepts(): void
+	public function testOpenPriceAndShoppingLocationIdSchemasAgreeWithTheServer(): void
 	{
 		$spec = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
 		$properties = $spec->paths->{'/stock/entry/{entryId}'}->put->requestBody->content->{'application/json'}->schema->properties;
 
-		// $value is re-encoded and $property's schema is re-decoded fresh on every call,
-		// the same defensive copy WireContractTest::validateAgainstMember() makes: Opis is
-		// not guaranteed to leave a reused schema object untouched between validations.
-		$validate = function ($value, $property, string $label, bool $shouldValidate): void
+		foreach ([true, false, 0, 1, '0', '1', 'true', 'false', null, 2, '2', 1.5, '', [], '0x1A'] as $value)
 		{
-			$result = (new \Opis\JsonSchema\Validator())->validate(
-				json_decode(json_encode($value)),
-				json_decode(json_encode($property))
-			);
-			self::assertSame($shouldValidate, $result->isValid(), "$label schema for " . var_export($value, true));
-		};
-
-		foreach ([
-			[true, true], [false, true],
-			[0, true], [1, true],
-			['0', true], ['1', true],
-			['true', false], ['false', false],
-			[null, false], [2, false], ['2', false], [1.5, false], ['', false],
-		] as [$value, $shouldValidate])
-		{
-			$validate($value, $properties->open, 'open', $shouldValidate);
+			$this->assertCandidateAgreesWithServer('open', $properties->open, $value);
 		}
 
-		foreach ([
-			[3.25, true], [0, true], [null, true], ['', true],
-			['abc', false], [[], false], [true, false],
-		] as [$value, $shouldValidate])
+		foreach ([3.25, 0, -1, null, '', 'abc', [], true, false, '0x1A'] as $value)
 		{
-			$validate($value, $properties->price, 'price', $shouldValidate);
+			$this->assertCandidateAgreesWithServer('price', $properties->price, $value);
 		}
 
-		foreach ([
-			[self::$grocerId, true], [null, true], ['', true],
-			['abc', false], [1.5, false], [true, false],
-		] as [$value, $shouldValidate])
+		// A real, existing, active shopping location, since a bare id that merely parses
+		// is not enough for this field - RequireExistingId() also checks the row exists.
+		foreach ([self::$grocerId, null, '', 'abc', 1.5, true, false, [], '0x1A'] as $value)
 		{
-			$validate($value, $properties->shopping_location_id, 'shopping_location_id', $shouldValidate);
+			$this->assertCandidateAgreesWithServer('shopping_location_id', $properties->shopping_location_id, $value);
+		}
+	}
+
+	/**
+	 * Opis validates $value against $property (re-decoding both fresh, the same
+	 * defensive copy WireContractTest::validateAgainstMember() makes: Opis is not
+	 * guaranteed to leave a reused schema object untouched between validations), PUTs
+	 * $value for $field to a freshly seeded entry, and asserts the two agree: 200 when
+	 * Opis says valid, 400 - with the entry unchanged - when it says invalid.
+	 */
+	private function assertCandidateAgreesWithServer(string $field, $property, $value): void
+	{
+		$entryId = self::seedStockRow();
+		$before = self::stockRow($entryId);
+		$label = "$field = " . var_export($value, true);
+
+		$result = (new \Opis\JsonSchema\Validator())->validate(
+			json_decode(json_encode($value)),
+			json_decode(json_encode($property))
+		);
+
+		$response = self::put($entryId, ['amount' => 1, $field => $value]);
+
+		if ($result->isValid())
+		{
+			self::assertSame(200, $response['status'], "$label: the schema admits this, the route must accept it: {$response['body']}");
+		}
+		else
+		{
+			self::assertSame(400, $response['status'], "$label: the schema refuses this, the route must too");
+			self::assertSame($before, self::stockRow($entryId), "$label: a refusal must change nothing");
+		}
+	}
+
+	/**
+	 * price accepts any is_numeric() string, and shopping_location_id any string
+	 * filter_var(..., FILTER_VALIDATE_INT) reads - documented in the field descriptions
+	 * rather than in the schema's formal type (see the sweep test above). Named here so
+	 * the leniency itself is pinned: if a future change to either parser stops reading
+	 * one of these forms, this fails with the exact form that broke, rather than the
+	 * sweep silently no longer needing to exclude it.
+	 */
+	public function testPriceAndShoppingLocationIdAcceptTheirDocumentedNumericStringLeniency(): void
+	{
+		foreach ([
+			['2.50', 2.5], ['3', 3.0], [' 3', 3.0], ['3 ', 3.0],
+			['1e3', 1000.0], ['1.', 1.0], ['.5', 0.5], ['-0', 0.0],
+		] as [$sent, $stored])
+		{
+			$entryId = self::seedStockRow();
+			$response = self::put($entryId, ['amount' => 1, 'price' => $sent]);
+			self::assertSame(200, $response['status'], "price " . var_export($sent, true) . " is documented leniency and must be accepted: {$response['body']}");
+			self::assertSame($stored, (float)self::stockRow($entryId)['price'], "price " . var_export($sent, true) . " must store $stored");
+		}
+
+		foreach ([(string)self::$grocerId, '+' . self::$grocerId] as $sent)
+		{
+			$entryId = self::seedStockRow();
+			$response = self::put($entryId, ['amount' => 1, 'shopping_location_id' => $sent]);
+			self::assertSame(200, $response['status'], "shopping_location_id " . var_export($sent, true) . " is documented leniency and must be accepted: {$response['body']}");
+			self::assertSame(self::$grocerId, (int)self::stockRow($entryId)['shopping_location_id'], "shopping_location_id " . var_export($sent, true) . " must store " . self::$grocerId);
 		}
 	}
 
