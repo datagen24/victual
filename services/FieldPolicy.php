@@ -150,4 +150,20 @@ class FieldPolicy extends BaseService
 
 		return $rows;
 	}
+
+	/**
+	 * Test-only: clears the per-request permission_fields cache.
+	 *
+	 * Named for what it clears rather than "ResetInstancesForTest", which would read as an
+	 * override of BaseService::ResetInstancesForTest() - it is not one: $RowsByEntity is
+	 * declared directly on this class, not on any cached BaseService instance, so clearing
+	 * $Instances does not touch it and a fresh FieldPolicy instance would still read this
+	 * stale, schema-bound array. Called from PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetCachesForTest()
+	{
+		self::$RowsByEntity = null;
+	}
 }

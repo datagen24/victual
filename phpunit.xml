@@ -21,12 +21,14 @@
 	<testsuites>
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
+			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
 		</testsuite>
 		<testsuite name="credentialsplit">
 			<file>tests/Pgsql/CredentialSplitTest.php</file>
+			<file>tests/Pgsql/MigrationRunnerAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
@@ -84,32 +86,49 @@
 		</testsuite>
 		<testsuite name="stockcoverage">
 			<file>tests/Pgsql/StockCoverageTest.php</file>
+			<file>tests/Pgsql/MergeProductsTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
+			<file>tests/Pgsql/RecipeSelfProductionLockOrderTest.php</file>
 		</testsuite>
 		<testsuite name="demodata">
 			<file>tests/Pgsql/DemoDataTest.php</file>
 		</testsuite>
 		<testsuite name="dialectpolicy">
 			<file>tests/Pgsql/DialectPolicyTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
+			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
+			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
+			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="stocklocations">
+			<!--
+				SchemaIsolationSecondTest/SchemaIsolationFirstTest (in that order - the
+				reverse of "dialectpolicy"'s registration of the same two files) are issue
+				#533's regression pair, reused here rather than behind a new run-tests.sh
+				phase so both possible class orders are exercised without adding one. See
+				SchemaIsolationFirstTest's docblock.
+			-->
+			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
+			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
+			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
