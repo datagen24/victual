@@ -491,11 +491,13 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 
 	/**
 	 * price accepts any is_numeric() string, and shopping_location_id any string
-	 * filter_var(..., FILTER_VALIDATE_INT) reads - documented in the field descriptions
-	 * rather than in the schema's formal type (see the sweep test above). Named here so
-	 * the leniency itself is pinned: if a future change to either parser stops reading
-	 * one of these forms, this fails with the exact form that broke, rather than the
-	 * sweep silently no longer needing to exclude it.
+	 * filter_var(..., FILTER_VALIDATE_INT) reads with no leading or trailing whitespace -
+	 * RequireIntegerId() (StockApiController.php) refuses a padded string before
+	 * filter_var() ever runs, even though filter_var() alone would tolerate the padding -
+	 * documented in the field descriptions rather than in the schema's formal type (see the
+	 * sweep test above). Named here so the leniency itself is pinned: if a future change to
+	 * either parser stops reading one of these forms, this fails with the exact form that
+	 * broke, rather than the sweep silently no longer needing to exclude it.
 	 */
 	public function testPriceAndShoppingLocationIdAcceptTheirDocumentedNumericStringLeniency(): void
 	{
@@ -516,6 +518,21 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 			$response = self::put($entryId, ['amount' => 1, 'shopping_location_id' => $sent]);
 			self::assertSame(200, $response['status'], "shopping_location_id " . var_export($sent, true) . " is documented leniency and must be accepted: {$response['body']}");
 			self::assertSame(self::$grocerId, (int)self::stockRow($entryId)['shopping_location_id'], "shopping_location_id " . var_export($sent, true) . " must store " . self::$grocerId);
+		}
+
+		// filter_var(..., FILTER_VALIDATE_INT) alone tolerates surrounding whitespace, but
+		// RequireIntegerId() (StockApiController.php) refuses a padded string before
+		// filter_var() ever sees it - padding is not part of the documented leniency, unlike
+		// the bare/plus-prefixed forms just above, which is exactly why it needs its own
+		// pin: a description that said "any string filter_var() reads" without this
+		// qualifier would be wrong about these four forms specifically.
+		foreach ([' ' . self::$grocerId, self::$grocerId . ' ', ' ' . self::$grocerId . ' ', self::$grocerId . "\n"] as $padded)
+		{
+			$entryId = self::seedStockRow(['shopping_location_id' => self::$grocerId]);
+			$before = self::stockRow($entryId);
+			$response = self::put($entryId, ['amount' => 1, 'shopping_location_id' => $padded]);
+			self::assertSame(400, $response['status'], "shopping_location_id " . var_export($padded, true) . " is padded - not documented leniency - and must be refused");
+			self::assertSame($before, self::stockRow($entryId), "a refused edit must change nothing");
 		}
 	}
 

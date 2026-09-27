@@ -2270,7 +2270,7 @@
 												"const": ""
 											}
 										],
-										"description": "Must name an existing, active shopping location. Omitted keeps the entry's current shopping location; null or \"\" clears it. Also accepts any string PHP's filter_var(..., FILTER_VALIDATE_INT) reads, such as \"1\" or \"+1\" - undocumented in the type above, matching this fork's own convention for location_id/shopping_location_id on the other stock-booking routes."
+										"description": "Must name an existing, active shopping location. Omitted keeps the entry's current shopping location; null or \"\" clears it. Also accepts any string PHP's filter_var(..., FILTER_VALIDATE_INT) reads, with no leading or trailing whitespace, such as \"1\" or \"+1\" - undocumented in the type above, matching this fork's own convention for location_id/shopping_location_id on the other stock-booking routes."
 									},
 									"purchased_date": {
 										"type": "string",
