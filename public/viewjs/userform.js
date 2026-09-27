@@ -61,13 +61,34 @@ $('#save-user-button').on('click', function (e)
 		jsonData.picture_file_name = RandomString() + CleanFileName($("#user-picture")[0].files[0].name);
 	}
 
-	jsonData.password_base64 = btoa(jsonData.password);
+	// #change_password exists only in edit mode with an authentication backend that has a
+	// password to change at all (userform.blade.php); when it does and is unticked, the
+	// password inputs are disabled and serializeJSON() - like a real form submit - omits a
+	// disabled field entirely, so jsonData.password is undefined here. Encoding it
+	// regardless used to send btoa(undefined) === "dW5kZWZpbmVk", the base64 of the literal
+	// string "undefined" - answered as a real new password by the API, so an admin's edit
+	// of someone else's profile with the box left unticked silently set that account's
+	// password to the word "undefined" (issue #549). Create mode and the externally-managed/
+	// embedded/disabled-auth branch have no such checkbox at all - .length is 0 - and must
+	// keep encoding unconditionally: a new account needs the password it was given, and
+	// those other modes render a hidden password field that always carries a value.
+	var changePasswordCheckbox = $("#change_password");
+
+	if (changePasswordCheckbox.length === 0 || changePasswordCheckbox.prop("checked"))
+	{
+		jsonData.password_base64 = btoa(jsonData.password);
+	}
+
 	delete jsonData.password;
 	delete jsonData.password_confirm;
 	delete jsonData.change_password;
 
 	// Only present when editing your own account, and only filled in when the password is
-	// actually being changed - the API requires it in exactly that case (sweep finding S6)
+	// actually being changed - the API requires it in exactly that case (sweep finding S6).
+	// Already safe against the same bug: current_password is disabled (and so omitted by
+	// serializeJSON()) exactly when password is, and the truthy check below additionally
+	// refuses to encode a present-but-empty value - there is no path here that can send
+	// btoa(undefined) or btoa("") disguised as a real current password (issue #549 review).
 	if (jsonData.hasOwnProperty("current_password"))
 	{
 		if (jsonData.current_password)

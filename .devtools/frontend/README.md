@@ -144,6 +144,21 @@ and assigns/removes Child and Guest through the user permissions page while pres
 an overlapping direct grant. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an
 installed Chromium executable. CI runs it in `frontend-security` after the S29 probe.
 
+## Userform password checkbox (issue #549)
+
+`node userform-password.js <url>` runs against a disposable authenticated admin or demo
+instance. It creates a second user and edits that account's page with `#change_password`
+left unticked, intercepting the PUT to `/api/users/{id}`.
+
+It asserts the built body carries no `password_base64`. The field used to be sent
+unconditionally. A disabled, unserialized password input then became `btoa(undefined)` - a
+real new password of the literal word "undefined". A second save, box ticked, with a real
+password, asserts `password_base64` is still sent, so the first assertion is not vacuous.
+
+This is entirely a question of what the browser puts in the request body, which the
+PostgreSQL phase cannot see. CI runs it in `frontend-security` after the role workflow
+probe.
+
 ## Location label resolution
 
 `node .devtools/frontend/location-labels.js --url http://127.0.0.1:8200` exercises the

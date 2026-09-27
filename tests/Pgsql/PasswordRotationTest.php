@@ -61,6 +61,8 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const TYPE_ORACLE_UNFLAGGED = 9715;
 	private const PICTURE_PRESERVED = 9716;
 	private const PICTURE_EXPLICIT_NULL = 9717;
+	private const ADMIN_EDIT_OTHER_NO_PASSWORD = 9718;
+	private const SELF_EDIT_NO_PASSWORD = 9719;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -163,6 +165,19 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::grantAdmin(self::PICTURE_EXPLICIT_NULL);
 		self::$db->exec("UPDATE users SET picture_file_name = 'existing-picture.png' WHERE id = " . self::PICTURE_EXPLICIT_NULL);
 		self::createSession('rotation-picture-explicit-null-session', self::PICTURE_EXPLICIT_NULL);
+
+		// issue #549: userform.js sent password_base64 = btoa(undefined) whenever a save
+		// happened with #change_password left unticked, so an admin's edit of another
+		// user's profile (or an unflagged self-edit, saved without touching the password)
+		// silently set the edited account's password to the literal word "undefined". A
+		// profile edit shaped exactly like that fixed form body - no password key at all -
+		// must leave the stored hash, sessions and flag alone.
+		self::createUser(self::ADMIN_EDIT_OTHER_NO_PASSWORD, 'rotation-admin-edit-other-no-password', 'no-password-target-pw-1');
+		self::createSession('rotation-admin-edit-other-no-password-session', self::ADMIN_EDIT_OTHER_NO_PASSWORD);
+
+		self::createUser(self::SELF_EDIT_NO_PASSWORD, 'rotation-self-edit-no-password', 'self-no-password-pw-1');
+		self::grantAdmin(self::SELF_EDIT_NO_PASSWORD);
+		self::createSession('rotation-self-edit-no-password-session', self::SELF_EDIT_NO_PASSWORD);
 	}
 
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
@@ -1049,6 +1064,64 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 
 		self::assertSame(204, $change['status'], $change['body']);
 		self::assertNull(self::storedPictureFileName(self::PICTURE_EXPLICIT_NULL), 'an explicit null still nulls the picture out');
+	}
+
+	/**
+	 * Given an administrator editing another user's profile with a body shaped exactly like
+	 * userform.js's fixed output when #change_password is left unticked - no password key
+	 * at all - when the save succeeds, then the target's stored password hash, sessions and
+	 * must_change_password flag are all untouched. Before the frontend fix (issue #549),
+	 * the unfixed form always sent password_base64 = btoa(undefined) regardless of the
+	 * checkbox, and the API answered that as a real new password - so this exact shape of
+	 * request, from an admin who only meant to fix a name, silently overwrote the target's
+	 * password with the literal word "undefined". This test is server-side: it proves the
+	 * API leaves state alone when the (now-fixed) client omits the field; the browser-side
+	 * half - that the fixed client actually omits it - is
+	 * .devtools/frontend/userform-password.js, which CI's frontend-security job runs and
+	 * this session did not (no browser was driven to verify this PR).
+	 */
+	public function testProfileEditWithoutAPasswordKeyLeavesHashSessionsAndFlagUntouchedWhenAnAdminEditsAnotherUser(): void
+	{
+		$originalHash = self::storedPasswordHash(self::ADMIN_EDIT_OTHER_NO_PASSWORD);
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::ADMIN_EDIT_OTHER_NO_PASSWORD,
+			'cookie' => 'rotation-admin-session',
+			'body' => [
+				'username' => 'rotation-admin-edit-other-no-password',
+				'first_name' => '',
+				'last_name' => '',
+				// no password key at all
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertSame($originalHash, self::storedPasswordHash(self::ADMIN_EDIT_OTHER_NO_PASSWORD), 'the stored hash is untouched');
+		self::assertSame(0, self::flag(self::ADMIN_EDIT_OTHER_NO_PASSWORD), 'must_change_password is untouched');
+		self::assertTrue(self::sessionExists('rotation-admin-edit-other-no-password-session'), 'the target\'s own session survives a write that never touched the password');
+	}
+
+	/** The same shape, for an unflagged self-edit that saves without touching the password. */
+	public function testProfileEditWithoutAPasswordKeyLeavesHashSessionsAndFlagUntouchedForAnUnflaggedSelfEdit(): void
+	{
+		$originalHash = self::storedPasswordHash(self::SELF_EDIT_NO_PASSWORD);
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::SELF_EDIT_NO_PASSWORD,
+			'cookie' => 'rotation-self-edit-no-password-session',
+			'body' => [
+				'username' => 'rotation-self-edit-no-password',
+				'first_name' => '',
+				'last_name' => '',
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertSame($originalHash, self::storedPasswordHash(self::SELF_EDIT_NO_PASSWORD), 'the stored hash is untouched');
+		self::assertSame(0, self::flag(self::SELF_EDIT_NO_PASSWORD));
+		self::assertTrue(self::sessionExists('rotation-self-edit-no-password-session'), 'the acting session is untouched by a write that never touched the password');
 	}
 
 	/**

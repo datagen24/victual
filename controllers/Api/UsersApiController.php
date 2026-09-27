@@ -227,8 +227,11 @@ class UsersApiController extends BaseApiController
 				self::RequireNullableString($requestBody, $stringField);
 			}
 
-			// Fetched once, here, and reused below for the omitted-picture_file_name write
-			// value and (when flagged) the field-scope check, rather than queried twice.
+			// Fetched here for the field-scope check below (when flagged). Deliberately not
+			// reused for the omitted-picture_file_name write value in $write, below: that
+			// read happens as late as possible, immediately before the write itself, so it
+			// is not this snapshot going stale that a concurrent picture change would be lost
+			// to (non-blocking finding, validator round 4).
 			$stored = $this->DB->users($targetUserId);
 
 			// An account that has to change its password reaches this route through
@@ -268,27 +271,36 @@ class UsersApiController extends BaseApiController
 				UsersService::GetInstance()->CheckCurrentPassword($targetUserId, $requestBody['current_password'] ?? null, true);
 			}
 
-			// An omitted picture_file_name keeps whatever is already stored, rather than
-			// silently nulling it out: the field-scope check above already reads an absent
-			// key as "no attempted change" (userform.js omits it unless a picture is being
-			// uploaded or deleted), but the write itself used to fall back to null the same
-			// way an omitted first_name or last_name does, erasing a stored picture on every
-			// ordinary form save that did not touch it - not only a flagged one, since this
-			// is the same code either way (validator round 3). first_name/last_name are not
-			// given the same treatment: unlike the picture, the form always submits both,
-			// even blank ("" rather than omitted), so there is no real "omitted" case for
-			// them to preserve, and an explicit null still nulls out the picture as before.
-			$pictureFileName = array_key_exists('picture_file_name', $requestBody)
-				? $requestBody['picture_file_name']
-				: $stored?->picture_file_name;
-
 			// Set only inside $write, and read only after the transaction wrapping it has
 			// committed - see the comment where it is read, below.
 			$newSessionKey = null;
 
-			$write = function () use ($isSelf, $username, $requestBody, $pictureFileName, $response, $request, $targetUserId, $actingSessionKey, &$newSessionKey)
+			$write = function () use ($isSelf, $username, $requestBody, $response, $request, $targetUserId, $actingSessionKey, &$newSessionKey)
 			{
 				if (!$isSelf) User::CheckMayAdminister($request, $targetUserId);
+
+				// An omitted picture_file_name keeps whatever is already stored, rather than
+				// silently nulling it out: the field-scope check above already reads an
+				// absent key as "no attempted change" (userform.js omits it unless a picture
+				// is being uploaded or deleted), but the write itself used to fall back to
+				// null the same way an omitted first_name or last_name does, erasing a
+				// stored picture on every ordinary form save that did not touch it - not only
+				// a flagged one, since this is the same code either way (validator round 3).
+				// first_name/last_name are not given the same treatment: unlike the picture,
+				// the form always submits both, even blank ("" rather than omitted), so there
+				// is no real "omitted" case for them to preserve, and an explicit null still
+				// nulls out the picture as before.
+				//
+				// Read here, immediately before the write, rather than reusing the $stored
+				// snapshot taken earlier for the field-scope check: that snapshot can already
+				// be stale by the time this runs - CheckCurrentPassword() and, on the
+				// ordinarily-permitted path, RolesService::Mutate()'s own lock acquisition
+				// both take real time - and writing it back would silently undo a picture a
+				// concurrent request changed in between (non-blocking finding, validator
+				// round 4).
+				$pictureFileName = array_key_exists('picture_file_name', $requestBody)
+					? $requestBody['picture_file_name']
+					: $this->DB->users($targetUserId)?->picture_file_name;
 
 				$newSessionKey = UsersService::GetInstance()->EditUser(
 					$targetUserId,

@@ -83,7 +83,7 @@ database creates one account, `admin`, and gives it:
   change-password form, and the API answers `403` to everything except that form's save
   (`PUT /api/users/{your id}`), `GET /api/user` and `GET /api/system/db-changed-time`. That
   includes API keys the account already holds, and the save itself accepts only the
-  password while the restriction is in force — a name or picture submitted alongside it
+  password while the restriction is in force — a name or picture changed alongside it
   is refused too.
 
 The same restriction applies to any account that logs in with the password `admin` — which is
