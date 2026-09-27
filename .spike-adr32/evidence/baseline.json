@@ -1,0 +1,492 @@
+{
+  "environment": {
+    "php": "8.4.25",
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "precision": "14",
+    "serialize_precision": "-1",
+    "mode": "baseline"
+  },
+  "results": [
+    {
+      "case": "consume: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 2,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "consume shortage 5.0E-10",
+      "pass": true,
+      "details": {
+        "stock": 0,
+        "bookings": 1
+      },
+      "kind": "check"
+    },
+    {
+      "case": "consume shortage 2.0E-9",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "open: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 2,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "open shortage 5.0E-10",
+      "pass": false,
+      "error": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open shortage 2.0E-9",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 4,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "transfer shortage 5.0E-10",
+      "pass": false,
+      "error": "Amount to be transferred cannot be > current stock amount at the source location",
+      "kind": "check"
+    },
+    {
+      "case": "transfer shortage 2.0E-9",
+      "pass": true,
+      "details": "Amount to be transferred cannot be > current stock amount at the source location",
+      "kind": "check"
+    },
+    {
+      "case": "transfer undo removes arithmetic residue",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "consume preserves 0.001",
+      "pass": true,
+      "details": 0.00099999999999989,
+      "kind": "check"
+    },
+    {
+      "case": "no extra booking after near-zero remainder",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "purchase undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "self-production undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory-correction undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory 0.2 and undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory 0.5 and undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory within tolerance refused",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects -5.0E-10",
+      "pass": true,
+      "details": "Amount can't be negative",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects INF",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects -INF",
+      "pass": true,
+      "details": "Amount can't be negative",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects -5.0E-10",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects INF",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[42703]: Undefined column: 7 ERROR:  column \"inf\" does not exist\nLINE 1: UPDATE stock SET amount = INF WHERE id = 34\n                                  ^",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects -INF",
+      "pass": true,
+      "details": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects -5.0E-10",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects INF",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects -INF",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects -5.0E-10",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects INF",
+      "pass": true,
+      "details": "Amount to be transferred cannot be > current stock amount at the source location",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects -INF",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects -5.0E-10",
+      "pass": true,
+      "details": "Amount can't be <= 0",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects INF",
+      "pass": true,
+      "details": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects -INF",
+      "pass": true,
+      "details": "Amount can't be <= 0",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects -5.0E-10",
+      "pass": true,
+      "details": "Amount can't be <= 0",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects NAN",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[42703]: Undefined column: 7 ERROR:  column \"nan\" does not exist\nLINE 1: UPDATE stock SET amount = NAN WHERE id = 54\n                                  ^",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects INF",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[42703]: Undefined column: 7 ERROR:  column \"inf\" does not exist\nLINE 1: UPDATE stock SET amount = INF WHERE id = 56\n                                  ^",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects -INF",
+      "pass": true,
+      "details": "Amount can't be <= 0",
+      "kind": "check"
+    },
+    {
+      "case": "edit accepts zero",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.99999999949999996",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (62, 47, 0.9999999995, 2030-01-01, 2026-09-27, spike-95, null, 1, null, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.99999999949999996",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (63, 48, 0.9999999995, 2030-01-01, 2026-09-27, spike-97, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.99999999949999996",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.0000000005",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (65, 50, 1.0000000005, 2030-01-01, 2026-09-27, spike-101, null, 1, null, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.0000000005",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (66, 51, 1.0000000005, 2030-01-01, 2026-09-27, spike-103, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.0000000005",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (67, 52, 1.0000000005, 2030-01-01, 2026-09-27, spike-105, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).\nCONTEXT:  SQL statement \"UPDATE stock\n\tSET product_id = NEW.product_id,\n\t\tamount = NEW.amount,\n\t\tbest_before_date = NEW.best_before_date,\n\t\tpurchased_date = NEW.purchased_date,\n\t\tstock_id = NEW.stock_id,\n\t\tprice = NEW.price,\n\t\topen = NEW.open,\n\t\topened_date = NEW.opened_date,\n\t\tlocation_id = NEW.location_id,\n\t\tshopping_location_id = NEW.shopping_location_id,\n\t\tnote = NEW.note,\n\t\topened_amount = NEW.opened_amount,\n\t\topened_qu_id = NEW.opened_qu_id,\n\t\topened_tare = NEW.opened_tare,\n\t\topened_measured_at = NEW.opened_measured_at\n\tWHERE id = NEW.id\"\nPL/pgSQL function trg_stock_next_use_upd() line 3 at SQL statement",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.995",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (68, 53, 0.995, 2030-01-01, 2026-09-27, spike-107, null, 1, null, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.995",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (69, 54, 0.995, 2030-01-01, 2026-09-27, spike-109, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.995",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.998",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (71, 56, 0.998, 2030-01-01, 2026-09-27, spike-113, null, 1, null, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.998",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (72, 57, 0.998, 2030-01-01, 2026-09-27, spike-115, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.998",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.002",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (74, 59, 1.002, 2030-01-01, 2026-09-27, spike-119, null, 1, null, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.002",
+      "pass": false,
+      "error": "SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (75, 60, 1.002, 2030-01-01, 2026-09-27, spike-121, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).",
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.002",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.0049999999999999",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.0049999999999999",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.0049999999999999",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "recipe clamp 5.0E-10",
+      "pass": true,
+      "details": 1,
+      "kind": "check"
+    },
+    {
+      "case": "recipe clamp 2.0E-9",
+      "pass": true,
+      "details": 1,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units consume factor 4",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units consume factor 0.001",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units open factor 4",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units open factor 0.001",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects NAN",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects INF",
+      "pass": false,
+      "error": "accepted invalid/no-change input",
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects -INF",
+      "pass": true,
+      "details": "A measurement requires a positive amount",
+      "kind": "check"
+    },
+    {
+      "case": "measured request exact 0.99999999949999996",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (95, 78, 0.9999999995, 2030-01-01, 2026-09-27, spike-157, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).\nCONTEXT:  SQL statement \"UPDATE stock\n\tSET product_id = NEW.product_id,\n\t\tamount = NEW.amount,\n\t\tbest_before_date = NEW.best_before_date,\n\t\tpurchased_date = NEW.purchased_date,\n\t\tstock_id = NEW.stock_id,\n\t\tprice = NEW.price,\n\t\topen = NEW.open,\n\t\topened_date = NEW.opened_date,\n\t\tlocation_id = NEW.location_id,\n\t\tshopping_location_id = NEW.shopping_location_id,\n\t\tnote = NEW.note,\n\t\topened_amount = NEW.opened_amount,\n\t\topened_qu_id = NEW.opened_qu_id,\n\t\topened_tare = NEW.opened_tare,\n\t\topened_measured_at = NEW.opened_measured_at\n\tWHERE id = NEW.id\"\nPL/pgSQL function trg_stock_next_use_upd() line 3 at SQL statement",
+      "kind": "check"
+    },
+    {
+      "case": "measured request exact 1.0000000005",
+      "pass": false,
+      "error": "SQL error instead of service refusal: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock\" violates check constraint \"stock_measurement_coherence_check\"\nDETAIL:  Failing row contains (97, 79, 1.0000000005, 2030-01-01, 2026-09-27, spike-159, null, 1, 2026-09-27, 2026-09-27 20:10:16, 3, null, null, 0.5, 2, null, 2026-09-27 20:10:16, 0).\nCONTEXT:  SQL statement \"UPDATE stock\n\tSET product_id = NEW.product_id,\n\t\tamount = NEW.amount,\n\t\tbest_before_date = NEW.best_before_date,\n\t\tpurchased_date = NEW.purchased_date,\n\t\tstock_id = NEW.stock_id,\n\t\tprice = NEW.price,\n\t\topen = NEW.open,\n\t\topened_date = NEW.opened_date,\n\t\tlocation_id = NEW.location_id,\n\t\tshopping_location_id = NEW.shopping_location_id,\n\t\tnote = NEW.note,\n\t\topened_amount = NEW.opened_amount,\n\t\topened_qu_id = NEW.opened_qu_id,\n\t\topened_tare = NEW.opened_tare,\n\t\topened_measured_at = NEW.opened_measured_at\n\tWHERE id = NEW.id\"\nPL/pgSQL function trg_stock_next_use_upd() line 3 at SQL statement",
+      "kind": "check"
+    },
+    {
+      "case": "bulk carried residue",
+      "pass": true,
+      "details": {
+        "small": 0.10000002384186,
+        "residue": 2.3841860000151e-08,
+        "rows": 1
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "bulk legitimate 0.0005 remainder",
+      "pass": true,
+      "details": {
+        "residue": 0.00049996376037598,
+        "rows": 1
+      },
+      "kind": "observation"
+    }
+  ]
+}

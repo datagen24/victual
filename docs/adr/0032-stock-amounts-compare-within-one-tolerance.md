@@ -306,3 +306,16 @@ this working copy does not contain their scripts or seeds.
 These are implementation-evidence gates. Substantive implementation and test changes
 belong in separate pull requests; the later acceptance pull request links their evidence
 and carries only the lifecycle bookkeeping required by the ADR index.
+
+## Acceptance evidence
+
+The [2026-09-27 comparison spike](../../.spike-adr32/RESULTS.md) exercises absolute and
+relative tolerances through real stock services on PostgreSQL. It records the combined
+master and undo-dependency revisions, experimental changes, reproduction commands, and
+an audit of all six gates. Both policies retain a bulk residue; the relative policy also
+removes a genuine small remainder at large magnitude. Runtime serialization precision
+changes the observed accumulated drift.
+
+This evidence does not accept the policy or land its implementation. The decider's
+choice in open question 3, production changes, maintained regressions, and final
+implementation verification remain required before the bookkeeping acceptance.
