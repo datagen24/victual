@@ -576,7 +576,7 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
-			$bestBeforeDate = StockService::KEEP_STORED_VALUE;
+			$bestBeforeDate = StockService::KeepStoredValue();
 			if (array_key_exists('best_before_date', $requestBody))
 			{
 				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
@@ -586,7 +586,7 @@ class StockApiController extends BaseApiController
 			// key keeps it (#487 correction 6; BaseApiController::GetParsedAndFilteredRequestBody()
 			// records the same null idiom for the generic entity routes, and "" is what
 			// master itself already treated as a clear here).
-			$price = StockService::KEEP_STORED_VALUE;
+			$price = StockService::KeepStoredValue();
 			if (array_key_exists('price', $requestBody))
 			{
 				if ($requestBody['price'] === null || $requestBody['price'] === '')
@@ -603,7 +603,7 @@ class StockApiController extends BaseApiController
 				}
 			}
 
-			$locationId = StockService::KEEP_STORED_VALUE;
+			$locationId = StockService::KeepStoredValue();
 			if (array_key_exists('location_id', $requestBody))
 			{
 				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
@@ -612,7 +612,7 @@ class StockApiController extends BaseApiController
 			// null or "" clears the store: "" is what the form's own "no store" combobox
 			// option sends (public/viewjs/stockentryform.js), and it means the same thing
 			// null does everywhere else in this method.
-			$shoppingLocationId = StockService::KEEP_STORED_VALUE;
+			$shoppingLocationId = StockService::KeepStoredValue();
 			if (array_key_exists('shopping_location_id', $requestBody))
 			{
 				if ($requestBody['shopping_location_id'] === null || $requestBody['shopping_location_id'] === '')
@@ -625,13 +625,13 @@ class StockApiController extends BaseApiController
 				}
 			}
 
-			$open = StockService::KEEP_STORED_VALUE;
+			$open = StockService::KeepStoredValue();
 			if (array_key_exists('open', $requestBody))
 			{
 				$open = WireBooleans::RequireBoolean($requestBody['open'], 'open flag');
 			}
 
-			$purchasedDate = StockService::KEEP_STORED_VALUE;
+			$purchasedDate = StockService::KeepStoredValue();
 			if (array_key_exists('purchased_date', $requestBody))
 			{
 				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
@@ -640,7 +640,7 @@ class StockApiController extends BaseApiController
 			// null clears the note; "" is left alone rather than mapped to null, matching
 			// how every other text column in this tree is handled (#487 correction 6) -
 			// nothing here or downstream distinguishes an empty note from no note.
-			$note = StockService::KEEP_STORED_VALUE;
+			$note = StockService::KeepStoredValue();
 			if (array_key_exists('note', $requestBody))
 			{
 				if ($requestBody['note'] === null)

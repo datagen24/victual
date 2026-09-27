@@ -20,7 +20,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *
  * The fix moves "what does an omitted field keep" into StockService::EditStockEntry()
  * itself, resolved against the row it re-reads under LockProductStock() - see
- * StockService::KEEP_STORED_VALUE. This is the two-connection harness
+ * StockService::KeepStoredValue(). This is the two-connection harness
  * StockConcurrencyTest.php uses for the same class of defect (issue #458): connection B
  * takes the advisory lock first and holds it while the subprocess under test queues behind
  * it; only once the subprocess is confirmed to be waiting does B commit the competing

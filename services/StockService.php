@@ -77,6 +77,9 @@ class StockService extends BaseService
 	 */
 	const ALLOWED_PICTURE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
+	/** @var object|null Backing instance for KeepStoredValue(); see that method's own comment. */
+	private static $KeepStoredValueInstance = null;
+
 	/**
 	 * Marks an EditStockEntry() argument the caller's request did not supply: the method
 	 * resolves it against the entry's own row, re-read fresh under this method's own
@@ -91,11 +94,26 @@ class StockService extends BaseService
 	 * already uses, closes that window instead of moving it.
 	 *
 	 * Distinct from null, which several arguments (price, shopping_location_id, note)
-	 * accept as a caller's explicit "clear this field" - a marker equal to a real,
-	 * documented value could never be told apart from that value. This one is not: no
-	 * argument's real value is ever this exact string.
+	 * accept as a caller's explicit "clear this field".
+	 *
+	 * A fresh anonymous-class instance, cached here and handed back on every call, rather
+	 * than the in-band string constant this replaced (`"\0victual-stock-service-..."`).
+	 * That string was reachable: nothing stops an API caller from sending it as, say,
+	 * `note`, JSON's `\u0000` escape and all, and EditStockEntry() then read that supplied
+	 * value back as "omitted" and kept whatever note was already stored - the one string a
+	 * client could never actually save as a note (found in review of #519/#524/#487). No
+	 * value json_decode() can ever produce - no string however it is spelled, no int,
+	 * float, bool, null or array - is ever `===` an object instance, so this has no
+	 * equivalent reachable case.
+	 *
+	 * @return object
 	 */
-	const KEEP_STORED_VALUE = "\0victual-stock-service-keep-stored-value\0";
+	public static function KeepStoredValue()
+	{
+		return self::$KeepStoredValueInstance ??= new class
+		{
+		};
+	}
 
 	/**
 	 * Adds all products which are below their minimum stock amount to the given shopping list.
@@ -916,14 +934,15 @@ class StockService extends BaseService
 			// A field the caller's request did not supply is resolved here, against this
 			// locked, freshly re-read row - never against the unlocked read the controller
 			// took before calling in, which a concurrent booking can have moved past by now.
-			// See KEEP_STORED_VALUE's own comment.
-			$bestBeforeDate = $bestBeforeDate === self::KEEP_STORED_VALUE ? $stockRow->best_before_date : $bestBeforeDate;
-			$locationId = $locationId === self::KEEP_STORED_VALUE ? $stockRow->location_id : $locationId;
-			$shoppingLocationId = $shoppingLocationId === self::KEEP_STORED_VALUE ? $stockRow->shopping_location_id : $shoppingLocationId;
-			$price = $price === self::KEEP_STORED_VALUE ? $stockRow->price : $price;
-			$open = $open === self::KEEP_STORED_VALUE ? $stockRow->open : $open;
-			$purchasedDate = $purchasedDate === self::KEEP_STORED_VALUE ? $stockRow->purchased_date : $purchasedDate;
-			$note = $note === self::KEEP_STORED_VALUE ? $stockRow->note : $note;
+			// See KeepStoredValue()'s own comment.
+			$keepStoredValue = self::KeepStoredValue();
+			$bestBeforeDate = $bestBeforeDate === $keepStoredValue ? $stockRow->best_before_date : $bestBeforeDate;
+			$locationId = $locationId === $keepStoredValue ? $stockRow->location_id : $locationId;
+			$shoppingLocationId = $shoppingLocationId === $keepStoredValue ? $stockRow->shopping_location_id : $shoppingLocationId;
+			$price = $price === $keepStoredValue ? $stockRow->price : $price;
+			$open = $open === $keepStoredValue ? $stockRow->open : $open;
+			$purchasedDate = $purchasedDate === $keepStoredValue ? $stockRow->purchased_date : $purchasedDate;
+			$note = $note === $keepStoredValue ? $stockRow->note : $note;
 
 			// Whether the edited state still permits the measurement (if any) this entry
 			// already carries. round() guards the float amount comparison the CHECK itself

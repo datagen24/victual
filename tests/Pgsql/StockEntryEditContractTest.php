@@ -209,6 +209,58 @@ class StockEntryEditContractTest extends PgsqlSchemaTestCase
 		self::assertSame('2026-01-20', $after['opened_date'], 'the opened date is untouched when open is kept, not just the flag');
 	}
 
+	/**
+	 * "Absent" used to be marked by a specific in-band string
+	 * (StockService::KEEP_STORED_VALUE, now StockService::KeepStoredValue() - a private
+	 * object instance no caller can ever construct): a note argument equal to that exact
+	 * string reached the "was this field supplied?" check indistinguishably from one the
+	 * caller genuinely never supplied, so EditStockEntry() kept the stored note instead of
+	 * saving the one it was given (found in review of #519/#524/#487). There was therefore
+	 * exactly one note no caller could ever successfully save; this proves that string now
+	 * reaches the write like any other value.
+	 *
+	 * Calls StockService::EditStockEntry() directly rather than through PUT: the former
+	 * sentinel's leading/trailing "\0" bytes are exactly what
+	 * BaseApiController::GetParsedAndFilteredRequestBody()'s HtmlPurifier::purify() step
+	 * strips from any string field on the way in (measured: a PUT of this same string
+	 * stores it with both "\0"s gone), so an HTTP-level test of the *previous* sentinel
+	 * string specifically cannot reach EditStockEntry() intact - not because of anything
+	 * this fix changes, but because HTMLPurifier already removes control characters from
+	 * every note before the controller ever compares it to anything. A direct call is also
+	 * the more faithful reproduction: WeighLocation() and the two devtools callers
+	 * (.devtools/mqtt/outbox-check.php, .devtools/pgsql/average-price-tests.php) all reach
+	 * this method the same way, none of them through HTMLPurifier.
+	 *
+	 * The stored result is "" (measured), not the sentinel verbatim: PostgreSQL text
+	 * cannot hold a NUL byte at all, and the value truncates there, at position 0. That is
+	 * unrelated to this fix and untestable around - no PHP-level change makes a PostgreSQL
+	 * TEXT column hold "\0". What this still proves, and what a passing/failing result
+	 * still turns on: whether the caller's argument reached the write path at all. Before
+	 * the fix, the sentinel matched and the stored note stayed 'original note' -
+	 * KeepStoredValue() was never consulted. After it, the note becomes exactly what
+	 * PostgreSQL does with the caller's own literal argument.
+	 */
+	public function testNoteCanBeSetToTheFormerSentinelStringVerbatim(): void
+	{
+		$formerSentinel = "\0victual-stock-service-keep-stored-value\0";
+		$entryId = self::seedStockRow(['note' => 'original note']);
+		$before = self::stockRow($entryId);
+
+		StockService::GetInstance()->EditStockEntry(
+			$entryId,
+			(float)$before['amount'],
+			$before['best_before_date'],
+			(int)$before['location_id'],
+			(int)$before['shopping_location_id'],
+			$before['price'],
+			(bool)$before['open'],
+			$before['purchased_date'],
+			$formerSentinel
+		);
+
+		self::assertSame('', self::stockRow($entryId)['note'], 'a note equal to the former in-band sentinel must reach the write (PostgreSQL then truncates it at its own leading NUL byte) - not be read as omitted and left as \'original note\'');
+	}
+
 	// ------------------------------------------------------------------------------
 	// M19 (issue #519): an unreadable supplied value is refused, not silently erased
 	// ------------------------------------------------------------------------------
