@@ -602,6 +602,40 @@ class DatabaseService
 	}
 
 	/**
+	 * Test-only: resets everything here that is bound to a connection/schema, so a new
+	 * PHPUnit test class attaching its own schema (see PgsqlSchemaTestCase) does not inherit
+	 * the previous class's dirty-data flag, before-commit listeners, or dialect instance.
+	 *
+	 * $Dialect is dropped rather than reused because PostgresDialect keeps its own pending
+	 * "changed time not yet flushed" flag as instance state ($DbChangedPending) - the same
+	 * shape of hazard BaseService::$Instances has, one level down, on the one dialect object
+	 * this class caches. Recreating it is simpler than adding a matching
+	 * ResetInstancesForTest() to every DatabaseDialect implementation for a flag that is
+	 * cheaper to throw away with the object that owns it; GetDialect() lazily builds a fresh
+	 * one on next use.
+	 *
+	 * Deliberately leaves $instance, $ShutdownHandlerRegistered, $BookkeepingDepth,
+	 * $DbConnection and $DbConnectionRaw alone: the shutdown handler must stay registered
+	 * only once per process; $BookkeepingDepth is a call-stack depth incremented and
+	 * decremented in the same try/finally (RunAsBookkeeping()), so it is always back to zero
+	 * between test classes and holds no schema-bound data to leak; and PgsqlSchemaTestCase
+	 * installs the new connection itself, by reflection, before calling this - only the test
+	 * harness knows the new PDO to install, so there is nothing generic this method could do
+	 * for either field.
+	 *
+	 * Called from PgsqlSchemaTestCase::setUpBeforeClass() only, after the new connection is
+	 * installed and before DatabaseMigrationService::MigrateDatabase() runs against it.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetForTest(): void
+	{
+		self::$Dialect = null;
+		self::$DataChanged = false;
+		self::$BeforeOutermostCommitListeners = [];
+	}
+
+	/**
 	 * Query logging is opt-in: dev mode plus an existing <data path>/sql.log file.
 	 */
 	private function IsQueryLoggingEnabled(): bool

@@ -77,6 +77,44 @@ class StockService extends BaseService
 	 */
 	const ALLOWED_PICTURE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
+	/** @var object|null Backing instance for KeepStoredValue(); see that method's own comment. */
+	private static $KeepStoredValueInstance = null;
+
+	/**
+	 * Marks an EditStockEntry() argument the caller's request did not supply: the method
+	 * resolves it against the entry's own row, re-read fresh under this method's own
+	 * product lock, rather than against a value read before this method was even called.
+	 *
+	 * A value a caller (StockApiController::EditStockEntry()) read before this method's
+	 * lock can already be stale by the time the lock is taken: a concurrent booking can
+	 * have opened the entry, moved it to another location, or changed its price in between.
+	 * Persisting that stale value would silently revert the concurrent change - a lost
+	 * update found in review of issues #519/#524's partial-update fix. Resolving "keep the
+	 * current value" here, against the locked re-read every other field of this method
+	 * already uses, closes that window instead of moving it.
+	 *
+	 * Distinct from null, which several arguments (price, shopping_location_id, note)
+	 * accept as a caller's explicit "clear this field".
+	 *
+	 * A fresh anonymous-class instance, cached here and handed back on every call, rather
+	 * than the in-band string constant this replaced (`"\0victual-stock-service-..."`).
+	 * That string was reachable: nothing stops an API caller from sending it as, say,
+	 * `note`, JSON's `\u0000` escape and all, and EditStockEntry() then read that supplied
+	 * value back as "omitted" and kept whatever note was already stored - the one string a
+	 * client could never actually save as a note (found in review of #519/#524/#487). No
+	 * value json_decode() can ever produce - no string however it is spelled, no int,
+	 * float, bool, null or array - is ever `===` an object instance, so this has no
+	 * equivalent reachable case.
+	 *
+	 * @return object
+	 */
+	public static function KeepStoredValue()
+	{
+		return self::$KeepStoredValueInstance ??= new class
+		{
+		};
+	}
+
 	/**
 	 * Adds all products which are below their minimum stock amount to the given shopping list.
 	 *
@@ -532,6 +570,46 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * Sums a set of stock entry candidates in $productId's own stock quantity unit.
+	 *
+	 * The candidate set handed in here is already the exact scope a caller validates and then
+	 * consumes/opens from (a location, a specific stock entry, a substitution set) - issue #487
+	 * findings H1 and H4. Summing the raw amounts of that set is wrong once it can contain a
+	 * different product's stock entries in a different quantity unit (#487 correction 4), and an
+	 * availability check has to agree with what the caller's own consume/open loop can actually
+	 * take from these same candidates. This mirrors that loop's own per-entry conversion: an
+	 * entry belonging to a product other than $productId is converted through the same
+	 * cache__quantity_unit_conversions_resolved row the loop looks up, from $productId's own
+	 * stock unit to that entry's product's stock unit, and divided back out of it; with no
+	 * resolvable conversion the amount is added unconverted, exactly as the loop would then
+	 * compare it unconverted.
+	 *
+	 * @param iterable $stockEntries Candidate stock entries already narrowed to the exact scope being validated
+	 * @param int $productId The product the result is expressed in terms of
+	 * @param int $productQuIdStock $productId's own qu_id_stock
+	 * @return float Sum, in $productId's stock quantity unit
+	 */
+	private function SumStockEntriesInProductUnit(iterable $stockEntries, int $productId, int $productQuIdStock): float
+	{
+		$sum = 0.0;
+		foreach ($stockEntries as $stockEntry)
+		{
+			if ($stockEntry->product_id != $productId)
+			{
+				$subProduct = $this->DB->products($stockEntry->product_id);
+				$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $stockEntry->product_id, $productQuIdStock, $subProduct->qu_id_stock)->fetch();
+				$sum += $conversion != null ? ($stockEntry->amount / $conversion->factor) : $stockEntry->amount;
+			}
+			else
+			{
+				$sum += $stockEntry->amount;
+			}
+		}
+
+		return $sum;
+	}
+
+	/**
 	 * Removes the given amount of a product from stock (consume or negative inventory correction).
 	 *
 	 * The amount is taken from the stock entries in default consume order (entries at the default
@@ -562,7 +640,9 @@ class StockService extends BaseService
 	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or location does not exist, $amount <= 0, the amount exceeds
-	 *                    the current (aggregated) stock amount, or $transactionType is not valid here
+	 *                    the stock amount available within the requested scope (location and/or
+	 *                    specific stock entry, in a common unit when substitution is allowed), or
+	 *                    $transactionType is not valid here
 	 */
 	public function ConsumeProduct(int $productId, float $amount, bool $spoiled, $transactionType, $specificStockEntryId = 'default', $recipeId = null, $locationId = null, &$transactionId = null, $allowSubproductSubstitution = false, $consumeExactAmount = false)
 	{
@@ -629,8 +709,25 @@ class StockService extends BaseService
 				{
 					$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
 				}
+				else
+				{
+					// Materialized once so the availability check below sums exactly the
+					// entries the loop further down iterates, instead of re-running the query
+					// and risking the two seeing different rows (issue #487, H1).
+					$materializedStockEntries = [];
+					foreach ($potentialStockEntries as $candidateStockEntry)
+					{
+						$materializedStockEntries[] = $candidateStockEntry;
+					}
+					$potentialStockEntries = $materializedStockEntries;
+				}
 
-				$productStockAmount = $productDetails->stock_amount_aggregated;
+				// H1 (issue #487): validated against the exact candidate scope above (location
+				// and/or specific stock entry, substitution set), not the product-wide aggregate
+				// - a narrower scope can hold less than the product-wide total. Mixed-unit
+				// substitution candidates are summed in $productId's own stock unit rather than
+				// as raw amounts (#487 correction 4).
+				$productStockAmount = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $productDetails->product->qu_id_stock);
 				if (round($amount, 2) > round($productStockAmount, 2))
 				{
 					throw new \Exception('Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)');
@@ -833,6 +930,19 @@ class StockService extends BaseService
 			{
 				throw new \Exception('Stock does not exist');
 			}
+
+			// A field the caller's request did not supply is resolved here, against this
+			// locked, freshly re-read row - never against the unlocked read the controller
+			// took before calling in, which a concurrent booking can have moved past by now.
+			// See KeepStoredValue()'s own comment.
+			$keepStoredValue = self::KeepStoredValue();
+			$bestBeforeDate = $bestBeforeDate === $keepStoredValue ? $stockRow->best_before_date : $bestBeforeDate;
+			$locationId = $locationId === $keepStoredValue ? $stockRow->location_id : $locationId;
+			$shoppingLocationId = $shoppingLocationId === $keepStoredValue ? $stockRow->shopping_location_id : $shoppingLocationId;
+			$price = $price === $keepStoredValue ? $stockRow->price : $price;
+			$open = $open === $keepStoredValue ? $stockRow->open : $open;
+			$purchasedDate = $purchasedDate === $keepStoredValue ? $stockRow->purchased_date : $purchasedDate;
+			$note = $note === $keepStoredValue ? $stockRow->note : $note;
 
 			// Whether the edited state still permits the measurement (if any) this entry
 			// already carries. round() guards the float amount comparison the CHECK itself
@@ -1959,9 +2069,10 @@ class StockService extends BaseService
 	 * @param array|null $measurement See above
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product does not exist, has opening disabled, the amount exceeds the
-	 *                    current unopened (aggregated) stock amount, a measurement is given without
-	 *                    targeting a specific single-unit entry, or a measurement's unit does not
-	 *                    convert to the product's stock unit
+	 *                    unopened stock amount available within the requested scope (specific stock
+	 *                    entry and/or substitution set, in a common unit when substitution is
+	 *                    allowed), a measurement is given without targeting a specific single-unit
+	 *                    entry, or a measurement's unit does not convert to the product's stock unit
 	 */
 	public function OpenProduct(int $productId, float $amount, $specificStockEntryId = 'default', &$transactionId = null, $allowSubproductSubstitution = false, ?array $measurement = null)
 	{
@@ -2003,19 +2114,33 @@ class StockService extends BaseService
 			}
 
 			$productDetails = (object)$this->GetProductDetails($productId);
-			$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
 			$potentialStockEntries = $this->GetProductStockEntries($productId, true, $allowSubproductSubstitution);
-
-			if ($amount > $productStockAmountUnopened)
-			{
-				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
-			}
 
 			if ($specificStockEntryId !== 'default')
 			{
 				$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
 			}
+			else
+			{
+				// Materialized once so the availability check below sums exactly the
+				// entries the loop further down iterates, instead of re-running the query
+				// and risking the two seeing different rows (issue #487, H1/H4).
+				$materializedStockEntries = [];
+				foreach ($potentialStockEntries as $candidateStockEntry)
+				{
+					$materializedStockEntries[] = $candidateStockEntry;
+				}
+				$potentialStockEntries = $materializedStockEntries;
+			}
 
+			// Measurement-specific checks run before the general availability check below:
+			// they name a narrower failure (this exact entry cannot carry a measurement)
+			// than "the scope holds too little", and a caller relying on one of these
+			// messages should still see it even when the named entry also happens to be
+			// short - issue #487 workstream 18 validation. $targetEntry can still be null
+			// here (a nonexistent stock_id, or one excluded by excludeOpened = true because
+			// it is already open) - the availability check has not run yet to catch that
+			// emptiness first.
 			$resolvedMeasurement = null;
 			if ($measurement !== null)
 			{
@@ -2041,6 +2166,18 @@ class StockService extends BaseService
 				}
 
 				$resolvedMeasurement = $this->ResolveMeasurement($productId, $measurement);
+			}
+
+			// H1/H4 (issue #487): validated against the exact candidate scope above (specific
+			// stock entry, substitution set), not the product-wide unopened aggregate - a
+			// narrower scope can hold less than the product-wide total. Mixed-unit substitution
+			// candidates are summed in $productId's own stock unit rather than as raw amounts
+			// (#487 correction 4).
+			$productStockAmountUnopened = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $product->qu_id_stock);
+
+			if ($amount > $productStockAmountUnopened)
+			{
+				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
 			}
 
 			foreach ($potentialStockEntries as $stockEntry)
@@ -2118,6 +2255,16 @@ class StockService extends BaseService
 					], $measurementColumns));
 
 					$amount -= $stockEntry->amount;
+
+					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId && $conversion != null)
+					{
+						// A sub product with QU conversions was used
+						// => Convert the rest amount back to be based on the original (parent)
+						// product for the next round - without this, a second substitution
+						// candidate has the factor applied on top of an amount already in the
+						// first candidate's unit, over-opening it (issue #487, H4).
+						$amount = $amount / $conversion->factor;
+					}
 				}
 				else
 				{
@@ -2351,7 +2498,8 @@ class StockService extends BaseService
 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or a location does not exist, the product is tare weight handled
-	 *                    (not supported), or the amount exceeds the stock amount at the source location
+	 *                    (not supported), or the amount exceeds the stock amount available within the
+	 *                    requested scope (source location and/or specific stock entry)
 	 */
 	public function TransferProduct(int $productId, float $amount, int $locationIdFrom, int $locationIdTo, $specificStockEntryId = 'default', &$transactionId = null)
 	{
@@ -2394,17 +2542,21 @@ class StockService extends BaseService
 
 			$productDetails = (object)$this->GetProductDetails($productId);
 
-			$productStockAmountAtFromLocation = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationIdFrom)->sum('amount');
 			$potentialStockEntriesAtFromLocation = $this->GetProductStockEntriesForLocation($productId, $locationIdFrom);
-
-			if ($amount > $productStockAmountAtFromLocation)
-			{
-				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
-			}
 
 			if ($specificStockEntryId !== 'default')
 			{
 				$potentialStockEntriesAtFromLocation = FindAllObjectsInArrayByPropertyValue($potentialStockEntriesAtFromLocation, 'stock_id', $specificStockEntryId);
+			}
+
+			// H1 (issue #487): validated against the exact candidate scope above (source
+			// location and/or specific stock entry), not the whole source-location aggregate -
+			// a named single entry can hold less than the location's total.
+			$productStockAmountAtFromLocation = $this->SumStockEntriesInProductUnit($potentialStockEntriesAtFromLocation, $productId, $productDetails->product->qu_id_stock);
+
+			if ($amount > $productStockAmountAtFromLocation)
+			{
+				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
 			}
 
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
@@ -3106,17 +3258,45 @@ class StockService extends BaseService
 	/**
 	 * Merges one product into another and deletes the removed product.
 	 *
-	 * Re-assigns stock, stock_log, barcodes, QU conversions, recipe positions/recipes, meal plan
-	 * entries and shopping list entries to the kept product inside a single database transaction
-	 * (rolled back on any error). Amounts are multiplied by the stock QU conversion factor from
-	 * the removed product's stock unit to the kept product's stock unit (factor 1 when no
-	 * conversion is defined).
+	 * Re-assigns stock, stock_log, barcodes, QU conversions, chores, recipe positions/recipes,
+	 * meal plan entries, shopping list entries, location minimums and child products to the
+	 * kept product inside a single database transaction (rolled back on any error, including
+	 * the refusals below - neither product is changed unless the whole merge succeeds). An
+	 * amount column is multiplied by the stock QU conversion factor from the removed product's
+	 * stock unit to the kept product's stock unit; a per-stock-unit price column is divided by
+	 * that same factor instead, so amount * price - the row's monetary value - is unchanged by
+	 * the merge (issue #503, M3: 500 g at 0.01/g was becoming 0.5 "kg" still priced at 0.01/kg,
+	 * a thousandfold understatement). product_barcodes.last_price and recipes_pos.price_factor
+	 * are deliberately left alone: the former is a total price for that barcode's own (amount,
+	 * qu_id) pair, which this method does not touch, and the latter is a unitless cost
+	 * multiplier, not a per-unit price (see the costs columns in db/pgsql/baseline/05_views_l3.sql).
+	 * The stale cache__products_average_price/cache__products_last_purchased rows the removed
+	 * product leaves behind are deleted, since nothing else does.
+	 *
+	 * The merge refuses outright, before any row is touched, when: the two products' stock
+	 * units differ and no conversion between them exists (no factor-1 fallback - that would
+	 * silently misinterpret the removed product's amounts and prices as already being in the
+	 * kept unit); the resolved conversion factor is not greater than zero (a zero or negative
+	 * factor would zero out or negate a rescaled amount, and divide-by-zero or negate a
+	 * rescaled price); the removed product has a measured open container - live in `stock`, or
+	 * only a live (`undone = 0`) consume booking left in `stock_log` after a full consumption
+	 * deleted the `stock` row itself - and the factor is not 1 (rescaling it would violate
+	 * stock's measurement coherence CHECK, migrations/0275.pgsql.sql, which requires amount = 1
+	 * on any measured row - part of issue #546, whose sibling failure through
+	 * trg_cascade_change_qu_id_stock's own rescale is not this method's to fix); or repointing
+	 * the removed product's own child products to the kept product would leave the kept product
+	 * with both a parent of its own and children of its own. enfore_product_nesting_level
+	 * (migrations/0277.pgsql.sql) does reject that last shape too - it fires BEFORE INSERT OR
+	 * UPDATE and refuses a row's own parent already having a parent - but only with a generic
+	 * message and only once the repoint below is already mid-transaction; refusing it here
+	 * first gives a clear, merge-specific message before anything is written.
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
 	 * @return void
 	 * @throws \Exception When either product does not exist / is inactive, both ids are equal,
-	 *                    or any of the update statements fails
+	 *                    one of the refusal conditions above applies, or any of the update
+	 *                    statements fails
 	 */
 	public function MergeProducts(int $productIdToKeep, int $productIdToRemove)
 	{
@@ -3146,20 +3326,131 @@ class StockService extends BaseService
 			$productToKeep = $this->DB->products($productIdToKeep);
 			$productToRemove = $this->DB->products($productIdToRemove);
 			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productToRemove->id, $productToRemove->qu_id_stock, $productToKeep->qu_id_stock)->fetch();
+
+			if ($conversion == null && $productToRemove->qu_id_stock != $productToKeep->qu_id_stock)
+			{
+				// Falling back to a factor of 1 here (as this method used to) would silently
+				// misread every moved amount and price as already being in the kept product's
+				// unit - 500 g becoming "500 kg". trg_cascade_change_qu_id_stock refuses the
+				// equivalent single-product unit change for the same reason; refuse the merge
+				// the same way, before any row is touched.
+				throw new \Exception('Cannot merge: no quantity unit conversion exists from $productIdToRemove\'s stock unit to $productIdToKeep\'s stock unit');
+			}
+
 			$factor = 1.0;
 			if ($conversion != null)
 			{
 				$factor = $conversion->factor;
 			}
 
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			if ($factor <= 0)
+			{
+				// A non-positive factor would make "amount * factor" zero or negative and
+				// "price / factor" a division by zero or a negative price. Nothing in
+				// db/pgsql/baseline/01_tables.sql puts a CHECK on
+				// quantity_unit_conversions.factor, and cache__quantity_unit_conversions_resolved
+				// returns whatever is stored unfiltered - a NEGATIVE factor reaches this method
+				// (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+				// stores one directly), though a factor of exactly 0 does not: inserting it
+				// makes quantity_unit_conversions_INS's own inverse-row computation,
+				// "1 / COALESCE(NEW.factor, 1)", raise a genuine division-by-zero (Postgres
+				// raises on this for float8 too, unlike raw IEEE 754) before the row commits.
+				// Refuse before any row is touched rather than let either arithmetic run.
+				throw new \Exception('Cannot merge: quantity unit conversion factor must be greater than zero');
+			}
+
+			if ($factor != 1.0
+				&& ($this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null
+					|| $this->DB->stock_log()->where('product_id = :1 AND undone = 0 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null))
+			{
+				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
+				// amount = 1 on any row carrying a measurement. Rescaling amount by anything
+				// other than 1 would violate that CHECK outright (a raw 23514) instead of
+				// producing a meaningfully converted measurement, which nothing here attempts.
+				// Refuse cleanly before any row is touched instead.
+				//
+				// Checking `stock` alone misses a fully consumed measured container: when
+				// ConsumeProduct() takes a whole measured entry, it deletes the `stock` row
+				// but mirrors opened_amount/opened_qu_id onto the consume stock_log row
+				// precisely so UndoBooking()'s consume branch can rebuild the deleted row
+				// later (migrations/0275.pgsql.sql, and the mirroring in ConsumeProduct()
+				// itself). Left unrescaled-and-unrefused, that consume booking would survive
+				// this merge, and undoing it afterwards would try to recreate a `stock` row
+				// with the rescaled amount instead of 1, hitting the same CHECK from the undo
+				// path rather than from this one (issue #546 - the sibling failure through
+				// trg_cascade_change_qu_id_stock's own rescale is not this method's to fix).
+				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container (live, or a live undoable consume booking) and the unit conversion factor is not 1');
+			}
+
+			if ($productToKeep->parent_product_id != null
+				&& $productToKeep->parent_product_id != $productIdToRemove
+				&& $this->DB->products()->where('parent_product_id = :1', $productIdToRemove)->fetch() != null)
+			{
+				// enfore_product_nesting_level (migrations/0277.pgsql.sql) allows only one
+				// level of nesting, checked both ways since that migration: a row cannot be
+				// given a parent that itself already has a parent, and a row cannot be given a
+				// parent while something else already treats the row itself as a parent. The
+				// repoint below (child.parent_product_id = $productIdToKeep) WOULD hit the
+				// first of those the moment the kept product has a parent of its own - the
+				// trigger does not miss this shape - but only mid-transaction, after the
+				// UPDATE statements above have already run, and only with its own generic
+				// "Unsupported product nesting level detected" message. Refusing here first
+				// gives a clear, merge-specific reason before anything is written at all. The
+				// exception excludes the kept product's parent being the removed product
+				// itself, which the block below clears in this same merge, leaving room for
+				// exactly that repoint.
+				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
+			}
+
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// Neither cache__products_average_price nor cache__products_last_purchased is
+			// cleaned up by trg_products_DELETE (which only clears
+			// cache__quantity_unit_conversions_resolved) or by stock_log_UPD above (which
+			// refreshes the row for the NEW, i.e. kept, product_id and has no reason to touch
+			// the removed product's row at all). Left alone, the removed product's rows in
+			// both caches would survive the merge, keyed by a product id that no longer exists.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM cache__products_average_price WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM cache__products_last_purchased WHERE product_id = ' . $productIdToRemove);
+
+			// last_price is a total price for this row's own (amount, qu_id) - a barcode's
+			// typical purchase package, e.g. "500 g for $2.50" - not a per-stock-unit price:
+			// public/viewjs/purchase.js sets it from the #price field in "total price" mode
+			// right after prefilling that same field from the scanned barcode's own last_price
+			// (purchase.js:414-417), and neither amount nor qu_id on this same row is touched
+			// by this method. It is therefore left as-is, unlike stock.price/stock_log.price
+			// above.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_barcodes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// quantity_unit_conversions_INS/_UPD/_DEL (db/pgsql/baseline/06_triggers_a.sql)
+			// keep an automatic inverse row in sync with every conversion, and
+			// qu_conversions_custom_constraint_UPD refuses an UPDATE that would leave two rows
+			// sharing the same (from_qu_id, to_qu_id, product_id) - which is exactly what
+			// repointing would do wherever the kept product already defines the same pair,
+			// including the common case where products_default_qu_conversions_INS
+			// auto-created the same 1:1 purchase/consume/price -> stock pair on both products.
+			// Dropping the removed product's conflicting row first, the same dedupe-then-move
+			// rule as product_substitutions below (the kept product's own factor wins), lets
+			// the DELETE trigger drop that row's own inverse along with it, so only the
+			// genuinely new pairs are left to repoint.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// price_factor is a unitless cost multiplier applied on top of amount * price in
+			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
+			// price itself, so only amount - the ingredient quantity - is converted.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// chores.product_amount is converted the same way trg_cascade_change_qu_id_stock
+			// converts it for a single product's own qu_id_stock change (same table, the same
+			// "amount * factor" line). Left unhandled, TrackChore() would throw "Product does
+			// not exist or is inactive" the next time this chore executed, since product_id
+			// would still name the now-deleted removed product.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE chores SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 
 			// product_substitutions is not in trg_cascade_product_removal's list of tables
 			// this method itself re-points before deleting - it is that trigger's own list,
@@ -3178,6 +3469,31 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.to_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.to_product_id = ' . $productIdToKeep . ' AND ps_keep.from_product_id = ps_remove.from_product_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET from_product_id = ' . $productIdToKeep . ' WHERE from_product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET to_product_id = ' . $productIdToKeep . ' WHERE to_product_id = ' . $productIdToRemove);
+
+			// product_location_min_stock carries a real FOREIGN KEY to products - unlike every
+			// other table this method touches, and unlike product_substitutions above, both of
+			// which do "application-level and trigger-level referential integrity, not
+			// FK-level" (migrations/0279.pgsql.sql) - so a removed product with a location
+			// minimum made the DELETE below fail outright with a foreign-key violation (issue
+			// #503, M3's second symptom). Repointing follows the same dedupe-then-move shape as
+			// product_substitutions above: a location where the kept product already has its
+			// own minimum keeps that row untouched - the removed product's is dropped rather
+			// than silently overwriting a minimum someone set deliberately on the surviving
+			// product - and min_stock_amount is converted by the same factor as every other
+			// amount above, so a surviving minimum still means the same physical quantity.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_location_min_stock plms_remove WHERE plms_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_location_min_stock plms_keep WHERE plms_keep.product_id = ' . $productIdToKeep . ' AND plms_keep.location_id = plms_remove.location_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_location_min_stock SET product_id = ' . $productIdToKeep . ', min_stock_amount = min_stock_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// products.parent_product_id: a dangling parent left on the removed product's own
+			// children would point at a row that no longer exists, and their stock would stop
+			// being aggregated under any parent at all. The kept product's own parent is
+			// cleared first when it was the removed product - repointing next would otherwise
+			// try to set it to itself - and only then are the removed product's children (if
+			// any) repointed to the kept product; the guard above already refused the whole
+			// merge if that repoint would have left the kept product with both a parent of its
+			// own and children of its own at once.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
 
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM products WHERE id = ' . $productIdToRemove);
 		});

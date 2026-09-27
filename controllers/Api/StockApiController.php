@@ -538,12 +538,22 @@ class StockApiController extends BaseApiController
 	 * Requires the STOCK_EDIT permission (403 otherwise).
 	 * Body fields: amount (required; a negative amount is refused). best_before_date,
 	 * price, location_id, shopping_location_id, open, purchased_date and note are all
-	 * optional - a key absent from the body keeps the entry's current value. A key that IS
-	 * present must be readable as its documented type (a valid date, a number, an id
-	 * naming an existing active location/shopping location, a real true/false, a string) or
-	 * the request is refused with 400 and nothing about the entry changes; null is never a
-	 * documented value for any of these fields and is refused the same way (audit findings
-	 * M19/M24, issues #519/#524).
+	 * optional - a key absent from the body keeps the entry's current value, resolved by
+	 * StockService::EditStockEntry() itself under its own lock (issue #524's partial-update
+	 * contract; resolving it here instead, against an unlocked read, lost a concurrent
+	 * booking's change to the same entry - found in review of #519/#524).
+	 * A key that IS present must be readable as its documented type (a valid date, a
+	 * number, an id naming an existing active location/shopping location, a boolean in one
+	 * of the forms WireBooleans::RequireBoolean() accepts, a string) or the request is
+	 * refused with 400 and nothing about the entry changes (audit findings M19/M24, issues
+	 * #519/#524). price, shopping_location_id and note additionally accept an explicit null
+	 * to clear the field - the one supported way to remove a price, detach a store or blank
+	 * a note, since PATCH semantics mean omitting the key keeps it instead - and price and
+	 * shopping_location_id also accept "" for the same reason as null (matching, for
+	 * shopping_location_id, the form's own "no store" option); note does not, since "" is a
+	 * real note rather than the absence of one. best_before_date, location_id,
+	 * purchased_date and open are not nullable: every stock entry has a due date, a
+	 * location and a purchased date, and open is a NOT NULL column.
 	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
 	 */
 	public function EditStockEntry(Request $request, Response $response, array $args)
@@ -566,63 +576,85 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
-			// Read once, purely to default an optional field the body omits to what is
-			// already stored (issue #524's partial-update contract): a missing key must
-			// never be read as an explicit null and erase good data (issue #519). A key
-			// that IS present is validated below regardless of what is already stored. When
-			// the id does not exist this is null and every default below goes unused -
-			// EditStockEntry() re-checks under its own lock and gives the existing "Stock
-			// does not exist" refusal.
-			$currentEntry = StockService::GetInstance()->GetStockEntry($args['entryId']);
-
-			$bestBeforeDate = $currentEntry?->best_before_date;
+			$bestBeforeDate = StockService::KeepStoredValue();
 			if (array_key_exists('best_before_date', $requestBody))
 			{
 				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
-			$price = $currentEntry?->price;
+			// null or "" clears the price - the only way to remove one, since omitting the
+			// key keeps it (#487 correction 6; BaseApiController::GetParsedAndFilteredRequestBody()
+			// records the same null idiom for the generic entity routes, and "" is what
+			// master itself already treated as a clear here).
+			$price = StockService::KeepStoredValue();
 			if (array_key_exists('price', $requestBody))
 			{
-				if (!is_numeric($requestBody['price']))
+				if ($requestBody['price'] === null || $requestBody['price'] === '')
+				{
+					$price = null;
+				}
+				elseif (!is_numeric($requestBody['price']))
 				{
 					throw new \Exception('The price must be a number');
 				}
-				$price = $requestBody['price'];
+				else
+				{
+					$price = $requestBody['price'];
+				}
 			}
 
-			$locationId = $currentEntry?->location_id;
+			$locationId = StockService::KeepStoredValue();
 			if (array_key_exists('location_id', $requestBody))
 			{
 				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
 
-			$shoppingLocationId = $currentEntry?->shopping_location_id;
+			// null or "" clears the store: "" is what the form's own "no store" combobox
+			// option sends (public/viewjs/stockentryform.js), and it means the same thing
+			// null does everywhere else in this method.
+			$shoppingLocationId = StockService::KeepStoredValue();
 			if (array_key_exists('shopping_location_id', $requestBody))
 			{
-				$shoppingLocationId = $this->RequireExistingId($requestBody, 'shopping_location_id', 'shopping_locations', 'shopping location');
+				if ($requestBody['shopping_location_id'] === null || $requestBody['shopping_location_id'] === '')
+				{
+					$shoppingLocationId = null;
+				}
+				else
+				{
+					$shoppingLocationId = $this->RequireExistingId($requestBody, 'shopping_location_id', 'shopping_locations', 'shopping location');
+				}
 			}
 
-			$open = $currentEntry?->open;
+			$open = StockService::KeepStoredValue();
 			if (array_key_exists('open', $requestBody))
 			{
 				$open = WireBooleans::RequireBoolean($requestBody['open'], 'open flag');
 			}
 
-			$purchasedDate = $currentEntry?->purchased_date;
+			$purchasedDate = StockService::KeepStoredValue();
 			if (array_key_exists('purchased_date', $requestBody))
 			{
 				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
 			}
 
-			$note = $currentEntry?->note;
+			// null clears the note; "" is left alone rather than mapped to null, matching
+			// how every other text column in this tree is handled (#487 correction 6) -
+			// nothing here or downstream distinguishes an empty note from no note.
+			$note = StockService::KeepStoredValue();
 			if (array_key_exists('note', $requestBody))
 			{
-				if (!is_string($requestBody['note']))
+				if ($requestBody['note'] === null)
+				{
+					$note = null;
+				}
+				elseif (!is_string($requestBody['note']))
 				{
 					throw new \Exception('The note must be a string');
 				}
-				$note = $requestBody['note'];
+				else
+				{
+					$note = $requestBody['note'];
+				}
 			}
 
 			$transactionId = StockService::GetInstance()->EditStockEntry($args['entryId'], $requestBody['amount'], $bestBeforeDate, $locationId, $shoppingLocationId, $price, $open, $purchasedDate, $note);

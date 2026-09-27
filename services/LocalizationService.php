@@ -272,4 +272,16 @@ class LocalizationService extends BaseService
 			$this->TranslatorQu->loadTranslations($this->PoQu);
 		};
 	}
+
+	/**
+	 * Test-only: clears the per-locale singleton instance cache.
+	 *
+	 * See BaseService::ResetInstancesForTest().
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetInstancesForTest()
+	{
+		self::$InstanceMap = [];
+	}
 }

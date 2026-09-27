@@ -27,18 +27,24 @@ $('#save-stockentry-button').on('click', function(e)
 	jsonData.best_before_date = Victual.Components.DateTimePicker.GetValue();
 	jsonData.purchased_date = Victual.Components.SecondaryDateTimePicker.GetValue();
 	jsonData.note = jsonForm.note;
-	jsonData.open = $("#open").is(":checked");
 
-	// The price input does not exist in the DOM at all when prices are not visible to this
-	// caller (views/stockentryform.blade.php), rather than being present with a zero value:
-	// PUT /api/stock/entry/{id} keeps the entry's stored price for a key the body omits, so
-	// sending a zero here would silently overwrite a price this caller never saw (issue
-	// #512). jsonForm.price is undefined in that case, so the key is left off jsonData
-	// entirely instead of being read into a bare, undeclared price variable.
-	if (jsonForm.price)
+	// #price is missing from the page for a caller without STOCK_PRICES_VIEW (a sibling
+	// change removes the input for them); jsonForm.price is then undefined, and the key is
+	// omitted here entirely so the server keeps whatever price is already stored - sending
+	// null would clear a price this caller cannot even see. Where the input does exist,
+	// empty clears the stored price (the server's own "" idiom - see StockApiController)
+	// and a filled-in value is parsed as a number. This used to read a bare "price"
+	// identifier that was never declared: an undeclared global that, with an element
+	// id="price" on the page and nothing else in scope named "price", resolved through the
+	// DOM's own named access on window instead of failing, so an empty price sent a
+	// jQuery-wrapped object where the server expects a number, null or "" (issue #487
+	// review of #519/#524).
+	if ($('#price').length)
 	{
-		jsonData.price = Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input);
+		jsonData.price = jsonForm.price ? Number.parseFloat(jsonForm.price).toFixed(Victual.UserSettings.stock_decimal_places_prices_input) : null;
 	}
+
+	jsonData.open = $("#open").is(":checked");
 
 	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING)
 	{
