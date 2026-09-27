@@ -3342,8 +3342,15 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_EDIT_OLD)
 			{
-				// Make sure there is a stock row still
-				$stockRow = $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
+				// Make sure there is a stock row still. stock_id is required alongside id
+				// (#555, sixth review round): after #555, no application path reissues a
+				// deleted row's id, but bin/victual-db-import still does - it reissues the
+				// ids of source rows deleted above the source's own surviving maximum, and
+				// an imported edit booking carries its own stock_row_id right along with it.
+				// An edit never changes a row's stock_id, so requiring it here costs nothing
+				// on any real edit; it just stops an id that got reused - by an import or any
+				// future path - from being trusted as if it still named the same lot.
+				$stockRow = $this->DB->stock()->where('id = :1 AND stock_id = :2', $logRow->stock_row_id, $logRow->stock_id)->fetch();
 
 				if ($stockRow == null)
 				{
@@ -3413,7 +3420,10 @@ class StockService extends BaseService
 			}
 			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_STOCK_MEASURED_OLD)
 			{
-				$stockRow = $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
+				// stock_id required alongside id, same reasoning as STOCK_EDIT_OLD above
+				// (#555, sixth review round): a measurement never changes a row's stock_id
+				// either, so this costs nothing on any real measurement undo.
+				$stockRow = $this->DB->stock()->where('id = :1 AND stock_id = :2', $logRow->stock_row_id, $logRow->stock_id)->fetch();
 
 				if ($stockRow == null)
 				{

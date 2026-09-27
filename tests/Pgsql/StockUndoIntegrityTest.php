@@ -1908,4 +1908,124 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		self::assertSame(self::$locationB, (int)$yRow['location_id'], 'Y was never relocated');
 		self::assertSame('2040-12-12', $yRow['best_before_date'], 'Y\'s own due date is untouched');
 	}
+
+	// ------------------------------------------------------------------------------
+	// #555, sixth Opus review round (validator probe E1) - STOCK_EDIT_OLD and
+	// STOCK_MEASURED_OLD undo matched by stock_row_id alone too. After #555, no
+	// application path reissues a deleted row's id - but bin/victual-db-import still
+	// does (it reissues the ids of source rows deleted above the source's own
+	// surviving maximum), and an imported edit or measurement booking carries its own
+	// stock_row_id right along with it. Forced here with a raw DELETE plus setval(),
+	// the same construction the validator's own probe used.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * E1: edit X (recording its pre-edit location/due date/price in the STOCK_EDIT_OLD
+	 * booking this test undoes), delete X's row directly, force an unrelated product Y
+	 * onto X's freed id, undo the edit. Matching by id alone accepted Y and overwrote
+	 * its due date, location and price with X's own pre-edit values - an edit never
+	 * changes a row's stock_id, so requiring it here costs nothing on any real edit.
+	 */
+	public function testUndoingAnEditRefusesRatherThanRewritingAnUnrelatedRowThatReusedItsId(): void
+	{
+		$product = self::insertProduct('Undo Edit Reused Id Guard');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationB, 'best_before_date' => '2044-04-04', 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 5.0]), new Response(), ['productId' => $product]),
+			200,
+			'X is purchased at B, due 2044-04-04, price 5'
+		);
+		$xId = (int)self::rows($product)[0]['id'];
+
+		$edit = $this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'best_before_date' => '2030-01-01', 'open' => false, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['entryId' => $xId]),
+			200,
+			'X is edited: location B->A, due date 2044-04-04->2030-01-01, price 5->1'
+		);
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$xId]);
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $xId, false)");
+
+		$otherProduct = self::insertProduct('Undo Edit Reused Id Guard Y');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationB, 'best_before_date' => '2050-05-05', 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 9.0]), new Response(), ['productId' => $otherProduct]),
+			200,
+			'Y, an unrelated purchase of a different product, is bought next and receives X\'s old id'
+		);
+		$rowById = self::$db->prepare('SELECT * FROM stock WHERE id = ?');
+		$rowById->execute([$xId]);
+		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($yRow, 'Sanity: Y really did land on X\'s old id');
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			400,
+			'Undoing the edit is refused: its booking\'s stock_row_id is now Y\'s id, and Y is not the lot this edit touched'
+		);
+
+		$rowById->execute([$xId]);
+		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);
+		self::assertSame(self::$locationB, (int)$yRow['location_id'], 'Y\'s own location is untouched, not rewritten to X\'s pre-edit B');
+		self::assertSame('2050-05-05', $yRow['best_before_date'], 'Y\'s own due date is untouched, not rewritten to X\'s pre-edit 2044-04-04');
+		self::assertSame(9.0, (float)$yRow['price'], 'Y\'s own price is untouched, not rewritten to X\'s pre-edit 5');
+	}
+
+	/**
+	 * The same defence for STOCK_MEASURED_OLD: measure X, delete its row directly,
+	 * force an unrelated product Y (never opened or measured) onto X's freed id, undo
+	 * the measurement. Matching by id alone would accept Y and stamp X's own
+	 * pre-measurement values onto it - here, all four measurement columns null, since
+	 * this was X's first measurement - clobbering whatever Y actually carries. A
+	 * measurement never changes a row's stock_id either.
+	 */
+	public function testUndoingAMeasurementRefusesRatherThanRewritingAnUnrelatedRowThatReusedItsId(): void
+	{
+		$product = self::insertProduct('Undo Measurement Reused Id Guard');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'X is purchased'
+		);
+		$xId = (int)self::rows($product)[0]['id'];
+		$this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'X is opened, becoming a single open unit eligible for measurement'
+		);
+
+		$measure = $this->expectStatus(
+			fn() => self::$stock->MeasureStockEntry(self::request('POST', ['amount' => 0.5, 'qu_id' => 2]), new Response(), ['entryId' => $xId]),
+			200,
+			'X is measured at 0.5 of its own stock unit'
+		);
+		$measureOld = array_values(array_filter($measure, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_MEASURED_OLD))[0];
+
+		self::$db->prepare('DELETE FROM stock WHERE id = ?')->execute([$xId]);
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $xId, false)");
+
+		$otherProduct = self::insertProduct('Undo Measurement Reused Id Guard Y');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationB, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $otherProduct]),
+			200,
+			'Y, an unrelated purchase of a different product, is bought next and receives X\'s old id - never opened or measured'
+		);
+		$rowById = self::$db->prepare('SELECT * FROM stock WHERE id = ?');
+		$rowById->execute([$xId]);
+		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($yRow, 'Sanity: Y really did land on X\'s old id');
+		self::assertSame(0, (int)$yRow['open'], 'Sanity: Y is sealed, not open');
+		self::assertSame(3.0, (float)$yRow['amount'], 'Sanity: Y holds its own 3 units');
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$measureOld['id']]),
+			400,
+			'Undoing the measurement is refused: its booking\'s stock_row_id is now Y\'s id, and Y is not the entry this measurement touched'
+		);
+
+		$rowById->execute([$xId]);
+		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);
+		self::assertSame(0, (int)$yRow['open'], 'Y is still sealed');
+		self::assertSame(3.0, (float)$yRow['amount'], 'Y still holds its own 3 units, not coerced to X\'s amount = 1');
+		self::assertNull($yRow['opened_amount'], 'Y still carries no measurement');
+	}
 }
