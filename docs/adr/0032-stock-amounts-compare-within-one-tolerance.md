@@ -1,6 +1,6 @@
 # ADR-0032: Stock amounts compare within one tolerance
 
-- **Status:** Proposed.
+- **Status:** Accepted (2026-09-27).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-26, from the maintainer's decision in the issue
