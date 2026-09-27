@@ -9,6 +9,7 @@ use Eluceo\iCal\Domain\ValueObject\Date;
 use Eluceo\iCal\Domain\ValueObject\DateTime;
 use Eluceo\iCal\Domain\ValueObject\SingleDay;
 use Eluceo\iCal\Domain\ValueObject\TimeSpan;
+use Eluceo\iCal\Domain\ValueObject\UniqueIdentifier;
 use Eluceo\iCal\Presentation\Factory\CalendarFactory;
 use Victual\Services\ApiKeyService;
 use Victual\Services\CalendarService;
@@ -85,15 +86,18 @@ class CalendarApiController extends BaseApiController
 					$compareDate = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $event['start']);
 				}
 
-				$vEvent = new Event();
+				// Create event with deterministic UID based on event type, entity ID, and date
+				// Format: <event_type>-<entity_id>-<YYYYMMDD>@victual
+				$uid = null;
+				if (isset($event['event_type']) && isset($event['entity_id']))
+				{
+					$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '-' . substr($event['start'], 0, 10) . '@victual');
+				}
+
+				$vEvent = new Event($uid);
 				$vEvent->setOccurrence($vEventOccurrence)
 					->setSummary($event['title'])
 					->setDescription($description);
-
-				// Note: Deterministic UIDs would be set here if eluceo/ical provides a setUid method.
-				// Currently, eluceo/ical 2.17.0 auto-generates UIDs, which is the root cause of #511.
-				// The event_type and entity_id fields are included in the event data for future use
-				// when a method to set UIDs becomes available.
 
 				$vCalendar->addEvent($vEvent);
 
