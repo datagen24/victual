@@ -52,6 +52,15 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 		(new ReflectionProperty(DatabaseService::class, 'DbConnection'))->setValue(null, null);
 
 		self::$Pdo = $pdo;
+
+		// This class does not call parent::setUpBeforeClass() - it manages its own
+		// connection and never migrates a schema (see the class docblock) - so it must
+		// reset the same process-global caches that method would have, now that its own
+		// connection is installed, or a class run earlier in this suite
+		// (CredentialSplitTest.php, which runs first in "credentialsplit") could leave this
+		// one holding cached service instances and data caches bound to a schema this
+		// connection does not have. Issue #533.
+		self::ResetSchemaBoundState();
 	}
 
 	public static function tearDownAfterClass(): void
