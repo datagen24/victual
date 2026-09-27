@@ -14,6 +14,36 @@ use Victual\Services\Labels\LabelIdentityService;
  * target: a source that predates the API's purifier carries payloads no later write path
  * would have accepted, and the target's migrations ran before the copy so migration 0260
  * cannot see them. See StoredHtmlPurifier.
+ *
+ * **Replacement scope**, precisely, because an import that replaces "most of" a database
+ * without saying which parts is not a contract anyone can rely on (issue #496):
+ *
+ *   - Every table both engines have in common (GetCommonTables()) is truncated and replaced
+ *     with the source's rows, verbatim - this is the import.
+ *   - DERIVED_STATE_TABLES (`outbox`, the two `mqtt_*` publication tables) are always
+ *     cleared, even when the source predates them and so has no counterpart to copy back in.
+ *     They describe consequences of data this import discards - a queued event, a cached
+ *     "already published" fact - and must not outlive it. See AssertDerivedStateIsEmpty().
+ *   - NOT_COPIED_TABLES are never touched by the copy or the truncate. `migrations` is the
+ *     target's own record of its own schema history, restored rather than replaced (see
+ *     AssertSchemaVersionsMatch()). The label-family tables are guarded instead of cleared:
+ *     a live (non-retired) label refuses the whole import outright, --force included, so
+ *     that nothing here ever leaves a live label pointing at data the import just replaced;
+ *     a *retired* label's dead snapshot is history and survives. `label_import_state`'s
+ *     epoch is bumped by one on every import instead, which is what actually invalidates any
+ *     in-flight label request composed against the pre-import identities - see ADR-0021 and
+ *     plan 25's "import epoch" and LabelIdentityService::Issue().
+ *   - TARGET_ONLY_TABLES (`roles`, `role_permissions`, `user_roles`, `permission_fields`,
+ *     `user_settings_defaults`, `system_db_changed_time`) are this engine's own configuration
+ *     rather than a household's data, seeded fresh rather than carried from a source that (for
+ *     several of them) predates their existence entirely; db/pgsql/roles-seed.sql and
+ *     db/pgsql/prices-seed.sql restore what TRUNCATE ... CASCADE clears via a foreign key
+ *     into a table that *is* replaced (see the `applyRowMigrations` branch below).
+ *   - Products imported with an unsupported multi-level parent chain (root -> middle -> leaf)
+ *     are repaired the way migrations/0277.pgsql.sql repairs one on an in-place upgrade: the
+ *     middle product's parent link is cleared, and the repair is named in the progress
+ *     output. See RepairProductNesting() for why this can arrive at all despite the target's
+ *     own guard trigger, and why refusing the import outright was not chosen instead.
  */
 class DatabaseImporter
 {
@@ -35,6 +65,26 @@ class DatabaseImporter
 	 * the same number, believing it already ran.
 	 */
 	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials'];
+
+	/**
+	 * Target tables holding derived or ephemeral state - never something a household
+	 * authored - that a source within the supported span may or may not carry, depending on
+	 * exactly which migration introduced it: `outbox` arrived at 0259, `mqtt_product_entities`
+	 * and `mqtt_published_entities` at 0257, while SUPPORTED_SOURCE_MIGRATION_MIN is 0255.
+	 *
+	 * When the source predates one of these tables, GetCommonTables() correctly leaves it out
+	 * of the common-table set - there is nothing in the source to copy - but "nothing to
+	 * copy" must not be read as "leave the target's rows alone": every other table in the
+	 * target is truncated and replaced by this import, and a queued outbox event or a cached
+	 * "MQTT already knows this" fact describes exactly the data being discarded. Left alone,
+	 * it survives an operation that is supposed to replace everything, which is issue #496's
+	 * H7(b) finding for `outbox` specifically. So these are always cleared, whether or not the
+	 * source has a counterpart to repopulate them from - see ImportSnapshot() and
+	 * AssertDerivedStateIsEmpty(). When the source *does* carry one of them it is already a
+	 * common table, copied and truncated the ordinary way; this list only closes the gap for
+	 * a source that predates it.
+	 */
+	const DERIVED_STATE_TABLES = ['outbox', 'mqtt_product_entities', 'mqtt_published_entities'];
 
 	/**
 	 * The oldest source schema this importer accepts, as a migration number.
@@ -132,11 +182,81 @@ class DatabaseImporter
 		}
 	}
 
+	/**
+	 * Applies migrations/0277.pgsql.sql's own repair rule to whatever products the copy just
+	 * brought in - reusing its rule rather than inventing a second one, per issue #496 (H7a):
+	 * a product may not both have a parent and be one, so whichever product is the "middle"
+	 * of a three-or-more-level chain (it has a parent_product_id of its own *and* something
+	 * else points at it as a parent) has that parent link cleared, the same way 0277 repairs
+	 * one on an in-place upgrade. Its children stay attached to it as a (now root) product,
+	 * which keeps the one level of nesting the schema supports rather than orphaning them.
+	 *
+	 * Why this can arrive at all despite `enfore_product_nesting_level`/0277's own trigger
+	 * still being installed on the target: `parent_product_id` predates the SQLite freeze
+	 * (upstream grocy has always had it) and the ORIGINAL trigger — carried unchanged through
+	 * every migration up to 0277 on both engines — was declared BEFORE UPDATE only, never
+	 * BEFORE INSERT (0277's own comment explains this at length). A source honestly written
+	 * by an installation older than 0277 can therefore carry a multi-level chain that no
+	 * engine's trigger, past or present, ever caught on INSERT. The target's copy of that
+	 * trigger cannot catch it either: SetTriggersEnabled() disables every user trigger for
+	 * the whole copy, on purpose, so that rows already shaped by the source arrive unchanged
+	 * rather than being recomputed a second time. Nothing else in this class re-validates the
+	 * rows it copies, so without this repair they sit in the target exactly as the source had
+	 * them, and the very next ordinary UPDATE to the middle product hits the guard trigger and
+	 * fails - a write nobody involved in that request could explain from the request alone.
+	 *
+	 * Repair, not refusal: 0277 already established this fork's answer to a chain found among
+	 * existing rows - correct it in place and say so, rather than block the operation the
+	 * chain has nothing to do with. An import is exactly that case again, so it reuses the
+	 * same answer instead of choosing a stricter one just because the rows arrived a different
+	 * way.
+	 *
+	 * Called after AssertValuesMatch(), never before it - see ImportSnapshot()'s own comment
+	 * on why the purifier and the key hasher are placed there, which applies here identically:
+	 * this rewrites rows the verbatim-copy assertions just finished proving were an exact
+	 * copy, so it must run after them.
+	 */
+	private function RepairProductNesting(): void
+	{
+		$affected = $this->Target->query(
+			'SELECT p_middle.id, p_middle.name
+			FROM products p_middle
+			JOIN products p_child ON p_child.parent_product_id = p_middle.id
+			WHERE p_middle.parent_product_id IS NOT NULL'
+		)->fetchAll(\PDO::FETCH_KEY_PAIR);
+
+		if (empty($affected))
+		{
+			return;
+		}
+
+		// The identical predicate, so what was just selected is exactly what gets repaired.
+		$this->Target->exec(
+			'UPDATE products
+			SET parent_product_id = NULL
+			WHERE id IN (
+				SELECT p_middle.id
+				FROM products p_middle
+				JOIN products p_child ON p_child.parent_product_id = p_middle.id
+				WHERE p_middle.parent_product_id IS NOT NULL
+			)
+			AND parent_product_id IS NOT NULL'
+		);
+
+		($this->Progress)('  repaired ' . count($affected) . ' unsupported product nesting '
+			. (count($affected) === 1 ? 'chain' : 'chains') . ': unset parent_product_id on product '
+			. implode(', ', array_map(
+				fn($id, $name) => $id . ' (' . $name . ')',
+				array_keys($affected),
+				array_values($affected)
+			)));
+	}
+
 	private function ImportSnapshot(bool $force, bool $applyRowMigrations): array
 	{
 		$tables = $this->GetCommonTables();
 
-		$this->AssertSchemaVersionsMatch();
+		$this->AssertSchemaVersionsMatch($applyRowMigrations);
 		$this->AssertStockLocations();
 
 		$report = [];
@@ -168,6 +288,7 @@ class DatabaseImporter
 				$this->Target->exec('UPDATE label_import_state SET epoch = epoch + 1 WHERE id = 1');
 			}
 			$this->AssertTargetIsEmpty($tables, $force);
+			$this->AssertDerivedStateIsEmpty($tables, $force);
 			// A pairing session binds the creating user's id. Imports replace those users;
 			// retained pairing material must not mint a credential for a reused account id.
 			if ($this->Target->query("SELECT to_regclass('label_worker_sessions')")->fetchColumn() !== null)
@@ -182,13 +303,28 @@ class DatabaseImporter
 			// time.
 			$this->SetTriggersEnabled($tables, false);
 
+			// DERIVED_STATE_TABLES the source happens to predate are never in $tables (see
+			// GetCommonTables()) and so would otherwise never appear in this statement at
+			// all - which is exactly how a stale outbox event survives a force import today
+			// (issue #496, H7b). Truncated in the same statement and the same transaction as
+			// every copied table, whether or not the source has rows to put back into them.
+			$derivedTablesToClear = array_values(array_filter(
+				array_diff(self::DERIVED_STATE_TABLES, $tables),
+				fn($table) => $this->Target->query("SELECT to_regclass('" . $table . "')")->fetchColumn() !== null
+			));
+
 			$this->Target->exec('TRUNCATE TABLE '
-				. implode(', ', array_map(fn($t) => $this->TargetDialect->QuoteIdentifier($t), $tables))
+				. implode(', ', array_map(fn($t) => $this->TargetDialect->QuoteIdentifier($t), array_merge($tables, $derivedTablesToClear)))
 				. ' RESTART IDENTITY CASCADE');
 
 			foreach ($tables as $table)
 			{
 				$report[$table] = $this->CopyTable($table);
+			}
+
+			foreach ($derivedTablesToClear as $table)
+			{
+				($this->Progress)('  ' . str_pad($table, 46) . ' cleared (derived state; the source predates it)');
 			}
 
 			$this->SetTriggersEnabled($tables, true);
@@ -238,6 +374,16 @@ class DatabaseImporter
 			}
 
 			StoredApiKeyHasher::HashPlaintextKeys($this->Target, $this->Progress);
+
+			// A source may honestly carry a product that is both a parent and a child - see
+			// RepairProductNesting() for why the target's own guard trigger never catches
+			// this on the way in. Same placement as the purifier and the key hasher above,
+			// and for the same reason: this rewrites rows the verbatim-copy assertions just
+			// finished proving were an exact copy, so it must run after them, never before.
+			if (in_array('products', $tables, true))
+			{
+				$this->RepairProductNesting();
+			}
 
 			// The frozen source replaces permission_hierarchy, and TRUNCATE CASCADE
 			// clears role grants. Restore the target's read leaves and built-in grants
@@ -413,8 +559,13 @@ class DatabaseImporter
 	 * is a *span*: SUPPORTED_SOURCE_MIGRATION_MIN through SUPPORTED_SOURCE_MIGRATION_MAX,
 	 * frozen, with both numbers named on refusal so the message says what would be accepted
 	 * rather than only that this was not.
+	 *
+	 * @param bool $applyRowMigrations Whether this is a real import rather than the
+	 * mechanical, unhelped copy the differential/label-identity test harnesses ask for by
+	 * passing false to Import() - see MigrationSetMismatch()'s docblock for why the stronger
+	 * completeness check below is skipped for them.
 	 */
-	private function AssertSchemaVersionsMatch()
+	private function AssertSchemaVersionsMatch(bool $applyRowMigrations)
 	{
 		$sourceVersion = $this->Source->query('SELECT MAX(migration) FROM migrations')->fetchColumn();
 		$targetVersion = $this->Target->query('SELECT MAX(migration) FROM migrations')->fetchColumn();
@@ -473,6 +624,97 @@ class DatabaseImporter
 				. 'Run bin/victual-migrate against it first.'
 			);
 		}
+
+		// Issue #518 (M18): a maximum agreeing is not proof of completeness.
+		// migrations/RESERVATIONS.md records exactly how a tree merging 0257 and 0259
+		// without 0258 reports MAX(migration) = 259 on either engine - indistinguishable, by
+		// that number alone, from a database that ran every one of them. Both MAX checks
+		// above (source and target) can be satisfied by exactly that hole, which is what let
+		// this finding through. Skipped when $applyRowMigrations is false - see
+		// MigrationSetMismatch()'s docblock.
+		if ($applyRowMigrations)
+		{
+			[$sourceMissing, $sourceUnknown] = $this->MigrationSetMismatch($this->Source, new SqliteDialect(), intval($sourceVersion));
+
+			if (!empty($sourceMissing) || !empty($sourceUnknown))
+			{
+				throw new \Exception(
+					'The source database claims migration ' . $sourceVersion . ' but its recorded '
+					. 'migration history does not actually support that claim' . $this->DescribeMigrationSetMismatch($sourceMissing, $sourceUnknown) . '. '
+					. 'The highest recorded number is not proof of completeness (see migrations/RESERVATIONS.md). '
+					. 'Start the source installation once with the software that wrote it, so it finishes migrating, then import again.'
+				);
+			}
+
+			[$targetMissing, $targetUnknown] = $this->MigrationSetMismatch($this->Target, $this->TargetDialect, $expectedTarget);
+
+			if (!empty($targetMissing) || !empty($targetUnknown))
+			{
+				throw new \Exception(
+					'The target database is not actually fully migrated' . $this->DescribeMigrationSetMismatch($targetMissing, $targetUnknown) . ', '
+					. 'even though its highest recorded migration number alone does not show that (see migrations/RESERVATIONS.md). '
+					. 'Run bin/victual-migrate against it, or otherwise reconcile the mismatch, before importing.'
+				);
+			}
+		}
+	}
+
+	/**
+	 * The predicate SchemaVersionMiddleware uses to decide whether to serve a request -
+	 * GetMissingMigrationNumbers()/GetUnknownMigrationNumbers(), a set comparison rather than
+	 * a maximum - applied to whichever connection and dialect the caller names, rather than to
+	 * those two instance methods' own hard-wired DatabaseService::GetInstance() connection.
+	 *
+	 * That connection is the configured database, which for $this->Source (SQLite) it can
+	 * never be, and which this class does not assume for $this->Target either, for the reason
+	 * AssertSchemaVersionsMatch() already gives for using a static method there: going through
+	 * GetInstance() would drag in BaseService's constructor and a connection this class has no
+	 * use for, since it is handed both of its own. GetRequiredMigrationNumbers() is the
+	 * static, connection-free half of the same predicate; reading "applied" straight from $db
+	 * and comparing gives the identical answer for that connection, without the assumption.
+	 *
+	 * @param int $ceiling Bounds the required set at the claimed version rather than at the
+	 * dialect's full range - a database legitimately has not yet run migrations past the one
+	 * it is at, and only a hole *below* that is issue #518's (M18) finding.
+	 * @return array{0: int[], 1: int[]} [missing, unknown], both ascending
+	 */
+	private function MigrationSetMismatch(\PDO $db, DatabaseDialect $dialect, int $ceiling): array
+	{
+		$required = array_values(array_filter(
+			DatabaseMigrationService::GetRequiredMigrationNumbers($dialect),
+			fn($number) => $number <= $ceiling
+		));
+
+		// The same negative-number filter GetAppliedMigrationNumbers() applies, for the same
+		// reason: DemoDataGeneratorService records "the demo data already ran" as migration
+		// -1, which answers to no migration file on either engine and is not a hole.
+		$applied = array_values(array_filter(
+			array_map('intval', $db->query('SELECT migration FROM migrations')->fetchAll(\PDO::FETCH_COLUMN)),
+			fn($number) => $number >= 0
+		));
+
+		return [
+			array_values(array_diff($required, $applied)),
+			array_values(array_diff($applied, $required)),
+		];
+	}
+
+	/** The parenthesised "(missing ...; recorded but unknown to this code: ...)" detail shared by both refusals above. */
+	private function DescribeMigrationSetMismatch(array $missing, array $unknown): string
+	{
+		$parts = [];
+
+		if (!empty($missing))
+		{
+			$parts[] = (count($missing) === 1 ? 'missing migration ' : 'missing migrations ') . implode(', ', $missing);
+		}
+
+		if (!empty($unknown))
+		{
+			$parts[] = 'recorded but unknown to this code: ' . implode(', ', $unknown);
+		}
+
+		return ' (' . implode('; ', $parts) . ')';
 	}
 
 	/**
@@ -507,6 +749,42 @@ class DatabaseImporter
 					. 'Importing replaces everything in it. Pass --force if that is what you want - '
 					. 'which is also the answer when the only thing in there is the initial data '
 					. 'bin/victual-migrate seeds into a fresh database.'
+				);
+			}
+		}
+	}
+
+	/**
+	 * The same "already contains data, pass --force" rule AssertTargetIsEmpty() enforces,
+	 * extended to DERIVED_STATE_TABLES entries a source within the supported span may
+	 * predate. GetCommonTables() correctly leaves such a table out of $tables - there is
+	 * nothing there to copy - which also means AssertTargetIsEmpty() never sees it; without
+	 * this, a non-force import would go on to silently discard whatever rows are in it (see
+	 * the TRUNCATE this method's caller performs) without ever having been refused the way
+	 * every other table's pre-existing data already is. Issue #496 (H7b).
+	 */
+	private function AssertDerivedStateIsEmpty(array $tables, bool $force): void
+	{
+		if ($force)
+		{
+			return;
+		}
+
+		foreach (self::DERIVED_STATE_TABLES as $table)
+		{
+			if (in_array($table, $tables, true)
+				|| $this->Target->query("SELECT to_regclass('" . $table . "')")->fetchColumn() === null)
+			{
+				continue;
+			}
+
+			$count = $this->Target->query('SELECT COUNT(*) FROM ' . $this->TargetDialect->QuoteIdentifier($table))->fetchColumn();
+
+			if ($count > 0)
+			{
+				throw new \Exception(
+					'The target database already contains data (' . $table . ' has ' . $count . ' rows). '
+					. 'Importing replaces everything in it. Pass --force if that is what you want.'
 				);
 			}
 		}
