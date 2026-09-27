@@ -10,10 +10,16 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *
  * Ensures:
  * - Identical /api/calendar/ical reads produce identical event UIDs
- * - Distinct events have distinct UIDs
- * - Never-expiring products and sentinel-dated tasks yield no unbounded events
+ * - Distinct events have distinct UIDs, and the event_type prefix keeps UIDs distinct
+ *   even when different entity types share the same numeric id
+ * - The UID stays stable when only the entity's own date changes (a rescheduled item
+ *   is an update, not a new event)
+ * - Never-expiring products (date-only sentinel) and batteries with no charge interval
+ *   configured (datetime sentinel) yield no unbounded events
  * - Normal dated events remain present
- * - TimeZone bounds do not extend to far-future sentinel dates
+ * - VTIMEZONE bounds do not extend to far-future sentinel dates, checked under a zone
+ *   with real DST transitions (UTC cannot reveal this half of the defect - see
+ *   testTimeZoneBoundsDoNotIncludeSentinelDates)
  */
 class CalendarIdentityTest extends PgsqlSchemaTestCase
 {
@@ -30,7 +36,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO users (id, username, password) VALUES (9600, 'calendar-test', 'fixture')");
 
 		// Grant calendar permissions
-		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'BATTERIES')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'BATTERIES', 'MEALPLAN_VIEW')");
 
 		// Create a session for the test user
 		self::$sessionKey = 'calendar-test-session-' . uniqid();
@@ -98,9 +104,11 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Act: Get iCal
 		$ical = $this->getIcalString();
 
-		// Assert: Sentinel-dated entries should not produce events (or be bounded)
-		// For now, we choose to exclude sentinel dates entirely
-		$this->assertStringNotContainsString('2999-12-31', $ical, 'Sentinel dates should not appear in iCal');
+		// Assert: Sentinel-dated entries should not produce events (or be bounded).
+		// iCal renders a DATE VALUE in compact form (YYYYMMDD, no dashes) - the input
+		// dashed form '2999-12-31' never appears in the output regardless of whether
+		// filtering works, so that literal would make this assertion vacuous.
+		$this->assertStringNotContainsString('29991231', $ical, 'Sentinel dates should not appear in iCal');
 		// The sentinel entry must not produce a VEVENT at all, not merely one whose date
 		// happens to be reformatted away from the literal string checked above.
 		$this->assertStringNotContainsString('Never Expires Product', $ical, 'Sentinel-dated product should not produce a calendar event');
@@ -132,32 +140,54 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 
 	public function testTimeZoneBoundsDoNotIncludeSentinelDates()
 	{
-		// Arrange: Create events with both normal and sentinel dates
+		// Arrange: a normal event (so there is a legitimate min/max date to build a
+		// VTIMEZONE from) and a SEPARATE, dedicated sentinel-only product - not the same
+		// product as the normal event, because StockService::GetCurrentStock() aggregates
+		// to one row per product_id via MIN(best_before_date), which would silently hide a
+		// second, later, sentinel-dated row on the same product behind the earlier one and
+		// never let it reach CalendarApiController's per-event filter at all.
 		$this->insertProduct('Product Normal', 10.0);
 		$productId = self::$db->lastInsertId();
 		$this->insertStockEntry($productId, 2.0, '2027-03-15');
 
-		// Also insert a sentinel-dated entry
+		$this->insertProduct('TZ Sentinel Product', 4.0);
+		$sentinelProductId = self::$db->lastInsertId();
 		$stmt = self::$db->prepare('
 			INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date)
 			VALUES (?, ?, ?, ?, ?, 0, CURRENT_DATE)
 		');
-		$stmt->execute([$productId, self::$locationId, '2999-12-31', 3.0, 'cal-tz-sentinel-' . uniqid()]);
+		$stmt->execute([$sentinelProductId, self::$locationId, '2999-12-31', 3.0, 'cal-tz-sentinel-' . uniqid()]);
 
-		// Act: Get iCal
-		$ical = $this->getIcalString();
+		// Act: read in a zone with real DST transitions. The suite otherwise runs in UTC,
+		// where DateTimeZone::getTransitions() returns exactly one fixed transition no
+		// matter what range is queried, so a VTIMEZONE block built under UTC looks
+		// identical whether $maxDate correctly excludes the sentinel or silently includes
+		// it - that half of #511 (M11) is invisible to a UTC-only assertion. Europe/Berlin's
+		// DST transitions make the block's content and size sensitive to $maxDate, which is
+		// what the #487 audit's own much larger, non-UTC ("205 KB") reproduction caught.
+		$ical = $this->getIcalString('Europe/Berlin');
 
-		// Assert: no DTSTART anywhere in the document - VEVENT or VTIMEZONE - reaches
-		// the sentinel year. Checking only the first DTSTART match would miss a bad
-		// VEVENT DTSTART hiding behind a benign, earlier VTIMEZONE DTSTART, so every
-		// occurrence is checked.
 		$this->assertStringContainsString('BEGIN:VTIMEZONE', $ical, 'Expected a VTIMEZONE block from the non-sentinel event');
-		preg_match_all('/DTSTART[^:\r\n]*:(\d{4})/', $ical, $matches);
-		$this->assertNotEmpty($matches[1], 'Expected at least one DTSTART in the iCal output');
+		$this->assertStringNotContainsString('TZ Sentinel Product', $ical, 'Sentinel-dated product should not produce a calendar event');
+
+		// Assert: every DTSTART inside the VTIMEZONE block specifically - a VEVENT's own
+		// DTSTART is already covered by the sentinel-exclusion tests - is before year 2100.
+		// A $maxDate that leaked to 2999 would make TimeZone::createFromPhpDateTimeZone()
+		// enumerate DST transitions up to that year.
+		preg_match('/BEGIN:VTIMEZONE\r?\n(.*?)END:VTIMEZONE/s', $ical, $tzBlock);
+		$this->assertNotEmpty($tzBlock, 'Expected to find a VTIMEZONE block to inspect');
+		preg_match_all('/DTSTART[^:\r\n]*:(\d{4})/', $tzBlock[1], $matches);
+		$this->assertNotEmpty($matches[1], 'Expected at least one DTSTART inside VTIMEZONE');
 		foreach ($matches[1] as $year)
 		{
-			$this->assertLessThan(2100, (int)$year, 'No DTSTART (event or VTimeZone) should extend to the sentinel year');
+			$this->assertLessThan(2100, (int)$year, 'No VTIMEZONE DTSTART should extend to the sentinel year');
 		}
+
+		// Assert: the feed stays small. A $maxDate leak to year 2999 would force
+		// Europe/Berlin's VTIMEZONE to enumerate roughly a millennium of DST transitions -
+		// the audit's original, unbounded Berlin reproduction was 205 KB; a correctly
+		// bounded feed for this two-event fixture is well under 10 KB.
+		$this->assertLessThan(10 * 1024, strlen($ical), 'iCal feed should stay small for a bounded date range');
 	}
 
 	/**
@@ -196,6 +226,77 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertStringNotContainsString('DTSTART;VALUE=DATE:20280110', $ical2);
 	}
 
+	/**
+	 * The type prefix in the UID is load-bearing, not decoration: every event type's
+	 * entity_id is only unique WITHIN that type's own table, so a product, a task, a
+	 * chore, a battery and a meal-plan note can share the exact same numeric primary
+	 * key. Without the prefix, all five would collapse onto one UID.
+	 */
+	public function testSharedNumericIdProducesDistinctUidsPerType()
+	{
+		// Arrange: the SAME id for all five, chosen well outside this class's natural
+		// auto-increment range so it cannot collide with another test method's rows.
+		$sharedId = 91000;
+
+		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ($sharedId, 'Shared ID Product', " . self::$locationId . ", 2, 2)");
+		$stmt = self::$db->prepare('
+			INSERT INTO stock (product_id, location_id, best_before_date, amount, stock_id, open, purchased_date)
+			VALUES (?, ?, ?, ?, ?, 0, CURRENT_DATE)
+		');
+		$stmt->execute([$sharedId, self::$locationId, '2028-03-01', 2.0, 'cal-shared-' . uniqid()]);
+
+		self::$db->exec("INSERT INTO tasks (id, name, due_date, done) VALUES ($sharedId, 'Shared ID Task', '2028-03-01', 0)");
+
+		// period_type 'daily' with no chores_log row yet: chores_current falls straight
+		// through to next_estimated_execution_time = start_date (no interval math
+		// needed to reach a real, non-sentinel date).
+		self::$db->exec("INSERT INTO chores (id, name, active, period_type, period_interval, start_date, track_date_only) VALUES ($sharedId, 'Shared ID Chore', 1, 'daily', 1, '2028-03-01 09:00:00', 0)");
+
+		// charge_interval_days > 0 with one prior charge cycle: batteries_current
+		// computes next_estimated_charge_time = that cycle's time + the interval.
+		self::$db->exec("INSERT INTO batteries (id, name, active, charge_interval_days) VALUES ($sharedId, 'Shared ID Battery', 1, 30)");
+		self::$db->exec("INSERT INTO battery_charge_cycles (battery_id, tracked_time, undone) VALUES ($sharedId, '2028-02-01 00:00:00', 0)");
+
+		// meal_plan_sections needs a real row to resolve against - an unresolved
+		// section_id makes CalendarService dereference a property on null.
+		self::$db->exec("INSERT INTO meal_plan_sections (id, name) VALUES ($sharedId, 'Shared ID Section')");
+		self::$db->exec("INSERT INTO meal_plan (id, day, type, note, section_id) VALUES ($sharedId, '2028-03-01', 'note', 'Shared ID Note', $sharedId)");
+
+		// Act
+		$ical = $this->getIcalString();
+
+		// Assert: five distinct, type-prefixed UIDs - one per entity. If the type
+		// prefix were ever dropped, every one of these entities would instead produce
+		// the same "91000@victual" UID, and none of these five exact strings would be
+		// found.
+		foreach (['stock', 'task', 'chore', 'battery', 'meal_plan_note'] as $type)
+		{
+			$this->assertStringContainsString("UID:{$type}-{$sharedId}@victual", $ical, "Expected a VEVENT with UID {$type}-{$sharedId}@victual");
+		}
+	}
+
+	/**
+	 * batteries_current substitutes the full datetime '2999-12-31 23:59:59' for
+	 * next_estimated_charge_time when charge_interval_days = 0
+	 * (db/pgsql/baseline/03_views_group1.sql) - not merely a date. This exercises the
+	 * sentinel filter's datetime-formatted path, which the product-only sentinel tests
+	 * above never touch (products are always date_format 'date'). Reproduced against
+	 * unfixed master: the event leaked as DTSTART:29991231T235959Z.
+	 */
+	public function testDatetimeSentinelBatteryYieldsNoBoundedEvent()
+	{
+		// Arrange: a battery with no charge interval configured - "never due" for
+		// batteries, the same concept as a product's null best-before date.
+		self::$db->exec("INSERT INTO batteries (name, active, charge_interval_days) VALUES ('Never Charged Battery', 1, 0)");
+
+		// Act
+		$ical = $this->getIcalString();
+
+		// Assert: no VEVENT for it.
+		$this->assertStringNotContainsString('Never Charged Battery', $ical, 'A battery with no charge interval should not produce a calendar event');
+		$this->assertStringNotContainsString('29991231', $ical, 'Sentinel dates should not appear in iCal');
+	}
+
 	// ===== Helper methods =====
 
 	/**
@@ -226,8 +327,17 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Get the iCal string from GET /api/calendar/ical via subprocess helper.
+	 *
+	 * $timezone, when given, is the server's default timezone for this one request
+	 * only (VICTUAL_TEST_TIMEZONE, honoured by request-subprocess-helper.php and used
+	 * the same way by WireContractTest). The suite otherwise runs in UTC, whose
+	 * DateTimeZone::getTransitions() returns exactly one fixed transition regardless of
+	 * the queried range - so a VTIMEZONE block rendered under UTC cannot reveal whether
+	 * $maxDate leaked a sentinel date into it. A zone with real DST transitions
+	 * (Europe/Berlin) is sensitive to the queried range and is what the #487 audit's
+	 * own reproduction actually used.
 	 */
-	private function getIcalString(): string
+	private function getIcalString(?string $timezone = null): string
 	{
 		$spec = [
 			'method' => 'GET',
@@ -235,14 +345,14 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			'cookie' => self::$sessionKey
 		];
 
-		$response = $this->dispatchRequest($spec);
+		$response = $this->dispatchRequest($spec, $timezone);
 		return $response['body'];
 	}
 
 	/**
 	 * Execute a request via the subprocess helper and return parsed response.
 	 */
-	private function dispatchRequest(array $spec): array
+	private function dispatchRequest(array $spec, ?string $timezone = null): array
 	{
 		// $_SERVER carries argv, which is an array and cannot be an environment value.
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -255,6 +365,10 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			'RBAC_TEST_SCHEMA' => self::Schema(),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 			'VICTUAL_DATAPATH' => VICTUAL_DATAPATH,
+			// '' rather than absent: the inherited environment above may already carry a
+			// value from this test process's own env, so a request that asks for no
+			// override has to explicitly overwrite it, matching WireContractTest::sendAs().
+			'VICTUAL_TEST_TIMEZONE' => $timezone ?? '',
 		]);
 
 		$process = proc_open(

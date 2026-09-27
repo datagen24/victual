@@ -13,6 +13,7 @@ use Eluceo\iCal\Domain\ValueObject\UniqueIdentifier;
 use Eluceo\iCal\Presentation\Factory\CalendarFactory;
 use Victual\Services\ApiKeyService;
 use Victual\Services\CalendarService;
+use Victual\Services\Mqtt\StateSnapshotAssembler;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -28,10 +29,11 @@ class CalendarApiController extends BaseApiController
 	 * a start are skipped, timed events are exported as zero-length occurrences.
 	 * Returns a 400 JSON error response on failure.
 	 *
-	 * Sentinel dates (2999-12-31 and beyond) are excluded to prevent unbounded events
-	 * and far-future timezone bounds. Event UIDs are deterministic (derived from event
-	 * type and entity ID only, no date) so identical reads yield identical UIDs and a
-	 * rescheduled entity keeps its UID across the date change (#511).
+	 * Sentinel dates (StateSnapshotAssembler::NO_DUE_DATE_SENTINEL_FROM, 2888-01-01, and
+	 * beyond) are excluded to prevent unbounded events and far-future timezone bounds.
+	 * Event UIDs are deterministic (derived from event type and entity ID only, no date)
+	 * so identical reads yield identical UIDs and a rescheduled entity keeps its UID
+	 * across the date change (#511).
 	 */
 	public function Ical(Request $request, Response $response, array $args)
 	{
@@ -44,8 +46,25 @@ class CalendarApiController extends BaseApiController
 			$vCalendar = new Calendar();
 			$vCalendar->setProductIdentifier('Victual');
 
-			// Sentinel date threshold: exclude events at or beyond this date
-			$sentinelThreshold = \DateTimeImmutable::createFromFormat('Y-m-d', '2999-01-01');
+			// Sentinel date threshold: exclude events at or beyond this date. Reuses
+			// StateSnapshotAssembler::NO_DUE_DATE_SENTINEL_FROM rather than a separate
+			// literal - it is the same "anything from here on means no real due date"
+			// concept the MQTT snapshot already established (2888-12-31 substituted for
+			// a null best-before date, 2999-12-31 for a battery with no charge interval;
+			// both sentinels, never real occurrences). This widens this endpoint's own
+			// former cutoff (2999-01-01) down to 2888-01-01, deliberately: a stock row's
+			// null best_before_date is already filtered a few lines below by the
+			// isset()/empty() check on $event['start'] and never reaches this comparison
+			// as the literal string '2888-12-31' today, but aligning the threshold means
+			// it is excluded here too if a future read path ever writes that convention
+			// into stock_current directly, rather than being excluded only by accident of
+			// today's NULL representation. No legitimate event uses a date within eight
+			// centuries of either constant. The '!' resets every field createFromFormat()
+			// does not receive to the Unix epoch, including time-of-day - without it, both
+			// this threshold and $eventDate below inherit the current wall-clock time,
+			// which makes a date exactly at the threshold compare on time-of-day rather
+			// than date alone.
+			$sentinelThreshold = \DateTimeImmutable::createFromFormat('!Y-m-d', StateSnapshotAssembler::NO_DUE_DATE_SENTINEL_FROM);
 
 			foreach ($events as $event)
 			{
@@ -54,8 +73,9 @@ class CalendarApiController extends BaseApiController
 					continue;
 				}
 
-				// Extract the date portion to check against sentinel threshold
-				$eventDate = \DateTimeImmutable::createFromFormat('Y-m-d', substr($event['start'], 0, 10));
+				// Extract the date portion to check against sentinel threshold. '!' as above:
+				// a date-only comparison must not carry today's time-of-day.
+				$eventDate = \DateTimeImmutable::createFromFormat('!Y-m-d', substr($event['start'], 0, 10));
 
 				// Skip events at or beyond the sentinel threshold (never-expiring products, etc.)
 				if ($eventDate >= $sentinelThreshold)
@@ -93,11 +113,21 @@ class CalendarApiController extends BaseApiController
 				// calendar slot, not a specific occurrence of it, so rescheduling the
 				// entity (a chore's next due date, a product's best-before date) changes
 				// DTSTART without changing UID - the same event moved, not a new one.
-				$uid = null;
-				if (isset($event['event_type']) && isset($event['entity_id']))
+				//
+				// A missing event_type/entity_id throws rather than falling through to
+				// Event's own default (a randomly generated UID, eluceo/ical's behaviour
+				// when none is given): silently accepting that fallback is exactly how
+				// #511 happened, and a future event source that forgets to set these two
+				// keys must fail loudly at request time, not quietly reintroduce
+				// non-deterministic UIDs for just that source.
+				if (!isset($event['event_type']) || !isset($event['entity_id']))
 				{
-					$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '@victual');
+					throw new \RuntimeException(
+						'Calendar event is missing event_type/entity_id required for a stable UID (#511)'
+						. (isset($event['title']) ? ": {$event['title']}" : '')
+					);
 				}
+				$uid = new UniqueIdentifier($event['event_type'] . '-' . $event['entity_id'] . '@victual');
 
 				$vEvent = new Event($uid);
 				$vEvent->setOccurrence($vEventOccurrence)
