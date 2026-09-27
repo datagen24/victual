@@ -532,6 +532,86 @@ class StockService extends BaseService
 	}
 
 	/**
+	 * Resolves the factor that converts an amount in $productId's own stock unit into a
+	 * substitution candidate's stock unit (the same direction ConsumeProduct()'s and
+	 * OpenProduct()'s loops apply), or null when the candidate cannot be expressed in
+	 * $productId's unit at all. Shared by SumStockEntriesInProductUnit() and both loops, so
+	 * all three agree on which candidates participate in a substitution (issue #553,
+	 * CodeRabbit review of #487/#490/#493's fix in PR #550).
+	 *
+	 * A candidate already stocked in $productId's own unit is always usable 1:1 - checked
+	 * directly rather than by requiring a cache__quantity_unit_conversions_resolved row to
+	 * exist for it. Today every product is in fact cached against its own stock unit with
+	 * factor 1.0 (quantity_unit_conversions_resolved's "QU conversions with a factor of 1.0
+	 * from the stock unit to the stock unit", db/pgsql/baseline/03_views_group2.sql), so this
+	 * check and a cache lookup would agree here - but same-unit correctness should not
+	 * depend on that cache population detail holding. Otherwise the resolved cache is
+	 * consulted; finding no row means null, and the candidate is excluded rather than
+	 * treated as already being in the right unit - #553's confirmed defect let one parent
+	 * unit consume or open one child unit of an unconvertible sub product regardless of the
+	 * real (unknown) ratio between them.
+	 *
+	 * @param int $subProductId
+	 * @param int $subProductQuIdStock $subProductId's own qu_id_stock
+	 * @param int $productQuIdStock The requested product's own qu_id_stock
+	 * @return float|null The factor, or null when $subProductId cannot be substituted here
+	 */
+	private function ResolveSubstitutionConversionFactor(int $subProductId, int $subProductQuIdStock, int $productQuIdStock): ?float
+	{
+		if ($subProductQuIdStock === $productQuIdStock)
+		{
+			return 1.0;
+		}
+
+		$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $subProductId, $productQuIdStock, $subProductQuIdStock)->fetch();
+		return $conversion != null ? (float)$conversion->factor : null;
+	}
+
+	/**
+	 * Sums a set of stock entry candidates in $productId's own stock quantity unit.
+	 *
+	 * The candidate set handed in here is already the exact scope a caller validates and then
+	 * consumes/opens from (a location, a specific stock entry, a substitution set) - issue #487
+	 * findings H1 and H4. Summing the raw amounts of that set is wrong once it can contain a
+	 * different product's stock entries in a different quantity unit (#487 correction 4), and an
+	 * availability check has to agree with what the caller's own consume/open loop can actually
+	 * take from these same candidates. This mirrors that loop's own per-entry conversion via
+	 * ResolveSubstitutionConversionFactor(): an entry belonging to a product other than
+	 * $productId is converted through the resolved factor and divided back out of it; a
+	 * candidate with no resolvable factor is excluded from the sum entirely (issue #553) rather
+	 * than added as if it were already in $productId's unit - the loop excludes it the same way.
+	 *
+	 * @param iterable $stockEntries Candidate stock entries already narrowed to the exact scope being validated
+	 * @param int $productId The product the result is expressed in terms of
+	 * @param int $productQuIdStock $productId's own qu_id_stock
+	 * @return float Sum, in $productId's stock quantity unit
+	 */
+	private function SumStockEntriesInProductUnit(iterable $stockEntries, int $productId, int $productQuIdStock): float
+	{
+		$sum = 0.0;
+		foreach ($stockEntries as $stockEntry)
+		{
+			if ($stockEntry->product_id != $productId)
+			{
+				$subProduct = $this->DB->products($stockEntry->product_id);
+				$factor = $this->ResolveSubstitutionConversionFactor($stockEntry->product_id, $subProduct->qu_id_stock, $productQuIdStock);
+				if ($factor === null)
+				{
+					continue;
+				}
+
+				$sum += $stockEntry->amount / $factor;
+			}
+			else
+			{
+				$sum += $stockEntry->amount;
+			}
+		}
+
+		return $sum;
+	}
+
+	/**
 	 * Removes the given amount of a product from stock (consume or negative inventory correction).
 	 *
 	 * The amount is taken from the stock entries in default consume order (entries at the default
@@ -562,7 +642,9 @@ class StockService extends BaseService
 	 * @param bool $consumeExactAmount Retired with the product-level tare mechanism (ADR-0022); has no effect
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or location does not exist, $amount <= 0, the amount exceeds
-	 *                    the current (aggregated) stock amount, or $transactionType is not valid here
+	 *                    the stock amount available within the requested scope (location and/or
+	 *                    specific stock entry, in a common unit when substitution is allowed), or
+	 *                    $transactionType is not valid here
 	 */
 	public function ConsumeProduct(int $productId, float $amount, bool $spoiled, $transactionType, $specificStockEntryId = 'default', $recipeId = null, $locationId = null, &$transactionId = null, $allowSubproductSubstitution = false, $consumeExactAmount = false)
 	{
@@ -629,8 +711,25 @@ class StockService extends BaseService
 				{
 					$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
 				}
+				else
+				{
+					// Materialized once so the availability check below sums exactly the
+					// entries the loop further down iterates, instead of re-running the query
+					// and risking the two seeing different rows (issue #487, H1).
+					$materializedStockEntries = [];
+					foreach ($potentialStockEntries as $candidateStockEntry)
+					{
+						$materializedStockEntries[] = $candidateStockEntry;
+					}
+					$potentialStockEntries = $materializedStockEntries;
+				}
 
-				$productStockAmount = $productDetails->stock_amount_aggregated;
+				// H1 (issue #487): validated against the exact candidate scope above (location
+				// and/or specific stock entry, substitution set), not the product-wide aggregate
+				// - a narrower scope can hold less than the product-wide total. Mixed-unit
+				// substitution candidates are summed in $productId's own stock unit rather than
+				// as raw amounts (#487 correction 4).
+				$productStockAmount = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $productDetails->product->qu_id_stock);
 				if (round($amount, 2) > round($productStockAmount, 2))
 				{
 					throw new \Exception('Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)');
@@ -647,11 +746,21 @@ class StockService extends BaseService
 					{
 						// A sub product will be used -> use QU conversions
 						$subProduct = $this->DB->products($stockEntry->product_id);
-						$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $stockEntry->product_id, $productDetails->product->qu_id_stock, $subProduct->qu_id_stock)->fetch();
-						if ($conversion != null)
+						$conversionFactor = $this->ResolveSubstitutionConversionFactor($stockEntry->product_id, $subProduct->qu_id_stock, $productDetails->product->qu_id_stock);
+						if ($conversionFactor === null)
 						{
-							$amount = $amount * $conversion->factor;
+							// Not convertible to $productId's own unit - excluded from
+							// substitution (issue #553): taking it as though it were already
+							// in that unit would consume/open one raw sub product unit per
+							// one $productId unit requested, regardless of the real (unknown)
+							// ratio. The availability check above already excluded this same
+							// candidate from the scope it validated, via
+							// SumStockEntriesInProductUnit()'s identical exclusion, so the loop
+							// has to agree and skip it too rather than fall through below.
+							continue;
 						}
+
+						$amount = $amount * $conversionFactor;
 					}
 
 					if ($amount >= $stockEntry->amount)
@@ -688,11 +797,12 @@ class StockService extends BaseService
 
 						$amount -= $stockEntry->amount;
 
-						if ($allowSubproductSubstitution && $stockEntry->product_id != $productId && $conversion != null)
+						if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
 						{
-							// A sub product with QU conversions was used
+							// A sub product with QU conversions was used ($conversionFactor is
+							// never null here - the continue above already excluded that case)
 							// => Convert the rest amount back to be based on the original (parent) product for the next round
-							$amount = $amount / $conversion->factor;
+							$amount = $amount / $conversionFactor;
 						}
 					}
 					else
@@ -1948,9 +2058,10 @@ class StockService extends BaseService
 	 * @param array|null $measurement See above
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product does not exist, has opening disabled, the amount exceeds the
-	 *                    current unopened (aggregated) stock amount, a measurement is given without
-	 *                    targeting a specific single-unit entry, or a measurement's unit does not
-	 *                    convert to the product's stock unit
+	 *                    unopened stock amount available within the requested scope (specific stock
+	 *                    entry and/or substitution set, in a common unit when substitution is
+	 *                    allowed), a measurement is given without targeting a specific single-unit
+	 *                    entry, or a measurement's unit does not convert to the product's stock unit
 	 */
 	public function OpenProduct(int $productId, float $amount, $specificStockEntryId = 'default', &$transactionId = null, $allowSubproductSubstitution = false, ?array $measurement = null)
 	{
@@ -1992,19 +2103,33 @@ class StockService extends BaseService
 			}
 
 			$productDetails = (object)$this->GetProductDetails($productId);
-			$productStockAmountUnopened = $productDetails->stock_amount_aggregated - $productDetails->stock_amount_opened_aggregated;
 			$potentialStockEntries = $this->GetProductStockEntries($productId, true, $allowSubproductSubstitution);
-
-			if ($amount > $productStockAmountUnopened)
-			{
-				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
-			}
 
 			if ($specificStockEntryId !== 'default')
 			{
 				$potentialStockEntries = FindAllObjectsInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
 			}
+			else
+			{
+				// Materialized once so the availability check below sums exactly the
+				// entries the loop further down iterates, instead of re-running the query
+				// and risking the two seeing different rows (issue #487, H1/H4).
+				$materializedStockEntries = [];
+				foreach ($potentialStockEntries as $candidateStockEntry)
+				{
+					$materializedStockEntries[] = $candidateStockEntry;
+				}
+				$potentialStockEntries = $materializedStockEntries;
+			}
 
+			// Measurement-specific checks run before the general availability check below:
+			// they name a narrower failure (this exact entry cannot carry a measurement)
+			// than "the scope holds too little", and a caller relying on one of these
+			// messages should still see it even when the named entry also happens to be
+			// short - issue #487 workstream 18 validation. $targetEntry can still be null
+			// here (a nonexistent stock_id, or one excluded by excludeOpened = true because
+			// it is already open) - the availability check has not run yet to catch that
+			// emptiness first.
 			$resolvedMeasurement = null;
 			if ($measurement !== null)
 			{
@@ -2030,6 +2155,18 @@ class StockService extends BaseService
 				}
 
 				$resolvedMeasurement = $this->ResolveMeasurement($productId, $measurement);
+			}
+
+			// H1/H4 (issue #487): validated against the exact candidate scope above (specific
+			// stock entry, substitution set), not the product-wide unopened aggregate - a
+			// narrower scope can hold less than the product-wide total. Mixed-unit substitution
+			// candidates are summed in $productId's own stock unit rather than as raw amounts
+			// (#487 correction 4).
+			$productStockAmountUnopened = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $product->qu_id_stock);
+
+			if ($amount > $productStockAmountUnopened)
+			{
+				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
 			}
 
 			foreach ($potentialStockEntries as $stockEntry)
@@ -2060,11 +2197,20 @@ class StockService extends BaseService
 				{
 					// A sub product will be used -> use QU conversions
 					$subProduct = $this->DB->products($stockEntry->product_id);
-					$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $stockEntry->product_id, $product->qu_id_stock, $subProduct->qu_id_stock)->fetch();
-					if ($conversion != null)
+					$conversionFactor = $this->ResolveSubstitutionConversionFactor($stockEntry->product_id, $subProduct->qu_id_stock, $product->qu_id_stock);
+					if ($conversionFactor === null)
 					{
-						$amount = $amount * $conversion->factor;
+						// Not convertible to $productId's own unit - excluded from
+						// substitution (issue #553): taking it as though it were already in
+						// that unit would open one raw sub product unit per one $productId
+						// unit requested, regardless of the real (unknown) ratio. The
+						// availability check above already excluded this same candidate from
+						// the scope it validated, via SumStockEntriesInProductUnit()'s
+						// identical exclusion, so the loop has to agree and skip it too.
+						continue;
 					}
+
+					$amount = $amount * $conversionFactor;
 				}
 
 				// Attaches only to the one entry named by $specificStockEntryId - the coherence
@@ -2107,6 +2253,17 @@ class StockService extends BaseService
 					], $measurementColumns));
 
 					$amount -= $stockEntry->amount;
+
+					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
+					{
+						// A sub product with QU conversions was used ($conversionFactor is
+						// never null here - the continue above already excluded that case)
+						// => Convert the rest amount back to be based on the original (parent)
+						// product for the next round - without this, a second substitution
+						// candidate has the factor applied on top of an amount already in the
+						// first candidate's unit, over-opening it (issue #487, H4).
+						$amount = $amount / $conversionFactor;
+					}
 				}
 				else
 				{
@@ -2340,7 +2497,8 @@ class StockService extends BaseService
 	 * @param string|null $transactionId By-reference; generated via uniqid() when null, shared across all bookings of this call
 	 * @return string The transaction id of the booking(s)
 	 * @throws \Exception When the product or a location does not exist, the product is tare weight handled
-	 *                    (not supported), or the amount exceeds the stock amount at the source location
+	 *                    (not supported), or the amount exceeds the stock amount available within the
+	 *                    requested scope (source location and/or specific stock entry)
 	 */
 	public function TransferProduct(int $productId, float $amount, int $locationIdFrom, int $locationIdTo, $specificStockEntryId = 'default', &$transactionId = null)
 	{
@@ -2383,17 +2541,21 @@ class StockService extends BaseService
 
 			$productDetails = (object)$this->GetProductDetails($productId);
 
-			$productStockAmountAtFromLocation = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationIdFrom)->sum('amount');
 			$potentialStockEntriesAtFromLocation = $this->GetProductStockEntriesForLocation($productId, $locationIdFrom);
-
-			if ($amount > $productStockAmountAtFromLocation)
-			{
-				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
-			}
 
 			if ($specificStockEntryId !== 'default')
 			{
 				$potentialStockEntriesAtFromLocation = FindAllObjectsInArrayByPropertyValue($potentialStockEntriesAtFromLocation, 'stock_id', $specificStockEntryId);
+			}
+
+			// H1 (issue #487): validated against the exact candidate scope above (source
+			// location and/or specific stock entry), not the whole source-location aggregate -
+			// a named single entry can hold less than the location's total.
+			$productStockAmountAtFromLocation = $this->SumStockEntriesInProductUnit($potentialStockEntriesAtFromLocation, $productId, $productDetails->product->qu_id_stock);
+
+			if ($amount > $productStockAmountAtFromLocation)
+			{
+				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
 			}
 
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
