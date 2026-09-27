@@ -29,7 +29,7 @@ class GenericEntityApiController extends BaseApiController
 	 * below-min-stock products to the shopping list (per user setting).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
-	 * Returns { "created_object_id": int|string } (200) or a 400 error response
+	 * Returns { "created_object_id": int } (200) or a 400 error response
 	 * (unknown/not exposed/not editable entity, invalid body, or a body that sets no
 	 * column at all and would therefore create nothing).
 	 */
@@ -148,8 +148,15 @@ class GenericEntityApiController extends BaseApiController
 						StockService::GetInstance()->AddMissingProductsToShoppingList(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount_list_id'));
 					}
 
+					// PDO::lastInsertId() - what LessQL's Row::save() reads $newObjectId from,
+					// per the comment above - always returns a string in PHP, whatever the
+					// column's own type. victual.openapi.json has documented this property
+					// integer on every route that carries it since before this cast existed
+					// (RolesApiController::AddRole() already did the same cast); audit finding
+					// H10 / issue #499 is the wire catching up to the document, not the other
+					// way around.
 					return $this->ApiResponse($response, [
-						'created_object_id' => $newObjectId
+						'created_object_id' => (int)$newObjectId
 					]);
 				});
 			});
@@ -580,6 +587,18 @@ class GenericEntityApiController extends BaseApiController
 		{
 			unset($requestBody[$column]);
 		}
+
+		// "userfields" is not a column of any entity table - UserfieldsService keeps them in
+		// their own table, keyed by entity name and object id (see GetObject()'s and
+		// GetObjects()'s own docblocks for the key this drops). A body that still carries it
+		// - what a client sends back after reading an object, since GetObject()/GetObjects()
+		// attach it to every response - made LessQL answer "SQLSTATE[42703]: undefined
+		// column" when writing back, which HandleApiCall() turns into a 400: exactly the
+		// read-edit-write round trip this function's own docblock says a client gets to rely
+		// on. A body that means to change Userfield values uses SetUserfields()
+		// (PUT /api/userfields/{entity}/{objectId}), the only path that writes them. Audit
+		// finding H10 / issue #499.
+		unset($requestBody['userfields']);
 
 		return $requestBody;
 	}

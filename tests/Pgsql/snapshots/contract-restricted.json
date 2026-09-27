@@ -1125,10 +1125,6 @@
             "user_id": "integer"
         }
     },
-    "GET /api/stock/entry/{entryId}": {
-        "status": 200,
-        "shape": "null"
-    },
     "GET /api/stock/locations/{locationId}/entries": {
         "status": 200,
         "shape": [

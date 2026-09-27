@@ -806,7 +806,18 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/userfields/{entity}/{objectId}' => fn() => $generic->GetUserfields(self::request(), new Response(), ['entity' => 'products', 'objectId' => $productId]),
 			$key === 'GET /api/stock' => fn() => $stock->CurrentStock(self::request(), new Response(), []),
 			$key === 'GET /api/stock/volatile' => fn() => $stock->CurrentVolatileStock(self::request(), new Response(), []),
-			$key === 'GET /api/stock/entry/{entryId}' => fn() => $stock->StockEntry(self::request(), new Response(), ['entryId' => self::$ids['stock_entry']]),
+			// Not replayed: self::$ids['stock_entry'] is captured once, right before the Admin
+			// sweep's own PUT /api/stock/entry/{entryId} case edits that same row - which can
+			// compact it into another (ordinary EditStockEntry() behavior; row compaction
+			// under edit/undo is audit finding C1's territory, not something this class
+			// controls) - so the id is not guaranteed to still exist by the time this replay
+			// runs, much later in the same sequence. Audit finding H10 / issue #499 turned a
+			// since-vanished id into the documented 400 instead of the previous 200 "null",
+			// which this class's own restricted-vs-admin invariant (200 or 403 only, see
+			// testRestrictedMatchesAdminMinusRedactedFields()) does not model for a reason
+			// other than a permission gate. Same reasoning as the "deleted by the Admin sweep"
+			// files case below.
+			$key === 'GET /api/stock/entry/{entryId}' => null,
 			$key === 'GET /api/stock/products/{productId}' => fn() => $stock->ProductDetails(self::request(), new Response(), ['productId' => $productId]),
 			$key === 'GET /api/stock/products/{productId}/entries' => fn() => $stock->ProductStockEntries(self::request(), new Response(), ['productId' => $productId]),
 			$key === 'GET /api/stock/products/{productId}/locations' => fn() => $stock->ProductStockLocations(self::request(), new Response(), ['productId' => $productId]),

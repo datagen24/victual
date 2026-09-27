@@ -103,8 +103,13 @@ class RecipesApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
+			// RecipesService::CopyRecipe() returns $this->DB->lastInsertId(), always a
+			// string in PHP; cast here to match the integer victual.openapi.json has
+			// documented for this property (audit finding H10 / issue #499, maintainer
+			// decision 2026-09-26), the same cast GenericEntityApiController::AddObject()
+			// and RolesApiController::AddRole() apply for the same reason.
 			return $this->ApiResponse($response, [
-				'created_object_id' => RecipesService::GetInstance()->CopyRecipe($args['recipeId'])
+				'created_object_id' => (int)RecipesService::GetInstance()->CopyRecipe($args['recipeId'])
 			]);
 		});
 	}
