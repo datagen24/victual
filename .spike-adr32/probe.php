@@ -113,6 +113,17 @@ class Adr32Probe extends PgsqlSchemaTestCase
             foreach((getenv('ADR32_FAST') ? [] : [1e5,1e6,1e7]) as $start)self::scenario("drift $start 1000 bookings",function()use($start){$p=self::product();self::row($p,$start);for($i=0;$i<1000;$i++)self::consume($p,.1);$before=self::total($p);$expected=$start-100;self::consume($p,$expected);return ['before'=>$before,'error'=>$before-$expected,'residue'=>self::total($p),'rows'=>count(self::snapshot($p)[0])];});
             self::scenario('bulk carried residue',function(){$p=self::product();self::row($p,999999999.9+.1);self::consume($p,999999999.9);$small=self::total($p);self::consume($p,.1);return ['small'=>$small,'residue'=>self::total($p),'rows'=>count(self::snapshot($p)[0])];});
             self::scenario('bulk legitimate 0.0005 remainder',function(){$p=self::product();self::row($p,1e9);self::consume($p,1e9-.0005);return ['residue'=>self::total($p),'rows'=>count(self::snapshot($p)[0])];});
+            foreach([.0005,.002] as $extra)self::scenario("large availability shortage $extra",function()use($extra){
+                $p=self::product();self::row($p,1e9);$call=fn()=>self::consume($p,1e9+$extra);
+                if(getenv('ADR32_MODE')==='relative' && $extra===.0005){$call();self::check(count(self::snapshot($p)[0])===0,'tolerated whole row not consumed');self::check(count(self::snapshot($p)[1])===1,'unexpected bookings');}
+                else return self::refuse($call,$p);
+            });
+            if(method_exists(S::class,'SpikeCompare'))self::scenario('large operand predicate boundaries',function(){
+                $expected=getenv('ADR32_MODE')==='relative'?0:-1;
+                self::check(S::SpikeCompare(1e9,1e9+.0005)===$expected,'inside relative window');
+                self::check(S::SpikeCompare(1e9,1e9+.002)===-1,'outside relative window');
+                self::check(S::SpikeCompare(1e9+.002,1e9)===1,'opposite direction');
+            });
             if(method_exists(S::class,'SpikeCompare')) self::scenario('inclusive boundary predicates',function(){foreach([0,.5e-9,1e-9,2e-9,-1e-9,-2e-9] as $v)self::check(S::SpikeCompare($v,0)===($v>1e-9?1:($v< -1e-9?-1:0)),'boundary '.$v);});
             echo json_encode(['environment'=>$metadata,'results'=>self::$results],JSON_PRETTY_PRINT|JSON_INVALID_UTF8_SUBSTITUTE|JSON_PARTIAL_OUTPUT_ON_ERROR),"\n";
         } finally {parent::tearDownAfterClass();}

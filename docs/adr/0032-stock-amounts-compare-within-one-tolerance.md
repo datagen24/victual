@@ -101,18 +101,25 @@ below does not address it.
 ## Decision
 
 The maintainer chose a shared comparison tolerance and unrounded storage in the
-recorded session. Decisions 3, 4 and 5, the exact predicates and scope in decision 1,
-and the additional verification requirements are proposed refinements requiring
+recorded session. On 2026-09-27, after the [comparison spike](../../.spike-adr32/RESULTS.md),
+the maintainer selected the combined relative tolerance and accepted its wider loss of
+precision at large amounts. The record remains Proposed pending its acceptance gates.
+Decisions 3, 4 and 5 and the implementation scope remain refinements requiring formal
 confirmation at acceptance.
 
-1. **Use one absolute tolerance, `AMOUNT_TOLERANCE = 1e-9`, for stock
-   availability and computed remainders.** For finite operands in the same unit, equality
-   means `abs(a - b) <= AMOUNT_TOLERANCE`; greater-than means
-   `a - b > AMOUNT_TOLERANCE`, and less-than means
-   `b - a > AMOUNT_TOLERANCE`. Zero uses the equality predicate with `b = 0`.
-   Reject non-finite inputs before comparison. This is an absolute tolerance in the
-   comparison's stock unit, with an inclusive equality boundary; it does not scale with
-   the amount's magnitude.
+1. **Use one tolerance function for stock availability and computed remainders:**
+   `tol(a, b) = max(AMOUNT_TOLERANCE, 1e-12 * max(abs(a), abs(b)))`, where the existing
+   `AMOUNT_TOLERANCE = 1e-9` remains the absolute floor. For finite operands in the same
+   stock unit, equality means `abs(a - b) <= tol(a, b)`. Greater-than means
+   `a - b > tol(a, b)`; less-than means `b - a > tol(a, b)`.
+   Reject non-finite inputs before comparison.
+
+   Decide whether a computed remainder `a - b` is zero by comparing `a` and `b` with
+   this predicate, retaining their magnitudes. Comparing only the remainder with zero
+   loses the relative term's scale. When a whole-entry comparison finds equality, mark
+   the transient request exhausted before processing another candidate or converting
+   the remaining request back. The stored booking still records the actual entry amount.
+   Direct zero tests use `tol(a, 0)`; they do not replace operand-based remainder tests.
 
    Aggregate availability and inventory comparisons use the requested product's stock
    unit. Per-entry comparisons use the candidate product's stock unit after conversion.
@@ -188,18 +195,21 @@ reject it. A later record would decide the schema and arithmetic changes.
 
 ## Consequences
 
-- Arithmetic residues within tolerance are treated as exhausted in the operations named
-  in decision 1. A legitimate amount within that same tolerance is indistinguishable from
-  residue; choosing `1e-9` accepts that loss of resolution in each comparison's stock unit.
-- Absolute tolerance has no proven safe magnitude or booking-count range. The schema
-  places no magnitude bound on `stock.amount`; error depends on values and operation
-  history. At `2^23` stock units, adjacent binary64 numbers are already more than `1e-9`
-  apart. A compacted `999999999.9 + 0.1` row consumed by those two amounts retains about
-  `2.38e-8`, which the proposed tolerance does not remove.
-- The deterministic [numeric probe](#numeric-evidence) reproduces that failure and
-  repeated-subtraction drift. Passing small-quantity fixtures establishes no guarantee for
-  bulk goods recorded in grams or millilitres. Accepting the absolute tolerance requires
-  explicitly accepting the residual failure modes in open question 3.
+- Arithmetic residues within the selected tolerance are treated as exhausted. Genuine
+  differences within the same tolerance are also treated as equal. The absolute floor
+  accepts loss of resolution up to `1e-9`; the relative term widens that window with the
+  operands' magnitude. At one billion stock units, the window is `0.001` stock units.
+  The spike confirms that a requested consume leaving about `0.0005` instead books the
+  entire row. The maintainer explicitly accepted this tradeoff on 2026-09-27.
+- The relative term clears the spike's accumulated-drift cases at 17-digit serialization,
+  but does not remove every residue. An error inherited from a much larger amount can
+  outgrow the tolerance once both operands become small. Consuming a row valued at
+  `999999999.9 + 0.1` in those two portions still leaves about `2.38e-8` under both
+  tested policies. This known limitation remains part of the selected policy.
+- The schema places no magnitude bound on `stock.amount`. Neither the
+  [numeric probe](#numeric-evidence) nor the service spike establishes a safe magnitude
+  or booking-count range. The service spike also shows that PHP serialization precision
+  changes accumulated drift during database round trips.
 - Exact measured-container coherence can reject an amount such as `1.0000000005` even
   though a stock availability comparison treats it as equal to one. Preserving that
   value with measurement metadata would violate the existing database constraint.
@@ -224,12 +234,14 @@ reject it. A later record would decide the schema and arithmetic changes.
    individually confirmed to accept a negative write in this record's reproduction.
 
 3. **Amounts beyond the absolute tolerance's useful range.** Choose whether to accept
-   the documented failures, propose a relative term such as
-   `max(1e-9, 1e-12 * max(abs(a), abs(b)))`, or pursue exact decimal arithmetic end to end.
-   A relative tolerance must compare the subtraction operands, not only the resulting
-   remainder with zero. It can still miss error inherited from a much larger prior amount
-   once both operands are small, and it can discard larger genuine quantities. No change
-   to the absolute tolerance is decided here; acceptance requires an explicit disposition.
+   the documented failures, add a relative term, or pursue exact decimal arithmetic.
+
+   > **Response:** On 2026-09-27, after comparing both policies through the stock services,
+   > the maintainer chose: "Use relative tolerance; accept its wider loss of precision at
+   > large amounts". The comparison presented both the wider loss and the carried
+   > `2.38e-8` residue that remains under either policy. Decision 1 now specifies
+   > `max(1e-9, 1e-12 * max(abs(a), abs(b)))`. Exact decimal arithmetic remains deferred.
+
 4. **SQL and browser comparisons.** `stock_current`, `stock_missing_products`,
    `product_groups_missing`, `product_location_missing`, and `recipes_pos_resolved`
    have their own stock comparisons. The last includes a `1e-8` threshold and rounded
@@ -266,11 +278,12 @@ this working copy does not contain their scripts or seeds.
 
 ## Acceptance prerequisites
 
-1. The decider confirms the exact `1e-9` absolute tolerance, inclusive equality boundary,
-   unit conversion rules, and exact coherence exception in decisions 1 and 5. The
-   implementation evidence records the stock magnitudes and conversion factors exercised.
-   The decider explicitly resolves open question 3, including whether the known bulk
-   residue failures are accepted. An arithmetic-policy change requires revising this
+1. The accepting pull request confirms the selected absolute floor `1e-9`, relative
+   coefficient `1e-12`, inclusive equality boundary, operand-based remainder checks,
+   unit conversion rules, and exact coherence exception. It cites open question 3's
+   response accepting the wider loss of precision and the known carried-residue limitation.
+   The implementation evidence records the magnitudes, conversion factors and serialization
+   precision exercised. Any further arithmetic-policy change requires revising this
    proposal before the separate bookkeeping acceptance.
 2. Regression tests on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md) cover
    consume, open, transfer, inventory correction and its undo, purchase undo,
@@ -278,8 +291,9 @@ this working copy does not contain their scripts or seeds.
    They reproduce #492 and #470 and assert stock rows and ledger amounts after each
    operation and its applicable undo. The consume fixture must retain distinct 0.1 and
    0.2 candidate rows so compaction cannot remove the per-entry subtraction being tested.
-3. Boundary tests cover zero and differences below, at, and above `1e-9`, including
-   negative computed residues. They preserve a genuine `0.001` remainder and refuse a
+3. Boundary tests cover zero and differences below, at, and above the selected tolerance, including
+   the `1e-9` floor, large operands, and negative computed residues. They preserve a
+   genuine `0.001` remainder at unit-scale operands and refuse a
    shortage outside tolerance without partial writes. Multi-entry cases assert that a
    near-zero remaining request does not create another booking. Mixed-unit substitution
    tests exercise both aggregate and per-entry comparisons after conversion. Recipe
@@ -316,6 +330,7 @@ an audit of all six gates. Both policies retain a bulk residue; the relative pol
 removes a genuine small remainder at large magnitude. Runtime serialization precision
 changes the observed accumulated drift.
 
-This evidence does not accept the policy or land its implementation. The decider's
-choice in open question 3, production changes, maintained regressions, and final
-implementation verification remain required before the bookkeeping acceptance.
+The maintainer selected the relative policy after reviewing this evidence; open question 3
+records the response. The spike does not land the implementation. Production changes,
+maintained regressions, and final implementation verification remain required before
+bookkeeping acceptance.

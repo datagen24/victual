@@ -2,8 +2,8 @@
 
 ADR-0032 is not ready for acceptance. Both experimental policies pass the focused
 functional checks, but both retain the demonstrated bulk residue. The relative policy
-also discards a genuine small remainder at large magnitudes. The arithmetic-policy
-choice and a production implementation remain outstanding.
+also discards a genuine small remainder at large magnitudes. On 2026-09-27, the maintainer selected the relative policy and accepted its wider loss of
+precision after reviewing both limitations. Production implementation remains outstanding.
 
 ## Working copies and runtime
 
@@ -47,7 +47,7 @@ not be attributed to choosing one tolerance over the other.
 
 | Case | Absolute | Relative |
 |---|---|---|
-| Focused functional checks | 76 passed | 76 passed |
+| Focused functional checks, including supplemental large-operand boundaries | 79 passed | 79 passed |
 | Existing undo-integrity tests | 41 tests, 360 assertions passed | 41 tests, 360 assertions passed |
 | Seed `(999999999.9 + 0.1)` and consume in portions `999999999.9`, then `0.1` | Leaves about `2.384186e-8` | Leaves the same residue |
 | Request `1e9 - 0.0005` from a billion-unit row | Preserves about `0.000499963760376` | Deletes the row and books its full amount |
@@ -57,8 +57,9 @@ The five bulk/drift records are observations, not assertions that these outcomes
 correct. Their successful execution does not turn the surviving residue or lost
 remainder into a passing acceptance criterion. JSON records identify them separately.
 
-The unchanged combined baseline passes 42 of the 75 comparable functional checks.
-The experiments add one direct predicate-boundary check that the baseline cannot run.
+The initial unchanged-baseline matrix passes 42 of 75 functional checks. The final
+experimental matrix adds two direct predicate checks and two large-availability cases.
+The baseline does not define the experimental predicate helper.
 The baseline failures include inconsistent availability comparisons, accepted negative
 or non-finite inputs, and application-approved measurements rejected by PostgreSQL's
 exact coherence constraint. Raw outcomes are in `evidence/baseline.json`.
@@ -108,16 +109,17 @@ is inferred from either set of fixtures.
 
 | Gate | Evidence | Remaining requirement |
 |---|---|---|
-| 1: policy confirmation | Both policies tested with identical service paths, units, and operands; bulk limitations demonstrated | Maintainer chooses the policy and explicitly disposes of open question 3; exact coherence and scope refinements need confirmation |
+| 1: policy confirmation | Both policies tested with identical service paths, units, and operands; bulk limitations demonstrated | Relative policy selected on 2026-09-27 and open question 3 answered; the acceptance PR must confirm the recorded policy and structural exceptions |
 | 2: booking and undo regressions | Consume, open, transfer, inventory in both directions, purchase, self-production and positive inventory-correction undo; separate 0.1 and 0.2 rows; transfer-undo residue fixture | Promote spike cases to maintained PHPUnit regressions and land the implementation/dependency separately |
 | 3: boundaries and conversions | Inclusive zero predicate; below/above availability shortages; 0.001 preservation; no extra booking after exhaustion; factors 4 and 0.001; recipe clamps; inventory equal-count refusal; bulk observations | Update the old refusal characterization; retain the chosen policy's documented limitations |
 | 4: coherence | Edit, measure and measured open at 1, 1 ± 0.5e-9, 0.995, 0.998, 1.002, 1.005; exact request checks and preserved positive split remainder | Land exact application predicates; SQL constraint remains unchanged |
 | 5: comparison inventory | Audit below and reproducible experimental patch | Production review must verify the final implementation, including any newer dependency sites |
 | 6: invalid inputs | Six stock write methods tested with -5e-10, NaN, positive and negative infinity; measurement non-finite inputs; zero edit succeeds; refused operations preserve stock and ledger | Land guards with regression coverage; service-level checks do not establish the HTTP error contract |
 
-No gate is marked complete solely because an exported experiment passes. Gate 1 requires
-a maintainer decision. Gates 2–6 require durable production implementation and regression
-evidence. Acceptance must remain a separate bookkeeping-only pull request.
+No gate is marked complete solely because an exported experiment passes. Gate 1's numeric
+policy choice is recorded, including acceptance of the relative policy's wider precision
+loss. Gates 2–6 require durable production implementation and regression evidence.
+Acceptance must remain a separate bookkeeping-only pull request.
 
 ## Comparison audit
 
