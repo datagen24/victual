@@ -64,7 +64,7 @@
 					"Labels"
 				],
 				"summary": "Resolve an opaque label",
-				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. STOCK_VIEW authorizes location labels. Unauthorized and unknown labels both return 200 with status unknown; a denied caller performs no label lookup. No other entity kind is resolved in this release.",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
 				"parameters": [
 					{
 						"name": "code",
@@ -111,7 +111,15 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"stock_entry",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"target": {
 													"type": "object",
@@ -122,13 +130,16 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id: for stock_entry, this is stock.id (the row that GET /api/stock/entry/{entryId} takes), not the stock_id string"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name of the target entity; for stock_entry, this is the product's current name, read live rather than captured - unlike the retired snapshot's product_name, it changes if the product is later renamed"
 														},
 														"path": {
-															"type": "string"
+															"type": "string",
+															"description": "A location's tree path; for the other five kinds, mirrors name"
 														}
 													}
 												}
@@ -153,7 +164,14 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"snapshot": {
 													"type": "object",
@@ -163,10 +181,73 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id of the retired entity"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name at retirement time"
+														}
+													}
+												},
+												"retired_at": {
+													"type": "string",
+													"description": "When the label was retired, as PostgreSQL renders the `labels.retired_at` `TIMESTAMPTZ` it is read straight out of: \"YYYY-MM-DD HH:MM:SS[.ffffff]\u00b1HH\" - a UTC offset, and fractional seconds when the column holds them. Neither the local rendering the rest of this document describes nor RFC 3339, so it carries no `pattern` and no `format`. One of the exceptions ADR-0027 decision 2 enumerates; a strict client should read it as an opaque string."
+												}
+											},
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"required": [
+												"status",
+												"uid",
+												"kind",
+												"snapshot",
+												"retired_at"
+											],
+											"properties": {
+												"status": {
+													"const": "retired"
+												},
+												"uid": {
+													"type": "string",
+													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
+												},
+												"kind": {
+													"const": "stock_entry"
+												},
+												"snapshot": {
+													"type": "object",
+													"required": [
+														"id",
+														"product_name",
+														"best_before_date",
+														"amount"
+													],
+													"properties": {
+														"id": {
+															"type": "integer",
+															"description": "Row id of the retired stock entry: stock.id, the row GET /api/stock/entry/{entryId} takes, not the stock_id string"
+														},
+														"product_name": {
+															"type": [
+																"string",
+																"null"
+															],
+															"description": "The product's name at retirement time, captured rather than read live; null when the entry was retired by deleting its product (issue #558); an entry retired earlier keeps its name even if the product is deleted afterwards"
+														},
+														"best_before_date": {
+															"type": [
+																"string",
+																"null"
+															],
+															"format": "date",
+															"description": "The stock entry's best_before_date at retirement time"
+														},
+														"amount": {
+															"type": "number",
+															"description": "The stock entry's amount at retirement time"
 														}
 													}
 												},
