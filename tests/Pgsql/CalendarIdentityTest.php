@@ -101,9 +101,16 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Assert: Sentinel-dated entries should not produce events (or be bounded)
 		// For now, we choose to exclude sentinel dates entirely
 		$this->assertStringNotContainsString('2999-12-31', $ical, 'Sentinel dates should not appear in iCal');
-		// Also check that the event UID doesn't span far into the future
+		// The sentinel entry must not produce a VEVENT at all, not merely one whose date
+		// happens to be reformatted away from the literal string checked above.
+		$this->assertStringNotContainsString('Never Expires Product', $ical, 'Sentinel-dated product should not produce a calendar event');
+		// Also check that no DTSTART (event or VTIMEZONE) spans far into the future.
+		// preg_match() returns int (0 or 1) on success and only bool false on a regex
+		// engine error, so assertSame(0, ...) is the type-correct way to assert "no match" -
+		// assertFalse() requires a literal bool and fails on the int 0 preg_match() actually
+		// returns, masking this assertion regardless of the real match result.
 		$hasUnboundedEvent = preg_match('/DTSTART.*?2999/', $ical);
-		$this->assertFalse($hasUnboundedEvent, 'Should not have events spanning to year 2999');
+		$this->assertSame(0, $hasUnboundedEvent, 'Should not have events spanning to year 2999');
 	}
 
 	public function testNormalDatedEventRemains()
@@ -140,11 +147,16 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Act: Get iCal
 		$ical = $this->getIcalString();
 
-		// Assert: The VTIMEZONE should not extend to year 2999
-		preg_match('/DTSTART.*?(\d{4})/s', $ical, $matches);
-		if (!empty($matches[1])) {
-			$year = (int)$matches[1];
-			$this->assertLessThan(2100, $year, 'TimeZone bounds should not extend beyond reasonable future');
+		// Assert: no DTSTART anywhere in the document - VEVENT or VTIMEZONE - reaches
+		// the sentinel year. Checking only the first DTSTART match would miss a bad
+		// VEVENT DTSTART hiding behind a benign, earlier VTIMEZONE DTSTART, so every
+		// occurrence is checked.
+		$this->assertStringContainsString('BEGIN:VTIMEZONE', $ical, 'Expected a VTIMEZONE block from the non-sentinel event');
+		preg_match_all('/DTSTART[^:\r\n]*:(\d{4})/', $ical, $matches);
+		$this->assertNotEmpty($matches[1], 'Expected at least one DTSTART in the iCal output');
+		foreach ($matches[1] as $year)
+		{
+			$this->assertLessThan(2100, (int)$year, 'No DTSTART (event or VTimeZone) should extend to the sentinel year');
 		}
 	}
 
@@ -196,7 +208,9 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	 */
 	private function dispatchRequest(array $spec): array
 	{
-		$environment = array_merge($_SERVER, [
+		// $_SERVER carries argv, which is an array and cannot be an environment value.
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$environment = array_merge($inherited, [
 			'PGHOST' => getenv('PGHOST'),
 			'PGPORT' => getenv('PGPORT'),
 			'PGUSER' => getenv('PGUSER'),
