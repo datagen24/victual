@@ -187,8 +187,17 @@ class UsersApiController extends BaseApiController
 		// change can keep this one session alive while revoking every other, and so it
 		// knows whether there is a browser session at all to mint a replacement for when
 		// the account was flagged (issue #513).
+		//
+		// Round 9 (CodeRabbit): valid alone is not enough - it must also belong to the
+		// account this request is authenticated as, $targetUserId when $isSelf. Under
+		// DISABLE_AUTH or externally managed (reverse-proxy) authentication, VICTUAL_USER_ID
+		// is not derived from this cookie at all, so a live cookie left over from some other
+		// account can still ride along; treating it as "the acting session" let a flagged
+		// self-edit under DISABLE_AUTH mint a fresh session for the wrong account entirely.
 		$rawSessionCookie = $request->getCookieParams()[SessionService::SESSION_COOKIE_NAME] ?? null;
-		$actingSessionKey = ($rawSessionCookie !== null && SessionService::GetInstance()->IsValidSession($rawSessionCookie))
+		$actingSessionKey = ($rawSessionCookie !== null
+			&& SessionService::GetInstance()->IsValidSession($rawSessionCookie)
+			&& SessionService::GetInstance()->GetUserBySessionKey($rawSessionCookie)?->id == $targetUserId)
 			? $rawSessionCookie
 			: null;
 
@@ -201,6 +210,30 @@ class UsersApiController extends BaseApiController
 
 			$requestBody = self::WithDecodedPassword($requestBody, 'password');
 			$requestBody = self::WithDecodedPassword($requestBody, 'current_password');
+
+			// Fetched here for the field-scope check below (when flagged) and for the
+			// omitted-field defaulting immediately after. Deliberately not reused for the
+			// omitted-picture_file_name write value in $write, below: that read happens as
+			// late as possible, immediately before the write itself, so it is not this
+			// snapshot going stale that a concurrent picture change would be lost to
+			// (non-blocking finding, validator round 4).
+			$stored = $this->DB->users($targetUserId);
+
+			// Round 9: BaseAuthMiddleware's own guidance to a flagged account
+			// (BaseAuthMiddleware::PasswordChangeRequired()) is to send "the new password
+			// and current_password" - nothing else. Followed literally, that request has no
+			// username at all, which used to fail RequiredField() below before it ever
+			// reached the field-scope check this account is actually subject to; adding
+			// username but not first_name/last_name/picture_file_name used to fail that
+			// check instead, since an omitted key there meant "blank this out", not "leave
+			// it". On the flagged path only, an omitted username/first_name/last_name/
+			// picture_file_name now means "keep the stored value" - a field that IS present
+			// and differs from what is stored is untouched by this and still refused below,
+			// exactly as before.
+			if ($mustChangePassword && $stored !== null)
+			{
+				$requestBody = self::WithStoredValuesForOmittedFields($requestBody, $stored);
+			}
 
 			// Everything below that does not depend on the stored password hash runs ahead
 			// of CheckCurrentPassword() - username's presence, every field's type, whether a
@@ -226,13 +259,6 @@ class UsersApiController extends BaseApiController
 			{
 				self::RequireNullableString($requestBody, $stringField);
 			}
-
-			// Fetched here for the field-scope check below (when flagged). Deliberately not
-			// reused for the omitted-picture_file_name write value in $write, below: that
-			// read happens as late as possible, immediately before the write itself, so it
-			// is not this snapshot going stale that a concurrent picture change would be lost
-			// to (non-blocking finding, validator round 4).
-			$stored = $this->DB->users($targetUserId);
 
 			// An account that has to change its password reaches this route through
 			// BaseAuthMiddleware's allowlist for that purpose alone. So it must actually change
@@ -402,6 +428,34 @@ class UsersApiController extends BaseApiController
 		{
 			throw new HttpForbiddenException($request, 'This account may only change its password until the required password change is made');
 		}
+	}
+
+	/**
+	 * On a flagged account's forced-rotation edit only: username, first_name, last_name
+	 * and picture_file_name each default to their stored value when the key is entirely
+	 * absent from the body - never when it is present, including present-and-null, which
+	 * stays exactly what the caller sent for RefuseChangesBeyondThePassword() to judge.
+	 *
+	 * Round 9. BaseAuthMiddleware's own guidance to a flagged account
+	 * (PasswordChangeRequired()'s 403 body) is to send only the new password and
+	 * current_password - so a request shaped exactly like that guidance used to fail
+	 * RequiredField('username') before ever reaching RefuseChangesBeyondThePassword(),
+	 * and adding just a username still failed that check, since an omitted
+	 * first_name/last_name/picture_file_name was read as an attempt to blank each one
+	 * out rather than as "unchanged". This is what makes following the server's own
+	 * advice actually work, without changing what "present and different" refuses.
+	 */
+	private static function WithStoredValuesForOmittedFields(array $requestBody, $stored): array
+	{
+		foreach (['username', 'first_name', 'last_name', 'picture_file_name'] as $field)
+		{
+			if (!array_key_exists($field, $requestBody))
+			{
+				$requestBody[$field] = $stored->$field;
+			}
+		}
+
+		return $requestBody;
 	}
 
 	/**

@@ -65,6 +65,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const SELF_EDIT_NO_PASSWORD = 9719;
 	private const REVERSE_PROXY_ADMIN = 9720;
 	private const DISABLE_AUTH_EDIT_TARGET = 9721;
+	private const FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS = 9722;
+	private const FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS = 9723;
+	private const SESSION_BINDING_OTHER_USER = 9724;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -196,6 +199,25 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::createUser(self::DISABLE_AUTH_EDIT_TARGET, 'rotation-disable-auth-edit-target', 'disable-auth-edit-target-pw-1');
 		self::createSession('rotation-disable-auth-edit-target-session-a', self::DISABLE_AUTH_EDIT_TARGET);
 		self::createSession('rotation-disable-auth-edit-target-session-b', self::DISABLE_AUTH_EDIT_TARGET);
+
+		// issue #514 round 9: each of its own fixture, not FIELD_SCOPE_ZERO_GRANT above -
+		// that one's own test already rotates its password and clears its flag as part of
+		// what it checks, the same cross-test contamination risk round 8 found reusing
+		// RESET_TARGET. A real name, so a stored-value default has something to actually
+		// carry forward rather than defaulting NULL back to NULL either way.
+		self::createUser(self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS, 'rotation-forced-omitted-fields', 'forced-omitted-pw-1', mustChangePassword: true);
+		self::$db->exec("UPDATE users SET first_name = 'Original', last_name = 'Name' WHERE id = " . self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS);
+		self::createSession('rotation-forced-omitted-fields-session', self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS);
+
+		self::createUser(self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS, 'rotation-forced-refuses-different', 'forced-refuses-pw-1', mustChangePassword: true);
+		self::$db->exec("UPDATE users SET first_name = 'Original', last_name = 'Name' WHERE id = " . self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS);
+		self::createSession('rotation-forced-refuses-different-session', self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS);
+
+		// CodeRabbit, round 9: a real, unrelated account with its own live session - never
+		// touched by a write on any other account, so its session surviving is exactly
+		// what proves that write never treated this session as its own acting one.
+		self::createUser(self::SESSION_BINDING_OTHER_USER, 'rotation-session-binding-other-user', 'session-binding-other-user-pw-1');
+		self::createSession('rotation-session-binding-other-user-session', self::SESSION_BINDING_OTHER_USER);
 	}
 
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
@@ -389,13 +411,16 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	 * 1 directly rather than querying for "the lowest id" and risking a mismatch
 	 * against what VICTUAL_USER_ID will actually be.
 	 *
-	 * This class shares its schema/process with BootstrapAdminTest (both are in the
-	 * bootstrapadmin testsuite), and id 1 there belongs to a fixture of its own - not
-	 * one with an explicit id (9400+), but one a real POST /api/users plants without
-	 * one: explicit-id inserts elsewhere in this schema never advance the id sequence,
-	 * so the first row that relies on it for its id lands at 1. This class has no
-	 * reason to know what that fixture holds, so it restores exactly what was there
-	 * rather than assuming.
+	 * This class gets its own schema, the same as every other Pgsql test class - it does
+	 * not share BootstrapAdminTest's. Id 1 in *this* one belongs to a fixture of this
+	 * class's own making: not one of the explicit-id fixtures above (9700+), but the
+	 * account testDisableAuthCreateWithoutAPasswordStoresAnUnusableOneInstead plants
+	 * with a real POST /api/users that names no id at all. Explicit-id inserts never
+	 * advance this schema's id sequence, so the first row that relies on it for its id
+	 * lands at 1 - and since that test runs before the edit tests below it, its
+	 * "rotation-disable-auth-created" account is what this helper finds and restores.
+	 * This class has no reason to know what that fixture holds beyond that, so it
+	 * restores exactly what was there rather than assuming more.
 	 *
 	 * @param callable(int $defaultUserId): void $body
 	 */
@@ -416,7 +441,9 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		}
 		if ($wasFlagged)
 		{
-			self::$db->exec('UPDATE users SET must_change_password = false WHERE id = ' . $defaultUserId);
+			// must_change_password is SMALLINT (0/1), not the SQL literals TRUE/FALSE - see
+			// self::flag()/createUser() elsewhere in this file, which already agree on 1/0.
+			self::$db->exec('UPDATE users SET must_change_password = 0 WHERE id = ' . $defaultUserId);
 		}
 
 		try
@@ -432,7 +459,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 			}
 			if ($wasFlagged)
 			{
-				self::$db->exec('UPDATE users SET must_change_password = true WHERE id = ' . $defaultUserId);
+				self::$db->exec('UPDATE users SET must_change_password = 1 WHERE id = ' . $defaultUserId);
 			}
 		}
 	}
@@ -796,6 +823,67 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertSame(204, $formShaped['status'], $formShaped['body']);
 		self::assertSame(0, self::flag(self::FIELD_SCOPE_ZERO_GRANT));
 		self::assertTrue(password_verify('field-scope-pw-2', self::storedPasswordHash(self::FIELD_SCOPE_ZERO_GRANT)));
+	}
+
+	/**
+	 * issue #514 round 9: BaseAuthMiddleware's own guidance to a flagged account
+	 * (PasswordChangeRequired()'s 403 body under the API) is to send exactly the new
+	 * password and current_password - nothing else. Before this round, a request built
+	 * exactly that way was refused with 400 "username is required": RequiredField() ran
+	 * before anything defaulted an omitted field to its stored value, so the server's
+	 * own advice did not actually work. The `$formShaped` case just above this test
+	 * already covers explicitly resubmitting matching values; this is the narrower,
+	 * more literal case of sending none of them at all.
+	 */
+	public function testForcedRotationBypassAcceptsTheBodyBaseAuthMiddlewareItselfRecommends(): void
+	{
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS,
+			'cookie' => 'rotation-forced-omitted-fields-session',
+			'body' => [
+				'password' => 'forced-omitted-pw-2',
+				'current_password' => 'forced-omitted-pw-1',
+				// no username, first_name, last_name or picture_file_name at all - exactly
+				// what BaseAuthMiddleware's own message recommends.
+			],
+		]);
+
+		self::assertSame(204, $change['status'], $change['body']);
+		self::assertTrue(password_verify('forced-omitted-pw-2', self::storedPasswordHash(self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS)));
+		self::assertSame(0, self::flag(self::FORCED_ROTATION_ACCEPTS_OMITTED_FIELDS), 'the flag is cleared by the write that resolves it');
+	}
+
+	/**
+	 * The other half of the same fix: an omitted field now defaults to its stored
+	 * value, but a field that is present and different is still refused exactly as
+	 * before - this round does not widen what a flagged account may touch, only what
+	 * "not sent" means.
+	 */
+	public function testForcedRotationBypassStillRefusesAPresentAndDifferentField(): void
+	{
+		$originalHash = self::storedPasswordHash(self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS);
+
+		$change = self::request([
+			'method' => 'PUT',
+			'path' => '/api/users/' . self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS,
+			'cookie' => 'rotation-forced-refuses-different-session',
+			'body' => [
+				'password' => 'forced-refuses-pw-2',
+				'current_password' => 'forced-refuses-pw-1',
+				'first_name' => 'Different',
+				// last_name and username omitted - defaulted, and so not what trips this.
+			],
+		]);
+
+		self::assertSame(403, $change['status'], $change['body']);
+		self::assertSame($originalHash, self::storedPasswordHash(self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS),
+			'the stored hash is untouched');
+		self::assertSame(1, self::flag(self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS),
+			'still flagged - the refused write is not the resolving one');
+		self::assertSame('Original', self::$db->query(
+			'SELECT first_name FROM users WHERE id = ' . self::FORCED_ROTATION_STILL_REFUSES_DIFFERENT_FIELDS
+		)->fetchColumn(), 'first_name is untouched too');
 	}
 
 	/**
@@ -1436,7 +1524,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		});
 	}
 
-	public function testDisableAuthCreatePageRendersNoPasswordField(): void
+	public function testDisableAuthPagesRenderNoPasswordFieldInEitherCreateOrEditMode(): void
 	{
 		self::withDisableAuthDefaultGrantedAdmin(function () {
 			$createPage = self::request([
@@ -1450,6 +1538,20 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 				. 'accepts a missing one with authentication disabled (issue #554, round 8)');
 			self::assertStringNotContainsString('name="password_confirm"', $createPage['body']);
 			self::assertStringNotContainsString('id="change_password"', $createPage['body']);
+
+			// Round 9: the create-mode check above was already covered; edit mode never
+			// was, unlike its reverse-proxy counterpart
+			// (testReverseProxyAuthRendersNoPasswordFieldInEitherCreateOrEditMode, round 6).
+			$editPage = self::request([
+				'method' => 'GET',
+				'path' => '/user/' . self::DISABLE_AUTH_EDIT_TARGET,
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(200, $editPage['status'], $editPage['body']);
+			self::assertStringNotContainsString('name="password"', $editPage['body']);
+			self::assertStringNotContainsString('name="current_password"', $editPage['body']);
+			self::assertStringNotContainsString('name="password_confirm"', $editPage['body']);
+			self::assertStringNotContainsString('id="change_password"', $editPage['body']);
 		});
 	}
 
@@ -1480,21 +1582,32 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	public function testDisableAuthSelfEditSucceedsWithoutAPassword(): void
 	{
 		self::withDisableAuthDefaultGrantedAdmin(function (int $defaultUserId) {
-			$statement = self::$db->prepare('SELECT username FROM users WHERE id = ?');
+			$statement = self::$db->prepare('SELECT username, first_name, last_name FROM users WHERE id = ?');
 			$statement->execute([$defaultUserId]);
-			$defaultUsername = (string)$statement->fetchColumn();
+			$original = $statement->fetch();
 
-			$edit = self::request([
-				'method' => 'PUT',
-				'path' => '/api/users/' . $defaultUserId,
-				'body' => [
-					'username' => $defaultUsername,
-					'first_name' => 'Renamed',
-					// no password or current_password key at all
-				],
-			], ['DISABLE_AUTH' => 'true']);
+			try
+			{
+				$edit = self::request([
+					'method' => 'PUT',
+					'path' => '/api/users/' . $defaultUserId,
+					'body' => [
+						'username' => $original['username'],
+						'first_name' => 'Renamed',
+						// no password or current_password key at all
+					],
+				], ['DISABLE_AUTH' => 'true']);
 
-			self::assertSame(204, $edit['status'], $edit['body']);
+				self::assertSame(204, $edit['status'], $edit['body']);
+			}
+			finally
+			{
+				// This id belongs to another test's own fixture (see this method's own
+				// use of withDisableAuthDefaultGrantedAdmin() and that helper's docblock) -
+				// restored exactly as found rather than left renamed.
+				$restore = self::$db->prepare('UPDATE users SET first_name = ?, last_name = ? WHERE id = ?');
+				$restore->execute([$original['first_name'], $original['last_name'], $defaultUserId]);
+			}
 		});
 	}
 
@@ -1529,5 +1642,105 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertSame(403, $answer['status'], "$method $path: " . $answer['body']);
 		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM users WHERE username = 'planted-by-zero-grant'")->fetchColumn());
 		self::assertSame(1, self::flag(self::WALL_ZERO_GRANT), 'still flagged - none of these refusals is the resolving write');
+	}
+
+	/**
+	 * CodeRabbit, round 9: $actingSessionKey used to be "any valid session cookie the
+	 * request happened to carry" - safe under DefaultAuthMiddleware, where a session
+	 * cookie is how VICTUAL_USER_ID gets decided in the first place, but not under
+	 * DISABLE_AUTH: VICTUAL_USER_ID there is the account with the lowest id regardless
+	 * of any cookie, so a live cookie left over from some other account can still ride
+	 * along and used to be treated as "the session that made this request." The
+	 * validator's own probe: a flagged self-edit under DISABLE_AUTH, carrying another
+	 * user's live cookie, minted a session for the DISABLE_AUTH identity as though that
+	 * cookie belonged to it.
+	 *
+	 * DISABLE_AUTH's identity is not a fixture this class controls (see
+	 * withDisableAuthDefaultGrantedAdmin()'s own docblock), so this test flags it and
+	 * gives it a known password directly, restoring both afterward, rather than
+	 * assuming either.
+	 */
+	public function testASessionCookieBelongingToAnotherUserIsNeverTreatedAsTheActingSession(): void
+	{
+		$defaultUserId = (int)self::$db->query('SELECT id FROM users ORDER BY id ASC LIMIT 1')->fetchColumn();
+
+		$statement = self::$db->prepare('SELECT username, password, must_change_password FROM users WHERE id = ?');
+		$statement->execute([$defaultUserId]);
+		$original = $statement->fetch();
+
+		$knownPassword = 'session-binding-known-pw-1';
+		self::$db->prepare('UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?')
+			->execute([password_hash($knownPassword, PASSWORD_ARGON2ID), $defaultUserId]);
+
+		try
+		{
+			$change = self::request([
+				'method' => 'PUT',
+				'path' => '/api/users/' . $defaultUserId,
+				'cookie' => 'rotation-session-binding-other-user-session',
+				'body' => [
+					'username' => $original['username'],
+					'password' => 'session-binding-rotated-pw',
+					'current_password' => $knownPassword,
+				],
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(204, $change['status'], $change['body']);
+			self::assertNull(self::sessionCookieValue($change),
+				'a cookie belonging to another user must never be treated as the acting '
+				. 'session - no session should be minted from a write that never had one of '
+				. 'its own presented');
+			self::assertTrue(self::sessionExists('rotation-session-binding-other-user-session'),
+				'the other user\'s own session must survive untouched - this write must never '
+				. 'reach for a session that was never its own');
+		}
+		finally
+		{
+			self::$db->prepare('UPDATE users SET password = ?, must_change_password = ? WHERE id = ?')
+				->execute([$original['password'], $original['must_change_password'], $defaultUserId]);
+		}
+	}
+
+	/**
+	 * issue #514 round 9: the spec typed first_name, last_name and picture_file_name
+	 * as plain strings, but PUT /users/{userId} documents (picture_file_name) and the
+	 * server accepts (all three - EditUser()'s corresponding parameters are each
+	 * ?string) an explicit null. Checked the way WireContractTest checks every wire
+	 * shape against this same document: Opis, against the actual schema object, not a
+	 * hand-written assertion on three "type" strings that could silently drift from
+	 * what validates and what does not.
+	 */
+	public function testNullFirstNameLastNameAndPictureFileNameValidateAgainstTheUserRequestSchema(): void
+	{
+		$document = json_decode(file_get_contents(VICTUAL_ROOT_PATH . '/victual.openapi.json'), false, flags: JSON_THROW_ON_ERROR);
+
+		$body = [
+			'username' => 'rotation-null-fields-schema-check',
+			'password' => 'schema-check-pw-1',
+			'first_name' => null,
+			'last_name' => null,
+			'picture_file_name' => null,
+		];
+
+		$validator = new \Opis\JsonSchema\Validator();
+		$validator->parser()->setOption('allowDefaults', false);
+
+		$result = $validator->validate(
+			json_decode(json_encode($body), false),
+			json_decode(json_encode($document->components->schemas->User), false)
+		);
+
+		$failure = '';
+		if (!$result->isValid())
+		{
+			$error = $result->error();
+			while ($error->subErrors())
+			{
+				$error = $error->subErrors()[0];
+			}
+			$failure = (implode('/', $error->data()->fullPath()) ?: '<root>') . ': ' . $error->keyword();
+		}
+
+		self::assertTrue($result->isValid(), $failure);
 	}
 }

@@ -1568,7 +1568,7 @@
 						}
 					}
 				},
-				"description": "Requires USERS_EDIT to edit another user, or USERS_EDIT_SELF to edit your own account - except a must_change_password-flagged account editing itself, which needs neither permission (issue #514): the flag alone authorizes it to change its own password, with the correct current_password, and nothing else in the same request. A flagged self-edit that sends no new password, or its current password again, is refused with 400 before anything else is checked. One that does send a new password but also renames the account, changes first_name/last_name or changes picture_file_name is refused with 403, the same answer a missing permission gets - this is an authorization refusal, not a data one, and applies whether or not a current password was also supplied.\n\nChanging your own password - flagged or not - additionally requires the current one, sent as current_password (or current_password_base64). A password change that succeeds revokes every other session already open on the account (issue #513): when the account being changed is also the acting one and was not flagged, the session that made the request is spared; when it was flagged, every session on the account is revoked, including the one that made the request, and a freshly minted session cookie replaces it."
+				"description": "Requires USERS_EDIT to edit another user, or USERS_EDIT_SELF to edit your own account - except a must_change_password-flagged account editing itself, which needs neither permission (issue #514): the flag alone authorizes it to change its own password, with the correct current_password, and nothing else in the same request. On this flagged path only, an omitted username, first_name, last_name or picture_file_name defaults to its stored value - the 403 refusal below is about a field that is present and different, not about which fields happen to be sent at all, so a request that sends only the new password and current_password (what this same route's own 403 body, when the flag is still set, recommends) is exactly as valid as one that resubmits every field unchanged. A flagged self-edit that sends no new password, or its current password again, is refused with 400 before anything else is checked. One that does send a new password but also sends a username, first_name, last_name or picture_file_name that differs from what is stored is refused with 403, the same answer a missing permission gets - this is an authorization refusal, not a data one, and applies whether or not a current password was also supplied.\n\nChanging your own password - flagged or not - additionally requires the current one, sent as current_password (or current_password_base64). A password change that succeeds revokes every other session already open on the account (issue #513): when the account being changed is also the acting one and was not flagged, the session that made the request is spared; when it was flagged, every session on the account is revoked, including the one that made the request, and a freshly minted session cookie replaces it."
 			},
 			"delete": {
 				"summary": "Deletes the given user",
@@ -10194,10 +10194,16 @@
 						"type": "string"
 					},
 					"first_name": {
-						"type": "string"
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"last_name": {
-						"type": "string"
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"password": {
 						"type": "string",
@@ -10216,7 +10222,10 @@
 						"description": "current_password, base64-encoded. See password_base64's own description."
 					},
 					"picture_file_name": {
-						"type": "string",
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "PUT /users/{userId} only: an omitted key leaves the stored picture untouched; an explicit null erases it. POST /users has no stored picture yet, so this distinction does not apply there."
 					},
 					"row_created_timestamp": {
