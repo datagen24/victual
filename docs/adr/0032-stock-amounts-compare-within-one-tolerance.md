@@ -6,9 +6,9 @@
 - **Recorded:** 2026-09-26, from the maintainer's decision in the issue
   [487](https://github.com/datagen24/victual/issues/487) remediation session the same day.
 - **Referenced by:** [issue 492](https://github.com/datagen24/victual/issues/492) (H3),
-  [issue 470](https://github.com/datagen24/victual/issues/470); extends the `round($x, 2)`
-  convention [PR #469](https://github.com/datagen24/victual/pull/469) established for the
-  purchase-undo branch to the rest of `services/StockService.php`.
+  [issue 470](https://github.com/datagen24/victual/issues/470); replaces the `round($x, 2)`
+  convention [PR #469](https://github.com/datagen24/victual/pull/469) used in purchase undo,
+  keeping its comparison-copy and unrounded-storage pattern.
 
 ## Context
 
@@ -44,10 +44,14 @@ computes `$newAmount = $stockRow->amount - $logRow->amount` and deletes the row 
 reaches this branch through the same float subtraction. Issue #470 names this the shape
 [PR #469](https://github.com/datagen24/victual/pull/469) (merged, closed #457) already fixed
 in the purchase-undo branch: undoing a transfer can leave "a near-zero phantom stock row" at
-the destination. [PR #531](https://github.com/datagen24/victual/pull/531) (state at
-2026-09-26: **draft, unmerged**) proposes rounding before comparing in this branch too,
-"matching #469's convention" per its own description, but has not merged — the exact `== 0`
-test is what runs on master today.
+the destination.
+
+[PR #531](https://github.com/datagen24/victual/pull/531), open and
+unmerged at its 2026-09-27 head `e60a5d22`, introduces
+`StockService::AMOUNT_TOLERANCE = 1e-9`. It applies the constant to purchase, transfer,
+open and stock-edit undo and the `ConsumeProduct()` candidate guard. Its remaining
+`round($x, 2)` sites await a separate change. The exact transfer-undo comparison remains
+in the Context audit's master revision.
 
 **PR #469's own fix established the pattern this record generalizes.** Rather than an exact
 comparison, it rounds to two decimal places before testing for a boundary, in the
@@ -72,7 +76,7 @@ decided ledger amount and do not test a boundary: `services/StockService.php:226
 printer label. `services/StockService.php:103`
 (`AddMissingProductsToShoppingList()`) rounds a missing amount before writing a
 `shopping_list` quantity — a different table from the stock ledger. Both are named here
-because the sweep behind this record covers every `round($x, 2)` call in the file, not
+because the sweep behind this record covers every `round()` call in the file, not
 because either decides a zero test or an availability comparison.
 
 `round($x, 2)` treats every value within 0.005 of a boundary as being at that boundary. For
@@ -97,14 +101,15 @@ below does not address it.
 ## Decision
 
 The maintainer chose a shared comparison tolerance and unrounded storage in the
-recorded session. The exact predicates, coherence exception, and additional verification
-requirements below are proposed refinements requiring confirmation at acceptance.
+recorded session. Decisions 3, 4 and 5, the exact predicates and scope in decision 1,
+and the additional verification requirements are proposed refinements requiring
+confirmation at acceptance.
 
-1. **Use one absolute tolerance, `STOCK_AMOUNT_TOLERANCE = 1e-9`, for stock
+1. **Use one absolute tolerance, `AMOUNT_TOLERANCE = 1e-9`, for stock
    availability and computed remainders.** For finite operands in the same unit, equality
-   means `abs(a - b) <= STOCK_AMOUNT_TOLERANCE`; greater-than means
-   `a - b > STOCK_AMOUNT_TOLERANCE`, and less-than means
-   `b - a > STOCK_AMOUNT_TOLERANCE`. Zero uses the equality predicate with `b = 0`.
+   means `abs(a - b) <= AMOUNT_TOLERANCE`; greater-than means
+   `a - b > AMOUNT_TOLERANCE`, and less-than means
+   `b - a > AMOUNT_TOLERANCE`. Zero uses the equality predicate with `b = 0`.
    Reject non-finite inputs before comparison. This is an absolute tolerance in the
    comparison's stock unit, with an inclusive equality boundary; it does not scale with
    the amount's magnitude.
@@ -131,18 +136,24 @@ requirements below are proposed refinements requiring confirmation at acceptance
    is invalid even within tolerance, and a negative log amount still identifies a consume.
    Measured-container coherence follows decision 5. Shopping-list quantities and display
    formatting remain outside the stock comparison policy.
+
+   `RecipesService::ConsumeRecipe()` uses these predicates for its positive-stock check
+   and availability clamp before calling `ConsumeProduct()`. SQL view comparisons and
+   comparisons in `public/viewjs/` remain outside this decision; open question 4 records
+   the unresolved scope and its consequences.
 2. **Stored amounts stay unrounded.** A comparison may select a whole-entry operation or
    deletion of an exhausted row. Surviving stock amounts and ledger entries retain the
    unrounded arithmetic or actual entry amount; the tolerance is never written as a value.
-   Inventory counts within tolerance of current stock produce no correction booking.
+   Inventory counts within tolerance of current stock are refused with the existing
+   equal-count validation error and produce no correction booking.
 3. **Display decimals are presentation only and never decide ledger validity.** The two
    printer-quantity roundings and the shopping-list amount-to-add rounding format a value
    already decided by the ledger; none of the three may be read as, or replaced by, a
    zero or availability test.
-4. **Negative amounts are refused.** At minimum, `EditStockEntry()` gains the check
-   `AddProduct()` already has, adjusted to `< 0` rather than `<= 0`: decision open question 1
-   below means a legitimate zero write (a vessel weighed empty through `WeighLocation()`,
-   which calls `EditStockEntry()`) must still succeed. The accepting pull request must state
+4. **Negative amounts are refused.** [PR #530](https://github.com/datagen24/victual/pull/530)
+   implements `if ($amount < 0)` in `EditStockEntry()` at the reviewed head `894fc44e`,
+   leaving zero writable. Open question 1 preserves a legitimate zero write when a vessel
+   is weighed empty through `WeighLocation()`, which calls `EditStockEntry()`. The accepting pull request must state
    whether `InventoryProduct()`, `OpenProduct()` and `TransferProduct()` carry the same gap —
    this record's reproduction did not exercise a negative write through them, so it does not
    assert that they do.
@@ -166,19 +177,29 @@ requirements below are proposed refinements requiring confirmation at acceptance
 - **Keep `round(x, 2)` everywhere.** Uniform, but wrong in both directions demonstrated
   above: it loses a real remainder under 0.005 of the stock unit, and it cannot distinguish
   "genuinely zero" from "a few grams" for a large-unit product.
-- **`NUMERIC` storage with a fixed scale.** Would remove float noise at the source rather
-  than tolerate it at comparison time, but is a schema change with wire-serialization work
-  of its own (the column is read as a JSON number on the wire today). Rejected for this
-  record; remains a possible later record.
+
+**Not decided: exact decimal storage and arithmetic.** `NUMERIC` storage paired with
+explicit decimal arithmetic in PHP, or scaled integers with a declared scale, can avoid
+binary floating-point residue for representable decimal operations. Storage alone is
+insufficient if PHP converts the values back to floats. These choices still need precision,
+range, division and rounding rules. [Issue #487](https://github.com/datagen24/victual/issues/487)
+correction 7 identifies explicit wire serialization as an option; the maintainer did not
+reject it. A later record would decide the schema and arithmetic changes.
 
 ## Consequences
 
 - Arithmetic residues within tolerance are treated as exhausted in the operations named
   in decision 1. A legitimate amount within that same tolerance is indistinguishable from
   residue; choosing `1e-9` accepts that loss of resolution in each comparison's stock unit.
-- Absolute tolerance does not guarantee removal of every floating-point error at every
-  magnitude. Conversion factors and stock magnitudes in the acceptance fixtures must be
-  recorded; behavior outside those tested ranges is not established by those tests.
+- Absolute tolerance has no proven safe magnitude or booking-count range. The schema
+  places no magnitude bound on `stock.amount`; error depends on values and operation
+  history. At `2^23` stock units, adjacent binary64 numbers are already more than `1e-9`
+  apart. A compacted `999999999.9 + 0.1` row consumed by those two amounts retains about
+  `2.38e-8`, which the proposed tolerance does not remove.
+- The deterministic [numeric probe](#numeric-evidence) reproduces that failure and
+  repeated-subtraction drift. Passing small-quantity fixtures establishes no guarantee for
+  bulk goods recorded in grams or millilitres. Accepting the absolute tolerance requires
+  explicitly accepting the residual failure modes in open question 3.
 - Exact measured-container coherence can reject an amount such as `1.0000000005` even
   though a stock availability comparison treats it as equal to one. Preserving that
   value with measurement metadata would violate the existing database constraint.
@@ -202,13 +223,58 @@ requirements below are proposed refinements requiring confirmation at acceptance
    decision 4: `InventoryProduct()`, `OpenProduct()` and `TransferProduct()` were not
    individually confirmed to accept a negative write in this record's reproduction.
 
+3. **Amounts beyond the absolute tolerance's useful range.** Choose whether to accept
+   the documented failures, propose a relative term such as
+   `max(1e-9, 1e-12 * max(abs(a), abs(b)))`, or pursue exact decimal arithmetic end to end.
+   A relative tolerance must compare the subtraction operands, not only the resulting
+   remainder with zero. It can still miss error inherited from a much larger prior amount
+   once both operands are small, and it can discard larger genuine quantities. No change
+   to the absolute tolerance is decided here; acceptance requires an explicit disposition.
+4. **SQL and browser comparisons.** `stock_current`, `stock_missing_products`,
+   `product_groups_missing`, `product_location_missing`, and `recipes_pos_resolved`
+   have their own stock comparisons. The last includes a `1e-8` threshold and rounded
+   comparison. Browser code in `public/viewjs/` also compares stock amounts.
+   A `0.8` minimum held as `0.1 + 0.7` can report a roughly `1.11e-16` shortage.
+   Whether these consumers adopt the tolerance, and how SQL and JavaScript share its
+   definition with PHP, remains undecided. Acceptance of this scoped record does not
+   establish consistent comparisons across the application.
+
+## Numeric evidence
+
+Measured 2026-09-27 with Python binary64 arithmetic against the storage and arithmetic
+model inspected at master `1ee17d2c`. This standalone probe reproduces arithmetic only;
+it is not a PostgreSQL or PHP integration test. Run with Python 3:
+
+```python
+import math
+from decimal import Decimal
+
+print("spacing at 2^23:", math.ulp(2**23))
+amount = 999999999.9 + 0.1
+print("bulk residue:", (amount - 999999999.9) - 0.1)
+amount = 1000000.0
+for _ in range(1000):
+    amount -= 0.1
+print("1000-booking error:", Decimal.from_float(amount) - Decimal("999900"))
+print("minimum shortage:", 0.8 - (0.1 + 0.7))
+```
+
+The outputs are approximately `1.86e-9`, `2.38e-8`, `2.33e-8`, and `1.11e-16`,
+respectively. These are counterexamples, not a bound on all booking sequences. The
+randomized V-541 measurements supplied during review are not reproduced here because
+this working copy does not contain their scripts or seeds.
+
 ## Acceptance prerequisites
 
 1. The decider confirms the exact `1e-9` absolute tolerance, inclusive equality boundary,
    unit conversion rules, and exact coherence exception in decisions 1 and 5. The
    implementation evidence records the stock magnitudes and conversion factors exercised.
+   The decider explicitly resolves open question 3, including whether the known bulk
+   residue failures are accepted. An arithmetic-policy change requires revising this
+   proposal before the separate bookkeeping acceptance.
 2. Regression tests on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md) cover
-   consume, open, transfer, inventory correction, purchase undo, and transfer undo.
+   consume, open, transfer, inventory correction and its undo, purchase undo,
+   self-production undo, and transfer undo.
    They reproduce #492 and #470 and assert stock rows and ledger amounts after each
    operation and its applicable undo. The consume fixture must retain distinct 0.1 and
    0.2 candidate rows so compaction cannot remove the per-entry subtraction being tested.
@@ -216,7 +282,11 @@ requirements below are proposed refinements requiring confirmation at acceptance
    negative computed residues. They preserve a genuine `0.001` remainder and refuse a
    shortage outside tolerance without partial writes. Multi-entry cases assert that a
    near-zero remaining request does not create another booking. Mixed-unit substitution
-   tests exercise both aggregate and per-entry comparisons after conversion.
+   tests exercise both aggregate and per-entry comparisons after conversion. Recipe
+   consumption tests exercise the availability clamp with shortages inside and outside
+   tolerance. Inventory tests assert the equal-count validation error within tolerance.
+   Include the bulk and repeated-booking counterexamples from Numeric evidence and state
+   the expected remaining limitations under the selected policy.
 4. Coherence tests exercise `EditStockEntry()`, `MeasureStockEntry()`, and measured
    `OpenProduct()` against the existing SQL constraint. Cover exactly one, values within
    `1e-9` on either side, and `0.995`, `0.998`, `1.002`, and `1.005` from the old rounding
