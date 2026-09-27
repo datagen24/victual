@@ -204,8 +204,12 @@ abstract class DatabaseDialect
 	 * processes starting together interleave those checks. The losing one rolls back on
 	 * a primary key violation rather than corrupting anything, but it exits non-zero, and
 	 * an initContainer that fails because a sibling won is an outage rather than a
-	 * no-op. The always-run 8888 fixup is worse: it is outside the per-migration
-	 * try/catch, so its race has nothing to catch it at all.
+	 * no-op. The always-run 8888 fixup would be worse without this lock: it shares a
+	 * transaction with its own statements like any other PHP migration (see
+	 * DatabaseMigrationService::ExecutePhpMigrationWhenNeeded()), so a lost race at least
+	 * rolls back cleanly rather than leaving partial writes - but it is never recorded as
+	 * applied, so nothing would notice a lost race after the fact the way a regular
+	 * migration's own row in "migrations" would.
 	 *
 	 * It lives on the dialect because locking is where engines differ most, but there is
 	 * only one real implementation: PostgreSQL's advisory lock. Under

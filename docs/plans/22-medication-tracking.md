@@ -319,10 +319,16 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0288** (medication master data and subjects)
-  and **0289** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0290** (medication master data and subjects)
+  and **0291** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0289–0290 until 2026-09-26, when issue #487 remediation's view-correction migration
+    (PR #542, fixing issues 501, 505, 497 and the weekly-schedule half of 506) took 0289
+    under the lowest-free-slot rule
+  - 0288–0289 until 2026-09-24, when [issue 461](https://github.com/datagen24/victual/issues/461)'s
+    stock location foreign key ([ADR-0029](../adr/0029-stock-locations-reference-existing-locations.md))
+    took 0288 under the lowest-free-slot rule
   - 0287–0288 until 2026-09-19, when
     [issue 208](https://github.com/datagen24/victual/issues/208)'s `api_keys.read_only` took
     0287 as scheduled work
@@ -347,7 +353,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved thirteen times.** In order:
+  **These numbers have moved seventeen times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -361,13 +367,19 @@ Collected because most of them are only visible from inside the existing code.
   - 0280–0281 for issue 130
   - 0282–0283 for plan 19 piece 2's collision with it
   - 0283–0284 for that plan's own written follow-up
-  - and now 0284–0285 for plan 32's own written migration
+  - 0284–0285 for plan 32's own written migration
+  - 0287–0288 for the hole `master`'s merge of plan 05's 0286 left below this plan's numbers,
+    closed by spending 0284 and 0285 themselves as no-op migrations rather than by moving a
+    file
+  - 0288–0289 for issue 208's `api_keys.read_only`
+  - 0289–0290 for issue 461's stock location foreign key
+  - and now 0290–0291 for PR #542's view-correction migration
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
   numbers, which is the argument for claiming before writing rather than before merging.
 
-  **The last seven are the ones to know about:**
+  **The last eleven are the ones to know about:**
 
   - 0267 went to a defect fix that was already written
   - 0268 to a scheduled plan
@@ -377,11 +389,16 @@ Collected because most of them are only visible from inside the existing code.
     claimed 0280 out from under it while it was in flight
   - issue 176's fix to that plan's own review follow-up, which was written and on disk when this
     table was next read
-  - and plan 32's own migration a second time — first claimed at 0285 without displacing this
+  - plan 32's own migration a second time — first claimed at 0285 without displacing this
     plan's numbers, then, once CI refused the hole that left, renumbered down to 0283 and this
     plan moved up again
+  - the hole `master`'s own merge of plan 05's 0286 left below this plan's numbers, closed by
+    spending 0284 and 0285 as no-op migrations rather than by moving a file
+  - issue 208's own `api_keys.read_only`, written on its branch
+  - issue 461's own stock location foreign key, written on its branch
+  - and PR #542's own view-correction migration for issue #487's audit, written on its branch
 
-  So this plan's numbers have seven times moved for work that was closer to having a file than
+  So this plan's numbers have eleven times moved for work that was closer to having a file than
   this one is.
 
   Two files rather than two *pairs*: this plan was written when
