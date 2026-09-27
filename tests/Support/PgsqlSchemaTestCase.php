@@ -79,8 +79,18 @@ abstract class PgsqlSchemaTestCase extends TestCase
 			// A setup that fails partway must not leave the *next* class attached to this
 			// one's schema: PHPUnit does not reliably call tearDownAfterClass() when
 			// setUpBeforeClass() itself throws, so the same cleanup tearDownAfterClass()
-			// would have done runs here explicitly before the failure propagates.
-			self::TearDownSchema();
+			// would have done runs here explicitly before the failure propagates. Guarded
+			// so that a second failure in cleanup - the DROP itself failing on a connection
+			// $ex may already have broken - cannot replace $ex, the failure a caller
+			// actually needs to see, with a less informative one about teardown.
+			try
+			{
+				self::TearDownSchema();
+			}
+			catch (\Throwable $tearDownEx)
+			{
+				error_log('Victual: cleanup after a failed PgsqlSchemaTestCase::setUpBeforeClass() itself failed: ' . $tearDownEx->getMessage());
+			}
 
 			throw $ex;
 		}
@@ -135,18 +145,27 @@ abstract class PgsqlSchemaTestCase extends TestCase
 	 * instances above are themselves constructed from, and FileStorage is an unrelated
 	 * static singleton one class outside the BaseService hierarchy with the same shape of
 	 * hazard (see FileStorage::ResetInstanceForTest()).
+	 *
+	 * Protected rather than private: MigrationRunnerAtomicityTest overrides
+	 * setUpBeforeClass() entirely (it builds its own disposable schemas per test method
+	 * rather than one migrated schema per class - see that class's docblock) and so never
+	 * calls this method's caller. It calls this directly, itself, once its own connection
+	 * is installed.
 	 */
-	private static function ResetSchemaBoundState(): void
+	protected static function ResetSchemaBoundState(): void
 	{
 		BaseService::ResetInstancesForTest();
 
 		// Static caches declared directly on a BaseService subclass rather than on the
 		// instance BaseService::$Instances caches - clearing that array does not touch
-		// these; a freshly constructed instance would still read the stale array.
+		// these; a freshly constructed instance would still read the stale array. Named
+		// ResetCachesForTest() rather than ResetInstancesForTest() precisely so a call
+		// through one of these class names cannot be misread as also clearing
+		// BaseService::$Instances - it does not, and the call above already did.
 		LocalizationService::ResetInstancesForTest();
-		UsersService::ResetInstancesForTest();
-		FieldPolicy::ResetInstancesForTest();
-		DatabaseMigrationService::ResetInstancesForTest();
+		UsersService::ResetCachesForTest();
+		FieldPolicy::ResetCachesForTest();
+		DatabaseMigrationService::ResetCachesForTest();
 
 		// Outside the BaseService hierarchy entirely.
 		BaseApiController::ResetColumnTypeCacheForTest();
