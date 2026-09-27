@@ -99,7 +99,7 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 	/** @return array<int, array<string, mixed>> */
 	private static function ledgerRows(int $productId): array
 	{
-		$statement = self::$db->prepare("SELECT amount, price, transaction_type FROM stock_log WHERE product_id = ? ORDER BY id");
+		$statement = self::$db->prepare("SELECT amount, price, transaction_type, undone, opened_amount FROM stock_log WHERE product_id = ? ORDER BY id");
 		$statement->execute([$productId]);
 
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -581,5 +581,94 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		// product id that no longer exists.
 		self::assertSame(0, self::cacheRowCount('cache__products_average_price', $remove), 'Then: the stale average-price cache row is deleted');
 		self::assertSame(0, self::cacheRowCount('cache__products_last_purchased', $remove), 'Then: the stale last-purchased cache row is deleted');
+	}
+
+	// ------------------------------------------------------------------------------
+	// CodeRabbit review of PR #540: a fully consumed measured container's live ledger row
+	// ------------------------------------------------------------------------------
+
+	public function testMergeRefusesWhenARemovedProductsFullyConsumedMeasuredContainerHasALiveLedgerRow(): void
+	{
+		$keep = self::insertProduct('Merge Consumed Measured Keep', [
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge Consumed Measured Remove', [
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => self::$ids['gram'], 'to_qu_id' => self::$ids['kilogram'], 'factor' => 2, 'product_id' => $remove]);
+
+		// Given: a single opened, measured container of the removed product is then fully
+		// consumed. ConsumeProduct() deletes the `stock` row for a whole-entry consumption,
+		// but mirrors opened_amount/opened_qu_id onto the consume stock_log row precisely so
+		// UndoBooking() can rebuild that row later - so the live (undone = 0), measured ledger
+		// row survives even though `stock` no longer has anything for this product.
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($remove, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $remove)->fetchColumn();
+		$stock->OpenProduct($remove, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+		$stock->ConsumeProduct($remove, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+
+		self::assertSame([], self::stockRows($remove), 'Given: the fully consumed container leaves no live stock row');
+		$given = self::ledgerRows($remove);
+		$liveMeasured = array_values(array_filter($given, fn($row) => (int)$row['undone'] === 0 && $row['opened_amount'] !== null));
+		self::assertNotEmpty($liveMeasured, 'Given: at least one live, undone, measured row remains in the ledger');
+		$liveMeasuredConsume = array_values(array_filter($liveMeasured, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_CONSUME));
+		self::assertCount(1, $liveMeasuredConsume, 'Given: the consume booking itself is one of them, mirroring the measurement it consumed (MeasureStockEntry() logs its own separate row too)');
+
+		// When: merging would rescale that booking's amount by a non-1 factor (2).
+		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: a live undoable ledger row still carries a measurement');
+
+		// Then: the refusal is this method's own clean message, and nothing changed - checking
+		// only `stock` (as this guard used to) would have missed this row entirely, since
+		// `stock` has nothing left for the removed product at all.
+		self::assertStringContainsString('measured open container', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw database exception message');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
+		self::assertSame($given, self::ledgerRows($remove), 'Then: the ledger is untouched');
+	}
+
+	// ------------------------------------------------------------------------------
+	// CodeRabbit review of PR #540: a non-positive resolved conversion factor
+	// ------------------------------------------------------------------------------
+
+	public function testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive(): void
+	{
+		$unit = self::insertRow('quantity_units', ['name' => 'Merge Nonpositive Unit', 'name_plural' => 'Merge Nonpositive Units']);
+		$keep = self::insertProduct('Merge Nonpositive Factor Keep');
+		$remove = self::insertProduct('Merge Nonpositive Factor Remove', [
+			'qu_id_purchase' => $unit,
+			'qu_id_stock' => $unit,
+			'qu_id_consume' => $unit,
+			'qu_id_price' => $unit,
+		]);
+
+		// Given: a negative conversion factor. Nothing in db/pgsql/baseline/01_tables.sql
+		// declares a CHECK on quantity_unit_conversions.factor, and this write path (or an
+		// equivalent one through POST/PUT /api/objects/quantity_unit_conversions, which applies
+		// no factor-specific validation of its own either) applies no positivity check either.
+		// A factor of exactly 0 is a different story and is NOT used here: it was tried first,
+		// and quantity_unit_conversions_INS's own inverse-row computation, "1 /
+		// COALESCE(NEW.factor, 1)", raises a genuine SQLSTATE[22012] division-by-zero from
+		// Postgres before the row is ever committed (Postgres raises on float division by
+		// zero, unlike raw IEEE 754 - it does not silently produce Infinity) - so 0 specifically
+		// cannot reach this table at all. A negative factor has no such obstacle: 1 / -5 is an
+		// ordinary finite value, so the INSERT below succeeds exactly like any other.
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $unit, 'to_qu_id' => 2, 'factor' => -5, 'product_id' => $remove]);
+
+		// When: merging resolves that factor.
+		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: the resolved conversion factor is not positive');
+
+		// Then: the refusal is this method's own clean message - a negative factor would
+		// otherwise reach "amount * -5" (a negative amount) and "price / -5" (a negative
+		// price) - and nothing changed.
+		self::assertStringContainsString('greater than zero', $message, 'Then: the refusal explains why, rather than executing the arithmetic');
+		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
 	}
 }

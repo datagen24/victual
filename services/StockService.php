@@ -3113,15 +3113,20 @@ class StockService extends BaseService
 	 * The merge refuses outright, before any row is touched, when: the two products' stock
 	 * units differ and no conversion between them exists (no factor-1 fallback - that would
 	 * silently misinterpret the removed product's amounts and prices as already being in the
-	 * kept unit); the removed product has a measured open container and the factor is not 1
-	 * (rescaling it would violate stock's measurement coherence CHECK, migrations/0275.pgsql.sql,
-	 * which requires amount = 1 on any measured row); or repointing the removed product's own
-	 * child products to the kept product would leave the kept product with both a parent of its
-	 * own and children of its own. enfore_product_nesting_level (migrations/0277.pgsql.sql)
-	 * does reject that shape too - it fires BEFORE INSERT OR UPDATE and refuses a row's own
-	 * parent already having a parent - but only with a generic message and only once the
-	 * repoint below is already mid-transaction; refusing it here first gives a clear,
-	 * merge-specific message before anything is written.
+	 * kept unit); the resolved conversion factor is not greater than zero (a zero or negative
+	 * factor would zero out or negate a rescaled amount, and divide-by-zero or negate a
+	 * rescaled price); the removed product has a measured open container - live in `stock`, or
+	 * only a live (`undone = 0`) consume booking left in `stock_log` after a full consumption
+	 * deleted the `stock` row itself - and the factor is not 1 (rescaling it would violate
+	 * stock's measurement coherence CHECK, migrations/0275.pgsql.sql, which requires amount = 1
+	 * on any measured row - part of issue #546, whose sibling failure through
+	 * trg_cascade_change_qu_id_stock's own rescale is not this method's to fix); or repointing
+	 * the removed product's own child products to the kept product would leave the kept product
+	 * with both a parent of its own and children of its own. enfore_product_nesting_level
+	 * (migrations/0277.pgsql.sql) does reject that last shape too - it fires BEFORE INSERT OR
+	 * UPDATE and refuses a row's own parent already having a parent - but only with a generic
+	 * message and only once the repoint below is already mid-transaction; refusing it here
+	 * first gives a clear, merge-specific message before anything is written.
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
@@ -3175,14 +3180,43 @@ class StockService extends BaseService
 				$factor = $conversion->factor;
 			}
 
-			if ($factor != 1.0 && $this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null)
+			if ($factor <= 0)
+			{
+				// A non-positive factor would make "amount * factor" zero or negative and
+				// "price / factor" a division by zero or a negative price. Nothing in
+				// db/pgsql/baseline/01_tables.sql puts a CHECK on
+				// quantity_unit_conversions.factor, and cache__quantity_unit_conversions_resolved
+				// returns whatever is stored unfiltered - a NEGATIVE factor reaches this method
+				// (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+				// stores one directly), though a factor of exactly 0 does not: inserting it
+				// makes quantity_unit_conversions_INS's own inverse-row computation,
+				// "1 / COALESCE(NEW.factor, 1)", raise a genuine division-by-zero (Postgres
+				// raises on this for float8 too, unlike raw IEEE 754) before the row commits.
+				// Refuse before any row is touched rather than let either arithmetic run.
+				throw new \Exception('Cannot merge: quantity unit conversion factor must be greater than zero');
+			}
+
+			if ($factor != 1.0
+				&& ($this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null
+					|| $this->DB->stock_log()->where('product_id = :1 AND undone = 0 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null))
 			{
 				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
 				// amount = 1 on any row carrying a measurement. Rescaling amount by anything
 				// other than 1 would violate that CHECK outright (a raw 23514) instead of
 				// producing a meaningfully converted measurement, which nothing here attempts.
 				// Refuse cleanly before any row is touched instead.
-				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container and the unit conversion factor is not 1');
+				//
+				// Checking `stock` alone misses a fully consumed measured container: when
+				// ConsumeProduct() takes a whole measured entry, it deletes the `stock` row
+				// but mirrors opened_amount/opened_qu_id onto the consume stock_log row
+				// precisely so UndoBooking()'s consume branch can rebuild the deleted row
+				// later (migrations/0275.pgsql.sql, and the mirroring in ConsumeProduct()
+				// itself). Left unrescaled-and-unrefused, that consume booking would survive
+				// this merge, and undoing it afterwards would try to recreate a `stock` row
+				// with the rescaled amount instead of 1, hitting the same CHECK from the undo
+				// path rather than from this one (issue #546 - the sibling failure through
+				// trg_cascade_change_qu_id_stock's own rescale is not this method's to fix).
+				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container (live, or a live undoable consume booking) and the unit conversion factor is not 1');
 			}
 
 			if ($productToKeep->parent_product_id != null
