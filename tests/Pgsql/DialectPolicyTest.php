@@ -312,4 +312,37 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 		self::assertTrue($result['supports_multi_statement_exec'],
 			'and a .sql migration file may be one exec()');
 	}
+
+	// ----- PostgresDialect::ResyncGeneratedIdCounters --------------------------------
+
+	/**
+	 * #555: resyncing used to set every identity sequence to exactly MAX(id) + 1, with no
+	 * floor against where the sequence already stood - so a batch that deleted the newest
+	 * rows (an undo, a rolled-back migration, a partial import) could pull the sequence
+	 * *backward*, and the very next ordinary insert reissued an id that had already been
+	 * handed out once. `services/StockService.php`'s own undo logic depends on an id, once
+	 * issued, never coming back once it is freed; this is that guarantee's own regression
+	 * test, independent of any stock scenario.
+	 */
+	public function testResyncNeverMovesAnIdentitySequenceBackward(): void
+	{
+		$dialect = new PostgresDialect();
+		$insert = self::$db->prepare('INSERT INTO locations (name) VALUES (?) RETURNING id');
+
+		$insert->execute(['Resync Backward Guard 1']);
+		$insert->execute(['Resync Backward Guard 2']);
+		$highestIssuedId = (int)$insert->fetchColumn();
+
+		// Deletes the newest row, the same shape of event a consume-and-undo, a rolled-
+		// back migration or a partial import leaves behind.
+		self::$db->prepare('DELETE FROM locations WHERE id = ?')->execute([$highestIssuedId]);
+
+		$dialect->ResyncGeneratedIdCounters(self::$db);
+
+		$insert->execute(['Resync Backward Guard 3']);
+		$nextId = (int)$insert->fetchColumn();
+
+		self::assertGreaterThan($highestIssuedId, $nextId,
+			'the next id issued after a resync must be above every id ever issued, not one reused from a deleted row');
+	}
 }

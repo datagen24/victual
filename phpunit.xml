@@ -88,6 +88,7 @@
 		<testsuite name="stockcoverage">
 			<file>tests/Pgsql/StockCoverageTest.php</file>
 			<file>tests/Pgsql/MergeProductsTest.php</file>
+			<file>tests/Pgsql/StockUndoIntegrityTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
