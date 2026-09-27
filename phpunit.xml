@@ -56,6 +56,7 @@
 		</testsuite>
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
+			<file>tests/Pgsql/StockEntryEditContractTest.php</file>
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
@@ -65,6 +66,7 @@
 		</testsuite>
 		<testsuite name="labelapi">
 			<file>tests/Pgsql/LabelApiTest.php</file>
+			<file>tests/Pgsql/LabelResolveSchemaTest.php</file>
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
@@ -90,6 +92,7 @@
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
 			<file>tests/Pgsql/RecipeSelfProductionLockOrderTest.php</file>
+			<file>tests/Pgsql/StockEntryEditLostUpdateTest.php</file>
 		</testsuite>
 		<testsuite name="demodata">
 			<file>tests/Pgsql/DemoDataTest.php</file>
