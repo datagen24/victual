@@ -100,6 +100,16 @@ Setting('CALENDAR_FIRST_DAY_OF_WEEK', '');
 // If calendars should show week numbers
 Setting('CALENDAR_SHOW_WEEK_OF_YEAR', true);
 
+// The domain part of every event UID the /api/calendar/ical export emits, i.e. the
+// "example.com" in "user@example.com" (issue #511). RFC 5545 requires a UID to be
+// globally unique; a fixed domain would make two Victual installations subscribed to
+// in the same calendar client collide on identical UIDs for different items. Change
+// this to something that identifies your installation - a hostname you control is the
+// conventional choice - if more than one install's calendar feed is ever subscribed to
+// from the same client. Left at the default, every UID this fork emits is
+// byte-identical to every prior release's.
+Setting('CALENDAR_UID_DOMAIN', 'victual');
+
 // Set this if you want to have a different start day for the weekly meal plan view,
 // leave empty to use CALENDAR_FIRST_DAY_OF_WEEK (see above)
 // Needs to be a number where Sunday = 0, Monday = 1 and so forth

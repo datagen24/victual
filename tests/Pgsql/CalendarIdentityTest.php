@@ -20,6 +20,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * - VTIMEZONE bounds do not extend to far-future sentinel dates, checked under a zone
  *   with real DST transitions (UTC cannot reveal this half of the defect - see
  *   testTimeZoneBoundsDoNotIncludeSentinelDates)
+ * - The UID's domain part (CALENDAR_UID_DOMAIN, config-dist.php) defaults to "victual",
+ *   is configurable per installation for RFC 5545 global uniqueness, and sanitizes an
+ *   out-of-range or empty value rather than accepting or refusing it
  */
 class CalendarIdentityTest extends PgsqlSchemaTestCase
 {
@@ -297,6 +300,82 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertStringNotContainsString('29991231', $ical, 'Sentinel dates should not appear in iCal');
 	}
 
+	/**
+	 * #511, CodeRabbit review comment 4117467865 on an earlier revision: a fixed
+	 * "@victual" domain makes two Victual installations subscribed to in the same
+	 * calendar client collide on identical UIDs for different items, since RFC 5545
+	 * requires a UID to be globally unique. CALENDAR_UID_DOMAIN (maintainer decision,
+	 * 2026-09-27) makes the domain part configurable per installation.
+	 */
+	public function testUidDomainIsConfigurable()
+	{
+		// Arrange
+		$this->insertProduct('Domain Config Product', 9.0);
+		$productId = self::$db->lastInsertId();
+		$this->insertStockEntry($productId, 1.0, '2028-04-01');
+
+		// Act: override for this one request only, the same way testTimeZoneBounds...
+		// overrides VICTUAL_TEST_TIMEZONE.
+		$ical = $this->getIcalString(null, ['VICTUAL_CALENDAR_UID_DOMAIN' => 'home.example']);
+
+		// Assert: every UID in the feed uses the configured domain, not the default -
+		// this covers events from every earlier test method still in the shared schema,
+		// not only this one's own fixture.
+		$uids = $this->extractUids($ical);
+		$this->assertNotEmpty($uids, 'Expected at least one event in the feed');
+		foreach ($uids as $uid)
+		{
+			$this->assertStringEndsWith('@home.example', $uid, "UID $uid should use the configured domain");
+		}
+	}
+
+	/**
+	 * A value outside the allowed character set (letters, digits, '.', '-') is
+	 * sanitized by replacement, the same way GetNodeId() sanitizes
+	 * VICTUAL_MQTT_TOPIC_PREFIX (services/Mqtt/DiscoveryPayloadBuilder.php) - never
+	 * accepted verbatim (a literal '@' would corrupt the UID's own "type-id@domain"
+	 * shape) and never refused outright.
+	 */
+	public function testInvalidUidDomainIsSanitized()
+	{
+		// Arrange
+		$this->insertProduct('Invalid Domain Product', 9.0);
+		$productId = self::$db->lastInsertId();
+		$this->insertStockEntry($productId, 1.0, '2028-04-02');
+
+		// Act: '@' and a space are both outside the allowed set.
+		$ical = $this->getIcalString(null, ['VICTUAL_CALENDAR_UID_DOMAIN' => 'bad@domain example']);
+
+		// Assert: the offending characters were replaced, not passed through - no UID's
+		// domain part contains anything outside [A-Za-z0-9.-].
+		$uid = $this->findUidForSummary($ical, 'Invalid Domain Product');
+		$this->assertNotNull($uid, 'Expected an event for the product');
+		$this->assertMatchesRegularExpression('/@[A-Za-z0-9.-]+$/', $uid, "UID $uid's domain part should only contain sanitized characters");
+		$this->assertStringNotContainsString('@bad@domain', $ical, 'A literal @ in the configured domain must not reach the UID unsanitized');
+	}
+
+	/**
+	 * An empty CALENDAR_UID_DOMAIN sanitizes to '' and falls back to the compiled-in
+	 * default 'victual' - the same default every UID used before this setting existed,
+	 * so an installation that never touches it keeps byte-identical UIDs.
+	 */
+	public function testEmptyUidDomainFallsBackToDefault()
+	{
+		// Arrange
+		$this->insertProduct('Empty Domain Product', 9.0);
+		$productId = self::$db->lastInsertId();
+		$this->insertStockEntry($productId, 1.0, '2028-04-03');
+
+		// Act: '' rather than omitting the key - Setting()'s getenv(...) !== false check
+		// treats an explicitly empty environment variable as set, not absent.
+		$ical = $this->getIcalString(null, ['VICTUAL_CALENDAR_UID_DOMAIN' => '']);
+
+		// Assert
+		$uid = $this->findUidForSummary($ical, 'Empty Domain Product');
+		$this->assertNotNull($uid, 'Expected an event for the product');
+		$this->assertStringEndsWith('@victual', $uid);
+	}
+
 	// ===== Helper methods =====
 
 	/**
@@ -336,8 +415,13 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 	 * $maxDate leaked a sentinel date into it. A zone with real DST transitions
 	 * (Europe/Berlin) is sensitive to the queried range and is what the #487 audit's
 	 * own reproduction actually used.
+	 *
+	 * $extraEnv overrides any other Setting()-backed constant for this one request, by
+	 * environment variable (VICTUAL_<NAME>, read by Setting() in helpers/extensions.php)
+	 * the same way $timezone overrides VICTUAL_TEST_TIMEZONE - e.g.
+	 * ['VICTUAL_CALENDAR_UID_DOMAIN' => 'home.example'].
 	 */
-	private function getIcalString(?string $timezone = null): string
+	private function getIcalString(?string $timezone = null, array $extraEnv = []): string
 	{
 		$spec = [
 			'method' => 'GET',
@@ -345,14 +429,14 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			'cookie' => self::$sessionKey
 		];
 
-		$response = $this->dispatchRequest($spec, $timezone);
+		$response = $this->dispatchRequest($spec, $timezone, $extraEnv);
 		return $response['body'];
 	}
 
 	/**
 	 * Execute a request via the subprocess helper and return parsed response.
 	 */
-	private function dispatchRequest(array $spec, ?string $timezone = null): array
+	private function dispatchRequest(array $spec, ?string $timezone = null, array $extraEnv = []): array
 	{
 		// $_SERVER carries argv, which is an array and cannot be an environment value.
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
@@ -369,7 +453,7 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			// value from this test process's own env, so a request that asks for no
 			// override has to explicitly overwrite it, matching WireContractTest::sendAs().
 			'VICTUAL_TEST_TIMEZONE' => $timezone ?? '',
-		]);
+		], $extraEnv);
 
 		$process = proc_open(
 			[PHP_BINARY, __DIR__ . '/request-subprocess-helper.php', base64_encode(json_encode($spec))],
