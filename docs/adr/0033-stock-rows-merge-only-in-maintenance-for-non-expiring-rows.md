@@ -14,10 +14,9 @@
 
 ## Context
 
-`StockService::CompactStockEntries()` (`services/StockService.php:3221`) runs inline, inside
-the same transaction, from three call sites: `AddProduct()`
-(`services/StockService.php:399`), `EditStockEntry()` (`services/StockService.php:904`), and
-`WeighLocation()` (`services/StockService.php:2663`).
+[`StockService::CompactStockEntries()`](../../services/StockService.php) runs inline,
+inside the same transaction, from three methods in that service: `AddProduct()`,
+`EditStockEntry()`, and `WeighLocation()`.
 
 It merges every group of stock rows equal in every grouping column of the `stock_splits`
 view (`migrations/0275.pgsql.sql:175`):
@@ -34,10 +33,9 @@ HAVING COUNT(*) > 1
 (`migrations/0275.pgsql.sql:193-202`). No later PostgreSQL migration redefines this view —
 the only other files matching `stock_splits` are the frozen SQLite-era migrations 0143,
 0156 and 0178, which do not run under [ADR-0008](0008-postgresql-only-runtime-engine.md).
-The merge keeps `MAX(s.id)` as the surviving row, sums the group's amounts onto it
-(`services/StockService.php:3298`), deletes every other row in the group
-(`services/StockService.php:3294`), and rewrites every `stock_log` row that pointed at a
-deleted `stock_id` to the surviving one (`services/StockService.php:3261-3262`), along with
+`CompactStockEntries()` keeps `MAX(s.id)` as the surviving row and writes the group's
+`total_amount` onto it. The method deletes the other rows by `id`, rewrites `stock` and
+`stock_log` references from each replaced `stock_id` to `stock_id_to_keep`, and updates
 `stock_entry_origins` lineage.
 
 This produces two demonstrated defects, both reproduced against master
