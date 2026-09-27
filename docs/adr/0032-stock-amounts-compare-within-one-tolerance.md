@@ -1,6 +1,8 @@
 # ADR-0032: Stock amounts compare within one tolerance
 
-- **Status:** Proposed.
+- **Status:** Accepted (2026-09-27). The maintainer accepted the spike evidence for all
+  six gates and confirmed decisions 1–5 and their scope. This acceptance supersedes the
+  body's pending-gates and pending-confirmation wording; production delivery remains outstanding.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-26, from the maintainer's decision in the issue
