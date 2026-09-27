@@ -231,6 +231,24 @@ class GenericEntityApiController extends BaseApiController
 				{
 					return $this->GenericErrorResponse($response, \Victual\Services\Database\StockLocationConstraint::DELETE_MESSAGE);
 				}
+
+				// Any other foreign key violation is an ordinary reference refusal - some
+				// other row still points at the one being deleted - and is a client error
+				// like the named case above, not a server fault. Audit finding M15 / issue
+				// #515: DELETE /api/objects/products/{id} for a product still named by
+				// product_location_min_stock.product_id (migrations/0276.pgsql.sql, no
+				// ON DELETE clause) reached here uncaught and answered 500. There is no
+				// per-constraint message to give the way the stock-location case has one, so
+				// this falls through to GenericErrorResponse() exactly as HandleApiCall()'s
+				// own PDOException clause does for every other controller (see its docblock):
+				// 400, with the driver's message - which always begins "SQLSTATE[" - replaced
+				// by WithoutDriverText()'s sanitised text. The row is left exactly as it was:
+				// a single DELETE statement that fails commits nothing, transaction or not.
+				if (($ex->errorInfo[0] ?? $ex->getCode()) === '23503')
+				{
+					return $this->GenericErrorResponse($response, $ex->getMessage());
+				}
+
 				throw $ex;
 			}
 
