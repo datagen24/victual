@@ -400,6 +400,14 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * already applied the round()-before-compare fix to the PURCHASE branch, and this is
 	 * the same treatment for TRANSFER_TO.
 	 */
+	/**
+	 * Uses a split (partial) transfer rather than a whole-row one: a whole-row transfer's
+	 * undo now relocates the same physical row in place (#488, second review round) and
+	 * does not recompute its amount at all, so it cannot itself develop or clean up a
+	 * residue. The split branch still computes `stockRow->amount - logRow->amount`
+	 * against the row it created at the destination, which is exactly where a real
+	 * SUM()-over-doubles residue (e.g. from CompactStockEntries()) could land.
+	 */
 	public function testUndoingATransferLeavesNoPhantomRowFromFloatResidueAtTheDestination(): void
 	{
 		$product = self::insertProduct('Undo Transfer Float Residue');
@@ -409,12 +417,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Five units are purchased at A'
 		);
 		$transfer = $this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 3, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
 			200,
-			'All five are moved to B (whole-row transfer)'
+			'Three of the five are split off to B'
 		);
 
-		self::$db->exec('UPDATE stock SET amount = 5.0000000001 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+		self::$db->exec('UPDATE stock SET amount = 3.0000000001 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
@@ -431,13 +439,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------------------------------------
 
 	/**
-	 * Whole-row transfer of an opened entry, then undo: before the fix, TRANSFER_TO
-	 * undo deleted the (relocated) row outright and TRANSFER_FROM undo rebuilt it at the
-	 * source without setting `open` or the opened_date-derived state, so the rebuilt row
-	 * came back closed while keeping opened_date - M22's own report. The fix mirrors
-	 * `open` (derived from opened_date, matching the CONSUME-undo reconstruction just
-	 * above in the same method) and the four measurement columns onto the TRANSFER_FROM
-	 * booking TransferProduct() writes.
+	 * Whole-row transfer of an opened entry, then undo: TRANSFER_TO's undo now relocates
+	 * the same physical row back to the source in place (#488, second review round)
+	 * rather than deleting it for TRANSFER_FROM's undo to rebuild - which used to lose
+	 * `open` and the opened_date-derived state entirely (M22's own report) until an
+	 * earlier round mirrored them onto the rebuild. Relocating in place preserves them
+	 * (and the row's own id) automatically, since nothing about `open`/`opened_date` is
+	 * ever touched by the relocate.
 	 */
 	public function testUndoingAWholeRowTransferPreservesOpenState(): void
 	{
@@ -469,6 +477,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$rows = self::rows($product);
 		self::assertCount(1, $rows, 'Exactly one entry survives the round trip');
+		self::assertSame($before['id'], $rows[0]['id'], 'it is the very same row, not a rebuild under a new id (#488, second review round)');
 		self::assertSame(1, (int)$rows[0]['open'], 'The entry is still open (#522 M22), not silently closed by the rebuild');
 		self::assertSame($before['opened_date'], $rows[0]['opened_date'], 'with its original opened date');
 		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at the source location');
@@ -510,6 +519,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$rows = self::rows($product);
 		self::assertCount(1, $rows, 'Exactly one entry survives the round trip');
+		self::assertSame($before['id'], $rows[0]['id'], 'it is the very same row, not a rebuild under a new id (#488, second review round)');
 		self::assertSame(0.5, (float)$rows[0]['opened_amount'], 'The measured remainder survives (#522 M22 / ADR-0022 decision 9)');
 		self::assertSame((int)$before['opened_qu_id'], (int)$rows[0]['opened_qu_id']);
 		self::assertSame(1.0, (float)$rows[0]['amount'], 'the coherence invariant (amount = 1 while measured) still holds');
@@ -874,9 +884,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	/**
 	 * TRANSFER_TO undo must keep a real small remainder at the destination rather than
 	 * deleting it as if it were a float artifact. round(x, 2) rounded 0.004 to 0.00 and
-	 * deleted the row outright, destroying a live contribution.
+	 * deleted the row outright, destroying a live contribution. Uses a split (partial)
+	 * transfer: a whole-row transfer's undo now relocates the same row in place (#488,
+	 * second review round) without recomputing its amount at all, so this comparison is
+	 * only reachable through the split branch, which still creates a new destination row
+	 * and still computes its amount arithmetically.
 	 */
-	public function testUndoingAWholeRowTransferKeepsARealSmallRemainderAtTheDestination(): void
+	public function testUndoingASplitTransferKeepsARealSmallRemainderAtTheDestination(): void
 	{
 		$product = self::insertProduct('Undo Transfer Real Remainder');
 		$this->expectStatus(
@@ -885,14 +899,14 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Five units are purchased at A'
 		);
 		$transfer = $this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 3, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
 			200,
-			'All five are moved to B (whole-row transfer)'
+			'Three of the five are split off to B'
 		);
 
 		// Simulates a real 0.004-unit lot having compacted onto this same row at B (e.g. a
 		// matching purchase there) - not a float artifact, a genuine small remainder.
-		self::$db->exec('UPDATE stock SET amount = 5.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+		self::$db->exec('UPDATE stock SET amount = 3.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
@@ -901,7 +915,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		);
 
 		self::assertEqualsWithDelta(0.004, self::stockAmountAtLocation($product, self::$locationB), 1e-9, 'The real 0.004 remainder is kept at B, not deleted as if it were zero');
-		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationA), 'and the transferred five units are back at A');
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationA), 'and the other two of the original five are back at A');
 	}
 
 	/**
@@ -909,9 +923,11 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * added, not treat a small negative remainder as zero. round(-0.004, 2) is -0.0, which
 	 * compares equal to zero (not negative) in PHP, so this used to delete the row outright
 	 * and then let TRANSFER_FROM's undo rebuild the full amount at the source -
-	 * manufacturing 0.004 units that were never there.
+	 * manufacturing 0.004 units that were never there. Uses a split transfer for the same
+	 * reason as the test above: a whole-row transfer's undo no longer computes an amount
+	 * delta at all, so there is nothing left for it to manufacture.
 	 */
-	public function testUndoingAWholeRowTransferRefusesRatherThanManufacturingStockOnAShortfall(): void
+	public function testUndoingASplitTransferRefusesRatherThanManufacturingStockOnAShortfall(): void
 	{
 		$product = self::insertProduct('Undo Transfer Shortfall Refusal');
 		$this->expectStatus(
@@ -920,16 +936,16 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Five units are purchased at A'
 		);
 		$transfer = $this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 3, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
 			200,
-			'All five are moved to B (whole-row transfer)'
+			'Three of the five are split off to B'
 		);
 
 		// Simulates the destination entry having been reduced, out of band, to slightly
 		// less than what this transfer added - standing in for a defect elsewhere or a
 		// direct database edit, the same way StockCoverageTest.php forces its own
 		// out-of-band states.
-		self::$db->exec('UPDATE stock SET amount = 4.996 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+		self::$db->exec('UPDATE stock SET amount = 2.996 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
 
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
@@ -1080,13 +1096,18 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * A move_on_open product's OpenProduct() call transfers the just-opened entry to its
 	 * default consume location inside the same transaction (OpenProduct()'s own
 	 * TransferProduct() call). Undoing that whole transaction processes the newest booking
-	 * first: the whole-row TRANSFER_TO undo deletes the row at the destination, and
-	 * TRANSFER_FROM's undo rebuilds it under a *new* id at the source - so by the time the
-	 * (oldest, processed last) PRODUCT_OPENED booking's own undo runs, its stock_row_id no
-	 * longer resolves to any row. The fix falls back to the pre-stock_row_id match (the
-	 * booking's own columns plus open = 1 and its location), which the rebuilt row still
-	 * satisfies exactly. Covers both a whole-entry open (the entire purchased row moves)
-	 * and a split open (only the opened portion moves, leaving an unopened remainder at A).
+	 * first: with an earlier fix, the whole-row TRANSFER_TO undo deleted the row at the
+	 * destination and TRANSFER_FROM's undo rebuilt it under a *new* id at the source, so
+	 * by the time the (oldest, processed last) PRODUCT_OPENED booking's own undo ran, its
+	 * stock_row_id no longer resolved to any row - and a same-columns fallback turned out
+	 * to be unsafe, since another live booking's row can coincidentally share the exact
+	 * same (stock_id, amount, purchased_date, open, location) (#488, second review round;
+	 * see the twin-row and compaction tests above). The actual fix instead keeps the row's
+	 * id stable through the whole-row transfer undo (TRANSFER_TO/FROM relocate it in
+	 * place rather than delete-and-rebuild), so PRODUCT_OPENED's own stock_row_id never
+	 * goes stale here in the first place. Covers both a whole-entry open (the entire
+	 * purchased row moves) and a split open (only the opened portion moves, leaving an
+	 * unopened remainder at A), and asserts the row's id is preserved throughout.
 	 */
 	private function moveOnOpenProductWithDefaultConsumeAtB(string $name): int
 	{
@@ -1103,6 +1124,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			200,
 			'One unit is purchased at A'
 		);
+		$originalId = self::rows($product)[0]['id'];
 		$open = $this->expectStatus(
 			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
 			200,
@@ -1110,6 +1132,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		);
 		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: the opened unit is now at B');
 		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationA), 'Sanity: nothing remains at A');
+		self::assertSame($originalId, self::rows($product)[0]['id'], 'Sanity: the whole-row transfer to B kept the same row id (#488, second review round)');
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
@@ -1119,6 +1142,7 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$rows = self::rows($product);
 		self::assertCount(1, $rows, 'Exactly one entry survives, back at A');
+		self::assertSame($originalId, $rows[0]['id'], 'it is the very same row throughout - opened, moved and undone - not a rebuild under a new id');
 		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at its original location');
 		self::assertSame(0, (int)$rows[0]['open'], 'closed again');
 		self::assertSame(1.0, (float)$rows[0]['amount'], 'holding its original amount');
@@ -1137,6 +1161,10 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			200,
 			'Three units are purchased at A'
 		);
+		// OpenProduct()'s split branch updates the original purchased row in place to
+		// become the opened portion (a new row is minted for the unopened remainder
+		// instead), so this id is the one that should travel to B and back.
+		$originalId = self::rows($product)[0]['id'];
 		$open = $this->expectStatus(
 			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
 			200,
@@ -1144,6 +1172,9 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		);
 		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: the opened unit is now at B');
 		self::assertSame(2.0, self::stockAmountAtLocation($product, self::$locationA), 'Sanity: the unopened remainder stays at A');
+		$atB = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
+		$atB->execute([$product, self::$locationB]);
+		self::assertSame($originalId, $atB->fetchColumn(), 'Sanity: the whole-row transfer to B kept the opened portion\'s original id (#488, second review round)');
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
@@ -1153,6 +1184,8 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$rows = self::rows($product);
 		self::assertCount(2, $rows, 'The unopened remainder and the rebuilt closed portion both exist at A');
+		$ids = array_column($rows, 'id');
+		self::assertContains($originalId, $ids, 'the opened-and-moved portion is the very same row throughout, not a rebuild under a new id');
 		foreach ($rows as $row)
 		{
 			self::assertSame(self::$locationA, (int)$row['location_id'], "Row {$row['id']} is back at A: " . json_encode($row));
@@ -1164,5 +1197,172 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$stillLive = self::$db->prepare('SELECT COUNT(*) FROM stock_log WHERE transaction_id = ? AND undone = 0');
 		$stillLive->execute([$open[0]['transaction_id']]);
 		self::assertSame(0, (int)$stillLive->fetchColumn(), 'every booking of the transaction (open + both transfer halves) is marked undone');
+	}
+
+	// ------------------------------------------------------------------------------
+	// #488, third Opus review round - preserving the row id through a whole-row
+	// transfer undo, and refusing rather than falling back once stock_row_id is set
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * An ordinary whole-row transfer's undo must keep the row's id (so a label printed
+	 * against it keeps its target - #491/#483, not touched by this PR) and restore every
+	 * attribute the transfer itself changed, not just location and amount. A transfer
+	 * into a freezer location adjusts best_before_date (ADR-0022 decision 7's freezing
+	 * behaviour); undoing it must restore the original due date, which only the
+	 * correlated TRANSFER_FROM booking recorded.
+	 */
+	public function testUndoingAWholeRowTransferKeepsTheRowIdAndRestoresAFreezingTransfersDueDate(): void
+	{
+		$product = self::insertProduct('Undo Transfer Freezing Due Date');
+		self::$db->prepare('UPDATE products SET default_best_before_days_after_freezing = -1 WHERE id = ?')->execute([$product]);
+		$freezer = self::insertRow('locations', ['name' => 'Freezing Due Date Freezer ' . $product, 'is_freezer' => 1]);
+
+		$originalDue = '2030-06-15';
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => $originalDue, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased at A (a non-freezer location), due 2030-06-15'
+		);
+		$originalId = self::rows($product)[0]['id'];
+
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => $freezer]), new Response(), ['productId' => $product]),
+			200,
+			'The whole entry is transferred into the freezer, which freezes its due date to 2999-12-31'
+		);
+		$frozen = self::rows($product)[0];
+		self::assertSame($originalId, $frozen['id'], 'Sanity: the whole-row transfer kept the same row id');
+		self::assertSame('2999-12-31', $frozen['best_before_date'], 'Sanity: the transfer froze the due date');
+		self::assertSame($freezer, (int)$frozen['location_id']);
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'Exactly one entry survives');
+		self::assertSame($originalId, $rows[0]['id'], 'it is the very same row - the id a label would target (#491/#483) is preserved');
+		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at the non-freezer source location');
+		self::assertSame($originalDue, $rows[0]['best_before_date'], 'with its original (unfrozen) due date restored');
+		self::assertSame(1.0, (float)$rows[0]['amount']);
+	}
+
+	/**
+	 * W1/W2 from the third Opus review round: three whole-row-transferred/opened entries
+	 * (X, kept at A throughout; Z1 and Z2, sent to B and a third location, then moved
+	 * back to A and opened) end up sharing stock_id, amount, purchased_date, open and
+	 * location once all three are open at A - X is kept apart only by its note (edited
+	 * to "x"), which CompactStockEntries() also groups by, so a later matching purchase
+	 * (at a fourth location, to trigger a product-wide compaction pass regardless of
+	 * where it lands) merges Z1 and Z2 (whose note is still null) into one row without
+	 * touching X. Undoing the newest opening (Z2 in W1; Z1 in W2, opened after Z2 this
+	 * time - the reordering that determines whether the compaction happens to keep or
+	 * delete that exact row) must never fall back to matching X: a booking that has a
+	 * stock_row_id must match that exact row or refuse, not guess from descriptive
+	 * columns that a different live booking's row can share by coincidence.
+	 */
+	private function threeWholeRowOpenedTwinsMergingTwoOfThem(string $productName, bool $moveZ1First): array
+	{
+		$product = self::insertProduct($productName);
+		$locationC = self::insertRow('locations', ['name' => 'Twin C ' . $product]);
+		$locationD = self::insertRow('locations', ['name' => 'Twin D ' . $product]);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'Three units are purchased at A'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'One unit is split off to B (Z1)'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => $locationC]), new Response(), ['productId' => $product]),
+			200,
+			'One more unit is split off to C (Z2)'
+		);
+
+		$rowX = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
+		$rowX->execute([$product, self::$locationA]);
+		$rowX = (int)$rowX->fetchColumn();
+		$this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0, 'location_id' => self::$locationA, 'note' => 'x']), new Response(), ['entryId' => $rowX]),
+			200,
+			'The remaining A row (X) is noted "x" - kept apart from Z1/Z2 by CompactStockEntries()\'s own note column'
+		);
+
+		// X, Z1 and Z2 all share the same stock_id (splits/transfers never mint a new one
+		// for a row that keeps a live booking - only for the piece left behind), so
+		// OpenProduct()'s stock_entry_id parameter cannot tell them apart: it filters
+		// candidates by stock_id, which is identical for all three. stock_next_use()'s
+		// own candidate order can be steered instead, since it prioritises a row at the
+		// product's default consume location above due/purchased date (identical for all
+		// three here, since every row descends from the one original purchase) - setting
+		// it to A once, before opening X, is enough for the whole sequence: every open
+		// call from here on immediately follows moving that call's own target row to A,
+		// and every other candidate is either already open (excluded outright) or still
+		// at a different location (lower priority), so A's own not-yet-open row is always
+		// the one picked, without needing to change the setting again.
+		self::$db->prepare('UPDATE products SET default_consume_location_id = ? WHERE id = ?')->execute([self::$locationA, $product]);
+		$this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'X (the only entry at A so far, and now the default consume location) is opened'
+		);
+
+		$moveAndOpen = function (int $fromLocation) use ($product)
+		{
+			$this->expectStatus(
+				fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => $fromLocation, 'location_id_to' => self::$locationA]), new Response(), ['productId' => $product]),
+				200,
+				'Moved back to A'
+			);
+			return $this->expectStatus(
+				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+				200,
+				'and opened'
+			);
+		};
+
+		$moveAndOpen($moveZ1First ? self::$locationB : $locationC);
+		$newestOpen = $moveAndOpen($moveZ1First ? $locationC : self::$locationB);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => $locationD, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'A matching purchase at D triggers CompactStockEntries() for the whole product, merging the two note-less opened twins at A'
+		);
+
+		return [$product, $newestOpen];
+	}
+
+	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesRatherThanClosingAnUnrelatedRow(): void
+	{
+		[$product, $newestOpen] = $this->threeWholeRowOpenedTwinsMergingTwoOfThem('Undo Twin Merge W1', true);
+
+		self::assertSame(3.0, self::openedAmount($product), 'Sanity: all three units are open before the undo (X=1, merged Z1+Z2=2)');
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$newestOpen[0]['id']]),
+			400,
+			'W1: undoing the newest opening (Z2) is refused, not satisfied by closing X or leaving the merged row open with 2'
+		);
+	}
+
+	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesInTheOtherOrderToo(): void
+	{
+		[$product, $newestOpen] = $this->threeWholeRowOpenedTwinsMergingTwoOfThem('Undo Twin Merge W2', false);
+
+		self::assertSame(3.0, self::openedAmount($product), 'Sanity: all three units are open before the undo (X=1, merged Z1+Z2=2)');
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$newestOpen[0]['id']]),
+			400,
+			'W2: undoing the newest opening (Z1, opened after Z2 this time) is refused - the merge instead deletes this exact row, and the fallback must not recover by closing X either'
+		);
 	}
 }
