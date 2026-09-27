@@ -28,12 +28,8 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		// Reset BaseService cached instances to avoid stale schema references across tests
 		// (issue #533: if a cached singleton holds a database connection to the old schema,
 		// it will fail with "relation ... does not exist" on the fresh schema)
-		$reflection = new \ReflectionClass(\Victual\Services\BaseService::class);
-		$property = $reflection->getProperty('Instances');
-		$property->setAccessible(true);
-		$property->setValue(null, []);
+		\Victual\Services\BaseService::ResetInstancesForTest();
 
-		// Now create the service after clearing cached instances
 		self::$stockService = new StockService();
 	}
 
