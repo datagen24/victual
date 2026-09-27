@@ -3499,17 +3499,45 @@ class StockService extends BaseService
 	/**
 	 * Merges one product into another and deletes the removed product.
 	 *
-	 * Re-assigns stock, stock_log, barcodes, QU conversions, recipe positions/recipes, meal plan
-	 * entries and shopping list entries to the kept product inside a single database transaction
-	 * (rolled back on any error). Amounts are multiplied by the stock QU conversion factor from
-	 * the removed product's stock unit to the kept product's stock unit (factor 1 when no
-	 * conversion is defined).
+	 * Re-assigns stock, stock_log, barcodes, QU conversions, chores, recipe positions/recipes,
+	 * meal plan entries, shopping list entries, location minimums and child products to the
+	 * kept product inside a single database transaction (rolled back on any error, including
+	 * the refusals below - neither product is changed unless the whole merge succeeds). An
+	 * amount column is multiplied by the stock QU conversion factor from the removed product's
+	 * stock unit to the kept product's stock unit; a per-stock-unit price column is divided by
+	 * that same factor instead, so amount * price - the row's monetary value - is unchanged by
+	 * the merge (issue #503, M3: 500 g at 0.01/g was becoming 0.5 "kg" still priced at 0.01/kg,
+	 * a thousandfold understatement). product_barcodes.last_price and recipes_pos.price_factor
+	 * are deliberately left alone: the former is a total price for that barcode's own (amount,
+	 * qu_id) pair, which this method does not touch, and the latter is a unitless cost
+	 * multiplier, not a per-unit price (see the costs columns in db/pgsql/baseline/05_views_l3.sql).
+	 * The stale cache__products_average_price/cache__products_last_purchased rows the removed
+	 * product leaves behind are deleted, since nothing else does.
+	 *
+	 * The merge refuses outright, before any row is touched, when: the two products' stock
+	 * units differ and no conversion between them exists (no factor-1 fallback - that would
+	 * silently misinterpret the removed product's amounts and prices as already being in the
+	 * kept unit); the resolved conversion factor is not greater than zero (a zero or negative
+	 * factor would zero out or negate a rescaled amount, and divide-by-zero or negate a
+	 * rescaled price); the removed product has a measured open container - live in `stock`, or
+	 * only a live (`undone = 0`) consume booking left in `stock_log` after a full consumption
+	 * deleted the `stock` row itself - and the factor is not 1 (rescaling it would violate
+	 * stock's measurement coherence CHECK, migrations/0275.pgsql.sql, which requires amount = 1
+	 * on any measured row - part of issue #546, whose sibling failure through
+	 * trg_cascade_change_qu_id_stock's own rescale is not this method's to fix); or repointing
+	 * the removed product's own child products to the kept product would leave the kept product
+	 * with both a parent of its own and children of its own. enfore_product_nesting_level
+	 * (migrations/0277.pgsql.sql) does reject that last shape too - it fires BEFORE INSERT OR
+	 * UPDATE and refuses a row's own parent already having a parent - but only with a generic
+	 * message and only once the repoint below is already mid-transaction; refusing it here
+	 * first gives a clear, merge-specific message before anything is written.
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
 	 * @return void
 	 * @throws \Exception When either product does not exist / is inactive, both ids are equal,
-	 *                    or any of the update statements fails
+	 *                    one of the refusal conditions above applies, or any of the update
+	 *                    statements fails
 	 */
 	public function MergeProducts(int $productIdToKeep, int $productIdToRemove)
 	{
@@ -3539,20 +3567,131 @@ class StockService extends BaseService
 			$productToKeep = $this->DB->products($productIdToKeep);
 			$productToRemove = $this->DB->products($productIdToRemove);
 			$conversion = $this->DB->cache__quantity_unit_conversions_resolved()->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $productToRemove->id, $productToRemove->qu_id_stock, $productToKeep->qu_id_stock)->fetch();
+
+			if ($conversion == null && $productToRemove->qu_id_stock != $productToKeep->qu_id_stock)
+			{
+				// Falling back to a factor of 1 here (as this method used to) would silently
+				// misread every moved amount and price as already being in the kept product's
+				// unit - 500 g becoming "500 kg". trg_cascade_change_qu_id_stock refuses the
+				// equivalent single-product unit change for the same reason; refuse the merge
+				// the same way, before any row is touched.
+				throw new \Exception('Cannot merge: no quantity unit conversion exists from $productIdToRemove\'s stock unit to $productIdToKeep\'s stock unit');
+			}
+
 			$factor = 1.0;
 			if ($conversion != null)
 			{
 				$factor = $conversion->factor;
 			}
 
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
-			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			if ($factor <= 0)
+			{
+				// A non-positive factor would make "amount * factor" zero or negative and
+				// "price / factor" a division by zero or a negative price. Nothing in
+				// db/pgsql/baseline/01_tables.sql puts a CHECK on
+				// quantity_unit_conversions.factor, and cache__quantity_unit_conversions_resolved
+				// returns whatever is stored unfiltered - a NEGATIVE factor reaches this method
+				// (MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+				// stores one directly), though a factor of exactly 0 does not: inserting it
+				// makes quantity_unit_conversions_INS's own inverse-row computation,
+				// "1 / COALESCE(NEW.factor, 1)", raise a genuine division-by-zero (Postgres
+				// raises on this for float8 too, unlike raw IEEE 754) before the row commits.
+				// Refuse before any row is touched rather than let either arithmetic run.
+				throw new \Exception('Cannot merge: quantity unit conversion factor must be greater than zero');
+			}
+
+			if ($factor != 1.0
+				&& ($this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null
+					|| $this->DB->stock_log()->where('product_id = :1 AND undone = 0 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null))
+			{
+				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
+				// amount = 1 on any row carrying a measurement. Rescaling amount by anything
+				// other than 1 would violate that CHECK outright (a raw 23514) instead of
+				// producing a meaningfully converted measurement, which nothing here attempts.
+				// Refuse cleanly before any row is touched instead.
+				//
+				// Checking `stock` alone misses a fully consumed measured container: when
+				// ConsumeProduct() takes a whole measured entry, it deletes the `stock` row
+				// but mirrors opened_amount/opened_qu_id onto the consume stock_log row
+				// precisely so UndoBooking()'s consume branch can rebuild the deleted row
+				// later (migrations/0275.pgsql.sql, and the mirroring in ConsumeProduct()
+				// itself). Left unrescaled-and-unrefused, that consume booking would survive
+				// this merge, and undoing it afterwards would try to recreate a `stock` row
+				// with the rescaled amount instead of 1, hitting the same CHECK from the undo
+				// path rather than from this one (issue #546 - the sibling failure through
+				// trg_cascade_change_qu_id_stock's own rescale is not this method's to fix).
+				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container (live, or a live undoable consume booking) and the unit conversion factor is not 1');
+			}
+
+			if ($productToKeep->parent_product_id != null
+				&& $productToKeep->parent_product_id != $productIdToRemove
+				&& $this->DB->products()->where('parent_product_id = :1', $productIdToRemove)->fetch() != null)
+			{
+				// enfore_product_nesting_level (migrations/0277.pgsql.sql) allows only one
+				// level of nesting, checked both ways since that migration: a row cannot be
+				// given a parent that itself already has a parent, and a row cannot be given a
+				// parent while something else already treats the row itself as a parent. The
+				// repoint below (child.parent_product_id = $productIdToKeep) WOULD hit the
+				// first of those the moment the kept product has a parent of its own - the
+				// trigger does not miss this shape - but only mid-transaction, after the
+				// UPDATE statements above have already run, and only with its own generic
+				// "Unsupported product nesting level detected" message. Refusing here first
+				// gives a clear, merge-specific reason before anything is written at all. The
+				// exception excludes the kept product's parent being the removed product
+				// itself, which the block below clears in this same merge, leaving room for
+				// exactly that repoint.
+				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
+			}
+
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// Neither cache__products_average_price nor cache__products_last_purchased is
+			// cleaned up by trg_products_DELETE (which only clears
+			// cache__quantity_unit_conversions_resolved) or by stock_log_UPD above (which
+			// refreshes the row for the NEW, i.e. kept, product_id and has no reason to touch
+			// the removed product's row at all). Left alone, the removed product's rows in
+			// both caches would survive the merge, keyed by a product id that no longer exists.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM cache__products_average_price WHERE product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM cache__products_last_purchased WHERE product_id = ' . $productIdToRemove);
+
+			// last_price is a total price for this row's own (amount, qu_id) - a barcode's
+			// typical purchase package, e.g. "500 g for $2.50" - not a per-stock-unit price:
+			// public/viewjs/purchase.js sets it from the #price field in "total price" mode
+			// right after prefilling that same field from the scanned barcode's own last_price
+			// (purchase.js:414-417), and neither amount nor qu_id on this same row is touched
+			// by this method. It is therefore left as-is, unlike stock.price/stock_log.price
+			// above.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_barcodes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// quantity_unit_conversions_INS/_UPD/_DEL (db/pgsql/baseline/06_triggers_a.sql)
+			// keep an automatic inverse row in sync with every conversion, and
+			// qu_conversions_custom_constraint_UPD refuses an UPDATE that would leave two rows
+			// sharing the same (from_qu_id, to_qu_id, product_id) - which is exactly what
+			// repointing would do wherever the kept product already defines the same pair,
+			// including the common case where products_default_qu_conversions_INS
+			// auto-created the same 1:1 purchase/consume/price -> stock pair on both products.
+			// Dropping the removed product's conflicting row first, the same dedupe-then-move
+			// rule as product_substitutions below (the kept product's own factor wins), lets
+			// the DELETE trigger drop that row's own inverse along with it, so only the
+			// genuinely new pairs are left to repoint.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM quantity_unit_conversions quc_remove WHERE quc_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM quantity_unit_conversions quc_keep WHERE quc_keep.product_id = ' . $productIdToKeep . ' AND quc_keep.from_qu_id = quc_remove.from_qu_id AND quc_keep.to_qu_id = quc_remove.to_qu_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE quantity_unit_conversions SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
+
+			// price_factor is a unitless cost multiplier applied on top of amount * price in
+			// the recipe costs columns (db/pgsql/baseline/05_views_l3.sql), not a per-unit
+			// price itself, so only amount - the ingredient quantity - is converted.
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes_pos SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE recipes SET product_id = ' . $productIdToKeep . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE meal_plan SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE shopping_list SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// chores.product_amount is converted the same way trg_cascade_change_qu_id_stock
+			// converts it for a single product's own qu_id_stock change (same table, the same
+			// "amount * factor" line). Left unhandled, TrackChore() would throw "Product does
+			// not exist or is inactive" the next time this chore executed, since product_id
+			// would still name the now-deleted removed product.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE chores SET product_id = ' . $productIdToKeep . ', product_amount = product_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 
 			// product_substitutions is not in trg_cascade_product_removal's list of tables
 			// this method itself re-points before deleting - it is that trigger's own list,
@@ -3571,6 +3710,31 @@ class StockService extends BaseService
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_substitutions ps_remove WHERE ps_remove.to_product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_substitutions ps_keep WHERE ps_keep.to_product_id = ' . $productIdToKeep . ' AND ps_keep.from_product_id = ps_remove.from_product_id)');
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET from_product_id = ' . $productIdToKeep . ' WHERE from_product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_substitutions SET to_product_id = ' . $productIdToKeep . ' WHERE to_product_id = ' . $productIdToRemove);
+
+			// product_location_min_stock carries a real FOREIGN KEY to products - unlike every
+			// other table this method touches, and unlike product_substitutions above, both of
+			// which do "application-level and trigger-level referential integrity, not
+			// FK-level" (migrations/0279.pgsql.sql) - so a removed product with a location
+			// minimum made the DELETE below fail outright with a foreign-key violation (issue
+			// #503, M3's second symptom). Repointing follows the same dedupe-then-move shape as
+			// product_substitutions above: a location where the kept product already has its
+			// own minimum keeps that row untouched - the removed product's is dropped rather
+			// than silently overwriting a minimum someone set deliberately on the surviving
+			// product - and min_stock_amount is converted by the same factor as every other
+			// amount above, so a surviving minimum still means the same physical quantity.
+			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM product_location_min_stock plms_remove WHERE plms_remove.product_id = ' . $productIdToRemove . ' AND EXISTS (SELECT 1 FROM product_location_min_stock plms_keep WHERE plms_keep.product_id = ' . $productIdToKeep . ' AND plms_keep.location_id = plms_remove.location_id)');
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE product_location_min_stock SET product_id = ' . $productIdToKeep . ', min_stock_amount = min_stock_amount * ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
+
+			// products.parent_product_id: a dangling parent left on the removed product's own
+			// children would point at a row that no longer exists, and their stock would stop
+			// being aggregated under any parent at all. The kept product's own parent is
+			// cleared first when it was the removed product - repointing next would otherwise
+			// try to set it to itself - and only then are the removed product's children (if
+			// any) repointed to the kept product; the guard above already refused the whole
+			// merge if that repoint would have left the kept product with both a parent of its
+			// own and children of its own at once.
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = NULL WHERE id = ' . $productIdToKeep . ' AND parent_product_id = ' . $productIdToRemove);
+			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE products SET parent_product_id = ' . $productIdToKeep . ' WHERE parent_product_id = ' . $productIdToRemove);
 
 			DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM products WHERE id = ' . $productIdToRemove);
 		});
