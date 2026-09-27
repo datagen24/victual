@@ -278,6 +278,13 @@ this working copy does not contain their scripts or seeds.
 
 ## Acceptance prerequisites
 
+On 2026-09-27, the maintainer selected reproducible spike evidence as the basis for
+acceptance. The six gates below apply to the experimental implementation in a pinned,
+disposable PostgreSQL working copy. They do not require production delivery before the
+architectural decision is accepted. Production adoption must preserve the verified
+behavior, add maintained regression tests, and pass the repository's coverage checks.
+
+
 1. The accepting pull request confirms the selected absolute floor `1e-9`, relative
    coefficient `1e-12`, inclusive equality boundary, operand-based remainder checks,
    unit conversion rules, and exact coherence exception. It cites open question 3's
@@ -285,7 +292,7 @@ this working copy does not contain their scripts or seeds.
    The implementation evidence records the magnitudes, conversion factors and serialization
    precision exercised. Any further arithmetic-policy change requires revising this
    proposal before the separate bookkeeping acceptance.
-2. Regression tests on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md) cover
+2. Reproducible spike tests on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md) cover
    consume, open, transfer, inventory correction and its undo, purchase undo,
    self-production undo, and transfer undo.
    They reproduce #492 and #470 and assert stock rows and ledger amounts after each
@@ -307,7 +314,7 @@ this working copy does not contain their scripts or seeds.
    window. Assert metadata retention or removal, validation refusal, and exact one-unit
    splits with positive remainders as applicable. No application-approved measured write
    may fail the SQL coherence constraint.
-5. The accepting pull request provides an implementation audit for every comparison in
+5. The accepting pull request provides an experimental implementation audit for every comparison in
    the decision 1 inventory and the decision 5 exception. It identifies any additional
    stock comparisons and explains their classification. Printer formatting and
    shopping-list rounding remain unchanged on purpose.
@@ -317,9 +324,10 @@ this working copy does not contain their scripts or seeds.
    the same gap (open question 2). Non-finite input tests demonstrate refusal before any
    stock or ledger mutation.
 
-These are implementation-evidence gates. Substantive implementation and test changes
-belong in separate pull requests; the later acceptance pull request links their evidence
-and carries only the lifecycle bookkeeping required by the ADR index.
+These are spike-evidence gates. The accepting pull request links the pinned experiment,
+its assertions and results, and the comparison audit. Production implementation, maintained
+regressions, and delivery verification belong in later pull requests. Acceptance carries
+only the lifecycle bookkeeping required by the ADR index.
 
 ## Acceptance evidence
 
@@ -331,6 +339,6 @@ removes a genuine small remainder at large magnitude. Runtime serialization prec
 changes the observed accumulated drift.
 
 The maintainer selected the relative policy after reviewing this evidence; open question 3
-records the response. The spike does not land the implementation. Production changes,
-maintained regressions, and final implementation verification remain required before
-bookkeeping acceptance.
+records the response. The spike does not land the implementation. The maintainer confirmed that spike evidence
+can clear acceptance, while production changes, maintained regressions, and final
+implementation verification remain delivery requirements.
