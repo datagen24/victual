@@ -170,10 +170,10 @@ class RecipesService extends BaseService
 
 			foreach ($recipePositions as $recipePosition)
 			{
-				if ($recipePosition->only_check_single_unit_in_stock == 0 && $recipePosition->stock_amount > 0)
+				if ($recipePosition->only_check_single_unit_in_stock == 0 && StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0)
 				{
 					$amount = $recipePosition->recipe_amount;
-					if ($recipePosition->stock_amount > 0 && $recipePosition->stock_amount < $recipePosition->recipe_amount)
+					if (StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0 && StockService::CompareAmounts($recipePosition->stock_amount, $recipePosition->recipe_amount) < 0)
 					{
 						$amount = $recipePosition->stock_amount;
 					}

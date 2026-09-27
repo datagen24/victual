@@ -397,6 +397,16 @@ abstract class DatabaseDialect
 	}
 
 	/**
+	 * Advances one identity column's sequence to at least $minNextValue, never backward -
+	 * see PostgresDialect's own implementation. A no-op here (SQLite's AUTOINCREMENT
+	 * already tracks the highest id ever used on its own, per ResyncGeneratedIdCounters()'s
+	 * own docblock above, so there is never a sequence to advance).
+	 */
+	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): void
+	{
+	}
+
+	/**
 	 * Tells the connection which user it is acting for, so that SQL side helpers resolving
 	 * user settings work. Called once authentication has established the user.
 	 */
