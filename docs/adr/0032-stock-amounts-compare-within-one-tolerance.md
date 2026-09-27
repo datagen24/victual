@@ -62,8 +62,8 @@ used to decide a boundary, not to change what is stored — recurs at:
 | `services/StockService.php:634` | `ConsumeProduct()` | `round($amount, 2) > round($productStockAmount, 2)` — availability |
 | `services/StockService.php:829` | `EditStockEntry()` | `round($amount, 2) == 1.0` — ADR-0022 coherence |
 | `services/StockService.php:960` | `MeasureStockEntry()` | `round($stockRow->amount, 2) != 1.0` — coherence |
-| `services/StockService.php:2021` | `TransferProduct()` | `round($amount, 2) != 1.0` — coherence |
-| `services/StockService.php:2027` | `TransferProduct()` | `round($targetEntry->amount, 2) < 1.0` — coherence |
+| `services/StockService.php:2021` | `OpenProduct()` | `round($amount, 2) != 1.0` — coherence |
+| `services/StockService.php:2027` | `OpenProduct()` | `round($targetEntry->amount, 2) < 1.0` — coherence |
 | `services/StockService.php:2822` | `UndoBooking()` | zero/negative test (PR #469) |
 
 Two further `round()` calls in this file round a display quantity already taken from a
@@ -96,19 +96,45 @@ below does not address it.
 
 ## Decision
 
-The maintainer decided:
+The maintainer chose a shared comparison tolerance and unrounded storage in the
+recorded session. The exact predicates, coherence exception, and additional verification
+requirements below are proposed refinements requiring confirmation at acceptance.
 
-1. **One named tolerance constant, on the order of 1e-9 of the stock unit, is used for
-   every zero test and every availability comparison.** It replaces the `round($x, 2)`
-   calls listed in Context that decide a boundary (`:634`, `:829`, `:960`, `:2021`,
-   `:2027`, `:2822`) and the exact comparisons at `:657`, `:2083`, `:2438` and `:2894`. The
-   printer-quantity and shopping-list `round()` calls (`:103`, `:2263`, `:2295`) are
-   unaffected — see decision 3.
-2. **Stored amounts stay unrounded.** The tolerance decides whether a comparison treats two
-   amounts as equal or a remainder as zero; it never becomes the value written to `stock`.
-   `services/StockService.php:2822`'s existing pattern already keeps this distinction —
-   compare a rounded copy, write the unrounded `$newAmount` — and this decision generalizes
-   the comparison side of that pattern, not the write side.
+1. **Use one absolute tolerance, `STOCK_AMOUNT_TOLERANCE = 1e-9`, for stock
+   availability and computed remainders.** For finite operands in the same unit, equality
+   means `abs(a - b) <= STOCK_AMOUNT_TOLERANCE`; greater-than means
+   `a - b > STOCK_AMOUNT_TOLERANCE`, and less-than means
+   `b - a > STOCK_AMOUNT_TOLERANCE`. Zero uses the equality predicate with `b = 0`.
+   Reject non-finite inputs before comparison. This is an absolute tolerance in the
+   comparison's stock unit, with an inclusive equality boundary; it does not scale with
+   the amount's magnitude.
+
+   Aggregate availability and inventory comparisons use the requested product's stock
+   unit. Per-entry comparisons use the candidate product's stock unit after conversion.
+   Loop termination uses the requested product's stock unit after converting the remaining
+   request back. A whole-entry booking records the entry's actual amount. A remaining
+   request within tolerance terminates the loop before another row is booked, including
+   when subtraction leaves a small negative remainder.
+
+   The required inventory in `StockService` includes:
+
+   | Function | Comparisons using the tolerance |
+   |---|---|
+   | `ConsumeProduct()` | Scoped availability, whole-entry selection, loop termination |
+   | `OpenProduct()` | Unopened availability, whole-entry selection, loop termination |
+   | `TransferProduct()` | Source availability, whole-entry selection, loop termination |
+   | `InventoryProduct()` | Equality and direction of the difference from current stock |
+   | `UndoBooking()` | Computed shortage and zero remainder for purchase, self-production, positive inventory correction, and transfer-to reversal |
+
+   This inventory also covers comparisons introduced after the dated Context audit.
+   Input sign checks and transaction-type classification remain exact: a negative input
+   is invalid even within tolerance, and a negative log amount still identifies a consume.
+   Measured-container coherence follows decision 5. Shopping-list quantities and display
+   formatting remain outside the stock comparison policy.
+2. **Stored amounts stay unrounded.** A comparison may select a whole-entry operation or
+   deletion of an exhausted row. Surviving stock amounts and ledger entries retain the
+   unrounded arithmetic or actual entry amount; the tolerance is never written as a value.
+   Inventory counts within tolerance of current stock produce no correction booking.
 3. **Display decimals are presentation only and never decide ledger validity.** The two
    printer-quantity roundings and the shopping-list amount-to-add rounding format a value
    already decided by the ledger; none of the three may be read as, or replaced by, a
@@ -120,6 +146,20 @@ The maintainer decided:
    whether `InventoryProduct()`, `OpenProduct()` and `TransferProduct()` carry the same gap —
    this record's reproduction did not exercise a negative write through them, so it does not
    assert that they do.
+
+5. **Measured-container coherence remains exact under ADR-0022.** The
+   `stock_measurement_coherence_check` in
+   [migration 0275](../../migrations/0275.pgsql.sql) requires an opened, measured row to
+   hold exactly one stock unit. Application checks must agree with that constraint.
+   `EditStockEntry()` retains measurement metadata only at exactly one unit;
+   `MeasureStockEntry()` requires exactly one unit. `OpenProduct()` with a measurement
+   requires an exact one-unit request and a candidate holding at least one unit.
+   A candidate above one unit must split off exactly one measured unit even if its
+   remainder falls within tolerance. A candidate below one cannot be accepted as one.
+   These structural checks replace the four rounded coherence checks in Context with
+   exact predicates. They take precedence over tolerant whole-entry selection, preserve
+   a positive split remainder, and do not normalize stored amounts or weaken the SQL
+   constraint.
 
 **Rejected:**
 
@@ -133,15 +173,16 @@ The maintainer decided:
 
 ## Consequences
 
-- The residue and phantom-row shapes in #492 and #470 stop occurring at the sites listed in
-  decision 1, without changing what a successful write stores.
-- **Tightening the coherence checks (`:829`, `:960`, `:2021`, `:2027`) from a 0.005 window to
-  roughly 1e-9 narrows what counts as "equal to 1.0" or "equal to zero".** A value that
-  `round(x, 2)` today accepts as coherent — for example an amount of `0.998` surviving a
-  quantity-unit conversion whose factor is not exact — could be refused under the tighter
-  tolerance where it previously passed. The regression suite accepting this record should
-  include a case at the old 0.005 boundary to show whether this is a real behavior change or
-  only a theoretical one.
+- Arithmetic residues within tolerance are treated as exhausted in the operations named
+  in decision 1. A legitimate amount within that same tolerance is indistinguishable from
+  residue; choosing `1e-9` accepts that loss of resolution in each comparison's stock unit.
+- Absolute tolerance does not guarantee removal of every floating-point error at every
+  magnitude. Conversion factors and stock magnitudes in the acceptance fixtures must be
+  recorded; behavior outside those tested ranges is not established by those tests.
+- Exact measured-container coherence can reject an amount such as `1.0000000005` even
+  though a stock availability comparison treats it as equal to one. Preserving that
+  value with measurement metadata would violate the existing database constraint.
+  Regression tests must cover both sides of one and the former `0.005` rounding window.
 - **The negative-amount refusal is a breaking change** for any caller relying on today's
   silent acceptance of a negative edit through `EditStockEntry()` — the point of the
   decision rather than a side effect.
@@ -163,13 +204,35 @@ The maintainer decided:
 
 ## Acceptance prerequisites
 
-1. The decider confirms the tolerance's order of magnitude (1e-9) against the
-   coherence-tightening consequence above.
-2. Regression tests reproducing #492 (consuming 0.3 from 0.1 + 0.2 leaves no residue row)
-   and #470 (undoing a transfer leaves no phantom row at the destination) pass against the
-   new constant, on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md).
-3. Every site named in decision 1 is updated, and the accepting pull request states that the
-   presentation-only sites (`:103`, `:2263`, `:2295`) were left unchanged on purpose.
-4. `EditStockEntry()` refuses a negative amount while continuing to accept zero; the
-   accepting pull request states the outcome of auditing `InventoryProduct()`,
-   `OpenProduct()` and `TransferProduct()` for the same gap (open question 2).
+1. The decider confirms the exact `1e-9` absolute tolerance, inclusive equality boundary,
+   unit conversion rules, and exact coherence exception in decisions 1 and 5. The
+   implementation evidence records the stock magnitudes and conversion factors exercised.
+2. Regression tests on real PostgreSQL per [ADR-0025](0025-three-test-tiers.md) cover
+   consume, open, transfer, inventory correction, purchase undo, and transfer undo.
+   They reproduce #492 and #470 and assert stock rows and ledger amounts after each
+   operation and its applicable undo. The consume fixture must retain distinct 0.1 and
+   0.2 candidate rows so compaction cannot remove the per-entry subtraction being tested.
+3. Boundary tests cover zero and differences below, at, and above `1e-9`, including
+   negative computed residues. They preserve a genuine `0.001` remainder and refuse a
+   shortage outside tolerance without partial writes. Multi-entry cases assert that a
+   near-zero remaining request does not create another booking. Mixed-unit substitution
+   tests exercise both aggregate and per-entry comparisons after conversion.
+4. Coherence tests exercise `EditStockEntry()`, `MeasureStockEntry()`, and measured
+   `OpenProduct()` against the existing SQL constraint. Cover exactly one, values within
+   `1e-9` on either side, and `0.995`, `0.998`, `1.002`, and `1.005` from the old rounding
+   window. Assert metadata retention or removal, validation refusal, and exact one-unit
+   splits with positive remainders as applicable. No application-approved measured write
+   may fail the SQL coherence constraint.
+5. The accepting pull request provides an implementation audit for every comparison in
+   the decision 1 inventory and the decision 5 exception. It identifies any additional
+   stock comparisons and explains their classification. Printer formatting and
+   shopping-list rounding remain unchanged on purpose.
+6. `EditStockEntry()` refuses negative amounts, including a negative value within
+   tolerance, while continuing to accept zero. The accepting pull request states the
+   outcome of auditing `InventoryProduct()`, `OpenProduct()` and `TransferProduct()` for
+   the same gap (open question 2). Non-finite input tests demonstrate refusal before any
+   stock or ledger mutation.
+
+These are implementation-evidence gates. Substantive implementation and test changes
+belong in separate pull requests; the later acceptance pull request links their evidence
+and carries only the lifecycle bookkeeping required by the ADR index.
