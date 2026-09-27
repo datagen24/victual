@@ -235,7 +235,7 @@
 																"string",
 																"null"
 															],
-															"description": "The product's name at retirement time, captured rather than read live; null if the product itself was later deleted (issue #558)"
+															"description": "The product's name at retirement time, captured rather than read live; null when the entry was retired by deleting its product (issue #558); an entry retired earlier keeps its name even if the product is deleted afterwards"
 														},
 														"best_before_date": {
 															"type": [
