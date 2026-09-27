@@ -1365,4 +1365,349 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'W2: undoing the newest opening (Z1, opened after Z2 this time) is refused - the merge instead deletes this exact row, and the fallback must not recover by closing X either'
 		);
 	}
+
+	// ------------------------------------------------------------------------------
+	// #488, fourth Opus review round - a whole-row transfer's row must be verified
+	// clean (still at the destination, amount unchanged since) before it is relocated;
+	// a row dirtied by something else in between must fall back to the same
+	// subtract-and-rebuild path a split transfer's undo already uses
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * Buy 2 at B, then buy 3 at A (a higher row id), transfer the whole 3 A->B (a
+	 * whole-row transfer, so both correlated bookings name that row's own id), then a
+	 * purchase elsewhere triggers CompactStockEntries() for the whole product, merging
+	 * the now-identical two rows at B into one survivor - keeping the transferred
+	 * row's id, since it is the higher of the two. Relocating that *whole* row back to
+	 * A would carry B's own original two units with it, with no booking accounting
+	 * for them. Undoing the transfer must instead subtract exactly the three units
+	 * this transfer moved - the same arithmetic a split transfer's undo already does -
+	 * leaving B's own two units behind.
+	 */
+	public function testUndoingAWholeRowTransferAfterCompactionSubtractsRatherThanRelocatingTheWholeRow(): void
+	{
+		$product = self::insertProduct('Undo Whole Transfer After Compaction');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$locationB, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'Two units are purchased directly at B'
+		);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'Three units are purchased at A - a higher row id than the B purchase'
+		);
+
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 3, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'The whole three-unit entry is transferred to B (a whole-row transfer)'
+		);
+		self::assertCount(2, array_filter(self::rows($product), fn($row) => (int)$row['location_id'] === self::$locationB), 'Sanity: two separate rows sit at B before compaction');
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: B holds both lots, 2 + 3');
+
+		$locationC = self::insertRow('locations', ['name' => 'After Compaction C ' . $product]);
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $locationC, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'A purchase elsewhere triggers a product-wide compaction pass, merging the two now-identical rows at B'
+		);
+		self::assertCount(1, array_filter(self::rows($product), fn($row) => (int)$row['location_id'] === self::$locationB), 'Sanity: B is down to a single compacted row');
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: that row holds all 5 units');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted'
+		);
+
+		self::assertSame(3.0, self::stockAmountAtLocation($product, self::$locationA), 'Only the three transferred units come back to A');
+		self::assertSame(2.0, self::stockAmountAtLocation($product, self::$locationB), 'B keeps its own original two units, not emptied by relocating the whole (now-merged) row');
+	}
+
+	/**
+	 * Whole-row counterpart to testUndoingASplitTransferKeepsARealSmallRemainderAtTheDestination()
+	 * above: the clean-relocate check must correctly recognise a row dirtied beyond
+	 * AMOUNT_TOLERANCE - simulating a genuine small lot compacted onto the destination
+	 * row after the transfer, the same way the split version does - and fall back to
+	 * the same subtract arithmetic, keeping the real remainder rather than relocating
+	 * (and so silently carrying) it away with the rest of the row.
+	 */
+	public function testUndoingAWholeRowTransferKeepsARealSmallRemainderAtTheDestination(): void
+	{
+		$product = self::insertProduct('Undo Whole Transfer Real Remainder');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'The whole five-unit entry is transferred to B (a whole-row transfer)'
+		);
+
+		// Simulates a real 0.004-unit lot having compacted onto this same row at B after
+		// the transfer - not a float artifact, a genuine small remainder, and well beyond
+		// AMOUNT_TOLERANCE, so the clean-relocate check must recognise this row is no
+		// longer exactly what the transfer moved.
+		self::$db->exec('UPDATE stock SET amount = 5.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted'
+		);
+
+		self::assertEqualsWithDelta(0.004, self::stockAmountAtLocation($product, self::$locationB), 1e-9, 'The real 0.004 remainder is kept at B, not relocated away with the rest of the row');
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationA), 'and the clean five units are rebuilt at A');
+	}
+
+	/**
+	 * Whole-row counterpart to testUndoingASplitTransferRefusesRatherThanManufacturingStockOnAShortfall()
+	 * above: dirtying the row short of what the transfer logged must still refuse,
+	 * rather than let the clean-relocate path move a row that quietly no longer holds
+	 * enough, or let the fallback delete it and manufacture the shortfall back at the
+	 * source.
+	 */
+	public function testUndoingAWholeRowTransferRefusesRatherThanManufacturingStockOnAShortfall(): void
+	{
+		$product = self::insertProduct('Undo Whole Transfer Shortfall Refusal');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'The whole five-unit entry is transferred to B (a whole-row transfer)'
+		);
+
+		// Simulates the destination entry having been reduced, out of band, to slightly
+		// less than what this transfer moved.
+		self::$db->exec('UPDATE stock SET amount = 4.996 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+
+		$this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			400,
+			'Undoing a whole-row transfer onto a destination short by 0.004 is refused, not relocated or rounded away'
+		);
+	}
+
+	/**
+	 * The clean-relocate check compares against AMOUNT_TOLERANCE, the same tolerance
+	 * the fallback arithmetic above uses, so a residue too small to be anything but
+	 * float noise (well under a hundred-millionth of a unit) does not force an
+	 * unnecessary fallback. Relocating in place never recomputes the row's amount at
+	 * all, so unlike testUndoingATransferLeavesNoPhantomRowFromFloatResidueAtTheDestination()'s
+	 * split path, the noise travels with the relocated row rather than being resolved
+	 * away by a delete-if-near-zero decision - there is only ever the one row in a
+	 * whole-row pairing, so no separate phantom row can arise from it either way.
+	 */
+	public function testUndoingAWholeRowTransferRelocatesThroughASubToleranceResidue(): void
+	{
+		$product = self::insertProduct('Undo Whole Transfer Sub Tolerance Residue');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$originalId = self::rows($product)[0]['id'];
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'The whole five-unit entry is transferred to B (a whole-row transfer)'
+		);
+
+		self::$db->exec('UPDATE stock SET amount = 5.0000000001 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'No separate phantom row is created either way - a whole-row pairing only ever has the one row');
+		self::assertSame($originalId, $rows[0]['id'], 'it is relocated, not rebuilt: the sub-tolerance residue is not enough to force the fallback path');
+		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at the source');
+		self::assertEqualsWithDelta(5.0000000001, (float)$rows[0]['amount'], 1e-12, 'the residue travels with the relocated row - relocating never recomputes an amount');
+	}
+
+	// ------------------------------------------------------------------------------
+	// #488, fourth Opus review round - a strict stock_row_id match must not refuse a
+	// legitimate undo just because an intervening consume-and-undo rebuilt the row
+	// under a fresh id; CONSUME (and negative INVENTORY_CORRECTION) bookings now
+	// record stock_row_id too, and their own undo rebuilds under that same id when the
+	// row they took from is gone
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * X1: transfer 2 of 5 A->B (split - the source row at A keeps its own id, reduced
+	 * to 3), consume the 3 left at A (a whole-take consume, deleting that row), undo
+	 * the consume, undo the transfer. Before CONSUME bookings carried their own
+	 * stock_row_id, undoing the consume rebuilt the A row under a fresh auto-increment
+	 * id, so the transfer's own TRANSFER_FROM booking - which named the original id -
+	 * could no longer find its source row and refused outright, even though nothing
+	 * about the transfer itself was wrong.
+	 */
+	public function testUndoingATransferFindsARowRebuiltByAnInterveningConsumeUndoByItsOriginalId(): void
+	{
+		$product = self::insertProduct('Undo Transfer After Consume Undo Split');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$originalId = self::rows($product)[0]['id'];
+
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'Two of the five are split off to B, leaving 3 at A under the same original row id'
+		);
+		$atA = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
+		$atA->execute([$product, self::$locationA]);
+		self::assertSame($originalId, $atA->fetchColumn(), 'Sanity: the split transfer kept the source row\'s own id at A');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'The 3 units left at A are fully consumed, deleting that row'
+		);
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationA), 'Sanity: nothing remains at A');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is accepted'
+		);
+		$atA->execute([$product, self::$locationA]);
+		self::assertSame($originalId, $atA->fetchColumn(), 'Sanity: the consume undo rebuilt the row under its original id, not a fresh one (#488, fourth review round)');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted, finding its source row by that preserved id rather than refusing'
+		);
+
+		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationA), 'All five units are back at A');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'nothing left at B');
+		$atA->execute([$product, self::$locationA]);
+		self::assertSame($originalId, $atA->fetchColumn(), 'still the very same original row id throughout');
+	}
+
+	/**
+	 * X2: transfer all 5 A->B (whole-row - both correlated bookings name the source
+	 * row's own id), consume them at B (a whole-take consume, deleting that row), undo
+	 * the consume, undo the transfer. Symmetric to X1 above but through the
+	 * clean-relocate path instead of the split/legacy one: before CONSUME bookings
+	 * carried their own stock_row_id, the consume-undo rebuild left the row under a
+	 * fresh id, so TRANSFER_TO's own relocate lookup (by the original id) found
+	 * nothing and refused outright - a regression present since the relocate path was
+	 * first introduced.
+	 */
+	public function testUndoingAWholeRowTransferFindsARowRebuiltByAnInterveningConsumeUndoByItsOriginalId(): void
+	{
+		$product = self::insertProduct('Undo Whole Transfer After Consume Undo');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Five units are purchased at A'
+		);
+		$originalId = self::rows($product)[0]['id'];
+
+		$transfer = $this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 5, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'The whole five-unit entry is transferred to B'
+		);
+		$atB = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
+		$atB->execute([$product, self::$locationB]);
+		self::assertSame($originalId, $atB->fetchColumn(), 'Sanity: the whole-row transfer kept the same row id at B');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationB]), new Response(), ['productId' => $product]),
+			200,
+			'All five units are consumed at B, deleting that row'
+		);
+		self::assertSame(0.0, self::stockAmount($product), 'Sanity: nothing remains anywhere');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is accepted'
+		);
+		$atB->execute([$product, self::$locationB]);
+		self::assertSame($originalId, $atB->fetchColumn(), 'Sanity: the consume undo rebuilt the row under its original id (#488, fourth review round)');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+			204,
+			'Undoing the transfer is accepted, relocating that same row back to A rather than refusing'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'Exactly one entry survives');
+		self::assertSame($originalId, $rows[0]['id'], 'still the very same original row id throughout');
+		self::assertSame(self::$locationA, (int)$rows[0]['location_id'], 'back at A');
+		self::assertSame(5.0, (float)$rows[0]['amount']);
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'nothing left at B');
+	}
+
+	/**
+	 * X3: open 1 unit, consume it (a whole-take consume, deleting that opened row),
+	 * undo the consume, undo the opening. Before CONSUME bookings carried their own
+	 * stock_row_id, the consume-undo rebuild left the row under a fresh id, so
+	 * PRODUCT_OPENED's own strict stock_row_id match (#488, third review round) could
+	 * no longer find it and refused outright, even though the rebuilt row was
+	 * otherwise identical - including still open, since the CONSUME booking mirrors
+	 * the opened state the same way it mirrors a measurement (ADR-0022 decision 9).
+	 */
+	public function testUndoingAnOpeningFindsARowRebuiltByAnInterveningConsumeUndoByItsOriginalId(): void
+	{
+		$product = self::insertProduct('Undo Opening After Consume Undo');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased at A'
+		);
+		$originalId = self::rows($product)[0]['id'];
+
+		$open = $this->expectStatus(
+			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+			200,
+			'It is opened'
+		);
+		self::assertSame($originalId, self::rows($product)[0]['id'], 'Sanity: opening it in place keeps the same row id');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'The opened unit is consumed, deleting that row'
+		);
+		self::assertSame(0.0, self::stockAmount($product), 'Sanity: nothing remains');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is accepted'
+		);
+		$rows = self::rows($product);
+		self::assertSame($originalId, $rows[0]['id'], 'Sanity: the consume undo rebuilt the row under its original id (#488, fourth review round)');
+		self::assertSame(1, (int)$rows[0]['open'], 'Sanity: the rebuilt row is still open - CONSUME mirrors the opened state, same as a measurement');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $open[0]['transaction_id']]),
+			204,
+			'Undoing the opening is accepted, finding the rebuilt row by its preserved id rather than refusing'
+		);
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'Exactly one entry survives');
+		self::assertSame($originalId, $rows[0]['id'], 'still the very same original row id throughout');
+		self::assertSame(0, (int)$rows[0]['open'], 'closed again');
+		self::assertSame(1.0, (float)$rows[0]['amount']);
+	}
 }
