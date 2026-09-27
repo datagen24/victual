@@ -106,6 +106,7 @@
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
+			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
