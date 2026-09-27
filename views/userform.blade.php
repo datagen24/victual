@@ -121,6 +121,24 @@
 					@endif>
 				<div class="invalid-feedback">{{ $__t('Passwords do not match') }}</div>
 			</div>
+			@elseif($mode == 'create')
+			{{-- Externally managed (reverse-proxy) authentication has no local password to
+			     change - ReverseProxyAuthenticator never checks one - but CreateUser()
+			     still requires the field. A hidden placeholder satisfies that, the same
+			     way the embedded/disabled-auth branch below does. Edit mode deliberately
+			     gets no such field here: EditUser() revokes every other session of the
+			     account whenever a password field is present at all (issue #513), and
+			     resending a placeholder on every ordinary profile edit would revoke
+			     sessions over a "password change" that never happened (issue #549,
+			     round 5). --}}
+			<input type="hidden"
+				name="password"
+				id="password"
+				value="x">
+			<input type="hidden"
+				name="password_confirm"
+				id="password_confirm"
+				value="x">
 			@endif
 			@else
 			<input type="hidden"

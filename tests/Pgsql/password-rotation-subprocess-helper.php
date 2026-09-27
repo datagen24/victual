@@ -38,6 +38,19 @@ namespace
 	define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 	define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
 	require_once VICTUAL_ROOT_PATH . '/packages/autoload.php';
+
+	$spec = json_decode(base64_decode($argv[1] ?? ''), true, flags: JSON_THROW_ON_ERROR);
+
+	// Before config.php, because Setting() freezes a constant the first time it is asked
+	// for and ReverseProxyAuthenticator reads REMOTE_ADDR (trusted-proxy check) and, in
+	// USE_ENV mode, the proxy-supplied username straight out of $_SERVER rather than out
+	// of the PSR-7 request - the same reason authstack-subprocess-helper.php does this
+	// (round 5, issue #549 reverse-proxy coverage).
+	foreach ($spec['server'] ?? [] as $name => $value)
+	{
+		$_SERVER[$name] = $value;
+	}
+
 	require_once VICTUAL_DATAPATH . '/config.php';
 	require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 
@@ -47,8 +60,6 @@ namespace
 	}
 
 	$GLOBALS['__capturedCookies'] = [];
-
-	$spec = json_decode(base64_decode($argv[1] ?? ''), true, flags: JSON_THROW_ON_ERROR);
 
 	define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 	$_SERVER['REQUEST_URI'] = $spec['path'];

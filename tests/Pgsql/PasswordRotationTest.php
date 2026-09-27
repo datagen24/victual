@@ -63,6 +63,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const PICTURE_EXPLICIT_NULL = 9717;
 	private const ADMIN_EDIT_OTHER_NO_PASSWORD = 9718;
 	private const SELF_EDIT_NO_PASSWORD = 9719;
+	private const REVERSE_PROXY_ADMIN = 9720;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -178,6 +179,14 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::createUser(self::SELF_EDIT_NO_PASSWORD, 'rotation-self-edit-no-password', 'self-no-password-pw-1');
 		self::grantAdmin(self::SELF_EDIT_NO_PASSWORD);
 		self::createSession('rotation-self-edit-no-password-session', self::SELF_EDIT_NO_PASSWORD);
+
+		// issue #549 round 5, the reverse-proxy variant: ReverseProxyAuthenticator matches
+		// an incoming username against an existing row before it ever creates one, so a
+		// pre-provisioned ADMIN account under this exact username is what the proxy-signed
+		// requests below authenticate as - no session row, because that authenticator never
+		// consults one.
+		self::createUser(self::REVERSE_PROXY_ADMIN, 'rotation-reverse-proxy-admin', '');
+		self::grantAdmin(self::REVERSE_PROXY_ADMIN);
 	}
 
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
@@ -1122,6 +1131,72 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		self::assertSame($originalHash, self::storedPasswordHash(self::SELF_EDIT_NO_PASSWORD), 'the stored hash is untouched');
 		self::assertSame(0, self::flag(self::SELF_EDIT_NO_PASSWORD));
 		self::assertTrue(self::sessionExists('rotation-self-edit-no-password-session'), 'the acting session is untouched by a write that never touched the password');
+	}
+
+	/**
+	 * issue #549 round 5: the reverse-proxy variant of the same bug, at the template
+	 * layer. views/userform.blade.php wrapped the checkbox and every password input in
+	 * `@if(!defined(VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION))` with no `@else`, so under
+	 * ReverseProxyAuthMiddleware the edit-mode page rendered no password field and no
+	 * checkbox at all - and neither did create mode, even though CreateUser() still
+	 * requires the field. userform.js only ever checked whether #change_password was
+	 * *absent* to decide "encode unconditionally", which was true for create mode's own
+	 * missing checkbox and also true here, so an edit under this backend still sent
+	 * password_base64 = btoa(undefined) (an admin's edit stored the literal word
+	 * "undefined" as the account's password; a self-edit got a 400 from the current
+	 * password it can never supply). The fix gives create mode a hidden placeholder
+	 * (CreateUser() needs one; there is no local password to change so a fixed "x" is as
+	 * good as any value) and gives edit mode no password field at all - resending it on
+	 * every ordinary profile edit would otherwise revoke every other session of the
+	 * account per issue #513's own fix, over a "password change" that never happened.
+	 *
+	 * This is a body-shape assertion at the PHP level rather than a frontend probe
+	 * addition: .devtools/frontend/userform-password.js drives a demo (DefaultAuthMiddleware)
+	 * instance, and the frontend-security CI job boots only that instance and a labels
+	 * instance, neither under VICTUAL_AUTH_CLASS=ReverseProxyAuthMiddleware. Standing up a
+	 * third browser-driven boot sequence for one form is out of proportion to this fix, so
+	 * the two pages are rendered here exactly as ReverseProxyAuthMiddleware would serve
+	 * them and the HTML is inspected directly. What is NOT covered by any automated check,
+	 * proxy mode or otherwise: that a real browser's serializeJSON() actually omits a
+	 * disabled/absent field the way userform.js assumes - that half is the existing
+	 * unticked-checkbox assertion in the frontend probe, which proxy mode cannot add to.
+	 */
+	public function testReverseProxyAuthRendersAHiddenPlaceholderPasswordOnlyOnCreateNeverOnEdit(): void
+	{
+		$proxySettings = [
+			'AUTH_CLASS' => 'Victual\\Middleware\\Auth\\ReverseProxyAuthMiddleware',
+			'REVERSE_PROXY_AUTH_TRUSTED_PROXIES' => '10.0.0.0/24',
+		];
+		$proxyRequest = [
+			'headers' => ['REMOTE_USER' => 'rotation-reverse-proxy-admin'],
+			'server' => ['REMOTE_ADDR' => '10.0.0.9'],
+		];
+
+		$createPage = self::request(array_merge($proxyRequest, [
+			'method' => 'GET',
+			'path' => '/user/new',
+		]), $proxySettings);
+
+		self::assertSame(200, $createPage['status'], $createPage['body']);
+		self::assertStringContainsString('name="password"', $createPage['body'],
+			'CreateUser() requires a password field even when nothing local checks it');
+		self::assertStringContainsString('value="x"', $createPage['body'],
+			'the placeholder must actually carry a value, or CreateUser() refuses it as empty');
+		self::assertStringContainsString('name="password_confirm"', $createPage['body']);
+		self::assertStringNotContainsString('id="change_password"', $createPage['body'],
+			'there is no local password to change under externally managed authentication');
+
+		$editPage = self::request(array_merge($proxyRequest, [
+			'method' => 'GET',
+			'path' => '/user/' . self::RESET_TARGET,
+		]), $proxySettings);
+
+		self::assertSame(200, $editPage['status'], $editPage['body']);
+		self::assertStringNotContainsString('name="password"', $editPage['body'],
+			'edit mode must render no password field at all, or userform.js has nothing to '
+			. 'gate password_base64 on and sends btoa(undefined) again (issue #549)');
+		self::assertStringNotContainsString('name="password_confirm"', $editPage['body']);
+		self::assertStringNotContainsString('id="change_password"', $editPage['body']);
 	}
 
 	/**

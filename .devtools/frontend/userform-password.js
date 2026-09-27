@@ -60,10 +60,15 @@ const assert = require('node:assert/strict');
 			'password_base64 must not be sent when #change_password is left unticked: ' + capturedBody);
 
 		// The contrast, so the assertion above is not vacuous: ticking the box and providing
-		// a real new password DOES still send password_base64.
+		// a real new password DOES still send password_base64. Loaded with ?changepw=true
+		// rather than clicking the checkbox directly: userform.js itself ticks it
+		// (`$("#change_password").click()`) on that URL parameter, the same page load
+		// BaseAuthMiddleware's own forced-change redirect uses, and a synthetic jQuery
+		// click is not subject to the real pointer-event hit-testing a Playwright .check()
+		// is - which failed here, timing out because the fixed-position navbar's own
+		// element intercepts the click at the checkbox's on-screen position.
 		capturedBody = null;
-		await page.goto(base + '/user/' + otherUser.id);
-		await page.locator('#change_password').check();
+		await page.goto(base + '/user/' + otherUser.id + '?changepw=true');
 		await page.locator('#password').fill('a new fixture password ' + token);
 		await page.locator('#password_confirm').fill('a new fixture password ' + token);
 		await Promise.all([page.waitForNavigation(), page.locator('#save-user-button').click()]);

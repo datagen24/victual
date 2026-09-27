@@ -61,20 +61,31 @@ $('#save-user-button').on('click', function (e)
 		jsonData.picture_file_name = RandomString() + CleanFileName($("#user-picture")[0].files[0].name);
 	}
 
-	// #change_password exists only in edit mode with an authentication backend that has a
-	// password to change at all (userform.blade.php); when it does and is unticked, the
-	// password inputs are disabled and serializeJSON() - like a real form submit - omits a
-	// disabled field entirely, so jsonData.password is undefined here. Encoding it
-	// regardless used to send btoa(undefined) === "dW5kZWZpbmVk", the base64 of the literal
-	// string "undefined" - answered as a real new password by the API, so an admin's edit
-	// of someone else's profile with the box left unticked silently set that account's
-	// password to the word "undefined" (issue #549). Create mode and the externally-managed/
-	// embedded/disabled-auth branch have no such checkbox at all - .length is 0 - and must
-	// keep encoding unconditionally: a new account needs the password it was given, and
-	// those other modes render a hidden password field that always carries a value.
+	// Two separate reasons jsonData.password can be missing, and encoding it regardless
+	// used to send btoa(undefined) === "dW5kZWZpbmVk" - the base64 of the literal string
+	// "undefined" - answered as a real new password by the API (issue #549):
+	//
+	// 1. #change_password (edit mode, an authentication backend with a local password to
+	//    change at all) exists and is unticked. The password inputs are then disabled, and
+	//    serializeJSON() - like a real form submit - omits a disabled field entirely. An
+	//    admin's edit of someone else's profile with the box left unticked silently set
+	//    that account's password to the word "undefined".
+	//
+	// 2. Externally managed (reverse-proxy) authentication in edit mode has no password
+	//    field at all, checkbox included - userform.blade.php renders one only for create
+	//    mode there, a hidden placeholder CreateUser() needs but EditUser() must not keep
+	//    receiving on every ordinary edit (see that template's own comment: a present
+	//    password field revokes every other session of the account, issue #513). Checking
+	//    only the checkbox's absence - "no checkbox means always encode" - was true for
+	//    create mode and for embedded/disabled-auth's own hidden fields, but not for this
+	//    case, and sent the same bogus password there too (round 5).
+	//
+	// So neither the checkbox's state nor its mere absence is sufficient on its own:
+	// whether the field was serialized at all is what actually decides it.
 	var changePasswordCheckbox = $("#change_password");
+	var passwordWasSerialized = jsonData.hasOwnProperty("password");
 
-	if (changePasswordCheckbox.length === 0 || changePasswordCheckbox.prop("checked"))
+	if (passwordWasSerialized && (changePasswordCheckbox.length === 0 || changePasswordCheckbox.prop("checked")))
 	{
 		jsonData.password_base64 = btoa(jsonData.password);
 	}

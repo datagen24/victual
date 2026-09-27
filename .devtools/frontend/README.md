@@ -159,6 +159,11 @@ This is entirely a question of what the browser puts in the request body, which 
 PostgreSQL phase cannot see. CI runs it in `frontend-security` after the role workflow
 probe.
 
+Reverse-proxy (externally managed) authentication renders no such checkbox in either
+mode, so this probe cannot exercise it and `frontend-security` never boots an instance
+under that backend. That variant's body-shape coverage lives in
+`tests/Pgsql/PasswordRotationTest.php` instead.
+
 ## Location label resolution
 
 `node .devtools/frontend/location-labels.js --url http://127.0.0.1:8200` exercises the
