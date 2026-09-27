@@ -136,14 +136,18 @@
 			     userform.js: EditUser() revokes every other session of the account
 			     whenever a password field is present at all (issue #513). --}}
 			@else
-			<input type="hidden"
-				name="password"
-				id="password"
-				value="x">
-			<input type="hidden"
-				name="password_confirm"
-				id="password_confirm"
-				value="x">
+			{{-- Embedded installs and instances with authentication disabled both fall
+			     under DISABLE_AUTH's single-identity bypass (BaseAuthMiddleware): every
+			     caller becomes the same default user with no credential at all, so there
+			     is no local password to change here either, in either mode - the same
+			     situation externally managed authentication is in, just above. A fixed
+			     placeholder ("x") used to stand in for both modes, which was issue #549's
+			     own class of defect: every account created through this form got the same
+			     real, guessable password, dormant only until authentication was ever
+			     turned back on. Fixed the same way round 6 fixed it for reverse-proxy
+			     authentication - CreateUser() now accepts a missing password under these
+			     constants too and stores unusable random bytes instead
+			     (UsersApiController::CreatedUserPassword()). Issue #554, round 8. --}}
 			@endif
 
 			@include('components.userfieldsform', array(

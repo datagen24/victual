@@ -54,6 +54,21 @@ namespace
 	require_once VICTUAL_DATAPATH . '/config.php';
 	require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 
+	// app.php:44-57. The modes that fix a user up front do it here rather than in the
+	// authentication middleware, which is why BaseAuthMiddleware's own bypass branch
+	// never defines VICTUAL_USER_ID itself - it expects this to already have happened.
+	// authstack-subprocess-helper.php already replicates this; this helper needs it too
+	// as of round 8 (issue #554), the first time a PasswordRotationTest request actually
+	// reaches authenticated, request-scoped code (LocaleMiddleware's own user-setting
+	// lookup) under one of these bypass modes - every earlier round 8 attempt at a
+	// DISABLE_AUTH request got an "Undefined constant VICTUAL_USER_ID" 500 from exactly
+	// that gap instead.
+	if ((VICTUAL_MODE === 'dev' || VICTUAL_MODE === 'demo' || VICTUAL_MODE === 'prerelease' || VICTUAL_DISABLE_AUTH === true)
+		&& !defined('VICTUAL_USER_ID'))
+	{
+		define('VICTUAL_USER_ID', 1);
+	}
+
 	if (getenv('VICTUAL_TEST_TIMEZONE'))
 	{
 		date_default_timezone_set(getenv('VICTUAL_TEST_TIMEZONE'));

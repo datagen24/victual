@@ -444,20 +444,32 @@ class UsersApiController extends BaseApiController
 	}
 
 	/**
-	 * The password to store for a newly created user (round 6, issue #549's class of
-	 * defect). Every mode but one still requires the client to supply a real one via
-	 * RequiredField(); under externally managed (reverse-proxy) authentication, a
-	 * missing or blank submission is accepted instead, and cryptographically random
-	 * bytes - discarded immediately after password_hash() runs on them in
-	 * UsersService::CreateUser() - are stored in its place.
+	 * The password to store for a newly created user (round 6, extended round 8 -
+	 * issue #549's class of defect, twice over). Every mode but the three below still
+	 * requires the client to supply a real one via RequiredField(); under externally
+	 * managed (reverse-proxy) authentication, or with authentication disabled, or on an
+	 * embedded install, a missing or blank submission is accepted instead, and
+	 * cryptographically random bytes - discarded immediately after password_hash() runs
+	 * on them in UsersService::CreateUser() - are stored in its place. The predicate is
+	 * deliberately the exact negation of userform.blade.php's own outer condition for
+	 * rendering a real password field at all
+	 * (`!VICTUAL_IS_EMBEDDED_INSTALL && !VICTUAL_DISABLE_AUTH`, further gated by
+	 * `!defined(VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION)`) - narrowing it any further
+	 * would let one of those three modes' create page back into RequiredField()'s
+	 * refusal with no way to satisfy it; widening it would relax the default mode's own
+	 * requirement, which round 6 and this round both leave untouched.
 	 *
-	 * ReverseProxyAuthMiddleware never consults a local password to authenticate a
-	 * request at all - ReverseProxyAuthenticator::Authenticate() reads only the
-	 * proxy-supplied identity - so nothing stored here is ever meant to work as a
+	 * None of the three reasons this exists ever check a local password to authenticate
+	 * a request at all: ReverseProxyAuthMiddleware reads only the proxy-supplied
+	 * identity, and DISABLE_AUTH/an embedded install both go through
+	 * BaseAuthMiddleware's single-default-user bypass (SessionService::GetDefaultUser())
+	 * before any authenticator runs. So nothing stored here is ever meant to work as a
 	 * real credential. The view used to send a fixed placeholder ("x") to satisfy
-	 * RequiredField() (round 5), which built a real, guessable password that would
-	 * work the moment the deployment's backend ever switched to DefaultAuthMiddleware.
-	 * Random bytes cannot be guessed regardless of which backend is active later.
+	 * RequiredField() - round 5 for reverse-proxy mode, and, it turned out, round 6 had
+	 * left the same placeholder in place for these other two modes too (issue #554) -
+	 * which built a real, guessable password that would work the moment the deployment
+	 * either switched authentication backend or turned authentication back on. Random
+	 * bytes cannot be guessed regardless of what changes later.
 	 *
 	 * This mirrors, but does not reuse, the convention ReverseProxyAuthenticator
 	 * itself already uses when it auto-provisions a user on first sight of a
@@ -471,9 +483,11 @@ class UsersApiController extends BaseApiController
 	private static function CreatedUserPassword(array $requestBody): string
 	{
 		$submitted = $requestBody['password'] ?? null;
+		$hasNoLocalPasswordToCheck = defined('VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION')
+			|| VICTUAL_IS_EMBEDDED_INSTALL
+			|| VICTUAL_DISABLE_AUTH;
 
-		if (defined('VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION')
-			&& (!is_string($submitted) || trim($submitted) === ''))
+		if ($hasNoLocalPasswordToCheck && (!is_string($submitted) || trim($submitted) === ''))
 		{
 			return random_bytes(32);
 		}

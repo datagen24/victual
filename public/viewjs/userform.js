@@ -61,24 +61,29 @@ $('#save-user-button').on('click', function (e)
 		jsonData.picture_file_name = RandomString() + CleanFileName($("#user-picture")[0].files[0].name);
 	}
 
-	// Two separate reasons jsonData.password can be missing, and encoding it regardless
-	// used to send btoa(undefined) === "dW5kZWZpbmVk" - the base64 of the literal string
-	// "undefined" - answered as a real new password by the API (issue #549):
+	// jsonData.password can be missing for two different reasons, and encoding it
+	// regardless used to send btoa(undefined) === "dW5kZWZpbmVk" - the base64 of the
+	// literal string "undefined" - answered as a real new password by the API (issue
+	// #549, in three different modes across rounds 4, 5, 6 and 8):
 	//
-	// 1. #change_password (edit mode, an authentication backend with a local password to
-	//    change at all) exists and is unticked. The password inputs are then disabled, and
+	// 1. #change_password (edit mode, a backend with a local password a user can change
+	//    at all) exists and is unticked. The password inputs are then disabled, and
 	//    serializeJSON() - like a real form submit - omits a disabled field entirely. An
 	//    admin's edit of someone else's profile with the box left unticked silently set
-	//    that account's password to the word "undefined".
+	//    that account's password to the word "undefined" (round 4).
 	//
-	// 2. Externally managed (reverse-proxy) authentication in edit mode has no password
-	//    field at all, checkbox included - userform.blade.php renders one only for create
-	//    mode there, a hidden placeholder CreateUser() needs but EditUser() must not keep
-	//    receiving on every ordinary edit (see that template's own comment: a present
-	//    password field revokes every other session of the account, issue #513). Checking
-	//    only the checkbox's absence - "no checkbox means always encode" - was true for
-	//    create mode and for embedded/disabled-auth's own hidden fields, but not for this
-	//    case, and sent the same bogus password there too (round 5).
+	// 2. There is no local password to change at all - externally managed (reverse-proxy)
+	//    authentication, an embedded install, or authentication disabled - so
+	//    userform.blade.php renders no password field and no checkbox in edit mode, and,
+	//    as of round 8, none in create mode either: CreateUser() itself now accepts a
+	//    missing password under all three of those and stores an unusable one instead
+	//    (UsersApiController::CreatedUserPassword()). Checking only the checkbox's
+	//    absence - "no checkbox means always encode" - was true for create mode's own
+	//    missing checkbox back when every other checkbox-less mode still rendered a
+	//    hidden field with a real value; it stopped being true the moment create mode
+	//    could be checkbox-less too, and sent the same bogus password there instead
+	//    (round 5 for reverse-proxy, round 8 for embedded installs and disabled auth -
+	//    issue #554).
 	//
 	// So neither the checkbox's state nor its mere absence is sufficient on its own:
 	// whether the field was serialized at all is what actually decides it.

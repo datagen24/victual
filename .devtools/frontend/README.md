@@ -159,10 +159,17 @@ This is entirely a question of what the browser puts in the request body, which 
 PostgreSQL phase cannot see. CI runs it in `frontend-security` after the role workflow
 probe.
 
-Reverse-proxy (externally managed) authentication renders no such checkbox in either
-mode, so this probe cannot exercise it and `frontend-security` never boots an instance
-under that backend. That variant's body-shape coverage lives in
-`tests/Pgsql/PasswordRotationTest.php` instead.
+Externally managed (reverse-proxy) authentication, an embedded install and
+authentication disabled entirely all render no such checkbox in either mode - there is
+no local password to change - so this probe cannot exercise any of them, and
+`frontend-security` never boots an instance under any of those backends.
+`tests/Pgsql/PasswordRotationTest.php` covers their server-side behavior instead: the
+rendered form, and the API's handling of a request shaped like what that form actually
+sends.
+
+What none of that reaches is what a real browser's own `serializeJSON()` produces from
+the form in edit mode under any of the three. That half is genuinely untested by any
+automated check in this repository.
 
 ## Location label resolution
 

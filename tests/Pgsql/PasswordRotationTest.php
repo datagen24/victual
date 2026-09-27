@@ -64,6 +64,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	private const ADMIN_EDIT_OTHER_NO_PASSWORD = 9718;
 	private const SELF_EDIT_NO_PASSWORD = 9719;
 	private const REVERSE_PROXY_ADMIN = 9720;
+	private const DISABLE_AUTH_EDIT_TARGET = 9721;
 
 	public static function setUpBeforeClass(): void
 	{
@@ -187,6 +188,14 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		// consults one.
 		self::createUser(self::REVERSE_PROXY_ADMIN, 'rotation-reverse-proxy-admin', '');
 		self::grantAdmin(self::REVERSE_PROXY_ADMIN);
+
+		// issue #554 round 8: its own fixture, not RESET_TARGET - that one's sessions are
+		// already gone by the time this round's tests run, deleted by
+		// testAdministratorResettingAnotherUsersPasswordRevokesAllOfThatUsersSessions
+		// above, which is the whole point of that test.
+		self::createUser(self::DISABLE_AUTH_EDIT_TARGET, 'rotation-disable-auth-edit-target', 'disable-auth-edit-target-pw-1');
+		self::createSession('rotation-disable-auth-edit-target-session-a', self::DISABLE_AUTH_EDIT_TARGET);
+		self::createSession('rotation-disable-auth-edit-target-session-b', self::DISABLE_AUTH_EDIT_TARGET);
 	}
 
 	private static function createUser(int $id, string $username, string $password, bool $mustChangePassword = false): void
@@ -360,6 +369,72 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		$statement->execute([$userId]);
 
 		return (int)$statement->fetchColumn();
+	}
+
+	/**
+	 * Runs $body with DISABLE_AUTH's acting identity granted ADMIN and cleared of
+	 * must_change_password for the duration, then restores exactly what was there
+	 * before either change.
+	 *
+	 * That identity is id 1, unconditionally - not SessionService::GetDefaultUser()'s
+	 * own result (the account with the lowest id, queried fresh, which username/picture
+	 * do come from). app.php:44-57 defines VICTUAL_USER_ID as the literal integer 1 for
+	 * every mode that bypasses authentication, before BaseAuthMiddleware or
+	 * GetDefaultUser() ever run - see this class's own subprocess helper, which
+	 * replicates that bootstrap step - and every permission check in this codebase
+	 * reads VICTUAL_USER_ID, not the authenticated row's actual id. A real deployment
+	 * only ever satisfies both at once because its first-ever admin is the lowest id
+	 * there will ever be *and* is created by a fresh id sequence starting at 1; nothing
+	 * about this schema's other fixtures guarantees the second half, so this targets id
+	 * 1 directly rather than querying for "the lowest id" and risking a mismatch
+	 * against what VICTUAL_USER_ID will actually be.
+	 *
+	 * This class shares its schema/process with BootstrapAdminTest (both are in the
+	 * bootstrapadmin testsuite), and id 1 there belongs to a fixture of its own - not
+	 * one with an explicit id (9400+), but one a real POST /api/users plants without
+	 * one: explicit-id inserts elsewhere in this schema never advance the id sequence,
+	 * so the first row that relies on it for its id lands at 1. This class has no
+	 * reason to know what that fixture holds, so it restores exactly what was there
+	 * rather than assuming.
+	 *
+	 * @param callable(int $defaultUserId): void $body
+	 */
+	private static function withDisableAuthDefaultGrantedAdmin(callable $body): void
+	{
+		$defaultUserId = 1;
+		$adminRoleId = (int)self::$db->query("SELECT id FROM roles WHERE code = 'ADMIN'")->fetchColumn();
+
+		$statement = self::$db->prepare('SELECT count(*) FROM user_roles WHERE user_id = ? AND role_id = ?');
+		$statement->execute([$defaultUserId, $adminRoleId]);
+		$alreadyAdmin = (int)$statement->fetchColumn() > 0;
+		$wasFlagged = self::flag($defaultUserId) === 1;
+
+		if (!$alreadyAdmin)
+		{
+			self::$db->prepare('INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)')
+				->execute([$defaultUserId, $adminRoleId]);
+		}
+		if ($wasFlagged)
+		{
+			self::$db->exec('UPDATE users SET must_change_password = false WHERE id = ' . $defaultUserId);
+		}
+
+		try
+		{
+			$body($defaultUserId);
+		}
+		finally
+		{
+			if (!$alreadyAdmin)
+			{
+				self::$db->prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?')
+					->execute([$defaultUserId, $adminRoleId]);
+			}
+			if ($wasFlagged)
+			{
+				self::$db->exec('UPDATE users SET must_change_password = true WHERE id = ' . $defaultUserId);
+			}
+		}
 	}
 
 	private static function storedUsername(int $userId): string
@@ -1304,6 +1379,123 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		$statement = self::$db->prepare('SELECT count(*) FROM users WHERE username = ?');
 		$statement->execute([$newUsername]);
 		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused create must not leave a user row behind');
+	}
+
+	/**
+	 * issue #554, round 8: the same class of defect round 6 fixed for reverse-proxy
+	 * authentication was still present for the other two modes that also have no local
+	 * password to change - an embedded install and authentication disabled entirely.
+	 * views/userform.blade.php's outer @else branch (embedded or disabled auth) still
+	 * rendered a hidden password/password_confirm pair with value="x" in both create
+	 * and edit mode: userform.js serialized and sent it every time, there being no
+	 * #change_password to gate on, so a self-edit failed the current-password check
+	 * every time, and an admin's edit of another user silently reset that account's
+	 * password to "x" and, because of this PR's own issue #513 fix, revoked every one
+	 * of their other sessions.
+	 *
+	 * DISABLE_AUTH is what these four tests exercise this through - the only one of the
+	 * two conditions this harness can independently override; an embedded install is a
+	 * build-time constant this subprocess helper itself hardcodes false, the same way
+	 * every other Pgsql test process's helper does, so that half of the fix is covered
+	 * by code review rather than a test. See withDisableAuthDefaultGrantedAdmin()'s own
+	 * docblock for what DISABLE_AUTH's single-identity bypass means for these fixtures.
+	 *
+	 * Only the two create tests immediately below fail against the unfixed code. The two
+	 * edit tests that follow them build their request body by hand, the same way every
+	 * other HTTP-level test in this file does, rather than rendering userform.blade.php
+	 * and letting userform.js serialize it - so neither one can actually put the old
+	 * template's hidden password field in front of anything, the same reason round 4's
+	 * own "no password key at all" tests already characterized rather than reproduced a
+	 * regression. What changed for EditUser() in round 8: nothing - it is CreateUser()
+	 * and the view that did. Both edit tests are kept anyway, to pin the correct
+	 * behavior they document, with that honestly noted on each.
+	 */
+	public function testDisableAuthCreateWithoutAPasswordStoresAnUnusableOneInstead(): void
+	{
+		self::withDisableAuthDefaultGrantedAdmin(function () {
+			$newUsername = 'rotation-disable-auth-created';
+
+			$create = self::request([
+				'method' => 'POST',
+				'path' => '/api/users',
+				'body' => ['username' => $newUsername],
+				// no password/password_base64 key at all - what the fixed view now sends.
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(204, $create['status'], $create['body']);
+
+			$statement = self::$db->prepare('SELECT password FROM users WHERE username = ?');
+			$statement->execute([$newUsername]);
+			$storedHash = $statement->fetchColumn();
+
+			self::assertNotFalse($storedHash, 'the account was not actually created');
+			self::assertFalse(password_verify('x', $storedHash), 'must not be the placeholder issue #554 found');
+			self::assertFalse(password_verify('undefined', $storedHash), 'must not be issue #549\'s original bogus value');
+			self::assertFalse(password_verify('', $storedHash),
+				'must not verify empty at all, unlike ReverseProxyAuthenticator\'s own auto-provisioning convention');
+		});
+	}
+
+	public function testDisableAuthCreatePageRendersNoPasswordField(): void
+	{
+		self::withDisableAuthDefaultGrantedAdmin(function () {
+			$createPage = self::request([
+				'method' => 'GET',
+				'path' => '/user/new',
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(200, $createPage['status'], $createPage['body']);
+			self::assertStringNotContainsString('name="password"', $createPage['body'],
+				'create mode must render no password field either, now that CreateUser() '
+				. 'accepts a missing one with authentication disabled (issue #554, round 8)');
+			self::assertStringNotContainsString('name="password_confirm"', $createPage['body']);
+			self::assertStringNotContainsString('id="change_password"', $createPage['body']);
+		});
+	}
+
+	/** Characterizes correct behaviour - see the class docblock above these four tests. */
+	public function testDisableAuthOrdinaryEditOfAnotherUserLeavesPasswordAndSessionsUntouched(): void
+	{
+		self::withDisableAuthDefaultGrantedAdmin(function () {
+			$originalHash = self::storedPasswordHash(self::DISABLE_AUTH_EDIT_TARGET);
+
+			$edit = self::request([
+				'method' => 'PUT',
+				'path' => '/api/users/' . self::DISABLE_AUTH_EDIT_TARGET,
+				'body' => [
+					'username' => 'rotation-disable-auth-edit-target',
+					// no password key at all
+				],
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(204, $edit['status'], $edit['body']);
+			self::assertSame($originalHash, self::storedPasswordHash(self::DISABLE_AUTH_EDIT_TARGET), 'the stored hash is untouched');
+			self::assertTrue(self::sessionExists('rotation-disable-auth-edit-target-session-a'),
+				'the target\'s own sessions survive a write that never touched the password');
+			self::assertTrue(self::sessionExists('rotation-disable-auth-edit-target-session-b'));
+		});
+	}
+
+	/** Characterizes correct behaviour - see the class docblock above these four tests. */
+	public function testDisableAuthSelfEditSucceedsWithoutAPassword(): void
+	{
+		self::withDisableAuthDefaultGrantedAdmin(function (int $defaultUserId) {
+			$statement = self::$db->prepare('SELECT username FROM users WHERE id = ?');
+			$statement->execute([$defaultUserId]);
+			$defaultUsername = (string)$statement->fetchColumn();
+
+			$edit = self::request([
+				'method' => 'PUT',
+				'path' => '/api/users/' . $defaultUserId,
+				'body' => [
+					'username' => $defaultUsername,
+					'first_name' => 'Renamed',
+					// no password or current_password key at all
+				],
+			], ['DISABLE_AUTH' => 'true']);
+
+			self::assertSame(204, $edit['status'], $edit['body']);
+		});
 	}
 
 	/**
