@@ -7,8 +7,8 @@
   [487](https://github.com/datagen24/victual/issues/487) remediation session the same day.
 - **Referenced by:** [issue 488](https://github.com/datagen24/victual/issues/488) (C1),
   [issue 491](https://github.com/datagen24/victual/issues/491) (H2); relies on
-  [PR #531](https://github.com/datagen24/victual/pull/531) (draft, unmerged at
-  2026-09-26) remaining the safety net named in decision 4;
+  [PR #531](https://github.com/datagen24/victual/pull/531) (open, unmerged at
+  2026-09-27, head `e60a5d22`) remaining the safety net named in decision 4;
   [ADR-0010](0010-workload-standard.md), whose workload standard the new maintenance
   routine must meet.
 
@@ -70,40 +70,66 @@ introduced, so a live label is not protected from being merged away.
 A full consume followed by undo separately recreates the stock row under a new `id`, while
 the label, keyed to the old id, stays retired.
 
-The maintainer's reasoning: merging exists to keep an upstream SQLite-descended database
-tidy, is better done as maintenance than as a side effect of every write, and has been seen
-to squash an expiration.
+The maintainer suggested that merging likely keeps an upstream SQLite-descended database
+tidy. That explanation is tentative; it does not establish a measured operational need
+or a maintainer rejection of removing merging entirely.
 
 ## Decision
 
-The maintainer decided:
+The maintainer's 2026-09-26 decision moves merging to an explicit maintenance command
+and limits eligible rows. The CronJob deployment, locking and identity safeguards, and
+location-total weighing behavior below are proposed refinements requiring acceptance.
 
 1. **Remove the three inline calls.** `AddProduct()`, `EditStockEntry()` and
    `WeighLocation()` no longer call `CompactStockEntries()` as part of their own
    transactions.
-2. **Merging becomes an explicit maintenance command**, runnable from a CronJob declared in
-   `deploy/` per the workload standard ([ADR-0010](0010-workload-standard.md)). No CronJob
-   exists in `deploy/` today — `deploy/kind/roles-job.yaml` is a one-off `Job`, and
-   `deploy/k3s/label-workers.yaml` declares a long-running `Deployment` — so this is the
-   first CronJob in the tree, and its manifest is subject to
-   `.devtools/ci/check_deploy_manifest.py` the same as every other declared workload.
-3. **The routine merges only rows whose `best_before_date` is `NULL` or `2999-12-31`** —
-   this fork's "never expires" sentinel, in use since `migrations/0033.sql` for
-   `default_best_before_days = -1` and documented at
-   `services/StockService.php:219` — **and that carry no live label**, in addition to
-   today's three `stock_splits` exclusions (per-unit `stock_id` prefixed `x`, a
-   `userfield_values` row, a measured remainder). Rows with a real due date are never
-   merged, by the maintenance routine or anything else.
-4. **[PR #531](https://github.com/datagen24/victual/pull/531)'s atomic undo refusal
-   remains the safety net** for bookings on rows a maintenance merge has touched. As
-   drafted, its `STOCK_EDIT_OLD` branch refuses an undo atomically — rather than silently
-   destroying another contribution or misreporting — when the target row's current amount
-   no longer matches what the correlated `STOCK_EDIT_NEW` booking recorded: the signature of
-   a merge having touched the row since the edit. The PR's own description states this is an
-   interim, partial fix for #488, not the lot/lineage redesign #488's checklist item 2 still
-   asks for.
+2. **Merging becomes an explicit maintenance command.** A CronJob in `deploy/` is the
+   proposed scheduling mechanism under [ADR-0010](0010-workload-standard.md).
+   `deploy/k3s/label-workers.yaml` already declares two CronJobs; the maintenance job
+   joins them and `.devtools/ci/check_deploy_manifest.py` checks its manifest.
+3. **Only unlabelled rows that never expire may merge.** Eligibility requires
+   `best_before_date IS NULL` or `best_before_date = '2999-12-31'`, the product sentinel
+   used by `StockService::AddProduct()` and freezer transfers in `TransferProduct()`.
+   Every other grouping column must match. Preserve the existing exclusions for
+   per-unit `stock_id` values prefixed `x`, stock userfield values, and measured remainders.
+   A live label means a `labels` row with `kind = 'stock_entry'`,
+   `target_id = stock.id`, and `retired_at IS NULL`; such a stock row cannot merge.
 
-**Rejected:**
+   Within the product lock and one transaction, lock candidate stock rows with
+   `SELECT ... FOR UPDATE` in ascending row-id order. After the locks are granted,
+   re-read eligibility, including live labels, and recompute groups and totals before
+   writing. Leave out rows that no longer qualify. Do not add a product-lock acquisition
+   to label issuance: issuance holds the import lock before its row lock, while stock
+   transfers can hold the product lock before requesting the import lock for reprinting.
+
+   Skip a group when any of its `stock_id` values is held by a stock row outside that
+   group. Check this under the product lock before any identity rewrite. A merge changes
+   only selected rows and their associated bookings and lineage; it must leave excluded
+   rows and their history unchanged. Skip a group if lineage or historical-booking ownership
+   cannot be confined to it without changing an outside row's history.
+4. **Atomic undo refusal covers both `STOCK_EDIT_OLD` and `PRODUCT_OPENED`.**
+   [PR #531](https://github.com/datagen24/victual/pull/531), or an equivalent fix, must
+   refuse an ambiguous reversal without changing stock or marking the booking undone.
+   Its row-identity and contribution checks protect against a maintenance merge deleting
+   or changing the target. This is a partial fix for #488, not the lot/lineage redesign
+   that issue still requires. The merge never rewrites `stock_log.stock_row_id`.
+5. **`WeighLocation()` corrects the location's total without merging its rows.** For the
+   existing single-product vessel case, compare the converted net reading with the sum of
+   that product's stock at the exact location. Lock and re-read that stock before deciding
+   the difference, and commit the correction and its bookings in one transaction.
+   A lower reading consumes the difference through the existing inventory-correction
+   service path in ordinary consumption order, restricted to that location. A higher
+   reading adds a separate positive inventory-correction row there. Existing rows retain
+   their due dates and identities; ordinary full-consumption label retirement still applies.
+
+   Do not copy an arbitrary existing lot's due date onto a positive correction. Before
+   implementation, specify how the operator supplies the new row's date and other required
+   purchase metadata, or how a documented inventory default supplies them. That contract
+   is an acceptance gate. A matching reading creates no booking. Multi-product locations
+   remain refused. The implementation must preserve ordinary booking and undo behavior;
+   weighing does not directly overwrite several rows or revive retired labels.
+
+**Alternatives considered:**
 
 - **Refusal alone, with inline merging kept.** Leaves the label-retirement hazard (#491) and
   the expiration-squashing risk live on every purchase, edit and weighing — the merge itself
@@ -113,56 +139,70 @@ The maintainer decided:
   merge already discarded that information — the same gap issue #487's "Corrections to the
   audit" item 5 names: "Stable row id is insufficient by itself. Repointing every booking to
   one merged row does not recover which booking contributed which quantity or attributes."
-- **Dropping merging entirely.** Rejected because the maintainer states it serves a real
-  purpose — keeping an upstream SQLite-descended database tidy — and moving it to
-  maintenance preserves that purpose while removing the transactional hazard.
+- **Dropping merging entirely.** This proposal retains an explicit maintenance command
+  as the maintainer requested. Its rationale is that optional consolidation can reduce
+  duplicate rows. No measurement establishes that benefit, and the maintainer's tentative
+  explanation does not constitute a rejection of removing merging.
 
 ## Consequences
 
-- **`WeighLocation()` currently depends on compaction having just run.** Its own comment
-  (`services/StockService.php:2657-2662`) says compaction runs first "so that ordinary
-  backstock-fed refills … collapse into the one row this correction can set the amount of",
-  and it then refuses unless exactly one row remains
-  (`services/StockService.php:2666-2668`). Removing the inline call means a vessel fed by more
-  than one uncompacted refill in the current session cannot be weighed until the maintenance
-  routine has run — a new operational dependency this decision creates. The accepting pull
-  request must state how an operator is told why a weighing was refused, or how the weighing
-  path triggers (or waits for) compaction itself without reintroducing an inline call.
+- Without decision 5, removing inline compaction would make multi-row vessels impossible
+  to weigh whenever their rows have real due dates or live labels. Waiting for maintenance
+  cannot resolve those cases. Correcting the location total removes that dependency and
+  preserves separate lot dates. Identical dated purchases will never merge again.
 - **A row's mergeability becomes visible and conditional** (due date and label state)
   rather than an unconditional side effect of every purchase, edit, and weighing. A row
   carrying a real expiration is never at risk of the id/lineage churn #488 and #491
   describe, closing the largest share of both findings' surface without changing
   `UndoBooking()` itself.
 - **The underlying lineage gap is not solved.** The maintenance routine still performs the
-  same three-statement rewrite (`stock_id` repoint, `stock_log` repoint,
-  `stock_entry_origins` repoint) as today's inline call, so issue #487 Corrections item 5's
+  identity and lineage rewrites on eligible groups, so issue #487 Corrections item 5's
   finding stands: a stable row id does not by itself recover which booking contributed which
   quantity after a merge. This decision bounds the finding's surface to rows that can never
-  expire and carry no label; it does not close it.
+  expire and carry no label; it does not close it. `stock_log.stock_row_id` stays
+  unchanged, so bookings on deleted rows retain their original physical row ids.
+  PR #531 can refuse edit/open undo when that identity is gone; consume undo can recreate
+  a fully consumed row under its original id. Reusing an id does not itself revive a label.
 - Nothing here is built: no maintenance command, no CronJob, no changed `stock_splits`
   predicate. This record constrains the design of that work; it does not describe code that
   exists.
 
 ## Open questions
 
-1. **#491's other half.** A full consume followed by undo recreates the row under a new id
-   while its label stays retired. Should undo reuse the original row id and revive the
-   label, or should the label stay retired? Not decided here.
+1. **#491's remaining label-revival question.** PR #531 at `e60a5d22` already restores
+   a fully consumed row under its original id. The retirement trigger clears the label's
+   `target_id`, so restoring the row alone leaves the label retired. Whether undo should
+   revive that label remains undecided; this proposal does not add revival.
+2. **Positive weighing correction metadata.** Decision 5 adds a row when the measured
+   total increases. Which date and other purchase metadata does the operator supply, and
+   which existing inventory defaults may apply? This must be specified before implementation
+   and demonstrated before acceptance; an arbitrary existing lot cannot supply the answer.
 
 ## Acceptance prerequisites
 
-1. The maintenance command is demonstrated against fixtures matching #488's and #491's
-   reproductions:
-   - a row with a real due date is never merged;
-   - a labelled row is never merged, even when every other `stock_splits` column matches;
-   - a `NULL`/`2999-12-31` row with no label is merged exactly as `CompactStockEntries()`
-     merges it today.
-2. [PR #531](https://github.com/datagen24/victual/pull/531) or an equivalent fix is merged,
-   so the `STOCK_EDIT_OLD` refusal this record relies on as a safety net (decision 4) is
-   actually in force before the three inline calls are removed.
-3. The CronJob is declared in `deploy/` and checked against the workload standard's four
-   properties — stateless, idempotent, unprivileged, declared
-   ([ADR-0010](0010-workload-standard.md)) — the way `.devtools/ci/check_deploy_manifest.py`
-   checks every other declared workload.
-4. The decider confirms `WeighLocation()`'s new operational dependency (Consequences) is
-   acceptable, or the accepting pull request states how it is mitigated.
+1. The maintenance command passes real-PostgreSQL fixtures for #488 and #491. Dated,
+   labelled, measured and userfield-bearing rows stay separate; eligible matching
+   never-expiring rows merge. A group sharing a `stock_id` with an outside row is skipped.
+   Force the protected row's shared id to sort after another candidate id, and verify
+   its amount, `stock_id`, bookings, lineage and live label remain unchanged.
+   Two-connection tests cover label issuance before candidate locks and issuance waiting
+   behind maintenance. A label committed before the eligibility recheck protects its row;
+   issuance after a committed deletion must fail without producing a live orphan label.
+2. PR #531 or an equivalent fix is merged before inline compaction is removed. Demonstrate
+   atomic refusal for both `STOCK_EDIT_OLD` and `PRODUCT_OPENED` after maintenance changes
+   their target, in both surviving-row orders. Assert unchanged `stock_row_id` values,
+   quantities, opened totals, and ledger state on refusal. Test interrupted maintenance
+   rollback and a repeat run with no new eligible rows.
+3. The proposed CronJob is declared and passes the manifest checks. Review separately
+   demonstrates ADR-0010's statelessness, idempotence, dedicated least-privilege credential
+   and database role, and deployment requirements; a manifest check alone proves neither
+   idempotence nor appropriate privileges.
+4. The decider confirms location-total weighing and resolves open question 2. Regression
+   tests weigh a vessel after two identical dated refills and repeat with a labelled row.
+   Cover lower, higher and unchanged readings, exact-location isolation, rollback, and
+   undo. Booking deltas must equal the correction; surviving rows keep their due dates
+   and identities. Test full-consumption label retirement separately from merge exclusion.
+   Remove all three inline calls only with this weighing behavior available.
+
+Implementation and verification belong in separate changes. The acceptance pull request
+links their evidence and carries only the required lifecycle bookkeeping.

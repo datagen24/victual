@@ -43,8 +43,9 @@ The issue's required outcome is to decide the semantics and disclose them, and t
 present recursive aggregation as already accepted."
 `docs/manual/using-victual/stock.md:66-67` already does exactly that: "groups can nest, and
 a group's own minimum stock amount rolls up from its members' shortfalls" is written as
-current behavior. It is not true today. Since nothing described below is built, it will not
-become true merely by this decision either. The sentence needs correcting independently of
+current behavior. The current view includes direct members only, and computes stock
+against the group's own minimum, not the sum of member shortfalls. The sentence remains
+wrong even after descendant stock is included. The sentence needs correcting independently of
 this record's outcome, and this record does not perform that correction.
 
 Plan 03 recorded, when the view was direct-members-only, that amounts are "summed in each
@@ -73,21 +74,33 @@ subtree through `product_groups_resolved` (`ancestor_product_group_id = pg.id`),
 group's reported shortfall continues to include its own direct members — the self-pair at
 depth 0 — as well as every descendant's.
 
+For an active group G with a nonzero minimum, compute
+`G.min_stock_amount - SUM(effective_amount(p))` over active products filed in G or any
+of its descendants, counting each product once. An empty sum is zero. A product's
+effective amount is its stock minus opened stock when `treat_opened_as_out_of_stock = 1`.
+Each product contributes in its own stock unit, without conversion. List G only when the
+result is positive. A subgroup's minimum never enters its ancestor's calculation.
+
+As a proposed refinement, active products under inactive subgroups still contribute to
+active ancestors. Group activity controls whether that group's own shortfall is reported;
+it does not remove active products or their stock from an ancestor's subtree. An inactive
+intermediate group does not stop traversal. Acceptance must confirm this rule.
+
 ## Consequences
 
 - **For the view:** this is a migration. `product_groups_missing`'s `member` join is
   rewritten to join through `product_groups_resolved` rather than directly on
   `product_group_id`. No other column of the view changes.
-- **For the UI:** `controllers/StockController.php:273`'s widening join needs the same
-  change. Without it, a group reported short through a descendant's shortfall is named on
-  the overview (per plan 03's design), but the products a shopper would need to see stay
-  filtered out by `is_in_stock_or_below_min_stock` and are never rendered. That breaks the
-  "click the group name, see its products" action from plan 03, for exactly the case this
-  decision adds.
-- **For the Manual:** `docs/manual/using-victual/stock.md:66-67`'s existing sentence
-  becomes accurate only once this decision is implemented; it is inaccurate today
-  regardless of this decision (see Context), and correcting or annotating it is separate
-  work this record does not perform.
+- **For the UI:** widen the controller's product selection through the closure view and
+  update the browser filter together. Filter options and short-group buttons carry group
+  ids. Each product row matches its direct group id and all ancestor ids from
+  `product_groups_resolved`, using delimited tokens as the location filter does.
+  Show paths to distinguish same-named groups under different parents; names remain display
+  text. This also addresses [issue #562](https://github.com/datagen24/victual/issues/562).
+- **For the Manual:** the existing sentence describes summed member shortfalls, not stock
+  summed against the group's own minimum. It is wrong before and after this change.
+  Prerequisite 3 requires replacing it with the formula in Decision and an accurate
+  statement of which membership scope is implemented.
 - **A product counted toward both a child's and a parent's minimum.** With roll-up, one
   product's stock can be the entire reason both its own direct group and every ancestor
   group report a shortfall. Each row stays independently true: plan 03 Q2 already
@@ -127,14 +140,21 @@ structure.
 
 ## Acceptance prerequisites
 
-1. The updated join is demonstrated against a fixture with a three-level tree (mirroring
-   ADR-0023's `Spices / Garlic / Fresh` shape): a root minimum is satisfied by a leaf
-   descendant's stock, and a group's own direct members still count when it has no
-   descendants.
-2. `controllers/StockController.php:273` is updated in the same change, with a regression
-   showing the overview renders a descendant's products when only an ancestor group is
-   reported short.
-3. `docs/manual/using-victual/stock.md:66-67` is reconciled with whatever this decision's
-   implementation actually ships — corrected to describe roll-up accurately if it ships with
-   this change, or corrected to state that roll-up is proposed rather than current if
-   implementation is deferred past this record's acceptance.
+1. Real-PostgreSQL fixtures cover a three-level tree, direct members together with
+   descendants, empty groups, inactive products, opened-stock exclusion, and single-count
+   contributions. With five units in the child, parent minimum 3 and child minimum 10
+   report only the child short by 5; parent minimum 10 and child minimum 2 report only
+   the parent short by 5. The decider confirms that active products under inactive groups
+   count; test an inactive intermediate group and confirm its own shortfall is not listed.
+2. The controller selection and browser filter change together. A probe in
+   `.devtools/frontend/` clicks a short ancestor and sees its descendant's product, with
+   out-of-stock products otherwise hidden. It also filters two same-named groups under
+   different parents independently, distinguishes their displayed paths, and excludes
+   unrelated branches. Options, buttons and row membership use ids throughout.
+3. The Manual replaces the claim about members' shortfalls with the group's own minimum
+   minus summed effective stock, explaining opened-stock exclusion and the lack of unit
+   conversion. It describes direct membership until implementation ships, then descendant
+   membership and the inactive-subgroup rule. Acceptance alone does not establish delivery.
+
+Implementation and verification belong in separate changes; the acceptance pull request
+links the evidence and contains only lifecycle bookkeeping.
