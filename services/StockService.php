@@ -66,24 +66,28 @@ class StockService extends BaseService
 	/** Transfer between locations: addition side at the destination location (positive amount, correlated with _FROM) */
 	const TRANSACTION_TYPE_TRANSFER_TO = 'transfer_to';
 
-	/**
-	 * The tolerance a stock amount comparison in UndoBooking()/ConsumeProduct() treats as
-	 * "the same amount" or "zero", in the product's stock quantity unit. Maintainer decision
-	 * during the #487 remediation (Proposed ADR pending): replaces the round($x, 2) convention
-	 * those comparisons used, whose 0.005-unit threshold silently destroyed or fabricated real
-	 * small remainders - a 0.004 lot compacted into a larger entry, then separated again by an
-	 * undo, rounded to zero and was deleted outright rather than kept. 1e-9 absorbs float noise
-	 * for rows up to roughly 100,000 stock units over about a thousand fractional bookings -
-	 * comfortably below any amount a user or a device could actually enter at that scale, so it
-	 * distinguishes floating-point noise from a real quantity there without reintroducing the
-	 * destructive rounding this replaces. It is not a bound at every scale: ADR-0032's own
-	 * validator measured adjacent doubles more than 1e-9 apart from 2^23 (8,388,608) up, a
-	 * 1e6-unit row drifting 3.5e-9 after 1,000 fractional bookings, and a 4e6-unit row drifting
-	 * 1.4e-9 after only 10 - larger bulk rows can drift beyond this tolerance. See ADR-0032
-	 * (Proposed), whose own magnitude question is still open. Only the comparisons this PR
-	 * touches were converted; other round($x, 2) call sites in this file are a later pass.
-	 */
+	/** Absolute floor for ADR-0032's stock-unit comparison tolerance. */
 	const AMOUNT_TOLERANCE = 1e-9;
+
+	/**
+	 * Compares finite amounts in the same stock unit under ADR-0032.
+	 * Pass the subtraction operands when deciding whether a remainder is zero:
+	 * comparing the remainder alone would lose the relative tolerance's scale.
+	 * Measured-container coherence and input sign checks remain exact.
+	 *
+	 * @return int -1, 0 or 1 when $a is less than, equal to or greater than $b
+	 */
+	public static function CompareAmounts(float $a, float $b): int
+	{
+		if (!is_finite($a) || !is_finite($b))
+		{
+			throw new \InvalidArgumentException('Stock amounts must be finite');
+		}
+
+		$difference = $a - $b;
+		$tolerance = max(self::AMOUNT_TOLERANCE, 1e-12 * max(abs($a), abs($b)));
+		return $difference > $tolerance ? 1 : ($difference < -$tolerance ? -1 : 0);
+	}
 
 	/**
 	 * Extensions ExternalBarcodeLookup() will store a downloaded or inline barcode picture
@@ -287,6 +291,11 @@ class StockService extends BaseService
 	 */
 	public function AddProduct(int $productId, float $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId = null, $shoppingLocationId = null, &$transactionId = null, $stockLabelType = 0, $note = null)
 	{
+		if (!is_finite($amount) || $amount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
 		if (!$this->ProductExists($productId))
 		{
 			throw new \Exception('Product does not exist or is inactive');
@@ -665,14 +674,19 @@ class StockService extends BaseService
 	 */
 	public function ConsumeProduct(int $productId, float $amount, bool $spoiled, $transactionType, $specificStockEntryId = 'default', $recipeId = null, $locationId = null, &$transactionId = null, $allowSubproductSubstitution = false, $consumeExactAmount = false)
 	{
+		if (!is_finite($amount) || $amount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
+		if (self::CompareAmounts($amount, 0) == 0)
+		{
+			throw new \InvalidArgumentException('Amount must be greater than ' . self::AMOUNT_TOLERANCE);
+		}
+
 		if (!$this->ProductExists($productId))
 		{
 			throw new \Exception('Product does not exist or is inactive');
-		}
-
-		if ($amount <= 0)
-		{
-			throw new \Exception('Amount can\'t be <= 0');
 		}
 
 		if ($locationId !== null && !$this->LocationExists($locationId))
@@ -747,7 +761,7 @@ class StockService extends BaseService
 				// substitution candidates are summed in $productId's own stock unit rather than
 				// as raw amounts (#487 correction 4).
 				$productStockAmount = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $productDetails->product->qu_id_stock);
-				if (round($amount, 2) > round($productStockAmount, 2))
+				if (self::CompareAmounts($amount, $productStockAmount) > 0)
 				{
 					throw new \Exception('Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)');
 				}
@@ -757,15 +771,15 @@ class StockService extends BaseService
 					// A whole-take below can leave $amount a hair off zero either way (CodeRabbit
 					// review of PR #531: the subtraction is exact float arithmetic on values that
 					// were not exact multiples of each other to begin with) - compared within
-					// AMOUNT_TOLERANCE, like every other zero/negative decision this file makes,
+					// the shared tolerance, like every other zero/negative decision this file makes,
 					// rather than by exact equality, so a residue too small to be real does not
 					// send the loop looking for one more candidate.
-					if (abs($amount) <= self::AMOUNT_TOLERANCE)
+					if (self::CompareAmounts($amount, 0) == 0)
 					{
 						break;
 					}
 
-					if ($stockEntry->amount < -self::AMOUNT_TOLERANCE)
+					if (self::CompareAmounts($stockEntry->amount, 0) < 0)
 					{
 						// A persisted stock row should never be genuinely negative, but a
 						// defect elsewhere in the ledger (#489 C2) could still leave one, and
@@ -778,7 +792,7 @@ class StockService extends BaseService
 						throw new \Exception('Cannot consume: a candidate stock entry holds a non-positive amount and stock data needs correction');
 					}
 
-					if ($stockEntry->amount <= self::AMOUNT_TOLERANCE)
+					if (self::CompareAmounts($stockEntry->amount, 0) == 0)
 					{
 						// A legitimate zero-amount row - WeighLocation() can leave one for a
 						// vessel whose gross reading equals its tare, and so can
@@ -800,10 +814,10 @@ class StockService extends BaseService
 						}
 					}
 
-					if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
+					if (self::CompareAmounts($stockEntry->amount, $amount) <= 0)
 					{
 						// Take the whole stock entry - not only when $amount covers it exactly
-						// or more, but also when it falls short by no more than AMOUNT_TOLERANCE
+						// or more, but also when it falls short by no more than the shared tolerance
 						// (CodeRabbit review of PR #531): splitting on a shortfall that small
 						// would write $stockEntry->amount - $amount, a float residue like
 						// 0.30000000000000004 - 0.3 = 5.5e-17, onto the row below instead of
@@ -849,7 +863,7 @@ class StockService extends BaseService
 
 						$stockEntry->delete();
 
-						$amount -= $stockEntry->amount;
+						$amount = self::CompareAmounts($amount, $stockEntry->amount) == 0 ? 0.0 : $amount - $stockEntry->amount;
 
 						if ($allowSubproductSubstitution && $stockEntry->product_id != $productId && $conversion != null)
 						{
@@ -860,7 +874,7 @@ class StockService extends BaseService
 					}
 					else
 					{
-						// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+						// Stock entry amount is > than needed amount by more than the shared tolerance
 						// (the branch above now also takes anything closer than that) -> split the
 						// stock entry resp. update the amount. $restStockAmount is a real remainder,
 						// not a float artifact, by construction.
@@ -961,21 +975,15 @@ class StockService extends BaseService
 	 */
 	public function EditStockEntry(int $stockRowId, float $amount, $bestBeforeDate, $locationId, $shoppingLocationId, $price, $open, $purchasedDate, $note = null)
 	{
+		if (!is_finite($amount) || $amount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
 		$stockRow = $this->DB->stock()->where('id = :1', $stockRowId)->fetch();
 		if ($stockRow === null)
 		{
 			throw new \Exception('Stock does not exist');
-		}
-
-		// A negative amount is never a valid edit (issue #492, audit finding H3): refused
-		// here, atomically, before anything is read or written, so every caller - the API
-		// controller and the internal WeighLocation() alike - gets the same refusal instead
-		// of a persisted negative stock row. Zero is deliberately left able to succeed here;
-		// zero-stock/zero-vessel semantics are their own, still-undecided question (see the
-		// H3 disposition in issue #487 and WeighLocation()'s own zero-amount write).
-		if ($amount < 0)
-		{
-			throw new \Exception('Amount can\'t be negative');
 		}
 
 		$productId = $stockRow->product_id;
@@ -1019,9 +1027,8 @@ class StockService extends BaseService
 			$note = $note === $keepStoredValue ? $stockRow->note : $note;
 
 			// Whether the edited state still permits the measurement (if any) this entry
-			// already carries. round() guards the float amount comparison the CHECK itself
-			// does exactly.
-			$staysCoherent = boolval($open) && round($amount, 2) == 1.0;
+			// already carries. ADR-0032 requires the same exact amount as the SQL CHECK.
+			$staysCoherent = boolval($open) && $amount == 1.0;
 
 			$measurementBefore = [
 				'opened_amount' => $stockRow->opened_amount,
@@ -1152,7 +1159,7 @@ class StockService extends BaseService
 				throw new \Exception('Stock does not exist');
 			}
 
-			if ($stockRow->open != 1 || round($stockRow->amount, 2) != 1.0)
+			if ($stockRow->open != 1 || $stockRow->amount != 1.0)
 			{
 				throw new \Exception('Only a single opened container (open, amount = 1) can be measured');
 			}
@@ -2051,6 +2058,11 @@ class StockService extends BaseService
 	 */
 	public function InventoryProduct(int $productId, float $newAmount, $bestBeforeDate, $locationId = null, $price = null, $shoppingLocationId = null, $purchasedDate = null, $stockLabelType = 0, $note = null)
 	{
+		if (!is_finite($newAmount) || $newAmount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
 		if (!$this->ProductExists($productId))
 		{
 			throw new \Exception('Product does not exist or is inactive');
@@ -2090,24 +2102,23 @@ class StockService extends BaseService
 			// Product-level tare weight handling (the gross-reading passthrough this used to
 			// describe) is retired under ADR-0022 decisions 4 and 7 (2026-09-14); see AddProduct()
 			// and ConsumeProduct(). $newAmount is always the net counted total now.
-			if ($newAmount == $productDetails->stock_amount)
+			$amountComparison = self::CompareAmounts($newAmount, $productDetails->stock_amount);
+			if ($amountComparison == 0)
 			{
 				throw new \Exception('The new amount cannot equal the current stock amount');
 			}
-			elseif ($newAmount > $productDetails->stock_amount)
+			elseif ($amountComparison > 0)
 			{
 				$bookingAmount = $newAmount - $productDetails->stock_amount;
 
 				return $this->AddProduct($productId, $bookingAmount, $bestBeforeDate, self::TRANSACTION_TYPE_INVENTORY_CORRECTION, $resolvedPurchasedDate, $resolvedPrice, $locationId, $resolvedShoppingLocationId, $unusedTransactionId, $stockLabelType, $note);
 			}
-			elseif ($newAmount < $productDetails->stock_amount)
+			else
 			{
 				$bookingAmount = $productDetails->stock_amount - $newAmount;
 
 				return $this->ConsumeProduct($productId, $bookingAmount, false, self::TRANSACTION_TYPE_INVENTORY_CORRECTION);
 			}
-
-			return null;
 		});
 	}
 
@@ -2150,6 +2161,16 @@ class StockService extends BaseService
 	 */
 	public function OpenProduct(int $productId, float $amount, $specificStockEntryId = 'default', &$transactionId = null, $allowSubproductSubstitution = false, ?array $measurement = null)
 	{
+		if (!is_finite($amount) || $amount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
+		if (self::CompareAmounts($amount, 0) == 0)
+		{
+			throw new \InvalidArgumentException('Amount must be greater than ' . self::AMOUNT_TOLERANCE);
+		}
+
 		if (!$this->ProductExists($productId))
 		{
 			throw new \Exception('Product does not exist or is inactive');
@@ -2228,13 +2249,13 @@ class StockService extends BaseService
 					throw new \Exception('A measurement requires opening a specific stock entry');
 				}
 
-				if (round($amount, 2) != 1.0)
+				if ($amount != 1.0)
 				{
 					throw new \Exception('A measurement requires opening exactly one unit');
 				}
 
 				$targetEntry = FindObjectInArrayByPropertyValue($potentialStockEntries, 'stock_id', $specificStockEntryId);
-				if ($targetEntry === null || round($targetEntry->amount, 2) < 1.0)
+				if ($targetEntry === null || $targetEntry->amount < 1.0)
 				{
 					throw new \Exception('This stock entry cannot be opened as a single measured container');
 				}
@@ -2249,17 +2270,17 @@ class StockService extends BaseService
 			// (#487 correction 4).
 			$productStockAmountUnopened = $this->SumStockEntriesInProductUnit($potentialStockEntries, $productId, $product->qu_id_stock);
 
-			if ($amount > $productStockAmountUnopened)
+			if (self::CompareAmounts($amount, $productStockAmountUnopened) > 0)
 			{
 				throw new \Exception('Amount to be opened cannot be > current unopened stock amount');
 			}
 
 			foreach ($potentialStockEntries as $stockEntry)
 			{
-				// Compared within AMOUNT_TOLERANCE rather than by exact equality (CodeRabbit
+				// Compared within the shared tolerance rather than by exact equality (CodeRabbit
 				// review of PR #531; same reasoning as ConsumeProduct()'s own loop): the
 				// whole-entry branch below can leave $amount a hair off zero either way.
-				if (abs($amount) <= self::AMOUNT_TOLERANCE)
+				if (self::CompareAmounts($amount, 0) == 0)
 				{
 					break;
 				}
@@ -2292,6 +2313,12 @@ class StockService extends BaseService
 					}
 				}
 
+				// Coherence is expressed in the candidate's stock unit after substitution.
+				if ($resolvedMeasurement !== null && $amount != 1.0)
+				{
+					throw new \Exception('A measurement requires opening exactly one unit');
+				}
+
 				// Attaches only to the one entry named by $specificStockEntryId - the coherence
 				// pre-checks above guarantee this entry ends the branch below at amount = 1.
 				$measurementColumns = [];
@@ -2305,11 +2332,15 @@ class StockService extends BaseService
 					];
 				}
 
-				if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
+				// A measured opening must split off exactly one unit, even inside the tolerance.
+				$takeWholeEntry = $resolvedMeasurement !== null
+					? $stockEntry->amount <= $amount
+					: self::CompareAmounts($stockEntry->amount, $amount) <= 0;
+				if ($takeWholeEntry)
 				{
 					// Mark the whole stock entry as opened - not only when $amount covers it
 					// exactly or more, but also when it falls short by no more than
-					// AMOUNT_TOLERANCE (CodeRabbit review of PR #531; same reasoning as
+					// the shared tolerance (CodeRabbit review of PR #531; same reasoning as
 					// ConsumeProduct()'s own whole-take branch): splitting on a shortfall that
 					// small would leave a float-residue remainder row below instead.
 					$logRow = $this->DB->stock_log()->createRow(array_merge([
@@ -2340,7 +2371,7 @@ class StockService extends BaseService
 						'best_before_date' => $newBestBeforeDate
 					], $measurementColumns));
 
-					$amount -= $stockEntry->amount;
+					$amount = self::CompareAmounts($amount, $stockEntry->amount) == 0 ? 0.0 : $amount - $stockEntry->amount;
 
 					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId && $conversion != null)
 					{
@@ -2354,7 +2385,7 @@ class StockService extends BaseService
 				}
 				else
 				{
-					// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+					// Stock entry amount is > than needed amount by more than the shared tolerance
 					// -> split the stock entry. $restStockAmount is a real remainder, not a
 					// float artifact, by construction.
 					$restStockAmount = $stockEntry->amount - $amount;
@@ -2595,6 +2626,16 @@ class StockService extends BaseService
 	 */
 	public function TransferProduct(int $productId, float $amount, int $locationIdFrom, int $locationIdTo, $specificStockEntryId = 'default', &$transactionId = null)
 	{
+		if (!is_finite($amount) || $amount < 0)
+		{
+			throw new \InvalidArgumentException('Stock amount must be finite and non-negative');
+		}
+
+		if (self::CompareAmounts($amount, 0) == 0)
+		{
+			throw new \InvalidArgumentException('Amount must be greater than ' . self::AMOUNT_TOLERANCE);
+		}
+
 		if (!$this->ProductExists($productId))
 		{
 			throw new \Exception('Product does not exist or is inactive');
@@ -2646,17 +2687,17 @@ class StockService extends BaseService
 			// a named single entry can hold less than the location's total.
 			$productStockAmountAtFromLocation = $this->SumStockEntriesInProductUnit($potentialStockEntriesAtFromLocation, $productId, $productDetails->product->qu_id_stock);
 
-			if ($amount > $productStockAmountAtFromLocation)
+			if (self::CompareAmounts($amount, $productStockAmountAtFromLocation) > 0)
 			{
 				throw new \Exception('Amount to be transferred cannot be > current stock amount at the source location');
 			}
 
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
 			{
-				// Compared within AMOUNT_TOLERANCE rather than by exact equality (CodeRabbit
+				// Compared within the shared tolerance rather than by exact equality (CodeRabbit
 				// review of PR #531; same reasoning as ConsumeProduct()'s own loop): the
 				// whole-entry branch below can leave $amount a hair off zero either way.
-				if (abs($amount) <= self::AMOUNT_TOLERANCE)
+				if (self::CompareAmounts($amount, 0) == 0)
 				{
 					break;
 				}
@@ -2693,10 +2734,10 @@ class StockService extends BaseService
 				}
 
 				$correlationId = uniqid();
-				if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
+				if (self::CompareAmounts($stockEntry->amount, $amount) <= 0)
 				{
 					// Take the whole stock entry - not only when $amount covers it exactly or
-					// more, but also when it falls short by no more than AMOUNT_TOLERANCE
+					// more, but also when it falls short by no more than the shared tolerance
 					// (CodeRabbit review of PR #531; same reasoning as ConsumeProduct()'s own
 					// whole-take branch): splitting on a shortfall that small would leave a
 					// float-residue remainder row at the source below instead.
@@ -2761,11 +2802,11 @@ class StockService extends BaseService
 						'best_before_date' => $newBestBeforeDate
 					]);
 
-					$amount -= $stockEntry->amount;
+					$amount = self::CompareAmounts($amount, $stockEntry->amount) == 0 ? 0.0 : $amount - $stockEntry->amount;
 				}
 				else
 				{
-					// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+					// Stock entry amount is > than needed amount by more than the shared tolerance
 					// -> split the stock entry resp. update the amount. $restStockAmount is a
 					// real remainder, not a float artifact, by construction.
 					$restStockAmount = $stockEntry->amount - $amount;
@@ -3113,15 +3154,16 @@ class StockService extends BaseService
 
 				$totalAmount = array_sum(array_map(fn($stockRow) => $stockRow->amount, $stockRows));
 				$newAmount = $totalAmount - $logRow->amount;
+				$amountComparison = self::CompareAmounts($totalAmount, $logRow->amount);
 
 				// stock.amount is a float column and CompactStockEntries() sums it in SQL, so an
 				// exact `== 0` comparison here would miss by a rounding hair (e.g. purchases of
 				// 0.1 and 0.2 merge to 0.30000000000000004) and leave a phantom near-zero row
-				// behind. Compared against AMOUNT_TOLERANCE rather than round()ed to two decimal
+				// behind. Compared against the shared tolerance rather than round()ed to two decimal
 				// places: that convention's 0.005-unit threshold could itself destroy a real
 				// small remainder, e.g. a 0.004 lot compacted into a larger purchase and then
 				// separated again by undoing the larger one alone (maintainer decision, #487).
-				if ($newAmount < -self::AMOUNT_TOLERANCE)
+				if ($amountComparison < 0)
 				{
 					// This booking's own amount is larger than what the matched row(s) currently
 					// hold - something else has already reduced the entry below this purchase's
@@ -3129,7 +3171,7 @@ class StockService extends BaseService
 					throw new \Exception('Booking cannot be undone: its stock entry holds less than this booking added');
 				}
 
-				if ($newAmount <= self::AMOUNT_TOLERANCE)
+				if ($amountComparison == 0)
 				{
 					foreach ($stockRows as $stockRow)
 					{
@@ -3253,7 +3295,7 @@ class StockService extends BaseService
 
 				// A whole-row pairing only relocates in place when the row still holds
 				// exactly what this booking moved - still at the destination location, its
-				// amount unchanged since (within AMOUNT_TOLERANCE, the same comparison the
+				// amount unchanged since (within the shared tolerance, the same comparison the
 				// split/legacy branch below already uses for its own arithmetic). Something
 				// else can dirty it first: CompactStockEntries() can fold another live lot
 				// into this very row, keeping its id as the merge survivor while summing in
@@ -3278,7 +3320,7 @@ class StockService extends BaseService
 					// that is still genuinely part of the same lot, refusing otherwise
 					// instead of relocating a stranger.
 					$cleanRelocateRow = $this->DB->stock()->where('id = :1 AND stock_id = :2', $logRow->stock_row_id, $logRow->stock_id)->fetch();
-					if ($cleanRelocateRow !== null && ($cleanRelocateRow->location_id !== $logRow->location_id || abs($cleanRelocateRow->amount - abs($logRow->amount)) > self::AMOUNT_TOLERANCE))
+					if ($cleanRelocateRow !== null && ($cleanRelocateRow->location_id !== $logRow->location_id || self::CompareAmounts($cleanRelocateRow->amount, abs($logRow->amount)) != 0))
 					{
 						$cleanRelocateRow = null;
 					}
@@ -3347,17 +3389,18 @@ class StockService extends BaseService
 					// SQL (see the PURCHASE branch's own comment above), so an exact `== 0`
 					// comparison here would miss a residue by a rounding hair and leave a
 					// phantom near-zero row at the destination behind (#470) - but comparing
-					// against AMOUNT_TOLERANCE rather than rounding to two decimals, so a
+					// against the shared tolerance rather than rounding to two decimals, so a
 					// real small remainder (e.g. a compacted 0.004 lot) is kept rather than
 					// deleted, and a shortfall of a few thousandths still refuses rather
 					// than silently clearing to zero (maintainer decision, #487).
 					$newAmount = $stockRow->amount - $logRow->amount;
-					if ($newAmount < -self::AMOUNT_TOLERANCE)
+					$amountComparison = self::CompareAmounts($stockRow->amount, $logRow->amount);
+					if ($amountComparison < 0)
 					{
 						throw new \Exception('Booking cannot be undone: its destination stock entry holds less than this booking added');
 					}
 
-					if ($newAmount <= self::AMOUNT_TOLERANCE)
+					if ($amountComparison == 0)
 					{
 						$stockRow->delete();
 					}
@@ -3394,7 +3437,7 @@ class StockService extends BaseService
 					// stock_id required alongside id, same reasoning as TRANSFER_TO above
 					// (#555, fifth review round).
 					$cleanRelocatedHome = $this->DB->stock()->where('id = :1 AND stock_id = :2', $logRow->stock_row_id, $logRow->stock_id)->fetch();
-					if ($cleanRelocatedHome !== null && ($cleanRelocatedHome->location_id !== $logRow->location_id || abs($cleanRelocatedHome->amount - abs($logRow->amount)) > self::AMOUNT_TOLERANCE))
+					if ($cleanRelocatedHome !== null && ($cleanRelocatedHome->location_id !== $logRow->location_id || self::CompareAmounts($cleanRelocatedHome->amount, abs($logRow->amount)) != 0))
 					{
 						$cleanRelocatedHome = null;
 					}
@@ -3465,12 +3508,13 @@ class StockService extends BaseService
 					else
 					{
 						// Reviewed for the same class of defect as TRANSFER_TO above:
-						// compared against AMOUNT_TOLERANCE and refused rather than risking
+						// compared against the shared tolerance and refused rather than risking
 						// a negative row, even though undoing a FROM booking only ever adds
 						// back what it removed and so cannot reach a negative result unless
 						// the row was already invalid beforehand.
 						$newAmount = $stockRow->amount - $logRow->amount;
-						if ($newAmount < -self::AMOUNT_TOLERANCE)
+						$amountComparison = self::CompareAmounts($stockRow->amount, $logRow->amount);
+						if ($amountComparison < 0)
 						{
 							throw new \Exception('Booking cannot be undone: its source stock entry holds less than this booking removed');
 						}
@@ -3511,7 +3555,7 @@ class StockService extends BaseService
 				// also not enough even when stock_row_id resolves: that same
 				// CompactStockEntries() merge can keep this row's id while overwriting its
 				// amount with the group's sum, so the amount is verified too, within
-				// AMOUNT_TOLERANCE.
+				// the shared tolerance.
 				//
 				// Only a booking recorded before stock_row_id was tracked for openings (it
 				// is null) uses the descriptive fallback, refusing unless exactly one row
@@ -3529,7 +3573,7 @@ class StockService extends BaseService
 				if ($logRow->stock_row_id !== null)
 				{
 					$stockRow = $this->DB->stock()->where('id = :1 AND stock_id = :2', $logRow->stock_row_id, $logRow->stock_id)->fetch();
-					if ($stockRow === null || abs($stockRow->amount - $logRow->amount) > self::AMOUNT_TOLERANCE)
+					if ($stockRow === null || self::CompareAmounts($stockRow->amount, $logRow->amount) != 0)
 					{
 						throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
 					}
@@ -3600,12 +3644,12 @@ class StockService extends BaseService
 				// merge. If the row's amount has since moved away from that, restoring this
 				// booking's pre-edit amount over it would silently discard whatever else the
 				// merge folded in while leaving that other purchase's booking marked live.
-				// Compared against AMOUNT_TOLERANCE rather than rounded to two decimals: that
+				// Compared against the shared tolerance rather than rounded to two decimals: that
 				// convention's 0.005-unit threshold missed any merge that added less than
 				// 0.005 (e.g. a compacted 0.004 lot), letting the undo through to overwrite a
 				// row that in fact held another purchase's units too (maintainer decision, #487).
 				$correlatedNew = $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_STOCK_EDIT_NEW)->fetch();
-				if ($correlatedNew !== null && abs($stockRow->amount - $correlatedNew->amount) > self::AMOUNT_TOLERANCE)
+				if ($correlatedNew !== null && self::CompareAmounts($stockRow->amount, $correlatedNew->amount) != 0)
 				{
 					throw new \Exception('Booking cannot be undone: its stock entry has changed since this edit (likely merged with another entry) and the edit\'s own effect cannot be isolated');
 				}
@@ -4164,7 +4208,7 @@ class StockService extends BaseService
 	 */
 	private function ResolveMeasurement(int $productId, array $measurement)
 	{
-		if (!array_key_exists('amount', $measurement) || !is_numeric($measurement['amount']) || $measurement['amount'] <= 0)
+		if (!array_key_exists('amount', $measurement) || !is_numeric($measurement['amount']) || !is_finite((float)$measurement['amount']) || $measurement['amount'] <= 0)
 		{
 			throw new \Exception('A measurement requires a positive amount');
 		}
@@ -4193,7 +4237,7 @@ class StockService extends BaseService
 
 		if ($isGross)
 		{
-			if (!array_key_exists('tare', $measurement) || !is_numeric($measurement['tare']) || $measurement['tare'] < 0)
+			if (!array_key_exists('tare', $measurement) || !is_numeric($measurement['tare']) || !is_finite((float)$measurement['tare']) || $measurement['tare'] < 0)
 			{
 				throw new \Exception('A gross measurement requires a tare weight');
 			}
