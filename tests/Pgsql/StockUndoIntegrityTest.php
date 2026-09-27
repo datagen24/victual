@@ -2102,4 +2102,53 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		);
 		self::assertSame(2.0, self::stockAmount($product), 'The weighed net (3.0 gross - 1.0 tare) corrects the one entry that is actually there');
 	}
+
+	/**
+	 * #555 (CodeRabbit review of PR #531, inline comment 4115694734): the consume-undo
+	 * rebuild reuses a deleted row's original id without telling the identity sequence
+	 * about it. DatabaseImporter::Import()'s own resync (from the target's surviving
+	 * row maximum, not from an id a booking merely names) can leave the sequence
+	 * sitting at or below an id that is taken again once this undo runs - simulated
+	 * directly here with a setval(), standing in for whatever import left the
+	 * sequence that low. Before the fix, the very next ordinary purchase collided
+	 * with the row this undo just rebuilt.
+	 */
+	public function testUndoingAFullConsumeAdvancesTheSequencePastTheRestoredIdEvenWhenItWasLeftBehind(): void
+	{
+		$product = self::insertProduct('Undo Consume Sequence Advance Guard');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'X is purchased'
+		);
+		$originalId = (int)self::rows($product)[0]['id'];
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'X is fully consumed, deleting its row'
+		);
+
+		// Standing in for DatabaseImporter::Import()'s own resync, which can leave the
+		// sequence at exactly a deleted row's id when that id came from the source
+		// database's own numbering rather than the target's surviving rows.
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $originalId, false)");
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is accepted, rebuilding X under its original id'
+		);
+		self::assertSame($originalId, (int)self::rows($product)[0]['id'], 'Sanity: X came back under its original id');
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => '2031-02-02', 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'An ordinary purchase right after does not collide with the rebuilt row on its primary key'
+		);
+		$newRow = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND best_before_date = ?');
+		$newRow->execute([$product, '2031-02-02']);
+		$newId = (int)$newRow->fetchColumn();
+		self::assertGreaterThan($originalId, $newId, 'the new purchase\'s id is above every id that already existed, not a reused one');
+	}
 }

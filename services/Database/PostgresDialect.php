@@ -480,6 +480,45 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
+	 * Advances one identity column's sequence to at least $minNextValue, never backward -
+	 * the same never-backward invariant ResyncGeneratedIdCounters() keeps for a whole
+	 * schema (#555), scoped here to the one sequence a caller already knows needs
+	 * advancing. An explicit-id INSERT (services/StockService.php's own consume-undo
+	 * rebuild reuses a deleted row's original id, so a later-undone booking naming that
+	 * same id still finds it) bypasses the sequence entirely - nothing else moves it past
+	 * that id on its own, and DatabaseImporter::Import()'s own resync (from the target's
+	 * surviving row maximum, not from an id a booking merely names) can leave the
+	 * sequence sitting at or below an id that is nonetheless taken again by then.
+	 * CredentialSplitTest.php confirms the runtime app role holds UPDATE on its own
+	 * sequences (setval() needs it, nextval() alone does not), so this is safe to call
+	 * from request-time code, not only from a migration or import running as a more
+	 * privileged role.
+	 */
+	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): void
+	{
+		$sequenceNameStatement = $pdo->prepare('SELECT pg_get_serial_sequence(?, ?)');
+		$sequenceNameStatement->execute([$table, $column]);
+		$sequenceName = $sequenceNameStatement->fetchColumn();
+		if (empty($sequenceName))
+		{
+			// $table.$column is not backed by an identity/serial sequence - nothing to advance.
+			return;
+		}
+
+		// GREATEST keeps this idempotent and forward-only: the sequence's own current next
+		// value (last_value, plus one only if is_called - an untouched sequence's
+		// last_value is just its seed, not something already issued) never moves backward,
+		// even though $minNextValue is itself a fixed floor the caller already knows it
+		// needs. $sequenceName is interpolated (not bound) because a FROM target cannot be
+		// a bind parameter; it is safe here because it came back from
+		// pg_get_serial_sequence() above, not from anything a caller supplies directly.
+		$advance = $pdo->prepare(
+			'SELECT setval(?, GREATEST((SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName . '), ?), false)'
+		);
+		$advance->execute([$sequenceName, $minNextValue]);
+	}
+
+	/**
 	 * Stores the acting user's id in the "victual.user_id" session variable, which the SQL
 	 * victual_user_setting() function reads. On SQLite the same function is a PHP callback
 	 * that sees VICTUAL_USER_ID directly, so no equivalent call is needed there.
