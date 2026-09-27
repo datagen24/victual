@@ -97,7 +97,14 @@
 			body that omits the key (claude/sonnet_stock-edit-input-r487 / PR #530). --}}
 			@if($pricesVisible)
 			@php
-			if (empty($stockEntry->price))
+			// Not empty(): '0' and 0.0 are both "empty" to PHP, and a stock entry can be
+			// genuinely priced at 0 (a free item) - a real, meaningful value that lowers an
+			// average, unlike a NULL price, which is excluded from one. empty() rendered
+			// that 0 as a blank field, and saving the untouched form then sent price="" -
+			// the documented "clear the price" idiom PUT /api/stock/entry/{id} now accepts
+			// (PR #530) - turning a stored 0 into NULL on every save (issue #545). Only an
+			// actual NULL should render blank.
+			if ($stockEntry->price === null)
 			{
 			$price = '';
 			}

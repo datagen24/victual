@@ -40,6 +40,15 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * (testStockEntryEditFormCarriesTheEntryBeingEdited) calls the controller directly instead
  * and only ever does so as ADMIN, so it says nothing about what a lower-privileged, really
  * authenticated caller receives or can do.
+ *
+ * Issue #545, found validating #530: the price @php block below rendered a stock entry
+ * genuinely priced at 0 (a free item) with a blank input, because PHP's empty() is true for
+ * 0 as well as for NULL. Once #530 made an empty price the documented way to clear the
+ * field, saving that untouched, blank-because-of-0 form turned the stored 0 into NULL on
+ * every save - 0 and NULL are not interchangeable to the price views (0 lowers an average,
+ * NULL is excluded from one). Fixed by checking $stockEntry->price === null instead of
+ * empty($stockEntry->price); testSavingTheFormUnchangedKeepsAnExplicitZeroPrice() is the
+ * regression test.
  */
 class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 {
@@ -55,7 +64,11 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 	/** M12's fixture identity: STOCK_VIEW only, nothing else. */
 	private const VIEW_ONLY_USER_ID = 9701;
 
-	/** Control identity: STOCK_VIEW plus a direct STOCK_PRICES_VIEW grant. */
+	/**
+	 * Control identity: STOCK_VIEW plus a direct STOCK_PRICES_VIEW grant, and STOCK_EDIT so
+	 * it can also exercise the issue #545 round-trip save (a real Adult-shaped combination -
+	 * the seed role holds all three through the whole STOCK subtree).
+	 */
 	private const PRICE_VISIBLE_USER_ID = 9702;
 
 	/**
@@ -76,6 +89,14 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 
 	/** Written to by the round-trip test only, so a save can never affect a read elsewhere. */
 	private static int $stockEntryIdForEdit = 0;
+
+	/**
+	 * Issue #545's fixture: priced at exactly 0, not NULL. Shared by a read-only redaction
+	 * check and the zero-price round-trip save test; safe to share because the save is
+	 * idempotent (it always writes the same 0 the row already has), and the redaction check
+	 * only asserts a field's absence, never a specific stored value.
+	 */
+	private static int $zeroPriceStockEntryId = 0;
 
 	private static string $viewOnlySessionKey;
 	private static string $priceVisibleSessionKey;
@@ -110,11 +131,14 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		// keep writing against that other class's (by then torn down) schema. These tests
 		// only need rows FieldPolicy/the form read and PUT /api/stock/entry edits, not a
 		// purchase ledger, so the direct insert is also the smaller fixture.
-		self::$stockEntryId = self::insertStockEntry('stockentryformprice-read-fixture', null);
+		self::$stockEntryId = self::insertStockEntry('stockentryformprice-read-fixture', null, self::PRICE);
 
 		// A second, independent entry: the round-trip save test writes to this one, so a
 		// save can never change what the read-only tests above assert against.
-		self::$stockEntryIdForEdit = self::insertStockEntry('stockentryformprice-edit-fixture', self::STORE);
+		self::$stockEntryIdForEdit = self::insertStockEntry('stockentryformprice-edit-fixture', self::STORE, self::PRICE);
+
+		// Issue #545: priced at exactly 0, to catch empty()'s "0 is empty" confusion with NULL.
+		self::$zeroPriceStockEntryId = self::insertStockEntry('stockentryformprice-zero-fixture', self::STORE, 0);
 
 		self::createUser(self::VIEW_ONLY_USER_ID, 'stockentryformprice-view-only');
 		self::grant(self::VIEW_ONLY_USER_ID, 'STOCK_VIEW');
@@ -123,6 +147,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		self::createUser(self::PRICE_VISIBLE_USER_ID, 'stockentryformprice-price-visible');
 		self::grant(self::PRICE_VISIBLE_USER_ID, 'STOCK_VIEW');
 		self::grant(self::PRICE_VISIBLE_USER_ID, 'STOCK_PRICES_VIEW');
+		self::grant(self::PRICE_VISIBLE_USER_ID, 'STOCK_EDIT');
 		self::$priceVisibleSessionKey = self::issueSession(self::PRICE_VISIBLE_USER_ID);
 
 		self::createUser(self::VIEW_EDIT_USER_ID, 'stockentryformprice-view-edit');
@@ -139,7 +164,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		self::$inheritedPriceVisibleSessionKey = self::issueSession(self::INHERITED_PRICE_VISIBLE_USER_ID);
 	}
 
-	private static function insertStockEntry(string $stockId, ?int $shoppingLocationId): int
+	private static function insertStockEntry(string $stockId, ?int $shoppingLocationId, float $price): int
 	{
 		$statement = self::$db->prepare(
 			'INSERT INTO stock(product_id, amount, best_before_date, purchased_date, stock_id, price, open, location_id, shopping_location_id) '
@@ -150,7 +175,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 			'best_before_date' => self::DUE_DATE_FUTURE,
 			'purchased_date' => self::PURCHASED_DATE,
 			'stock_id' => $stockId,
-			'price' => self::PRICE,
+			'price' => $price,
 			'location_id' => self::LOCATION,
 			'shopping_location_id' => $shoppingLocationId,
 		]);
@@ -392,5 +417,84 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 			0.0001,
 			'the ledger row for this edit also carries the preserved price, not null or zero'
 		);
+	}
+
+	/**
+	 * Re-asserts issue #512's redaction on the boundary value issue #545 is about: a
+	 * price-blind caller must not see a price of exactly 0 either, and (per
+	 * testViewOnlyCallerDoesNotReceiveThePrice's reasoning, repeated here against a
+	 * different stored value) has no price field through which to change it.
+	 */
+	public function testViewOnlyCallerDoesNotReceiveTheZeroPriceEither(): void
+	{
+		$response = self::request('GET', '/stockentry/' . self::$zeroPriceStockEntryId, self::$viewOnlySessionKey);
+
+		self::assertSame(200, $response['status'], $response['body']);
+		self::assertStringNotContainsString(
+			'id="price"',
+			$response['body'],
+			'no price field is rendered for a price-blind caller, whether the stored price is 0 or any other value'
+		);
+		self::assertStringContainsString(
+			'Victual.PricesVisible = false;',
+			$response['body']
+		);
+	}
+
+	/**
+	 * Issue #545: views/stockentryform.blade.php pre-filled the price input with '' whenever
+	 * empty($stockEntry->price). PHP's empty() is true for 0 as well as for NULL, so a stock
+	 * entry genuinely priced at 0 (a free item) rendered with a blank price field. Saving
+	 * that untouched form then sent price="" - the documented "clear the price" idiom PUT
+	 * /api/stock/entry/{id} accepts (PR #530, now on master) - turning the stored 0 into
+	 * NULL on every save. 0 and NULL are not interchangeable to the price views: 0 is a real
+	 * price that lowers an average, NULL is excluded from one.
+	 *
+	 * Given a stock entry stored at price 0 and a price-visible caller, when that caller GETs
+	 * the form - the price input must render "0", not blank, which is itself part of the fix
+	 * - and then PUTs back exactly the fields the rendered form carries (price included,
+	 * because the field renders with a real value, not the price-blind caller's omitted
+	 * case), then the stored price is still 0 - not NULL - on both the stock row and the
+	 * resulting stock-edit-new ledger row.
+	 */
+	public function testSavingTheFormUnchangedKeepsAnExplicitZeroPrice(): void
+	{
+		$get = self::request('GET', '/stockentry/' . self::$zeroPriceStockEntryId, self::$priceVisibleSessionKey);
+		self::assertSame(200, $get['status'], $get['body']);
+
+		// The defect: empty($stockEntry->price) rendered a stored 0 as value="" - proving
+		// the fix has to be in the Blade template itself, not only the API or the JS.
+		self::assertMatchesRegularExpression(
+			'/<input[^>]*id="price"[^>]*value="0"/',
+			$get['body'],
+			'a stored price of exactly 0 renders as "0" in the price input, not blank'
+		);
+
+		// Exactly the fields the rendered form carries: price is a real "0" here (not
+		// omitted, and not the empty-string clear idiom), because that is what the input
+		// above renders and what stockentryform.js's "if ($('#price').length)" branch reads.
+		$put = self::request('PUT', '/api/stock/entry/' . self::$zeroPriceStockEntryId, self::$priceVisibleSessionKey, [
+			'amount' => 1,
+			'best_before_date' => self::DUE_DATE_FUTURE,
+			'purchased_date' => self::PURCHASED_DATE,
+			'note' => '',
+			'open' => false,
+			'location_id' => self::LOCATION,
+			'shopping_location_id' => self::STORE,
+			'price' => 0,
+		]);
+		self::assertSame(200, $put['status'], 'the edit succeeds: ' . $put['body']);
+
+		$stored = self::$db->query('SELECT price FROM stock WHERE id = ' . self::$zeroPriceStockEntryId)->fetchColumn();
+		self::assertNotNull($stored, 'the stock row keeps its explicit 0 price - it must not become NULL');
+		self::assertEqualsWithDelta(0.0, (float)$stored, 0.0001, 'the stock row keeps the price at exactly 0');
+
+		$ledgerPrice = self::$db->query(
+			'SELECT price FROM stock_log WHERE stock_row_id = ' . self::$zeroPriceStockEntryId
+			. " AND transaction_type = 'stock-edit-new' ORDER BY id DESC LIMIT 1"
+		)->fetchColumn();
+		self::assertNotFalse($ledgerPrice, 'the edit left a stock-edit-new ledger row behind');
+		self::assertNotNull($ledgerPrice, 'the stock-edit-new ledger row also keeps the explicit 0 price, not NULL');
+		self::assertEqualsWithDelta(0.0, (float)$ledgerPrice, 0.0001, 'the ledger price is exactly 0');
 	}
 }
