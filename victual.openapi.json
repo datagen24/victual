@@ -64,7 +64,7 @@
 					"Labels"
 				],
 				"summary": "Resolve an opaque label",
-				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. STOCK_VIEW authorizes location labels. Unauthorized and unknown labels both return 200 with status unknown; a denied caller performs no label lookup. No other entity kind is resolved in this release.",
+				"description": "Accepts a bare uid or vctl: payload, ignoring case and folding I/L to 1 and O to 0. Each kind resolves under the caller's domain permission (FieldCatalogue::DomainPermission): STOCK_VIEW for location, product, and stock_entry; RECIPES_VIEW for recipe; CHORES_VIEW for chore; BATTERIES for battery. Unauthorized and unknown labels both return 200 with status unknown; a caller holding none of these permissions performs no label lookup.",
 				"parameters": [
 					{
 						"name": "code",
@@ -111,7 +111,15 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"stock_entry",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"target": {
 													"type": "object",
@@ -122,13 +130,16 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id: for stock_entry, this is stock.id (the row that GET /api/stock/entry/{entryId} takes), not the stock_id string"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name of the target entity; for stock_entry, this is the product's current name, read live rather than captured - unlike the retired snapshot's product_name, it changes if the product is later renamed"
 														},
 														"path": {
-															"type": "string"
+															"type": "string",
+															"description": "A location's tree path; for the other five kinds, mirrors name"
 														}
 													}
 												}
@@ -153,7 +164,14 @@
 													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
 												},
 												"kind": {
-													"const": "location"
+													"type": "string",
+													"enum": [
+														"location",
+														"product",
+														"recipe",
+														"chore",
+														"battery"
+													]
 												},
 												"snapshot": {
 													"type": "object",
@@ -163,10 +181,73 @@
 													],
 													"properties": {
 														"id": {
-															"type": "integer"
+															"type": "integer",
+															"description": "Row id of the retired entity"
 														},
 														"name": {
-															"type": "string"
+															"type": "string",
+															"description": "Name at retirement time"
+														}
+													}
+												},
+												"retired_at": {
+													"type": "string",
+													"description": "When the label was retired, as PostgreSQL renders the `labels.retired_at` `TIMESTAMPTZ` it is read straight out of: \"YYYY-MM-DD HH:MM:SS[.ffffff]\u00b1HH\" - a UTC offset, and fractional seconds when the column holds them. Neither the local rendering the rest of this document describes nor RFC 3339, so it carries no `pattern` and no `format`. One of the exceptions ADR-0027 decision 2 enumerates; a strict client should read it as an opaque string."
+												}
+											},
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"required": [
+												"status",
+												"uid",
+												"kind",
+												"snapshot",
+												"retired_at"
+											],
+											"properties": {
+												"status": {
+													"const": "retired"
+												},
+												"uid": {
+													"type": "string",
+													"pattern": "^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$"
+												},
+												"kind": {
+													"const": "stock_entry"
+												},
+												"snapshot": {
+													"type": "object",
+													"required": [
+														"id",
+														"product_name",
+														"best_before_date",
+														"amount"
+													],
+													"properties": {
+														"id": {
+															"type": "integer",
+															"description": "Row id of the retired stock entry: stock.id, the row GET /api/stock/entry/{entryId} takes, not the stock_id string"
+														},
+														"product_name": {
+															"type": [
+																"string",
+																"null"
+															],
+															"description": "The product's name at retirement time, captured rather than read live; null when the entry was retired by deleting its product (issue #558); an entry retired earlier keeps its name even if the product is deleted afterwards"
+														},
+														"best_before_date": {
+															"type": [
+																"string",
+																"null"
+															],
+															"format": "date",
+															"description": "The stock entry's best_before_date at retirement time"
+														},
+														"amount": {
+															"type": "number",
+															"description": "The stock entry's amount at retirement time"
 														}
 													}
 												},
@@ -945,7 +1026,7 @@
 			},
 			"delete": {
 				"summary": "Deletes a single object of the given entity",
-				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location.",
+				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged.",
 				"tags": [
 					"Generic entity interactions"
 				],
@@ -2207,46 +2288,94 @@
 						"application/json": {
 							"schema": {
 								"type": "object",
+								"description": "amount is required. Every other property is optional: a property whose key is absent from the body keeps the entry's current value, resolved against the entry as it is at the moment of the edit rather than as it was when the request was formed. A property that is present must be readable as the type documented below, or as the additional numeric-string forms price and shopping_location_id's own descriptions name, or the request is refused with 400 and nothing about the entry changes. price, shopping_location_id and note additionally accept an explicit null to clear the field, since an absent key keeps it instead; price and shopping_location_id also accept \"\" for the same reason - for shopping_location_id this matches the web form's own \"no store\" option. best_before_date, location_id, purchased_date and open are not nullable.",
 								"properties": {
 									"amount": {
 										"type": "number",
-										"description": "The new amount"
+										"description": "The entry's new amount. A negative amount is refused; zero is unaffected by that check."
 									},
 									"best_before_date": {
 										"type": "string",
 										"format": "date",
-										"description": "The due date of the product to add, when omitted, the current date is used"
+										"description": "The due date of this stock entry. Omitted keeps the entry's current due date."
 									},
 									"price": {
-										"type": "number",
-										"description": "The price per stock quantity unit in configured currency"
+										"oneOf": [
+											{
+												"type": "number"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "The price per stock quantity unit in configured currency. Omitted keeps the entry's current price; null or \"\" clears it. Also accepts any string PHP's is_numeric() reads, such as \"3\", \"2.50\", \"1e3\", \".5\" or one with leading/trailing whitespace - undocumented in the type above, matching this fork's own convention for the same field on POST /stock/products/{productId}/add and the other stock-booking routes, whose examples show it."
 									},
 									"open": {
-										"type": "boolean",
-										"description": "If the stock entry was already opened or not"
+										"oneOf": [
+											{
+												"type": "boolean"
+											},
+											{
+												"type": "integer",
+												"enum": [
+													0,
+													1
+												]
+											},
+											{
+												"type": "string",
+												"enum": [
+													"0",
+													"1"
+												]
+											}
+										],
+										"description": "Whether the stock entry is opened. Also accepted: 0/1 and the strings \"0\"/\"1\" - not the word strings \"true\"/\"false\". Omitted keeps the entry's current open state; opening it for the first time stamps today as its opened date."
 									},
 									"location_id": {
 										"type": "integer",
-										"description": "If omitted, the default location of the product is used"
+										"description": "Must name an existing, active location. Omitted keeps the entry's current location."
 									},
 									"shopping_location_id": {
-										"type": "integer",
-										"description": "If omitted, no store will be affected"
+										"oneOf": [
+											{
+												"type": "integer"
+											},
+											{
+												"type": "null"
+											},
+											{
+												"const": ""
+											}
+										],
+										"description": "Must name an existing, active shopping location. Omitted keeps the entry's current shopping location; null or \"\" clears it. Also accepts any string PHP's filter_var(..., FILTER_VALIDATE_INT) reads, with no leading or trailing whitespace, such as \"1\" or \"+1\" - undocumented in the type above, matching this fork's own convention for location_id/shopping_location_id on the other stock-booking routes."
 									},
 									"purchased_date": {
 										"type": "string",
 										"format": "date",
-										"description": "The date when this stock entry was purchased"
+										"description": "The date when this stock entry was purchased. Omitted keeps the entry's current purchased date."
+									},
+									"note": {
+										"type": [
+											"string",
+											"null"
+										],
+										"description": "A free-text note. Omitted keeps the entry's current note; null clears it."
 									}
 								},
+								"required": [
+									"amount"
+								],
 								"example": {
-									"id": "2",
-									"amount": "1",
+									"amount": 1,
 									"best_before_date": "2021-07-19",
 									"purchased_date": "2020-01-01",
-									"price": "22.03",
+									"price": 22.03,
 									"open": false,
-									"location_id": "4"
+									"location_id": 4
 								}
 							}
 						}
@@ -2267,7 +2396,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, invalid transaction type)",
+						"description": "The operation was not successful (possible errors are: not an existing stock entry, a negative amount, or a supplied field that could not be read as its documented type - including a location_id/shopping_location_id naming no active row)",
 						"content": {
 							"application/json": {
 								"schema": {

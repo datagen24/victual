@@ -178,4 +178,61 @@ final class WireBooleans
 
 		return $rows;
 	}
+
+	/**
+	 * Validates that $value is true/false, 1/0, or "1"/"0", and refuses anything else -
+	 * including the word strings "true"/"false" and null. A controller reads a
+	 * documented-boolean request field through this rather than through boolval() or
+	 * filter_var($value, FILTER_VALIDATE_BOOLEAN): boolval("false") is true, and
+	 * filter_var("garbage", FILTER_VALIDATE_BOOLEAN) returns the same false its correct
+	 * answer for "false" does, so neither tells an explicit false apart from a value that
+	 * cannot be read at all - exactly the distinction a partial update needs kept (audit
+	 * findings M19/M24, issues #519/#524), the same way ADR-0028 decision 1 keeps a
+	 * timestamp a route cannot read from silently becoming a default.
+	 *
+	 * 1/0 are accepted alongside true/false because this fork's own callers send them: this
+	 * class's own class docblock records that the API accepts 0/1 on input, GET renders a
+	 * documented-boolean column it does not convert (like this one) as the stored integer,
+	 * and a caller that round-trips a GET response back through a PUT is exactly this
+	 * method's job to accept. "1"/"0" are accepted too because
+	 * BaseApiController::GetParsedAndFilteredRequestBody() passes every scalar that is not
+	 * already a bool through HtmlPurifier::purify(), which takes and returns a string - so
+	 * a JSON body carrying the *number* 1 or 0 has already become the *string* "1" or "0" by
+	 * the time it reaches here, indistinguishably from a client that sent the string
+	 * outright. The word strings "true"/"false" stay refused: nothing documents them, and
+	 * accepting them would put boolval()'s exact defect back in a different spelling.
+	 *
+	 * This is the write-side counterpart of Coerce()/CoerceRows() above: those turn a
+	 * stored 0/1 into the true/false a documented-boolean response promises, and this
+	 * refuses anything but the forms above on the way in. Kept as its own function rather
+	 * than a mode flag on Coerce(), because a reader that tolerates 0/1 and a writer that
+	 * refuses word strings are two different behaviours, and one function with a flag for
+	 * that would be a worse API than two small ones. Not a per-shape column table like
+	 * COLUMNS above: a caller already knows which single field it is validating, so there is
+	 * nothing a table would add here.
+	 *
+	 * @param mixed $value
+	 * @param string $fieldName Used only to build the exception message
+	 * @return bool
+	 * @throws \Exception When $value is not one of true, false, 1, 0, "1" or "0"
+	 */
+	public static function RequireBoolean($value, string $fieldName): bool
+	{
+		if (is_bool($value))
+		{
+			return $value;
+		}
+
+		if ($value === 0 || $value === '0')
+		{
+			return false;
+		}
+
+		if ($value === 1 || $value === '1')
+		{
+			return true;
+		}
+
+		throw new \Exception('The ' . $fieldName . ' must be true or false');
+	}
 }
