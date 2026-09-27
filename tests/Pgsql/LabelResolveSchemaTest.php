@@ -135,8 +135,12 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 	/**
 	 * The OpenAPI spec must declare all entity kinds that the server resolves.
 	 *
-	 * Both the `resolved` and `retired` response variants declare `kind` as a const
-	 * or enum. This test ensures they match LabelIdentityService::KINDS exactly.
+	 * The `resolved` variant declares `kind` as an enum covering all six kinds - their
+	 * `target` shape does not differ. `retired` is split into two variants instead,
+	 * because stock_entry's snapshot shape does not match the other five kinds' {id, name}
+	 * (migrations/0283.pgsql.php's retire_stock_entry_labels() trigger); this test checks
+	 * the two retired variants partition LabelIdentityService::KINDS exactly, with no
+	 * overlap and no omission, the same guarantee it checks for the resolved variant.
 	 */
 	public function testOpenApiSpecDeclaresAllLabelKinds(): void
 	{
@@ -148,49 +152,69 @@ class LabelResolveSchemaTest extends PgsqlSchemaTestCase
 
 		$responses = $labelResolveOperation['responses']['200']['content']['application/json']['schema'];
 		$variants = $responses['oneOf'];
-		self::assertCount(3, $variants, 'Response must have exactly 3 variants: unknown, resolved, retired');
+		self::assertCount(4, $variants, 'Response must have exactly 4 variants: unknown, resolved, retired (five kinds), retired (stock_entry)');
 
 		$resolvedVariant = $variants[1];
 		self::assertSame('resolved', $resolvedVariant['properties']['status']['const'], 'Variant 1 must be resolved');
-		$resolvedKind = $resolvedVariant['properties']['kind'];
+		$resolvedKinds = self::KindsOf($resolvedVariant['properties']['kind']);
 
 		$retiredVariant = $variants[2];
-		self::assertSame('retired', $retiredVariant['properties']['status']['const'], 'Variant 2 must be retired');
-		$retiredKind = $retiredVariant['properties']['kind'];
+		self::assertSame('retired', $retiredVariant['properties']['status']['const'], 'Variant 2 must be retired (non-stock_entry kinds)');
+		$retiredKinds = self::KindsOf($retiredVariant['properties']['kind']);
+
+		$retiredStockEntryVariant = $variants[3];
+		self::assertSame('retired', $retiredStockEntryVariant['properties']['status']['const'], 'Variant 3 must be retired (stock_entry)');
+		$retiredStockEntryKinds = self::KindsOf($retiredStockEntryVariant['properties']['kind']);
 
 		// Get the server's kinds via reflection to avoid duplicating the list
 		$reflection = new \ReflectionClass(LabelIdentityService::class);
 		$kindsConstant = $reflection->getConstant('KINDS');
 		self::assertIsArray($kindsConstant, 'LabelIdentityService must have KINDS array');
 
-		$serverKinds = array_flip($kindsConstant);
+		// assertSame on arrays is order-sensitive; the enum's declaration order carries no
+		// meaning, so both sides are sorted before comparing sets.
+		$serverKinds = $kindsConstant;
+		sort($serverKinds);
 
-		// Both the resolved and retired response variants must declare the same kinds
-		if (isset($resolvedKind['enum']))
-		{
-			$specKinds = array_flip($resolvedKind['enum']);
-		}
-		else
-		{
-			// Fall back to const if enum is not present (this is the buggy state)
-			$specKinds = [$resolvedKind['const'] => true];
-		}
-
-		self::assertSame($serverKinds, $specKinds,
+		$sortedResolvedKinds = $resolvedKinds;
+		sort($sortedResolvedKinds);
+		self::assertSame($serverKinds, $sortedResolvedKinds,
 			'OpenAPI spec resolved.kind must declare exactly the kinds in LabelIdentityService::KINDS');
 
-		if (isset($retiredKind['enum']))
+		self::assertSame(['stock_entry'], $retiredStockEntryKinds,
+			'The stock_entry retired variant must declare kind as exactly stock_entry');
+
+		$nonStockEntryServerKinds = array_values(array_diff($kindsConstant, ['stock_entry']));
+		sort($nonStockEntryServerKinds);
+		$sortedRetiredKinds = $retiredKinds;
+		sort($sortedRetiredKinds);
+		self::assertSame($nonStockEntryServerKinds, $sortedRetiredKinds,
+			'The non-stock_entry retired variant must declare exactly the five non-stock_entry kinds');
+
+		$combinedRetiredKinds = array_merge($retiredKinds, $retiredStockEntryKinds);
+		sort($combinedRetiredKinds);
+		self::assertSame($serverKinds, $combinedRetiredKinds,
+			'The two retired variants together must declare exactly the kinds in LabelIdentityService::KINDS, with no overlap');
+	}
+
+	/**
+	 * The kind values a `kind` property schema declares, whether as an `enum` or as a bare
+	 * `const`. Fails the test with a clear message rather than reading an undefined array
+	 * key - the risk a `kind` schema written as a `$ref` would otherwise carry silently.
+	 */
+	private static function KindsOf(array $kindSchema): array
+	{
+		if (isset($kindSchema['enum']))
 		{
-			$specRetiredKinds = array_flip($retiredKind['enum']);
-		}
-		else
-		{
-			// Fall back to const if enum is not present (this is the buggy state)
-			$specRetiredKinds = [$retiredKind['const'] => true];
+			return $kindSchema['enum'];
 		}
 
-		self::assertSame($serverKinds, $specRetiredKinds,
-			'OpenAPI spec retired.kind must declare exactly the kinds in LabelIdentityService::KINDS');
+		if (isset($kindSchema['const']))
+		{
+			return [$kindSchema['const']];
+		}
+
+		self::fail('kind property schema is neither enum nor const: ' . json_encode($kindSchema));
 	}
 
 	/**
