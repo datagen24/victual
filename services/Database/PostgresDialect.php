@@ -426,8 +426,9 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
-	 * Sets every identity column's sequence to MAX(id) + 1 (at least 1), needed after
-	 * inserting rows with explicit ids (migrations, demo data, database import).
+	 * Sets every identity column's sequence to MAX(id) + 1, or leaves it where it already
+	 * is if that is higher (at least 1 either way), needed after inserting rows with
+	 * explicit ids (migrations, demo data, database import).
 	 */
 	public function ResyncGeneratedIdCounters(\PDO $pdo): void
 	{
@@ -435,10 +436,29 @@ class PostgresDialect extends DatabaseDialect
 		// inserted with an explicit id, unlike SQLite's AUTOINCREMENT. Without this the
 		// sequence eventually catches up with rows that already exist and inserts start
 		// failing on the primary key.
+		//
+		// Never move a sequence *backward* (#555): setting it to exactly MAX(id) + 1
+		// regardless of where it already stood let a batch that deleted the newest rows -
+		// an undo, a rolled-back migration, a partial import - pull the sequence back down
+		// with them, so the very next ordinary insert reissued an id that had already been
+		// handed out once. That silently handed a deleted row's old identity to an
+		// unrelated new row: services/StockService.php's own undo logic depends on an id,
+		// once issued, never coming back once it is freed (see UndoBooking()'s CONSUME/
+		// negative-INVENTORY_CORRECTION rebuild, and the stock_id cross-check every
+		// stock_row_id match now also carries as its own defence in depth). Taking the
+		// greater of the sequence's own current next value (last_value, plus one only if
+		// is_called - an untouched sequence's last_value is just its seed, not something
+		// already issued) and MAX(id) + 1 keeps this call idempotent and forward-only
+		// without a floor that can retreat.
 		$pdo->exec(
 			'DO $$
 			DECLARE
 				r RECORD;
+				seq_name text;
+				seq_last_value bigint;
+				seq_is_called boolean;
+				next_from_seq bigint;
+				next_from_data bigint;
 			BEGIN
 				FOR r IN
 					SELECT table_name, column_name
@@ -446,13 +466,14 @@ class PostgresDialect extends DatabaseDialect
 					WHERE table_schema = current_schema()
 						AND is_identity = \'YES\'
 				LOOP
-					-- GREATEST because some tables hold rows with negative ids on purpose
-					-- (meal_plan_sections has the internal section at -1), and a sequence
-					-- cannot be set below 1
-					EXECUTE format(
-						\'SELECT setval(pg_get_serial_sequence(%L, %L), GREATEST(COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, 1), false)\',
-						r.table_name, r.column_name, r.column_name, r.table_name
-					);
+					seq_name := pg_get_serial_sequence(quote_ident(r.table_name), r.column_name);
+					EXECUTE format(\'SELECT last_value, is_called FROM %s\', seq_name) INTO seq_last_value, seq_is_called;
+					next_from_seq := seq_last_value + CASE WHEN seq_is_called THEN 1 ELSE 0 END;
+					EXECUTE format(\'SELECT COALESCE(MAX(%I), 0) + 1 FROM %I\', r.column_name, r.table_name) INTO next_from_data;
+					-- GREATEST also keeps the floor of 1, because some tables hold rows
+					-- with negative ids on purpose (meal_plan_sections has the internal
+					-- section at -1) and a sequence cannot be set below 1.
+					PERFORM setval(seq_name, GREATEST(next_from_seq, next_from_data, 1), false);
 				END LOOP;
 			END $$;'
 		);
