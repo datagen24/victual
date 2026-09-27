@@ -2479,7 +2479,7 @@ class StockService extends BaseService
 	 *
 	 * @param int $productId
 	 * @param float $amount Amount to subtract (in the quantity unit of the list entry)
-	 * @param int $listId Shopping list id (only validated for existence)
+	 * @param int $listId Shopping list id (scopes the removal operation; defaults to 1 per API contract)
 	 * @return void
 	 * @throws \Exception When the shopping list does not exist
 	 */
@@ -2490,7 +2490,7 @@ class StockService extends BaseService
 			throw new \Exception('Shopping list does not exist');
 		}
 
-		$productRow = $this->DB->shopping_list()->where('product_id = :1', $productId)->fetch();
+		$productRow = $this->DB->shopping_list()->where('product_id = :1 AND shopping_list_id = :2', $productId, $listId)->fetch();
 
 		// If no entry was found with for this product, we return gracefully
 		if ($productRow != null && !empty($productRow))
