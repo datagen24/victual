@@ -121,25 +121,20 @@
 					@endif>
 				<div class="invalid-feedback">{{ $__t('Passwords do not match') }}</div>
 			</div>
-			@elseif($mode == 'create')
-			{{-- Externally managed (reverse-proxy) authentication has no local password to
-			     change - ReverseProxyAuthenticator never checks one - but CreateUser()
-			     still requires the field. A hidden placeholder satisfies that, the same
-			     way the embedded/disabled-auth branch below does. Edit mode deliberately
-			     gets no such field here: EditUser() revokes every other session of the
-			     account whenever a password field is present at all (issue #513), and
-			     resending a placeholder on every ordinary profile edit would revoke
-			     sessions over a "password change" that never happened (issue #549,
-			     round 5). --}}
-			<input type="hidden"
-				name="password"
-				id="password"
-				value="x">
-			<input type="hidden"
-				name="password_confirm"
-				id="password_confirm"
-				value="x">
 			@endif
+			{{-- Externally managed (reverse-proxy) authentication renders no password
+			     field at all here, in either mode - not even a hidden one. A fixed
+			     placeholder used to stand in for create mode (round 5), but that gave
+			     every account created through this form the same real, guessable
+			     password ("x"), dormant only until the deployment's backend ever
+			     switches away from reverse-proxy auth (issue #549's own class of
+			     defect, round 6). CreateUser() itself now accepts a missing password
+			     under this constant and stores unusable random bytes instead
+			     (UsersApiController::CreateUser()) - ReverseProxyAuthenticator never
+			     checks a local password on login either way. Edit mode keeps deliberately
+			     getting no such field for the separate reason already covered in
+			     userform.js: EditUser() revokes every other session of the account
+			     whenever a password field is present at all (issue #513). --}}
 			@else
 			<input type="hidden"
 				name="password"

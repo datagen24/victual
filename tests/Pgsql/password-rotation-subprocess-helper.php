@@ -125,6 +125,7 @@ namespace
 
 	echo json_encode([
 		'status' => $response->getStatusCode(),
+		'headers' => $response->getHeaders(),
 		'body' => (string)$response->getBody(),
 		'cookies' => $GLOBALS['__capturedCookies'],
 	]);

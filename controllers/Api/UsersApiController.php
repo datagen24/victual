@@ -93,7 +93,7 @@ class UsersApiController extends BaseApiController
 					self::RequiredField($requestBody, 'username'),
 					$requestBody['first_name'] ?? null,
 					$requestBody['last_name'] ?? null,
-					self::RequiredField($requestBody, 'password'),
+					self::CreatedUserPassword($requestBody),
 					$requestBody['picture_file_name'] ?? null
 				);
 
@@ -441,6 +441,44 @@ class UsersApiController extends BaseApiController
 		}
 
 		return $requestBody[$field];
+	}
+
+	/**
+	 * The password to store for a newly created user (round 6, issue #549's class of
+	 * defect). Every mode but one still requires the client to supply a real one via
+	 * RequiredField(); under externally managed (reverse-proxy) authentication, a
+	 * missing or blank submission is accepted instead, and cryptographically random
+	 * bytes - discarded immediately after password_hash() runs on them in
+	 * UsersService::CreateUser() - are stored in its place.
+	 *
+	 * ReverseProxyAuthMiddleware never consults a local password to authenticate a
+	 * request at all - ReverseProxyAuthenticator::Authenticate() reads only the
+	 * proxy-supplied identity - so nothing stored here is ever meant to work as a
+	 * real credential. The view used to send a fixed placeholder ("x") to satisfy
+	 * RequiredField() (round 5), which built a real, guessable password that would
+	 * work the moment the deployment's backend ever switched to DefaultAuthMiddleware.
+	 * Random bytes cannot be guessed regardless of which backend is active later.
+	 *
+	 * This mirrors, but does not reuse, the convention ReverseProxyAuthenticator
+	 * itself already uses when it auto-provisions a user on first sight of a
+	 * username: an empty string. password_verify('', $thatHash) is true - it is
+	 * safe only because PasswordLogin::Process() refuses an empty submitted password
+	 * outright, before ever calling password_verify(). Random bytes do not depend on
+	 * that (or any other) caller remembering to guard against the value it stored.
+	 *
+	 * @throws EInvalidApiQuery
+	 */
+	private static function CreatedUserPassword(array $requestBody): string
+	{
+		$submitted = $requestBody['password'] ?? null;
+
+		if (defined('VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION')
+			&& (!is_string($submitted) || trim($submitted) === ''))
+		{
+			return random_bytes(32);
+		}
+
+		return self::RequiredField($requestBody, 'password');
 	}
 
 	/**

@@ -307,6 +307,25 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		return null;
 	}
 
+	/**
+	 * A response header's value, or '' when it was never set - round 6, needed to tell
+	 * LoginController::ProcessLogin()'s two redirects apart (both 302: '/' on success,
+	 * '/login?invalid=true' on failure), the same way AuthStackTest::header() already
+	 * does for its own helper's response shape.
+	 */
+	private static function header(array $response, string $name): string
+	{
+		foreach ($response['headers'] ?? [] as $header => $values)
+		{
+			if (strcasecmp($header, $name) === 0)
+			{
+				return implode(', ', $values);
+			}
+		}
+
+		return '';
+	}
+
 	private static function sessionExists(string $sessionKey): bool
 	{
 		$statement = self::$db->prepare('SELECT count(*) FROM sessions WHERE session_key = ?');
@@ -1139,16 +1158,21 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	 * `@if(!defined(VICTUAL_EXTERNALLY_MANAGED_AUTHENTICATION))` with no `@else`, so under
 	 * ReverseProxyAuthMiddleware the edit-mode page rendered no password field and no
 	 * checkbox at all - and neither did create mode, even though CreateUser() still
-	 * requires the field. userform.js only ever checked whether #change_password was
+	 * required the field. userform.js only ever checked whether #change_password was
 	 * *absent* to decide "encode unconditionally", which was true for create mode's own
 	 * missing checkbox and also true here, so an edit under this backend still sent
 	 * password_base64 = btoa(undefined) (an admin's edit stored the literal word
 	 * "undefined" as the account's password; a self-edit got a 400 from the current
-	 * password it can never supply). The fix gives create mode a hidden placeholder
-	 * (CreateUser() needs one; there is no local password to change so a fixed "x" is as
-	 * good as any value) and gives edit mode no password field at all - resending it on
-	 * every ordinary profile edit would otherwise revoke every other session of the
-	 * account per issue #513's own fix, over a "password change" that never happened.
+	 * password it can never supply).
+	 *
+	 * Round 5 first fixed this by giving create mode a hidden placeholder value ("x") to
+	 * satisfy CreateUser()'s then-required field. Round 6 found that placeholder was
+	 * itself issue #549's class of defect: a real, guessable password stored for every
+	 * account created this way, dormant only until the deployment's backend switches
+	 * away from reverse-proxy authentication. Both modes now render no password field at
+	 * all - CreateUser() itself was changed instead (see
+	 * testReverseProxyCreateWithoutAPasswordStoresAnUnusableOneInstead below) to accept a
+	 * missing one under this backend and store unusable random bytes.
 	 *
 	 * This is a body-shape assertion at the PHP level rather than a frontend probe
 	 * addition: .devtools/frontend/userform-password.js drives a demo (DefaultAuthMiddleware)
@@ -1161,7 +1185,7 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 	 * disabled/absent field the way userform.js assumes - that half is the existing
 	 * unticked-checkbox assertion in the frontend probe, which proxy mode cannot add to.
 	 */
-	public function testReverseProxyAuthRendersAHiddenPlaceholderPasswordOnlyOnCreateNeverOnEdit(): void
+	public function testReverseProxyAuthRendersNoPasswordFieldInEitherCreateOrEditMode(): void
 	{
 		$proxySettings = [
 			'AUTH_CLASS' => 'Victual\\Middleware\\Auth\\ReverseProxyAuthMiddleware',
@@ -1178,11 +1202,10 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 		]), $proxySettings);
 
 		self::assertSame(200, $createPage['status'], $createPage['body']);
-		self::assertStringContainsString('name="password"', $createPage['body'],
-			'CreateUser() requires a password field even when nothing local checks it');
-		self::assertStringContainsString('value="x"', $createPage['body'],
-			'the placeholder must actually carry a value, or CreateUser() refuses it as empty');
-		self::assertStringContainsString('name="password_confirm"', $createPage['body']);
+		self::assertStringNotContainsString('name="password"', $createPage['body'],
+			'create mode must render no password field either, now that CreateUser() '
+			. 'accepts a missing one under externally managed authentication (round 6)');
+		self::assertStringNotContainsString('name="password_confirm"', $createPage['body']);
 		self::assertStringNotContainsString('id="change_password"', $createPage['body'],
 			'there is no local password to change under externally managed authentication');
 
@@ -1197,6 +1220,90 @@ class PasswordRotationTest extends PgsqlSchemaTestCase
 			. 'gate password_base64 on and sends btoa(undefined) again (issue #549)');
 		self::assertStringNotContainsString('name="password_confirm"', $editPage['body']);
 		self::assertStringNotContainsString('id="change_password"', $editPage['body']);
+	}
+
+	/**
+	 * issue #549 round 6: the reverse-proxy variant of round 5's own fix was the same
+	 * class of defect it fixed. Under ReverseProxyAuthMiddleware, CreateUser() now
+	 * accepts a request with no password field at all
+	 * (UsersApiController::CreatedUserPassword()) and stores cryptographically random
+	 * bytes instead - never a fixed value, and never the empty string
+	 * ReverseProxyAuthenticator's own auto-provisioning convention uses (that value is
+	 * safe only because PasswordLogin::Process() refuses an empty submitted password
+	 * before ever calling password_verify(); random bytes do not depend on that guard).
+	 *
+	 * The stored hash must not verify against "x" (round 5's own placeholder), against
+	 * "undefined" (issue #549's original client-side bug), or against "" - and, since the
+	 * whole point of this round is that a reverse-proxy-created account's password must
+	 * stay unusable even if the deployment's backend is later switched away from
+	 * reverse-proxy authentication, a login attempt is made against DefaultAuthMiddleware
+	 * directly (the concrete way this would ever matter) rather than only inspecting the
+	 * stored hash in isolation.
+	 */
+	public function testReverseProxyCreateWithoutAPasswordStoresAnUnusableOneInstead(): void
+	{
+		$proxySettings = [
+			'AUTH_CLASS' => 'Victual\\Middleware\\Auth\\ReverseProxyAuthMiddleware',
+			'REVERSE_PROXY_AUTH_TRUSTED_PROXIES' => '10.0.0.0/24',
+		];
+		$newUsername = 'rotation-reverse-proxy-created';
+
+		$create = self::request([
+			'method' => 'POST',
+			'path' => '/api/users',
+			'headers' => ['REMOTE_USER' => 'rotation-reverse-proxy-admin'],
+			'server' => ['REMOTE_ADDR' => '10.0.0.9'],
+			'body' => ['username' => $newUsername],
+			// no password/password_base64 key at all - what the fixed view now sends.
+		], $proxySettings);
+
+		self::assertSame(204, $create['status'], $create['body']);
+
+		$statement = self::$db->prepare('SELECT password FROM users WHERE username = ?');
+		$statement->execute([$newUsername]);
+		$storedHash = $statement->fetchColumn();
+
+		self::assertNotFalse($storedHash, 'the account was not actually created');
+		self::assertFalse(password_verify('x', $storedHash), 'must not be round 5\'s own placeholder');
+		self::assertFalse(password_verify('undefined', $storedHash), 'must not be issue #549\'s original bogus value');
+		self::assertFalse(password_verify('', $storedHash),
+			'must not verify empty at all, unlike ReverseProxyAuthenticator\'s own auto-provisioning convention');
+
+		foreach (['x', 'undefined', '', 'a total guess'] as $guess)
+		{
+			$login = self::request([
+				'method' => 'POST',
+				'path' => '/login',
+				'body' => ['username' => $newUsername, 'password' => $guess],
+			]);
+
+			self::assertSame(302, $login['status'], $login['body']);
+			self::assertStringContainsString('/login?invalid=true', self::header($login, 'Location'),
+				"a password login guessing '$guess' must be refused, even after the "
+				. 'backend switched to DefaultAuthMiddleware: ' . self::header($login, 'Location'));
+		}
+	}
+
+	/**
+	 * The one-sided part of round 6's fix: every mode but externally managed
+	 * authentication must keep requiring a real password on create, unchanged.
+	 */
+	public function testDefaultModeCreateStillRequiresAPassword(): void
+	{
+		$newUsername = 'rotation-default-mode-needs-password';
+
+		$create = self::request([
+			'method' => 'POST',
+			'path' => '/api/users',
+			'cookie' => 'rotation-admin-session',
+			'body' => ['username' => $newUsername],
+		]);
+
+		self::assertSame(400, $create['status'], $create['body']);
+
+		$statement = self::$db->prepare('SELECT count(*) FROM users WHERE username = ?');
+		$statement->execute([$newUsername]);
+		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused create must not leave a user row behind');
 	}
 
 	/**
