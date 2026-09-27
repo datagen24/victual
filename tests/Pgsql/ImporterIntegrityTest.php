@@ -17,12 +17,19 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * middle product hit the target's own (correct, present) guard trigger and failed for a
  * reason nobody involved in that write could see.
  *
- * H7(b): a target's own outbox rows, describing consequences of data an import is about to
- * discard wholesale, used to survive a force import whenever the source predated the
- * migration that introduced `outbox` (0259) - which every source at
- * DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN (0255) does, since GetCommonTables()
- * correctly leaves a table the source does not have out of the copy, and nothing filled that
- * gap.
+ * H7(b), replacement scope: a target's own outbox rows, describing consequences of data an
+ * import is about to discard wholesale, used to survive a force import whenever the source
+ * predated the migration that introduced `outbox` (0259). Fixed by treating `outbox` as
+ * never copied and always surgically cleared (ClearOutbox()) rather than truncated - a first
+ * round of this fix used TRUNCATE ... CASCADE, which silently took print_jobs/print_attempts
+ * down with it through their foreign keys. Round two also found: `mqtt_published_entities`
+ * describes the *target's own broker connection*, not the source's data, and must survive
+ * untouched (never copied, never cleared) so MqttStatePublicationService can still retract
+ * whatever it owes; `mqtt_product_entities` (the household's per-product opt-in) is correctly
+ * cleared when the source predates it, but is real household configuration, not "derived"
+ * state; and the price caches (cache__products_average_price,
+ * cache__products_last_purchased) need recomputing after the copy, not just copying, because
+ * migrations/0267.pgsql.sql's split-entry fix never ran on any SQLite source.
  *
  * M18: AssertSchemaVersionsMatch() used to compare only MAX(migration) on both the source and
  * the target, which a hole below the maximum does not move (migrations/RESERVATIONS.md
@@ -36,6 +43,14 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	/** Restores whatever a test punched into the shared target, so method order cannot matter. */
 	private ?int $deletedTargetMigration = null;
 
+	/**
+	 * NOT_COPIED_TABLES (outbox, the label/print subsystem, mqtt_published_entities) is
+	 * exactly the set of tables Import(true) never truncates - which is the point of this
+	 * whole test class, but it also means fixtures this class inserts into them accumulate
+	 * across test methods sharing one schema, unlike every table Import(true) itself resets.
+	 * Cleaned up here in foreign-key order: print_jobs.current_attempt_id is nulled first
+	 * (it points forward at print_attempts, which points back at print_jobs and outbox).
+	 */
 	protected function tearDown(): void
 	{
 		foreach ($this->files as $file)
@@ -56,7 +71,17 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			$this->deletedTargetMigration = null;
 		}
 
+		self::Pdo()->exec('UPDATE print_jobs SET current_attempt_id = NULL');
+		self::Pdo()->exec('DELETE FROM print_evidence');
+		self::Pdo()->exec('DELETE FROM print_attempts');
+		self::Pdo()->exec('DELETE FROM print_jobs');
 		self::Pdo()->exec('DELETE FROM outbox');
+		self::Pdo()->exec('DELETE FROM label_printers');
+		self::Pdo()->exec('DELETE FROM label_drivers');
+		self::Pdo()->exec('DELETE FROM label_workers');
+		self::Pdo()->exec('DELETE FROM mqtt_published_entities');
+		self::Pdo()->exec('DELETE FROM mqtt_product_entities');
+		self::Pdo()->exec('DELETE FROM cache__products_average_price WHERE product_id >= 8000');
 		self::Pdo()->exec('DELETE FROM products WHERE id >= 8000');
 	}
 
@@ -88,6 +113,21 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** A minimal worker -> driver -> printer chain, unique per call so tests sharing this schema cannot collide. */
+	private function labelPrinterFixture(): array
+	{
+		$db = self::Pdo();
+		$suffix = bin2hex(random_bytes(4));
+
+		$workerId = (int)$db->query("INSERT INTO label_workers (name, configuration_mode) VALUES ('importer-integrity-worker-$suffix', 'declared') RETURNING id")->fetchColumn();
+		$db->exec('INSERT INTO label_drivers (driver_id, schema_version, contract_version, connection_types, discriminator_properties, combination_binding, settings_schemas, capability_document, registered_by_worker_id) VALUES '
+			. "('importer-integrity-driver-$suffix', '1', 1, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, $workerId)");
+		$printerId = (int)$db->query('INSERT INTO label_printers (name, active, is_default, worker_id, driver_id, driver_schema_version, connection, connection_type, model, settings, settings_validated_at) VALUES '
+			. "('importer-integrity-printer-$suffix', 1, 0, $workerId, 'importer-integrity-driver-$suffix', '1', 'tcp://localhost:9100', 'network', 'fixture', '{}'::jsonb, CURRENT_TIMESTAMP) RETURNING id")->fetchColumn();
+
+		return [$workerId, $printerId];
+	}
+
 	// --- H7(a): unsupported product nesting is repaired, and the guard works afterward ----
 
 	public function testImportRepairsAMultiLevelProductChainAndReportsIt(): void
@@ -106,8 +146,8 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertSame([8001 => null, 8002 => null, 8003 => 8002], $rows,
 			'the middle product (8002) must have its parent link cleared; the leaf (8003) stays under it; the root (8001) is untouched');
 
-		self::assertNotEmpty(preg_grep('/repaired 1 unsupported product nesting chain.*8002/', $messages),
-			'the import output must name the repair: ' . implode("\n", $messages));
+		self::assertNotEmpty(preg_grep('/repaired 1 unsupported product nesting chain.*8002.*was parented under 8001/', $messages),
+			'the import output must name the repair and the parent link that was cleared: ' . implode("\n", $messages));
 
 		// The point of the repair: an ordinary write to product 8002 must now succeed rather
 		// than hitting trg_enfore_product_nesting_level (migrations/0277.pgsql.sql), which
@@ -141,9 +181,9 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::Pdo()->exec("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, parent_product_id) VALUES ('Leaf', 1, 2, 2, $middleId)");
 	}
 
-	// --- H7(b): a stale outbox event does not survive a replace --------------------------
+	// --- H7(b): outbox is surgically cleared without disturbing print history -------------
 
-	public function testImportClearsAStaleOutboxEventEvenWhenTheSourcePredatesTheTable(): void
+	public function testImportClearsAnUnreferencedOutboxRowEvenWhenTheSourcePredatesTheTable(): void
 	{
 		self::Pdo()->exec("INSERT INTO outbox (event_type, payload, attempts) VALUES ('stock.transaction_booked', '{\"marker\":\"pre-import\"}', 0)");
 		self::assertSame(1, (int)self::Pdo()->query("SELECT count(*) FROM outbox WHERE payload LIKE '%pre-import%'")->fetchColumn());
@@ -162,19 +202,92 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 		self::assertSame(0, (int)self::Pdo()->query('SELECT count(*) FROM outbox')->fetchColumn(),
 			'no outbox row - stale or otherwise - may survive a replace the source could not have contributed to');
-		self::assertNotEmpty(preg_grep('/outbox.*cleared/', $messages), 'the clearing must be reported: ' . implode("\n", $messages));
+		self::assertNotEmpty(preg_grep('/outbox: deleted 1 unreferenced row/', $messages), 'the deletion must be reported: ' . implode("\n", $messages));
 	}
 
-	public function testNonForceImportRefusesAPreExistingOutboxRowRatherThanSilentlyDiscardingIt(): void
+	public function testImportDeletesAnUnreferencedOutboxRow(): void
 	{
-		// Isolate AssertDerivedStateIsEmpty() from the pre-existing AssertTargetIsEmpty():
-		// the freshly migrated target's ordinary seeded rows (an admin user, api_keys, the
+		$db = self::Pdo();
+		$outboxId = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('stock.transaction_booked', '{}') RETURNING id")->fetchColumn();
+
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$this->importer($source)->Import(true);
+
+		self::assertSame(0, (int)$db->query('SELECT count(*) FROM outbox WHERE id = ' . $outboxId)->fetchColumn(),
+			'nothing references this row, so it must be deleted outright rather than kept around forever as inert history');
+	}
+
+	public function testImportKeepsADeliveredPrintJobsOutboxRowUntouched(): void
+	{
+		$db = self::Pdo();
+		[$workerId, $printerId] = $this->labelPrinterFixture();
+
+		$outboxId = (int)$db->query("INSERT INTO outbox (event_type, payload, delivered_at) VALUES ('label.print_requested', '{}', CURRENT_TIMESTAMP) RETURNING id")->fetchColumn();
+		$before = $db->query('SELECT delivered_at, dead_lettered_at FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
+
+		$jobId = (int)$db->query('INSERT INTO print_jobs (outbox_id, printer_id, label_uid) VALUES ('
+			. $outboxId . ', ' . $printerId . ", '01ARZ3NDEKTSV4RRFFQ69G5FAV') RETURNING id")->fetchColumn();
+		$attemptId = (int)$db->query('INSERT INTO print_attempts (outbox_id, job_id, attempt_number, worker_id, lease_expires_at, lease_hard_deadline, acknowledged_on) VALUES ('
+			. $outboxId . ', ' . $jobId . ", 1, $workerId, CURRENT_TIMESTAMP + INTERVAL '5 minutes', CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'report') RETURNING id")->fetchColumn();
+		$db->exec('UPDATE print_jobs SET current_attempt_id = ' . $attemptId . ' WHERE id = ' . $jobId);
+
+		// A source lacking `outbox` entirely (0255) - the harder case: nothing here could
+		// possibly be "the source's own copy", so keeping this row can only be this fix.
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$this->importer($source)->Import(true);
+
+		$after = $db->query('SELECT delivered_at, dead_lettered_at FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($after, 'a delivered, referenced outbox row must not be deleted');
+		self::assertSame($before, $after, 'and must not be touched in any way either - it is already done');
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_jobs WHERE id = ' . $jobId)->fetchColumn(),
+			'the print job survives because its outbox_id foreign key was never broken');
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_attempts WHERE id = ' . $attemptId)->fetchColumn(),
+			'the print attempt survives for the same reason');
+	}
+
+	public function testImportDeadLettersAPendingPrintJobsOutboxRowAndNeverDeliversIt(): void
+	{
+		$db = self::Pdo();
+		[$workerId, $printerId] = $this->labelPrinterFixture();
+
+		$outboxId = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id")->fetchColumn();
+		$jobId = (int)$db->query('INSERT INTO print_jobs (outbox_id, printer_id, label_uid) VALUES ('
+			. $outboxId . ', ' . $printerId . ", 'PENDING1DEKTSV4RRFFQ69G5F') RETURNING id")->fetchColumn();
+		$attemptId = (int)$db->query('INSERT INTO print_attempts (outbox_id, job_id, attempt_number, worker_id, lease_expires_at, lease_hard_deadline, acknowledged_on) VALUES ('
+			. $outboxId . ', ' . $jobId . ", 1, $workerId, CURRENT_TIMESTAMP + INTERVAL '5 minutes', CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'report') RETURNING id")->fetchColumn();
+
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+
+		$messages = [];
+		$this->importer($source, function ($message) use (&$messages)
+		{
+			$messages[] = $message;
+		})->Import(true);
+
+		$row = $db->query('SELECT delivered_at, dead_lettered_at FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($row, 'the referenced outbox row must not be deleted');
+		self::assertNull($row['delivered_at'], 'it was never delivered and must not be reported as if it had been');
+		self::assertNotNull($row['dead_lettered_at'], 'a pending, referenced row must be dead-lettered rather than left live');
+
+		self::assertSame(0,
+			(int)$db->query('SELECT count(*) FROM outbox WHERE id = ' . $outboxId . ' AND delivered_at IS NULL AND dead_lettered_at IS NULL')->fetchColumn(),
+			"OutboxService::GetUndelivered()'s own WHERE clause (delivered_at IS NULL AND dead_lettered_at IS NULL) must now exclude this row"
+		);
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_jobs WHERE id = ' . $jobId)->fetchColumn(), 'the print job survives');
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_attempts WHERE id = ' . $attemptId)->fetchColumn(), 'the print attempt survives');
+		self::assertNotEmpty(preg_grep('/outbox: deleted 0 unreferenced row.*dead-lettered 1 row/', $messages),
+			'the dead-lettering must be reported: ' . implode("\n", $messages));
+	}
+
+	public function testNonForceImportRefusesAPreExistingUndeliveredOutboxRowRatherThanSilentlyDiscardingIt(): void
+	{
+		// Isolate AssertOutboxIsHandleable() from the pre-existing AssertTargetIsEmpty(): the
+		// freshly migrated target's ordinary seeded rows (an admin user, api_keys, the
 		// default quantity units) would otherwise trip that broader, unrelated check first,
 		// on every real target - which is not the gap this test exists to cover. Only the
-		// ordinary common tables are emptied; NOT_COPIED_TABLES/TARGET_ONLY_TABLES (roles,
-		// permission_fields, label_import_state's single bootstrap row, ...) are left exactly
-		// as the migration run seeded them, the way a real DatabaseImporter run leaves them.
-		$excluded = array_merge(['outbox'], DatabaseImporter::NOT_COPIED_TABLES, DatabaseImporter::TARGET_ONLY_TABLES);
+		// ordinary common tables are emptied; NOT_COPIED_TABLES/TARGET_ONLY_TABLES are left
+		// exactly as the migration run seeded them, the way a real import leaves them.
+		$excluded = array_merge(DatabaseImporter::NOT_COPIED_TABLES, DatabaseImporter::TARGET_ONLY_TABLES);
 		$otherTables = array_diff(self::Pdo()->query("SELECT table_name FROM information_schema.tables
 			WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'")->fetchAll(PDO::FETCH_COLUMN), $excluded);
 		self::Pdo()->exec('TRUNCATE TABLE ' . implode(', ', array_map(fn($t) => '"' . $t . '"', $otherTables)) . ' RESTART IDENTITY CASCADE');
@@ -193,10 +306,233 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			$thrown = $ex;
 		}
 
-		self::assertNotNull($thrown, 'a non-force import must refuse when the target already holds an outbox row');
+		self::assertNotNull($thrown, 'a non-force import must refuse when the target already holds an undelivered outbox row');
 		self::assertStringContainsString('outbox', $thrown->getMessage());
 		self::assertStringContainsString('--force', $thrown->getMessage());
 		self::assertSame(1, (int)self::Pdo()->query('SELECT count(*) FROM outbox')->fetchColumn(), 'refusal must leave the target unchanged');
+	}
+
+	// --- H7(b): the target's own MQTT broker state is neither copied nor cleared ----------
+
+	public function testImportKeepsTheMqttPublicationLedgerButClearsTheProductOptIn(): void
+	{
+		$db = self::Pdo();
+		$productId = 8401;
+		$objectId = 'product_' . $productId;
+		$payloadHash = hash('sha256', 'importer-integrity-fixture');
+
+		$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ($productId, 'Ledger fixture', 1, 2, 2)");
+		$db->exec('INSERT INTO mqtt_product_entities (product_id) VALUES (' . $productId . ')');
+		$statement = $db->prepare('INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES (?, ?)');
+		$statement->execute([$objectId, $payloadHash]);
+
+		// A source predating `mqtt_product_entities`/`mqtt_published_entities` (0257) and,
+		// separately, not carrying this product at all - the target's opt-in for it can no
+		// longer mean anything once this product id belongs to whatever the import wrote
+		// there instead (or to nothing at all), but the ledger describes the broker, not the
+		// product, and must survive regardless.
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$this->importer($source)->Import(true);
+
+		self::assertSame([['object_id' => $objectId, 'payload_hash' => $payloadHash]],
+			array_map(fn($row) => ['object_id' => $row['object_id'], 'payload_hash' => $row['payload_hash']],
+				$db->query('SELECT object_id, payload_hash FROM mqtt_published_entities WHERE object_id = ' . $db->quote($objectId))->fetchAll(PDO::FETCH_ASSOC)),
+			'the ledger row must survive an import untouched - it describes the target broker, not the source data');
+
+		self::assertSame(0, (int)$db->query('SELECT count(*) FROM mqtt_product_entities WHERE product_id = ' . $productId)->fetchColumn(),
+			'the opt-in flag, keyed to a product id the import just replaced, must not survive under a stale reference');
+	}
+
+	/**
+	 * The other half of the property above, proven against the real publication code rather
+	 * than only against the schema: a ledger row that survived with nothing currently opting
+	 * its product in - exactly testImportKeepsTheMqttPublicationLedgerButClearsTheProductOptIn()'s
+	 * own end state - must still cause MqttStatePublicationService::Retract() to send an empty
+	 * payload for its topic and forget the row, the next time publication runs. Seeded
+	 * directly (mqttcoverage-subprocess-helper.php's `seedledgerrow` step) rather than by
+	 * running a full import first: the previous test already proves an import produces this
+	 * exact state, so this one starts from it and asks the question a broker can actually
+	 * answer, using the same stand-in broker infrastructure MqttCoverageTest.php's own
+	 * scenarios do (see that class for the fuller pattern this borrows a reduced copy of).
+	 */
+	public function testARetractionForALedgerEntryThatSurvivedAnImportReachesTheBroker(): void
+	{
+		$productId = 8402;
+		$objectId = 'product_' . $productId;
+		$db = self::Pdo();
+		$statement = $db->prepare('INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES (?, ?)');
+		$statement->execute([$objectId, hash('sha256', 'importer-integrity-retraction-fixture')]);
+
+		$port = $this->reserveTcpPort();
+		$logFile = sys_get_temp_dir() . '/importer-integrity-mqtt-' . uniqid() . '.log';
+		file_put_contents($logFile, '');
+		$broker = $this->startStandInBroker($port, $logFile);
+
+		try
+		{
+			$resultFile = sys_get_temp_dir() . '/importer-integrity-mqtt-result-' . uniqid() . '.json';
+			$environment = array_merge(array_filter(array_merge($_SERVER, $_ENV), 'is_scalar'), [
+				'RBAC_TEST_SCHEMA' => self::Schema(),
+				'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+				'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+				'PGHOST' => getenv('PGHOST'),
+				'PGPORT' => getenv('PGPORT'),
+				'PGUSER' => getenv('PGUSER'),
+				'PGPASSWORD' => getenv('PGPASSWORD'),
+				'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+				'VICTUAL_MQTT_ENABLED' => 'true',
+				'VICTUAL_MQTT_HOST' => '127.0.0.1',
+				'VICTUAL_MQTT_PORT' => (string)$port
+			]);
+
+			$process = proc_open(
+				[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'retract', $resultFile],
+				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+				$pipes,
+				null,
+				$environment
+			);
+
+			self::assertIsResource($process, 'could not start the scenario helper');
+			$output = stream_get_contents($pipes[1]);
+			$errors = stream_get_contents($pipes[2]);
+			fclose($pipes[1]);
+			fclose($pipes[2]);
+			proc_close($process);
+
+			self::assertFileExists($resultFile, "the scenario helper wrote no result.\nstdout: $output\nstderr: $errors");
+			$result = json_decode((string)file_get_contents($resultFile), true);
+			@unlink($resultFile);
+			self::assertIsArray($result, "the scenario helper wrote no JSON.\nstdout: $output\nstderr: $errors");
+			self::assertArrayHasKey('error', $result, 'malformed result: ' . json_encode($result));
+			self::assertNull($result['error'], 'the retraction scenario must not error: ' . json_encode($result));
+			self::assertTrue($result['steps']['0:retract'] ?? false, 'the retraction reports success');
+
+			$waited = 0;
+			while ($waited < 100 && !str_contains((string)@file_get_contents($logFile), '=== end'))
+			{
+				usleep(50000);
+				$waited++;
+			}
+			self::assertStringContainsString('=== end', (string)@file_get_contents($logFile), 'the stand-in broker never finished the connection');
+
+			$topics = [];
+			foreach (file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line)
+			{
+				$fields = explode("\t", $line);
+				if ($fields[0] === '=== connect' || str_starts_with($line, '==='))
+				{
+					continue;
+				}
+				$topics[$fields[0]] = (int)($fields[1] ?? 0);
+			}
+
+			$expectedTopic = 'victual/state/product/' . $productId;
+			self::assertArrayHasKey($expectedTopic, $topics, "the surviving ledger entry's topic must be retracted: " . json_encode($topics));
+			self::assertSame(0, $topics[$expectedTopic], 'a retraction clears the retained message with an empty payload');
+
+			self::assertSame(0, (int)$db->query('SELECT count(*) FROM mqtt_published_entities WHERE object_id = ' . $db->quote($objectId))->fetchColumn(),
+				'Retract() forgets a ledger row once its topic has actually been retracted');
+		}
+		finally
+		{
+			if (is_resource($broker))
+			{
+				proc_terminate($broker);
+				proc_close($broker);
+			}
+			@unlink($logFile);
+			@unlink($logFile . '.stdout');
+			@unlink($logFile . '.stderr');
+		}
+	}
+
+	private function reserveTcpPort(): int
+	{
+		$socket = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorMessage);
+
+		if ($socket === false)
+		{
+			self::fail('could not reserve a port: ' . $errorMessage);
+		}
+
+		$name = (string)stream_socket_get_name($socket, false);
+		fclose($socket);
+
+		return (int)substr($name, strrpos($name, ':') + 1);
+	}
+
+	/** @return resource */
+	private function startStandInBroker(int $port, string $logFile)
+	{
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'broker', (string)$port, $logFile, 'record'],
+			[1 => ['file', $logFile . '.stdout', 'a'], 2 => ['file', $logFile . '.stderr', 'a']],
+			$pipes,
+			null,
+			array_filter(array_merge($_SERVER, $_ENV), 'is_scalar')
+		);
+
+		if (!is_resource($process))
+		{
+			self::fail('could not start the stand-in broker on 127.0.0.1:' . $port);
+		}
+
+		$waited = 0;
+
+		while ($waited < 100)
+		{
+			$probe = @fsockopen('127.0.0.1', $port, $errorNumber, $errorMessage, 0.2);
+
+			if ($probe !== false)
+			{
+				fclose($probe);
+				usleep(50000);
+				file_put_contents($logFile, '');
+
+				return $process;
+			}
+
+			usleep(50000);
+			$waited++;
+		}
+
+		self::fail('the stand-in broker never bound 127.0.0.1:' . $port);
+	}
+
+	// --- H7(b), replacement scope: price caches are recomputed, not just copied -----------
+
+	public function testImportRebuildsThePriceCachesRatherThanCopyingAStaleOne(): void
+	{
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$productId = 8501;
+
+		$source->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ($productId, 'Price rebuild fixture', 1, 2, 2)");
+		$source->exec("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id, purchased_date) VALUES "
+			. "($productId, 4, 'price-fixture-1', 'purchase', 2, 0, 1, '2026-01-01'), "
+			. "($productId, 3, 'price-fixture-2', 'purchase', 2, 0, 1, '2026-01-02'), "
+			. "($productId, 2, 'price-fixture-3', 'purchase', 3, 0, 1, '2026-01-03')");
+		// This fixture's own stock_log triggers already populate cache__products_average_price
+		// from these three rows - whatever they compute (a real, older SQLite installation's
+		// own cache is exactly this: trigger-maintained, never touched by
+		// migrations/0267.pgsql.sql's split-entry fix, which no SQLite source ever ran) is
+		// overwritten deliberately here with the validator's own probe value, 2.0, so the
+		// assertion below is not at the mercy of whether this fixture's triggers happen to
+		// already agree with the correct answer.
+		$source->exec("UPDATE cache__products_average_price SET price = 2.0 WHERE product_id = $productId");
+		self::assertSame(1, (int)$source->query("SELECT count(*) FROM cache__products_average_price WHERE product_id = $productId")->fetchColumn(),
+			"the fixture's own trigger must have created exactly one cache row to overwrite");
+
+		$messages = [];
+		$this->importer($source, function ($message) use (&$messages)
+		{
+			$messages[] = $message;
+		})->Import(true);
+
+		$rebuilt = (float)self::Pdo()->query('SELECT price FROM cache__products_average_price WHERE product_id = ' . $productId)->fetchColumn();
+		self::assertEqualsWithDelta(20 / 9, $rebuilt, 0.0001,
+			'the weighted average of purchases 4@2, 3@2 and 2@3 is 2.2222..., not the 2.0 the source (and a verbatim copy of it) cached');
+		self::assertNotEmpty(preg_grep('/rebuilt price cache/', $messages), 'the rebuild must be reported: ' . implode("\n", $messages));
 	}
 
 	// --- M18: a hole below the maximum is refused on both sides ---------------------------
