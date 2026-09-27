@@ -307,6 +307,11 @@ class StockService extends BaseService
 			throw new \Exception('Amount can\'t be <= 0');
 		}
 
+		if (self::CompareAmounts($amount, 0) == 0)
+		{
+			throw new \InvalidArgumentException('Amount must be greater than ' . self::AMOUNT_TOLERANCE);
+		}
+
 		$productDetails = (object)$this->GetProductDetails($productId);
 
 		// Product-level tare weight arithmetic against the product's whole stock total was

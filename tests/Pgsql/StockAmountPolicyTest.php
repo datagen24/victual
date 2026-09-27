@@ -164,7 +164,12 @@ class StockAmountPolicyTest extends PgsqlSchemaTestCase
 		}
 	}
 
-	#[DataProvider('operations')]
+	public static function apiOperations(): array
+	{
+		return [['consume'], ['open'], ['transfer'], ['add']];
+	}
+
+	#[DataProvider('apiOperations')]
 	public function testTinyApiRequestsReturn400WithAnUntouchedLedger(string $operation): void
 	{
 		$product = self::product();
@@ -172,12 +177,12 @@ class StockAmountPolicyTest extends PgsqlSchemaTestCase
 		$before = self::snapshot($product);
 		$request = (new ServerRequestFactory())->createServerRequest('POST', '/api/stock/products/' . $product . '/' . $operation)
 			->withHeader('Content-Type', 'application/json')
-			->withParsedBody(['amount' => 1e-9, 'location_id_from' => self::$source, 'location_id_to' => self::$destination]);
+			->withParsedBody(['amount' => 1e-9, 'best_before_date' => '2035-01-01', 'location_id_from' => self::$source, 'location_id_to' => self::$destination]);
 		$container = new \DI\Container();
 		$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
 		$container->set('UrlManager', new \Victual\Helpers\UrlManager(''));
 		$controller = new StockApiController($container);
-		$method = ['consume' => 'ConsumeProduct', 'open' => 'OpenProduct', 'transfer' => 'TransferProduct'][$operation];
+		$method = ['consume' => 'ConsumeProduct', 'open' => 'OpenProduct', 'transfer' => 'TransferProduct', 'add' => 'AddProduct'][$operation];
 		try
 		{
 			$response = $controller->$method($request, new Response(), ['productId' => $product]);
@@ -192,6 +197,32 @@ class StockAmountPolicyTest extends PgsqlSchemaTestCase
 		self::assertSame(400, $status);
 		self::assertStringContainsString('Amount must be greater than', $error);
 		self::assertSame($before, self::snapshot($product));
+	}
+
+	public function testPositiveBookingsRejectTinyAmountsAndLeaveLargerAmountsConsumable(): void
+	{
+		foreach ([StockService::TRANSACTION_TYPE_PURCHASE, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, StockService::TRANSACTION_TYPE_INVENTORY_CORRECTION] as $type)
+		{
+			$product = self::product();
+			foreach ([0.5e-9, 1e-9] as $amount)
+			{
+				$transactionId = null;
+				$message = self::refuse($product, function () use ($product, $amount, $type, &$transactionId) {
+					self::$stock->AddProduct($product, $amount, '2035-01-01', $type, '2026-09-27', null, self::$source, null, $transactionId);
+				});
+				self::assertSame('Amount must be greater than ' . StockService::AMOUNT_TOLERANCE, $message);
+				self::assertNull($transactionId);
+			}
+			self::$stock->AddProduct($product, 2e-9, '2035-01-01', $type, '2026-09-27', null, self::$source);
+			[$rows, $logs] = self::snapshot($product);
+			self::assertCount(1, $rows);
+			self::assertCount(1, $logs);
+			self::assertSame(2e-9, (float)$rows[0]['amount']);
+			self::assertSame(2e-9, (float)$logs[0]['amount']);
+			self::book('consume', $product, 2e-9);
+			self::assertSame([], self::snapshot($product)[0]);
+			self::assertSame(-2e-9, (float)self::snapshot($product)[1][1]['amount']);
+		}
 	}
 
 	public static function availability(): iterable
