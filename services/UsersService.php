@@ -335,4 +335,21 @@ class UsersService extends BaseService
 		$userRow = $this->DB->users()->where('id = :1', $userId)->fetch();
 		return $userRow !== null;
 	}
+
+	/**
+	 * Test-only: clears the per-request user settings cache.
+	 *
+	 * Named for what it clears rather than "ResetInstancesForTest", which would read as an
+	 * override of BaseService::ResetInstancesForTest() - it is not one: $UserSettingsCache
+	 * is declared directly on this class, not on any cached BaseService instance, so
+	 * clearing $Instances does not touch it and a fresh UsersService instance would still
+	 * read this stale, schema-bound array. Called from
+	 * PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetCachesForTest()
+	{
+		self::$UserSettingsCache = [];
+	}
 }

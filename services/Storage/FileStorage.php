@@ -53,6 +53,23 @@ abstract class FileStorage
 	}
 
 	/**
+	 * Test-only: clears the per-request backend singleton.
+	 *
+	 * DatabaseStorage (one of the two backends this can resolve to) captures
+	 * DatabaseService::GetDbConnectionRaw() in its constructor - the same hazard
+	 * BaseService::$Instances has, one class outside that hierarchy. A cached instance from
+	 * a previous PHPUnit test class would otherwise keep writing to that class's own
+	 * connection, pointed by then at a dropped schema. Called from
+	 * PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetInstanceForTest(): void
+	{
+		self::$Instance = null;
+	}
+
+	/**
 	 * Whether a file with this name exists in this group.
 	 *
 	 * @param string $group Group name, e.g. "productpictures"

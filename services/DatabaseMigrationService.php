@@ -214,6 +214,25 @@ class DatabaseMigrationService extends BaseService
 	}
 
 	/**
+	 * Test-only: clears the memoized applied-migrations list.
+	 *
+	 * Named for what it clears rather than "ResetInstancesForTest", which would read as an
+	 * override of BaseService::ResetInstancesForTest() - it is not one: $AppliedMigrationNumbers
+	 * is declared directly on this class, not on any cached BaseService instance, so clearing
+	 * $Instances does not touch it. MigrateDatabase() already clears it itself once it
+	 * finishes (see the comment on that assignment) - this exists for the case a previous
+	 * PHPUnit class's setup threw before reaching that point, leaving the memo describing a
+	 * schema this process is about to stop using instead of the one about to be migrated.
+	 * Called from PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetCachesForTest()
+	{
+		self::$AppliedMigrationNumbers = null;
+	}
+
+	/**
 	 * The highest migration number this database has recorded, or 0 when it has recorded
 	 * none.
 	 *

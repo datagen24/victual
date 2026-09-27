@@ -337,6 +337,25 @@ class BaseApiController extends BaseController
 	}
 
 	/**
+	 * Test-only: clears the per-request column-type cache.
+	 *
+	 * $ColumnTypeCache is a static on this controller, not on any BaseService instance, so
+	 * BaseService::ResetInstancesForTest() cannot reach it. Every PHPUnit schema carries the
+	 * same table/column shape (all of them run the identical migration set), so a leaked
+	 * entry does not corrupt a *value* the way UsersService's or FieldPolicy's caches can -
+	 * but a table that failed to read once (cached here as null, meaning "could not
+	 * validate") would otherwise refuse every later class's queries against that table too,
+	 * including one where it reads fine. Called from
+	 * PgsqlSchemaTestCase::setUpBeforeClass() only.
+	 *
+	 * @internal Test support only
+	 */
+	public static function ResetColumnTypeCacheForTest(): void
+	{
+		self::$ColumnTypeCache = [];
+	}
+
+	/**
 	 * Refuses a request whose filter or sort cannot be validated, rather than running it
 	 * unvalidated.
 	 *
