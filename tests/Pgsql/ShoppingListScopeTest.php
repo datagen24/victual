@@ -3,7 +3,6 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
-use PHPUnit\Framework\Attributes\Depends;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -38,19 +37,11 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		self::$stockService = new StockService();
 	}
 
-	private static function productExists(int $productId): bool
+	private static function getShoppingListItems(int $listId, int $productId): array
 	{
-		$stmt = self::$db->prepare('SELECT COUNT(*) FROM products WHERE id = ?');
-		$stmt->execute([$productId]);
-		return (int)$stmt->fetchColumn() > 0;
-	}
-
-	private static function getShoppingListItem(int $listId, int $productId): ?array
-	{
-		$stmt = self::$db->prepare('SELECT id, shopping_list_id, product_id, amount FROM shopping_list WHERE shopping_list_id = ? AND product_id = ? LIMIT 1');
+		$stmt = self::$db->prepare('SELECT id, shopping_list_id, product_id, amount FROM shopping_list WHERE shopping_list_id = ? AND product_id = ? ORDER BY id');
 		$stmt->execute([$listId, $productId]);
-		$row = $stmt->fetch(PDO::FETCH_ASSOC);
-		return $row === false ? null : $row;
+		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
 	/**
@@ -94,31 +85,32 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		self::$stockService->AddProductToShoppingList($productId, 3, 2, null, $list3Id);
 
 		// Verify both entries exist
-		$list2Item = self::getShoppingListItem($list2Id, $productId);
-		self::assertNotNull($list2Item, 'Product should be on list 2 with amount 5');
-		self::assertSame(5, (int)$list2Item['amount'], 'List 2 item should have amount 5');
+		$list2Items = self::getShoppingListItems($list2Id, $productId);
+		self::assertCount(1, $list2Items, 'Product should be on list 2 once');
+		self::assertEqualsWithDelta(5.0, (float)$list2Items[0]['amount'], 0.001, 'List 2 item should have amount 5');
 
-		$list3Item = self::getShoppingListItem($list3Id, $productId);
-		self::assertNotNull($list3Item, 'Product should be on list 3 with amount 3');
-		self::assertSame(3, (int)$list3Item['amount'], 'List 3 item should have amount 3');
+		$list3Items = self::getShoppingListItems($list3Id, $productId);
+		self::assertCount(1, $list3Items, 'Product should be on list 3 once');
+		self::assertEqualsWithDelta(3.0, (float)$list3Items[0]['amount'], 0.001, 'List 3 item should have amount 3');
 
 		// CRITICAL TEST: Remove 1 unit from list 3 (should result in list 3 having amount 2)
 		self::$stockService->RemoveProductFromShoppingList($productId, 1, $list3Id);
 
 		// Assert list 3 was modified correctly (amount reduced from 3 to 2)
-		$list3ItemAfter = self::getShoppingListItem($list3Id, $productId);
-		self::assertNotNull($list3ItemAfter, 'Product should still be on list 3 after partial removal');
-		self::assertSame(2, (int)$list3ItemAfter['amount'], 'List 3 item should have amount 2 (3-1)');
+		$list3ItemsAfter = self::getShoppingListItems($list3Id, $productId);
+		self::assertCount(1, $list3ItemsAfter, 'Product should still be on list 3 after partial removal');
+		self::assertEqualsWithDelta(2.0, (float)$list3ItemsAfter[0]['amount'], 0.001, 'List 3 item should have amount 2 (3-1)');
 
 		// CRITICAL ASSERTION: List 2 should be completely unchanged
-		$list2ItemAfter = self::getShoppingListItem($list2Id, $productId);
-		self::assertNotNull($list2ItemAfter, 'Product should still be on list 2 (unchanged)');
-		self::assertSame(5, (int)$list2ItemAfter['amount'], 'List 2 item MUST still have amount 5 (this fails with the bug)');
+		$list2ItemsAfter = self::getShoppingListItems($list2Id, $productId);
+		self::assertCount(1, $list2ItemsAfter, 'Product should still be on list 2 (unchanged)');
+		self::assertEqualsWithDelta(5.0, (float)$list2ItemsAfter[0]['amount'], 0.001, 'List 2 item MUST still have amount 5 (this fails with the bug)');
 	}
 
 	/**
 	 * Test that when a product is not on a specific list, removal returns gracefully
-	 * without modifying any list.
+	 * without modifying any list. Product is added to list B (list 2), then removal is
+	 * attempted on list A (list 1).
 	 */
 	public function testRemoveProductNotOnListIsGraceful(): void
 	{
@@ -132,29 +124,49 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		$stmt->execute(['Test Product 2', $locationId]);
 		$productId = (int)$stmt->fetchColumn();
 
-		// Use list 1
-		$listId = 1;
+		// List B: where the product IS
+		$listB = 2;
+		// List A: where the product is NOT
+		$listA = 1;
 
-		// Do NOT add the product to any list
+		// Ensure list B exists
+		$stmt = self::$db->prepare('SELECT COUNT(*) FROM shopping_lists WHERE id = ?');
+		$stmt->execute([$listB]);
+		if ((int)$stmt->fetchColumn() === 0) {
+			self::$db->exec("INSERT INTO shopping_lists(id, name) VALUES (2, 'List B')");
+		}
 
-		// Try to remove the product from list 1 (it's not there)
+		// Add the product to list B only (with amount 3)
+		self::$stockService->AddProductToShoppingList($productId, 3, 2, null, $listB);
+
+		// Verify it's on list B
+		$listBItemsBefore = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsBefore, 'Product should be on list B');
+		self::assertEqualsWithDelta(3.0, (float)$listBItemsBefore[0]['amount'], 0.001, 'List B item should have amount 3');
+
+		// (a) Try to remove the product from list A through the service (it's not there)
 		// This should not throw an exception and should not modify any state
 		try {
-			self::$stockService->RemoveProductFromShoppingList($productId, 1, $listId);
+			self::$stockService->RemoveProductFromShoppingList($productId, 1, $listA);
 			// Expected: operation completes gracefully
 		} catch (\Exception $e) {
 			self::fail("RemoveProductFromShoppingList should return gracefully when product is not on the list, but threw: " . $e->getMessage());
 		}
 
-		// Verify no entry was created
-		$item = self::getShoppingListItem($listId, $productId);
-		self::assertNull($item, 'No entry should exist for a product not on the list');
+		// Verify no entry was created on list A
+		$listAItems = self::getShoppingListItems($listA, $productId);
+		self::assertCount(0, $listAItems, 'No entry should exist for a product not on list A');
+
+		// Verify list B is completely unchanged
+		$listBItemsAfter = self::getShoppingListItems($listB, $productId);
+		self::assertCount(1, $listBItemsAfter, 'Product should still be on list B (unchanged)');
+		self::assertSame($listBItemsBefore[0]['id'], $listBItemsAfter[0]['id'], 'List B row id must be unchanged');
+		self::assertEqualsWithDelta(3.0, (float)$listBItemsAfter[0]['amount'], 0.001, 'List B item amount must be unchanged (still 3)');
 	}
 
 	/**
 	 * Control test: verify normal single-list removal works correctly.
 	 */
-	#[Depends('testRemoveProductFromListDoesNotMutateOtherLists')]
 	public function testRemoveProductFromSingleListWorks(): void
 	{
 		// Create a location for the product
@@ -172,21 +184,21 @@ class ShoppingListScopeTest extends PgsqlSchemaTestCase
 		// Add product to list 1 with amount 5
 		self::$stockService->AddProductToShoppingList($productId, 5, 2, null, $listId);
 
-		$itemBefore = self::getShoppingListItem($listId, $productId);
-		self::assertNotNull($itemBefore, 'Product should be on list 1');
-		self::assertSame(5, (int)$itemBefore['amount'], 'Initial amount should be 5');
+		$itemsBefore = self::getShoppingListItems($listId, $productId);
+		self::assertCount(1, $itemsBefore, 'Product should be on list 1');
+		self::assertEqualsWithDelta(5.0, (float)$itemsBefore[0]['amount'], 0.001, 'Initial amount should be 5');
 
 		// Remove 2 units
 		self::$stockService->RemoveProductFromShoppingList($productId, 2, $listId);
 
-		$itemAfter = self::getShoppingListItem($listId, $productId);
-		self::assertNotNull($itemAfter, 'Product should still be on list 1');
-		self::assertSame(3, (int)$itemAfter['amount'], 'Amount should be 3 (5-2)');
+		$itemsAfter = self::getShoppingListItems($listId, $productId);
+		self::assertCount(1, $itemsAfter, 'Product should still be on list 1');
+		self::assertEqualsWithDelta(3.0, (float)$itemsAfter[0]['amount'], 0.001, 'Amount should be 3 (5-2)');
 
 		// Remove all remaining (3 units) - should delete the row
 		self::$stockService->RemoveProductFromShoppingList($productId, 3, $listId);
 
-		$itemFinal = self::getShoppingListItem($listId, $productId);
-		self::assertNull($itemFinal, 'Product should be removed from list 1 when amount reaches 0');
+		$itemsFinal = self::getShoppingListItems($listId, $productId);
+		self::assertCount(0, $itemsFinal, 'Product should be removed from list 1 when amount reaches 0');
 	}
 }
