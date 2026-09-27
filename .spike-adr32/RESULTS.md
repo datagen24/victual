@@ -1,9 +1,10 @@
 # ADR-0032 acceptance spike
 
-ADR-0032 is not ready for acceptance. Both experimental policies pass the focused
-functional checks, but both retain the demonstrated bulk residue. The relative policy
-also discards a genuine small remainder at large magnitudes. On 2026-09-27, the maintainer selected the relative policy and accepted its wider loss of
-precision after reviewing both limitations. Production implementation remains outstanding.
+The maintainer selected the relative policy on 2026-09-27 and accepted its wider loss of
+precision and carried-residue limitation. The maintainer then confirmed that reproducible
+spike evidence can clear acceptance; production delivery remains later work. The gate
+audit below uses that acceptance criterion. The experiment does not change production
+services or claim production coverage.
 
 ## Working copies and runtime
 
@@ -105,21 +106,44 @@ container setup, schema migration and teardown. The 14-digit runs used the same 
 tree and patch generator with persistent disposable containers. No safe numerical range
 is inferred from either set of fixtures.
 
+## Selected-policy acceptance run
+
+The 2026-09-27 acceptance run strengthens stock-ledger amount assertions for consume,
+open, transfer, purchase and inventory, and verifies the factor-10 opening that the
+existing suite characterizes as a refusal. The added case opens ten separate one-can
+rows, checks ten one-can bookings, and undoes them to ten unopened cans.
+
+The final runner passes 80 functional checks at both PHP precision 14 and precision 17,
+with five separate bulk/drift observations per run. The raw results are
+[`relative-acceptance-14.json`](evidence/relative-acceptance-14.json) and
+[`relative-acceptance-17.json`](evidence/relative-acceptance-17.json). These runs use the
+same pinned combined tree and experimental patch described above. Experimental functional
+failures now cause a nonzero exit; the baseline and numerical observations remain explicit
+evidence rather than pass requirements.
+
+The baseline audit shows that inventory, open and transfer all accept the tested negative
+input `-5e-10` without service refusal. The experimental guards reject it before mutation.
+They also reject NaN and both infinities. Edit still permits zero. These observations
+answer decision 4's required audit without claiming that every baseline invalid input
+produces the same failure.
+
 ## Gate audit
 
-| Gate | Evidence | Remaining requirement |
+| Gate | Evidence | Outcome under the spike criterion |
 |---|---|---|
-| 1: policy confirmation | Both policies tested with identical service paths, units, and operands; bulk limitations demonstrated | Relative policy selected on 2026-09-27 and open question 3 answered; the acceptance PR must confirm the recorded policy and structural exceptions |
-| 2: booking and undo regressions | Consume, open, transfer, inventory in both directions, purchase, self-production and positive inventory-correction undo; separate 0.1 and 0.2 rows; transfer-undo residue fixture | Promote spike cases to maintained PHPUnit regressions and land the implementation/dependency separately |
-| 3: boundaries and conversions | Inclusive zero predicate; below/above availability shortages; 0.001 preservation; no extra booking after exhaustion; factors 4 and 0.001; recipe clamps; inventory equal-count refusal; bulk observations | Update the old refusal characterization; retain the chosen policy's documented limitations |
-| 4: coherence | Edit, measure and measured open at 1, 1 ± 0.5e-9, 0.995, 0.998, 1.002, 1.005; exact request checks and preserved positive split remainder | Land exact application predicates; SQL constraint remains unchanged |
-| 5: comparison inventory | Audit below and reproducible experimental patch | Production review must verify the final implementation, including any newer dependency sites |
-| 6: invalid inputs | Six stock write methods tested with -5e-10, NaN, positive and negative infinity; measurement non-finite inputs; zero edit succeeds; refused operations preserve stock and ledger | Land guards with regression coverage; service-level checks do not establish the HTTP error contract |
+| 1: policy confirmation | Both policies tested with identical service paths, units, and operands; bulk limitations demonstrated | Relative policy selected and open question 3 answered; acceptance confirms the floor, coefficient, inclusive boundary, conversion rules and exact coherence exception |
+| 2: booking and undo regressions | Consume, open, transfer, inventory in both directions, purchase, self-production and positive inventory-correction undo; separate 0.1 and 0.2 rows; transfer-undo residue fixture | Stock and ledger assertions pass in the selected-policy experiment |
+| 3: boundaries and conversions | Inclusive zero predicate; below/above availability shortages; 0.001 preservation; no extra booking after exhaustion; factors 4, 0.001 and 10; recipe clamps; inventory equal-count refusal; bulk observations | Selected-policy checks pass; bulk residue and large-amount precision loss remain explicitly accepted limitations |
+| 4: coherence | Edit, measure and measured open at 1, 1 ± 0.5e-9, 0.995, 0.998, 1.002, 1.005; exact request checks and preserved positive split remainder | Experimental predicates pass against the unchanged SQL constraint |
+| 5: comparison inventory | Audit below and reproducible experimental patch | All decision-inventory sites classified; printer, shopping-list, SQL and browser exclusions recorded |
+| 6: invalid inputs | Six stock write methods tested with -5e-10, NaN, positive and negative infinity; measurement non-finite inputs; zero edit succeeds | Refusals preserve stock and ledger; inventory, open and transfer receive the same finite and strict-sign guards as edit |
 
-No gate is marked complete solely because an exported experiment passes. Gate 1's numeric
-policy choice is recorded, including acceptance of the relative policy's wider precision
-loss. Gates 2–6 require durable production implementation and regression evidence.
-Acceptance must remain a separate bookkeeping-only pull request.
+These results satisfy the experimental evidence requirements. The acceptance PR must
+confirm the selected policy and cite this report. Production adoption must port the
+regressions, update the old scoped-open refusal characterization, integrate the undo
+dependency, audit the final implementation, and run the required coverage checks. HTTP,
+PostgreSQL 15 and concurrency verification remain production delivery work.
+Acceptance remains a separate bookkeeping-only pull request.
 
 ## Comparison audit
 
@@ -157,8 +181,9 @@ PHP_PRECISION=17 .spike-adr32/run.sh relative > /tmp/adr32-relative-17.json
 Set `ADR32_FAST=1` to omit the three 1,000-booking observations. `ENGINE=podman` selects
 Podman explicitly. The runner cleans up only the uniquely named containers, network, and
 temporary export it creates. It emits JSON containing each check and observation;
-inspect the `pass` fields, since baseline failures are expected evidence and do not make
-the runner exit unsuccessfully. A setup failure does exit unsuccessfully.
+inspect the `pass` fields. Baseline failures are expected evidence and do not make
+the runner exit unsuccessfully. Experimental functional-check failures and setup failures
+exit unsuccessfully; observations remain separate from assertions.
 
 The spike makes no coverage-floor claim. It changes no production application code;
 full-suite coverage, HTTP validation, PostgreSQL 15, and concurrency regression runs

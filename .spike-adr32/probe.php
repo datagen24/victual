@@ -67,6 +67,7 @@ class Adr32Probe extends PgsqlSchemaTestCase
                     elseif($operation==='open'){foreach($rows as $r)self::check((int)$r['open']===1,'unopened residue');}
                     else {foreach($rows as $r)self::check((int)$r['location_id']===self::$to,'source residue');}
                     $logs=self::snapshot($p)[1];self::check(count($logs)===($operation==='transfer'?4:2),'unexpected booking count');
+                    foreach($logs as $log)self::check(abs(abs((float)$log['amount'])-.1)<1e-12 || abs(abs((float)$log['amount'])-.2)<1e-12,'incorrect ledger amount');
                     self::undoAll($p);self::near(self::total($p),.3);
                     foreach(self::snapshot($p)[0] as $r){self::check((int)$r['location_id']===self::$loc,'undo location');self::check((int)$r['open']===0,'undo open');}
                     return ['bookings'=>count($logs),'restored'=>self::total($p)];
@@ -85,8 +86,8 @@ class Adr32Probe extends PgsqlSchemaTestCase
             });
             self::scenario('consume preserves 0.001',function(){ $p=self::product();self::row($p,1.001);self::consume($p,1);self::near(self::total($p),.001);return self::total($p);});
             self::scenario('no extra booking after near-zero remainder',function(){ $p=self::product();self::row($p,.3);self::row($p,.4);self::consume($p,.3+.5e-9);self::check(count(self::snapshot($p)[1])===1,'extra booking');self::near(self::total($p),.4); });
-            foreach([S::TRANSACTION_TYPE_PURCHASE,S::TRANSACTION_TYPE_SELF_PRODUCTION,S::TRANSACTION_TYPE_INVENTORY_CORRECTION] as $type)self::scenario("$type undo",function()use($type){$p=self::product();self::$stock->AddProduct($p,.3,'2030-01-01',$type,'2026-09-27',null,self::$loc);self::undoAll($p);self::check(count(self::snapshot($p)[0])===0,'undo residue');});
-            foreach([.2,.5] as $count)self::scenario("inventory $count and undo",function()use($count){$p=self::product();self::row($p,.3);self::$stock->InventoryProduct($p,$count,'2030-01-01',self::$loc);self::near(self::total($p),$count);self::undoAll($p);self::near(self::total($p),.3);});
+            foreach([S::TRANSACTION_TYPE_PURCHASE,S::TRANSACTION_TYPE_SELF_PRODUCTION,S::TRANSACTION_TYPE_INVENTORY_CORRECTION] as $type)self::scenario("$type undo",function()use($type){$p=self::product();self::$stock->AddProduct($p,.3,'2030-01-01',$type,'2026-09-27',null,self::$loc);self::near(self::total($p),.3);self::check(count(self::snapshot($p)[1])===1,'purchase booking count');self::near(abs((float)self::snapshot($p)[1][0]['amount']),.3);self::undoAll($p);self::check(count(self::snapshot($p)[0])===0,'undo residue');foreach(self::snapshot($p)[1] as $log)self::check((int)$log['undone']===1,'booking not undone');});
+            foreach([.2,.5] as $count)self::scenario("inventory $count and undo",function()use($count){$p=self::product();self::row($p,.3);self::$stock->InventoryProduct($p,$count,'2030-01-01',self::$loc);self::near(self::total($p),$count);self::check(count(self::snapshot($p)[1])===1,'inventory booking count');self::near(abs((float)self::snapshot($p)[1][0]['amount']),abs($count-.3));self::undoAll($p);self::near(self::total($p),.3);foreach(self::snapshot($p)[1] as $log)self::check((int)$log['undone']===1,'inventory booking not undone');});
             self::scenario('inventory within tolerance refused',function(){$p=self::product();self::row($p,1);return self::refuse(fn()=>self::$stock->InventoryProduct($p,1+.5e-9,'2030-01-01',self::$loc),$p);});
             foreach(['edit','inventory','open','transfer','consume','add'] as $operation)foreach([-5e-10,NAN,INF,-INF] as $value)self::scenario("$operation rejects ".(string)$value,function()use($operation,$value){$p=self::product();$row=self::row($p,1);return self::refuse(fn()=>match($operation){'edit'=>self::edit($row,$value),'inventory'=>self::$stock->InventoryProduct($p,$value,'2030-01-01',self::$loc),'open'=>self::$stock->OpenProduct($p,$value),'transfer'=>self::$stock->TransferProduct($p,$value,self::$loc,self::$to),'consume'=>self::consume($p,$value),'add'=>self::$stock->AddProduct($p,$value,'2030-01-01',S::TRANSACTION_TYPE_PURCHASE,'2026-09-27',null,self::$loc)},$p);});
             self::scenario('edit accepts zero',function(){$p=self::product();$r=self::row($p,1);self::edit($r,0);self::check(count(self::snapshot($p)[0])===1,'zero row deleted');self::near(self::total($p),0);});
@@ -108,6 +109,20 @@ class Adr32Probe extends PgsqlSchemaTestCase
                 else foreach($rows as $r)self::check((int)$r['open']===1,'converted unopened residue');
                 self::undoAll($child);self::near(self::total($child),.3*$factor);
             });
+            self::scenario('factor 10 opens ten separate rows and undoes',function(){
+                $parent=self::product();$child=self::product();
+                $qu=(int)self::$db->query("INSERT INTO quantity_units(name,name_plural) VALUES('ten cans','ten cans') RETURNING id")->fetchColumn();
+                self::$db->exec("UPDATE products SET parent_product_id=$parent,qu_id_stock=$qu,qu_id_purchase=$qu,qu_id_consume=$qu,qu_id_price=$qu WHERE id=$child");
+                self::$db->exec("INSERT INTO quantity_unit_conversions(product_id,from_qu_id,to_qu_id,factor) VALUES($child,2,$qu,10)");
+                for($i=0;$i<10;$i++)self::row($child,1);
+                $tx=null;self::$stock->OpenProduct($parent,1,'default',$tx,true);
+                [$rows,$logs]=self::snapshot($child);
+                self::check(count($rows)===10 && count($logs)===10,'expected ten rows and bookings');
+                foreach($rows as $r){self::check((int)$r['open']===1,'unopened row');self::near((float)$r['amount'],1);}
+                foreach($logs as $log)self::near(abs((float)$log['amount']),1);
+                self::undoAll($child);self::near(self::total($child),10);
+                foreach(self::snapshot($child)[0] as $r)self::check((int)$r['open']===0,'undo failed to close row');
+            });
             foreach([NAN,INF,-INF] as $v)self::scenario('measurement rejects '.(string)$v,function()use($v){$p=self::product();$r=self::row($p,1,1);return self::refuse(fn()=>self::$stock->MeasureStockEntry((int)$r['id'],['amount'=>$v,'qu_id'=>2]),$p);});
             foreach([1-.5e-9,1+.5e-9] as $v)self::scenario('measured request exact '.sprintf('%.17g',$v),function()use($v){$p=self::product();$r=self::row($p,2);return self::refuse(function()use($p,$r,$v){$tx=null;return self::$stock->OpenProduct($p,$v,$r['stock_id'],$tx,false,['amount'=>.5,'qu_id'=>2]);},$p);});
             foreach((getenv('ADR32_FAST') ? [] : [1e5,1e6,1e7]) as $start)self::scenario("drift $start 1000 bookings",function()use($start){$p=self::product();self::row($p,$start);for($i=0;$i<1000;$i++)self::consume($p,.1);$before=self::total($p);$expected=$start-100;self::consume($p,$expected);return ['before'=>$before,'error'=>$before-$expected,'residue'=>self::total($p),'rows'=>count(self::snapshot($p)[0])];});
@@ -126,6 +141,7 @@ class Adr32Probe extends PgsqlSchemaTestCase
             });
             if(method_exists(S::class,'SpikeCompare')) self::scenario('inclusive boundary predicates',function(){foreach([0,.5e-9,1e-9,2e-9,-1e-9,-2e-9] as $v)self::check(S::SpikeCompare($v,0)===($v>1e-9?1:($v< -1e-9?-1:0)),'boundary '.$v);});
             echo json_encode(['environment'=>$metadata,'results'=>self::$results],JSON_PRETTY_PRINT|JSON_INVALID_UTF8_SUBSTITUTE|JSON_PARTIAL_OUTPUT_ON_ERROR),"\n";
+            if(getenv('ADR32_MODE')!=='baseline' && array_filter(self::$results,fn($r)=>$r['kind']==='check' && !$r['pass']))throw new RuntimeException('Acceptance spike checks failed');
         } finally {parent::tearDownAfterClass();}
     }
 }
