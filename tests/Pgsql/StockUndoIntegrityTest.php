@@ -2021,4 +2021,85 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		self::assertSame(3.0, (float)$yRow['amount'], 'Y still holds its own 3 units, not coerced to X\'s amount = 1');
 		self::assertNull($yRow['opened_amount'], 'Y still carries no measurement');
 	}
+
+	// ------------------------------------------------------------------------------
+	// CodeRabbit review of PR #531 (inline comment 4115694730) - a residue too small
+	// to be real must never be written to a row at all, in ConsumeProduct(),
+	// OpenProduct() or TransferProduct() alike: this PR's own zero-row skip in
+	// ConsumeProduct() turned what used to be a one-step-longer-lived row (the next
+	// whole-take absorbed and deleted it) into a permanent one.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * A row holding 0.30000000000000004 (0.1 + 0.2 in binary floating point - forced
+	 * directly here, since a real purchase-and-compact round trip does not reliably
+	 * reach the database with those low bits still attached), then consume exactly
+	 * 0.3. Before the fix, $stockEntry->amount - $amount (5.5e-17) was written onto
+	 * the row instead of taking it whole, and this PR's own zero-row skip just above
+	 * the loop left it there forever rather than the next whole-take absorbing and
+	 * deleting it, as happened before that skip existed.
+	 */
+	public function testConsumingAFloatResidueLeavesNoPermanentResidueRow(): void
+	{
+		$product = self::insertProduct('Consume Float Sum No Residue');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased'
+		);
+		self::$db->exec('UPDATE stock SET amount = 0.30000000000000004 WHERE product_id = ' . $product);
+		self::assertSame(0.30000000000000004, self::stockAmount($product), 'Sanity: the row now holds the exact float sum of 0.1 + 0.2, not 0.3');
+
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 0.3, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'The full 0.3 is consumed'
+		);
+
+		self::assertCount(0, self::rows($product), 'No residue row remains - the whole entry was taken, not split into a near-zero remainder');
+		self::assertSame(0.0, self::stockAmount($product), 'and the on-hand amount is exactly zero');
+	}
+
+	/**
+	 * The same scenario as above, but at a tare-configured vessel that is then reused
+	 * for a second, later purchase (a different due date, so CompactStockEntries()
+	 * cannot merge it with any leftover): before the fix, the stray residue row from
+	 * consuming the first purchase survived as a second entry at the vessel, and
+	 * WeighLocation() - which requires exactly one - refused it, even though nothing
+	 * a person would call a real container was left behind by the consume.
+	 */
+	public function testWeighingAVesselStillWorksAfterConsumingAResidueProneAmountThere(): void
+	{
+		$product = self::insertProduct('Consume Float Sum Weigh After');
+		$tareUnit = self::insertRow('quantity_units', ['name' => 'Float Sum Weigh Tare Unit ' . $product]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $tareUnit, 'to_qu_id' => 2, 'factor' => 1, 'product_id' => $product]);
+		$vessel = self::insertRow('locations', ['name' => 'Float Sum Weigh Vessel ' . $product, 'tare_weight' => 1.0, 'tare_qu_id' => $tareUnit]);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $vessel, 'best_before_date' => '2030-01-01', 'purchased_date' => '2030-01-01']), new Response(), ['productId' => $product]),
+			200,
+			'One unit is purchased into the vessel, due 2030-01-01'
+		);
+		self::$db->exec('UPDATE stock SET amount = 0.30000000000000004 WHERE product_id = ' . $product);
+
+		$this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 0.3, 'location_id' => $vessel]), new Response(), ['productId' => $product]),
+			200,
+			'The full 0.3 is consumed'
+		);
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => $vessel, 'best_before_date' => '2031-02-02', 'purchased_date' => '2031-02-02']), new Response(), ['productId' => $product]),
+			200,
+			'A second, later container (a different due date) is placed in the same vessel'
+		);
+		self::assertCount(1, self::rows($product), 'Sanity: only the second container is there - no leftover residue row from the first');
+
+		$this->expectStatus(
+			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 3.0]), new Response(), ['locationId' => $vessel]),
+			200,
+			'Weighing the vessel is accepted - it holds exactly one stock entry, the second container'
+		);
+		self::assertSame(2.0, self::stockAmount($product), 'The weighed net (3.0 gross - 1.0 tare) corrects the one entry that is actually there');
+	}
 }

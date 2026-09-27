@@ -72,11 +72,15 @@ class StockService extends BaseService
 	 * during the #487 remediation (Proposed ADR pending): replaces the round($x, 2) convention
 	 * those comparisons used, whose 0.005-unit threshold silently destroyed or fabricated real
 	 * small remainders - a 0.004 lot compacted into a larger entry, then separated again by an
-	 * undo, rounded to zero and was deleted outright rather than kept. 1e-9 is comfortably
-	 * above a double's own arithmetic error (~1e-16, and the ~1e-10 residue a SUM() over
-	 * doubles can leave - see #470) and comfortably below any amount a user or a device could
-	 * actually enter, so it distinguishes floating-point noise from a real quantity without
-	 * reintroducing the destructive rounding this replaces. Only the comparisons this PR
+	 * undo, rounded to zero and was deleted outright rather than kept. 1e-9 absorbs float noise
+	 * for rows up to roughly 100,000 stock units over about a thousand fractional bookings -
+	 * comfortably below any amount a user or a device could actually enter at that scale, so it
+	 * distinguishes floating-point noise from a real quantity there without reintroducing the
+	 * destructive rounding this replaces. It is not a bound at every scale: ADR-0032's own
+	 * validator measured adjacent doubles more than 1e-9 apart from 2^23 (8,388,608) up, a
+	 * 1e6-unit row drifting 3.5e-9 after 1,000 fractional bookings, and a 4e6-unit row drifting
+	 * 1.4e-9 after only 10 - larger bulk rows can drift beyond this tolerance. See ADR-0032
+	 * (Proposed), whose own magnitude question is still open. Only the comparisons this PR
 	 * touches were converted; other round($x, 2) call sites in this file are a later pass.
 	 */
 	const AMOUNT_TOLERANCE = 1e-9;
@@ -653,7 +657,13 @@ class StockService extends BaseService
 
 				foreach ($potentialStockEntries as $stockEntry)
 				{
-					if ($amount == 0)
+					// A whole-take below can leave $amount a hair off zero either way (CodeRabbit
+					// review of PR #531: the subtraction is exact float arithmetic on values that
+					// were not exact multiples of each other to begin with) - compared within
+					// AMOUNT_TOLERANCE, like every other zero/negative decision this file makes,
+					// rather than by exact equality, so a residue too small to be real does not
+					// send the loop looking for one more candidate.
+					if (abs($amount) <= self::AMOUNT_TOLERANCE)
 					{
 						break;
 					}
@@ -693,12 +703,22 @@ class StockService extends BaseService
 						}
 					}
 
-					if ($amount >= $stockEntry->amount)
+					if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
 					{
-						// Take the whole stock entry. The four opened_* columns are mirrored
-						// onto the booking (ADR-0022 decision 9) so undoing this consume can
-						// rebuild the deleted row with its measurement intact - see
-						// UndoBooking()'s TRANSACTION_TYPE_CONSUME branch.
+						// Take the whole stock entry - not only when $amount covers it exactly
+						// or more, but also when it falls short by no more than AMOUNT_TOLERANCE
+						// (CodeRabbit review of PR #531): splitting on a shortfall that small
+						// would write $stockEntry->amount - $amount, a float residue like
+						// 0.30000000000000004 - 0.3 = 5.5e-17, onto the row below instead of
+						// taking it. Before this PR that residue row was still consumable - the
+						// next whole-take absorbed and deleted it. The zero-row skip this PR
+						// added just above the loop (ConsumeProduct()'s own candidate check)
+						// would instead leave it there forever, showing in entry lists and
+						// tripping WeighLocation()'s "does not hold exactly one stock entry".
+						// The four opened_* columns are mirrored onto the booking (ADR-0022
+						// decision 9) so undoing this consume can rebuild the deleted row with
+						// its measurement intact - see UndoBooking()'s TRANSACTION_TYPE_CONSUME
+						// branch.
 						$logRow = $this->DB->stock_log()->createRow([
 							'product_id' => $stockEntry->product_id,
 							'amount' => $stockEntry->amount * -1,
@@ -743,7 +763,10 @@ class StockService extends BaseService
 					}
 					else
 					{
-						// Stock entry amount is > than needed amount -> split the stock entry resp. update the amount
+						// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+						// (the branch above now also takes anything closer than that) -> split the
+						// stock entry resp. update the amount. $restStockAmount is a real remainder,
+						// not a float artifact, by construction.
 						$restStockAmount = $stockEntry->amount - $amount;
 
 						$logRow = $this->DB->stock_log()->createRow([
@@ -2085,7 +2108,10 @@ class StockService extends BaseService
 
 			foreach ($potentialStockEntries as $stockEntry)
 			{
-				if ($amount == 0)
+				// Compared within AMOUNT_TOLERANCE rather than by exact equality (CodeRabbit
+				// review of PR #531; same reasoning as ConsumeProduct()'s own loop): the
+				// whole-entry branch below can leave $amount a hair off zero either way.
+				if (abs($amount) <= self::AMOUNT_TOLERANCE)
 				{
 					break;
 				}
@@ -2131,9 +2157,13 @@ class StockService extends BaseService
 					];
 				}
 
-				if ($amount >= $stockEntry->amount)
+				if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
 				{
-					// Mark the whole stock entry as opened
+					// Mark the whole stock entry as opened - not only when $amount covers it
+					// exactly or more, but also when it falls short by no more than
+					// AMOUNT_TOLERANCE (CodeRabbit review of PR #531; same reasoning as
+					// ConsumeProduct()'s own whole-take branch): splitting on a shortfall that
+					// small would leave a float-residue remainder row below instead.
 					$logRow = $this->DB->stock_log()->createRow(array_merge([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $stockEntry->amount,
@@ -2166,7 +2196,9 @@ class StockService extends BaseService
 				}
 				else
 				{
-					// Stock entry amount is > than needed amount -> split the stock entry
+					// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+					// -> split the stock entry. $restStockAmount is a real remainder, not a
+					// float artifact, by construction.
 					$restStockAmount = $stockEntry->amount - $amount;
 					$restStockId = uniqid();
 
@@ -2458,7 +2490,10 @@ class StockService extends BaseService
 
 			foreach ($potentialStockEntriesAtFromLocation as $stockEntry)
 			{
-				if ($amount == 0)
+				// Compared within AMOUNT_TOLERANCE rather than by exact equality (CodeRabbit
+				// review of PR #531; same reasoning as ConsumeProduct()'s own loop): the
+				// whole-entry branch below can leave $amount a hair off zero either way.
+				if (abs($amount) <= self::AMOUNT_TOLERANCE)
 				{
 					break;
 				}
@@ -2495,9 +2530,13 @@ class StockService extends BaseService
 				}
 
 				$correlationId = uniqid();
-				if ($amount >= $stockEntry->amount)
+				if (($stockEntry->amount - $amount) <= self::AMOUNT_TOLERANCE)
 				{
-					// Take the whole stock entry
+					// Take the whole stock entry - not only when $amount covers it exactly or
+					// more, but also when it falls short by no more than AMOUNT_TOLERANCE
+					// (CodeRabbit review of PR #531; same reasoning as ConsumeProduct()'s own
+					// whole-take branch): splitting on a shortfall that small would leave a
+					// float-residue remainder row at the source below instead.
 					$logRowForLocationFrom = $this->DB->stock_log()->createRow([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $stockEntry->amount * -1,
@@ -2563,7 +2602,9 @@ class StockService extends BaseService
 				}
 				else
 				{
-					// Stock entry amount is > than needed amount -> split the stock entry resp. update the amount
+					// Stock entry amount is > than needed amount by more than AMOUNT_TOLERANCE
+					// -> split the stock entry resp. update the amount. $restStockAmount is a
+					// real remainder, not a float artifact, by construction.
 					$restStockAmount = $stockEntry->amount - $amount;
 
 					$logRowForLocationFrom = $this->DB->stock_log()->createRow([
