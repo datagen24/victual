@@ -83,6 +83,15 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		return (int)$statement->fetchColumn();
 	}
 
+	/** labels has no id column - migrations/0269.pgsql.sql's primary key is uid, supplied by the caller. */
+	private static function insertLabel(array $columns): void
+	{
+		$names = implode(', ', array_keys($columns));
+		$placeholders = implode(', ', array_fill(0, count($columns), '?'));
+		$statement = self::$db->prepare("INSERT INTO labels ($names) VALUES ($placeholders)");
+		$statement->execute(array_values($columns));
+	}
+
 	private static function insertProduct(string $name, int $locationId): int
 	{
 		return self::insertRow('products', [
@@ -151,16 +160,28 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
-	/** The refusal every case below expects: 400, a plain error_message, nothing leaked. */
+	/**
+	 * Review round 2's own reproduction: an unreferenced DELETE carries no values, so
+	 * GenericErrorResponse()'s usual WithoutDriverText() fallback ("check that every value it
+	 * carries suits the field it is for") sent an operator looking for a problem that did not
+	 * exist - and ShowApiError() (public/js/victual.js) shows error_message for every 4xx, so
+	 * that text reached the entity-list delete dialog verbatim. The exact string here has to
+	 * match GenericEntityApiController::REFERENCE_REFUSAL_MESSAGE literally (that constant is
+	 * private, so there is nothing to import instead) - a drift between the two is exactly the
+	 * regression this assertSame() exists to catch, which assertStringNotContainsString() did
+	 * not.
+	 */
 	private function assertOrdinaryReferenceRefusal(array $result, string $message): void
 	{
 		self::assertSame(400, $result['status'], "$message: expected 400, got {$result['status']} (body: {$result['body']}, stderr: {$result['stderr']})");
 
 		$body = json_decode((string)$result['body'], true);
 		self::assertIsArray($body, "$message: response body must be JSON");
-		self::assertArrayHasKey('error_message', $body, "$message: response body must carry error_message");
-		self::assertStringNotContainsStringIgnoringCase('SQLSTATE', $body['error_message'], "$message: no driver text may reach the client");
-		self::assertStringNotContainsStringIgnoringCase('constraint', $body['error_message'], "$message: no constraint name may reach the client");
+		self::assertSame(
+			'Object is still referenced by other objects; remove those references before deleting it',
+			$body['error_message'] ?? null,
+			"$message: must carry the fixed, actionable refusal message - not driver text, and not any other wording"
+		);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -274,6 +295,50 @@ class ReferenceRefusalTest extends PgsqlSchemaTestCase
 		$storedQuId = self::$db->prepare('SELECT tare_qu_id FROM locations WHERE id = ?');
 		$storedQuId->execute([$locationId]);
 		self::assertSame($quId, (int)$storedQuId->fetchColumn(), 'The referencing location must still name the unit');
+	}
+
+	// ------------------------------------------------------------------------------
+	// migrations/0269.pgsql.sql's retire_location_labels: a BEFORE DELETE trigger, so its own
+	// write has to roll back with a refused delete too, not only the row DeleteObject() itself
+	// targeted.
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * Given a location carries a live label and is also referenced by a product's minimum
+	 * stock, when it is deleted, then the request is refused (400) and the label is left
+	 * exactly as it was - not retired. retire_location_labels() runs BEFORE the DELETE it is
+	 * attached to, inside the same statement; PostgreSQL's statement-level atomicity means a
+	 * statement that ultimately fails undoes everything it - and anything it fired - already
+	 * did, not only the row named in its own FROM/WHERE. Probed in review round 2; pinned
+	 * here so a future change to this trigger, or to how DeleteObject() catches the failure,
+	 * cannot silently retire a label out from under a delete that never actually happened.
+	 */
+	public function testDeletingAReferencedLocationLeavesItsLabelUnretired(): void
+	{
+		$locationId = self::insertRow('locations', ['name' => 'M15 Labeled Location']);
+		$productId = self::insertProduct('M15 Product For Label Case', $locationId);
+		self::insertRow('product_location_min_stock', [
+			'product_id' => $productId,
+			'location_id' => $locationId,
+			'min_stock_amount' => 1,
+		]);
+		self::insertLabel([
+			'uid' => '0ABCDEFGHJKMN',
+			'kind' => 'location',
+			'target_id' => $locationId,
+		]);
+
+		$result = self::delete('locations', $locationId);
+
+		$this->assertOrdinaryReferenceRefusal($result, 'Deleting a labeled location referenced by product_location_min_stock');
+
+		$label = self::$db->prepare('SELECT target_id, retired_at, retirement_snapshot FROM labels WHERE uid = ?');
+		$label->execute(['0ABCDEFGHJKMN']);
+		$stored = $label->fetch(PDO::FETCH_ASSOC);
+
+		self::assertSame($locationId, (int)$stored['target_id'], 'The label must still point at the location - not retired to a null target');
+		self::assertNull($stored['retired_at'], 'The refused delete must not have retired the label');
+		self::assertNull($stored['retirement_snapshot'], 'A live label carries no retirement snapshot');
 	}
 
 	// ------------------------------------------------------------------------------

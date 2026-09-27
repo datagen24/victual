@@ -237,16 +237,27 @@ class GenericEntityApiController extends BaseApiController
 				// like the named case above, not a server fault. Audit finding M15 / issue
 				// #515: DELETE /api/objects/products/{id} for a product still named by
 				// product_location_min_stock.product_id (migrations/0276.pgsql.sql, no
-				// ON DELETE clause) reached here uncaught and answered 500. There is no
-				// per-constraint message to give the way the stock-location case has one, so
-				// this falls through to GenericErrorResponse() exactly as HandleApiCall()'s
-				// own PDOException clause does for every other controller (see its docblock):
-				// 400, with the driver's message - which always begins "SQLSTATE[" - replaced
-				// by WithoutDriverText()'s sanitised text. The row is left exactly as it was:
-				// a single DELETE statement that fails commits nothing, transaction or not.
+				// ON DELETE clause) reached here uncaught and answered 500.
+				//
+				// REFERENCE_REFUSAL_MESSAGE, not $ex->getMessage() run through
+				// GenericErrorResponse()'s usual WithoutDriverText() sanitisation: that
+				// fallback ("check that every value it carries suits the field it is for")
+				// was written for a request body, and a DELETE carries none. Review round 2
+				// found that exact text reaching the entity-list delete dialog verbatim -
+				// ShowApiError() (public/js/victual.js) shows error_message for every 4xx -
+				// and sending an operator looking for a value problem that does not exist.
+				//
+				// A single failed DELETE statement leaves the row untouched with nothing
+				// beyond it to roll back, which is true today because DeleteObject() runs in
+				// autocommit - it is not wrapped in InRequestTransaction() the way
+				// AddObject()/EditObject() are (#494/#548). If that ever changes, this catch
+				// has to stay outside whatever transaction wraps the delete: a transaction
+				// that saw this method return a normal GenericErrorResponse() rather than a
+				// thrown exception would commit right through the refusal, the same failure
+				// mode audit correction 8 describes for AddObject()/EditObject().
 				if (($ex->errorInfo[0] ?? $ex->getCode()) === '23503')
 				{
-					return $this->GenericErrorResponse($response, $ex->getMessage());
+					return $this->GenericErrorResponse($response, self::REFERENCE_REFUSAL_MESSAGE);
 				}
 
 				throw $ex;
@@ -534,6 +545,16 @@ class GenericEntityApiController extends BaseApiController
 	 * endpoints, whatever permission it holds. See WithoutServerOwnedColumns().
 	 */
 	private const SERVER_OWNED_COLUMNS = ['id', 'row_created_timestamp', 'import_epoch'];
+
+	/**
+	 * DeleteObject()'s answer to an ordinary foreign-key delete refusal (audit finding M15 /
+	 * issue #515) that is not the named stock-location case. Deliberately generic - it names
+	 * no table or column, the way StockLocationConstraint::DELETE_MESSAGE names "Location"
+	 * because it is only ever raised for one - and deliberately not the driver's own message:
+	 * see DeleteObject()'s catch block for why a DELETE's refusal cannot reuse
+	 * WithoutDriverText()'s usual "check that every value it carries" fallback.
+	 */
+	private const REFERENCE_REFUSAL_MESSAGE = 'Object is still referenced by other objects; remove those references before deleting it';
 
 	/**
 	 * Plan 23 questions 1 and 2: is_freezer is derived from the chosen storage class, and
