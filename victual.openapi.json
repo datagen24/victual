@@ -945,7 +945,7 @@
 			},
 			"delete": {
 				"summary": "Deletes a single object of the given entity",
-				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location.",
+				"description": "Deleting a location with child locations or any stock is refused with HTTP 400. Move or consume stock before deleting its location. Deleting any object still referenced by another object through an enforced foreign key - for example a product or a location named by a location's minimum stock, or a storage class or quantity unit set on a location - is refused the same way, leaving both objects unchanged.",
 				"tags": [
 					"Generic entity interactions"
 				],

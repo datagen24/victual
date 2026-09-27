@@ -102,6 +102,7 @@
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
+			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
