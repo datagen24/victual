@@ -245,3 +245,29 @@ the same handler, which runs the identical `jsonData` transform.
 
 CI runs it in `frontend-security` after the working container replenishment checks, against the
 demo instance on 8085.
+
+## Nullable-integer and nullable-date form fields
+
+`node nullable-integer-forms.js <url>` is the regression test for the JS half of
+[issue 574](https://github.com/datagen24/victual/issues/574) and for
+[issue 587](https://github.com/datagen24/victual/issues/587): the same shape of defect as
+issue 159 above, in three `Victual.EntityForm` `body()` hooks that probe did not cover.
+`mealplansectionform.js` and `userfieldform.js` each convert a blank `sort_number`;
+`taskform.js` converts `category_id`, `assigned_to_user_id` (renamed from the user picker's
+own `user_id`) and `due_date` (read from the `DateTimePicker` component, not a plain input).
+Without the conversion, `serializeJSON()`'s `""` for the blank field reaches PostgreSQL and is
+refused the same way as the product form's pickers.
+
+No PHP phase can see this either, for the same reason: a server-side test sends a
+correctly-typed body, so it cannot tell whether the conversion is still there. This probe
+drives each form as a person leaving an optional field blank would:
+
+- **meal plan section, userfield**: create a row with `sort_number` blank and assert the
+  stored value is `null`. Resave a stored `0` row unchanged and assert `0` is kept - the same
+  case issue 574 itself was, a `!empty()` view check treating `0` as blank. Resave the blank
+  (`null`) row unchanged and assert `null` is kept with no error surfacing.
+- **task**: create a task with category, assignee and due date all blank, and assert all
+  three are `null`. Resave it unchanged and assert success.
+
+CI runs it in `frontend-security` after the product form nullable picker checks, against the
+demo instance on 8085.

@@ -319,10 +319,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0290** (medication master data and subjects)
-  and **0291** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0291** (medication master data and subjects)
+  and **0292** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0290–0291 until 2026-09-28, when issue #487 remediation's ADR-0033 decision-3 migration
+    (PR #580, narrowing `stock_splits` to never-expiring, unlabelled rows for issues 488 and
+    491) was written to disk as `0292.pgsql.sql` above this plan's still-unwritten claims and
+    moved down to 0290 under the lowest-free-slot rule
   - 0289–0290 until 2026-09-26, when issue #487 remediation's view-correction migration
     (PR #542, fixing issues 501, 505, 497 and the weekly-schedule half of 506) took 0289
     under the lowest-free-slot rule
@@ -353,7 +357,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved seventeen times.** In order:
+  **These numbers have moved eighteen times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -373,7 +377,8 @@ Collected because most of them are only visible from inside the existing code.
     file
   - 0288–0289 for issue 208's `api_keys.read_only`
   - 0289–0290 for issue 461's stock location foreign key
-  - and now 0290–0291 for PR #542's view-correction migration
+  - 0290–0291 for PR #542's view-correction migration
+  - and now 0291–0292 for PR #580's ADR-0033 decision-3 migration
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

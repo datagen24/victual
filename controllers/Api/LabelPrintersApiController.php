@@ -59,10 +59,20 @@ class LabelPrintersApiController extends BaseApiController
     }
     private function DeletePrinter(\PDO $db, int $id): array
     {
-        // Retire queued work visibly before removing its configuration. History retains the id.
-        $q = $db->prepare("UPDATE outbox SET dead_lettered_at=CURRENT_TIMESTAMP,last_error='Printer deleted' WHERE id IN (SELECT outbox_id FROM print_jobs WHERE printer_id=? AND outcome IS NULL)");
+        // Retire queued work visibly before removing its configuration. History retains the
+        // id. "outcome IS NULL" alone also matches a job a worker is currently holding - its
+        // outcome is not decided yet either - and a job already cancelled through
+        // LabelOperationsService::Cancel(), whose own outcome is deliberately never set (a
+        // cancelled job never printed, and recording it as dead_lettered would claim
+        // something about a physical object that did not happen). Both are excluded here the
+        // same way PrintAttemptService::Claim() already excludes a live attempt from being
+        // claimed a second time: by the attempt's own ended_at/lease_expires_at, not by
+        // whether the job happens to have an outcome yet.
+        $notDisturbed = 'AND cancelled_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM print_attempts a WHERE a.id=print_jobs.current_attempt_id AND a.ended_at IS NULL AND a.lease_expires_at>CURRENT_TIMESTAMP)';
+        $q = $db->prepare("UPDATE outbox SET dead_lettered_at=CURRENT_TIMESTAMP,last_error='Printer deleted' WHERE id IN (SELECT outbox_id FROM print_jobs WHERE printer_id=? AND outcome IS NULL $notDisturbed)");
         $q->execute([$id]);
-        $q = $db->prepare("UPDATE print_jobs SET outcome='dead_lettered',outcome_at=CURRENT_TIMESTAMP WHERE printer_id=? AND outcome IS NULL");
+        $q = $db->prepare("UPDATE print_jobs SET outcome='dead_lettered',outcome_at=CURRENT_TIMESTAMP WHERE printer_id=? AND outcome IS NULL $notDisturbed");
         $q->execute([$id]);
         $q = $db->prepare('DELETE FROM label_printer_status WHERE printer_id=?');
         $q->execute([$id]);

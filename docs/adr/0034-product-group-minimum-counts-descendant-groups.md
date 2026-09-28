@@ -81,10 +81,11 @@ effective amount is its stock minus opened stock when `treat_opened_as_out_of_st
 Each product contributes in its own stock unit, without conversion. List G only when the
 result is positive. A subgroup's minimum never enters its ancestor's calculation.
 
-As a proposed refinement, active products under inactive subgroups still contribute to
+Active products under inactive subgroups still contribute to
 active ancestors. Group activity controls whether that group's own shortfall is reported;
 it does not remove active products or their stock from an ancestor's subtree. An inactive
-intermediate group does not stop traversal. Acceptance must confirm this rule.
+intermediate group does not stop traversal. The maintainer confirmed this rule on
+2026-09-28. This confirmation does not change the record's Proposed status.
 
 ## Consequences
 

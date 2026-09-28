@@ -2,6 +2,7 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Database\ChangeTrackingLessQlDatabase;
 use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Influx\InfluxEventWriter;
@@ -171,12 +172,13 @@ class DatabaseService
 		if (self::$DbConnection == null)
 		{
 			$pdo = $this->GetDbConnectionRaw();
-			self::$DbConnection = new Database($pdo);
-			self::$DbConnection->setPrimary('user_roles', ['user_id', 'role_id']);
-			self::$DbConnection->setPrimary('role_permissions', ['role_id', 'permission_id']);
+			$connection = new ChangeTrackingLessQlDatabase($pdo);
+			self::$DbConnection = $connection;
+			$connection->setPrimary('user_roles', ['user_id', 'role_id']);
+			$connection->setPrimary('role_permissions', ['role_id', 'permission_id']);
 
 			$dialect = $this->GetDialect();
-			self::$DbConnection->setIdentifierDelimiter($dialect->GetIdentifierDelimiter());
+			$connection->setIdentifierDelimiter($dialect->GetIdentifierDelimiter());
 
 			$trackChanges = $dialect->RequiresChangeTracking();
 
@@ -190,19 +192,29 @@ class DatabaseService
 
 			if ($trackChanges || $notifyOnChange || $this->IsQueryLoggingEnabled())
 			{
-				self::$DbConnection->setQueryCallback(function ($query, $params) use ($pdo, $dialect, $trackChanges, $notifyOnChange)
+				$connection->setQueryCallback(function ($query, $params) use ($pdo, $dialect, $trackChanges, $notifyOnChange, $connection)
 				{
 					$this->LogQuery($query, $params);
 
 					if (($trackChanges || $notifyOnChange) && $dialect->IsWriteStatement($query)
 						&& !$this->IsBookkeeping())
 					{
-						if ($trackChanges)
+						// Deferred until the statement this callback describes actually
+						// succeeds (issue #534 follow-up): LessQL calls this callback
+						// (onQuery()) before it prepares/executes the query, so a refused
+						// write - e.g. deleting a product product_location_min_stock still
+						// references - would otherwise already be marked as a change by the
+						// time the resulting PDOException reaches the caller. See
+						// ChangeTrackingLessQlDatabase's own docblock.
+						$connection->SetOnWriteSucceeded(function () use ($dialect, $pdo, $trackChanges)
 						{
-							$dialect->MarkDbChanged($pdo);
-						}
+							if ($trackChanges)
+							{
+								$dialect->MarkDbChanged($pdo);
+							}
 
-						$this->MarkDataChanged();
+							$this->MarkDataChanged();
+						});
 					}
 				});
 			}
@@ -259,6 +271,28 @@ class DatabaseService
 	 * The engine-specific counterpart is on the dialect: engine-neutral composition
 	 * belongs here; anything an engine does differently belongs there.
 	 *
+	 * **A rolled-back outermost call restores the change-tracking flags to what they were
+	 * just before it began** (issue #534). $DataChanged and the dialect's own deferred
+	 * "changed time not yet flushed" flag (PostgresDialect::$DbChangedPending) are set the
+	 * moment a write statement reaches the database - see ExecuteDbStatement() and the
+	 * query callback in GetDbConnection() - with no knowledge of whether the transaction
+	 * that write is part of will ever commit. Without this, a refused write still advanced
+	 * GET /api/system/db-changed-time and republished the MQTT state snapshot at request
+	 * end, even though nothing committed.
+	 *
+	 * The snapshot is taken fresh on every call that finds no transaction open, not once per
+	 * request, which is what makes a request with several separate top-level transactions
+	 * behave correctly: a later transaction's own refusal restores the flags to what an
+	 * earlier one's *commit* already left them as, rather than to "nothing happened yet".
+	 * The flags mean "something committed", not "nothing failed".
+	 *
+	 * A nested (joining) call needs no restore logic of its own: it has no catch here at
+	 * all, so an inner $work() throwing simply propagates - uncaught at every joining
+	 * level - up to this same outermost catch block, wherever in the call graph it
+	 * originated. One snapshot and one restore, both at the outermost level, therefore
+	 * cover an inner rollback-then-rethrow exactly as they cover a throw from the outermost
+	 * $work() itself.
+	 *
 	 * @see DatabaseDialect::WithMigrationLock() The per-engine locking used around migrations
 	 * @param callable $work Receives no arguments; its return value is passed through
 	 * @return mixed Whatever $work returns
@@ -273,6 +307,10 @@ class DatabaseService
 			return $work();
 		}
 
+		$dialect = $this->GetDialect();
+		$dataChangedBeforeTransaction = self::$DataChanged;
+		$pendingChangeBeforeTransaction = $dialect->CapturePendingChangeState();
+
 		$pdo->beginTransaction();
 
 		try
@@ -284,6 +322,12 @@ class DatabaseService
 			// yet. Anything that has to be written exactly once per transaction, describing
 			// its final state, belongs here - see RegisterBeforeOutermostCommit().
 			$this->RunBeforeOutermostCommit();
+
+			// Inside the try, not after it: a commit that itself fails (a constraint
+			// deferred to commit time, a connection dropped between here and the server)
+			// must restore the flags exactly like any other failure to make this
+			// transaction's writes durable - see this method's docblock.
+			$pdo->commit();
 		}
 		catch (\Throwable $ex)
 		{
@@ -299,10 +343,13 @@ class DatabaseService
 			// carry over into whatever this request does next
 			self::$BeforeOutermostCommitListeners = [];
 
+			// Same reasoning: a transaction that did not happen must not leave behind a
+			// change signal it alone set - see this method's docblock.
+			self::$DataChanged = $dataChangedBeforeTransaction;
+			$dialect->RestorePendingChangeState($pendingChangeBeforeTransaction);
+
 			throw $ex;
 		}
-
-		$pdo->commit();
 
 		return $result;
 	}

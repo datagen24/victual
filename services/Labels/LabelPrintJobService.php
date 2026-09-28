@@ -28,13 +28,34 @@ class LabelPrintJobService extends LabelService
         if (!$job || (int)$job['current_attempt_id'] !== $attemptId) {
             $this->Refuse('attempt_id', 'not_current', 'Review the current attempt');
         }
+        // Captured before Reap() runs: this is the only way left to tell "this job already had
+        // an outcome" apart from "Reap() is what just gave it one", once both read as non-null
+        // below.
+        $outcomeBeforeReap = $job['outcome'];
         (new PrintAttemptService($this->db))->Reap($jobId);
         $attempt = $this->Query('SELECT * FROM print_attempts WHERE id=?', [$attemptId])->fetch(\PDO::FETCH_ASSOC);
         if ($attempt['ended_at'] === null) {
             $this->Refuse('attempt_id', 'attempt_running', 'Attempt has not ended');
         }
+        // Reap() above may have just dead-lettered this job in this same transaction, if its
+        // printer was deleted while the attempt it just reaped was outstanding
+        // (PrintAttemptService::Reap()) - re-read rather than trust the fetch from before Reap()
+        // ran, or a job that just reached a terminal outcome could still be re-authorized.
+        $job = $this->Query('SELECT * FROM print_jobs WHERE id=?', [$jobId])->fetch(\PDO::FETCH_ASSOC);
         if ($job['outcome'] !== null) {
-            $this->Refuse('attempt_id', 'already_completed', 'Job has a successful delivery report');
+            // A job that already had an outcome before this call is still refused: nothing
+            // about that is this call's business to undo. But when Reap() is what just
+            // finished the job - the printer it was leased against is gone, and Claim() can
+            // never select it again (PrintAttemptService::DeadLetterIfPrinterGone()) - refusing
+            // would roll the whole transaction back and undo Reap()'s dead-letter with it,
+            // leaving the job outcome NULL, its attempt never ended, and its outbox row never
+            // acknowledged: exactly the "stuck forever, every authorize refused" state
+            // DeadLetterIfPrinterGone() exists to prevent. Let it commit and hand back the
+            // now-dead-lettered job instead.
+            if ($outcomeBeforeReap !== null) {
+                $this->Refuse('attempt_id', 'already_completed', 'That job already has an outcome');
+            }
+            return $job;
         }
         if ((int)$job['attempts_authorized'] === (int)$job['attempts_made']) {
             $this->Query('UPDATE print_jobs SET attempts_authorized=attempts_authorized+1 WHERE id=?', [$jobId]);

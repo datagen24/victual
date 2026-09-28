@@ -13,5 +13,19 @@ Victual.EntityForm({
 	endpoint: 'objects/meal_plan_sections',
 	list: '/mealplansections',
 	userfields: false,
-	comboboxGuard: false
+	comboboxGuard: false,
+	// serializeJSON() hands back the empty string for a blank numberpicker
+	// (views/components/numberpicker.blade.php is a plain <input type="number">), and
+	// sort_number is a nullable integer: "" is not a valid integer literal, so the generic
+	// entity endpoint's write was refused (400, issue #574) instead of leaving the column
+	// NULL. Same reasoning as locationform.js's parent_location_id/storage_class_id/
+	// tare_weight handling.
+	body: function (jsonData)
+	{
+		jsonData.sort_number = jsonData.sort_number === '' || jsonData.sort_number === undefined
+			? null
+			: parseInt(jsonData.sort_number, 10);
+
+		return jsonData;
+	}
 });

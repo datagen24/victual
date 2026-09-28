@@ -265,7 +265,8 @@ class StockService extends BaseService
 	 * Writes one new stock entry plus one corresponding stock_log booking - or, with $stockLabelType = 2,
 	 * one entry/booking pair with amount 1 per unit (each with its own stock_id) so every unit gets its own label.
 	 * Depending on the label type and the label printer feature flags, label printing webhooks are triggered.
-	 * Afterwards CompactStockEntries() merges equal stock entries of this product.
+	 * Does not merge the new entry with another that now happens to match it - that is a maintenance
+	 * command's job, not this method's, per ADR-0033 decision 1 (2026-09-27).
 	 *
 	 * $amount is always the net amount to add. Product-level tare weight handling (a gross
 	 * reading with the container weight subtracted) was removed under ADR-0022 decisions 4
@@ -374,9 +375,7 @@ class StockService extends BaseService
 			// land as one.
 			DatabaseService::GetInstance()->InTransaction(function () use ($productId, $amount, $bestBeforeDate, $transactionType, $purchasedDate, $price, $locationId, $shoppingLocationId, $stockLabelType, $note, $productDetails, &$transactionId)
 			{
-				// Serialises against every other booking of this product (issue #458) -
-				// including the CompactStockEntries() call below, which reads and rewrites
-				// this product's stock rows.
+				// Serialises against every other booking of this product (issue #458).
 				DatabaseService::GetInstance()->LockProductStock($productId);
 
 				if ($stockLabelType == 2)
@@ -467,11 +466,14 @@ class StockService extends BaseService
 					}
 				}
 
-				$this->CompactStockEntries($productId);
-
-				// Inside the transaction on purpose: the outbox row and the ledger rows
-				// commit together or not at all, so a rolled back booking leaves no event
-				// behind and a crash after the commit still delivers one.
+				// No CompactStockEntries() call here (ADR-0033 decision 1, 2026-09-27): merging
+				// duplicate stock rows is now an explicit maintenance command
+				// (bin/victual-compact-stock), not a side effect of every purchase. Issue #488
+				// reproduced compaction silently discarding a live booking's units on a later
+				// undo; issue #491 reproduced it retiring a live stock_entry label out from
+				// under a purchase that happened to match an already-labelled row. See
+				// CompactStockEntries()'s own docblock for the restricted eligibility the
+				// maintenance command now applies.
 				BookingEventPublisher::RecordTransaction($transactionId);
 			});
 
@@ -954,8 +956,10 @@ class StockService extends BaseService
 	 *
 	 * Writes a correlated pair of stock_log bookings: a TRANSACTION_TYPE_STOCK_EDIT_OLD snapshot of
 	 * the entry before the change and a TRANSACTION_TYPE_STOCK_EDIT_NEW snapshot after it (linked by
-	 * a shared correlation id, so an undo restores the old state). Afterwards CompactStockEntries()
-	 * merges equal stock entries of the product.
+	 * a shared correlation id, so an undo restores the old state). Does not merge the edited entry
+	 * with another that now happens to match it - that is a maintenance command's job, not this
+	 * method's, per ADR-0033 decision 1 (2026-09-27): CompactStockEntries() used to run inline here
+	 * and issue #488 found it could delete a row an in-flight undo still depended on.
 	 *
 	 * A measurement already on the entry (ADR-0022 decisions 1, 8, 9) is carried through
 	 * unchanged when the edit leaves it coherent (still open = 1, amount = 1), and dropped -
@@ -1108,11 +1112,10 @@ class StockService extends BaseService
 			], $measurementAfter));
 			$logNewRowForStockUpdate->save();
 
-			$this->CompactStockEntries($stockRow->product_id);
-
-			// Inside the transaction on purpose: the outbox row and the ledger rows commit
-			// together or not at all, so a rolled back edit leaves no event behind and a
-			// crash after the commit still delivers one.
+			// No CompactStockEntries() call here (ADR-0033 decision 1, 2026-09-27): an edit
+			// that happens to make this entry match another no longer merges them inline. See
+			// CompactStockEntries()'s own docblock for why, and for the maintenance command
+			// that now performs merging under a tightened eligibility rule.
 			BookingEventPublisher::RecordTransaction($transactionId);
 		});
 
@@ -2904,31 +2907,59 @@ class StockService extends BaseService
 
 	/**
 	 * Weighs a vessel (a bin, a spice jar - a location that stock passes through rather than
-	 * arrives in) and corrects its one stock entry to match, per ADR-0022 decision 4's
-	 * location-scoped tare and docs/plans/landed/29-working-container-replenishment.md.
+	 * arrives in) and corrects its stock TOTAL at that location to match, per ADR-0022 decision
+	 * 4's location-scoped tare, docs/plans/landed/29-working-container-replenishment.md, and
+	 * ADR-0033 decision 5 (2026-09-27).
 	 *
-	 * The device posts a gross reading in the location's own tare unit; this method
-	 * subtracts the location's tare weight, converts the net remainder into the stocked
-	 * product's stock unit through cache__quantity_unit_conversions_resolved - the same
-	 * per-product conversion cache every other write path in this class reads (ADR-0022
-	 * decision 3), refusing rather than assuming when no conversion path exists - and hands
-	 * the result to EditStockEntry(), which does no tare arithmetic of its own and simply
-	 * sets the entry's amount, exactly as it does for a human-entered correction.
+	 * The device posts a gross reading in the location's own tare unit; this method subtracts
+	 * the location's tare weight, converts the net remainder into the stocked product's stock
+	 * unit through cache__quantity_unit_conversions_resolved - the same per-product conversion
+	 * cache every other write path in this class reads (ADR-0022 decision 3), refusing rather
+	 * than assuming when no conversion path exists - and compares it against the SUM of every
+	 * stock row this product holds at this exact location (not the product's stock everywhere,
+	 * and not one merged row: ADR-0033 removed the compaction this method used to run first, so
+	 * a vessel refilled more than once, or holding a dated or labelled lot, can legitimately
+	 * hold several rows here at once):
+	 *
+	 * - A reading within ADR-0032's tolerance of that sum books nothing and returns an empty
+	 *   string - there is nothing to correct, and StockApiController::WeighLocation() answers
+	 *   200 with an empty transaction array rather than treating this as a refusal.
+	 * - A lower reading consumes the difference through ConsumeProduct() in its own ordinary
+	 *   consume order, restricted to this location ($locationId) - existing rows are reduced or
+	 *   deleted as that order already decides, exactly as any other inventory correction would.
+	 * - A higher reading adds ONE new row through AddProduct(), at this location, as a
+	 *   TRANSACTION_TYPE_INVENTORY_CORRECTION. That row needs a due date nothing here can
+	 *   guess (an arbitrary existing lot's date would misrepresent what was actually added -
+	 *   ADR-0033's own Decision text), so the caller must supply $bestBeforeDate explicitly;
+	 *   its price, shopping location and purchased date come from the same defaults
+	 *   InventoryProduct() already uses for its own positive correction (the product's last
+	 *   price/shopping location, purchased today).
+	 *
+	 * Every existing row at the location keeps its own due date, label and identity either
+	 * way - this method never merges, and ordinary full-consumption label retirement (the
+	 * retire_stock_entry_labels trigger, migrations/0283.pgsql.php) applies only if the
+	 * consume branch happens to empty a labelled row completely, exactly as any other consume
+	 * would.
 	 *
 	 * Refuses when the location has no tare configured, when zero or more than one distinct
 	 * product is stocked there (weighing a shared shelf makes no sense - a vessel holds one
-	 * product), or when more than one stock entry for that product remains at the location
-	 * after compaction (weighing one physical container requires one row to correct).
+	 * product; still refused after ADR-0033, unchanged), or when the reading is higher and no
+	 * $bestBeforeDate was supplied.
 	 *
 	 * @param int $locationId
 	 * @param float $grossAmount The gross reading, in the location's own tare_qu_id.
 	 * @param int|null $grossQuId When given, must equal the location's tare_qu_id - present
 	 *                            so a client's unit mismatch is refused rather than silently
 	 *                            misweighed, per ADR-0022 question 5's "gross" contract.
-	 * @return string The transaction id of the resulting stock edit.
-	 * @throws \Exception When the location, its tare, or a single correctable entry cannot be resolved.
+	 * @param string|null $bestBeforeDate Required only when the reading turns out to be higher
+	 *                            than what is on record (a positive correction adds a new row
+	 *                            and needs its own due date); ignored otherwise.
+	 * @return string The transaction id of the resulting booking, or '' when the reading
+	 *                 matched what was on record and nothing was booked.
+	 * @throws \Exception When the location, its tare, or the product stocked there cannot be
+	 *                    resolved, or a higher reading is given no $bestBeforeDate.
 	 */
-	public function WeighLocation(int $locationId, float $grossAmount, ?int $grossQuId = null): string
+	public function WeighLocation(int $locationId, float $grossAmount, ?int $grossQuId = null, ?string $bestBeforeDate = null): string
 	{
 		$location = $this->DB->locations()->where('id = :1 AND active = 1', $locationId)->fetch();
 		if ($location === null)
@@ -2964,12 +2995,12 @@ class StockService extends BaseService
 		}
 		$productId = reset($productIds);
 
-		// Everything from here on reads and rewrites this one product's stock rows -
-		// compacting, counting the survivors, editing the one that remains - and has to see
-		// one consistent, locked snapshot of them (issue #458): a concurrent booking of the
-		// same product between any of these reads and the final edit could otherwise leave
-		// this correction acting on a row count or amount that is no longer current.
-		return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $locationId, $netInTareUnit, $location)
+		// Everything from here on reads and rewrites this one product's stock rows - summing
+		// them, deciding the correction, booking it - and has to see one consistent, locked
+		// snapshot of them (issue #458): a concurrent booking of the same product between any
+		// of these reads and the final booking could otherwise leave this correction acting on
+		// a total that is no longer current.
+		return DatabaseService::GetInstance()->InTransaction(function () use ($productId, $locationId, $netInTareUnit, $location, $bestBeforeDate)
 		{
 			DatabaseService::GetInstance()->LockProductStock($productId);
 
@@ -3000,23 +3031,48 @@ class StockService extends BaseService
 
 			$newAmount = $netInTareUnit * $conversion->factor;
 
-			// A measured entry describes exactly one container (ADR-0022 decision 8's coherence
-			// argument, applied here to a vessel rather than to an opened purchased container):
-			// compaction first, so that ordinary backstock-fed refills - which each mint a new row
-			// via TransferProduct() - collapse into the one row this correction can set the amount
-			// of, rather than leaving the weighing refused by an accident of how many transfers
-			// happened to run before it.
-			$this->CompactStockEntries($productId);
+			// ADR-0033 decision 5: the location's TOTAL, not one merged row. Backstock-fed
+			// refills (TransferProduct()) and a real due date or a live label (which, since
+			// ADR-0033 decision 3, can now keep a row from ever being merged by the
+			// maintenance command) can all leave more than one row stocked here at once; this
+			// sums across every one of them rather than requiring compaction to have already
+			// collapsed them into a single row.
+			$currentAmountAtLocation = array_sum(array_map(fn($row) => (float)$row->amount, $stockAtLocation));
 
-			$stockRows = $this->DB->stock()->where('product_id = :1 AND location_id = :2', $productId, $locationId)->fetchAll();
-			if (count($stockRows) !== 1)
+			$comparison = self::CompareAmounts($newAmount, $currentAmountAtLocation);
+
+			if ($comparison === 0)
 			{
-				throw new \Exception('This location does not hold exactly one stock entry to weigh');
+				// A matching reading books nothing (ADR-0033 decision 5): the vessel already
+				// reads what is on record. StockApiController::WeighLocation() treats this as
+				// success with an empty result rather than delegating to StockTransactions(),
+				// which requires a transaction id to exist.
+				return '';
 			}
-			$stockRow = $stockRows[0];
 
-			return $this->EditStockEntry($stockRow->id, $newAmount, $stockRow->best_before_date, $locationId,
-				$stockRow->shopping_location_id, $stockRow->price, $stockRow->open, $stockRow->purchased_date, $stockRow->note);
+			if ($comparison > 0)
+			{
+				if ($bestBeforeDate === null)
+				{
+					throw new \Exception('The weighed amount is higher than what is on record; a best_before_date is required for the new stock entry, since one cannot be guessed from the rows already here');
+				}
+
+				// Same defaults InventoryProduct() already uses for its own positive
+				// correction (ADR-0033 decision 5, resolving the ADR's open question 2):
+				// last price, last shopping location, purchased today. An arbitrary existing
+				// lot's own price/location/date would misrepresent what was actually added.
+				return $this->AddProduct($productId, $newAmount - $currentAmountAtLocation, $bestBeforeDate,
+					self::TRANSACTION_TYPE_INVENTORY_CORRECTION, date('Y-m-d'), $productDetails->last_price,
+					$locationId, $productDetails->last_shopping_location_id);
+			}
+
+			// Lower reading: consume the difference in ordinary consume order, restricted to
+			// this location - existing rows elsewhere are never touched, and a row emptied
+			// completely here retires its label the same way any other full consume does
+			// (tested separately from the maintenance merge exclusion, ADR-0033 acceptance
+			// prerequisite 4).
+			return $this->ConsumeProduct($productId, $currentAmountAtLocation - $newAmount, false,
+				self::TRANSACTION_TYPE_INVENTORY_CORRECTION, 'default', null, $locationId);
 		});
 	}
 
@@ -4154,14 +4210,39 @@ class StockService extends BaseService
 	/**
 	 * Merges stock entries which are equal in every relevant attribute (product, due date,
 	 * purchased date, price, open state/date, location, shopping location and note) into a
-	 * single entry holding the summed amount.
+	 * single entry holding the summed amount. Called only by the explicit maintenance command
+	 * (bin/victual-compact-stock) since ADR-0033 decision 1 (2026-09-27) - never inline from a
+	 * booking path. Safe to call directly in a test, as before.
 	 *
-	 * Candidate groups come from the stock_splits view (which excludes entries with per-unit
-	 * labels - stock_id starting with "x" - and entries with userfield values). For each group,
-	 * inside its own database transaction, all stock and stock_log rows are rewritten to the
-	 * surviving stock_id, the redundant stock rows are deleted and the kept row is set to the
-	 * group's total amount. The split lineage in stock_entry_origins (see RecordSplitOrigin())
-	 * is rewritten with them.
+	 * Candidate groups come from the stock_splits view (migrations/0290.pgsql.sql), which
+	 * excludes: entries with per-unit labels (stock_id starting with "x"), entries with
+	 * userfield values, entries carrying a measured remainder (opened_amount IS NOT NULL),
+	 * entries with a real due date (best_before_date other than NULL or the 2999-12-31
+	 * never-expires sentinel - ADR-0033 decision 3, closing issue #488's C1), and entries
+	 * carrying a live stock_entry label (ADR-0033 decision 3, closing issue #491's H2). A row
+	 * with a real due date or a live label is therefore never a merge candidate, regardless of
+	 * how many other rows would otherwise match it.
+	 *
+	 * For each surviving group, inside its own database transaction: the group's own rows are
+	 * locked (SELECT ... FOR UPDATE, ascending id) and eligibility, groups and totals are
+	 * re-read fresh under those locks (ADR-0033 decision 3) - a label committed while this
+	 * call waited for the locks is seen before anything is deleted, since
+	 * LabelIdentityService::Issue() takes the same row lock before inserting a label and so
+	 * either wins the race and is honoured here, or loses it and fails cleanly against a row
+	 * already gone. A group sharing a stock_id with a row outside it is skipped outright
+	 * (below) rather than merged - a split (partial open/transfer) can leave two different
+	 * `stock` rows carrying the same stock_id, and rewriting "every row with this stock_id",
+	 * the only kind of statement this method can issue since stock_id rather than id is the
+	 * merge key, would corrupt that outside row's identity and history. A group is likewise
+	 * skipped when an outside row's own stock_entry_origins lineage names one of this group's
+	 * stock_ids as its origin (RecordSplitOrigin() leaves exactly that on the untouched
+	 * remainder of an earlier partial open/transfer) - that outside row was never a merge
+	 * candidate and must keep recording which purchase it actually split from, not whichever
+	 * one happened to end up surviving this group's own merge. All stock and stock_log rows
+	 * of an accepted group are rewritten to the surviving stock_id, the redundant stock rows
+	 * are deleted and the kept row is set to the group's total amount. The split lineage in
+	 * stock_entry_origins (see RecordSplitOrigin()) is rewritten with them. stock_log.stock_row_id
+	 * is never rewritten by this method.
 	 *
 	 * @param int|null $productId Limit compacting to this product; null compacts all products
 	 * @return void
@@ -4196,13 +4277,181 @@ class StockService extends BaseService
 			{
 				DatabaseService::GetInstance()->LockProductStock($oneProductId);
 
+				// First pass: which rows are candidates right now, under the product lock -
+				// used only to know what to lock next. LockProductStock() already serialises
+				// this call against every other StockService write path for this product, so
+				// the one thing that can still change between this read and the locks below
+				// is a label issuance, which never takes that lock (ADR-0033 decision 3
+				// explicitly keeps it that way - see LabelIdentityService::Issue()).
+				$candidateGroups = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
+				if (count($candidateGroups) === 0)
+				{
+					return;
+				}
+
+				$candidateRowIds = [];
+				foreach ($candidateGroups as $group)
+				{
+					foreach (explode(',', $group->id_group) as $id)
+					{
+						$candidateRowIds[] = (int)$id;
+					}
+				}
+				$candidateRowIds = array_unique($candidateRowIds);
+				sort($candidateRowIds);
+
+				// The actual synchronisation boundary against a concurrent label issuance
+				// (ADR-0033 decision 3): a real PostgreSQL row lock, taken in ascending id
+				// order across every candidate row in one statement so this call cannot
+				// deadlock against another multi-row locker ordering differently.
+				// LabelIdentityService::Issue() locks its one target row the same way before
+				// inserting into labels, so it either committed before this statement runs
+				// (and is visible in the re-read below) or blocks on it until this call
+				// commits or rolls back, at which point its row either no longer exists (this
+				// call merged/deleted it - Issue() then fails cleanly with no label ever
+				// inserted) or is exactly as this call left it.
+				$placeholders = implode(',', array_fill(0, count($candidateRowIds), '?'));
+				// This exact statement - the row lock this whole re-read strategy depends on -
+				// is also the seam a test observes CompactStockEntries() genuinely paused at:
+				// see tests/Pgsql/compact-stock-subprocess-helper.php's DatabaseService subclass,
+				// installed via ReflectionProperty before this call, which pauses here when
+				// VICTUAL_TEST_COMPACT_PAUSE_AT names this checkpoint. Never set outside the
+				// test suite's own subprocess helper, so this line runs unpaused for every real
+				// caller (bin/victual-compact-stock and any future one).
+				DatabaseService::GetInstance()->ExecuteDbQuery("SELECT id FROM stock WHERE id IN ($placeholders) ORDER BY id ASC FOR UPDATE", $candidateRowIds);
+
 				// The re-read this fix is about: every group belonging to this product,
-				// current as of right now under the lock rather than from before it.
+				// current as of right now under the lock rather than from before it -
+				// including eligibility, since a label committed between the first read
+				// above and the row locks just taken removes its row from stock_splits here.
 				$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
 
 				foreach ($splittedStockEntries as $splittedStockEntry)
 				{
 					$stockIds = explode(',', $splittedStockEntry->stock_id_group);
+					$idGroup = explode(',', $splittedStockEntry->id_group);
+
+					// Newly-eligible-since-the-first-read guard: every id in this re-read group
+					// must already be one this transaction actually locked above. Nothing that
+					// takes LockProductStock() first can add a row here between the two reads -
+					// that lock is held for the whole transaction - but ADR-0033 decision 3
+					// deliberately leaves label issuance able to race unlocked, and issuance
+					// only ever narrows eligibility (retiring an existing label is a distinct
+					// operation this guard also has no way to exclude by construction). A row
+					// that entered this group only after the lock was taken was never protected
+					// by it, so rewriting it here would act on a row this transaction could not
+					// prove nothing else was concurrently doing something to - skip the whole
+					// group rather than merge on the strength of a lock never actually held.
+					$idsOutsideLock = array_diff(array_map('intval', $idGroup), $candidateRowIds);
+					if (count($idsOutsideLock) > 0)
+					{
+						continue;
+					}
+
+					// Shared stock_id guard (ADR-0033 decision 3): skip this whole group if any
+					// of its stock_id values is also carried by a `stock` row this group does
+					// not include. That other row's history and lineage must stay byte-for-byte
+					// unchanged, and the UPDATE ... WHERE stock_id = '...' statements below have
+					// no way to spare it - they rewrite every row sharing that stock_id, group
+					// member or not.
+					$idPlaceholders = implode(',', array_fill(0, count($idGroup), '?'));
+					$stockIdPlaceholders = implode(',', array_fill(0, count($stockIds), '?'));
+					$outsideRowCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+						"SELECT 1 FROM stock WHERE stock_id IN ($stockIdPlaceholders) AND id NOT IN ($idPlaceholders) LIMIT 1",
+						array_merge($stockIds, $idGroup)
+					);
+					if ($outsideRowCheck->fetchColumn() !== false)
+					{
+						continue;
+					}
+
+					// Lineage confinement (ADR-0033 decision 3's last sentence). Two guards,
+					// for two different failure modes. RecordSplitOrigin() always stores the
+					// FLATTENED origin (the ultimate purchase a chain of splits descends from,
+					// never an intermediate parent - see its own docblock), so this table can
+					// only ever link a stock_id to its true root: there is no chain to walk and
+					// no cycle it could form, so "the root of X" is a single lookup, not a
+					// recursion.
+					//
+					// Guard 1 (round 2, unchanged): an outside row can have RecordSplitOrigin()
+					// lineage naming one of the group's DISAPPEARING ids as its own origin - left
+					// behind on the untouched remainder of an earlier partial open/transfer that
+					// has nothing else to do with this group. The rewrite below only ever fires
+					// for a disappearing id (stock_id_to_keep's own identity never changes), but
+					// within that it rewrites every row naming one, group member or not, which
+					// would silently reattribute a real, unrelated entry's history to a different
+					// purchase than the one it actually split from. Unconditional: flattening
+					// means a disappearing id can only ever be named directly by an outside row
+					// when that id is itself a root, and round 3's probes below show exactly why
+					// that can never be let through.
+					$disappearingStockIds = [];
+					foreach ($stockIds as $stockId)
+					{
+						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						{
+							$disappearingStockIds[] = $stockId;
+						}
+					}
+					if (count($disappearingStockIds) > 0)
+					{
+						$disappearingPlaceholders = implode(',', array_fill(0, count($disappearingStockIds), '?'));
+						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+							"SELECT 1 FROM stock_entry_origins WHERE origin_stock_id IN ($disappearingPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders) LIMIT 1",
+							array_merge($disappearingStockIds, $stockIds)
+						);
+						if ($outsideLineageCheck->fetchColumn() !== false)
+						{
+							continue;
+						}
+					}
+
+					// Guard 2 (round 3): round 2's guard alone still misses two shapes, both
+					// real application flows, and both share one structural trait round 2's
+					// guard ignored - the group spans MORE THAN ONE ORIGIN ROOT (two originally
+					// separate purchases, only one of which has since been split):
+					//   - An outside row can name the group's KEPT id as its origin instead of a
+					//     disappearing one. The kept id's own identity never changes, but the
+					//     merge still moves a DIFFERENT root's history onto it, which the outside
+					//     row's lineage never signed up for.
+					//   - A group member's OWN lineage can name an outside row as ITS origin (the
+					//     member is an unopened remainder of a different root than its sibling).
+					// Merging either silently reattributes one root's purchase price/history onto
+					// the other, which prerequisite 1 forbids. But merging portions that all
+					// descend from a SINGLE shared root changes no purchase's resolved root and
+					// no root's total - that is ordinary compaction (e.g.
+					// testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge's second merge:
+					// two opened portions of the same original purchase, one of them a second-
+					// generation remainder of the other) and must stay allowed even though an
+					// unrelated, still-live remainder of that same shared root sits outside the
+					// group - that remainder's resolved root does not change either, only the
+					// surviving id's spelling does. So this guard only ever runs when the group's
+					// members resolve to more than one distinct root; when they all share one
+					// root it is skipped entirely, deliberately including the kept id in the
+					// outside-link check when it does run.
+					$originRows = DatabaseService::GetInstance()->ExecuteDbQuery(
+						"SELECT stock_id, origin_stock_id FROM stock_entry_origins WHERE stock_id IN ($stockIdPlaceholders)",
+						$stockIds
+					)->fetchAll(\PDO::FETCH_KEY_PAIR);
+					$roots = [];
+					foreach ($stockIds as $stockId)
+					{
+						$roots[$originRows[$stockId] ?? $stockId] = true;
+					}
+					if (count($roots) > 1)
+					{
+						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+							"SELECT 1 FROM stock_entry_origins WHERE"
+							. " (stock_id IN ($stockIdPlaceholders) AND origin_stock_id NOT IN ($stockIdPlaceholders))"
+							. " OR (origin_stock_id IN ($stockIdPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders))"
+							. " LIMIT 1",
+							array_merge($stockIds, $stockIds, $stockIds, $stockIds)
+						);
+						if ($outsideLineageCheck->fetchColumn() !== false)
+						{
+							continue;
+						}
+					}
+
 					foreach ($stockIds as $stockId)
 					{
 						if ($stockId != $splittedStockEntry->stock_id_to_keep)
@@ -4247,6 +4496,12 @@ class StockService extends BaseService
 							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
 						}
 					}
+
+					// This exact statement - the survivor's amount rewrite, the last statement
+					// of a group actually merged - is the seam a test observes
+					// CompactStockEntries() genuinely paused after a group's first rewrite: see
+					// tests/Pgsql/compact-stock-subprocess-helper.php's DatabaseService subclass
+					// for the 'after_first_rewrite' checkpoint.
 				}
 			});
 		}

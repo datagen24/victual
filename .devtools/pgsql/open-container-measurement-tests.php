@@ -517,11 +517,15 @@ check(abs($gallonsRemaining - 0.5) < 0.0001, "4.3 lb resolves to 0.5 gallon thro
 
 echo "\n11. a measured entry is left alone by CompactStockEntries()\n";
 
+// ADR-0033 (2026-09-27) restricts CompactStockEntries() to rows with no real due date -
+// best_before_date NULL or the 2999-12-31 "never expires" sentinel - so every row here
+// uses the sentinel; a real date like the '2026-12-10' this used before would never be a
+// merge candidate at all, regardless of the measured-remainder exclusion this case is about.
 $flour11 = MakeProduct('Compaction flour', $bag, $locationId);
-$compactA = MakeStockRow($flour11, 1, 'compact-a', $locationId, ['open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2026-12-10']);
-$compactB = MakeStockRow($flour11, 1, 'compact-b', $locationId, ['open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2026-12-10']);
+$compactA = MakeStockRow($flour11, 1, 'compact-a', $locationId, ['open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2999-12-31']);
+$compactB = MakeStockRow($flour11, 1, 'compact-b', $locationId, ['open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2999-12-31']);
 $compactC = MakeStockRow($flour11, 1, 'compact-c', $locationId, [
-	'open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2026-12-10',
+	'open' => 1, 'opened_date' => '2026-09-05', 'price' => 2.90, 'purchased_date' => '2026-09-03', 'best_before_date' => '2999-12-31',
 	'opened_amount' => 0.8, 'opened_qu_id' => $bag, 'opened_measured_at' => '2026-09-05 10:00:00',
 ]);
 
