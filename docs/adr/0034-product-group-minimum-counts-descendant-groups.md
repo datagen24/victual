@@ -1,6 +1,6 @@
 # ADR-0034: A product group's minimum stock counts its descendant groups
 
-- **Status:** Proposed.
+- **Status:** Accepted 2026-09-28.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-26, from the maintainer's decision in the issue
