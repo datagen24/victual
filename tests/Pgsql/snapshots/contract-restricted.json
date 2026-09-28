@@ -958,9 +958,26 @@
         }
     },
     "GET /api/objects/{entity}/{objectId} (stock)": {
-        "status": 404,
+        "status": 200,
         "shape": {
-            "error_message": "string"
+            "amount": "integer",
+            "best_before_date": "string",
+            "id": "integer",
+            "import_epoch": "integer",
+            "location_id": "integer",
+            "note": "null",
+            "open": "integer",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "product_id": "integer",
+            "purchased_date": "string",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "stock_id": "string",
+            "userfields": "null"
         }
     },
     "GET /api/objects/{entity}/{objectId} (task_categories)": {
@@ -1127,7 +1144,25 @@
     },
     "GET /api/stock/entry/{entryId}": {
         "status": 200,
-        "shape": "null"
+        "shape": {
+            "amount": "integer",
+            "best_before_date": "string",
+            "id": "integer",
+            "import_epoch": "integer",
+            "location_id": "integer",
+            "note": "null",
+            "open": "integer",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "product_id": "integer",
+            "purchased_date": "string",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "stock_id": "string"
+        }
     },
     "GET /api/stock/locations/{locationId}/entries": {
         "status": 200,

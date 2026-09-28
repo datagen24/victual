@@ -236,9 +236,31 @@ async function probe(browser, label, how, run)
 	{
 		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
 		await page.waitForTimeout(1200);
+		const button = page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first();
+		const stockRowId = await button.getAttribute('data-stockrow-id');
 		const before = maxLogId();
-		await page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first().click();
+		await button.click();
 		await waitForUndoToast(page);
+
+		// Audit finding H10 / issue #499: this button consumes the entry's whole amount
+		// (data-consume-amount), which deletes the row server-side. The success handler's
+		// own RefreshStockEntryRow() re-fetches it right after and used to get a 200 "null"
+		// body it read as "hide the row"; GET /stock/entry/{id} now answers the documented
+		// 400 for a gone id instead, which must still hide the row rather than surface
+		// DefaultErrorHandler's "A server error occured" toast. Waited rather than asserted
+		// immediately: RefreshStockEntryRow()'s own GET is a second request, fired
+		// alongside the success toast rather than awaited by it.
+		await page.waitForTimeout(800);
+		if (await page.locator('#toast-container .toast-error').count() > 0)
+		{
+			throw new Error('the consumed entry\'s row refresh surfaced a server-error toast instead of hiding the row (H10 / issue #499)');
+		}
+		const rowClass = await page.locator('#stock-' + stockRowId + '-row').getAttribute('class');
+		if (!rowClass || !rowClass.split(/\s+/).includes('d-none'))
+		{
+			throw new Error('the consumed entry\'s row was not hidden after its GET /stock/entry/{id} refresh (H10 / issue #499): class="' + rowClass + '"');
+		}
+
 		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
 		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };

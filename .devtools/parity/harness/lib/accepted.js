@@ -495,6 +495,31 @@ const ACCEPTED = [
 			typeof difference.victual === 'boolean' &&
 			isNumericish(difference.upstream) &&
 			Number(difference.upstream) === (difference.victual ? 1 : 0)
+	},
+
+	{
+		id: 'issue-499-created-object-id-integer',
+		reference: 'https://github.com/datagen24/victual/issues/499, docs/adr/0005-wire-contract-is-the-invariant.md',
+		reason:
+			'`created_object_id` is a JSON number here and a numeric string upstream, on the three routes ' +
+			'that carry it: POST /objects/{entity}, POST /recipes/{recipeId}/copy and POST /roles. This ' +
+			'file already recorded upstream\'s side of that as a string once - `create-with-no-fields-' +
+			'refused` above quotes upstream\'s `"0"` for an empty create - and PDO::lastInsertId() (what ' +
+			'both LessQL\'s Row::save() and RecipesService::CopyRecipe() read the id from) always returns a ' +
+			'string in PHP regardless of the column\'s own type, on either side of this fork. ' +
+			'victual.openapi.json has documented the property `integer` since before this fix; only the ' +
+			'fork\'s wire and its own contract snapshot were wrong (audit finding H10 / issue #499). ' +
+			'ADR-0005\'s rule is that the document decides and the wrong side moves, and the fork is the ' +
+			'side that moved.\n\n' +
+			'The matcher demands the two sides agree once the string is read as a number - not merely that ' +
+			'one side is a string and the other is not - so a created_object_id genuinely different between ' +
+			'the two engines (surrogate-key-allocation\'s drift, or a real defect) is still reported.',
+		match: ({ difference }) => {
+			if (difference.kind !== 'type') return false;
+			if (lastSegment(difference.pointer) !== 'created_object_id') return false;
+			if (typeof difference.victual !== 'number') return false;
+			return isNumericish(difference.upstream) && Number(difference.upstream) === difference.victual;
+		}
 	}
 ];
 
