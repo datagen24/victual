@@ -63,8 +63,12 @@ booking can be undone from the stock journal.
   table of every such conversion is at **`/quantityunitconversionsresolved`**.
   **`/quantityunitpluraltesting`** is a developer utility for checking plural-form strings,
   not a page a household needs day to day.
-- **`/productgroups`** / **`/productgroup/{id}`** — groups can nest, and a group's own
-  minimum stock amount rolls up from its members' shortfalls.
+- **`/productgroups`** / **`/productgroup/{id}`** — groups can nest. A group's
+  shortfall is its own minimum minus the summed effective stock of its active direct
+  member products. Opened stock is excluded for products configured to treat it as out
+  of stock. Each product contributes in its own stock unit, without conversion.
+  Descendant groups do not contribute yet; [ADR-0034](../../adr/0034-product-group-minimum-counts-descendant-groups.md)
+  proposes that change.
 - **`/productbarcodes/{id}`** edits one barcode-to-product mapping. **`/productsubstitutions/new`**
   records a directed substitution (e.g. "coffee grounds substitute for beans", never the
   reverse) used by recipe fulfilment.
