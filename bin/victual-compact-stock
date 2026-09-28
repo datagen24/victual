@@ -81,7 +81,20 @@ foreach ($arguments as $argument)
 {
 	if (str_starts_with($argument, '--product-id='))
 	{
-		$productId = (int)substr($argument, strlen('--product-id='));
+		$rawProductId = substr($argument, strlen('--product-id='));
+
+		// (int) casting silently turned every malformed value into 0 - "--product-id=abc"
+		// and a bare "--product-id=" both compacted the whole database ($productId falls
+		// through to the sweep-everything call below) rather than refusing outright, and
+		// "--product-id=12x" silently compacted product 12 instead of being rejected
+		// (CodeRabbit review comment 4121171258). Validated before any database connection
+		// is opened (see below), so a refusal here never touches anything.
+		$productId = filter_var($rawProductId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+		if ($productId === false)
+		{
+			fwrite(STDERR, 'Invalid --product-id value: "' . $rawProductId . '" (must be a positive integer)' . PHP_EOL);
+			exit(1);
+		}
 	}
 }
 

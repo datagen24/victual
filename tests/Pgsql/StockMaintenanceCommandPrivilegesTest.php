@@ -248,4 +248,81 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 	{
 		return array_map(fn($grant) => [$grant[1]], self::GRANTS);
 	}
+
+	/**
+	 * Runs the real bin/victual-compact-stock binary as its own OS subprocess (see
+	 * StockMaintenanceCompactionTest::testRealCompactStockBinaryRunsAsASubprocessOnAFirstAndARepeatRun's
+	 * own runBinary() for the same env/PGOPTIONS shape), with the given extra CLI arguments.
+	 *
+	 * @return array{0: int, 1: string, 2: string} exit code, stdout, stderr
+	 */
+	private static function runBinary(array $extraArgs): array
+	{
+		$env = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env['VICTUAL_DB_DRIVER'] = 'pgsql';
+		$env['VICTUAL_DB_HOST'] = (string)getenv('PGHOST');
+		$env['VICTUAL_DB_PORT'] = (string)getenv('PGPORT');
+		$env['VICTUAL_DB_NAME'] = (string)getenv('PHPUNIT_DB_NAME');
+		$env['VICTUAL_DB_USER'] = (string)getenv('PGUSER');
+		$env['VICTUAL_DB_PASSWORD'] = (string)getenv('PGPASSWORD');
+		$env['VICTUAL_DATAPATH'] = (string)getenv('VICTUAL_DATAPATH');
+		$env['PGOPTIONS'] = '-c search_path=' . self::Schema() . ',public';
+
+		$process = proc_open(
+			array_merge([PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock'], $extraArgs),
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+		self::assertIsResource($process, 'bin/victual-compact-stock could not be started');
+
+		$stdout = stream_get_contents($pipes[1]);
+		$stderr = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		$exitCode = proc_close($process);
+
+		return [$exitCode, $stdout, $stderr];
+	}
+
+	/**
+	 * CodeRabbit review comment 4121171258: `(int)substr(...)` on --product-id silently turned
+	 * every malformed value into 0 or a truncated prefix instead of refusing - "--product-id="
+	 * and "--product-id=abc" both became 0 (the whole-database sweep, reported as "No eligible
+	 * stock rows to merge." and exit 0 - the OPPOSITE of a refusal), and "--product-id=12x"
+	 * silently became 12 (compacting the wrong, unintended product). Seeds one real eligible
+	 * pair so a silently-accepted malformed value would visibly merge it; asserts the exit
+	 * code, the STDERR message, AND that `stock` is byte-for-byte unchanged - not only that the
+	 * process failed, since a refusal that still touched the database would be worse than this
+	 * bug, not a fix for it.
+	 */
+	#[DataProvider('malformedProductIdValues')]
+	public function testMalformedProductIdIsRefusedWithoutTouchingTheDatabase(string $value): void
+	{
+		$product = self::seedMergeableProduct('Privileges CLI ' . bin2hex(random_bytes(4)));
+		$before = self::$db->prepare('SELECT * FROM stock WHERE product_id = ? ORDER BY id');
+		$before->execute([$product]);
+		$before = $before->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(2, $before, 'Sanity: two still-separate candidate rows before the binary runs');
+
+		[$exitCode, , $stderr] = self::runBinary(['--product-id=' . $value, '--quiet']);
+
+		self::assertSame(1, $exitCode, "--product-id=$value must exit 1, not silently succeed: stderr=$stderr");
+		self::assertStringContainsString($value, $stderr, "The STDERR message must name the bad value ($value): got \"$stderr\"");
+		self::assertStringContainsString('product-id', strtolower($stderr), 'and identify which option was bad');
+
+		$after = self::$db->prepare('SELECT * FROM stock WHERE product_id = ? ORDER BY id');
+		$after->execute([$product]);
+		self::assertSame($before, $after->fetchAll(PDO::FETCH_ASSOC), 'A refusal must leave stock byte-for-byte unchanged - it must never compact product 0 or a truncated-prefix product instead');
+	}
+
+	public static function malformedProductIdValues(): array
+	{
+		return [
+			'non-numeric' => ['abc'],
+			'empty' => [''],
+			'numeric prefix with trailing garbage' => ['12x'],
+		];
+	}
 }
