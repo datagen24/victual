@@ -688,7 +688,8 @@ class ContractTest extends PgsqlSchemaTestCase
 			'task_categories' => self::$ids['task_category'] ?? null,
 			'equipment' => self::$ids['equipment'] ?? null,
 			'roles' => self::roleId('CHILD'),
-			'stock' => self::$ids['stock_entry'] ?? null,
+			// Not self::$ids['stock_entry'] - see lowestStockEntryIdForProduct()'s own docblock.
+			'stock' => self::lowestStockEntryIdForProduct(self::$ids['product'] ?? null),
 			'stock_log' => null,
 		];
 
@@ -806,18 +807,15 @@ class ContractTest extends PgsqlSchemaTestCase
 			$key === 'GET /api/userfields/{entity}/{objectId}' => fn() => $generic->GetUserfields(self::request(), new Response(), ['entity' => 'products', 'objectId' => $productId]),
 			$key === 'GET /api/stock' => fn() => $stock->CurrentStock(self::request(), new Response(), []),
 			$key === 'GET /api/stock/volatile' => fn() => $stock->CurrentVolatileStock(self::request(), new Response(), []),
-			// Not replayed: self::$ids['stock_entry'] is captured once, right before the Admin
-			// sweep's own PUT /api/stock/entry/{entryId} case edits that same row - which can
-			// compact it into another (ordinary EditStockEntry() behavior; row compaction
-			// under edit/undo is audit finding C1's territory, not something this class
-			// controls) - so the id is not guaranteed to still exist by the time this replay
-			// runs, much later in the same sequence. Audit finding H10 / issue #499 turned a
-			// since-vanished id into the documented 400 instead of the previous 200 "null",
-			// which this class's own restricted-vs-admin invariant (200 or 403 only, see
-			// testRestrictedMatchesAdminMinusRedactedFields()) does not model for a reason
-			// other than a permission gate. Same reasoning as the "deleted by the Admin sweep"
-			// files case below.
-			$key === 'GET /api/stock/entry/{entryId}' => null,
+			// Not self::$ids['stock_entry'] - see lowestStockEntryIdForProduct()'s own
+			// docblock for why, and why replaying against a real surviving row (rather than
+			// skipping this route) matters: a null/404 body has no price field for FieldPolicy
+			// to redact, so comparing against one never exercised that redaction for CHILD.
+			$key === 'GET /api/stock/entry/{entryId}' => (function () use ($stock, $productId)
+			{
+				$id = self::lowestStockEntryIdForProduct($productId);
+				return $id === null ? null : fn() => $stock->StockEntry(self::request(), new Response(), ['entryId' => $id]);
+			})(),
 			$key === 'GET /api/stock/products/{productId}' => fn() => $stock->ProductDetails(self::request(), new Response(), ['productId' => $productId]),
 			$key === 'GET /api/stock/products/{productId}/entries' => fn() => $stock->ProductStockEntries(self::request(), new Response(), ['productId' => $productId]),
 			$key === 'GET /api/stock/products/{productId}/locations' => fn() => $stock->ProductStockLocations(self::request(), new Response(), ['productId' => $productId]),
@@ -874,10 +872,37 @@ class ContractTest extends PgsqlSchemaTestCase
 			'task_categories' => self::$ids['task_category'] ?? null,
 			'equipment' => self::$ids['equipment'] ?? null,
 			'roles' => self::roleId('CHILD'),
-			'stock' => self::$ids['stock_entry'] ?? null,
+			'stock' => self::lowestStockEntryIdForProduct(self::$ids['product'] ?? null),
 		];
 
 		return $map[$entity] ?? null;
+	}
+
+	/**
+	 * The lowest surviving `stock` row id for $productId, or null if none remain.
+	 *
+	 * Not self::$ids['stock_entry']: that id is the row testStockOperations() first creates,
+	 * and it is fully consumed by that same method's own POST .../inventory case before
+	 * either sweep below runs - see the 'GET /api/stock/entry/{entryId}' case in
+	 * routeCallForKey() for the full sequence. testGenericEntitySweepAsAdmin()'s $knownIds and
+	 * genericSweepKnownId() both used the same stale id for the 'stock' entity, which made
+	 * GET /api/objects/{entity}/{objectId} (stock) answer the ordinary (and here, correct)
+	 * 404 on both the Admin and restricted golden - true, but not what either sweep meant to
+	 * exercise, and not a check of the price redaction FieldPolicy applies to this route for
+	 * CHILD.
+	 */
+	private static function lowestStockEntryIdForProduct(?int $productId): ?int
+	{
+		if ($productId === null)
+		{
+			return null;
+		}
+
+		$statement = self::$db->prepare('SELECT MIN(id) FROM stock WHERE product_id = ?');
+		$statement->execute([$productId]);
+		$id = $statement->fetchColumn();
+
+		return $id === false || $id === null ? null : (int)$id;
 	}
 
 	// ------------------------------------------------------------------------------

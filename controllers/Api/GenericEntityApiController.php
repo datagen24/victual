@@ -136,10 +136,13 @@ class GenericEntityApiController extends BaseApiController
 					//
 					// LessQL's Row::save() already asks the right question - it looks the id
 					// up as lastInsertId($db->getSequence($table)) and leaves it on the row -
-					// so the value is there to be read. SQLite is unaffected either way, and
-					// the "nothing was inserted" case is unchanged: save() skips a row with
-					// no modified columns, the primary is never set, and this stays null (the
-					// difference from upstream that issue #47 records).
+					// so the value is there to be read. SQLite is unaffected either way. save()
+					// would leave this null for a row with no modified columns (the difference
+					// from upstream that issue #47 records), but the empty($requestBody) check
+					// above already refuses that request with 400 before execution reaches
+					// here, so this line does not see it today - the response below still
+					// treats a null defensively rather than depending on that guard being the
+					// only way here.
 					$newObjectId = $newRow->id;
 
 					// TODO: This should be better done somehow in StockService
@@ -154,9 +157,12 @@ class GenericEntityApiController extends BaseApiController
 					// integer on every route that carries it since before this cast existed
 					// (RolesApiController::AddRole() already did the same cast); audit finding
 					// H10 / issue #499 is the wire catching up to the document, not the other
-					// way around.
+					// way around. Guarded rather than a blind cast: (int)null is 0, not null,
+					// and a fabricated id that looks like a real answer would be worse than the
+					// type this fixes - see $newObjectId's own comment above for why null is
+					// not believed to be reachable here today, and why the guard stays anyway.
 					return $this->ApiResponse($response, [
-						'created_object_id' => (int)$newObjectId
+						'created_object_id' => $newObjectId === null ? null : (int)$newObjectId
 					]);
 				});
 			});
