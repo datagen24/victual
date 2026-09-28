@@ -36,12 +36,21 @@ class UsersService extends BaseService
 	/**
 	 * Verifies the given plaintext password against the user's stored hash.
 	 *
+	 * $throttle mirrors PasswordLogin::Process() against LoginThrottleService, keyed by
+	 * this user's username - the same counter a wrong login password feeds. It is opt-in
+	 * because most callers reach this only from behind an already-granted USERS_EDIT_SELF,
+	 * where guessing costs a valid credential to attempt at all; the forced-rotation bypass
+	 * in UsersApiController::EditUser() has no such barrier (issue #514's throttling
+	 * subclaim) and passes true. An empty submission is refused for free, exactly as
+	 * PasswordLogin treats an empty login password: it is not a guess and should not cost
+	 * one.
+	 *
 	 * @throws \Victual\Controllers\Users\PermissionMissingException Never - see below
 	 * @throws \Exception When the password does not match, so that the answer is the same
 	 *                    400 as any other refused edit rather than a 403, which would say
 	 *                    "you are allowed, but" about a credential check
 	 */
-	public function CheckCurrentPassword(int $userId, ?string $currentPassword): void
+	public function CheckCurrentPassword(int $userId, ?string $currentPassword, bool $throttle = false): void
 	{
 		$user = $this->DB->users($userId);
 
@@ -50,9 +59,32 @@ class UsersService extends BaseService
 			throw new \Exception('User does not exist');
 		}
 
-		if ($currentPassword === null || $currentPassword === '' || !password_verify($currentPassword, $user->password))
+		if ($currentPassword === null || $currentPassword === '')
 		{
 			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if ($throttle && !LoginThrottleService::GetInstance()->IsAttemptAllowed($user->username))
+		{
+			// Answered exactly like a wrong password - see PasswordLogin's own comment on
+			// DUMMY_PASSWORD_HASH: telling a guesser they hit the limit tells them the
+			// limit exists and roughly where it is.
+			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if (!password_verify($currentPassword, $user->password))
+		{
+			if ($throttle)
+			{
+				LoginThrottleService::GetInstance()->RecordFailedAttempt($user->username);
+			}
+
+			throw new \Exception('The current password is required to change the password, and did not match');
+		}
+
+		if ($throttle)
+		{
+			LoginThrottleService::GetInstance()->ClearAttempts($user->username);
 		}
 	}
 
@@ -176,9 +208,37 @@ class UsersService extends BaseService
 	 * Updates a user's profile; the password is only changed (re-hashed with Argon2id)
 	 * when a non-empty one is given.
 	 *
+	 * A changed password revokes every other session of this account
+	 * (SessionService::RemoveOtherSessions()) - issue #513: without it, a session opened
+	 * with a compromised or bootstrap credential outlived the rotation meant to end its
+	 * access, and `must_change_password` cleared under it regardless. $actingSessionKey is
+	 * the session, if any, that authenticated the request making this change; $isSelf is
+	 * whether that request's caller is $userId itself. An administrator resetting somebody
+	 * else's password passes $isSelf = false, and their own session - a different user's
+	 * row - is never excepted regardless of what $actingSessionKey names, so every one of
+	 * $userId's sessions clears.
+	 *
+	 * When $isSelf and the account was flagged before this call, the acting session is not
+	 * spared either (validator round 2 on issue #513): every session on a flagged account,
+	 * that one included, was opened under the very credential this rotation exists to get
+	 * away from, and none of them is the proof that the change is legitimate - the current
+	 * password submitted with this request is. So all of them are revoked, and when there
+	 * was a browser session to begin with ($actingSessionKey not null) a fresh one replaces
+	 * it, exactly as a new login would issue - the return value, non-null exactly then, for
+	 * the caller to set as the response's session cookie. An API-key-authenticated forced
+	 * change ($actingSessionKey null) revokes without minting a replacement: there was no
+	 * browser session to keep alive in the first place.
+	 *
+	 * An ordinary (unflagged) self password change keeps behaving as it always has: every
+	 * other session is revoked and the acting one - proven by the very request making the
+	 * change - is spared, so changing one's own password does not log that browser out.
+	 * API keys are a separate credential and are deliberately left alone throughout.
+	 *
+	 * @return string|null The new session key to set as the response's cookie in place of
+	 *                      the one just revoked, or null when no replacement was minted
 	 * @throws \Exception When the user does not exist
 	 */
-	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null)
+	public function EditUser(int $userId, string $username, ?string $firstName, ?string $lastName, ?string $password, ?string $pictureFileName = null, ?string $actingSessionKey = null, bool $isSelf = false): ?string
 	{
 		if (!$this->UserExists($userId))
 		{
@@ -195,21 +255,36 @@ class UsersService extends BaseService
 				'last_name' => $lastName,
 				'picture_file_name' => $pictureFileName
 			]);
+
+			return null;
 		}
-		else
+
+		$wasFlagged = (int)$user->must_change_password === 1;
+
+		$user->update([
+			'username' => $username,
+			'first_name' => $firstName,
+			'last_name' => $lastName,
+			'password' => password_hash($password, PASSWORD_ARGON2ID),
+			'picture_file_name' => $pictureFileName,
+			// Whatever it is now, it is not the seeded default any more - unless somebody
+			// deliberately set it back to that, which the next login will notice. Written
+			// in the same update as the password so the two cannot come apart.
+			'must_change_password' => 0
+		]);
+
+		$sessionService = SessionService::GetInstance();
+
+		if ($isSelf && $wasFlagged)
 		{
-			$user->update([
-				'username' => $username,
-				'first_name' => $firstName,
-				'last_name' => $lastName,
-				'password' => password_hash($password, PASSWORD_ARGON2ID),
-				'picture_file_name' => $pictureFileName,
-				// Whatever it is now, it is not the seeded default any more - unless somebody
-				// deliberately set it back to that, which the next login will notice. Written
-				// in the same update as the password so the two cannot come apart.
-				'must_change_password' => 0
-			]);
+			$sessionService->RemoveOtherSessions($userId, null);
+
+			return $actingSessionKey !== null ? $sessionService->CreateSession($userId) : null;
 		}
+
+		$sessionService->RemoveOtherSessions($userId, $actingSessionKey);
+
+		return null;
 	}
 
 	/** @var array<int|string, array<string, mixed>> Per-request settings cache: [user id => [key => value]] */

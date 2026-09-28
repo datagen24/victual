@@ -13,6 +13,11 @@
 // The description is {"method": "GET", "path": "/api/user", "headers": {...},
 // "cookie": "<session key>", "body": {...}}; everything but method and path is optional.
 // A body is sent as "application/json" unless "headers" already types the request.
+// "rawBody" (a string) is an alternative to "body": sent verbatim, with no json_encode()
+// of its own - for a test that needs the request body to be deliberately unparseable
+// (truncated JSON, a bare scalar, the literal "null", a JSON array) rather than a
+// well-formed object built from a PHP array. "body" and "rawBody" are mutually exclusive;
+// "rawBody" wins if both are given.
 // Output: {"status": <int>, "body": "<response body>"}. Attaches to the schema the calling
 // test class migrated (RBAC_TEST_SCHEMA / PHPUNIT_DB_NAME), like the root helper.
 
@@ -96,9 +101,11 @@ if (isset($spec['cookie']))
 	$request = $request->withCookieParams([Victual\Services\SessionService::SESSION_COOKIE_NAME => $spec['cookie']]);
 }
 
-if (isset($spec['body']))
+if (isset($spec['rawBody']) || isset($spec['body']))
 {
-	$request = $request->withBody((new StreamFactory())->createStream(json_encode($spec['body'])));
+	$request = $request->withBody((new StreamFactory())->createStream(
+		isset($spec['rawBody']) ? $spec['rawBody'] : json_encode($spec['body'])
+	));
 
 	// Only when the caller did not type the request itself. WireContractTest sends
 	// "application/json; charset=utf-8" and a few deliberately wrong types (issue #229),

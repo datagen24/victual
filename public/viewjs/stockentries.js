@@ -335,7 +335,11 @@ Victual.LabelPrinting.Wire({
  * (amount, due/purchase dates, location, price, opened state, styling for due/overdue),
  * rather than reloading the whole table. Falls back to a full page reload if the row
  * can no longer be found (e.g. after an undo created a different row id). Hides the row
- * entirely if the entry's amount has dropped to zero.
+ * entirely if the entry's amount has dropped to zero, or if the entry no longer exists at
+ * all - both of the consume buttons above operate on the entry's whole amount, which
+ * deletes it (views/stockentries.blade.php's two "consume the whole entry" actions).
+ * GET /stock/entry/{id} answers the documented 400 for that case (audit finding H10 /
+ * issue #499), not the 200 "null" body it used to; see the error callback below.
  * @param {number|string} stockRowId - stock entry id, matching the "stock-{id}-row" DOM id
  */
 function RefreshStockEntryRow(stockRowId)
@@ -351,7 +355,7 @@ function RefreshStockEntryRow(stockRowId)
 				window.location.reload();
 			}
 
-			if (result == null || result.amount == 0)
+			if (result.amount == 0)
 			{
 				animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
 				{
@@ -498,6 +502,46 @@ function RefreshStockEntryRow(stockRowId)
 		function(xhr)
 		{
 			Victual.FrontendHelpers.EndUiBusy();
+
+			// The entry this row shows was consumed/transferred/compacted away since the
+			// last render - the documented 400 GET /stock/entry/{id} now answers instead of
+			// a 200 "null" body (H10 / issue #499). Hide the row exactly as the old success
+			// branch did for that case, rather than showing a generic server-error dialog
+			// for what is routine upkeep, not a failure.
+			//
+			// The status alone does not tell that apart from any other 400: HandleApiCall()
+			// also maps a PDOException - e.g. a transient database failure - to 400, with an
+			// unrelated message. So the exact server message is matched too, the way
+			// Victual.FrontendHelpers.ShowApiError parses a body (xhr.response may already be
+			// parsed, or may be a JSON string). See the comment above the throw in
+			// StockApiController::StockEntry() - that message and this check must change
+			// together. Anything else, including any other 400, still goes to the default
+			// error handler below.
+			if (xhr && xhr.status === 400)
+			{
+				var response = xhr.response;
+				var isMissingStockEntry = false;
+
+				try
+				{
+					var parsed = typeof response === 'string' ? JSON.parse(response) : response;
+					isMissingStockEntry = !!parsed && parsed.error_message === 'Stock does not exist';
+				}
+				catch (parseError)
+				{
+					isMissingStockEntry = false;
+				}
+
+				if (isMissingStockEntry)
+				{
+					animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
+					{
+						$("#stock-" + stockRowId + "-row").addClass("d-none");
+					});
+					return;
+				}
+			}
+
 			Victual.Api.DefaultErrorHandler(xhr);
 		}
 	);

@@ -80,6 +80,7 @@ guessing.
 | `DEFAULT_LOCALE` | `en` | A folder name under `/localization` (e.g. `de`). Used when neither the browser's preferred locale nor the signed-in user's own setting apply. |
 | `CALENDAR_FIRST_DAY_OF_WEEK` | *(empty)* | `0` (Sunday) through `6` (Saturday); empty uses the locale default. |
 | `CALENDAR_SHOW_WEEK_OF_YEAR` | `true` | Shows week numbers on calendar views. |
+| `CALENDAR_UID_DOMAIN` | `victual` | The part after `@` in every export UID (`{type}-{id}@{domain}`). Set an installation-specific hostname (in punycode, if internationalized) when several installations' feeds reach one calendar client. Characters outside letters, digits, `.` and `-` become `-`; a result with no letters or digits falls back to `victual`. Changing it assigns every event a new UID; subscribed clients replace all events once. |
 | `MEAL_PLAN_FIRST_DAY_OF_WEEK` | *(empty)* | Same 0–6 scale as above, plus `-1` to start the meal plan week dynamically on "today". Empty follows `CALENDAR_FIRST_DAY_OF_WEEK`. |
 | `CURRENCY` | `USD` | An ISO 4217 three-letter code, used only to format money values — Victual does not convert between currencies. |
 | `ENERGY_UNIT` | `kcal` | A display label only (e.g. `kcal` or `kJ`); nothing converts between energy units either. |

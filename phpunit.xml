@@ -22,6 +22,7 @@
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
 			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
+			<file>tests/Pgsql/RecipeRouteAuthzTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
@@ -45,6 +46,7 @@
 		</testsuite>
 		<testsuite name="bootstrapadmin">
 			<file>tests/Pgsql/BootstrapAdminTest.php</file>
+			<file>tests/Pgsql/PasswordRotationTest.php</file>
 		</testsuite>
 		<testsuite name="uploadclamp">
 			<file>tests/Pgsql/FileSizeLimitTest.php</file>
@@ -61,6 +63,7 @@
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
+			<file>tests/Pgsql/StockEntryFormPriceTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
@@ -107,8 +110,10 @@
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
+			<file>tests/Pgsql/CalendarIdentityTest.php</file>
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
+			<file>tests/Pgsql/ApiInputShapesTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
@@ -116,6 +121,7 @@
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
 			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
+			<file>tests/Pgsql/ObjectRoundTripTest.php</file>
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
