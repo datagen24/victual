@@ -283,8 +283,39 @@ async function probe(browser, label, how, run)
 	{
 		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
 		await page.waitForTimeout(1200);
-		const button = page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first();
-		const stockRowId = await button.getAttribute('data-stockrow-id');
+
+		// Issue #610 round 2: StockService's own docs (top of services/StockService.php)
+		// say a batch is identified by its `stock_id`, not the row id - "splitting an
+		// entry (partial open/transfer) creates additional rows sharing the same
+		// stock_id". ConsumeProduct()'s stock_entry_id parameter scopes consumption to
+		// that stock_id, not to one specific row - so if the row this scenario picks
+		// shares its stock_id with another (undepleted) row, "consume this row's whole
+		// displayed amount" can drain the *other* row first and leave this one untouched,
+		// which is exactly what a repeat failure's diagnostics showed (PR #617, run
+		// 36479777109: GET /stock/entry/81 kept answering 200 amount:1, unchanged from
+		// before the consume - not a redraw race at all, a stock_id shared with a row
+		// this scenario never clicked). Picking a row whose stock_id is unique among all
+		// currently listed rows guarantees the H10 assumption this scenario relies on -
+		// that clicking a row's own consume button fully depletes that specific row -
+		// actually holds.
+		const stockRowId = await page.evaluate(() =>
+		{
+			const counts = {};
+			const rows = [];
+			document.querySelectorAll('a.stock-consume-button:not(.stock-consume-button-spoiled)').forEach(el =>
+			{
+				const stockId = el.getAttribute('data-stock-id');
+				counts[stockId] = (counts[stockId] || 0) + 1;
+				rows.push({ rowId: el.getAttribute('data-stockrow-id'), stockId });
+			});
+			const unique = rows.find(r => counts[r.stockId] === 1);
+			return unique ? unique.rowId : null;
+		});
+		if (!stockRowId)
+		{
+			throw new Error('no stock entry on /stockentries has a stock_id unique to its own row - every consume button would risk draining a sibling row instead');
+		}
+		const button = page.locator('a.stock-consume-button[data-stockrow-id="' + stockRowId + '"]:not(.stock-consume-button-spoiled)');
 
 		// Issue #610: this scenario only exercises the race it is meant to catch - a
 		// *sibling* stock entry of the same product being refreshed (and redrawing the
@@ -305,6 +336,25 @@ async function probe(browser, label, how, run)
 		// (.stock-consume-button-spoiled) - so this must exclude the spoiled one and stay
 		// scoped to this row, exactly like the original locator above, or it resolves to
 		// two elements.
+		// Issue #610 round 2: CI still times out here intermittently even with the
+		// synchronous-hide fix in place (evidence: PR #614, run 36475590815). Rather than
+		// guess further at which of several plausible paths is responsible - a partial
+		// consume leaving amount > 0, an unrelated 400, a stale/duplicate response - log
+		// every response this row's own refresh GET receives, so a repeat failure's CI log
+		// shows the actual server answer instead of just the timeout.
+		const entryResponses = [];
+		const entryResponseListener = async response =>
+		{
+			if (response.request().method() !== 'GET' || !new RegExp('/api/stock/entry/' + stockRowId + '(\\?|$)').test(response.url()))
+			{
+				return;
+			}
+			let body = '';
+			try { body = (await response.text()).slice(0, 300); } catch (e) { body = '<unreadable: ' + e.message + '>'; }
+			entryResponses.push({ status: response.status(), body, at: Date.now() });
+		};
+		page.on('response', entryResponseListener);
+
 		const reloadedButton = page.locator('#stock-' + stockRowId + '-row a.stock-consume-button:not(.stock-consume-button-spoiled)');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
 			reloadedButton.click());
@@ -322,12 +372,28 @@ async function probe(browser, label, how, run)
 		// applies d-none synchronously rather than in an animationend callback that a
 		// concurrent sibling-row redraw could cancel, and deliberately keeps the row's
 		// node in the DOM (rather than removing it) so Undo can find and restore it below.
-		await page.waitForFunction(id =>
+		try
 		{
-			const row = document.querySelector('#stock-' + id + '-row');
-			const err = document.querySelector('#toast-container .toast-error');
-			return (row && row.classList.contains('d-none')) || err;
-		}, stockRowId, { timeout: 15000 });
+			await page.waitForFunction(id =>
+			{
+				const row = document.querySelector('#stock-' + id + '-row');
+				const err = document.querySelector('#toast-container .toast-error');
+				return (row && row.classList.contains('d-none')) || err;
+			}, stockRowId, { timeout: 15000 });
+		}
+		catch (waitError)
+		{
+			const rowState = await page.evaluate(id =>
+			{
+				const row = document.querySelector('#stock-' + id + '-row');
+				return row ? { found: true, className: row.className, amountText: (document.querySelector('#stock-' + id + '-amount') || {}).textContent } : { found: false };
+			}, stockRowId);
+			console.log('   [debug #610] row ' + stockRowId + ' GET /stock/entry responses: ' + JSON.stringify(entryResponses));
+			console.log('   [debug #610] row ' + stockRowId + ' state at timeout: ' + JSON.stringify(rowState));
+			page.off('response', entryResponseListener);
+			throw waitError;
+		}
+		page.off('response', entryResponseListener);
 
 		if (await page.locator('#toast-container .toast-error').count() > 0)
 		{
