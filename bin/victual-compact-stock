@@ -29,25 +29,39 @@
 // Database privileges (for ADR-0010 property 3's least-privilege split, wired up separately
 // - see ADR-0033 acceptance prerequisite 3): SELECT, UPDATE, DELETE on stock; SELECT, UPDATE
 // on stock_log (rewriting stock_id only - never stock_row_id, never any other column);
-// SELECT, INSERT, UPDATE, DELETE on stock_entry_origins; SELECT, UPDATE on labels (read to
-// evaluate eligibility, write because deleting a losing row fires retire_stock_entry_labels -
-// migrations/0283.pgsql.php - which UPDATEs the label it retires, under this same caller's
-// privileges since the trigger function carries none of its own); SELECT on products (that
-// same trigger's retirement_snapshot reads only the product name - not userfield_values or
-// userfields, which round 3 wrongly kept on this list: no statement this command or its
-// triggers run needs them directly, and stock_splits' own userfield-eligibility check runs
-// through the view below, which reads its underlying tables as the view's OWNER, not this
-// caller). Also SELECT on the views stock_splits (this command's own candidate-group
-// read - CompactStockEntries()'s very first query), products_average_price and
-// products_last_purchased; and SELECT, INSERT, UPDATE on cache__products_average_price and
-// cache__products_last_purchased (SELECT too - not just the writes - because Postgres
-// requires it to evaluate ON CONFLICT DO UPDATE's exclusion values), because every
-// stock_log row this command rewrites fires the stock_log_UPD trigger
-// (trg_stock_log_UPD(), db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER
-// like every other trigger function here and so writes those two cache tables under this
-// same caller's rights, not its own. No DDL, no TRUNCATE. That is a
-// subset of the victual_app role deploy/postgres/roles.sql already grants; it does not yet
-// have a role of its own.
+// SELECT, UPDATE, DELETE on stock_entry_origins (never INSERT - this command only ever
+// UPDATEs an existing row's origin_stock_id or DELETEs one outright; new rows are written by
+// RecordSplitOrigin(), called from OpenProduct()/TransferProduct(), never from here); SELECT,
+// UPDATE on labels (read to evaluate eligibility, write because deleting a losing row fires
+// retire_stock_entry_labels - migrations/0283.pgsql.php - which UPDATEs the label it retires,
+// under this same caller's privileges since the trigger function carries none of its own);
+// SELECT on products (that same trigger's retirement_snapshot reads only the product name -
+// not userfield_values or userfields, which round 3 wrongly kept on this list: no statement
+// this command or its triggers run needs them directly, and stock_splits' own
+// userfield-eligibility check runs through the view below, which reads its underlying tables
+// as the view's OWNER, not this caller). Also SELECT on the views stock_splits (this
+// command's own candidate-group read - CompactStockEntries()'s very first query),
+// products_average_price and products_last_purchased; SELECT, INSERT, UPDATE on
+// cache__products_average_price and cache__products_last_purchased (SELECT too - not just the
+// writes - because Postgres requires it to evaluate ON CONFLICT DO UPDATE's exclusion
+// values), because every stock_log row this command rewrites fires the stock_log_UPD trigger
+// (trg_stock_log_UPD(), db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER like
+// every other trigger function here and so writes those two cache tables under this same
+// caller's rights, not its own; and SELECT, UPDATE on system_db_changed_time - not something
+// CompactStockEntries() itself touches, but the process's own exit runs DatabaseService's
+// shutdown handler same as any other caller, which flushes a deferred changed-time write
+// there (PostgresDialect::FlushDbChangedTime(), a bare UPDATE ... WHERE id = 1) whenever this
+// run changed anything; that handler swallows any failure, so without this grant the command
+// still exits 0, but polling clients relying on the changed time never see the merge. The
+// MQTT state snapshot and InfluxDB booking-event drain that same shutdown handler can also
+// run need no grant of their own here: both are gated behind their own on/off constant
+// (VICTUAL_MQTT_ENABLED, VICTUAL_INFLUXDB_ENABLED - MqttStatePublicationService::IsEnabled(),
+// InfluxEventWriter::IsEnabled()) and, off by default, run no query at all ("no class loaded,
+// no query run, no connection attempted" - MqttStatePublicationService::IsEnabled()'s own
+// docblock). A deployment that turns either on for this role would need to grant whatever
+// that path then touches at that time; this list documents the standard, as-shipped
+// configuration only. No DDL, no TRUNCATE. That is a subset of the victual_app role
+// deploy/postgres/roles.sql already grants; it does not yet have a role of its own.
 //
 // Exit codes: 0 when the run completed (with or without anything to merge), 1 on failure.
 

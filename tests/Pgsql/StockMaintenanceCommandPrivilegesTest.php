@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Victual\Services\DatabaseService;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
 use Victual\Controllers\Api\StockApiController;
@@ -11,7 +12,7 @@ use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * ADR-0033 acceptance prerequisite 3 / round 3b item 2: bin/victual-compact-stock's own
+ * ADR-0033 acceptance prerequisite 3 / round 3c item 1/3: bin/victual-compact-stock's own
  * documented privilege list, proved against a real PostgreSQL role holding EXACTLY those
  * grants (see V580R2ProbeTest.php's testProbe3DocumentedPrivilegesSuffice, a round-2
  * throwaway validator probe this test supersedes with the corrected, complete list).
@@ -22,15 +23,23 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * (written by the stock_log_UPD trigger, which is SECURITY INVOKER - see
  * db/pgsql/baseline/06_triggers_b.sql - and so runs under this caller's own rights whenever a
  * merge rewrites a stock_log row). Round 3 kept userfield_values/userfields from round 2's
- * list without being able to prove they were needed; round 3b removes them outright -
+ * list without being able to prove they were needed; round 3b removed them outright -
  * retire_stock_entry_labels() (migrations/0283.pgsql.php) reads only `products`, and
  * stock_splits' own userfield-eligibility check runs through the view, which reads its
- * underlying tables as the view's OWNER, not this caller. Every grant that remains is proved
- * necessary below.
+ * underlying tables as the view's OWNER, not this caller. Round 3c adds SELECT+UPDATE on
+ * system_db_changed_time (the real command's process-exit handler flushes a deferred changed-
+ * time write there - PostgresDialect::FlushDbChangedTime(), db/DatabaseService's
+ * RegisterShutdownHandler() - and DatabaseService swallows a failure there, so the command
+ * exits 0 even though clients never see the merge) and drops INSERT from stock_entry_origins
+ * (CompactStockEntries() only ever UPDATEs or DELETEs existing rows there; new rows are
+ * written by RecordSplitOrigin(), called from OpenProduct()/TransferProduct(), never from the
+ * compaction path). Every grant that remains is proved necessary below.
  *
- * Sufficiency: a role holding exactly the corrected list runs a real merge end to end.
- * Necessity: dropping any ONE grant from that list makes the same run fail - proving every
- * grant on the list is load-bearing, not merely harmless.
+ * Sufficiency: a role holding exactly the corrected list runs a real merge end to end AND the
+ * same shutdown changed-time flush the real command's process exit runs afterwards, asserting
+ * changed_time actually advanced rather than only that nothing threw.
+ * Necessity: dropping any ONE grant from that list makes the merge OR that flush fail -
+ * proving every grant on the list is load-bearing, not merely harmless.
  */
 class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 {
@@ -47,7 +56,7 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 	private const GRANTS = [
 		['GRANT SELECT, UPDATE, DELETE ON %SCHEMA%.stock TO %ROLE%', 'stock'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.stock_log TO %ROLE%', 'stock_log'],
-		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.stock_entry_origins TO %ROLE%', 'stock_entry_origins'],
+		['GRANT SELECT, UPDATE, DELETE ON %SCHEMA%.stock_entry_origins TO %ROLE%', 'stock_entry_origins'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.labels TO %ROLE%', 'labels'],
 		['GRANT SELECT ON %SCHEMA%.products TO %ROLE%', 'products'],
 		['GRANT SELECT ON %SCHEMA%.stock_splits TO %ROLE%', 'stock_splits (view)'],
@@ -55,6 +64,7 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		['GRANT SELECT ON %SCHEMA%.products_last_purchased TO %ROLE%', 'products_last_purchased (view)'],
 		['GRANT SELECT, INSERT, UPDATE ON %SCHEMA%.cache__products_average_price TO %ROLE%', 'cache__products_average_price'],
 		['GRANT SELECT, INSERT, UPDATE ON %SCHEMA%.cache__products_last_purchased TO %ROLE%', 'cache__products_last_purchased'],
+		['GRANT SELECT, UPDATE ON %SCHEMA%.system_db_changed_time TO %ROLE%', 'system_db_changed_time'],
 	];
 
 	public static function setUpBeforeClass(): void
@@ -122,7 +132,25 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		return $product;
 	}
 
-	/** Grants every entry in self::GRANTS except the ones named in $omit, runs a real merge under that role, and returns the outcome (true success, or the thrown message). */
+	private static function changedTime(): string
+	{
+		return (string)self::$db->query('SELECT changed_time FROM system_db_changed_time WHERE id = 1')->fetchColumn();
+	}
+
+	/**
+	 * Grants every entry in self::GRANTS except the ones named in $omit, runs a real merge
+	 * under that role, and returns the outcome. Also runs the SAME shutdown step the real
+	 * command's process-exit handler runs afterwards - FlushDbChangedTime()
+	 * (services/DatabaseService.php's RegisterShutdownHandler(), PostgresDialect.php:425) -
+	 * under the same role and the same still-open connection, since that is the one DELETE-me
+	 * blocker round 3c reports: DatabaseService swallows a failure there
+	 * (RegisterShutdownHandler()'s own try/catch) so the real command exits 0 even when this
+	 * step fails, which is exactly why testing CompactStockEntries()'s own return/throw alone
+	 * cannot see it.
+	 *
+	 * @return array{0: bool, 1: ?string, 2: int, 3: bool, 4: ?string} merge succeeded, merge
+	 *         error, product id, flush succeeded AND changed_time actually advanced, flush error
+	 */
 	private static function runUnderRole(array $omit = []): array
 	{
 		$schema = self::Schema();
@@ -144,6 +172,8 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 				self::$db->exec($sql);
 			}
 
+			$changedTimeBefore = self::changedTime();
+
 			self::$db->exec("SET ROLE $role");
 			$error = null;
 			try
@@ -158,9 +188,27 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 			{
 				self::$db->rollBack();
 			}
+
+			// The real command's shutdown handler, reproduced directly rather than through
+			// register_shutdown_function() (nothing in a test can trigger that on demand) -
+			// same call, same still-active role, same connection.
+			$flushError = null;
+			try
+			{
+				$dbService = DatabaseService::GetInstance();
+				$dbService->GetDialect()->FlushDbChangedTime($dbService->GetDbConnectionRaw());
+			}
+			catch (\Throwable $ex)
+			{
+				$flushError = $ex->getMessage();
+			}
+
 			self::$db->exec('RESET ROLE');
 
-			return [$error === null, $error, $product];
+			$changedTimeAfter = self::changedTime();
+			$flushSucceeded = $flushError === null && $changedTimeAfter !== $changedTimeBefore;
+
+			return [$error === null, $error, $product, $flushSucceeded, $flushError];
 		}
 		finally
 		{
@@ -176,7 +224,7 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 
 	public function testTheCorrectedDocumentedGrantListSufficesForARealMerge(): void
 	{
-		[$success, $error, $product] = self::runUnderRole([]);
+		[$success, $error, $product, $flushSucceeded, $flushError] = self::runUnderRole([]);
 
 		self::assertTrue($success, 'The corrected, complete grant list must let a real merge run to completion: ' . ($error ?? ''));
 
@@ -184,14 +232,16 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		$rows->execute([$product]);
 		$amounts = $rows->fetchAll(PDO::FETCH_COLUMN);
 		self::assertSame([5.0], array_map('floatval', $amounts), 'Sanity: the merge actually happened (one row, amount 5)');
+
+		self::assertTrue($flushSucceeded, 'The real command\'s shutdown handler flushes the deferred changed-time write under this same role - DatabaseService swallows a failure there (exit 0, no visible error), so this asserts the value actually advanced, not merely that nothing threw: ' . ($flushError ?? '(no exception, but changed_time did not advance)'));
 	}
 
 	#[DataProvider('grantLabels')]
 	public function testRemovingAnySingleGrantFailsTheRun(string $label): void
 	{
-		[$success, $error] = self::runUnderRole([$label]);
+		[$success, $error, , $flushSucceeded, $flushError] = self::runUnderRole([$label]);
 
-		self::assertFalse($success, "Omitting the '$label' grant must fail the run - every grant on the documented list is load-bearing, not merely harmless");
+		self::assertTrue($success === false || $flushSucceeded === false, "Omitting the '$label' grant must fail the run OR the shutdown changed-time flush - every grant on the documented list is load-bearing, not merely harmless (merge error: " . ($error ?? 'none') . '; flush error: ' . ($flushError ?? 'none') . ')');
 	}
 
 	public static function grantLabels(): array
