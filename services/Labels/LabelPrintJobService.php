@@ -33,8 +33,13 @@ class LabelPrintJobService extends LabelService
         if ($attempt['ended_at'] === null) {
             $this->Refuse('attempt_id', 'attempt_running', 'Attempt has not ended');
         }
+        // Reap() above may have just dead-lettered this job in this same transaction, if its
+        // printer was deleted while the attempt it just reaped was outstanding
+        // (PrintAttemptService::Reap()) - re-read rather than trust the fetch from before Reap()
+        // ran, or a job that just reached a terminal outcome could still be re-authorized.
+        $job = $this->Query('SELECT * FROM print_jobs WHERE id=?', [$jobId])->fetch(\PDO::FETCH_ASSOC);
         if ($job['outcome'] !== null) {
-            $this->Refuse('attempt_id', 'already_completed', 'Job has a successful delivery report');
+            $this->Refuse('attempt_id', 'already_completed', 'That job already has an outcome');
         }
         if ((int)$job['attempts_authorized'] === (int)$job['attempts_made']) {
             $this->Query('UPDATE print_jobs SET attempts_authorized=attempts_authorized+1 WHERE id=?', [$jobId]);
