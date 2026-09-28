@@ -1993,7 +1993,18 @@ class StockService extends BaseService
 	 *
 	 * @param int $productId
 	 * @param bool $excludeOpened When true, only unopened entries are returned
-	 * @param bool $allowSubproductSubstitution When true, entries of resolved sub products are included
+	 * @param bool $allowSubproductSubstitution When true, entries of resolved sub products are included -
+	 *             but only for a sub product whose stock unit resolves to $productId's own stock unit
+	 *             through cache__quantity_unit_conversions_resolved. A sub product with no such
+	 *             resolved conversion is excluded from the candidate set entirely (maintainer decision
+	 *             D4, issue #553): it must never be counted 1:1 by SumStockEntriesInProductUnit()'s
+	 *             availability check or by the consume/open loop that iterates this same result, both
+	 *             of which convert (or, for a product-owned entry, pass through unconverted) exactly
+	 *             the candidates this method hands them. cache__quantity_unit_conversions_resolved
+	 *             always carries the identity row (factor 1.0) for a sub product sharing $productId's
+	 *             own stock unit (db/pgsql/baseline/03_views_group2.sql, "Priority 2" of
+	 *             product_conversions), so this only ever excludes a genuinely unconvertible sub
+	 *             product, never a same-unit one.
 	 * @return \LessQL\Result Iterable stock entry rows (amounts in the entry's product's stock quantity unit)
 	 */
 	public function GetProductStockEntries(int $productId, $excludeOpened = false, $allowSubproductSubstitution = false)
@@ -2001,7 +2012,30 @@ class StockService extends BaseService
 		$sqlWhereProductId = 'product_id = ' . $productId;
 		if ($allowSubproductSubstitution)
 		{
-			$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
+			// A nonexistent $productId (this method has no existence check of its own -
+			// callers like ConsumeProduct()/OpenProduct() check first, but the raw API route
+			// does not) previously just produced an always-empty result via the plain IN
+			// (...) below; kept that behaviour here instead of a null-property fatal.
+			$parentProduct = $this->DB->products($productId);
+			if ($parentProduct === null)
+			{
+				$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
+			}
+			else
+			{
+				$parentQuIdStock = (int)$parentProduct->qu_id_stock;
+				$sqlWhereProductId = '('
+					. 'product_id IN ('
+					. 'SELECT pr.sub_product_id FROM products_resolved pr '
+					. 'JOIN products p_sub ON p_sub.id = pr.sub_product_id '
+					. 'JOIN cache__quantity_unit_conversions_resolved qucr '
+					. 'ON qucr.product_id = pr.sub_product_id '
+					. 'AND qucr.from_qu_id = ' . $parentQuIdStock . ' '
+					. 'AND qucr.to_qu_id = p_sub.qu_id_stock '
+					. 'WHERE pr.parent_product_id = ' . $productId
+					. ') OR product_id = ' . $productId
+					. ')';
+			}
 		}
 
 		$sqlWhereAndOpen = 'AND open IN (0, 1)';
