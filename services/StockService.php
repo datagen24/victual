@@ -821,7 +821,33 @@ class StockService extends BaseService
 						}
 					}
 
-					if (self::CompareAmounts($stockEntry->amount, $amount) <= 0)
+					$takeWholeEntry = self::CompareAmounts($stockEntry->amount, $amount) <= 0;
+
+					// A measured entry is never a split candidate (maintainer decision D8,
+					// issue #502 round 2): stock_next_use() sorts open DESC, so an opened,
+					// measured container is ordinarily the very first candidate here, and an
+					// ordinary fractional consume, inventory correction or recipe/chore booking
+					// has no business being refused just because one happens to exist - weighed
+					// partial containers belong to the tare/working-container flow (ADR-0022),
+					// not to this one. Left completely untouched and skipped in favor of other
+					// stock; the amount-not-yet-zero check after this loop refuses only when no
+					// other candidate - including one explicitly named via $specificStockEntryId,
+					// which narrows $potentialStockEntries to just this entry - could cover what
+					// remains. The conversion this block may have just applied is undone first,
+					// symmetric to the whole-take branch's own reversal below, so the next
+					// candidate (a different sub product, or none) starts from the true
+					// $productId-unit remainder rather than this entry's converted one.
+					if (!$takeWholeEntry && $stockEntry->opened_amount !== null)
+					{
+						if ($allowSubproductSubstitution && $stockEntry->product_id != $productId && $conversion != null)
+						{
+							$amount = $amount / $conversion->factor;
+						}
+
+						continue;
+					}
+
+					if ($takeWholeEntry)
 					{
 						// Take the whole stock entry - not only when $amount covers it exactly
 						// or more, but also when it falls short by no more than the shared tolerance
@@ -881,6 +907,10 @@ class StockService extends BaseService
 					}
 					else
 					{
+						// A measured entry never reaches here - the defer above this branch's
+						// own top sends it back before any write, since no split of it (amount
+						// other than 1) can carry its measurement forward (ADR-0022 decision 8).
+						//
 						// Stock entry amount is > than needed amount by more than the shared tolerance
 						// (the branch above now also takes anything closer than that) -> split the
 						// stock entry resp. update the amount. $restStockAmount is a real remainder,
@@ -912,24 +942,27 @@ class StockService extends BaseService
 						]);
 						$logRow->save();
 
-						// A partial consume of a measured entry always leaves an amount other
-						// than 1 - the entry could only be measured in the first place with
-						// amount = 1 (ADR-0022 decision 8) - so the measurement is dropped
-						// rather than left to violate the coherence CHECK. Re-measuring the
-						// remaining container is MeasureStockEntry()'s job, not this one's.
-						$measurementClear = $stockEntry->opened_amount !== null ? [
-							'opened_amount' => null,
-							'opened_qu_id' => null,
-							'opened_tare' => null,
-							'opened_measured_at' => null,
-						] : [];
-
-						$stockEntry->update(array_merge([
+						$stockEntry->update([
 							'amount' => $restStockAmount
-						], $measurementClear));
+						]);
 
 						$amount = 0;
 					}
+				}
+
+				// Every candidate has now either been taken (whole or split) or skipped for
+				// being a measured entry's split (the defer above). $amount can only still be
+				// nonzero here because the only stock left able to cover it was one of those
+				// deferred, measured entries - the pre-loop availability check already
+				// guarantees the product-wide total (measured entries' full amount included)
+				// covers the request, so this is not an ordinary shortfall. Refused rather
+				// than silently taking a whole extra unit the caller never asked for, or
+				// falling through to the split branch's own coherence violation - covers both
+				// "the measured entry is the only remaining source" and "the caller named it
+				// explicitly via stock_entry_id" (issue #487, M2 round 2 / maintainer decision D8).
+				if (self::CompareAmounts($amount, 0) != 0)
+				{
+					throw new \Exception('Cannot consume a fraction of a measured container: weigh it instead (the working container flow), or consume the whole container');
 				}
 
 				if (boolval(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount')))
@@ -2759,8 +2792,23 @@ class StockService extends BaseService
 					$shouldReviseStockEntryLabel = false;
 				}
 
+				$takeWholeEntry = self::CompareAmounts($stockEntry->amount, $amount) <= 0;
+
+				// A measured entry is never a split candidate (maintainer decision D8, issue
+				// #487 M2 round 2), for the same reason ConsumeProduct()'s own loop defers one:
+				// a measurement only ever describes exactly one whole unit (ADR-0022 decision
+				// 8), so no split of it can carry that forward on either resulting row. Left
+				// completely untouched and skipped in favor of other stock at the source
+				// location; the amount-not-yet-zero check after this loop refuses only when no
+				// other candidate - including one explicitly named via $specificStockEntryId,
+				// which narrows the candidate list to just this entry - could cover what remains.
+				if (!$takeWholeEntry && $stockEntry->opened_amount !== null)
+				{
+					continue;
+				}
+
 				$correlationId = uniqid();
-				if (self::CompareAmounts($stockEntry->amount, $amount) <= 0)
+				if ($takeWholeEntry)
 				{
 					// Take the whole stock entry - not only when $amount covers it exactly or
 					// more, but also when it falls short by no more than the shared tolerance
@@ -2841,6 +2889,10 @@ class StockService extends BaseService
 				}
 				else
 				{
+					// A measured entry never reaches here - the defer above this branch's own
+					// top sends it back before any write, since no split of it (amount other
+					// than 1) can carry its measurement forward (ADR-0022 decision 8).
+					//
 					// Stock entry amount is > than needed amount by more than the shared tolerance
 					// -> split the stock entry resp. update the amount. $restStockAmount is a
 					// real remainder, not a float artifact, by construction.
@@ -2886,9 +2938,9 @@ class StockService extends BaseService
 					// saved, so its id is known) before the TRANSFER_TO booking below, so
 					// that booking can name the exact row its amount landed on (#489 C2; see
 					// the whole-entry branch's own comment on stock_row_id above). A measured
-					// entry cannot reach here: it must hold amount = 1 (the coherence CHECK),
-					// so $amount < $stockEntry->amount is only possible while unmeasured, and
-					// this new row's own opened_* columns are correctly left null.
+					// entry cannot reach here: the defer just above this loop's own top skips it
+					// before any write, so this new row's own opened_* columns are correctly left
+					// null.
 					$stockEntryNew = $this->DB->stock()->createRow([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $amount,
@@ -2929,6 +2981,18 @@ class StockService extends BaseService
 
 					$amount = 0;
 				}
+			}
+
+			// Every candidate at the source location has now either been taken (whole or
+			// split) or skipped for being a measured entry's split (the defer above). See
+			// ConsumeProduct()'s own identical check for why $amount can only still be
+			// nonzero here, and why that means "no other stock could cover it" rather than
+			// an ordinary shortfall - covers both "the measured entry is the only remaining
+			// source" and "the caller named it explicitly via stock_entry_id" (issue #487,
+			// M2 round 2 / maintainer decision D8).
+			if (self::CompareAmounts($amount, 0) != 0)
+			{
+				throw new \Exception('Cannot transfer a fraction of a measured container: weigh it instead (the working container flow), or transfer the whole container');
 			}
 
 			// Inside the transaction on purpose: the outbox row and the ledger rows commit
