@@ -50,6 +50,7 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	private static StockService $stock;
 	private static int $location;
 	private static string $apiKey = '';
+	private static string $limitedApiKey = '';
 
 	public static function setUpBeforeClass(): void
 	{
@@ -72,6 +73,16 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		self::$apiKey = bin2hex(random_bytes(25));
 		$statement = self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, 9602, now() + interval '30 days', ?)");
 		$statement->execute([ApiKeyService::HashKey(self::$apiKey), substr(self::$apiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
+
+		// A second HTTP-level user granted CHORE_UNDO_EXECUTION only, never STOCK_EDIT -
+		// for the authorization case (issue #506, CWE-863): CHORE_UNDO_EXECUTION alone
+		// authorizes undoing the chore itself, not reversing stock.
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9603, 'chore-stock-undo-limited-api', 'fixture')");
+		$grant = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT 9603, id FROM permission_hierarchy WHERE name = ?');
+		$grant->execute(['CHORE_UNDO_EXECUTION']);
+		self::$limitedApiKey = bin2hex(random_bytes(25));
+		$statement = self::$db->prepare("INSERT INTO api_keys (api_key, key_hint, user_id, expires, key_type) VALUES (?, ?, 9603, now() + interval '30 days', ?)");
+		$statement->execute([ApiKeyService::HashKey(self::$limitedApiKey), substr(self::$limitedApiKey, -4), ApiKeyService::API_KEY_TYPE_DEFAULT]);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -170,9 +181,9 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	 *
 	 * @return array{status: int, body: mixed, stderr: string}
 	 */
-	private static function requestThroughHttp(string $method, string $path): array
+	private static function requestThroughHttp(string $method, string $path, ?string $apiKey = null): array
 	{
-		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => self::$apiKey]];
+		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => $apiKey ?? self::$apiKey]];
 
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -509,5 +520,49 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 
 		self::assertSame(400, $result['status'], "the undo route should refuse: {$result['stderr']}");
 		self::assertSame($before, self::ledger(), 'The refused HTTP request leaves the chore log, stock and stock_log unchanged');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Authorization (CWE-863, CodeRabbit finding on this PR): CHORE_UNDO_EXECUTION
+	// alone authorizes undoing the chore, not reversing stock. A caller who holds only
+	// CHORE_UNDO_EXECUTION must be refused (403) on an execution whose undo would also
+	// reverse a live linked stock booking - with nothing changed - but must still be
+	// able to undo a chore-only execution, the same permission split the recipe consume
+	// route already applies (STOCK_PURCHASE on top of STOCK_CONSUME, issue #532/#581).
+	// ------------------------------------------------------------------------------
+
+	public function testUndoingALinkedExecutionOverHttpWithoutStockEditIsRefusedButChoreOnlyIsNotRequired(): void
+	{
+		$product = self::insertProduct('Chore Undo Authz Product');
+		self::stockUp($product, 5);
+
+		$choreId = self::insertChore('Chore Undo Authz Linked', [
+			'consume_product_on_execution' => 1,
+			'product_id' => $product,
+			'product_amount' => 2,
+		]);
+
+		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00');
+		self::assertSame(3.0, self::stockAmount($product));
+
+		$before = self::ledger();
+
+		$result = self::requestThroughHttp('POST', "/api/chores/executions/$executionId/undo", self::$limitedApiKey);
+
+		self::assertSame(403, $result['status'], "CHORE_UNDO_EXECUTION alone must not reverse stock: {$result['stderr']}");
+		self::assertSame($before, self::ledger(), 'The refused request leaves the chore log, stock and stock_log unchanged');
+
+		// The same limited caller can still undo a chore-only execution (no live linked
+		// booking) - CHORE_UNDO_EXECUTION alone remains sufficient for that, exactly as
+		// before this authorization check existed.
+		$plainChoreId = self::insertChore('Chore Undo Authz Plain', [
+			'consume_product_on_execution' => 0,
+		]);
+		$plainExecutionId = self::$chores->TrackChore($plainChoreId, '2026-09-28 09:00:00');
+
+		$plainResult = self::requestThroughHttp('POST', "/api/chores/executions/$plainExecutionId/undo", self::$limitedApiKey);
+
+		self::assertSame(204, $plainResult['status'], "a chore-only undo needs no STOCK_EDIT: {$plainResult['stderr']}");
+		self::assertSame(1, (int)self::choreLogRow($plainExecutionId)['undone'], 'The chore-only execution is undone');
 	}
 }

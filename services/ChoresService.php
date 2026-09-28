@@ -2,6 +2,9 @@
 
 namespace Victual\Services;
 
+use Victual\Controllers\Users\PermissionMissingException;
+use Victual\Controllers\Users\User;
+
 /**
  * Business logic for chore tracking: execution journal, next-execution user assignment
  * and merging of chores.
@@ -360,14 +363,43 @@ class ChoresService extends BaseService
 	 * that ordinary partial case reaches it unchanged, still atomic, still refusing
 	 * whole when any one of that remainder cannot be undone.
 	 *
+	 * Authorization (CWE-863, CodeRabbit finding on this PR): CHORE_UNDO_EXECUTION alone
+	 * authorizes undoing the chore itself, not reversing stock - the same composite-
+	 * operation rule issue #532 applied to recipe consumption (RecipesService::
+	 * ConsumeRecipe(), which checks STOCK_PURCHASE before a self-production booking).
+	 * So when - and only when - a live linked booking is actually about to be reversed,
+	 * this also requires STOCK_EDIT, the same permission POST /api/stock/transactions/
+	 * {id}/undo and POST /api/stock/bookings/{id}/undo already require for reversing
+	 * stock this way (StockApiController::UndoTransaction()/UndoBooking()). A NULL link,
+	 * or one whose booking is already gone, is chore-only regardless, and stays
+	 * available on CHORE_UNDO_EXECUTION alone, exactly as before this check existed.
+	 *
+	 * $request shapes the refusal the same way RecipesService::ConsumeRecipe()'s own
+	 * STOCK_PURCHASE check does: User::HasPermissions() only ever reads the ambient
+	 * VICTUAL_USER_ID, never $request, so the permission is checked unconditionally
+	 * rather than only when a request happens to be given (that gate is exactly the
+	 * fail-open shape issue #532 closed) - a caller with no request must already hold
+	 * STOCK_EDIT, exactly like one that does. With a request, the refusal is the same
+	 * PermissionMissingException User::CheckPermission() throws everywhere else
+	 * (HandleApiCall() answers 403); without one, a plain \Exception. Either way nothing
+	 * is booked, and this whole InTransaction() unwinds before the chores_log update
+	 * below runs.
+	 *
 	 * @param int $executionId
-	 * @throws \Exception When the entry does not exist or was already undone, or when the
+	 * @param \Psr\Http\Message\ServerRequestInterface|null $request Only shapes the
+	 *              exception a missing STOCK_EDIT throws; the permission check itself is
+	 *              unconditional (see above)
+	 * @throws \Exception When the entry does not exist or was already undone, when the
 	 *                     linked stock transaction has a live booking that can no longer
-	 *                     be undone
+	 *                     be undone, or when a live linked booking would be reversed but
+	 *                     the acting user lacks STOCK_EDIT
+	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was
+	 *              given and the acting user lacks STOCK_EDIT for an execution that will
+	 *              reverse a live linked booking
 	 */
-	public function UndoChoreExecution($executionId)
+	public function UndoChoreExecution($executionId, $request = null)
 	{
-		return DatabaseService::GetInstance()->InTransaction(function () use ($executionId)
+		return DatabaseService::GetInstance()->InTransaction(function () use ($executionId, $request)
 		{
 			$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
 			if ($logRow == null)
@@ -377,6 +409,16 @@ class ChoresService extends BaseService
 
 			if (!empty($logRow->stock_transaction_id) && $this->HasLiveStockBooking($logRow->stock_transaction_id))
 			{
+				if (!User::HasPermissions(User::PERMISSION_STOCK_EDIT))
+				{
+					if ($request !== null)
+					{
+						throw new PermissionMissingException($request, User::PERMISSION_STOCK_EDIT);
+					}
+
+					throw new \Exception('Permission missing: ' . User::PERMISSION_STOCK_EDIT);
+				}
+
 				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
 				// later booking now depends on this one), the exception unwinds this
 				// whole InTransaction() and the chores_log update below never happens.
