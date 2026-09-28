@@ -404,6 +404,50 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
+	// (b, round 5) A stock_transaction_id that is set, but whose booking(s) were
+	// already undone independently through the stock journal - not through
+	// ChoresService::UndoChoreExecution() - before the chore itself was undone. Calling
+	// StockService::UndoTransaction() again refuses ("This transaction was not found or
+	// already undone"), which without this fix left the chore permanently stuck at
+	// undone = 0: every retry hit the same refusal over stock that was already back the
+	// way it was. The chore undo must instead succeed as chore-only.
+	// ------------------------------------------------------------------------------
+
+	public function testUndoingAnExecutionWhoseStockTransactionWasAlreadyFullyUndoneStillUndoesTheChore(): void
+	{
+		$product = self::insertProduct('Chore Undo Probe B2 Product');
+		self::stockUp($product, 5);
+
+		$choreId = self::insertChore('Chore Undo Probe B2', [
+			'consume_product_on_execution' => 1,
+			'product_id' => $product,
+			'product_amount' => 2,
+		]);
+
+		$executionId = self::$chores->TrackChore($choreId, '2026-09-28 09:00:00');
+		self::assertSame(3.0, self::stockAmount($product));
+
+		$transactionId = self::choreLogRow($executionId)['stock_transaction_id'];
+		self::assertNotEmpty($transactionId);
+
+		// The stock side is undone directly, through the stock journal - not through
+		// ChoresService::UndoChoreExecution() - exactly the sequence issue #506 round 5
+		// found: StockService::UndoTransaction() leaves no live booking behind for
+		// $transactionId once this returns.
+		self::$stock->UndoTransaction($transactionId);
+		self::assertSame(5.0, self::stockAmount($product), 'The stock is already restored, independently of the chore');
+
+		$stockLogBefore = self::consumeStockLogRowsForProduct($product);
+		self::assertSame(1, (int)$stockLogBefore[0]['undone'], 'The booking is already undone before the chore undo runs');
+
+		self::$chores->UndoChoreExecution($executionId);
+
+		self::assertSame(1, (int)self::choreLogRow($executionId)['undone'], 'The chore itself is undone - not stuck refusing forever');
+		self::assertSame(5.0, self::stockAmount($product), "The chore's own undo does not change stock a second time");
+		self::assertSame($stockLogBefore, self::consumeStockLogRowsForProduct($product), 'The already-undone booking is not touched again');
+	}
+
+	// ------------------------------------------------------------------------------
 	// (c) Sub-product substitution: TrackChore() always passes
 	//     allowSubproductSubstitution = true, so the consumption can land on a child
 	//     product's stock_log.product_id rather than the chore's own (parent)

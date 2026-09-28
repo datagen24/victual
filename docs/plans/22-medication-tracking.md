@@ -319,10 +319,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0291** (medication master data and subjects)
-  and **0292** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0292** (medication master data and subjects)
+  and **0293** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0291–0292 until 2026-09-28, later still, when issue #506's maintainer decision D5 (an
+    explicit `chores_log.stock_transaction_id` column, #487 remediation) was written to disk
+    as `0291.pgsql.sql` above this plan's still-unwritten claims and moved up to 0292–0293
+    under the lowest-free-slot rule
   - 0290–0291 until 2026-09-28, when issue #487 remediation's ADR-0033 decision-3 migration
     (PR #580, narrowing `stock_splits` to never-expiring, unlabelled rows for issues 488 and
     491) was written to disk as `0292.pgsql.sql` above this plan's still-unwritten claims and

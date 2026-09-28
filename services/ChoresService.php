@@ -346,9 +346,24 @@ class ChoresService extends BaseService
 	 * undoes the chore alone, exactly as before decision D1 (its "legacy executions"
 	 * case), rather than refusing.
 	 *
+	 * A stock_transaction_id that is set but names no still-live (undone = 0) stock_log
+	 * row also undoes the chore alone (issue #506 round 5): the stock side of this
+	 * execution was already undone by some other path - directly through the stock
+	 * journal, for instance - and StockService::UndoTransaction() refuses outright when
+	 * every booking of a transaction id is already undone ("This transaction was not
+	 * found or already undone"). Calling it anyway would make this chore's own undo fail
+	 * every time, forever, over stock that is already back the way it was - the chore
+	 * would never be undoable again. A transaction with *some* bookings still live and
+	 * some already undone is different and is not this method's problem to solve:
+	 * UndoTransaction() itself only ever reverses the still-live remainder of a
+	 * transaction (never the whole original set), which is exactly right here too, so
+	 * that ordinary partial case reaches it unchanged, still atomic, still refusing
+	 * whole when any one of that remainder cannot be undone.
+	 *
 	 * @param int $executionId
 	 * @throws \Exception When the entry does not exist or was already undone, or when the
-	 *                     linked stock transaction exists but can no longer be undone
+	 *                     linked stock transaction has a live booking that can no longer
+	 *                     be undone
 	 */
 	public function UndoChoreExecution($executionId)
 	{
@@ -360,7 +375,7 @@ class ChoresService extends BaseService
 				throw new \Exception('Execution does not exist or was already undone');
 			}
 
-			if (!empty($logRow->stock_transaction_id))
+			if (!empty($logRow->stock_transaction_id) && $this->HasLiveStockBooking($logRow->stock_transaction_id))
 			{
 				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
 				// later booking now depends on this one), the exception unwinds this
@@ -376,6 +391,17 @@ class ChoresService extends BaseService
 
 			$this->CalculateNextExecutionAssignment($logRow->chore_id);
 		});
+	}
+
+	/**
+	 * Whether $transactionId still has at least one not-yet-undone stock_log booking.
+	 *
+	 * @param string $transactionId
+	 * @return bool
+	 */
+	private function HasLiveStockBooking(string $transactionId): bool
+	{
+		return $this->DB->stock_log()->where('undone = 0 AND transaction_id = :1', $transactionId)->count() > 0;
 	}
 
 	/**
