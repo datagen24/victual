@@ -131,6 +131,71 @@ class OutboxService extends BaseService
 	}
 
 	/**
+	 * The undelivered events of one type, oldest first - locked so that a concurrent drain
+	 * skips past whatever this call returns rather than reading it too.
+	 *
+	 * Issue #510 (M10): GetUndelivered() above has no row claim, so two drains running at
+	 * once - two request-end triggers, or a request-end trigger racing
+	 * `bin/victual-publish-state --drain` - could each read the same undelivered row and
+	 * both deliver it. `PrintAttemptService::Claim()` (PrintAttemptService.php:64) already
+	 * answers this for the label-print outbox rows with `FOR UPDATE OF j SKIP LOCKED`; this
+	 * is the same answer for BookingEventPublisher's InfluxDB drain, the only other
+	 * consumer of the outbox table.
+	 *
+	 * **Must be called from inside the caller's own open transaction** (see
+	 * DatabaseService::InTransaction()), and the claim only holds for as long as that
+	 * transaction stays open: `SKIP LOCKED` makes a second, concurrent call simply skip a
+	 * row this one has locked rather than block on it, so the row stops being invisible to
+	 * a second drain the moment this transaction commits or rolls back. The caller
+	 * therefore has to keep the claim, the delivery attempt, and the eventual
+	 * MarkDelivered()/RecordFailure()/DeadLetter() call all inside that same transaction -
+	 * see BookingEventPublisher::Drain(), which does exactly that.
+	 *
+	 * A separate method rather than a change to GetUndelivered()'s own semantics:
+	 * GetUndelivered() has exactly one caller (BookingEventPublisher::Drain()) today, but
+	 * changing what it means - a plain read becoming one that requires a transaction and
+	 * takes locks - is exactly the kind of change #561's `PrintAttemptService::Claim()`
+	 * reservation exists to keep out of a shared table's read path without another agent
+	 * having to prove nothing else depends on the old behaviour first.
+	 *
+	 * @return array<int, array{id: int, payload: array}>
+	 * @throws \LogicException When called with no transaction open
+	 */
+	public function ClaimUndelivered(string $eventType, int $limit = self::DRAIN_BATCH_SIZE): array
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+		if (!$pdo->inTransaction())
+		{
+			throw new \LogicException('ClaimUndelivered requires an open transaction, so the claim it takes lasts as long as the caller needs it to');
+		}
+
+		$query = $pdo->prepare(
+			'SELECT id, payload FROM outbox'
+				. ' WHERE event_type = ? AND delivered_at IS NULL AND dead_lettered_at IS NULL'
+				. ' ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED'
+		);
+		$query->execute([$eventType, $limit]);
+
+		$rows = [];
+
+		foreach ($query->fetchAll(\PDO::FETCH_ASSOC) as $row)
+		{
+			// Same corrupt-row handling as GetUndelivered(): a payload that is not a JSON
+			// object becomes an empty array, so the caller's own validation decides what
+			// happens to it rather than a TypeError taking the whole drain with it.
+			$decoded = json_decode((string)$row['payload'], true);
+
+			$rows[] = [
+				'id' => (int)$row['id'],
+				'payload' => is_array($decoded) ? $decoded : []
+			];
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * How many events of a type are still waiting, excluding dead-lettered ones.
 	 *
 	 * Deliberately allowed to throw. A caller that has to *prove* the queue is empty - the

@@ -51,3 +51,21 @@ This is where "how has spending shifted" gets answered, precisely because it is 
 with its own credentials rather than broadcast to anything on the broker. `INFLUXDB_TIMEOUT_SECONDS`
 bounds the same kind of delay `MQTT_CONNECT_TIMEOUT_SECONDS` does, and a write failure is
 handled the same way: logged, never reaching the booking that triggered it.
+
+**Delivery contract.** Every booking is queued in an internal outbox inside its own
+transaction and delivered at-least-once. A drain claims a batch of undelivered rows, locking
+them so a second, concurrent drain skips past them rather than reading the same rows too. It
+sends the batch to InfluxDB and only marks it delivered once InfluxDB has acknowledged it. So
+a crash, a timeout, or a rejected write leaves the rows queued for the next drain instead of
+losing them, and two drains running at once - two requests, or a request racing
+`bin/victual-publish-state --drain` - never both deliver the same row.
+
+Because delivery can retry, a consumer reading these events must be able to see the same
+point twice. Every point here is idempotent by construction (see the measurements above), so
+a redelivered batch overwrites rather than duplicates.
+
+The MQTT publish above is deliberately different: it is a QoS 0, idempotent full-state
+snapshot rather than an outbox-drained queue, by design (plan 18, question 5). A lost message
+costs nothing the next write or the next boot publish does not already repair. The MQTT
+client library this fork uses also cannot acknowledge QoS 1 without running an event loop
+across the end of a web request, which is exactly what this design avoids.
