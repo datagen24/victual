@@ -8,10 +8,11 @@
 // PDO's own synchronous, blocking calls from a single PHP process cannot produce genuine
 // overlap by merely alternating in a loop, since each call fully completes before the next
 // begins - two separate OS processes, scheduled independently by the kernel, can. A
-// wall-clock duration (matching the reported reproduction: "34-46 ids reissued in 3.5s")
-// gives the two processes' independently-scheduled round trips many chances to truly
-// overlap, rather than a fixed iteration count that risks one side finishing before the
-// other has properly started.
+// wall-clock duration (this run found 96 of the 52151 values this process drew reissued in
+// 4s against the unfixed, read-then-setval version of AdvanceIdentitySequence()) gives the
+// two processes' independently-scheduled round trips many chances to truly overlap, rather
+// than a fixed iteration count that risks one side finishing before the other has properly
+// started.
 //
 // nextval() rather than an INSERT deliberately: inserting into an identity column with a
 // reissued id would hit that column's own PRIMARY KEY constraint and throw, not silently
