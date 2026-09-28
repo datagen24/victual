@@ -25,6 +25,20 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [stock_log cache rebuild tests](019-stock-log-cache-rebuild.sql) cover migration 0292
+(issue #588). `trg_stock_log_UPD` and `trg_stock_log_DEL` share
+`rebuild_stock_log_cache_for_product()`, which recomputes
+`cache__products_average_price`/`cache__products_last_purchased` from what the
+`products_average_price`/`products_last_purchased` views currently return for one product.
+
+That replaces two narrower shapes. UPD used to only ever upsert, leaving a stale cache row
+once `StockService::UndoBooking()` undoes a product's only purchase. DEL's round-1 shape
+only ever deleted, emptying the cache even when another booking of the same product was
+still there. Four cases are covered: an UPDATE that empties the view for a product, an
+UPDATE that moves a booking to a different `product_id`
+(`StockService::MergeProducts()`'s shape), a DELETE that leaves another booking of the same
+product, and a DELETE with the issue's own id/`product_id` coincidence.
+
 ## The list
 
 Migrations 0001-0255 are SQLite-only history that PostgreSQL never runs (it loads the
@@ -56,6 +70,9 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_current` (opened aggregate, mixed conversion factors) | view | 0289 | `018-audit-view-corrections.sql` |
 | `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
+| `rebuild_stock_log_cache_for_product` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
+| `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
+| `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 
 ## Completeness
 
