@@ -1300,109 +1300,109 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * stock_row_id must match that exact row or refuse, not guess from descriptive
 	 * columns that a different live booking's row can share by coincidence.
 	 */
-	private function threeWholeRowOpenedTwinsMergingTwoOfThem(string $productName, bool $moveZ1First): array
+	/**
+	 * Rebuilt for ADR-0033 (2026-09-27): the original fixture here purchased three units,
+	 * split two off by whole-row TRANSFER, and opened all three - which shared one stock_id
+	 * throughout (a whole-row transfer never mints a new one), so the two-row group this test
+	 * needs to merge always shared that id with the third, outside row and ADR-0033's
+	 * shared-stock_id guard now correctly, and permanently, skips it. No maintenance run can
+	 * reach that precondition any more.
+	 *
+	 * What W1/W2 actually protect against is still reachable, on a fixture with no shared
+	 * stock_id at all: two one-unit never-expiring purchases, each opened WHOLE via its own
+	 * stock_entry_id (no split, so no remainder and no lineage row either), then merged by one
+	 * explicit maintenance run. $openR2First controls which opening is booked last:
+	 *
+	 * - false (R1 opened first, R2 second): the newest opening targets R2, the row the merge
+	 *   KEEPS (MAX(id) - R2 is always the higher id, having been purchased second). The row
+	 *   still exists afterwards, but the merge overwrote its amount with the group's sum - the
+	 *   identity check's AMOUNT MISMATCH branch (StockService.php's UndoBooking(), PRODUCT_OPENED
+	 *   case).
+	 * - true (R2 opened first, R1 second): the newest opening targets R1, the row the merge
+	 *   DELETES. Undoing it must reach the identity check's NULL-ROW branch, not the
+	 *   subsequent-bookings guard a few lines above it in UndoBooking() - reachable only
+	 *   because nothing is undone after the row it named stops existing, since the merge
+	 *   itself never inserts a stock_log row, and this is the newest one in the group either
+	 *   way (id order, not row survival, decides "newest").
+	 *
+	 * @return array{0: int, 1: int} product id, the newest PRODUCT_OPENED booking's id
+	 */
+	private function twoWholeRowOpenedTwinsMerging(string $productName, bool $openR2First): array
 	{
 		$product = self::insertProduct($productName);
-		$locationC = self::insertRow('locations', ['name' => 'Twin C ' . $product]);
-		$locationD = self::insertRow('locations', ['name' => 'Twin D ' . $product]);
+		$purchasedDate = '2026-01-01';
+		$price = 1.0;
 
-		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+		$purchaseArgs = ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => $purchasedDate, 'price' => $price];
+		$purchase1 = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', $purchaseArgs), new Response(), ['productId' => $product]),
 			200,
-			'Three units are purchased at A'
+			'R1 (one never-expiring unit) is purchased'
 		);
-		$this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+		$purchase2 = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', $purchaseArgs), new Response(), ['productId' => $product]),
 			200,
-			'One unit is split off to B (Z1)'
+			'R2 (a second, matching never-expiring unit) is purchased - its row id is always higher than R1\'s'
 		);
-		$this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => $locationC]), new Response(), ['productId' => $product]),
-			200,
-			'One more unit is split off to C (Z2)'
-		);
+		$stockIdR1 = $purchase1[0]['stock_id'];
+		$stockIdR2 = $purchase2[0]['stock_id'];
 
-		$rowX = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
-		$rowX->execute([$product, self::$locationA]);
-		$rowX = (int)$rowX->fetchColumn();
-		$this->expectStatus(
-			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0, 'location_id' => self::$locationA, 'note' => 'x']), new Response(), ['entryId' => $rowX]),
-			200,
-			'The remaining A row (X) is noted "x" - kept apart from Z1/Z2 by CompactStockEntries()\'s own note column'
-		);
-
-		// X, Z1 and Z2 all share the same stock_id (splits/transfers never mint a new one
-		// for a row that keeps a live booking - only for the piece left behind), so
-		// OpenProduct()'s stock_entry_id parameter cannot tell them apart: it filters
-		// candidates by stock_id, which is identical for all three. stock_next_use()'s
-		// own candidate order can be steered instead, since it prioritises a row at the
-		// product's default consume location above due/purchased date (identical for all
-		// three here, since every row descends from the one original purchase) - setting
-		// it to A once, before opening X, is enough for the whole sequence: every open
-		// call from here on immediately follows moving that call's own target row to A,
-		// and every other candidate is either already open (excluded outright) or still
-		// at a different location (lower priority), so A's own not-yet-open row is always
-		// the one picked, without needing to change the setting again.
-		self::$db->prepare('UPDATE products SET default_consume_location_id = ? WHERE id = ?')->execute([self::$locationA, $product]);
-		$this->expectStatus(
-			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
-			200,
-			'X (the only entry at A so far, and now the default consume location) is opened'
-		);
-
-		$moveAndOpen = function (int $fromLocation) use ($product)
+		$openWhole = function (string $stockId) use ($product)
 		{
-			$this->expectStatus(
-				fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => $fromLocation, 'location_id_to' => self::$locationA]), new Response(), ['productId' => $product]),
-				200,
-				'Moved back to A'
-			);
 			return $this->expectStatus(
-				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockId]), new Response(), ['productId' => $product]),
 				200,
-				'and opened'
+				'The whole one-unit row is opened by its own stock_entry_id - no split, no remainder'
 			);
 		};
 
-		$moveAndOpen($moveZ1First ? self::$locationB : $locationC);
-		$newestOpen = $moveAndOpen($moveZ1First ? $locationC : self::$locationB);
+		$openWhole($openR2First ? $stockIdR2 : $stockIdR1);
+		$newestOpen = $openWhole($openR2First ? $stockIdR1 : $stockIdR2);
 
-		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => $locationD, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
-			200,
-			'A matching purchase at D triggers CompactStockEntries() for the whole product, merging the two note-less opened twins at A'
-		);
+		StockService::GetInstance()->CompactStockEntries($product);
+		self::assertCount(1, self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product)->fetchAll(), 'Sanity: the explicit maintenance run merged the two opened whole rows into one');
 
-		return [$product, $newestOpen];
+		return [$product, (int)$newestOpen[0]['id']];
 	}
 
 	/**
-	 * ADR-0033 decision 3's shared-stock_id guard (2026-09-27) makes this fixture's merge
-	 * permanently unreachable: X, Z1 and Z2 all share one stock_id (a whole-row transfer
-	 * never mints a new one - see threeWholeRowOpenedTwinsMergingTwoOfThem()'s own docblock),
-	 * so the {Z1, Z2} candidate group always shares its stock_id with X, a row outside the
-	 * group - exactly the case the guard exists to skip. No maintenance run, explicit or
-	 * inline, can ever produce the merged precondition this test depends on any more; it is
-	 * not a matter of updating a due date. Reconstructing the same precondition through raw
-	 * SQL (bypassing a real merge) was considered and rejected as testing a state the
-	 * application can no longer reach.
-	 *
-	 * The acceptance-prerequisite coverage this test and W2 provided - PRODUCT_OPENED undo
-	 * refused in both surviving-row orders - is preserved by
-	 * StockMaintenanceCompactionTest::testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge(),
-	 * which asserts refusal for both the booking whose row a merge deletes and the booking
-	 * whose row a merge keeps (its amount having changed underneath it), using a fixture with
-	 * no shared stock_id to trigger this guard.
+	 * W1 (rebuilt, see twoWholeRowOpenedTwinsMerging()'s own docblock): the newest opening's
+	 * row was DELETED by the merge - the identity check's NULL-ROW branch, not the
+	 * subsequent-bookings guard a merged StockMaintenanceCompactionTest fixture reaches
+	 * instead (its own second merge rewrites both openings onto the kept stock_id before
+	 * either is undone, so nothing there is left to exercise this specific branch).
 	 */
-	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesRatherThanClosingAnUnrelatedRow(): void
+	public function testUndoingTheNewestOpeningRefusesWhenTheMergeDeletedItsRow(): void
 	{
-		self::markTestSkipped('Unreachable under ADR-0033\'s shared-stock_id guard - see this test\'s own docblock. Superseded by StockMaintenanceCompactionTest::testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge().');
+		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Deleted', true);
+
+		$decoded = $this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
+			400,
+			'Undoing the newest opening is refused - the merge deleted the row it named'
+		);
+		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
+
+		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not resurrect or split the merged row');
 	}
 
-	/** See testUndoingTheNewestOfThreeOpenedTwinsRefusesRatherThanClosingAnUnrelatedRow()'s docblock (W1) - the same applies here (W2). */
-	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesInTheOtherOrderToo(): void
+	/**
+	 * W2 (rebuilt, see twoWholeRowOpenedTwinsMerging()'s own docblock): the newest opening's
+	 * row SURVIVED the merge, but the merge overwrote its amount with the group's sum - the
+	 * identity check's AMOUNT MISMATCH branch.
+	 */
+	public function testUndoingTheNewestOpeningRefusesWhenTheMergeKeptButChangedItsRow(): void
 	{
-		self::markTestSkipped('Unreachable under ADR-0033\'s shared-stock_id guard - see testUndoingTheNewestOfThreeOpenedTwinsRefusesRatherThanClosingAnUnrelatedRow()\'s docblock (W1). Superseded by StockMaintenanceCompactionTest::testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge().');
+		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Kept', false);
+
+		$decoded = $this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
+			400,
+			'Undoing the newest opening is refused - the row it named still exists, but the merge changed its amount underneath it'
+		);
+		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its amount-mismatch branch, same text as the null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
+
+		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not split the merged row back apart');
 	}
 
 	// ------------------------------------------------------------------------------
