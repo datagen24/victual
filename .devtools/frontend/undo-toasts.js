@@ -299,7 +299,13 @@ async function probe(browser, label, how, run)
 		await page.reload({ waitUntil: 'networkidle' });
 		await page.waitForTimeout(1200);
 
-		const reloadedButton = page.locator('a.stock-consume-button[data-stockrow-id="' + stockRowId + '"]');
+		// Each row renders two `.stock-consume-button` anchors sharing the same
+		// data-stockrow-id - the plain consume button (views/stockentries.blade.php's
+		// btn-danger anchor) and the "mark as spoiled" dropdown item
+		// (.stock-consume-button-spoiled) - so this must exclude the spoiled one and stay
+		// scoped to this row, exactly like the original locator above, or it resolves to
+		// two elements.
+		const reloadedButton = page.locator('#stock-' + stockRowId + '-row a.stock-consume-button:not(.stock-consume-button-spoiled)');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
 			reloadedButton.click());
 		await waitForUndoToast(page);
