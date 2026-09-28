@@ -3225,6 +3225,26 @@ class StockService extends BaseService
 					'opened_measured_at' => $logRow->opened_measured_at
 				];
 
+				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
+				// amount = 1 (and open = 1) on any row carrying a measurement. An ordinary
+				// whole-take consume of a measured container always logs amount -1, so this
+				// rebuild's amount is always exactly 1 - but a ledger rescale of this
+				// booking's own amount (MergeProducts() itself now refuses this before
+				// writing when the factor is not 1 - issue #546 - but
+				// trg_cascade_change_qu_id_stock*'s own rescale of stock_log on a single
+				// product's own qu_id_stock change is not guarded the same way) can leave a
+				// measured consume booking whose amount is no longer -1. Inserting that
+				// rebuild would violate the CHECK outright with a raw 23514, which
+				// BaseApiController's own generic PDOException handling would surface only
+				// as a generic "database rejected this request" message - never explaining
+				// what specifically could not be restored. Refuse truthfully here instead,
+				// before any row is touched, exactly as this class refuses every other
+				// undo shape it cannot safely reverse.
+				if ($rebuiltStockRow['opened_amount'] !== null && self::CompareAmounts($rebuiltStockRow['amount'], 1.0) !== 0)
+				{
+					throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+				}
+
 				// A booking with a stock_row_id (set by ConsumeProduct() above for every
 				// CONSUME and negative INVENTORY_CORRECTION booking from here on) whose own
 				// row is gone at undo time - a whole-take consume deletes it, and

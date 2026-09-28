@@ -94,6 +94,7 @@
 			<file>tests/Pgsql/MergeProductsTest.php</file>
 			<file>tests/Pgsql/StockUndoIntegrityTest.php</file>
 			<file>tests/Pgsql/StockAmountPolicyTest.php</file>
+			<file>tests/Pgsql/UndoMeasuredContainerCoherenceTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
