@@ -67,7 +67,14 @@ class RecipesController extends BaseController
 			$productDetails = null;
 			if ($mealPlanEntry['product_id'] !== null)
 			{
-				$productDetails = StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']);
+				// Redacted the same way GET /api/stock/products/{id} redacts product_details
+				// (StockApiController::ProductDetails) - this page is another product_details
+				// channel that FieldPolicy has to reach, not a second list of price fields
+				// (issue #590, the same class as #512/#573). WireBooleans::Coerce() is not
+				// applied here: that step is wire-format only (is_aggregated_amount 0/1 -> bool)
+				// and unrelated to redaction.
+				$productDetails = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']));
+				$productDetails['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $productDetails['product_barcodes']);
 			}
 
 			$events[] = [
