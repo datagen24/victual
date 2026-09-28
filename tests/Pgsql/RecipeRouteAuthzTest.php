@@ -71,6 +71,11 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 			// No RECIPES_VIEW - the existence-leak scenario for the pair of permissions that
 			// (unlike consume-only above) is enough to actually consume a producing recipe.
 			'consume-purchase' => ['id' => 9605, 'permissions' => ['STOCK_CONSUME', 'STOCK_PURCHASE']],
+			// RECIPES_VIEW + STOCK_PURCHASE, deliberately without STOCK_CONSUME: on a plain
+			// (non-producing) recipe, GetEffectiveOutputProductId() is empty, so the consume
+			// button's own STOCK_PURCHASE clause is already satisfied regardless of this grant -
+			// isolating the button's separate STOCK_CONSUME requirement.
+			'view-purchase' => ['id' => 9608, 'permissions' => ['RECIPES_VIEW', 'STOCK_PURCHASE']],
 		];
 
 		$insertUser = self::$db->prepare('INSERT INTO users(id, username, password) VALUES (?, ?, ?)');
@@ -93,11 +98,11 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::$db->exec('INSERT INTO user_roles(user_id, role_id) SELECT 9606, id FROM roles WHERE code = \'CHILD\'');
 		self::$keys['child-role'] = self::issueKey(9606);
 
-		// Page-render cases (R3/R4) go through GET /recipes, which only accepts a session
+		// Page-render cases go through GET /recipes, which only accepts a session
 		// cookie (see sendToPage()) - one session per user whose eligibility a page-render
 		// case checks, inserted the way ViewCorrectionsHttpTest.php's own fixture does.
 		$insertSession = self::$db->prepare("INSERT INTO sessions(session_key, user_id, expires) VALUES (?, ?, now() + interval '1 day')");
-		foreach (['child-role' => 9606, 'view-consume' => 9601, 'view-consume-purchase' => 9602] as $name => $userId)
+		foreach (['child-role' => 9606, 'view-consume' => 9601, 'view-consume-purchase' => 9602, 'view-purchase' => 9608] as $name => $userId)
 		{
 			$sessionKey = 'authz-session-' . $name;
 			$insertSession->execute([$sessionKey, $userId]);
@@ -287,8 +292,8 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	 * this call books - config-dist.php defaults INFLUXDB_ENABLED to false, and a PHP
 	 * constant cannot be redefined once set, so every other request in this file (through the
 	 * plain send() above) never enqueues anything, refusal or not. A copy of
-	 * ComposedOperationAtomicityTest::requestWithInfluxEnabled() (this fix's reservation does
-	 * not permit editing that file) rather than a shared helper.
+	 * ComposedOperationAtomicityTest::requestWithInfluxEnabled(), kept local here rather than
+	 * factored into a shared helper.
 	 *
 	 * @return array{status: int, body: mixed}
 	 */
@@ -575,7 +580,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R1 fail-closed (RecipesService::ConsumeRecipe() with no request)
+	// Issue #532: fail-closed when RecipesService::ConsumeRecipe() is called with no request
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -626,11 +631,11 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	// whole process by PgsqlSchemaTestCase::Boot() at 9000, the same id the negative case
 	// above depends on holding nothing. tests/Pgsql/RecipeOperationsTest.php and
 	// ComposedOperationAtomicityTest.php are that control: both grant their own user 9000
-	// ADMIN (issue #532 round 2) and both call ConsumeRecipe() directly, with no request, on
+	// ADMIN (issue #532) and both call ConsumeRecipe() directly, with no request, on
 	// producing recipes, asserting the self-production booking succeeds.
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R4(a) meal-plan shadow of a NON-producing recipe
+	// Issue #532: meal-plan shadow of a NON-producing recipe
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -672,7 +677,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R4(b) the built-in CHILD role, granted through user_roles
+	// Issue #532: the built-in CHILD role, granted through user_roles
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -727,7 +732,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R4(c) response BODIES, not only statuses, across recipe shapes
+	// Issue #532: response BODIES, not only statuses, across recipe shapes
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -797,7 +802,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R4(d) the outbox, with InfluxDB actually enabled
+	// Issue #532: the outbox, with InfluxDB actually enabled
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -815,10 +820,15 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		$recipeId = self::insertRecipe('Authz Influx Producing Recipe A', ['product_id' => $outputId]);
 		self::addIngredient($recipeId, $ingredientId, 1);
 
+		$watermark = self::highestStockLogId();
 		$outboxBefore = self::outboxCount();
 		$response = self::sendWithInfluxEnabled('POST', '/api/recipes/' . $recipeId . '/consume', self::$keys['view-consume']);
 
 		self::assertSame(403, $response['status'], 'RECIPES_VIEW + STOCK_CONSUME is not enough for a producing recipe, InfluxDB enabled or not');
+		self::assertSame(5.0, self::stockAmount($ingredientId), 'The ingredient stock is untouched');
+		self::assertSame(0.0, self::stockAmount($outputId), 'Nothing was self-produced');
+		self::assertSame([], self::stockLogSince($watermark), 'No stock_log row was written');
+		self::assertSame(0, self::shoppingListCountFor($ingredientId), 'The refusal touched no shopping_list row either');
 		self::assertSame($outboxBefore, self::outboxCount(), 'The refusal enqueued nothing even with InfluxDB enabled');
 	}
 
@@ -850,7 +860,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R4(e) a custom (non-built-in) role
+	// Issue #532: a custom (non-built-in) role
 	// ------------------------------------------------------------------------------
 
 	/**
@@ -871,15 +881,16 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
-	// Issue #532 round 2: R3/R4 UI eligibility - views/recipes.blade.php's consume button
+	// Issue #532: UI eligibility - views/recipes.blade.php's consume button
 	// ------------------------------------------------------------------------------
 
 	/**
 	 * GET /recipes?recipe=<id> renders views/recipes.blade.php's own consume button
 	 * server-side - a page-render counterpart to the API-level cases above, in the manner
 	 * tests/Pgsql/HouseholdPagesTest.php uses for other pages, driven over the same HTTP
-	 * subprocess as the API cases (routes.php registers this page under the same auth
-	 * middleware as the API, so the fixture API keys above work here unchanged).
+	 * subprocess as the API cases. routes.php registers this page under the same auth
+	 * middleware as the API, but a page route accepts only a session cookie (see
+	 * sendToPage() above) - so this reuses the fixture sessions above, not the API keys.
 	 */
 	public function testRecipesPageOffersTheConsumeButtonOnlyWhenEligible(): void
 	{
@@ -901,7 +912,7 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Issue #532's R3: a typed shadow URL (/recipes?recipe=<shadowId>) used to read the
+	 * Issue #532: a typed shadow URL (/recipes?recipe=<shadowId>) used to read the
 	 * shadow's own product_id, which ConsumeRecipe() never sets - so the button rendered for
 	 * a caller lacking STOCK_PURCHASE on a shadow whose *original* recipe produces stock,
 	 * exactly the recipe testMealPlanShadowOfAProducingRecipeNeedsStockPurchase() already
@@ -935,5 +946,37 @@ class RecipeRouteAuthzTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $allowed['status']);
 		self::assertStringNotContainsString('recipe-consume', $refused['body'], 'The shadow\'s own product_id is always empty, but its original recipe produces stock');
 		self::assertStringContainsString('recipe-consume', $allowed['body'], 'STOCK_PURCHASE makes the button eligible, following the shadow to its original recipe');
+	}
+
+	/**
+	 * The consume button ANDs STOCK_CONSUME with a STOCK_PURCHASE clause that only matters for
+	 * a producing recipe - on a plain recipe GetEffectiveOutputProductId() is empty, so that
+	 * clause is vacuously true and STOCK_PURCHASE alone must not be enough to show the button.
+	 * view-purchase holds STOCK_PURCHASE but never STOCK_CONSUME, isolating that requirement.
+	 */
+	public function testRecipesPageHidesConsumeButtonWithoutStockConsumeOnAPlainRecipe(): void
+	{
+		$recipeId = self::insertRecipe('Authz Page Plain Recipe A');
+
+		$response = self::sendToPage('GET', '/recipes?recipe=' . $recipeId, self::$sessions['view-purchase']);
+
+		self::assertSame(200, $response['status']);
+		self::assertStringNotContainsString('recipe-consume', $response['body'], 'RECIPES_VIEW + STOCK_PURCHASE without STOCK_CONSUME must not show the consume button, even on a plain recipe');
+	}
+
+	/**
+	 * The shopping-list button's SHOPPINGLIST_ITEMS_ADD condition is independent of the
+	 * consume button's - view-consume holds RECIPES_VIEW + STOCK_CONSUME (enough to see the
+	 * consume button on this same plain recipe) but never SHOPPINGLIST_ITEMS_ADD, so the
+	 * shopping-list button must still be absent.
+	 */
+	public function testRecipesPageHidesShoppingListButtonWithoutShoppingListItemsAdd(): void
+	{
+		$recipeId = self::insertRecipe('Authz Page Plain Recipe B');
+
+		$response = self::sendToPage('GET', '/recipes?recipe=' . $recipeId, self::$sessions['view-consume']);
+
+		self::assertSame(200, $response['status']);
+		self::assertStringNotContainsString('recipe-shopping-list', $response['body'], 'RECIPES_VIEW without SHOPPINGLIST_ITEMS_ADD must not show the add-missing-to-shopping-list button');
 	}
 }

@@ -67,7 +67,7 @@ class ComposedOperationAtomicityTest extends PgsqlSchemaTestCase
 		self::$db = self::Pdo();
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'composed-atomicity-caller', 'fixture')");
 		// RecipesService::ConsumeRecipe() checks STOCK_PURCHASE unconditionally on the ambient
-		// caller as of issue #532 round 2 - this class's direct calls below consume producing
+		// caller as of issue #532 - this class's direct calls below consume producing
 		// recipes to test atomicity, not authorization, so the caller needs the permission
 		// rather than the call needing a request (see RecipeRouteAuthzTest.php for the
 		// authorization coverage itself).

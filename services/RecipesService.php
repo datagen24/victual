@@ -103,8 +103,8 @@ class RecipesService extends BaseService
 	 * A self-production is a stock addition like any other, so it also requires
 	 * STOCK_PURCHASE in addition to STOCK_CONSUME (maintainer decision on issue #532,
 	 * 2026-09-26) - including when the recipe is a meal-plan shadow whose *original*
-	 * recipe produces a product. The check itself is unconditional on $request (issue #532
-	 * round 2): User::HasPermissions() only ever consults the ambient VICTUAL_USER_ID, never
+	 * recipe produces a product. The check itself is unconditional on $request (issue #532):
+	 * User::HasPermissions() only ever consults the ambient VICTUAL_USER_ID, never
 	 * the request, so a caller that forgets to pass one must not be read as "skip the check" -
 	 * that silently let a caller reach self-production without STOCK_PURCHASE, and no error
 	 * at all, which is exactly the gap this check exists to close. $request only shapes the
@@ -217,7 +217,7 @@ class RecipesService extends BaseService
 			// a meal-plan shadow is judged by what its original recipe produces rather than by
 			// the shadow's own (always empty) product_id.
 			//
-			// Unconditional on $request (issue #532 round 2): HasPermissions() only reads the
+			// Unconditional on $request (issue #532): HasPermissions() only reads the
 			// ambient VICTUAL_USER_ID, so gating the check itself on $request !== null let a
 			// caller that simply forgot the argument reach self-production with no
 			// STOCK_PURCHASE and no error - failing open. $request only decides which
