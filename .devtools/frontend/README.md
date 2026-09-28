@@ -48,7 +48,7 @@ node forced-failure.js --url http://127.0.0.1:8200
 node routes-smoke.js --url http://127.0.0.1:8200 --out /tmp/routes.json
 
 # plan 12 check 2, last item - the Undo link in every stock booking toast still undoes
-node undo-toasts.js --url http://127.0.0.1:8200 --db "$VDATA/victual_en.db"
+node undo-toasts.js --url http://127.0.0.1:8200
 
 # plan 12 check 6 - two datetimepickers on one page set, clear and validate independently
 node two-pickers.js --url http://127.0.0.1:8200
@@ -112,14 +112,26 @@ and covered by reading the diff, which is the weaker evidence and is recorded as
 
 `forced-failure.js` exits non-zero if any assertion fails, so it can be run as a gate.
 
-`undo-toasts.js` books stock on each of the seven pages that show an Undo toast, clicks
-the Undo link in the toast that page rendered, and reads `stock_log` back to confirm every
-row the booking wrote came back `undone = 1`. It books and undoes real stock, so it needs a
-throwaway database, and it reads that database directly because `stock_log` has no read
-API - hence `--db`. It is the acceptance test for plan 12 step 5's shared
-`public/js/victual_stock_dialogs.js`, and it is known to be capable of failing: delete the
-`purchase.js` `@push` from a pre-step-5 `stockoverview.blade.php` and it reports
+`undo-toasts.js` books stock on each of the eight pages/forms that show an Undo toast and
+clicks the Undo link in the toast that page rendered. It confirms every row the booking
+wrote came back `undone = 1` by reading the booked rows back through the API -
+`GET /stock/transactions/{id}` or `GET /stock/bookings/{id}`, the same endpoint the
+toast's own Undo link posts its undo to.
+
+It books and undoes real stock, but needs no throwaway database of its own: it runs
+against the same PostgreSQL demo instance the other `frontend-security` probes do, wired
+into that CI job. Issue #579 is the gap this closes - the previous version read
+`stock_log` through a raw SQLite connection, and nothing under `.github/` ran it.
+
+It is the acceptance test for plan 12 step 5's shared
+`public/js/victual_stock_dialogs.js`, and it is known to be capable of failing: delete
+the `purchase.js` `@push` from a pre-step-5 `stockoverview.blade.php` and it reports
 `UndoStockTransaction is not defined`, 1 row booked and 0 undone.
+
+The `stockentry-edit` scenario additionally covers issue #575: the edit form's Undo link
+was built from `result.id`, which is `undefined` against the array
+`PUT /stock/entry/{entryId}` actually returns. On the unfixed code it books 1 row and
+undoes 0, because the link's booking id is `undefined` and the undo POST is refused.
 
 `two-pickers.js` drives both datetimepickers on `stockentryform`, `purchase`, `inventory`
 and `mealplan` and, after each action on one, reads the other's value and validity back. It

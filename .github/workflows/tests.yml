@@ -717,6 +717,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node nullable-integer-forms.js http://127.0.0.1:8085
 
+      # Plan 12 check 2 (last item), and issues #575/#579. Every stock booking toast's
+      # inline "Undo" link, including the stock entry edit form's, still undoes what it
+      # booked. Against the demo instance on 8085 like the checks above - nothing here needs
+      # the label subsystem. It reads the booked rows back through the API rather than a
+      # database connection of its own (issue #579's gap: the previous version needed the
+      # SQLite runtime ADR-0008 retired, and nothing in CI ran it).
+      - name: Run stock booking Undo toast checks
+        working-directory: .devtools/frontend
+        run: node undo-toasts.js --url http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087
