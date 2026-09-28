@@ -309,27 +309,107 @@ class ChoresService extends BaseService
 	}
 
 	/**
-	 * Marks a chore execution log entry as undone (the row is kept, not deleted) and
-	 * recalculates the next execution assignment.
+	 * Marks a chore execution log entry as undone (the row is kept, not deleted),
+	 * undoes the stock consumption it booked when one can be identified without
+	 * ambiguity, and recalculates the next execution assignment.
+	 *
+	 * Issue #506 (maintainer decision D1, #487 remediation): undoing an execution that
+	 * consumed stock must undo that consumption too, atomically with the chore undo - if
+	 * the stock undo is refused (e.g. a later booking now depends on it), nothing here
+	 * commits either. An execution whose consumption cannot be linked (see
+	 * FindLinkedStockConsumptionTransactionId()) undoes the chore alone, exactly as
+	 * before this decision, rather than refusing.
 	 *
 	 * @param int $executionId
-	 * @throws \Exception When the entry does not exist or was already undone
+	 * @throws \Exception When the entry does not exist or was already undone, or when a
+	 *                     linked stock consumption exists but can no longer be undone
 	 */
 	public function UndoChoreExecution($executionId)
 	{
-		$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
-		if ($logRow == null)
+		return DatabaseService::GetInstance()->InTransaction(function () use ($executionId)
 		{
-			throw new \Exception('Execution does not exist or was already undone');
+			$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
+			if ($logRow == null)
+			{
+				throw new \Exception('Execution does not exist or was already undone');
+			}
+
+			$transactionId = $this->FindLinkedStockConsumptionTransactionId($logRow);
+			if ($transactionId !== null)
+			{
+				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
+				// later booking now depends on this one), the exception unwinds this
+				// whole InTransaction() and the chores_log update below never happens.
+				StockService::GetInstance()->UndoTransaction($transactionId);
+			}
+
+			// Update log entry
+			$logRow->update([
+				'undone' => 1,
+				'undone_timestamp' => date('Y-m-d H:i:s')
+			]);
+
+			$this->CalculateNextExecutionAssignment($logRow->chore_id);
+		});
+	}
+
+	/**
+	 * Finds the single stock_log transaction_id that TrackChore()'s consumption booked
+	 * for this execution, if it can be identified without ambiguity.
+	 *
+	 * chores_log carries no transaction_id column (issue #506 decision D1: no
+	 * migration), so the link is derived rather than stored: TrackChore() inserts the
+	 * chores_log row and calls StockService::ConsumeProduct() inside the very same
+	 * database transaction (DatabaseService::InTransaction() lets the nested call join
+	 * rather than nest), and every row_created_timestamp default in this schema is
+	 * `date_trunc('second', LOCALTIMESTAMP)` - a value PostgreSQL holds fixed for the
+	 * whole transaction, not just the statement it appears in. So a still-undone
+	 * TRANSACTION_TYPE_CONSUME stock_log row for the chore's product whose
+	 * row_created_timestamp exactly equals this chores_log row's was necessarily written
+	 * by this same execution's TrackChore() call - an exact identity, not a time-window
+	 * guess that could land on an unrelated consumption.
+	 *
+	 * An execution with no matching rows (nothing was consumed, or the chore no longer
+	 * names a product) returns null, and so does one whose matches span more than one
+	 * distinct transaction_id - two genuinely different consumptions landing in the same
+	 * second is a real if rare possibility this method refuses to guess between. Either
+	 * way the caller then undoes the chore alone, the pre-#506 behaviour (decision D1's
+	 * "legacy executions" case).
+	 *
+	 * @param \LessQL\Row $logRow The chores_log row being undone
+	 * @return string|null
+	 */
+	private function FindLinkedStockConsumptionTransactionId($logRow)
+	{
+		$chore = $this->DB->chores()->where('id = :1', $logRow->chore_id)->fetch();
+		if ($chore === null || empty($chore->product_id))
+		{
+			return null;
 		}
 
-		// Update log entry
-		$logRow->update([
-			'undone' => 1,
-			'undone_timestamp' => date('Y-m-d H:i:s')
-		]);
+		$candidateBookings = $this->DB->stock_log()->where(
+			'undone = 0 AND transaction_type = :1 AND product_id = :2 AND row_created_timestamp = :3',
+			StockService::TRANSACTION_TYPE_CONSUME,
+			$chore->product_id,
+			$logRow->row_created_timestamp
+		)->fetchAll();
 
-		$this->CalculateNextExecutionAssignment($logRow->chore_id);
+		if (count($candidateBookings) === 0)
+		{
+			return null;
+		}
+
+		$transactionIds = array_values(array_unique(array_map(function ($booking)
+		{
+			return $booking->transaction_id;
+		}, $candidateBookings)));
+
+		if (count($transactionIds) !== 1 || empty($transactionIds[0]))
+		{
+			return null;
+		}
+
+		return $transactionIds[0];
 	}
 
 	/**
