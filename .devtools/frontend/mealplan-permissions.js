@@ -85,7 +85,21 @@ function api(page, path, method = 'GET', body)
 	}, { path, method, body });
 }
 
-/** Seeds one recipe (one ingredient, in stock) and one product entry for DAY, as whichever identity is currently acting - the seeded bootstrap administrator, before it is ever downgraded. */
+/**
+ * Seeds one recipe (one ingredient, deliberately left with NO stock) and one product entry
+ * (its own product, fully in stock) for DAY, as whichever identity is currently acting - the
+ * seeded bootstrap administrator, before it is ever downgraded.
+ *
+ * The ingredient is left unstocked on purpose: recipes_resolved.need_fulfilled_with_shopping_list
+ * (db/pgsql/baseline/05_views_l3.sql) is what recipeOrderMissingButtonDisabledClasses reads
+ * (public/viewjs/mealplan.js) to decide the add-missing button's own "disabled" class - stocking
+ * the ingredient enough to cover the recipe's need made that flag 1 (need already fulfilled) for
+ * every shape, including "full", where this probe wants to see the button rendered *enabled* to
+ * prove the permission gate is what is being tested rather than this unrelated stock-state flag.
+ * RecipesService::ConsumeRecipe() consumes only ingredients whose stock_amount is greater than
+ * zero, so an unstocked ingredient is silently skipped rather than refused - the week button
+ * click-through check below still succeeds with nothing to consume for it.
+ */
 async function seedFixtures(page, tag)
 {
 	const qu = await api(page, 'objects/quantity_units', 'POST', { name: 'Probe Piece ' + tag, name_plural: 'Probe Pieces ' + tag });
@@ -100,7 +114,6 @@ async function seedFixtures(page, tag)
 		qu_id_purchase: qu.created_object_id, qu_id_stock: qu.created_object_id,
 		qu_id_consume: qu.created_object_id, qu_id_price: qu.created_object_id
 	});
-	await api(page, 'stock/products/' + ingredient.created_object_id + '/add', 'POST', { amount: 10 });
 	await api(page, 'stock/products/' + mealProduct.created_object_id + '/add', 'POST', { amount: 10 });
 
 	const recipe = await api(page, 'objects/recipes', 'POST', { name: 'Probe Recipe ' + tag, base_servings: 1 });
