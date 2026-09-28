@@ -1711,9 +1711,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$failures = [];
 		foreach (self::COLUMN_SCHEMAS as $schema => $entity)
 		{
-			// StorageClass temperature NUMERIC values are strings on the wire, a separate
-			// scalar-type defect. Its column nullability is still checked above.
-			if ($schema === 'StorageClass' || !isset(self::spec()['components']['schemas'][$schema]['properties']['userfields']))
+			if (!isset(self::spec()['components']['schemas'][$schema]['properties']['userfields']))
 			{
 				continue;
 			}
@@ -1732,10 +1730,71 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
+	public function testStorageClassTemperaturesAreNumbersOrNullOnBothReads(): void
+	{
+		self::$db->exec("INSERT INTO storage_classes (id, name, min_temp_c, max_temp_c) VALUES
+			(9580, 'Wire temperature fractions', -18.25, 4.75),
+			(9581, 'Wire temperature zero', 0, NULL),
+			(9582, 'Wire temperature unset', NULL, 0)");
+		try
+		{
+			$rows = array_column(self::get('/api/objects/storage_classes'), null, 'id');
+			foreach ([9580 => [-18.25, 4.75], 9581 => [0, null], 9582 => [null, 0]] as $id => $expected)
+			{
+				foreach ([$rows[$id], self::get("/api/objects/storage_classes/$id")] as $row)
+				{
+					foreach (['min_temp_c', 'max_temp_c'] as $index => $column)
+					{
+						self::assertSame($expected[$index], $row[$column], "$id.$column");
+					}
+					self::assertIsInt($row['treats_as_freezer']);
+					self::assertIsInt($row['sort_order']);
+					if (array_key_exists('userfields', $row))
+					{
+						$row['userfields'] = (object)$row['userfields'];
+					}
+					self::assertSame([], self::validateAgainstMember($row, 'StorageClass'));
+				}
+			}
+		}
+		finally
+		{
+			self::$db->exec('DELETE FROM storage_classes WHERE id BETWEEN 9580 AND 9582');
+		}
+	}
+
+	public function testProductDetailsLocationsIncludeTheirParent(): void
+	{
+		self::$db->exec("INSERT INTO locations (id, name, parent_location_id) VALUES (9580, 'Wire child shelf', 9500)");
+		self::$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock, default_consume_location_id)
+			VALUES (9580, 'Wire nested location product', 9580, 9500, 9500, 9500)");
+		try
+		{
+			foreach ([[9580, 9500], [9500, 9580]] as [$location, $consumeLocation])
+			{
+				self::$db->exec("UPDATE products SET location_id = $location, default_consume_location_id = $consumeLocation WHERE id = 9580");
+				$body = self::get('/api/stock/products/9580');
+				foreach (['location' => $location, 'default_consume_location' => $consumeLocation] as $key => $id)
+				{
+					self::assertArrayHasKey('parent_location_id', $body[$key]);
+					self::assertSame($id === 9580 ? 9500 : null, $body[$key]['parent_location_id']);
+					self::assertSame([], self::validateAgainstMember($body[$key], 'Location'));
+				}
+				self::assertSame([], self::validateAgainstMember($body, 'ProductDetailsResponse'));
+			}
+		}
+		finally
+		{
+			self::$db->exec('DELETE FROM products WHERE id = 9580');
+			self::$db->exec('DELETE FROM locations WHERE id = 9580');
+		}
+	}
+
 	public function testDomainResponsesValidateNullableHistoryAndAssignments(): void
 	{
 		$failures = [];
 		foreach ([
+			'/api/stock/products/9500' => ['ProductDetailsResponse', false],
 			'/api/chores/9500' => ['ChoreDetailsResponse', false],
 			'/api/batteries/9500' => ['BatteryDetailsResponse', false],
 			'/api/chores' => ['CurrentChoreResponse', true],

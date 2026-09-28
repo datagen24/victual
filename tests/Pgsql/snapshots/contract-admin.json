@@ -678,8 +678,8 @@
             {
                 "active": "integer",
                 "id": "integer",
-                "max_temp_c": "string",
-                "min_temp_c": "string",
+                "max_temp_c": "integer",
+                "min_temp_c": "integer",
                 "name": "string",
                 "row_created_timestamp": "string",
                 "sort_order": "integer",
@@ -1313,6 +1313,7 @@
                 "id": "integer",
                 "is_freezer": "integer",
                 "name": "string",
+                "parent_location_id": "null",
                 "row_created_timestamp": "string"
             },
             "next_due_date": "string",
@@ -1444,6 +1445,7 @@
                 "id": "integer",
                 "is_freezer": "integer",
                 "name": "string",
+                "parent_location_id": "null",
                 "row_created_timestamp": "string"
             },
             "next_due_date": "string",
