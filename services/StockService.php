@@ -881,6 +881,22 @@ class StockService extends BaseService
 					}
 					else
 					{
+						// A partial consume of a measured entry always leaves an amount other
+						// than 1 on the remaining row - the entry could only be measured in the
+						// first place with amount = 1 (ADR-0022 decision 8) - so no split of it
+						// can carry the measurement forward: dropping it silently (as this
+						// branch used to) loses that state with nothing in stock_log to recover
+						// it, and leaving it in place would violate stock_measurement_coherence_check
+						// (migrations/0275.pgsql.sql) outright. Refused before any row is
+						// touched (issue #487, M2), the same way this class refuses every other
+						// undo/edit shape it cannot safely reverse or represent - consuming the
+						// whole container, or clearing its measurement first, are the caller's
+						// remaining options.
+						if ($stockEntry->opened_amount !== null)
+						{
+							throw new \Exception('Cannot partially consume a measured container: consume the entire container, or clear its measurement first');
+						}
+
 						// Stock entry amount is > than needed amount by more than the shared tolerance
 						// (the branch above now also takes anything closer than that) -> split the
 						// stock entry resp. update the amount. $restStockAmount is a real remainder,
@@ -912,21 +928,9 @@ class StockService extends BaseService
 						]);
 						$logRow->save();
 
-						// A partial consume of a measured entry always leaves an amount other
-						// than 1 - the entry could only be measured in the first place with
-						// amount = 1 (ADR-0022 decision 8) - so the measurement is dropped
-						// rather than left to violate the coherence CHECK. Re-measuring the
-						// remaining container is MeasureStockEntry()'s job, not this one's.
-						$measurementClear = $stockEntry->opened_amount !== null ? [
-							'opened_amount' => null,
-							'opened_qu_id' => null,
-							'opened_tare' => null,
-							'opened_measured_at' => null,
-						] : [];
-
-						$stockEntry->update(array_merge([
+						$stockEntry->update([
 							'amount' => $restStockAmount
-						], $measurementClear));
+						]);
 
 						$amount = 0;
 					}
@@ -2841,6 +2845,22 @@ class StockService extends BaseService
 				}
 				else
 				{
+					// A partial transfer of a measured entry would leave the source row at an
+					// amount other than 1 while still carrying opened_amount - the entry could
+					// only be measured in the first place with amount = 1 (ADR-0022 decision
+					// 8), so no split of it can carry the measurement forward. Unlike
+					// ConsumeProduct()'s split branch, this one used to leave opened_* untouched
+					// on the reduced row instead of clearing it, so the update below would hit
+					// stock_measurement_coherence_check (migrations/0275.pgsql.sql) outright
+					// with a raw SQLSTATE 23514. Refused before any row is touched (issue #487,
+					// M2), the same way ConsumeProduct()'s own split branch now refuses -
+					// transferring the whole container, or clearing its measurement first, are
+					// the caller's remaining options.
+					if ($stockEntry->opened_amount !== null)
+					{
+						throw new \Exception('Cannot partially transfer a measured container: transfer the entire container, or clear its measurement first');
+					}
+
 					// Stock entry amount is > than needed amount by more than the shared tolerance
 					// -> split the stock entry resp. update the amount. $restStockAmount is a
 					// real remainder, not a float artifact, by construction.
@@ -2886,9 +2906,9 @@ class StockService extends BaseService
 					// saved, so its id is known) before the TRANSFER_TO booking below, so
 					// that booking can name the exact row its amount landed on (#489 C2; see
 					// the whole-entry branch's own comment on stock_row_id above). A measured
-					// entry cannot reach here: it must hold amount = 1 (the coherence CHECK),
-					// so $amount < $stockEntry->amount is only possible while unmeasured, and
-					// this new row's own opened_* columns are correctly left null.
+					// entry cannot reach here: the refusal above this branch's own top sends it
+					// back before any write, so this new row's own opened_* columns are
+					// correctly left null.
 					$stockEntryNew = $this->DB->stock()->createRow([
 						'product_id' => $stockEntry->product_id,
 						'amount' => $amount,
