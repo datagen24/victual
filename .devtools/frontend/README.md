@@ -294,3 +294,40 @@ drives each form as a person leaving an optional field blank would:
 
 CI runs it in `frontend-security` after the product form nullable picker checks, against the
 demo instance on 8085.
+
+## Meal plan button permission gates (issue #591)
+
+`node mealplan-permissions.js --child-url <url> --guest-url <url> --full-url <url>` asserts
+which of the meal plan's consume-recipe, add-missing-to-shopping-list and consume-product
+buttons render for the built-in CHILD and GUEST roles versus a fully-granted user, and that
+the week aggregate's consume button never `PUT`s `objects/meal_plan/undefined`.
+
+It cannot run against the shared demo instance on 8085 the way most other probes here do.
+Demo/dev mode has exactly one identity for every request
+(`SessionService::GetDefaultUser()`, the lowest user id). `PUT /api/users/{id}/permissions`
+refuses granting anything the caller does not already hold (`User::CheckMayGrant()`). So
+once that one shared identity were reduced to CHILD's or GUEST's permission set, it could
+never be raised back for a later probe in the same job, nor moved sideways to the next
+role shape.
+
+Each of the three URLs is therefore its own disposable `VICTUAL_MODE=dev` instance with its
+own empty database. The probe seeds one recipe entry and one product entry through the API
+while the instance's own bootstrap administrator still holds every permission. It then
+downgrades that one identity to the target role's exact grant set exactly once (a one-way
+trip, for the reason above) before loading `/mealplan` and reading the DOM back.
+
+Every button on the page is otherwise gated only on what its own click flow's routes
+already require, so `mayConsumeMealPlanRecipe()`/`mayAddMealPlanRecipeToShoppingList()`/
+`mayConsumeMealPlanProduct()` (`public/viewjs/mealplan.js`) are asserted, not just read.
+
+On unfixed `mealplan.js`, CHILD's `RECIPES_VIEW` + `STOCK_CONSUME` +
+`SHOPPINGLIST_ITEMS_ADD` were enough to see all three buttons - the composite-permission
+gap issue #591 reports. Each button's own click flow also calls a route requiring
+`RECIPES_MEALPLAN` or `RECIPES`, which CHILD lacks. The product-consume button rendered for
+every role with no permission gate at all.
+
+The week button's `data-mealplan-entry-id` check runs only for the fully-granted shape -
+the one role whose gate lets that button render.
+
+CI boots the three disposable instances after the labels instance and runs this probe in
+`frontend-security` after the role workflow probe.
