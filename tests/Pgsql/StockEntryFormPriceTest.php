@@ -28,8 +28,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * price field at all when prices are not visible (views/stockentryform.blade.php) and to
  * have stockentryform.js omit the price key from the PUT body when the input is absent,
  * relying on PUT /api/stock/entry/{id} keeping the stored value for any key the body omits
- * - the server-side half landed separately on claude/sonnet_stock-edit-input-r487 (PR
- * #530), which this branch is stacked on. This class does not touch
+ * - the server-side half is PR #530's (merged). This class does not touch
  * controllers/Api/StockApiController.php or services/StockService.php; that partial-update
  * contract is #530's own StockEntryEditContractTest.php, in the wirecontract testsuite.
  *
@@ -373,8 +372,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 	 * price key - then the request succeeds and the stored price is unchanged, both on the
 	 * stock row and on the resulting stock-edit-new ledger row PUT /api/stock/entry/{id}
 	 * leaves behind. This exercises the frontend half only; the server keeping an omitted
-	 * key's current value is claude/sonnet_stock-edit-input-r487 (PR #530), which this
-	 * branch is stacked on.
+	 * key's current value is PR #530's contract (merged).
 	 */
 	public function testSavingTheRenderedFormAsAPriceBlindEditorDoesNotChangeThePrice(): void
 	{
@@ -487,7 +485,7 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 
 		$stored = self::$db->query('SELECT price FROM stock WHERE id = ' . self::$zeroPriceStockEntryId)->fetchColumn();
 		self::assertNotNull($stored, 'the stock row keeps its explicit 0 price - it must not become NULL');
-		self::assertEqualsWithDelta(0.0, (float)$stored, 0.0001, 'the stock row keeps the price at exactly 0');
+		self::assertSame(0.0, (float)$stored, 'the stock row keeps the price at exactly 0');
 
 		$ledgerPrice = self::$db->query(
 			'SELECT price FROM stock_log WHERE stock_row_id = ' . self::$zeroPriceStockEntryId
@@ -495,6 +493,6 @@ class StockEntryFormPriceTest extends PgsqlSchemaTestCase
 		)->fetchColumn();
 		self::assertNotFalse($ledgerPrice, 'the edit left a stock-edit-new ledger row behind');
 		self::assertNotNull($ledgerPrice, 'the stock-edit-new ledger row also keeps the explicit 0 price, not NULL');
-		self::assertEqualsWithDelta(0.0, (float)$ledgerPrice, 0.0001, 'the ledger price is exactly 0');
+		self::assertSame(0.0, (float)$ledgerPrice, 'the ledger price is exactly 0');
 	}
 }
