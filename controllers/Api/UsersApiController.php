@@ -688,7 +688,11 @@ class UsersApiController extends BaseApiController
 	{
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is true for this route (victual.openapi.json), so an
+			// absent body is refused with 400 here rather than reaching $requestBody['value']
+			// as null and silently storing NULL as the setting's new value (issue #498/#487
+			// H9 round 2).
+			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
 
 			$value = UsersService::GetInstance()->SetUserSetting(VICTUAL_USER_ID, $args['settingKey'], $requestBody['value']);
 			return $this->EmptyApiResponse($response);

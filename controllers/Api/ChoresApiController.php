@@ -35,7 +35,11 @@ class ChoresApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is false for this route (victual.openapi.json): an
+			// absent body defaults to [], applying chore_id's own documented default (every
+			// chore) rather than 500ing on the null array_key_exists() below cannot accept
+			// (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$choreId = null;
 			if (array_key_exists('chore_id', $requestBody) && !empty($requestBody['chore_id']) && is_numeric($requestBody['chore_id']))
@@ -106,12 +110,23 @@ class ChoresApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
+			// requestBody.required is true for this route (victual.openapi.json), so an
+			// absent body is refused with 400 here rather than reaching
+			// RequestedTimestamp()'s non-nullable `array $requestBody` parameter as null,
+			// which raised a TypeError and 500ed (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($requestBody);
+
 			$trackedTime = $this->RequestedTimestamp($request, $requestBody, 'tracked_time');
 
+			// WireBooleans::RequireBoolean() rather than filter_var(...FILTER_VALIDATE_BOOLEAN):
+			// the UI always sends a real boolean (public/viewjs/choretracking.js,
+			// choresoverview.js), and filter_var() reads a malformed value as false, which
+			// logs an ordinary execution instead of refusing the request (issue #498/#487
+			// H9 round 2).
 			$skipped = false;
-			if (array_key_exists('skipped', $requestBody) && filter_var($requestBody['skipped'], FILTER_VALIDATE_BOOLEAN) !== false)
+			if (array_key_exists('skipped', $requestBody))
 			{
-				$skipped = $requestBody['skipped'];
+				$skipped = WireBooleans::RequireBoolean($requestBody['skipped'], 'skipped');
 			}
 
 			$doneBy = VICTUAL_USER_ID;

@@ -38,6 +38,12 @@ class TasksApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $requestBody, $response)
 		{
+			// requestBody.required is true for this route (victual.openapi.json), so an
+			// absent body is refused with 400 here rather than reaching
+			// RequestedTimestamp()'s non-nullable `array $requestBody` parameter as null,
+			// which raised a TypeError and 500ed (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($requestBody);
+
 			$doneTime = $this->RequestedTimestamp($request, $requestBody, 'done_time');
 
 			TasksService::GetInstance()->MarkTaskAsCompleted($args['taskId'], $doneTime);
