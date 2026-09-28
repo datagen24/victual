@@ -138,9 +138,11 @@ class OutboxService extends BaseService
 	 * once - two request-end triggers, or a request-end trigger racing
 	 * `bin/victual-publish-state --drain` - could each read the same undelivered row and
 	 * both deliver it. `PrintAttemptService::Claim()` (PrintAttemptService.php:64) already
-	 * answers this for the label-print outbox rows with `FOR UPDATE OF j SKIP LOCKED`; this
-	 * is the same answer for BookingEventPublisher's InfluxDB drain, the only other
-	 * consumer of the outbox table.
+	 * answers the equivalent problem for print jobs with `FOR UPDATE OF j SKIP LOCKED` - a
+	 * claim on `print_jobs`, not on `outbox` itself, since a print job's own row is what a
+	 * concurrent worker could otherwise double-claim. This method's claim is the same idea
+	 * applied to the outbox table directly, for BookingEventPublisher's InfluxDB drain, the
+	 * only other consumer of undelivered outbox rows.
 	 *
 	 * **Must be called from inside the caller's own open transaction** (see
 	 * DatabaseService::InTransaction()), and the claim only holds for as long as that
