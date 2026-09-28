@@ -52,7 +52,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 	/**
 	 * ADR-0033's "never expires" sentinel (2026-09-27) - the only real date value
-	 * migrations/0292.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
+	 * migrations/0290.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
 	 * above is a real, finite date and is never merge-eligible; a fixture that needs
 	 * CompactStockEntries() to actually merge two rows must use this one, or NULL, instead.
 	 */

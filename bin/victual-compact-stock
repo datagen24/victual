@@ -15,7 +15,7 @@
 // label out from under a purchase that happened to match the labelled row. Neither inline
 // call remains (this command is the only caller left), and the merge itself now only
 // considers rows with no real due date (best_before_date IS NULL or the 2999-12-31
-// never-expires sentinel) and no live label - migrations/0292.pgsql.sql's stock_splits
+// never-expires sentinel) and no live label - migrations/0290.pgsql.sql's stock_splits
 // definition is the authority for exactly which rows qualify.
 //
 // Idempotent and safe to run repeatedly, including concurrently with ordinary bookings and

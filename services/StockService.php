@@ -4118,7 +4118,7 @@ class StockService extends BaseService
 	 * (bin/victual-compact-stock) since ADR-0033 decision 1 (2026-09-27) - never inline from a
 	 * booking path. Safe to call directly in a test, as before.
 	 *
-	 * Candidate groups come from the stock_splits view (migrations/0292.pgsql.sql), which
+	 * Candidate groups come from the stock_splits view (migrations/0290.pgsql.sql), which
 	 * excludes: entries with per-unit labels (stock_id starting with "x"), entries with
 	 * userfield values, entries carrying a measured remainder (opened_amount IS NOT NULL),
 	 * entries with a real due date (best_before_date other than NULL or the 2999-12-31

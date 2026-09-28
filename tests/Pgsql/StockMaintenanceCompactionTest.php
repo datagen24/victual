@@ -445,7 +445,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * #488's own closure: two rows with a REAL, finite due date, matching on every other
 	 * grouping column, never merge - not inline (already true: no inline call remains) and
 	 * not even through an explicit, direct CompactStockEntries() call, because
-	 * migrations/0292.pgsql.sql's stock_splits excludes them from candidacy outright.
+	 * migrations/0290.pgsql.sql's stock_splits excludes them from candidacy outright.
 	 */
 	public function testRowsWithARealDueDateNeverMergeEvenViaExplicitMaintenance(): void
 	{

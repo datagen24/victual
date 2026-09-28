@@ -38,7 +38,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 
 	/**
 	 * ADR-0033's "never expires" sentinel (2026-09-27) - the only real date value
-	 * migrations/0292.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
+	 * migrations/0290.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
 	 * above is a real, finite date and is never merge-eligible.
 	 */
 	private const NEVER_EXPIRES = '2999-12-31';

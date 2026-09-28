@@ -74,15 +74,25 @@ have recorded it.
 | 0287 | [issue #208](https://github.com/datagen24/victual/issues/208) (plan 02's Victual-side auth) — `api_keys.read_only` | in this tree |
 | 0288 | [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md), [issue 461](https://github.com/datagen24/victual/issues/461) — stock location foreign key | in this tree |
 | 0289 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #542) — `stock_current`, `uihelper_stock_journal` and `chores_current` recreated from their latest definitions to fix issues [501](https://github.com/datagen24/victual/issues/501), [505](https://github.com/datagen24/victual/issues/505), [497](https://github.com/datagen24/victual/issues/497) and the weekly-schedule half of [506](https://github.com/datagen24/victual/issues/506) | in this tree |
-| 0290 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0291 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
-| 0292 | [ADR-0033](../docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 3 — `stock_splits` narrowed to never-expiring, unlabelled rows (issues [488](https://github.com/datagen24/victual/issues/488), [491](https://github.com/datagen24/victual/issues/491)) | in this tree |
+| 0290 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #580), [ADR-0033](../docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 3 — `stock_splits` narrowed to never-expiring, unlabelled rows (issues [488](https://github.com/datagen24/victual/issues/488), [491](https://github.com/datagen24/victual/issues/491)) | in this tree |
+| 0291 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0292 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is
 about numbers that have, and a branch that has not merged is still deciding what its
 migration says. What changed is that `login_attempts` lost its `ip_address` column — see that
 file for why a per-address count is the proxy's job and not this application's.
+
+Renumbered 2026-09-28: issue [#487](https://github.com/datagen24/victual/issues/487)
+remediation's ADR-0033 decision-3 migration (PR #580, narrowing `stock_splits` to
+never-expiring, unlabelled rows for issues 488 and 491) was written to disk as
+`0292.pgsql.sql`, above plan 22's still-unwritten 0290–0291 — the hole
+`check-migrations.php` refuses without `--allow-reserved-holes`, which CI does not set. Per
+the lowest-free-slot rule, the file moves down to **0290** and plan 22's two unwritten claims
+move up in turn, from 0290–0291 to **0291–0292**, keeping their own order.
+[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+The next unclaimed number is now **0293**.
 
 Renumbered 2026-09-26: issue [#487](https://github.com/datagen24/victual/issues/487)
 remediation's view-correction migration (PR #542, fixing issues 501, 505, 497 and the
