@@ -290,6 +290,37 @@ $(".calendar").each(function()
 					return false;
 				}
 
+				element.attr("data-product-details", event.productDetails);
+
+				// The product this entry names was deleted, or deactivated after the entry
+				// was created - StockService::GetProductDetails() throws for either
+				// (StockService::ProductExists()), so the server sends this reduced marker
+				// instead of calling it at all (issue #595). The entry still has to stay
+				// visible and deletable - unlike a missing recipe just above, which returns
+				// false and hides the event entirely, hiding this one would leave the user
+				// with no way to see or remove it. Editing is not offered: the edit dialog's
+				// ProductPicker change handler re-fetches GET stock/products/{id}
+				// (Victual.Components.ProductPicker.GetPicker().on('change', ...) below),
+				// which throws on exactly the same "missing or inactive" condition and is
+				// not something this fix reaches (that endpoint is out of scope here).
+				if (productDetails.missing || productDetails.inactive)
+				{
+					var productLabel = productDetails.missing ? __t("Product not found") : productDetails.product.name.escapeHTML();
+					var productNote = productDetails.missing ? __t("This product no longer exists") : __t("This product is deactivated");
+
+					element.html('\
+					<div> \
+						<h5 class="text-truncate mb-1 text-muted ' + additionalTitleCssClasses + '">' + productLabel + '</h5> \
+						<h5 class="small text-truncate mb-1 text-muted"><i class="fa-solid fa-triangle-exclamation"></i> ' + productNote + '</h5> \
+						<h5 class="d-print-none"> \
+							<a class="btn btn-outline-danger btn-xs remove-product-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
+							' + doneButtonHtml + ' \
+						</h5> \
+					</div>');
+
+					return;
+				}
+
 				// Same reason as recipe.name above: this is concatenated into markup below,
 				// and products.name is a text column, so it can contain markup as typed
 				productDetails.product.name = productDetails.product.name.escapeHTML();
@@ -305,26 +336,72 @@ $(".calendar").each(function()
 					productDetails.last_price = 0;
 				}
 
-				element.attr("data-product-details", event.productDetails);
+				// product.qu_id_stock carries no FK (db/pgsql/baseline/01_tables.sql), so the
+				// quantity unit a product names can be deleted out from under it - both
+				// StockService::GetProductDetails() and the reduced non-STOCK_VIEW lookup in
+				// RecipesController::MealPlan() then return quantity_unit_stock as null
+				// rather than throwing. Falling back first to Victual.QuantityUnits (every
+				// QU; harmless to expose, and already page-global for the product-add form)
+				// keeps the amount readable instead of a TypeError on .name; an empty unit is
+				// the last resort, for the id itself no longer resolving either.
+				var quantityUnitStock = productDetails.quantity_unit_stock;
+				if (quantityUnitStock === null || quantityUnitStock === undefined)
+				{
+					quantityUnitStock = FindObjectInArrayByPropertyValue(Victual.QuantityUnits, "id", productDetails.product.qu_id_stock) || { name: "", name_plural: "" };
+				}
+
+				// A caller without STOCK_VIEW never receives stock_amount_aggregated (or
+				// any other stock-state field) at all - the server omits the key rather
+				// than sending a zero, the same distinguishable-absence contract
+				// last_price above relies on (issue #594). Whether there is "enough in
+				// stock" is then simply unknown, not "not enough" - the consume and
+				// add-to-shoppinglist buttons both stay disabled (neither action is safe
+				// or even submittable without knowing, see below) and the fulfillment
+				// line is left blank instead of showing a guessed answer.
+				var stockStateKnown = typeof productDetails.stock_amount_aggregated !== "undefined" && productDetails.stock_amount_aggregated !== null;
 
 				var productOrderMissingButtonDisabledClasses = "disabled";
-				if (productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
+				var shoppingListButtonTitle = __t("Add to shopping list");
+				if (stockStateKnown)
 				{
-					productOrderMissingButtonDisabledClasses = "";
+					if (productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
+					{
+						productOrderMissingButtonDisabledClasses = "";
+					}
+				}
+				else
+				{
+					// Stock state is unknown (no STOCK_VIEW) - the button stays disabled
+					// rather than being enabled on shopping-list permission alone (round 3
+					// review of PR #599): the dialog it opens
+					// (shoppinglistitemform.js:221) fills the quantity unit only from a
+					// GET stock/products/{id} call, which itself needs STOCK_VIEW
+					// (StockApiController::ProductDetails) and has no error handler, so an
+					// enabled button would open a form this caller could never submit
+					// (the quantity unit field is required and stays empty,
+					// productamountpicker.blade.php:42-49). Fixing that form for a caller
+					// without STOCK_VIEW is out of scope here - the tooltip explains why
+					// the button does nothing instead.
+					shoppingListButtonTitle = __t("Stock access is required to add this to the shopping list");
 				}
 
 				var productConsumeButtonDisabledClasses = "disabled";
-				if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+				if (stockStateKnown && productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
 				{
 					productConsumeButtonDisabledClasses = "";
 				}
 
-				fulfillmentInfoHtml = __t('Not enough in stock');
-				var fulfillmentIconHtml = '<i class="fa-solid fa-times text-danger"></i>';
-				if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+				var fulfillmentInfoHtml = "";
+				var fulfillmentIconHtml = "";
+				if (stockStateKnown)
 				{
-					var fulfillmentInfoHtml = __t('Enough in stock');
-					var fulfillmentIconHtml = '<i class="fa-solid fa-check text-success"></i>';
+					fulfillmentInfoHtml = __t('Not enough in stock');
+					fulfillmentIconHtml = '<i class="fa-solid fa-times text-danger"></i>';
+					if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+					{
+						fulfillmentInfoHtml = __t('Enough in stock');
+						fulfillmentIconHtml = '<i class="fa-solid fa-check text-success"></i>';
+					}
 				}
 
 				var costsAndCaloriesPerServing = ""
@@ -340,19 +417,19 @@ $(".calendar").each(function()
 				var shoppingListButtonHtml = "";
 				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
 				{
-					shoppingListButtonHtml = '<a class="btn btn-outline-primary btn-xs show-as-dialog-link ' + productOrderMissingButtonDisabledClasses + '" href="' + U("/shoppinglistitem/new?embedded&updateexistingproduct&list=1&product=") + mealPlanEntry.product_id + '&amount=' + mealPlanEntry.product_amount + '" data-toggle="tooltip" title="' + __t("Add to shopping list") + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '"><i class="fa-solid fa-cart-plus"></i></a>';
+					shoppingListButtonHtml = '<a class="btn btn-outline-primary btn-xs show-as-dialog-link ' + productOrderMissingButtonDisabledClasses + '" href="' + U("/shoppinglistitem/new?embedded&updateexistingproduct&list=1&product=") + mealPlanEntry.product_id + '&amount=' + mealPlanEntry.product_amount + '" data-toggle="tooltip" title="' + shoppingListButtonTitle + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '"><i class="fa-solid fa-cart-plus"></i></a>';
 				}
 
 				element.html('\
 				<div> \
 					<h5 class="text-truncate mb-1 cursor-link productcard-trigger ' + additionalTitleCssClasses + '" data-toggle="tooltip" title="' + __t("Display product") + '" data-product-id="' + productDetails.product.id.toString() + '">' + productDetails.product.name + '</h5> \
-					<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-quantity-amount">' + mealPlanEntry.product_amount + "</span> " + __n(mealPlanEntry.product_amount, productDetails.quantity_unit_stock.name, productDetails.quantity_unit_stock.name_plural, true) + '</h5> \
+					<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-quantity-amount">' + mealPlanEntry.product_amount + "</span> " + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true) + '</h5> \
 					<h5 class="small timeago-contextual text-truncate mb-1">' + fulfillmentIconHtml + " " + fulfillmentInfoHtml + '</h5> \
 					' + costsAndCaloriesPerServing + ' \
 					<h5 class="d-print-none"> \
 						<a class="btn btn-outline-info btn-xs edit-meal-plan-entry-button" href="#" data-toggle="tooltip" title="' + __t("Edit this item") + '"><i class="fa-solid fa-edit"></i></a> \
 						<a class="btn btn-outline-danger btn-xs remove-product-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
-						<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, productDetails.quantity_unit_stock.name, productDetails.quantity_unit_stock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a> \
+						<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a> \
 						' + shoppingListButtonHtml + ' \
 						' + doneButtonHtml + ' \
 					</h5> \

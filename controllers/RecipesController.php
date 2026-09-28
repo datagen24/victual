@@ -67,14 +67,70 @@ class RecipesController extends BaseController
 			$productDetails = null;
 			if ($mealPlanEntry['product_id'] !== null)
 			{
-				// Redacted the same way GET /api/stock/products/{id} redacts product_details
-				// (StockApiController::ProductDetails) - this page is another product_details
-				// channel that FieldPolicy has to reach, not a second list of price fields
-				// (issue #590, the same class as #512/#573). WireBooleans::Coerce() is not
-				// applied here: that step is wire-format only (is_aggregated_amount 0/1 -> bool)
-				// and unrelated to redaction.
-				$productDetails = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']));
-				$productDetails['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $productDetails['product_barcodes']);
+				// GetProductDetails() throws when the product no longer exists or was
+				// deactivated after this meal-plan entry was created (StockService.php,
+				// ProductExists()) - a single stale entry must not break every other
+				// entry's render (issue #595), so existence/active state is checked here
+				// directly instead of calling into it and catching that failure.
+				$product = $this->DB->products($mealPlanEntry['product_id']);
+				if ($product === null)
+				{
+					// meal_plan.product_id carries no FK (db/pgsql/baseline/01_tables.sql), so
+					// a deleted product leaves this entry dangling with nothing left to name.
+					// mealplan.js renders a reduced "product not found" card from this marker
+					// alone, rather than hiding the entry outright - it still has to stay
+					// visible and deletable.
+					$productDetails = ['missing' => true];
+				}
+				elseif (!$product->active)
+				{
+					// Deactivated after this entry was created - the same condition
+					// GetProductDetails() throws on. The entry must still render (name only)
+					// and stay deletable; no stock or price field is sent at all, regardless
+					// of STOCK_VIEW, since none of it can be trusted for a product no longer
+					// in use. Only the allowlisted card fields are sent, not the row itself -
+					// see MealPlanProductCardFields() below.
+					$productDetails = ['product' => $this->MealPlanProductCardFields($product), 'inactive' => true];
+				}
+				elseif (User::HasPermissions(User::PERMISSION_STOCK_VIEW))
+				{
+					// Redacted the same way GET /api/stock/products/{id} redacts
+					// product_details (StockApiController::ProductDetails) - this page
+					// is another product_details channel that FieldPolicy has to reach,
+					// not a second list of price fields (issue #590, the same class as
+					// #512/#573). WireBooleans::Coerce() is not applied here: that step
+					// is wire-format only (is_aggregated_amount 0/1 -> bool) and
+					// unrelated to redaction.
+					$productDetails = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']));
+					$productDetails['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $productDetails['product_barcodes']);
+				}
+				else
+				{
+					// GetProductDetails() embeds stock-state fields (stock_amount*,
+					// next_due_date, location) that GET /api/stock/products/{id} gates
+					// wholesale behind STOCK_VIEW - StockApiController::ProductDetails
+					// refuses the entire request for a caller without it, rather than
+					// trimming the response, and FieldPolicy's product_details rows
+					// (above) only ever gated price fields, never these. A caller here
+					// who only holds MEALPLAN_VIEW must end up with the same
+					// stock-state-free result, so this builds just the fields the
+					// calendar card renders directly, rather than calling
+					// GetProductDetails() and trying to strip its stock fields back out
+					// (issue #594). The product itself is reduced to the same
+					// allowlisted card fields as the inactive branch above (round 4
+					// review of PR #599, CodeRabbit comment 4123093457): the full products
+					// row also carries location_id, min_stock_amount, qu_id_price,
+					// default_purchase_price_type and other stock/price configuration
+					// that /api/objects/products already gates behind STOCK_VIEW
+					// (EntityReadPolicy.php), so serialising it whole here would be
+					// exactly the kind of second, ungated channel #594 itself was about.
+					// qu_id_stock carries no FK either, so this lookup can itself be null
+					// - mealplan.js falls back to Victual.QuantityUnits for that.
+					$productDetails = [
+						'product' => $this->MealPlanProductCardFields($product),
+						'quantity_unit_stock' => $this->DB->quantity_units($product->qu_id_stock)
+					];
+				}
 			}
 
 			$events[] = [
@@ -125,6 +181,35 @@ class RecipesController extends BaseController
 			'usedMealplanSectionsCount' => $usedMealplanSections->count(),
 			'weekRecipe' => $weekRecipe
 		]);
+	}
+
+	/**
+	 * The product master-data fields MealPlan()'s reduced product card needs -
+	 * mealplan.js's "product" branch, when the caller lacks STOCK_VIEW or the
+	 * product is inactive: id/name/picture_file_name/calories for the card itself,
+	 * qu_id_stock for its quantity-unit-name fallback (Victual.QuantityUnits lookup,
+	 * since quantity_unit_stock is not sent in that case either).
+	 *
+	 * Selected explicitly rather than serialising the whole products row, which also
+	 * carries location_id, min_stock_amount, qu_id_price,
+	 * default_purchase_price_type and other stock/price configuration -
+	 * /api/objects/products already gates all of that behind STOCK_VIEW
+	 * (EntityReadPolicy.php), so embedding the row whole here would be exactly the
+	 * kind of second, ungated channel issue #594 was about in the first place (round
+	 * 4 review of PR #599, CodeRabbit comment 4123093457).
+	 *
+	 * @param object $product A products row (e.g. $this->DB->products($id))
+	 * @return array<string, mixed>
+	 */
+	private function MealPlanProductCardFields($product): array
+	{
+		return [
+			'id' => $product->id,
+			'name' => $product->name,
+			'picture_file_name' => $product->picture_file_name,
+			'calories' => $product->calories,
+			'qu_id_stock' => $product->qu_id_stock
+		];
 	}
 
 	/**
