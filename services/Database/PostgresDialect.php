@@ -426,8 +426,9 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
-	 * Sets every identity column's sequence to MAX(id) + 1 (at least 1), needed after
-	 * inserting rows with explicit ids (migrations, demo data, database import).
+	 * Sets every identity column's sequence to MAX(id) + 1, or leaves it where it already
+	 * is if that is higher (at least 1 either way), needed after inserting rows with
+	 * explicit ids (migrations, demo data, database import).
 	 */
 	public function ResyncGeneratedIdCounters(\PDO $pdo): void
 	{
@@ -435,10 +436,29 @@ class PostgresDialect extends DatabaseDialect
 		// inserted with an explicit id, unlike SQLite's AUTOINCREMENT. Without this the
 		// sequence eventually catches up with rows that already exist and inserts start
 		// failing on the primary key.
+		//
+		// Never move a sequence *backward* (#555): setting it to exactly MAX(id) + 1
+		// regardless of where it already stood let a batch that deleted the newest rows -
+		// an undo, a rolled-back migration, a partial import - pull the sequence back down
+		// with them, so the very next ordinary insert reissued an id that had already been
+		// handed out once. That silently handed a deleted row's old identity to an
+		// unrelated new row: services/StockService.php's own undo logic depends on an id,
+		// once issued, never coming back once it is freed (see UndoBooking()'s CONSUME/
+		// negative-INVENTORY_CORRECTION rebuild, and the stock_id cross-check every
+		// stock_row_id match now also carries as its own defence in depth). Taking the
+		// greater of the sequence's own current next value (last_value, plus one only if
+		// is_called - an untouched sequence's last_value is just its seed, not something
+		// already issued) and MAX(id) + 1 keeps this call idempotent and forward-only
+		// without a floor that can retreat.
 		$pdo->exec(
 			'DO $$
 			DECLARE
 				r RECORD;
+				seq_name text;
+				seq_last_value bigint;
+				seq_is_called boolean;
+				next_from_seq bigint;
+				next_from_data bigint;
 			BEGIN
 				FOR r IN
 					SELECT table_name, column_name
@@ -446,16 +466,56 @@ class PostgresDialect extends DatabaseDialect
 					WHERE table_schema = current_schema()
 						AND is_identity = \'YES\'
 				LOOP
-					-- GREATEST because some tables hold rows with negative ids on purpose
-					-- (meal_plan_sections has the internal section at -1), and a sequence
-					-- cannot be set below 1
-					EXECUTE format(
-						\'SELECT setval(pg_get_serial_sequence(%L, %L), GREATEST(COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, 1), false)\',
-						r.table_name, r.column_name, r.column_name, r.table_name
-					);
+					seq_name := pg_get_serial_sequence(quote_ident(r.table_name), r.column_name);
+					EXECUTE format(\'SELECT last_value, is_called FROM %s\', seq_name) INTO seq_last_value, seq_is_called;
+					next_from_seq := seq_last_value + CASE WHEN seq_is_called THEN 1 ELSE 0 END;
+					EXECUTE format(\'SELECT COALESCE(MAX(%I), 0) + 1 FROM %I\', r.column_name, r.table_name) INTO next_from_data;
+					-- GREATEST also keeps the floor of 1, because some tables hold rows
+					-- with negative ids on purpose (meal_plan_sections has the internal
+					-- section at -1) and a sequence cannot be set below 1.
+					PERFORM setval(seq_name, GREATEST(next_from_seq, next_from_data, 1), false);
 				END LOOP;
 			END $$;'
 		);
+	}
+
+	/**
+	 * Advances one identity column's sequence to at least $minNextValue, never backward -
+	 * the same never-backward invariant ResyncGeneratedIdCounters() keeps for a whole
+	 * schema (#555), scoped here to the one sequence a caller already knows needs
+	 * advancing. An explicit-id INSERT (services/StockService.php's own consume-undo
+	 * rebuild reuses a deleted row's original id, so a later-undone booking naming that
+	 * same id still finds it) bypasses the sequence entirely - nothing else moves it past
+	 * that id on its own, and DatabaseImporter::Import()'s own resync (from the target's
+	 * surviving row maximum, not from an id a booking merely names) can leave the
+	 * sequence sitting at or below an id that is nonetheless taken again by then.
+	 * CredentialSplitTest.php confirms the runtime app role holds UPDATE on its own
+	 * sequences (setval() needs it, nextval() alone does not), so this is safe to call
+	 * from request-time code, not only from a migration or import running as a more
+	 * privileged role.
+	 */
+	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): void
+	{
+		$sequenceNameStatement = $pdo->prepare('SELECT pg_get_serial_sequence(?, ?)');
+		$sequenceNameStatement->execute([$table, $column]);
+		$sequenceName = $sequenceNameStatement->fetchColumn();
+		if (empty($sequenceName))
+		{
+			// $table.$column is not backed by an identity/serial sequence - nothing to advance.
+			return;
+		}
+
+		// GREATEST keeps this idempotent and forward-only: the sequence's own current next
+		// value (last_value, plus one only if is_called - an untouched sequence's
+		// last_value is just its seed, not something already issued) never moves backward,
+		// even though $minNextValue is itself a fixed floor the caller already knows it
+		// needs. $sequenceName is interpolated (not bound) because a FROM target cannot be
+		// a bind parameter; it is safe here because it came back from
+		// pg_get_serial_sequence() above, not from anything a caller supplies directly.
+		$advance = $pdo->prepare(
+			'SELECT setval(?, GREATEST((SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName . '), ?), false)'
+		);
+		$advance->execute([$sequenceName, $minNextValue]);
 	}
 
 	/**

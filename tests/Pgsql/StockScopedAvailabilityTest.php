@@ -574,7 +574,7 @@ class StockScopedAvailabilityTest extends PgsqlSchemaTestCase
 		self::assertSame($before, self::state([$productId]));
 	}
 
-	public function testOpenWithANonExactConversionFactorCurrentlyRefusesOnFloatAccumulation(): void
+	public function testOpenWithANonExactConversionFactorBooksAllTenEntries(): void
 	{
 		// Given: a factor of 10 spread across ten separate 1-can entries (10 cans = a
 		// mathematically exact 1.0 parent-equivalent, but 1/10 is not exactly
@@ -589,32 +589,22 @@ class StockScopedAvailabilityTest extends PgsqlSchemaTestCase
 		{
 			self::stockRow($childId, 1, $locationA, sprintf('2030-01-%02d', $i));
 		}
-		$before = self::state([$childId]);
-
-		// When: opening exactly 1 parent unit (= all ten cans).
-		//
-		// Then (current, pinned behaviour - not a correctness claim): this is refused,
-		// because SumStockEntriesInProductUnit() sums ten conversions of 1/10 in PHP
-		// floating point (0.1 is not exact in binary), landing a hair under 1.0, and the
-		// comparison this workstream deliberately left as a plain ">" (matching this
-		// function's own pre-existing convention, not a new tolerance) then treats that
-		// as insufficient. The same accumulation refuses this exact scenario on
-		// unpatched master too, through the SQL view's own SUM() - this is not a
-		// regression this fix introduces. ADR-0032 (PR #541, not yet accepted) proposes
-		// the maintainer's tolerance decision for comparisons like this one, coordinated
-		// with #531's AMOUNT_TOLERANCE; fixing the accumulation itself is out of this
-		// workstream's reservation (issue #487 H1/H4 only) and is left for whichever
-		// change adopts that decision.
 		$tx = null;
-		try
+		self::$stock->OpenProduct($parentId, 1, 'default', $tx, true);
+		$rows = self::$db->query('SELECT amount, open FROM stock WHERE product_id = ' . $childId)->fetchAll(PDO::FETCH_ASSOC);
+		$logs = self::$db->query('SELECT amount FROM stock_log WHERE product_id = ' . $childId)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertCount(10, $rows);
+		self::assertCount(10, $logs);
+		foreach ($rows as $row)
 		{
-			self::$stock->OpenProduct($parentId, 1, 'default', $tx, true);
-			self::fail('Pinning current behaviour: this is expected to refuse today (see comment above); if this now succeeds, the float-accumulation characterisation is stale and this test needs updating alongside whatever changed it, not silently loosened');
+			self::assertSame(1.0, (float)$row['amount']);
+			self::assertSame(1, (int)$row['open']);
 		}
-		catch (\Exception $ex)
+		foreach ($logs as $amount)
 		{
-			self::assertSame('Amount to be opened cannot be > current unopened stock amount', $ex->getMessage());
+			self::assertSame(1.0, (float)$amount);
 		}
-		self::assertSame($before, self::state([$childId]));
+		self::$stock->UndoTransaction($tx);
+		self::assertSame(10, (int)self::$db->query('SELECT COUNT(*) FROM stock WHERE product_id = ' . $childId . ' AND open = 0 AND amount = 1')->fetchColumn());
 	}
 }

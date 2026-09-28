@@ -1,0 +1,21 @@
+PHPUnit 11.5.56 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+Configuration: /app/phpunit.xml
+
+Time: 00:00.846, Memory: 14.00 MB
+
+There was 1 failure:
+
+1) Victual\Tests\Pgsql\StockScopedAvailabilityTest::testOpenWithANonExactConversionFactorCurrentlyRefusesOnFloatAccumulation
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'Amount to be opened cannot be > current unopened stock amount'
++'Pinning current behaviour: this is expected to refuse today (see comment above); if this now succeeds, the float-accumulation characterisation is stale and this test needs updating alongside whatever changed it, not silently loosened'
+
+/app/tests/Pgsql/StockScopedAvailabilityTest.php:616
+
+FAILURES!
+Tests: 15, Assertions: 64, Failures: 1.

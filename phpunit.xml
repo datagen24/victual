@@ -32,6 +32,7 @@
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
+			<file>tests/Pgsql/ShoppingListScopeTest.php</file>
 		</testsuite>
 		<testsuite name="mealplan">
 			<file>tests/Pgsql/MealPlanRedactionTest.php</file>
@@ -88,6 +89,8 @@
 		<testsuite name="stockcoverage">
 			<file>tests/Pgsql/StockCoverageTest.php</file>
 			<file>tests/Pgsql/MergeProductsTest.php</file>
+			<file>tests/Pgsql/StockUndoIntegrityTest.php</file>
+			<file>tests/Pgsql/StockAmountPolicyTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>

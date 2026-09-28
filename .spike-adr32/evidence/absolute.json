@@ -1,0 +1,537 @@
+{
+  "environment": {
+    "php": "8.4.25",
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "precision": "14",
+    "serialize_precision": "-1",
+    "mode": "absolute"
+  },
+  "results": [
+    {
+      "case": "consume: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 2,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "consume shortage 5.0E-10",
+      "pass": true,
+      "details": {
+        "stock": 0,
+        "bookings": 1
+      },
+      "kind": "check"
+    },
+    {
+      "case": "consume shortage 2.0E-9",
+      "pass": true,
+      "details": "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)",
+      "kind": "check"
+    },
+    {
+      "case": "open: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 2,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "open shortage 5.0E-10",
+      "pass": true,
+      "details": {
+        "stock": 1,
+        "bookings": 1
+      },
+      "kind": "check"
+    },
+    {
+      "case": "open shortage 2.0E-9",
+      "pass": true,
+      "details": "Amount to be opened cannot be > current unopened stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer: 0.1+0.2 and undo",
+      "pass": true,
+      "details": {
+        "bookings": 4,
+        "restored": 0.30000000000000004
+      },
+      "kind": "check"
+    },
+    {
+      "case": "transfer shortage 5.0E-10",
+      "pass": true,
+      "details": {
+        "stock": 1,
+        "bookings": 2
+      },
+      "kind": "check"
+    },
+    {
+      "case": "transfer shortage 2.0E-9",
+      "pass": true,
+      "details": "Amount to be transferred cannot be > current stock amount at the source location",
+      "kind": "check"
+    },
+    {
+      "case": "transfer undo removes arithmetic residue",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "consume preserves 0.001",
+      "pass": true,
+      "details": 0.00099999999999989,
+      "kind": "check"
+    },
+    {
+      "case": "no extra booking after near-zero remainder",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "purchase undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "self-production undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory-correction undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory 0.2 and undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory 0.5 and undo",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "inventory within tolerance refused",
+      "pass": true,
+      "details": "The new amount cannot equal the current stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "edit rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "inventory rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "open rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "transfer rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "consume rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects -5.0E-10",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects NAN",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "add rejects -INF",
+      "pass": true,
+      "details": "Invalid stock amount",
+      "kind": "check"
+    },
+    {
+      "case": "edit accepts zero",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.99999999949999996",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.99999999949999996",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.99999999949999996",
+      "pass": true,
+      "details": "This stock entry cannot be opened as a single measured container",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.0000000005",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.0000000005",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.0000000005",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.995",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.995",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.995",
+      "pass": true,
+      "details": "This stock entry cannot be opened as a single measured container",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 0.998",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 0.998",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 0.998",
+      "pass": true,
+      "details": "This stock entry cannot be opened as a single measured container",
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.002",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.002",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.002",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measure coherence 1.0049999999999999",
+      "pass": true,
+      "details": "Only a single opened container (open, amount = 1) can be measured",
+      "kind": "check"
+    },
+    {
+      "case": "edit coherence 1.0049999999999999",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measured-open coherence 1.0049999999999999",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "recipe clamp 5.0E-10",
+      "pass": true,
+      "details": 1,
+      "kind": "check"
+    },
+    {
+      "case": "recipe clamp 2.0E-9",
+      "pass": true,
+      "details": 1,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units consume factor 4",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units consume factor 0.001",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units open factor 4",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "mixed units open factor 0.001",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects NAN",
+      "pass": true,
+      "details": "A measurement requires a positive amount",
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects INF",
+      "pass": true,
+      "details": "A measurement requires a positive amount",
+      "kind": "check"
+    },
+    {
+      "case": "measurement rejects -INF",
+      "pass": true,
+      "details": "A measurement requires a positive amount",
+      "kind": "check"
+    },
+    {
+      "case": "measured request exact 0.99999999949999996",
+      "pass": true,
+      "details": "A measurement requires opening exactly one unit",
+      "kind": "check"
+    },
+    {
+      "case": "measured request exact 1.0000000005",
+      "pass": true,
+      "details": "A measurement requires opening exactly one unit",
+      "kind": "check"
+    },
+    {
+      "case": "drift 100000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 99900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "drift 1000000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 999900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "drift 10000000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 9999900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "bulk carried residue",
+      "pass": true,
+      "details": {
+        "small": 0.10000002384186,
+        "residue": 2.3841860000151e-08,
+        "rows": 1
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "bulk legitimate 0.0005 remainder",
+      "pass": true,
+      "details": {
+        "residue": 0.00049996376037598,
+        "rows": 1
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "inclusive boundary predicates",
+      "pass": true,
+      "details": null,
+      "kind": "check"
+    }
+  ]
+}

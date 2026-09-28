@@ -1,0 +1,44 @@
+{
+  "environment": {
+    "php": "8.4.25",
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "precision": "14",
+    "serialize_precision": "-1",
+    "mode": "baseline"
+  },
+  "results": [
+    {
+      "case": "drift 100000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 99900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "drift 1000000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 999900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    },
+    {
+      "case": "drift 10000000 1000 bookings",
+      "pass": true,
+      "details": {
+        "before": 9999900,
+        "error": 0,
+        "residue": 0,
+        "rows": 0
+      },
+      "kind": "observation"
+    }
+  ]
+}
