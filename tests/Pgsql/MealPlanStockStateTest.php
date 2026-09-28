@@ -186,6 +186,18 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		{
 			self::assertArrayNotHasKey($field, $productDetails, "MEALPLAN_VIEW alone must not surface product_details.$field - the API gates it behind STOCK_VIEW by refusing the whole request");
 		}
+
+		// stock_amount_aggregated's absence, asserted above, is also the exact signal
+		// mealplan.js's eventRender reads to keep the add-to-shoppinglist button
+		// disabled for this caller (round 3 review of PR #599, option (b)): that
+		// button's own dialog needs a further, STOCK_VIEW-gated API call to fill in a
+		// required field (shoppinglistitemform.js/StockApiController::ProductDetails),
+		// which this caller cannot make either. The button itself is built entirely
+		// client-side (mealplan.js's eventRender, run by FullCalendar in the browser),
+		// so its rendered disabled/tooltip state cannot be asserted from this
+		// direct-controller render - there is no browser in this test, and the
+		// controller never emits button markup for PHPUnit to inspect. This assertion
+		// on the field that state is derived from is the closest available check.
 	}
 
 	public function testMealPlanViewWithStockViewStillReceivesStockStateFields(): void

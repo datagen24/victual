@@ -75,21 +75,6 @@ function mayAddMealPlanRecipeToShoppingList()
 	return userHasPermission("RECIPES_VIEW") && userHasPermission("SHOPPINGLIST_ITEMS_ADD");
 }
 
-// The product path's add-to-shoppinglist button (unlike the recipe one above) has
-// always been gated purely on whether stock_amount_aggregated says there is enough in
-// stock, never on a permission check of its own - because until issue #594 that field
-// was always present. For a caller without STOCK_VIEW it no longer is, and "unknown
-// stock state" must not silently read as "definitely enough" (button disabled forever)
-// when the caller actually holds shopping-list rights. This mirrors
-// mayAddMealPlanRecipeToShoppingList() (RECIPES_VIEW is irrelevant here - a product
-// entry never involves a recipe): SHOPPINGLIST_ITEMS_ADD alone. The button always adds
-// mealPlanEntry.product_amount in full regardless of stock (see its href below), so this
-// only changes whether the nudge appears, never what gets added.
-function mayAddMealPlanProductToShoppingList()
-{
-	return userHasPermission("SHOPPINGLIST_ITEMS_ADD");
-}
-
 // FullCalendar setup - one calendar instance per meal plan section; only the primary
 // (first) section shows the header/navigation, all others render as bare all-day rows
 // (minTime/maxTime squeeze the time grid away so only the all-day row remains)
@@ -369,12 +354,14 @@ $(".calendar").each(function()
 				// any other stock-state field) at all - the server omits the key rather
 				// than sending a zero, the same distinguishable-absence contract
 				// last_price above relies on (issue #594). Whether there is "enough in
-				// stock" is then simply unknown, not "not enough" - the consume button
-				// stays disabled (that action is never safe to offer without knowing) and
-				// the fulfillment line is left blank instead of showing a guessed answer.
+				// stock" is then simply unknown, not "not enough" - the consume and
+				// add-to-shoppinglist buttons both stay disabled (neither action is safe
+				// or even submittable without knowing, see below) and the fulfillment
+				// line is left blank instead of showing a guessed answer.
 				var stockStateKnown = typeof productDetails.stock_amount_aggregated !== "undefined" && productDetails.stock_amount_aggregated !== null;
 
 				var productOrderMissingButtonDisabledClasses = "disabled";
+				var shoppingListButtonTitle = __t("Add to shopping list");
 				if (stockStateKnown)
 				{
 					if (productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
@@ -382,13 +369,20 @@ $(".calendar").each(function()
 						productOrderMissingButtonDisabledClasses = "";
 					}
 				}
-				else if (mayAddMealPlanProductToShoppingList())
+				else
 				{
-					// Stock state is unknown, so fall back to the caller's shopping-list
-					// permission alone (issue #594 review) - the button always adds the
-					// entry's full amount regardless of stock (see its href below), so this
-					// only changes whether the nudge appears, never what gets added.
-					productOrderMissingButtonDisabledClasses = "";
+					// Stock state is unknown (no STOCK_VIEW) - the button stays disabled
+					// rather than being enabled on shopping-list permission alone (round 3
+					// review of PR #599): the dialog it opens
+					// (shoppinglistitemform.js:221) fills the quantity unit only from a
+					// GET stock/products/{id} call, which itself needs STOCK_VIEW
+					// (StockApiController::ProductDetails) and has no error handler, so an
+					// enabled button would open a form this caller could never submit
+					// (the quantity unit field is required and stays empty,
+					// productamountpicker.blade.php:42-49). Fixing that form for a caller
+					// without STOCK_VIEW is out of scope here - the tooltip explains why
+					// the button does nothing instead.
+					shoppingListButtonTitle = __t("Stock access is required to add this to the shopping list");
 				}
 
 				var productConsumeButtonDisabledClasses = "disabled";
@@ -423,7 +417,7 @@ $(".calendar").each(function()
 				var shoppingListButtonHtml = "";
 				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
 				{
-					shoppingListButtonHtml = '<a class="btn btn-outline-primary btn-xs show-as-dialog-link ' + productOrderMissingButtonDisabledClasses + '" href="' + U("/shoppinglistitem/new?embedded&updateexistingproduct&list=1&product=") + mealPlanEntry.product_id + '&amount=' + mealPlanEntry.product_amount + '" data-toggle="tooltip" title="' + __t("Add to shopping list") + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '"><i class="fa-solid fa-cart-plus"></i></a>';
+					shoppingListButtonHtml = '<a class="btn btn-outline-primary btn-xs show-as-dialog-link ' + productOrderMissingButtonDisabledClasses + '" href="' + U("/shoppinglistitem/new?embedded&updateexistingproduct&list=1&product=") + mealPlanEntry.product_id + '&amount=' + mealPlanEntry.product_amount + '" data-toggle="tooltip" title="' + shoppingListButtonTitle + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '"><i class="fa-solid fa-cart-plus"></i></a>';
 				}
 
 				element.html('\
