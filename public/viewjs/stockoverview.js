@@ -333,8 +333,12 @@ function RefreshMissingProductGroups()
 			result.forEach(function (group)
 			{
 				var button = $('<button class="btn btn-link btn-sm p-0 text-body missing-product-group-button" type="button"></button>');
-				button.attr("data-product-group-name", group.name);
-				button.text(group.name);
+				button.attr("data-product-group-id", group.id);
+				var option = $("#product-group-filter option").filter(function ()
+				{
+					return this.value === String(group.id);
+				});
+				button.text(option.length ? option.text() : group.name);
 
 				var shortfall = $('<span class="text-muted ml-2"></span>');
 				shortfall.text(__t('%s missing', group.amount_missing));
@@ -351,9 +355,9 @@ function RefreshMissingProductGroups()
 // session hides the very rows this click exists to reveal.
 $(document).on("click", ".missing-product-group-button", function ()
 {
-	var name = $(this).attr("data-product-group-name");
+	var groupId = $(this).attr("data-product-group-id");
 	ClearAllFilters();
-	$("#product-group-filter").val(name);
+	$("#product-group-filter").val(groupId);
 	$("#product-group-filter").trigger("change");
 });
 

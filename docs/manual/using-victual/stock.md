@@ -68,7 +68,8 @@ booking can be undone from the stock journal.
   member products. Opened stock is excluded for products configured to treat it as out
   of stock. Each product contributes in its own stock unit, without conversion.
   Descendant groups do not contribute yet; [ADR-0034](../../adr/0034-product-group-minimum-counts-descendant-groups.md)
-  proposes that change.
+  proposes that change. The stock overview's group filter includes descendants and
+  displays full group paths.
 - **`/productbarcodes/{id}`** edits one barcode-to-product mapping. **`/productsubstitutions/new`**
   records a directed substitution (e.g. "coffee grounds substitute for beans", never the
   reverse) used by recipe fulfilment.

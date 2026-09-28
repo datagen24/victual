@@ -218,3 +218,12 @@ the same handler, which runs the identical `jsonData` transform.
 
 CI runs it in `frontend-security` after the working container replenishment checks, against the
 demo instance on 8085.
+
+## Descendant product group filtering
+
+`node group-min-stock-descendants.js <url>` checks ADR-0034's controller/browser gate
+against a disposable dev or demo instance. With zero-stock products otherwise hidden,
+a short ancestor must reveal its descendant through an inactive intermediate group.
+The probe also checks independent filtering of same-named groups, displayed paths,
+inactive-product exclusion, and exclusion of unrelated branches. The `frontend-security`
+CI job runs it alongside `group-min-stock.js`.

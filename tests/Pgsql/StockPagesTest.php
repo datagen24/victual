@@ -530,6 +530,39 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString(self::NAME_PRODUCT_DRAINED, $html, 'with the default setting a product at zero stock and no minimum is left off');
 	}
 
+	#[Depends('testFixturesAreCreated')]
+	public function testOverviewIncludesDescendantsOfShortGroupsThroughInactiveGroups(): void
+	{
+		self::assumeRole('ADMIN');
+		self::$db->beginTransaction();
+		try
+		{
+			self::$db->exec("DELETE FROM user_settings WHERE user_id = 9000 AND key = 'stock_overview_show_all_out_of_stock_products'");
+			self::$db->exec('UPDATE product_groups SET min_stock_amount = 100000 WHERE id = ' . self::GROUP_PARENT);
+			self::$db->exec('UPDATE product_groups SET parent_product_group_id = ' . self::GROUP_PARENT . ' WHERE id = ' . self::GROUP_INACTIVE);
+			self::$db->exec('UPDATE product_groups SET parent_product_group_id = ' . self::GROUP_INACTIVE . ' WHERE id = ' . self::GROUP_CHILD);
+			$html = self::stockPage('Overview');
+			$document = new \DOMDocument();
+			@$document->loadHTML($html);
+			$xpath = new \DOMXPath($document);
+			$row = $xpath->query('//*[@id="product-' . self::PRODUCT_BARE . '-row"]');
+			self::assertSame(1, $row->length, 'a short ancestor includes its zero-stock descendant through an inactive group');
+			$membership = $xpath->query('./td[9]', $row->item(0))->item(0)->textContent;
+			foreach ([self::GROUP_PARENT, self::GROUP_INACTIVE, self::GROUP_CHILD] as $id)
+			{
+				self::assertStringContainsString('xx' . $id . 'xx', $membership);
+			}
+			self::assertSame(0, $xpath->query('//*[@id="product-' . self::PRODUCT_INACTIVE . '-row"]')->length);
+			$option = $xpath->query('//*[@id="product-group-filter"]/option[@value="' . self::GROUP_CHILD . '"]');
+			self::assertSame(1, $option->length);
+			self::assertSame(self::NAME_GROUP_PARENT . ' / ' . self::NAME_GROUP_INACTIVE . ' / ' . self::NAME_GROUP_CHILD, $option->item(0)->textContent);
+		}
+		finally
+		{
+			self::$db->rollBack();
+		}
+	}
+
 	/**
 	 * stock_overview_show_all_out_of_stock_products is the one page setting on these
 	 * controllers that can be flipped from a test without redefining a constant, and the
