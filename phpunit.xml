@@ -71,6 +71,7 @@
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
+			<file>tests/Pgsql/LabelJobLifecycleTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
