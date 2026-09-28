@@ -79,18 +79,37 @@ class BaseApiController extends BaseController
 	}
 
 	/**
-	 * The message to put on the wire in place of a database driver's own.
+	 * The message to put on the wire in place of a database driver's own, and with the
+	 * calling file/line a PHP TypeError names stripped.
 	 *
-	 * Anything that is not a driver message is returned unchanged.
+	 * The second half is issue #498/#487 H9: a value of the wrong shape reaching a typed
+	 * sink - an absent body's null reaching array_key_exists() or a non-nullable parameter,
+	 * a malformed query parameter reaching FilterData()'s `array $query` - raises a
+	 * TypeError whose own message names the full server path and line of the call, e.g.
+	 * "...must be of type array, null given, called in /app/controllers/Api/
+	 * BaseApiController.php on line 421". That text is the exception's getMessage(), which
+	 * reaches error_message on every response through GenericErrorResponse() and through
+	 * ExceptionController's own 500 branch alike - unlike error_details (stack_trace/file/
+	 * line), it is not gated on displayErrorDetails, so it disclosed the path in production
+	 * too. LogException() logs the exception's file/line as structured context regardless of
+	 * this stripping (app.php passes logErrorDetails=true unconditionally), so the operator
+	 * record is unaffected; only the wire copy loses the suffix.
+	 *
+	 * Anything else is returned unchanged.
 	 */
 	public static function WithoutDriverText($errorMessage)
 	{
-		if (is_string($errorMessage) && string_starts_with($errorMessage, 'SQLSTATE['))
+		if (!is_string($errorMessage))
+		{
+			return $errorMessage;
+		}
+
+		if (string_starts_with($errorMessage, 'SQLSTATE['))
 		{
 			return 'The database rejected this request - check that every value it carries suits the field it is for';
 		}
 
-		return $errorMessage;
+		return preg_replace('/, called in .+ on line \d+$/', '', $errorMessage) ?? $errorMessage;
 	}
 
 	/**
@@ -413,12 +432,46 @@ class BaseApiController extends BaseController
 	 * limit() is given: -1 is SQLite's spelling of "no limit" and PostgreSQL refuses it
 	 * outright ("LIMIT must not be negative"), where a LIMIT of bigint's maximum value is
 	 * accepted by both and is, in practice, no limit at all.
+	 *
+	 * The shape of each parameter is validated here, before it reaches a typed sink
+	 * downstream (issue #498/#487 H9). Several callers of this method - GenericEntityApiController::GetObjects()
+	 * among them - call it with no HandleApiCall() wrapper of their own, so what refuses a
+	 * malformed shape has to be a Slim HttpException (mapped to its own status by
+	 * ExceptionController whether or not such a wrapper is present), exactly like the
+	 * "Invalid sort order" and "field ... may not be used" refusals already below - not a
+	 * bare \Exception, which would reach the caller as an unclassified 500 the same way the
+	 * shapes this guards against did:
+	 * - "query" must be an array of conditions - a scalar (e.g. "?query=abc") reached
+	 *   FilterData()'s `array $query` parameter as a TypeError.
+	 * - "order" must be a single string - an array (e.g. "?order[]=name") reached explode()'s
+	 *   string parameter as a TypeError.
+	 * - "limit"/"offset" must not be negative - a negative value (e.g. "?limit=-1") reached
+	 *   PostgreSQL as a literal negative LIMIT/OFFSET, which it refuses outright, as an
+	 *   uncaught PDOException here (MaterialiseFiltered() only turns that refusal into a
+	 *   clean 400 when "query" or "order" was also given). A non-numeric limit (e.g. "all")
+	 *   is deliberately left alone: intval() already reads it as 0, which is an ordinary
+	 *   empty page rather than a request that needs refusing.
 	 */
 	protected function QueryData(Request $request, Result $data, array $query)
 	{
 		if (isset($query['query']))
 		{
+			if (!is_array($query['query']))
+			{
+				throw new HttpException($request, 'Invalid query: "query" must be an array of filter conditions', 400);
+			}
+
 			$data = $this->FilterData($request, $data, $query['query']);
+		}
+
+		if (isset($query['limit']))
+		{
+			$this->AssertNotNegative($request, $query['limit'], 'limit');
+		}
+
+		if (isset($query['offset']))
+		{
+			$this->AssertNotNegative($request, $query['offset'], 'offset');
 		}
 
 		if (isset($query['limit']) || isset($query['offset']))
@@ -428,6 +481,11 @@ class BaseApiController extends BaseController
 
 		if (isset($query['order']))
 		{
+			if (!is_string($query['order']))
+			{
+				throw new HttpException($request, 'Invalid query: "order" must be a single field name, not an array', 400);
+			}
+
 			$parts = explode(':', $query['order']);
 			$this->AssertFieldExists($request, $this->AssertCanValidate($request, $this->ColumnTypesOf($data)), $parts[0], $data->getTable());
 
@@ -447,6 +505,23 @@ class BaseApiController extends BaseController
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Refuses a "limit"/"offset" query parameter that is a negative number, with 400 rather
+	 * than letting it reach PostgreSQL as a literal negative LIMIT/OFFSET ("LIMIT must not be
+	 * negative"), which a caller with neither "query" nor "order" set would otherwise see as
+	 * an uncaught 500 (MaterialiseFiltered() only cleans up that refusal when one of those two
+	 * was also given). A value that is not numeric at all - "all", say - is deliberately left
+	 * alone: GenericQueryTest::testANonNumericLimitIsTreatedAsZero() already pins intval()
+	 * reading it as 0 rather than refusing it, and this must not disturb that.
+	 */
+	private function AssertNotNegative(Request $request, $value, string $name): void
+	{
+		if (is_numeric($value) && intval($value) < 0)
+		{
+			throw new HttpException($request, 'Invalid query: "' . $name . '" must not be negative', 400);
+		}
 	}
 
 	/**
@@ -774,6 +849,30 @@ class BaseApiController extends BaseController
 					$value = str_replace('&lt;', '<', $value);
 				}
 			}
+		}
+
+		return $requestBody;
+	}
+
+	/**
+	 * Refuses a request whose body could not be parsed - almost always because none was sent
+	 * at all - with the same message AddProduct()/ConsumeProduct() already throw for a null
+	 * body, for a route whose OpenAPI requestBody is documented required: true (issue
+	 * #498/#487 H9). A route documented to allow an absent body does not call this: it
+	 * coalesces GetParsedAndFilteredRequestBody()'s result to [] at its own call site instead,
+	 * so the body's own documented field defaults apply rather than a 400.
+	 *
+	 * Must be called from inside the HandleApiCall() closure, the same way the two existing
+	 * null-body checks this mirrors are: thrown before that closure starts, a plain \Exception
+	 * would reach ExceptionController uncaught and answer 500, not 400.
+	 *
+	 * @return array The now-guaranteed-non-null request body
+	 */
+	protected function RequireRequestBody(?array $requestBody): array
+	{
+		if ($requestBody === null)
+		{
+			throw new \Exception('Request body could not be parsed (probably invalid JSON format or missing/wrong Content-Type header)');
 		}
 
 		return $requestBody;

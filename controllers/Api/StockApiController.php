@@ -133,7 +133,12 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is false for this route (victual.openapi.json): an
+			// absent body defaults to [], applying list_id's own documented default
+			// rather than a 400 - issue #498/#487 H9. Without this, array_key_exists()
+			// below raised a TypeError on the null GetParsedAndFilteredRequestBody()
+			// returns for an empty body, escaping HandleApiCall() uncaught as a 500.
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 
@@ -159,7 +164,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// See AddMissingProductsToShoppingList() above: requestBody.required is false
+			// for this route too, so an absent body defaults to [] rather than 500ing on
+			// the null array_key_exists() below cannot accept (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -184,7 +192,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// See AddMissingProductsToShoppingList() above: requestBody.required is false
+			// for this route too, so an absent body defaults to [] rather than 500ing on
+			// the null array_key_exists() below cannot accept (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -307,7 +318,11 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is true for this route (victual.openapi.json):
+			// product_id has no sensible default, so an absent body is refused with 400
+			// here rather than reaching array_key_exists() below as null and 500ing
+			// (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
 
 			$listId = 1;
 			$amount = 1;
@@ -363,7 +378,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is false for this route (victual.openapi.json): an
+			// absent body defaults to [], applying list_id's and done_only's own
+			// documented defaults rather than a 500 (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -410,10 +428,17 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
+			// WireBooleans::RequireBoolean() (#530) rather than the raw value: spoiled is a
+			// StockService::ConsumeProduct() parameter typed `bool`, so a raw null (a JSON
+			// "spoiled": null) reached it as a TypeError and 500ed, and the word string
+			// "false" reached it as a truthy PHP value and booked a *spoiled* consumption
+			// while answering success (issue #498/#487 H9). RequireBoolean() refuses both
+			// with 400 instead - see its own docblock for why the word strings are not
+			// accepted as a third spelling of true/false.
 			$spoiled = false;
 			if (array_key_exists('spoiled', $requestBody))
 			{
-				$spoiled = $requestBody['spoiled'];
+				$spoiled = WireBooleans::RequireBoolean($requestBody['spoiled'], 'spoiled');
 			}
 
 			$transactionType = StockService::TRANSACTION_TYPE_CONSUME;
@@ -1031,7 +1056,11 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is true for this route (victual.openapi.json):
+			// product_id has no sensible default, so an absent body is refused with 400
+			// here rather than reaching array_key_exists() below as null and 500ing
+			// (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
 
 			$listId = 1;
 			$amount = 1;
