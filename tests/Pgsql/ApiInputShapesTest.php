@@ -19,10 +19,39 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   Passing that null into array_key_exists() or into RequestedTimestamp()'s non-nullable
  *   `array $requestBody` parameter is a \TypeError - a sibling of \Exception under
  *   \Throwable, not caught by HandleApiCall()'s catch clauses - so it escaped uncaught to
- *   ExceptionController as a 500. Six of the ten (victual.openapi.json's requestBody.required
- *   is false for each) now default the body to [] so the field's own documented default
- *   applies; four (requestBody.required: true) now refuse the same way
- *   AddProduct()/ConsumeProduct() already refused a null body, with 400 rather than a crash.
+ *   ExceptionController as a 500. Five of the ten (victual.openapi.json's requestBody.required
+ *   is false for each: the four /stock/shoppinglist/* operations other than add-product/
+ *   remove-product, plus chores/executions/calculate-next-assignments) now default the body
+ *   to [] so the field's own documented default applies; the other five
+ *   (requestBody.required: true) now refuse the same way AddProduct()/ConsumeProduct()
+ *   already refused a null body, with 400 rather than a crash.
+ *
+ * Round 2 added three more defects the same shape of probing found:
+ *
+ * - **A malformed-but-present body was indistinguishable from an absent one.**
+ *   GetParsedAndFilteredRequestBody() used to return null for a body Slim's own parser could
+ *   not read - truncated JSON, the literal "null", a bare scalar, a JSON array - exactly as
+ *   it does for a body that was never sent, so "?? []" applied an optional route's *defaults*
+ *   to a request that actually named different values it just could not parse (a truncated
+ *   "clear" body naming a different list_id emptied the *default* list instead), and a
+ *   required route's RequireRequestBody() could not refuse it either since the check is only
+ *   "=== null". The method now reads the raw body itself and reports three distinct results:
+ *   empty (null, absence - the only shape a caller may default), a JSON object (the parsed
+ *   array), or anything else (always a 400, whatever the route's requestBody.required says).
+ * - **allow_subproduct_substitution had the same misread as spoiled.** ConsumeProduct() and
+ *   OpenProduct() both read it as the raw request value; a string "false" is truthy in PHP,
+ *   so it silently allowed substitution the caller meant to refuse. Fixed the same way, with
+ *   WireBooleans::RequireBoolean().
+ * - **done_only (ClearShoppingList) and skipped (TrackChoreExecution) read a malformed value
+ *   as false via filter_var(...FILTER_VALIDATE_BOOLEAN).** For done_only that is destructive.
+ *   not merely wrong: false means "clear the whole list", so a value filter_var() cannot read
+ *   was cleared as if the caller had explicitly asked for it. The UI sends a real boolean for
+ *   both (public/viewjs/shoppinglist.js, choretracking.js, choresoverview.js), so both now go
+ *   through RequireBoolean() too.
+ *
+ * Also fixed: PUT /api/user/settings/{settingKey} (requestBody.required: true) read
+ * $requestBody['value'] straight off a null body and stored NULL as the setting; it now
+ * refuses an absent body with RequireRequestBody(), like the other required-body routes.
  * - **The path disclosure was in error_message, not error_details.** A PHP TypeError raised
  *   for a bad argument names the call site verbatim - "..., called in
  *   /app/controllers/Api/BaseApiController.php on line 421" - and that text is the
@@ -91,7 +120,9 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			'BATTERIES_TRACK_CHARGE_CYCLE',
 			'TASKS_MARK_COMPLETED',
 			'STOCK_CONSUME',
+			'STOCK_OPEN',
 			'STOCK_VIEW',
+			'TASKS_VIEW',
 		] as $permission)
 		{
 			$statement->execute([$permission]);
@@ -119,10 +150,6 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 	 * is JSON at all" (BaseApiController::GetParsedAndFilteredRequestBody()'s own, separate,
 	 * "Bad Content-Type" refusal), and matches the audit's own api.php reproduction exactly.
 	 *
-	 * Asserts, for every response this class observes regardless of status, that no server
-	 * file path reached the wire - the blanket form of the H9 path-disclosure claim ("several
-	 * responses expose /app/... call sites"), rather than one assertion per refusal case.
-	 *
 	 * @return array{status: int, body: string}
 	 */
 	private static function Request(string $method, string $path, ?array $body = null): array
@@ -138,6 +165,55 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 			$spec['body'] = $body;
 		}
 
+		return self::Send($spec);
+	}
+
+	/**
+	 * Like Request(), but for a body that is deliberately not a well-formed JSON object:
+	 * truncated JSON, the literal "null", a bare scalar, or a JSON array - sent through
+	 * request-subprocess-helper.php's "rawBody" key, verbatim, with no json_encode() of its
+	 * own (round 2 of issue #498/#487 H9: a malformed body must be refused, never treated as
+	 * an absent one). $rawBody of null sends no body at all, the same "absent" case Request()
+	 * sends when its own $body is null - the one way to also test $setContentType = false,
+	 * for the converse round-2 finding: an absent body must apply an optional route's
+	 * defaults even when the caller also omitted Content-Type.
+	 *
+	 * @return array{status: int, body: string}
+	 */
+	private static function RawRequest(string $method, string $path, ?string $rawBody, bool $setContentType = true): array
+	{
+		$headers = ['VICTUAL-API-KEY' => self::$apiKey];
+
+		if ($setContentType)
+		{
+			$headers['Content-Type'] = 'application/json';
+		}
+
+		$spec = [
+			'method' => $method,
+			'path' => $path,
+			'headers' => $headers,
+		];
+
+		if ($rawBody !== null)
+		{
+			$spec['rawBody'] = $rawBody;
+		}
+
+		return self::Send($spec);
+	}
+
+	/**
+	 * Runs $spec through request-subprocess-helper.php and returns its decoded answer.
+	 *
+	 * Asserts, for every response this class observes regardless of status, that no server
+	 * file path reached the wire - the blanket form of the H9 path-disclosure claim ("several
+	 * responses expose /app/... call sites"), rather than one assertion per refusal case.
+	 *
+	 * @return array{status: int, body: string}
+	 */
+	private static function Send(array $spec): array
+	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
 			'RBAC_TEST_SCHEMA' => self::Schema(),
@@ -164,9 +240,11 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		fclose($pipes[2]);
 		proc_close($process);
 
+		$requestLabel = ($spec['method'] ?? '?') . ' ' . ($spec['path'] ?? '?');
+
 		$start = strrpos($output, '{"status"');
 		$result = $start === false ? null : json_decode(substr($output, $start), true);
-		self::assertIsArray($result, "the request helper printed no JSON for $method $path. stdout: $output\nstderr: $errors");
+		self::assertIsArray($result, "the request helper printed no JSON for $requestLabel. stdout: $output\nstderr: $errors");
 
 		// json_encode() escapes "/" as "\/" by default, so the raw response body never
 		// contains the literal substring "/app/" even when it names that path - checking the
@@ -176,7 +254,7 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		$decodedForPathCheck = json_decode((string)$result['body'], true);
 		$searchable = $decodedForPathCheck === null ? (string)$result['body'] : json_encode($decodedForPathCheck, JSON_UNESCAPED_SLASHES);
 		self::assertStringNotContainsString('/app/', $searchable,
-			"$method $path: no server file path may reach a response body ({$result['body']})");
+			"$requestLabel: no server file path may reach a response body ({$result['body']})");
 
 		return $result;
 	}
@@ -446,6 +524,127 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		self::assertNull($row['done_timestamp'], 'a refused request must not have recorded a completion time');
 	}
 
+	// --- A present-but-unparseable body is always refused, never treated as absent ---
+
+	/**
+	 * Round 2's own reproduction: a truncated body naming a *different* list_id used to be
+	 * read as null by GetParsedAndFilteredRequestBody(), exactly like a genuinely absent one,
+	 * so "?? []" applied list_id's default (1) - clearing the caller's own list's neighbour
+	 * rather than the list actually named, and rather than refusing the unreadable request.
+	 */
+	public function testTruncatedBodyOnClearShoppingListIsRefusedAndClearsNeitherList(): void
+	{
+		$otherListId = self::insertRow('shopping_lists', ['name' => 'H9 Round2 Other List']);
+		$defaultRowId = self::insertRow('shopping_list', ['note' => 'H9 round2 default list item', 'shopping_list_id' => 1, 'done' => 0]);
+		$otherRowId = self::insertRow('shopping_list', ['note' => 'H9 round2 other list item', 'shopping_list_id' => $otherListId, 'done' => 0]);
+
+		$result = self::RawRequest('POST', '/api/stock/shoppinglist/clear', '{"list_id":' . $otherListId . ',"done_only":true');
+
+		self::AssertRefusedAsError400($result, 'POST /stock/shoppinglist/clear with truncated JSON');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE id IN (?, ?)');
+		$statement->execute([$defaultRowId, $otherRowId]);
+		self::assertSame(2, (int)$statement->fetchColumn(), 'a refused request must not have cleared either list - not the one it named and not the default it could not fall back to');
+	}
+
+	public function testJsonNullBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
+	{
+		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 null body item', 'shopping_list_id' => 1, 'done' => 0]);
+
+		$result = self::RawRequest('POST', '/api/stock/shoppinglist/clear', 'null');
+
+		self::AssertRefusedAsError400($result, 'POST /stock/shoppinglist/clear with a JSON null body');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE id = ?');
+		$statement->execute([$rowId]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'a JSON null body is present, not absent, and must not default to clearing the list');
+	}
+
+	public function testScalarBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
+	{
+		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 scalar body item', 'shopping_list_id' => 1, 'done' => 0]);
+
+		$result = self::RawRequest('POST', '/api/stock/shoppinglist/clear', '"clear everything"');
+
+		self::AssertRefusedAsError400($result, 'POST /stock/shoppinglist/clear with a scalar JSON body');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE id = ?');
+		$statement->execute([$rowId]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'a scalar JSON body is present, not absent, and must not default to clearing the list');
+	}
+
+	public function testArrayBodyOnClearShoppingListIsRefusedAndLeavesTheListUntouched(): void
+	{
+		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 array body item', 'shopping_list_id' => 1, 'done' => 0]);
+
+		$result = self::RawRequest('POST', '/api/stock/shoppinglist/clear', '[1,2,3]');
+
+		self::AssertRefusedAsError400($result, 'POST /stock/shoppinglist/clear with a JSON array body');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE id = ?');
+		$statement->execute([$rowId]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'a JSON array body is present, not absent, and must not default to clearing the list');
+	}
+
+	/**
+	 * The same four malformed shapes, on a requestBody.required: true route this time, in a
+	 * single test (RequireRequestBody() and the new shape guard are the same one check
+	 * either way, so this exercises the one code path with all four bad inputs rather than
+	 * repeating identical assertions in four methods).
+	 */
+	public function testMalformedBodiesOnARequiredBodyRouteAreRefusedWithoutCreatingARow(): void
+	{
+		foreach (['{"product_id":1,' => 'truncated JSON', 'null' => 'a JSON null body', '"x"' => 'a scalar JSON body', '[1]' => 'a JSON array body'] as $rawBody => $label)
+		{
+			$before = self::shoppingListCount();
+
+			$result = self::RawRequest('POST', '/api/stock/shoppinglist/add-product', $rawBody);
+
+			self::AssertRefusedAsError400($result, "POST /stock/shoppinglist/add-product with $label");
+			self::assertSame($before, self::shoppingListCount(), "a refused request ($label) must not have added a row");
+		}
+	}
+
+	/**
+	 * The RequestedTimestamp()-based routes read the body through a differently-shaped call
+	 * (GetParsedAndFilteredRequestBody() runs before HandleApiCall()'s closure even starts,
+	 * see TrackChoreExecution()), so a malformed body here is refused before HandleApiCall()
+	 * ever runs - still a clean 400, because the refusal is a Slim HttpException and
+	 * ExceptionController maps its own status regardless of which wrapper was, or was not,
+	 * involved.
+	 */
+	public function testMalformedBodyOnChoreExecuteIsRefusedWithoutLoggingAnExecution(): void
+	{
+		$choreId = self::insertRow('chores', ['name' => 'H9 Round2 Malformed Execute Chore', 'period_type' => 'manually']);
+
+		$result = self::RawRequest('POST', '/api/chores/' . $choreId . '/execute', '{"tracked_time":');
+
+		self::AssertRefusedAsError400($result, 'POST /chores/{id}/execute with truncated JSON');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM chores_log WHERE chore_id = ?');
+		$statement->execute([$choreId]);
+		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused request must not have logged an execution');
+	}
+
+	// --- The converse: absence is content-type-independent too ---
+
+	/**
+	 * Round 2's other finding: a truly absent body used to be refused with 400 "Bad
+	 * Content-Type" when the caller also omitted the header, on a route #498 says should
+	 * apply its defaults to an absent body - the Content-Type check ran before the emptiness
+	 * check could establish that there was no body to have a type at all.
+	 */
+	public function testAbsentBodyWithNoContentTypeOnAnOptionalBodyRouteAppliesTheDefaultList(): void
+	{
+		$locationId = self::insertLocation('H9 Round2 No Content Type Location');
+		$productId = self::insertProduct('H9 Round2 No Content Type Product', $locationId, 5);
+
+		$result = self::RawRequest('POST', '/api/stock/shoppinglist/add-missing-products', null, false);
+
+		self::assertSame(204, $result['status'], "an absent body with no Content-Type must still apply the documented default, not 400 'Bad Content-Type': {$result['body']}");
+		self::assertTrue(self::shoppingListHasProduct($productId), 'the default list must have had the missing product added to it');
+	}
+
 	// ================================================================================
 	// Group B: malformed query shapes on GET /api/objects/{entity}
 	// ================================================================================
@@ -492,6 +691,41 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 		$nonNumeric = self::Request('GET', '/api/objects/products?limit=all');
 		self::assertSame(200, $nonNumeric['status'], 'a non-numeric limit is intval()\'d to 0, not refused - it must not become a 500 or a 400');
 		self::assertSame([], json_decode((string)$nonNumeric['body'], true), 'a limit of "all" reads as 0, which is an empty page');
+	}
+
+	/**
+	 * Round 2's own reproduction: is_numeric("-1abc") is false, so the first revision's guard
+	 * (is_numeric($v) && intval($v) < 0) let it straight through to intval(), which still
+	 * reads -1 out of the numeric prefix and reached PostgreSQL as a literal negative LIMIT.
+	 */
+	public function testLimitWithTrailingGarbageIsRefused(): void
+	{
+		$result = self::Request('GET', '/api/objects/products?limit=-1abc');
+
+		self::AssertRefusedAsError400($result, 'GET /objects/products?limit=-1abc');
+	}
+
+	public function testOffsetWithTrailingGarbageIsRefused(): void
+	{
+		$result = self::Request('GET', '/api/objects/products?offset=-3x');
+
+		self::AssertRefusedAsError400($result, 'GET /objects/products?offset=-3x');
+	}
+
+	/**
+	 * Round 2's other query-shape finding: QueryData()'s is_array($query['query']) check is
+	 * about the top-level shape of "query" itself, not each element inside it, so a nested
+	 * array item ("?query[0][]=name=x" parses to $query['query'] = [0 => ['name=x']]) passed
+	 * that check and reached FilterData()'s preg_match($pattern, $q, ...) with $q itself an
+	 * array, which is a TypeError - is_string($q) now refuses it before preg_match() is
+	 * called. Exercised on /api/tasks rather than /api/objects/products, matching the
+	 * coordinator's own reproduction of this specific case.
+	 */
+	public function testNestedQueryArrayItemIsRefused(): void
+	{
+		$result = self::Request('GET', '/api/tasks?query%5B0%5D%5B%5D=name%3Dx');
+
+		self::AssertRefusedAsError400($result, 'GET /tasks?query[0][]=name=x (a nested array item)');
 	}
 
 	// ================================================================================
@@ -567,5 +801,151 @@ class ApiInputShapesTest extends PgsqlSchemaTestCase
 
 		$statement->execute([$freshProductId]);
 		self::assertSame(0, (int)$statement->fetchColumn(), 'spoiled:false must be stored as the integer 0');
+	}
+
+	// ================================================================================
+	// Group D: allow_subproduct_substitution on POST .../consume and POST .../open
+	// ================================================================================
+
+	/**
+	 * A parent product with no stock of its own and a child (parent_product_id = parent)
+	 * that does, both in the same quantity unit so no quantity_unit_conversions row is
+	 * needed - the minimal fixture the substitution branch in
+	 * StockService::GetProductStockEntries() (joined through products_resolved) actually
+	 * needs.
+	 *
+	 * @return array{0: int, 1: int, 2: int} [parentId, childId, childStockRowId]
+	 */
+	private static function insertSubstitutionFixture(string $label): array
+	{
+		$locationId = self::insertLocation("H9 $label Location");
+		$parentId = self::insertProduct("H9 $label Parent", $locationId);
+		$childId = self::insertRow('products', [
+			'name' => "H9 $label Child",
+			'location_id' => $locationId,
+			'qu_id_purchase' => 2,
+			'qu_id_stock' => 2,
+			'parent_product_id' => $parentId,
+		]);
+		$childStockRowId = self::insertStock($childId, $locationId, 3, date('Y-m-d', strtotime('+30 days')));
+
+		return [$parentId, $childId, $childStockRowId];
+	}
+
+	/**
+	 * The same misread "spoiled" had: the string "false" is truthy in PHP, so it silently
+	 * allowed substitution from the child even though the caller meant to refuse it - a
+	 * parent with no stock of its own that should refuse with "not enough stock" instead
+	 * consumed the child's (issue #498/#487 H9 round 2).
+	 */
+	public function testConsumeWithStringFalseSubstitutionIsRefusedWithoutConsumingStock(): void
+	{
+		[$parentId, $childId, $childStockRowId] = self::insertSubstitutionFixture('Consume String Substitution');
+
+		$result = self::Request('POST', '/api/stock/products/' . $parentId . '/consume', ['amount' => 1, 'allow_subproduct_substitution' => 'false']);
+
+		self::AssertRefusedAsError400($result, 'POST .../consume with allow_subproduct_substitution:"false"');
+		self::assertSame(3.0, self::stockAmount($childStockRowId), 'a refused consume must not have moved the child\'s stock');
+		self::assertSame(0, self::stockLogCountFor($childId), 'a refused consume must not have written a ledger row for the child');
+		self::assertSame(0, self::stockLogCountFor($parentId), 'a refused consume must not have written a ledger row for the parent either');
+	}
+
+	/** Positive control: a real boolean true still allows substitution exactly as before. */
+	public function testConsumeWithARealBooleanSubstitutionStillSubstitutes(): void
+	{
+		[$parentId, $childId, $childStockRowId] = self::insertSubstitutionFixture('Consume Real Substitution');
+
+		$result = self::Request('POST', '/api/stock/products/' . $parentId . '/consume', ['amount' => 1, 'allow_subproduct_substitution' => true]);
+
+		self::assertSame(200, $result['status'], "a real boolean allow_subproduct_substitution:true must still be accepted and substitute: {$result['body']}");
+		self::assertSame(2.0, self::stockAmount($childStockRowId), 'a real true must still consume from the child');
+	}
+
+	public function testOpenWithStringFalseSubstitutionIsRefusedWithoutOpeningStock(): void
+	{
+		[$parentId, $childId, $childStockRowId] = self::insertSubstitutionFixture('Open String Substitution');
+
+		$result = self::Request('POST', '/api/stock/products/' . $parentId . '/open', ['amount' => 1, 'allow_subproduct_substitution' => 'false']);
+
+		self::AssertRefusedAsError400($result, 'POST .../open with allow_subproduct_substitution:"false"');
+
+		$statement = self::$db->prepare('SELECT open FROM stock WHERE id = ?');
+		$statement->execute([$childStockRowId]);
+		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused open must not have opened the child\'s stock');
+	}
+
+	/** Positive control: a real boolean true still opens the child's stock exactly as before. */
+	public function testOpenWithARealBooleanSubstitutionStillOpens(): void
+	{
+		[$parentId, $childId, $childStockRowId] = self::insertSubstitutionFixture('Open Real Substitution');
+
+		$result = self::Request('POST', '/api/stock/products/' . $parentId . '/open', ['amount' => 1, 'allow_subproduct_substitution' => true]);
+
+		self::assertSame(200, $result['status'], "a real boolean allow_subproduct_substitution:true must still be accepted and open the child's stock: {$result['body']}");
+
+		$statement = self::$db->prepare('SELECT open FROM stock WHERE id = ?');
+		$statement->execute([$childStockRowId]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'a real true must still open the child\'s stock');
+	}
+
+	// ================================================================================
+	// Group E: done_only (ClearShoppingList) and skipped (TrackChoreExecution)
+	// ================================================================================
+
+	/**
+	 * done_only:false means "clear the whole list" (StockService::ClearShoppingList()), so
+	 * filter_var(...FILTER_VALIDATE_BOOLEAN) reading a malformed value as false was
+	 * destructive, not merely wrong: a caller who meant "just the done ones" and sent a
+	 * value filter_var() cannot read would have had the whole list cleared instead (issue
+	 * #498/#487 H9 round 2).
+	 */
+	public function testClearShoppingListWithGarbageDoneOnlyIsRefusedAndLeavesTheListUntouched(): void
+	{
+		$rowId = self::insertRow('shopping_list', ['note' => 'H9 round2 done_only garbage item', 'shopping_list_id' => 1, 'done' => 0]);
+
+		$result = self::Request('POST', '/api/stock/shoppinglist/clear', ['done_only' => 'garbage']);
+
+		self::AssertRefusedAsError400($result, 'POST /stock/shoppinglist/clear with done_only:"garbage"');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM shopping_list WHERE id = ?');
+		$statement->execute([$rowId]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'a malformed done_only must not silently mean "clear everything"');
+	}
+
+	public function testChoreExecuteWithGarbageSkippedIsRefusedWithoutLoggingAnExecution(): void
+	{
+		$choreId = self::insertRow('chores', ['name' => 'H9 Round2 Garbage Skipped Chore', 'period_type' => 'manually']);
+
+		$result = self::Request('POST', '/api/chores/' . $choreId . '/execute', ['skipped' => 'garbage']);
+
+		self::AssertRefusedAsError400($result, 'POST /chores/{id}/execute with skipped:"garbage"');
+
+		$statement = self::$db->prepare('SELECT count(*) FROM chores_log WHERE chore_id = ?');
+		$statement->execute([$choreId]);
+		self::assertSame(0, (int)$statement->fetchColumn(), 'a refused request must not have logged an execution');
+	}
+
+	// ================================================================================
+	// Group F: PUT /api/user/settings/{settingKey}
+	// ================================================================================
+
+	/**
+	 * UsersApiController::SetUserSetting() used to read $requestBody['value'] straight off a
+	 * null body (a PHP warning, not a crash) and store the resulting NULL as the setting's
+	 * new value, although victual.openapi.json documents this route's requestBody as
+	 * required: true (issue #498/#487 H9 round 2).
+	 */
+	public function testSetUserSettingWithNoBodyIsRefusedAndLeavesTheSettingUnchanged(): void
+	{
+		self::$db->exec("DELETE FROM user_settings WHERE user_id = " . self::USER_ID . " AND key = 'h9_round2_setting'");
+		self::$db->exec("INSERT INTO user_settings (user_id, key, value) VALUES (" . self::USER_ID . ", 'h9_round2_setting', 'original')");
+
+		$result = self::Request('PUT', '/api/user/settings/h9_round2_setting');
+
+		self::AssertRefusedAsError400($result, 'PUT /user/settings/{key} with no body');
+
+		$statement = self::$db->prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'h9_round2_setting'");
+		$statement->execute([self::USER_ID]);
+		self::assertSame('original', $statement->fetchColumn(), 'a refused request must not have overwritten the setting with NULL');
 	}
 }
