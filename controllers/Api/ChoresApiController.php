@@ -99,7 +99,11 @@ class ChoresApiController extends BaseApiController
 	 * ParseApiDateTime() accepts; omit it to use the current time, send one it cannot read
 	 * and the request is refused with 400 - see BaseApiController::RequestedTimestamp()),
 	 * skipped (boolean, defaults to false), done_by (user id, defaults to the current user).
-	 * Requires the CHORE_TRACK_EXECUTION permission (403 otherwise).
+	 * Requires the CHORE_TRACK_EXECUTION permission (403 otherwise). A chore with
+	 * consume_product_on_execution set also requires STOCK_CONSUME, checked once
+	 * ChoresService::TrackChore() knows a product will actually be consumed (issue #604) -
+	 * the same permission POST /api/stock/products/{id}/consume already requires for that
+	 * same booking.
 	 * Returns the created chores_log row (200) or a 400 error response.
 	 */
 	public function TrackChoreExecution(Request $request, Response $response, array $args)
@@ -140,7 +144,7 @@ class ChoresApiController extends BaseApiController
 				User::CheckPermission($request, User::PERMISSION_CHORE_TRACK_EXECUTION);
 			}
 
-			$choreExecutionId = ChoresService::GetInstance()->TrackChore($args['choreId'], $trackedTime, $doneBy, $skipped);
+			$choreExecutionId = ChoresService::GetInstance()->TrackChore($args['choreId'], $trackedTime, $doneBy, $skipped, $request);
 			return $this->ApiResponse($response, $this->DB->chores_log($choreExecutionId));
 		});
 	}
