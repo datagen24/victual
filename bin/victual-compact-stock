@@ -1,0 +1,150 @@
+#!/usr/bin/env php
+<?php
+
+// Merges duplicate stock rows, then exits.
+//
+//   php bin/victual-compact-stock [--product-id=N] [--quiet]
+//
+// This is the explicit maintenance command ADR-0033 moves stock-row compaction into
+// (docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md). Before this
+// command existed, StockService::CompactStockEntries() ran inline inside AddProduct(),
+// EditStockEntry() and WeighLocation() - merging a purchase, an edit or a weighing into
+// whatever else already matched it on every grouping column, every time. Issue #488 found
+// that inline merge could delete a row an in-flight undo still depended on, silently
+// discarding a live booking's units; issue #491 found it could retire a live stock_entry
+// label out from under a purchase that happened to match the labelled row. Neither inline
+// call remains (this command is the only caller left), and the merge itself now only
+// considers rows with no real due date (best_before_date IS NULL or the 2999-12-31
+// never-expires sentinel) and no live label - migrations/0292.pgsql.sql's stock_splits
+// definition is the authority for exactly which rows qualify.
+//
+// Idempotent and safe to run repeatedly, including concurrently with ordinary bookings and
+// with itself: StockService::CompactStockEntries() takes the same per-product advisory lock
+// (DatabaseService::LockProductStock()) every booking path already serialises against, then
+// row-level SELECT ... FOR UPDATE locks on the exact candidate rows before re-reading
+// eligibility and writing, so a label issued mid-run is honoured rather than merged away
+// (ADR-0033 decision 3). A run that finds nothing eligible - the ordinary case, most of the
+// time - changes nothing and still exits 0.
+//
+// Database privileges (for ADR-0010 property 3's least-privilege split, wired up separately
+// - see ADR-0033 acceptance prerequisite 3): SELECT, UPDATE, DELETE on stock; SELECT, UPDATE
+// on stock_log (rewriting stock_id only - never stock_row_id, never any other column);
+// SELECT, INSERT, UPDATE, DELETE on stock_entry_origins; SELECT on labels, userfield_values
+// and userfields (read only, to evaluate eligibility). No DDL, no TRUNCATE, no access to any
+// other table. That is a subset of the victual_app role deploy/postgres/roles.sql already
+// grants; it does not yet have a role of its own.
+//
+// Exit codes: 0 when the run completed (with or without anything to merge), 1 on failure.
+
+use Victual\Services\DatabaseService;
+use Victual\Services\StockService;
+
+if (PHP_SAPI !== 'cli')
+{
+	exit('This is a command line script');
+}
+
+$arguments = array_slice($argv, 1);
+$quiet = in_array('--quiet', $arguments, true);
+
+$productId = null;
+foreach ($arguments as $argument)
+{
+	if (str_starts_with($argument, '--product-id='))
+	{
+		$productId = (int)substr($argument, strlen('--product-id='));
+	}
+}
+
+if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
+{
+	echo "Usage: php bin/victual-compact-stock [--product-id=N] [--quiet]\n\n";
+	echo "  Merges stock rows which agree on every grouping column (product, due date,\n";
+	echo "  purchased date, price, open state/date, location, shopping location, note) and\n";
+	echo "  are each eligible to merge: no real due date (only NULL or the 2999-12-31\n";
+	echo "  never-expires sentinel), no live stock_entry label, no per-unit label prefix,\n";
+	echo "  no userfield value, no measured remainder. Run it on a schedule (a CronJob is\n";
+	echo "  the intended deployment, per ADR-0010's workload standard); safe to run\n";
+	echo "  repeatedly and concurrently with ordinary stock bookings.\n\n";
+	echo "  --product-id=N  Limit the run to one product's stock rows. Omit to sweep every\n";
+	echo "                  product that currently has anything eligible.\n";
+	echo "  --quiet         Only print errors.\n";
+	exit(0);
+}
+
+if (!defined('VICTUAL_DATAPATH'))
+{
+	define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH') ?: __DIR__ . '/../data');
+}
+
+require_once __DIR__ . '/../packages/autoload.php';
+
+// Same shape as bin/victual-migrate and bin/victual-publish-state: config.php is optional so
+// that a checkout with only environment variables set still works.
+if (file_exists(VICTUAL_DATAPATH . '/config.php'))
+{
+	require_once VICTUAL_DATAPATH . '/config.php';
+}
+
+require_once __DIR__ . '/../config-dist.php';
+
+// stock_splits and the label eligibility check it now carries (ADR-0033 decision 3) resolve
+// through the ordinary LessQL connection, not through a request - no user context is read or
+// written by this command, but VICTUAL_USER_ID is defined for the same reason
+// bin/victual-publish-state defines it: some engines resolve user settings through views this
+// command's dependencies can touch.
+if (!defined('VICTUAL_USER_ID'))
+{
+	define('VICTUAL_USER_ID', 1);
+}
+
+try
+{
+	(new Victual\Helpers\ConfigurationValidator())->validateConfig();
+}
+catch (\Victual\Helpers\EInvalidConfig $ex)
+{
+	fwrite(STDERR, 'Invalid setting in config.php: ' . $ex->getMessage() . PHP_EOL);
+	exit(1);
+}
+
+DatabaseService::GetInstance()->SetCurrentUserId(VICTUAL_USER_ID);
+
+try
+{
+	$db = DatabaseService::GetInstance()->GetDbConnectionRaw();
+
+	if ($productId !== null)
+	{
+		$candidateStatement = $db->prepare('SELECT COUNT(*) FROM stock_splits WHERE product_id = ?');
+		$candidateStatement->execute([$productId]);
+		$candidateGroups = (int)$candidateStatement->fetchColumn();
+		$candidateProducts = $candidateGroups > 0 ? 1 : 0;
+	}
+	else
+	{
+		$candidateGroups = (int)$db->query('SELECT COUNT(*) FROM stock_splits')->fetchColumn();
+		$candidateProducts = (int)$db->query('SELECT COUNT(DISTINCT product_id) FROM stock_splits')->fetchColumn();
+	}
+
+	if (!$quiet)
+	{
+		echo $candidateGroups === 0
+			? 'No eligible stock rows to merge.' . PHP_EOL
+			: 'Found ' . $candidateGroups . ' eligible group(s) across ' . $candidateProducts . ' product(s); merging...' . PHP_EOL;
+	}
+
+	StockService::GetInstance()->CompactStockEntries($productId);
+
+	if (!$quiet)
+	{
+		echo $candidateGroups === 0 ? 'Nothing to do.' . PHP_EOL : 'Compaction complete.' . PHP_EOL;
+	}
+}
+catch (\Throwable $ex)
+{
+	fwrite(STDERR, 'Stock compaction failed: ' . $ex->getMessage() . PHP_EOL);
+	exit(1);
+}
+
+exit(0);

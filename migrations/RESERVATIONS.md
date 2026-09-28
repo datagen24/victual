@@ -76,6 +76,7 @@ have recorded it.
 | 0289 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #542) — `stock_current`, `uihelper_stock_journal` and `chores_current` recreated from their latest definitions to fix issues [501](https://github.com/datagen24/victual/issues/501), [505](https://github.com/datagen24/victual/issues/505), [497](https://github.com/datagen24/victual/issues/497) and the weekly-schedule half of [506](https://github.com/datagen24/victual/issues/506) | in this tree |
 | 0290 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0291 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0292 | [ADR-0033](../docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 3 — `stock_splits` narrowed to never-expiring, unlabelled rows (issues [488](https://github.com/datagen24/victual/issues/488), [491](https://github.com/datagen24/victual/issues/491)) | in this tree |
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is

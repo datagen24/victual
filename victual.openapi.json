@@ -4008,7 +4008,7 @@
 		},
 		"/stock/locations/{locationId}/weigh": {
 			"post": {
-				"summary": "Weighs a vessel (a bin, a spice jar) and corrects its one stock entry to match, subtracting the location's own tare",
+				"summary": "Weighs a vessel (a bin, a spice jar) and corrects its stock total at that location to match, subtracting the location's own tare",
 				"tags": [
 					"Stock"
 				],
@@ -4037,6 +4037,11 @@
 									"gross_qu_id": {
 										"type": "integer",
 										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									},
+									"best_before_date": {
+										"type": "string",
+										"format": "date",
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. Ignored when the reading is lower or unchanged."
 									}
 								},
 								"example": {
@@ -4048,7 +4053,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The operation was successful. An empty array means the reading matched the amount already on record at this location and nothing was booked (ADR-0033)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4061,7 +4066,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit)",
+						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit, higher reading given with no best_before_date)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4125,6 +4130,11 @@
 									"gross_qu_id": {
 										"type": "integer",
 										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									},
+									"best_before_date": {
+										"type": "string",
+										"format": "date",
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. Ignored when the reading is lower or unchanged."
 									}
 								},
 								"example": {
@@ -4136,7 +4146,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The operation was successful. An empty array means the reading matched the amount already on record at this location and nothing was booked (ADR-0033)",
 						"content": {
 							"application/json": {
 								"schema": {
