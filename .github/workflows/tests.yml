@@ -690,6 +690,15 @@ jobs:
             curl -sS -o /dev/null -w "mealplan probe instance $port /about -> %{http_code}\n" http://127.0.0.1:$port/about
           done
 
+          # PIDs of the three background `php -S` processes just started above, one per
+          # line in the order child/guest/full - read back by the teardown step below,
+          # once the probe that needs them has run. `jobs -p` rather than three separate
+          # `$!` captures: this step's own shell is what backgrounded them, and `jobs -p`
+          # lists exactly its own background jobs in start order, with no risk of a `$!`
+          # capture landing on the wrong statement if this script is ever reordered.
+          jobs -p > /tmp/mealplan-probe-instance-pids.txt
+          cat /tmp/mealplan-probe-instance-pids.txt
+
       - name: Run the S29 payload probe
         working-directory: .devtools/frontend
         run: node s29-payload.js --url http://127.0.0.1:8085 --out s29-payload-ci.json
@@ -706,6 +715,32 @@ jobs:
         run: |
           node mealplan-permissions.js --child-url http://127.0.0.1:8090 \
             --guest-url http://127.0.0.1:8091 --full-url http://127.0.0.1:8092
+
+      # These three instances exist only for the probe just above - unlike the demo and
+      # labels instances (shared by every other probe in this job, so left running for the
+      # whole job), nothing after this point needs them. Left running, three more `php -S`
+      # processes plus their PostgreSQL connections compete with the demo instance for the
+      # runner's CPU for the rest of the job - a plausible cause of "Run stock booking Undo
+      # toast checks" later on failing with page.waitForResponse timeouts on the *demo*
+      # instance's own stock/products/{id}/consume calls (a route this probe never calls -
+      # its own consume calls are all recipes/{id}/consume, on its own ports, never 8085)
+      # even though this job's steps run one at a time, never concurrently with each other.
+      # Runs unconditionally (always(), not just on failure), always right after the probe
+      # that needs these instances alive and before anything later that does not.
+      - name: Tear down the meal-plan permission probe instances
+        if: always()
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          if [ -f /tmp/mealplan-probe-instance-pids.txt ]; then
+            kill $(cat /tmp/mealplan-probe-instance-pids.txt) 2>/dev/null || true
+          fi
+          for dbname in victual_mealplan_child victual_mealplan_guest victual_mealplan_full; do
+            PGPASSWORD=$PGPASSWORD dropdb --if-exists -h $PGHOST -p $PGPORT -U $PGUSER "$dbname" || true
+          done
 
       # Issue #549. Whether userform.js sends password_base64 at all is entirely a
       # browser-side question - it depends on #change_password's checked state and on
