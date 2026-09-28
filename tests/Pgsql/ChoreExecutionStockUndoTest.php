@@ -523,4 +523,101 @@ class ChoreExecutionStockUndoTest extends PgsqlSchemaTestCase
 		self::assertSame(400, $result['status'], "the undo route should refuse: {$result['stderr']}");
 		self::assertSame($before, self::ledger(), 'The refused HTTP request leaves the chore log, stock and stock_log unchanged');
 	}
+
+	// ------------------------------------------------------------------------------
+	// (d) Opus validator probe (round 3): DatabaseImporter::Import() writes an entire
+	//     imported database in one transaction, so every imported chores_log row
+	//     shares its xmin with every imported stock_log row - including consumptions
+	//     that belong to a different chore, or none. Simulated here with a raw PDO
+	//     transaction wrapping two chores_log inserts and one unrelated consumption,
+	//     the same shape an import produces. Neither execution's xmin is exclusive to
+	//     it (condition 1), so undoing either one must fall back to a chore-only undo.
+	//
+	//     Run as two independent scenarios, each undoing only one of its pair, rather
+	//     than undoing both of one pair in sequence: undoing the first of a pair
+	//     updates its own chores_log row, which changes that row's own xmin (any
+	//     UPDATE does) without touching its sibling's - so undoing the *second* of an
+	//     already-partly-undone pair would see only one live chores_log row left
+	//     sharing the original xmin and misread that as condition 1's exclusivity,
+	//     rather than as what it actually is: one execution of an originally-shared
+	//     import batch. Each scenario below undoes exactly one execution while its
+	//     sibling chores_log row is still untouched, so condition 1 sees the shared
+	//     xmin honestly, in both directions.
+	// ------------------------------------------------------------------------------
+
+	public function testImporterStyleSharedTransactionFallsBackToChoreOnlyUndo(): void
+	{
+		// Scenario 1: undo the first of an imported pair.
+		$productFirst = self::insertProduct('Chore Undo Probe D Product First');
+		self::stockUp($productFirst, 5);
+		$choreFirstA = self::insertChore('Chore Undo Probe D First A', ['consume_product_on_execution' => 0]);
+		$choreFirstB = self::insertChore('Chore Undo Probe D First B', ['consume_product_on_execution' => 0]);
+
+		// A single transaction writing two chores_log rows and one unrelated consumption -
+		// self::$db is the same raw PDO connection DatabaseService::InTransaction() joins
+		// (PgsqlSchemaTestCase injects it by reflection), so ConsumeProduct()'s own nested
+		// InTransaction() call below joins this one rather than opening its own, exactly as
+		// it would join DatabaseImporter's.
+		self::$db->beginTransaction();
+		$executionFirstA = self::insertRow('chores_log', ['chore_id' => $choreFirstA, 'tracked_time' => '2026-09-28 09:00:00', 'done_by_user_id' => 9000]);
+		self::insertRow('chores_log', ['chore_id' => $choreFirstB, 'tracked_time' => '2026-09-28 09:00:00', 'done_by_user_id' => 9000]);
+		self::$stock->ConsumeProduct($productFirst, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+		self::$db->commit();
+
+		self::assertSame(4.0, self::stockAmount($productFirst), 'The unrelated consumption, written alongside both chores_log rows');
+
+		self::$chores->UndoChoreExecution($executionFirstA);
+		self::assertSame(4.0, self::stockAmount($productFirst), 'Undoing the first of the pair must not touch the unrelated consumption');
+		self::assertSame(1, (int)self::choreLogRow($executionFirstA)['undone']);
+
+		// Scenario 2: undo the second of an (otherwise untouched) imported pair.
+		$productSecond = self::insertProduct('Chore Undo Probe D Product Second');
+		self::stockUp($productSecond, 5);
+		$choreSecondA = self::insertChore('Chore Undo Probe D Second A', ['consume_product_on_execution' => 0]);
+		$choreSecondB = self::insertChore('Chore Undo Probe D Second B', ['consume_product_on_execution' => 0]);
+
+		self::$db->beginTransaction();
+		self::insertRow('chores_log', ['chore_id' => $choreSecondA, 'tracked_time' => '2026-09-28 09:00:00', 'done_by_user_id' => 9000]);
+		$executionSecondB = self::insertRow('chores_log', ['chore_id' => $choreSecondB, 'tracked_time' => '2026-09-28 09:00:00', 'done_by_user_id' => 9000]);
+		self::$stock->ConsumeProduct($productSecond, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+		self::$db->commit();
+
+		self::assertSame(4.0, self::stockAmount($productSecond));
+
+		self::$chores->UndoChoreExecution($executionSecondB);
+		self::assertSame(4.0, self::stockAmount($productSecond), 'Undoing the second of the pair (sibling still untouched) must not touch the unrelated consumption');
+		self::assertSame(1, (int)self::choreLogRow($executionSecondB)['undone']);
+	}
+
+	// ------------------------------------------------------------------------------
+	// (e) Round 3, condition 2 (SINGLE CONSUMPTION TRANSACTION): one chores_log row
+	//     sharing its xmin with two distinct consumption transaction_ids (two separate
+	//     ConsumeProduct() calls joined into one explicit transaction, the same shape a
+	//     composed operation or an importer could produce) must fall back to a
+	//     chore-only undo rather than guess which transaction_id is this execution's
+	//     own.
+	// ------------------------------------------------------------------------------
+
+	public function testSharedTransactionWithTwoConsumptionTransactionIdsFallsBackToChoreOnlyUndo(): void
+	{
+		$product = self::insertProduct('Chore Undo Probe E Product');
+		self::stockUp($product, 5);
+
+		$choreId = self::insertChore('Chore Undo Probe E', ['consume_product_on_execution' => 0]);
+
+		self::$db->beginTransaction();
+		$executionId = self::insertRow('chores_log', ['chore_id' => $choreId, 'tracked_time' => '2026-09-28 09:00:00', 'done_by_user_id' => 9000]);
+		// Two separate ConsumeProduct() calls, each generating its own transaction_id
+		// (neither passes an existing one in), joined into this one explicit transaction.
+		self::$stock->ConsumeProduct($product, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+		self::$stock->ConsumeProduct($product, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+		self::$db->commit();
+
+		self::assertSame(3.0, self::stockAmount($product), 'Two separate one-unit consumptions, sharing the one transaction');
+
+		self::$chores->UndoChoreExecution($executionId);
+
+		self::assertSame(3.0, self::stockAmount($product), 'Chore-only undo: neither consumption transaction_id is touched');
+		self::assertSame(1, (int)self::choreLogRow($executionId)['undone']);
+	}
 }
