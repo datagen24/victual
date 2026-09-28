@@ -2151,4 +2151,61 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$newId = (int)$newRow->fetchColumn();
 		self::assertGreaterThan($originalId, $newId, 'the new purchase\'s id is above every id that already existed, not a reused one');
 	}
+
+	// ------------------------------------------------------------------------------
+	// STOCK_EDIT_OLD undo restores shopping_location_id (#531 follow-up)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The TRANSACTION_TYPE_STOCK_EDIT_OLD booking records shopping_location_id the same as
+	 * every other edited column (see its own creation in EditStockEntry()), but the undo's
+	 * restore array omitted it - so undoing an edit that had cleared a store restored the
+	 * price and due date but left the store NULL instead of the store the edit had cleared.
+	 */
+	public function testUndoingAStockEditRestoresTheClearedShoppingLocation(): void
+	{
+		$store = self::insertRow('shopping_locations', ['name' => 'Undo Restore Store']);
+		$product = self::insertProduct('Undo Restore Shopping Location');
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', [
+				'amount' => 2,
+				'location_id' => self::$locationA,
+				'shopping_location_id' => $store,
+				'best_before_date' => self::FAR_FUTURE_DATE,
+				'purchased_date' => '2026-01-01',
+				'price' => 1.5,
+			]), new Response(), ['productId' => $product]),
+			200,
+			'Purchased with a store recorded'
+		);
+
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$entryId->execute([$product]);
+		$entryId = (int)$entryId->fetchColumn();
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The store is recorded before the edit');
+
+		$edit = $this->expectStatus(
+			// shopping_location_id: null clears the store - omitting the key entirely
+			// means "keep the current value" (StockService::KeepStoredValue()), so a null
+			// is required here to actually clear it.
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.5, 'location_id' => self::$locationA, 'shopping_location_id' => null]), new Response(), ['entryId' => $entryId]),
+			200,
+			'The edit clears the store'
+		);
+
+		self::assertNull(self::rows($product)[0]['shopping_location_id'], 'The store is cleared by the edit');
+
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+		self::assertSame($store, (int)$editOld['shopping_location_id'], 'The OLD booking records the store the edit cleared');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			204,
+			'Undoing the edit is accepted'
+		);
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The undo restores the store the edit had cleared, not NULL');
+	}
 }

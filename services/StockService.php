@@ -3672,6 +3672,12 @@ class StockService extends BaseService
 					'purchased_date' => $logRow->purchased_date,
 					'price' => $logRow->price,
 					'location_id' => $logRow->location_id,
+					// The OLD booking records shopping_location_id the same as every other
+					// edited column (see its own creation in EditStockEntry()), but this
+					// restore array omitted it - so undoing an edit that had cleared a
+					// store left it NULL instead of restoring whichever store the entry
+					// held before the edit.
+					'shopping_location_id' => $logRow->shopping_location_id,
 					'open' => $open,
 					'opened_date' => $openedDate,
 					'note' => $logRow->note,
