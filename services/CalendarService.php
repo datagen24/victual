@@ -26,7 +26,9 @@ class CalendarService extends BaseService
 	 * Meal plan entries without a section time are all-day events ('date_format' =>
 	 * 'date'); a section time turns them into timed events ('datetime').
 	 *
-	 * @return array[] Each event: {title: string, start: string, date_format: 'date'|'datetime', link: string, color: string, description?: string, allDay?: bool}
+	 * Each event includes 'event_type' and 'entity_id' for deterministic UID generation.
+	 *
+	 * @return array[] Each event: {title: string, start: string, date_format: 'date'|'datetime', link: string, color: string, description?: string, allDay?: bool, event_type: string, entity_id: int}
 	 */
 	public function GetEvents()
 	{
@@ -47,7 +49,9 @@ class CalendarService extends BaseService
 						'start' => $currentStockEntry->best_before_date,
 						'date_format' => 'date',
 						'link' => $this->UrlManager->ConstructUrl('/stockoverview'),
-						'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_products']
+						'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_products'],
+						'event_type' => 'stock',
+						'entity_id' => $currentStockEntry->product_id
 					];
 				}
 			}
@@ -65,7 +69,9 @@ class CalendarService extends BaseService
 					'start' => $currentTaskEntry->due_date,
 					'date_format' => 'date',
 					'link' => $this->UrlManager->ConstructUrl('/tasks'),
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_tasks']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_tasks'],
+					'event_type' => 'task',
+					'entity_id' => $currentTaskEntry->id
 				];
 			}
 		}
@@ -93,7 +99,9 @@ class CalendarService extends BaseService
 					'date_format' => 'datetime',
 					'link' => $this->UrlManager->ConstructUrl('/choresoverview'),
 					'allDay' => $chore->track_date_only == 1,
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_chores']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_chores'],
+					'event_type' => 'chore',
+					'entity_id' => $currentChoreEntry->chore_id
 				];
 			}
 		}
@@ -111,7 +119,9 @@ class CalendarService extends BaseService
 					'start' => $currentBatteryEntry->next_estimated_charge_time,
 					'date_format' => 'datetime',
 					'link' => $this->UrlManager->ConstructUrl('/batteriesoverview'),
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_batteries']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_batteries'],
+					'event_type' => 'battery',
+					'entity_id' => $currentBatteryEntry->battery_id
 				];
 			}
 		}
@@ -149,7 +159,9 @@ class CalendarService extends BaseService
 					'date_format' => $dateFormat,
 					'description' => $this->UrlManager->ConstructUrl('/mealplan' . '?week=' . $mealPlanDayRecipe->day),
 					'link' => $this->UrlManager->ConstructUrl('/recipes' . '?recipe=' . $mealPlanDayRecipe->recipe_id . '#fullscreen'),
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan'],
+					'event_type' => 'meal_plan_recipe',
+					'entity_id' => $mealPlanDayRecipe->id
 				];
 			}
 
@@ -178,7 +190,9 @@ class CalendarService extends BaseService
 					'start' => $start,
 					'date_format' => $dateFormat,
 					'link' => $this->UrlManager->ConstructUrl('/mealplan' . '?start=' . $start),
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan'],
+					'event_type' => 'meal_plan_note',
+					'entity_id' => $mealPlanDayNote->id
 				];
 			}
 
@@ -207,7 +221,9 @@ class CalendarService extends BaseService
 					'start' => $start,
 					'date_format' => $dateFormat,
 					'link' => $this->UrlManager->ConstructUrl('/mealplan' . '?start=' . $start),
-					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan']
+					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan'],
+					'event_type' => 'meal_plan_product',
+					'entity_id' => $mealPlanDayProduct->id
 				];
 			}
 		}
