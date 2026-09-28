@@ -259,9 +259,11 @@ class ChoresService extends BaseService
 	 *              missing STOCK_CONSUME throws for a stock-consuming chore; the permission
 	 *              check itself is unconditional (see above)
 	 * @return int The id of the created log row
-	 * @throws \Exception When the chore or user does not exist, a manually scheduled chore is
-	 *              skipped, or the acting user lacks STOCK_CONSUME for a chore that consumes a
-	 *              product and no request was given to shape a PermissionMissingException instead
+	 * @throws \Exception When the chore or user does not exist, the chore is inactive, a chore
+	 *              that consumes a product on execution has no product_amount configured, a
+	 *              manually scheduled chore is skipped, or the acting user lacks STOCK_CONSUME
+	 *              for a chore that consumes a product and no request was given to shape a
+	 *              PermissionMissingException instead
 	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was given and
 	 *              the acting user lacks STOCK_CONSUME for a chore that consumes a product
 	 */
@@ -279,6 +281,31 @@ class ChoresService extends BaseService
 		}
 
 		$chore = $this->DB->chores($choreId);
+
+		// Issue #506 (audit M6, validation half): neither of these was checked at all, so an
+		// inactive chore could still be tracked (the "active" column exists purely as a list
+		// filter - ChoresController's "chores" queries already restrict to "active = 1" - and
+		// tracking bypassed it entirely), and a chore configured to consume a product on
+		// execution but left with no product_amount reached StockService::ConsumeProduct()'s
+		// non-nullable `float $amount` parameter with null - a PHP TypeError, not a silent
+		// success: the request 500ed (uncaught by HandleApiCall()'s generic \Exception catch,
+		// which does not catch \TypeError) and the transaction rolled back, so nothing was
+		// ever booked. That is still the wrong refusal - an opaque 500 instead of the 400 a
+		// misconfigured chore should get - which is what these checks fix. Checked here,
+		// before any write (including the chores_log insert below) and before this method's
+		// own STOCK_CONSUME permission check further down (issue #604/#606): a caller who
+		// lacks STOCK_CONSUME but tracks an invalid chore now gets 400, not 403 - either way
+		// nothing is written.
+		if ((int)$chore->active !== 1)
+		{
+			throw new \Exception('Chore is inactive');
+		}
+
+		if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id) && $chore->product_amount === null)
+		{
+			throw new \Exception('Chore consumes a product on execution but has no product_amount configured');
+		}
+
 		if ($chore->track_date_only == 1)
 		{
 			$trackedTime = substr($trackedTime, 0, 10) . ' 00:00:00';
