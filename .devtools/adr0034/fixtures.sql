@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap;
 \if :candidate
 \ir rollup.sql
 \endif
-SELECT plan(12);
+SELECT plan(16);
 INSERT INTO product_groups (id, name, min_stock_amount, parent_product_group_id) VALUES
  (97001, 'ADR0034 root', 3, NULL),
  (97002, 'ADR0034 child', 10, 97001),
@@ -56,5 +56,18 @@ SELECT is((SELECT count(*)::integer FROM product_groups_missing WHERE id = 97005
 UPDATE product_groups SET min_stock_amount = 0 WHERE id = 97004;
 SELECT is((SELECT count(*)::integer FROM product_groups_missing WHERE id = 97004), 0,
  'zero-minimum group is omitted');
+-- The child holds five units and its active leaf holds two effective units.
+-- Deactivating the intermediate group must hide only its own shortfall.
+UPDATE product_groups SET active = 0 WHERE id = 97002;
+SELECT is((SELECT amount_missing::numeric FROM product_groups_missing WHERE id = 97001), 2::numeric,
+ 'active products in and beneath an inactive intermediate group still count');
+SELECT is((SELECT count(*)::integer FROM product_groups_missing WHERE id = 97002), 0,
+ 'inactive intermediate group does not report its own shortfall');
+UPDATE products SET active = 0 WHERE id = 97001;
+SELECT is((SELECT amount_missing::numeric FROM product_groups_missing WHERE id = 97001), 7::numeric,
+ 'inactive product is excluded while active leaf stock crosses the inactive intermediate');
+UPDATE product_groups SET active = 0 WHERE id = 97003;
+SELECT is((SELECT amount_missing::numeric FROM product_groups_missing WHERE id = 97001), 7::numeric,
+ 'active leaf product still counts when both descendant groups are inactive');
 SELECT * FROM finish();
 ROLLBACK;
