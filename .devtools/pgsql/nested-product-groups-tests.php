@@ -38,9 +38,13 @@
 //
 // Case 8 is a control rather than a guard: product_groups_missing (migration 0268) predates
 // this migration and nothing here touches it. Plan 30 question 1 - whether a parent group's
-// minimum rolls up to descendant groups - is unanswered, so this asserts only that today's
-// unchanged behaviour (a group's own direct members, nothing from its descendants) still
-// holds once the table it reads is a tree instead of a flat list.
+// minimum rolls up to descendant groups - was later answered by ADR-0034 and migration 0293
+// (issue #508): stock in a descendant group now counts toward an ancestor's shortfall. This
+// assertion still holds unchanged, but no longer as a demonstration of "no roll-up" - none of
+// Spices' descendants carry any stock here, so the roll-up sum is zero either way and the
+// group is short by its full minimum under both the old and the new view. See
+// .devtools/pgtap/020-product-group-rollup.sql for cases that actually exercise the roll-up
+// with nonzero descendant stock.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
@@ -420,22 +424,24 @@ $statement->execute([$waitingLeft, $waitingRight]);
 check((int)$statement->fetchColumn() === 2,
 	'both groups are still reachable from a root, so neither has vanished from the pickers');
 
-// --- 8. product_groups_missing is unaffected (plan 30 question 1 is unanswered) ----------
+// --- 8. product_groups_missing is unaffected by nesting alone (roll-up needs stock) ------
 
-echo "\n8. product_groups_missing still counts a group's own direct members only\n";
+echo "\n8. product_groups_missing: an empty subtree is short by the full minimum\n";
 
 $pdo->prepare('UPDATE product_groups SET min_stock_amount = 3 WHERE id = ?')->execute([$spices]);
 
-// Spices carries no product of its own - only its descendants Parsley and Garlic do - so it
-// must be reported short by its whole minimum, taking no credit from members several levels
-// below it. This is today's behaviour, unchanged by migration 0278; it is not an answer to
-// question 1, only a control that the question is still open rather than settled by accident.
+// Spices carries no product of its own, and neither Garlic nor Fresh (nor any other
+// descendant) has any stock at this point in the file - so it is reported short by its whole
+// minimum whether the member join is direct-only (migration 0268/0278) or rolled up through
+// product_groups_resolved (migration 0293, ADR-0034, issue #508). This case is unaffected by
+// the roll-up decision; it is a control that migration 0278 alone (adding the tree) does not
+// change min-stock reporting by itself.
 $statement = $pdo->prepare('SELECT amount_missing FROM product_groups_missing WHERE id = ?');
 $statement->execute([$spices]);
 $missing = $statement->fetchColumn();
 
 check($missing !== false && abs((float)$missing - 3) < 0.000001,
-	'Spices is reported short by its full minimum, with no roll-up from Parsley or Garlic\'s members');
+	'Spices is reported short by its full minimum; none of its descendants carry any stock here');
 
 // --- 9. The entities ---------------------------------------------------------------------
 

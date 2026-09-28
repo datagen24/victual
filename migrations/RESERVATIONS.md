@@ -77,8 +77,18 @@ have recorded it.
 | 0290 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #580), [ADR-0033](../docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 3 — `stock_splits` narrowed to never-expiring, unlabelled rows (issues [488](https://github.com/datagen24/victual/issues/488), [491](https://github.com/datagen24/victual/issues/491)) | in this tree |
 | 0291 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issue [#506](https://github.com/datagen24/victual/issues/506) decision D5 — `chores_log.stock_transaction_id`, the explicit link between a chore execution and the stock consumption it booked | in this tree |
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
-| 0293 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0294 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
+| 0294 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered again on 2026-09-28: issue [#508](https://github.com/datagen24/victual/issues/508)
+(M8, #487 remediation)'s `product_groups_missing` roll-up migration, deciding
+[ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md), is being
+written on this branch as `0293.pgsql.sql`, above plan 22's still-unwritten claims. Per the
+lowest-free-slot rule, the file the branch is actually writing takes the lowest free slot and
+plan 22's two unwritten claims move up in turn, from 0293–0294 to **0294–0295**, keeping their
+own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+table. The next unclaimed number is now **0296**.
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is
