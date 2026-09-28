@@ -259,6 +259,28 @@ class DatabaseService
 	 * The engine-specific counterpart is on the dialect: engine-neutral composition
 	 * belongs here; anything an engine does differently belongs there.
 	 *
+	 * **A rolled-back outermost call restores the change-tracking flags to what they were
+	 * just before it began** (issue #534). $DataChanged and the dialect's own deferred
+	 * "changed time not yet flushed" flag (PostgresDialect::$DbChangedPending) are set the
+	 * moment a write statement reaches the database - see ExecuteDbStatement() and the
+	 * query callback in GetDbConnection() - with no knowledge of whether the transaction
+	 * that write is part of will ever commit. Without this, a refused write still advanced
+	 * GET /api/system/db-changed-time and republished the MQTT state snapshot at request
+	 * end, even though nothing committed.
+	 *
+	 * The snapshot is taken fresh on every call that finds no transaction open, not once per
+	 * request, which is what makes a request with several separate top-level transactions
+	 * behave correctly: a later transaction's own refusal restores the flags to what an
+	 * earlier one's *commit* already left them as, rather than to "nothing happened yet".
+	 * The flags mean "something committed", not "nothing failed".
+	 *
+	 * A nested (joining) call needs no restore logic of its own: it has no catch here at
+	 * all, so an inner $work() throwing simply propagates - uncaught at every joining
+	 * level - up to this same outermost catch block, wherever in the call graph it
+	 * originated. One snapshot and one restore, both at the outermost level, therefore
+	 * cover an inner rollback-then-rethrow exactly as they cover a throw from the outermost
+	 * $work() itself.
+	 *
 	 * @see DatabaseDialect::WithMigrationLock() The per-engine locking used around migrations
 	 * @param callable $work Receives no arguments; its return value is passed through
 	 * @return mixed Whatever $work returns
@@ -272,6 +294,10 @@ class DatabaseService
 		{
 			return $work();
 		}
+
+		$dialect = $this->GetDialect();
+		$dataChangedBeforeTransaction = self::$DataChanged;
+		$pendingChangeBeforeTransaction = $dialect->CapturePendingChangeState();
 
 		$pdo->beginTransaction();
 
@@ -298,6 +324,11 @@ class DatabaseService
 			// The listeners describe a transaction that is not happening, so nothing may
 			// carry over into whatever this request does next
 			self::$BeforeOutermostCommitListeners = [];
+
+			// Same reasoning: a transaction that did not happen must not leave behind a
+			// change signal it alone set - see this method's docblock.
+			self::$DataChanged = $dataChangedBeforeTransaction;
+			$dialect->RestorePendingChangeState($pendingChangeBeforeTransaction);
 
 			throw $ex;
 		}

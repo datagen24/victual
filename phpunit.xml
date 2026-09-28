@@ -112,6 +112,7 @@
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
+			<file>tests/Pgsql/RollbackChangeSignalsTest.php</file>
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>

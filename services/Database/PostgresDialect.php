@@ -426,6 +426,22 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
+	 * @return bool The current value of $DbChangedPending
+	 */
+	public function CapturePendingChangeState()
+	{
+		return $this->DbChangedPending;
+	}
+
+	/**
+	 * @param bool $state A value previously returned by CapturePendingChangeState()
+	 */
+	public function RestorePendingChangeState($state): void
+	{
+		$this->DbChangedPending = (bool)$state;
+	}
+
+	/**
 	 * Sets every identity column's sequence to MAX(id) + 1, or leaves it where it already
 	 * is if that is higher (at least 1 either way), needed after inserting rows with
 	 * explicit ids (migrations, demo data, database import).
