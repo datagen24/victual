@@ -287,10 +287,15 @@ class ChoresService extends BaseService
 		// filter - ChoresController's "chores" queries already restrict to "active = 1" - and
 		// tracking bypassed it entirely), and a chore configured to consume a product on
 		// execution but left with no product_amount reached StockService::ConsumeProduct()'s
-		// non-nullable `float $amount` parameter with null, which PHP coerces to 0.0 rather
-		// than refusing: the chore silently "consumed" nothing instead of the request being
-		// rejected as the misconfiguration it is. Both are checked here, before any write
-		// (including the chores_log insert below), so a refusal leaves no row at all.
+		// non-nullable `float $amount` parameter with null - a PHP TypeError, not a silent
+		// success: the request 500ed (uncaught by HandleApiCall()'s generic \Exception catch,
+		// which does not catch \TypeError) and the transaction rolled back, so nothing was
+		// ever booked. That is still the wrong refusal - an opaque 500 instead of the 400 a
+		// misconfigured chore should get - which is what these checks fix. Checked here,
+		// before any write (including the chores_log insert below) and before this method's
+		// own STOCK_CONSUME permission check further down (issue #604/#606): a caller who
+		// lacks STOCK_CONSUME but tracks an invalid chore now gets 400, not 403 - either way
+		// nothing is written.
 		if ((int)$chore->active !== 1)
 		{
 			throw new \Exception('Chore is inactive');

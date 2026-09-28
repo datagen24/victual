@@ -20,17 +20,30 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *    regression coverage #506 asks for; it does not change behaviour (it already passes on
  *    master).
  *
+ *    The scenario needs two executions, an older live one and a newer undone one - not a
+ *    single tracked-then-undone execution. With only one, MAX(l.tracked_time) over the outer
+ *    LEFT JOIN's own `l.undone = 0` is NULL once that execution is undone, so chores_current
+ *    takes the "no prior execution" / start_date branch and the weekly branch's subquery -
+ *    the thing this test is meant to guard - never runs at all. A round-2 validator confirmed
+ *    a single-execution version of this test kept passing even against a chores_current with
+ *    the "AND undone = 0" fix removed. With an older live execution present, MAX(l.tracked_time)
+ *    is not NULL, the weekly branch's own subquery runs, and it alone determines whether the
+ *    undone newer execution still drives the schedule.
+ *
  * 2. ChoresService::TrackChore() validation. Two cases named by #506 were not checked at
  *    all: an inactive chore (chores.active = 0) could still be tracked - "active" was only
  *    ever consulted as a list filter (ChoresController's "chores" queries already restrict to
  *    "active = 1"), never by the tracking path itself - and a chore configured to consume a
  *    product on execution but left with a NULL product_amount reached
- *    StockService::ConsumeProduct()'s non-nullable `float $amount` parameter with null, which
- *    PHP coerces to 0.0 rather than refusing: the request silently "succeeded", consuming
- *    nothing, instead of being rejected as the misconfiguration it is. Both are now refused
- *    with an \Exception (400 over HTTP, via BaseApiController::HandleApiCall()'s generic
- *    catch), before any write - including the chores_log insert - so a refusal leaves
- *    chores_log and stock byte-for-byte unchanged.
+ *    StockService::ConsumeProduct()'s non-nullable `float $amount` parameter with null. That
+ *    is a PHP TypeError, not a silent success: uncaught by BaseApiController::HandleApiCall()'s
+ *    generic \Exception catch (which does not catch \TypeError), it 500ed and the transaction
+ *    rolled back, so nothing was ever written or consumed either way - but a misconfigured
+ *    chore getting an opaque 500 is still the wrong refusal. Both cases are now refused with
+ *    a plain \Exception (400 over HTTP, via that same generic catch), checked before any write
+ *    - including the chores_log insert - and before this method's own STOCK_CONSUME
+ *    permission check (issue #604/#606): a caller who lacks STOCK_CONSUME and tracks an
+ *    invalid chore now gets 400 rather than 403, and nothing is written either way.
  *
  * Follows ChoreExecutionStockUndoTest.php's own pattern: call ChoresService/StockService
  * directly, and assert on chores_log/stock/stock_log rows rather than only a thrown
@@ -131,6 +144,13 @@ class ChoreScheduleUndoneAndValidationTest extends PgsqlSchemaTestCase
 	{
 		// period_config names every weekday so the 'weekly' branch always has a candidate day
 		// to pick regardless of what day the test runs on.
+		//
+		// Two executions, deliberately - an older one that stays live, and a newer one that
+		// gets undone - not a single tracked-then-undone execution: see the class docblock.
+		// With only the older execution live, MAX(l.tracked_time) over the outer LEFT JOIN's
+		// `l.undone = 0` is the older execution's own tracked_time, so chores_current takes
+		// the 'weekly' branch and its own subquery runs; whether that subquery still counts
+		// the newer, undone execution is exactly what this test needs to discriminate.
 		$choreId = self::insertChore('Weekly Undone Schedule', [
 			'period_type' => ChoresService::CHORE_PERIOD_TYPE_WEEKLY,
 			'period_interval' => 1,
@@ -138,18 +158,23 @@ class ChoreScheduleUndoneAndValidationTest extends PgsqlSchemaTestCase
 			'start_date' => '2026-01-05 08:00:00',
 		]);
 
-		$beforeTracking = self::nextEstimatedExecutionTime($choreId);
-		self::assertNotNull($beforeTracking, 'A weekly chore with a start_date has a next_estimated_execution_time before any tracking');
+		$olderExecutionId = self::$chores->TrackChore($choreId, '2026-09-11 09:00:00');
+		$expectedFromOlderOnly = self::nextEstimatedExecutionTime($choreId);
+		self::assertNotNull($expectedFromOlderOnly, 'The older, live execution alone already drives a schedule');
 
-		$executionId = self::$chores->TrackChore($choreId, '2026-09-21 09:00:00');
+		$newerExecutionId = self::$chores->TrackChore($choreId, '2026-09-22 09:00:00');
+		$fromNewerLive = self::nextEstimatedExecutionTime($choreId);
+		self::assertNotSame($expectedFromOlderOnly, $fromNewerLive, 'The newer, live execution now drives the schedule instead');
 
-		$afterTracking = self::nextEstimatedExecutionTime($choreId);
-		self::assertNotSame($beforeTracking, $afterTracking, 'Tracking a live execution does advance the schedule');
+		self::$chores->UndoChoreExecution($newerExecutionId);
 
-		self::$chores->UndoChoreExecution($executionId);
-
-		$afterUndo = self::nextEstimatedExecutionTime($choreId);
-		self::assertSame($beforeTracking, $afterUndo, 'Undoing the only execution must restore the schedule exactly as if it never happened - an undone row must not still drive chores_current\'s weekly branch');
+		$afterUndoingNewer = self::nextEstimatedExecutionTime($choreId);
+		self::assertSame(
+			$expectedFromOlderOnly,
+			$afterUndoingNewer,
+			'Undoing the newer execution must restore the schedule to what the older, still-live execution alone produces - the weekly branch\'s own subquery must not still count the undone execution just because it is more recent'
+		);
+		self::assertNotSame($fromNewerLive, $afterUndoingNewer, 'Sanity: the undone execution\'s own (later) schedule must not still be the answer');
 	}
 
 	// ------------------------------------------------------------------------------
