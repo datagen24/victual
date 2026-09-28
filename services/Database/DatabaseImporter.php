@@ -238,11 +238,15 @@ class DatabaseImporter
 	 *
 	 * Concurrency: the copy runs inside one transaction that also locks out a concurrent
 	 * `PrintAttemptService::Claim()` for its duration (see ImportSnapshot()'s `LOCK TABLE
-	 * print_jobs` and ClearOutbox()), but takes no lock a request outside the label/print
-	 * subsystem would ever queue behind. An operator still stops the application and its
-	 * label workers before importing - see docs/manual/getting-started.md - because this
-	 * import replaces the data every other request reads and writes, not because this class
-	 * leaves any of that unlocked.
+	 * print_jobs` and ClearOutbox()). That `print_jobs` lock is the only lock this class
+	 * adds: the import already takes every copied table ACCESS EXCLUSIVE for the whole
+	 * transaction through its own `TRUNCATE` (see ImportSnapshot()), and `print_jobs` is
+	 * one of the few tables that statement never reaches - it is in NOT_COPIED_TABLES (see
+	 * the class docblock) precisely because ClearOutbox() has to leave its rows alone, so
+	 * this class takes the lock on it explicitly instead. An operator still stops the
+	 * application and its label workers before importing - see
+	 * docs/manual/getting-started.md - because this import replaces the data every other
+	 * request reads and writes, not because this class leaves any of that unlocked.
 	 *
 	 * @param bool $force Skip the target-is-empty check; existing rows are truncated away
 	 * @param bool $applyRowMigrations Re-apply the migrations that rewrite rows rather than
@@ -1051,14 +1055,20 @@ class DatabaseImporter
 	 * `LabelIdentityService::Issue()`, and `Claim()`'s own `FOR UPDATE OF j`
 	 * (PrintAttemptService.php:50) never waits on it. ImportSnapshot() closes that gap with
 	 * `LOCK TABLE print_jobs IN ACCESS EXCLUSIVE MODE` immediately after `LockImport()` (see
-	 * that call site for how the lock mode forces a claim already in flight to finish first
-	 * and blocks a new one until this transaction ends). With it, no attempt claimed before
-	 * this transaction began is still running by the time this method dead-letters its outbox
-	 * row, and no new claim can start until the transaction commits - so the job really is
-	 * finished unconditionally, including one whose current attempt was still outstanding when
-	 * the transaction began: by then, `api_keys` (a common, replaced table) has already been
+	 * that call site for how the lock mode forces a `Claim()` transaction already in flight
+	 * to finish first, without handing out this job, and blocks a new one from starting
+	 * until this transaction ends). That stops any new claim, and any claim still in
+	 * flight, from ever handing out this job's payload - but not an attempt that was
+	 * already leased before this transaction began: `Claim()` had already returned that job
+	 * to its worker, and no lock taken here reaches back into a transaction that already
+	 * committed. That attempt can still print while this one runs; by the time this method
+	 * dead-letters its outbox row, `api_keys` (a common, replaced table) has already been
 	 * truncated too, cascading onto `label_worker_credentials` (NOT_COPIED_TABLES; see the
-	 * class docblock), so the credential that attempt authenticated with is gone as well.
+	 * class docblock), so at least the credential that attempt authenticated with is
+	 * invalidated once the import commits. This is exactly why
+	 * docs/manual/getting-started.md tells an operator to stop the label workers before
+	 * importing rather than relying on this lock alone: it closes the claim race, not a
+	 * worker that already holds a leased job.
 	 * Reusing `PrintAttemptService.php:98`'s own outcome value and columns, every job whose
 	 * outbox row was just dead-lettered and which was not already finished (`outcome IS NULL
 	 * AND cancelled_at IS NULL` - a cancelled job stays cancelled, and a job already
