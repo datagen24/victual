@@ -1240,10 +1240,16 @@ class StockApiController extends BaseApiController
 				? (int)$requestBody['gross_qu_id']
 				: null;
 
+			// Present-but-malformed must be refused outright (RequireIsoDate(), issue #519's
+			// pattern), not silently treated as absent: falling through to null here would
+			// report a higher reading's "best_before_date is required" refusal for a caller
+			// who did supply one, just not a valid one - the wrong error for what actually
+			// went wrong. Absence itself is still fine at this stage; StockService::
+			// WeighLocation() is the one that refuses a higher reading with none.
 			$bestBeforeDate = null;
-			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
+			if (array_key_exists('best_before_date', $requestBody))
 			{
-				$bestBeforeDate = $requestBody['best_before_date'];
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
 			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId, $bestBeforeDate);
