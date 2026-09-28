@@ -118,10 +118,15 @@ class ChoresApiController extends BaseApiController
 
 			$trackedTime = $this->RequestedTimestamp($request, $requestBody, 'tracked_time');
 
+			// WireBooleans::RequireBoolean() rather than filter_var(...FILTER_VALIDATE_BOOLEAN):
+			// the UI always sends a real boolean (public/viewjs/choretracking.js,
+			// choresoverview.js), and filter_var() reads a malformed value as false, which
+			// logs an ordinary execution instead of refusing the request (issue #498/#487
+			// H9 round 2).
 			$skipped = false;
-			if (array_key_exists('skipped', $requestBody) && filter_var($requestBody['skipped'], FILTER_VALIDATE_BOOLEAN) !== false)
+			if (array_key_exists('skipped', $requestBody))
 			{
-				$skipped = $requestBody['skipped'];
+				$skipped = WireBooleans::RequireBoolean($requestBody['skipped'], 'skipped');
 			}
 
 			$doneBy = VICTUAL_USER_ID;

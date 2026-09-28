@@ -515,10 +515,23 @@ class BaseApiController extends BaseController
 	 * was also given). A value that is not numeric at all - "all", say - is deliberately left
 	 * alone: GenericQueryTest::testANonNumericLimitIsTreatedAsZero() already pins intval()
 	 * reading it as 0 rather than refusing it, and this must not disturb that.
+	 *
+	 * Gating this on is_numeric($value) first (as an earlier revision did) missed
+	 * "-1abc"/"-3x": is_numeric() demands the *whole* string be a number and answers false
+	 * for a numeric prefix followed by garbage, where intval() reads exactly that prefix and
+	 * still returns -1/-3 - so the negative value reached the database anyway (issue
+	 * #498/#487 H9 round 2). intval()'s own answer is what decides this now, with nothing
+	 * gating it: "all" intval()s to 0, which is not negative, so it is still left alone
+	 * exactly as before.
 	 */
 	private function AssertNotNegative(Request $request, $value, string $name): void
 	{
-		if (is_numeric($value) && intval($value) < 0)
+		if (is_array($value))
+		{
+			throw new HttpException($request, 'Invalid query: "' . $name . '" must not be an array', 400);
+		}
+
+		if (intval($value) < 0)
 		{
 			throw new HttpException($request, 'Invalid query: "' . $name . '" must not be negative', 400);
 		}
@@ -537,6 +550,16 @@ class BaseApiController extends BaseController
 
 		foreach ($query as $q)
 		{
+			// Each condition must be a plain string: a nested array (e.g.
+			// "?query[0][]=name=x", which QueryData()'s own is_array($query['query']) check
+			// cannot see - that check is about the top-level shape, not each element's)
+			// reached preg_match()'s string $subject parameter as a TypeError and 500ed
+			// (issue #498/#487 H9 round 2).
+			if (!is_string($q))
+			{
+				throw new HttpException($request, 'Invalid query', 400);
+			}
+
 			$matches = [];
 			preg_match(
 				'/(?P<field>' . self::PATTERN_FIELD . ')'
@@ -792,9 +815,50 @@ class BaseApiController extends BaseController
 	 */
 	protected function GetParsedAndFilteredRequestBody($request, ?string $entity = null)
 	{
+		// $request->getParsedBody() is trusted first, not read around: several PHPUnit
+		// classes (GenericQueryTest, GenericWriteAtomicityTest, StockUndoIntegrityTest among
+		// them) call a controller directly with a request built by
+		// withParsedBody($array)->withHeader('Content-Type', 'application/json') - a real
+		// parsed body with no real body stream behind it at all, which an eager read of
+		// $request->getBody() would see as empty and wrongly report as absent.
+		$requestBody = $request->getParsedBody();
+
+		// Slim's own JSON body parser answers null for BOTH a genuinely empty body and one it
+		// could not read at all (truncated JSON, the literal "null"), and this method's
+		// contract with its callers depends on telling those two apart (issue #498/#487 H9
+		// round 2): "no body was sent" is the caller's own choice to default or refuse
+		// (RequireRequestBody() or "?? []" at the call site); "a body was sent and it could
+		// not be read" is never one of the shapes a caller may default. The raw stream is the
+		// only place that distinction still exists once getParsedBody() has already
+		// collapsed both to null, so it is read here - and only here, now that a
+		// withParsedBody() caller has already left this branch by not being null.
+		if ($requestBody === null && (string)$request->getBody() === '')
+		{
+			// Checked before the Content-Type check, deliberately: a client that sent
+			// nothing at all is "sent nothing" whether or not it also named a type for the
+			// nothing it sent, and a route documented to allow an absent body must be able
+			// to apply its own defaults to a request that omitted the header along with the
+			// body.
+			return null;
+		}
+
 		if (self::MediaTypeOf($request) !== 'application/json')
 		{
 			throw new HttpException($request, 'Bad Content-Type', 400);
+		}
+
+		// Three ways to reach here that are not "a JSON object was parsed": getParsedBody()
+		// is still null (a non-empty body Slim's parser could not read at all, or read as the
+		// literal "null"), it decoded to something that is not an array (a bare scalar - true,
+		// a number, a string), or it decoded to a non-empty PHP "list" (a JSON array;
+		// json_decode(..., true) makes a JSON object and a JSON array equally plain arrays, so
+		// a sequential-integer-keyed one is what "an array, not an object" looks like once
+		// decoded). An *empty* array is left alone: {} and [] both decode to [] and a caller
+		// with nothing further to say is an object with no properties set either way, which
+		// applies the same defaults an absent body on the same route would.
+		if ($requestBody === null || !is_array($requestBody) || (count($requestBody) > 0 && array_is_list($requestBody)))
+		{
+			throw new HttpException($request, 'Bad Request: the request body must be a JSON object', 400);
 		}
 
 		if (self::$htmlPurifierInstance == null)
@@ -807,13 +871,6 @@ class BaseApiController extends BaseController
 		// notice reached a response body rather than a log the first time a write route
 		// taking no entity was driven through tests/Pgsql/request-subprocess-helper.php.
 		$htmlColumns = $entity === null ? [] : (self::HTML_RENDERED_COLUMNS[$entity] ?? []);
-
-		$requestBody = $request->getParsedBody();
-
-		if ($requestBody === null)
-		{
-			return null;
-		}
 
 		foreach ($requestBody as $key => &$value)
 		{

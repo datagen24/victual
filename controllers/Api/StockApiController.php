@@ -389,10 +389,15 @@ class StockApiController extends BaseApiController
 				$listId = $requestBody['list_id'];
 			}
 
+			// WireBooleans::RequireBoolean() rather than filter_var(...FILTER_VALIDATE_BOOLEAN):
+			// the UI always sends a real boolean (public/viewjs/shoppinglist.js), and
+			// done_only:false means "clear the whole list" - filter_var() reads null,
+			// "garbage" or "no" as false too, so a malformed value here was not merely
+			// misread, it was destructive (issue #498/#487 H9 round 2).
 			$doneOnly = false;
-			if (array_key_exists('done_only', $requestBody) && filter_var($requestBody['done_only'], FILTER_VALIDATE_BOOLEAN) !== false)
+			if (array_key_exists('done_only', $requestBody))
 			{
-				$doneOnly = boolval($requestBody['done_only']);
+				$doneOnly = WireBooleans::RequireBoolean($requestBody['done_only'], 'done_only');
 			}
 
 			StockService::GetInstance()->ClearShoppingList($listId, $doneOnly);
@@ -471,10 +476,15 @@ class StockApiController extends BaseApiController
 				$consumeExact = $requestBody['exact_amount'];
 			}
 
+			// Same defect and same fix as "spoiled" above: the UI always sends a real
+			// boolean (public/viewjs/consume.js, stockoverview.js), so WireBooleans::RequireBoolean()
+			// costs it nothing and stops a string "false" from being read as truthy and
+			// silently allowing substitution the caller meant to refuse (issue #498/#487 H9
+			// round 2).
 			$allowSubproductSubstitution = false;
 			if (array_key_exists('allow_subproduct_substitution', $requestBody))
 			{
-				$allowSubproductSubstitution = $requestBody['allow_subproduct_substitution'];
+				$allowSubproductSubstitution = WireBooleans::RequireBoolean($requestBody['allow_subproduct_substitution'], 'allow_subproduct_substitution');
 			}
 
 			$transactionId = null;
@@ -887,10 +897,11 @@ class StockApiController extends BaseApiController
 				$specificStockEntryId = $requestBody['stock_entry_id'];
 			}
 
+			// Same defect and same fix as ConsumeProduct() above (issue #498/#487 H9 round 2).
 			$allowSubproductSubstitution = false;
 			if (array_key_exists('allow_subproduct_substitution', $requestBody))
 			{
-				$allowSubproductSubstitution = $requestBody['allow_subproduct_substitution'];
+				$allowSubproductSubstitution = WireBooleans::RequireBoolean($requestBody['allow_subproduct_substitution'], 'allow_subproduct_substitution');
 			}
 
 			$measurement = null;
