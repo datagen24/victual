@@ -305,7 +305,7 @@ async function probe(browser, label, how, run)
 		await page.waitForTimeout(1200);
 
 		const [childFrame] = await Promise.all([
-			page.waitForEvent('frame'),
+			page.waitForEvent('frameattached'),
 			page.locator('a.show-as-dialog-link[href*="/stockentry/"]').first().click()
 		]);
 		await childFrame.waitForLoadState('load');
