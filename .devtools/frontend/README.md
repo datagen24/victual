@@ -130,8 +130,10 @@ the `purchase.js` `@push` from a pre-step-5 `stockoverview.blade.php` and it rep
 
 The `stockentry-edit` scenario additionally covers issue #575: the edit form's Undo link
 was built from `result.id`, which is `undefined` against the array
-`PUT /stock/entry/{entryId}` actually returns. On the unfixed code it books 1 row and
-undoes 0, because the link's booking id is `undefined` and the undo POST is refused.
+`PUT /stock/entry/{entryId}` actually returns. `EditStockEntry` always writes two
+correlated rows (`STOCK_EDIT_OLD` and `STOCK_EDIT_NEW`) sharing one `transaction_id`, so
+this scenario books 2 rows. On the unfixed code it undoes 0 of them, because the link's
+booking id is `undefined` and the undo POST is refused.
 
 `two-pickers.js` drives both datetimepickers on `stockentryform`, `purchase`, `inventory`
 and `mealplan` and, after each action on one, reads the other's value and validity back. It

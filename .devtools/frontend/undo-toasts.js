@@ -308,7 +308,13 @@ async function probe(browser, label, how, run)
 
 		await waitForUndoToast(page);
 		await clickUndoInToast(page);
-		return readUndoneCount(page, 'stock/bookings/' + booking[0].id);
+		// EditStockEntry always writes two correlated rows - STOCK_EDIT_OLD and
+		// STOCK_EDIT_NEW, sharing both a transaction_id and a correlation_id - and
+		// UndoBooking() cascades to every row sharing the clicked one's correlation_id, so
+		// the toast's single Undo link undoes both. Reading the transaction back (as the
+		// transfer scenario above does, for the same two-row-per-booking reason) is what
+		// actually checks that cascade rather than only the row named in the link.
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- meal plan --------------------------------------------------------------------
