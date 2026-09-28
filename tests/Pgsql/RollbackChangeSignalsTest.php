@@ -39,6 +39,14 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   rather than reimplemented - so the request-end publish this fix also protects can be
  *   observed actually not happening. The same request with sufficient stock is the control:
  *   it must still advance the changed time and still publish.
+ * - Two more HTTP requests through DELETE /api/objects/products/{id}, refused by
+ *   product_location_min_stock's FOREIGN KEY when a minimum-stock row still references the
+ *   product. Unlike every case above, GenericEntityApiController::DeleteObject() runs this
+ *   delete in autocommit - no DatabaseService::InTransaction() call wraps it at all - so the
+ *   rollback-restore fix above cannot reach it: the change was marked before the DELETE
+ *   statement even ran, by LessQL's own onQuery() hook firing ahead of prepare()/execute().
+ *   See ChangeTrackingLessQlDatabase's docblock for that fix. The same request against an
+ *   unreferenced product is the control.
  *
  * Registered in the mqttcoverage suite (phpunit.xml), alongside MqttCoverageTest.php - the
  * suite that already owns MQTT and request-end coverage.
@@ -168,6 +176,21 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 			'consume_product_on_execution' => 1,
 			'product_id' => $productId,
 			'product_amount' => $amount,
+		]);
+	}
+
+	/**
+	 * A minimum-stock row referencing $productId, so that FOREIGN KEY REFERENCES products(id)
+	 * on product_location_min_stock.product_id (migrations/0276.pgsql.sql, no ON DELETE
+	 * clause) refuses deleting that product - the autocommit-write case this class's
+	 * DELETE-over-HTTP test below exists for.
+	 */
+	private static function insertProductLocationMinStock(int $productId): int
+	{
+		return self::insertRow('product_location_min_stock', [
+			'product_id' => $productId,
+			'location_id' => self::$pantryLocationId,
+			'min_stock_amount' => 1,
 		]);
 	}
 
@@ -542,6 +565,72 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 		$result = self::RunHttpRequest('POST', '/api/chores/' . $choreId . '/execute', []);
 
 		self::assertSame(200, $result['status'], 'the chore execution succeeds over HTTP: ' . $result['body']);
+
+		self::assertNotSame($before, self::changedTime(),
+			'the control: a committed write over HTTP must still advance db-changed-time');
+
+		self::AwaitBatch(self::$brokerLog);
+		self::assertStringContainsString('=== connect', (string)file_get_contents(self::$brokerLog),
+			'the control: a committed write over HTTP must still publish the MQTT state snapshot');
+	}
+
+	// ------------------------------------------------------------------------------
+	// HTTP coverage: an autocommit write refused with no InTransaction() around it at all
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * Given a product referenced by product_location_min_stock.product_id,
+	 * When DELETE /api/objects/products/{id} is issued over HTTP,
+	 * Then the FOREIGN KEY refusal answers 400 and, per issue #534, neither db-changed-time
+	 * nor the MQTT state snapshot reflect it.
+	 *
+	 * This is a different shape from every other case in this class: GenericEntityApiController
+	 * ::DeleteObject() runs $row->delete() in autocommit, with no DatabaseService::
+	 * InTransaction() call around it at all (see that method's own comment on why), so
+	 * InTransaction()'s rollback-restores-the-flags fix cannot reach it - there is no
+	 * transaction to roll back. What used to mark the change here was LessQL's own onQuery()
+	 * hook, which GetDbConnection()'s query callback used to act on immediately, before the
+	 * DELETE statement it describes ever reached the database - see
+	 * ChangeTrackingLessQlDatabase's docblock for the fix.
+	 */
+	public function testARefusedProductDeleteOverHttpLeavesDbChangedTimeUnchangedAndPublishesNothing(): void
+	{
+		file_put_contents(self::$brokerLog, '');
+
+		$productId = self::insertProduct('Rollback Signals Referenced Product');
+		self::insertProductLocationMinStock($productId);
+
+		$before = self::changedTime();
+
+		$result = self::RunHttpRequest('DELETE', '/api/objects/products/' . $productId);
+
+		self::assertSame(400, $result['status'], 'the product delete is refused over HTTP: ' . $result['body']);
+		self::assertStringContainsString('still referenced', $result['body'],
+			'refused for the intended reason, not some other 400');
+
+		self::assertSame($before, self::changedTime(),
+			'a refused write over HTTP must not advance db-changed-time - issue #534');
+
+		self::assertSame('', trim((string)file_get_contents(self::$brokerLog)),
+			'a refused write over HTTP must publish nothing to MQTT - issue #534');
+	}
+
+	/**
+	 * The control for the case above: the same shape, with no reference in the way, both
+	 * advances db-changed-time and publishes - proving the refusal case is a real refusal to
+	 * signal, not an inability to signal at all.
+	 */
+	public function testASuccessfulProductDeleteOverHttpAdvancesDbChangedTimeAndPublishes(): void
+	{
+		file_put_contents(self::$brokerLog, '');
+
+		$productId = self::insertProduct('Rollback Signals Unreferenced Product');
+
+		$before = self::changedTime();
+
+		$result = self::RunHttpRequest('DELETE', '/api/objects/products/' . $productId);
+
+		self::assertSame(204, $result['status'], 'the product delete succeeds over HTTP: ' . $result['body']);
 
 		self::assertNotSame($before, self::changedTime(),
 			'the control: a committed write over HTTP must still advance db-changed-time');

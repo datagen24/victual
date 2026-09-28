@@ -2,6 +2,7 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Database\ChangeTrackingLessQlDatabase;
 use Victual\Services\Database\DatabaseDialect;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Influx\InfluxEventWriter;
@@ -171,12 +172,13 @@ class DatabaseService
 		if (self::$DbConnection == null)
 		{
 			$pdo = $this->GetDbConnectionRaw();
-			self::$DbConnection = new Database($pdo);
-			self::$DbConnection->setPrimary('user_roles', ['user_id', 'role_id']);
-			self::$DbConnection->setPrimary('role_permissions', ['role_id', 'permission_id']);
+			$connection = new ChangeTrackingLessQlDatabase($pdo);
+			self::$DbConnection = $connection;
+			$connection->setPrimary('user_roles', ['user_id', 'role_id']);
+			$connection->setPrimary('role_permissions', ['role_id', 'permission_id']);
 
 			$dialect = $this->GetDialect();
-			self::$DbConnection->setIdentifierDelimiter($dialect->GetIdentifierDelimiter());
+			$connection->setIdentifierDelimiter($dialect->GetIdentifierDelimiter());
 
 			$trackChanges = $dialect->RequiresChangeTracking();
 
@@ -190,19 +192,29 @@ class DatabaseService
 
 			if ($trackChanges || $notifyOnChange || $this->IsQueryLoggingEnabled())
 			{
-				self::$DbConnection->setQueryCallback(function ($query, $params) use ($pdo, $dialect, $trackChanges, $notifyOnChange)
+				$connection->setQueryCallback(function ($query, $params) use ($pdo, $dialect, $trackChanges, $notifyOnChange, $connection)
 				{
 					$this->LogQuery($query, $params);
 
 					if (($trackChanges || $notifyOnChange) && $dialect->IsWriteStatement($query)
 						&& !$this->IsBookkeeping())
 					{
-						if ($trackChanges)
+						// Deferred until the statement this callback describes actually
+						// succeeds (issue #534 follow-up): LessQL calls this callback
+						// (onQuery()) before it prepares/executes the query, so a refused
+						// write - e.g. deleting a product product_location_min_stock still
+						// references - would otherwise already be marked as a change by the
+						// time the resulting PDOException reaches the caller. See
+						// ChangeTrackingLessQlDatabase's own docblock.
+						$connection->SetOnWriteSucceeded(function () use ($dialect, $pdo, $trackChanges)
 						{
-							$dialect->MarkDbChanged($pdo);
-						}
+							if ($trackChanges)
+							{
+								$dialect->MarkDbChanged($pdo);
+							}
 
-						$this->MarkDataChanged();
+							$this->MarkDataChanged();
+						});
 					}
 				});
 			}
@@ -310,6 +322,12 @@ class DatabaseService
 			// yet. Anything that has to be written exactly once per transaction, describing
 			// its final state, belongs here - see RegisterBeforeOutermostCommit().
 			$this->RunBeforeOutermostCommit();
+
+			// Inside the try, not after it: a commit that itself fails (a constraint
+			// deferred to commit time, a connection dropped between here and the server)
+			// must restore the flags exactly like any other failure to make this
+			// transaction's writes durable - see this method's docblock.
+			$pdo->commit();
 		}
 		catch (\Throwable $ex)
 		{
@@ -332,8 +350,6 @@ class DatabaseService
 
 			throw $ex;
 		}
-
-		$pdo->commit();
 
 		return $result;
 	}
