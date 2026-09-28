@@ -10,6 +10,7 @@ use Victual\Services\Labels\IdempotencyService;
 use Victual\Services\Labels\LabelOperationsService;
 use Victual\Services\Labels\LabelPrintJobService;
 use Victual\Services\Labels\LabelTemplateService;
+use Victual\Services\Labels\LabelValidationException;
 use Victual\Services\Labels\PrintAttemptService;
 use Victual\Services\Labels\PrinterConfigurationService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
@@ -19,10 +20,15 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * `.devtools/labels/print-job-tests.php` does not reach.
  *
  * That suite already covers the ordinary claim/attempt/authorization path and the starvation
- * and blocked-attempt cases its own fixtures produce. This class is four narrower cases: what
- * an attempt costs when nothing was actually attempted, what a retired label leaves behind in
- * its own queue, what two concurrent reservations of one idempotency key do to each other, and
- * what deleting a printer may and may not finish on jobs it is walking away from.
+ * and blocked-attempt cases its own fixtures produce. This class covers: what an attempt costs
+ * when nothing was actually attempted; what a retired label's queued job does and does not
+ * become (ADR-0019: it stays queued, indefinitely, the same as any other unclaimed job, whether
+ * or not it was ever rendered, and cannot be crowded out of the claim query's own LIMIT by a
+ * page of other retired jobs ahead of it); what two concurrent reservations of one idempotency
+ * key do to each other; what deleting a printer may and may not finish on jobs it is walking
+ * away from - immediately, and later, when a surviving attempt against it is finally reported
+ * or reaped; and what AttachArtifact() does with a renderer result that outlives the job it was
+ * meant for.
  */
 class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 {
@@ -114,6 +120,15 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			->Enqueue(self::newLocation($locationName), 0, $printerId, self::$template));
 	}
 
+	/** An unrendered job whose label is retired before it is ever claimed. */
+	private static function retiredJob(int $printerId): int
+	{
+		$location = self::newLocation('Lifecycle bulk-retired');
+		$jobId = self::tx(static fn () => (new LabelPrintJobService(self::$db))->Enqueue($location, 0, $printerId, self::$template));
+		self::$db->exec('DELETE FROM locations WHERE id = ' . $location);
+		return $jobId;
+	}
+
 	private static function jobRow(int $jobId): array
 	{
 		return self::$db->query('SELECT * FROM print_jobs WHERE id = ' . $jobId)->fetch(PDO::FETCH_ASSOC);
@@ -158,15 +173,15 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 
 	/**
 	 * "Retirement first, then the bytes" (LabelOperationsService::Reprint()) and "retirement
-	 * stops new claims" (LabelOperationsService::AssertLabelLive(), used by Reprint() and
-	 * PromotePreview() but not, until this fix, by Claim()) are the decided halves of the
-	 * contract. What was not decided by any document - what a retired label's queued job
-	 * *becomes* - is settled by the fixer assignment itself: dead-letter it, the same terminal
-	 * state every other "the target is gone" precondition in this method already uses
-	 * (unreadable payload, deleted printer), rather than inventing cancelled_at semantics a
-	 * database trigger cannot reach without a migration this change does not touch.
+	 * stops new claims" (LabelOperationsService::AssertLabelLive(), and now Claim()'s own
+	 * claim-query SQL) are the whole of the decided contract. What a retired label's queued job
+	 * *becomes* is explicitly undecided: ADR-0019 (around "Unclaimed jobs stay queued,
+	 * indefinitely, and nothing dead-letters for being unclaimed ... Dead-lettering stays for
+	 * [a payload no version can read, plus] decision item 4's deleted-printer case") rules out
+	 * inventing a terminal state here, so this asserts only what is decided - not claimed, and
+	 * otherwise untouched - and leaves the open question open.
 	 */
-	public function testRetiredLabelJobIsDeadLetteredRatherThanClaimedOrLeftForever(): void
+	public function testRetiredLabelJobIsNeverClaimedAndStaysQueued(): void
 	{
 		[$worker, $printer] = self::newPrinter();
 		$location = self::newLocation('Lifecycle retiring shelf');
@@ -178,46 +193,84 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$retiredAt = self::$db->query('SELECT retired_at FROM labels WHERE uid = ' . self::$db->quote($labelUid))->fetchColumn();
 		self::assertNotNull($retiredAt, 'Precondition: deleting the location retires its label (migration 0269 trigger)');
 
+		$before = self::jobRow($jobId);
+
 		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
 		self::assertSame([], $claims, 'A retired label is never claimed');
 
-		$job = self::jobRow($jobId);
-		self::assertSame('dead_lettered', $job['outcome'],
-			'Retirement stops new claims and finishes the job with the terminal state every other unclaimable-target case already uses');
-		self::assertNotNull($job['outcome_at'], 'The terminal state records when it happened');
-		self::assertNull($job['cancelled_at'], 'This is a dead-letter, not a user-initiated cancellation (LabelOperationsService::Cancel()), so cancelled_at/cancelled_reason stay unset');
-		self::assertSame(0, (int)$job['attempts_made'], 'Consistent with the other dead-letter paths: no attempt is spent discovering the target is gone');
+		$after = self::jobRow($jobId);
+		self::assertNull($after['outcome'], 'Retirement stops new claims; it does not dead-letter a job for merely being unclaimed (ADR-0019)');
+		self::assertNull($after['cancelled_at'], 'Retirement is not a user-initiated cancellation (LabelOperationsService::Cancel()) either');
+		self::assertSame(0, (int)$after['attempts_made'], 'No attempt is spent discovering the label is retired');
+		self::assertEquals($before, $after, 'The job row is otherwise untouched by an unclaimable retirement');
 
-		$outboxDeadLetteredAt = self::$db->query('SELECT dead_lettered_at FROM outbox WHERE id = ' . (int)$job['outbox_id'])->fetchColumn();
-		self::assertNotNull($outboxDeadLetteredAt, 'The outbox row is acknowledged the same way every other dead letter is');
+		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNull($outboxRow['dead_lettered_at'], 'The outbox row is not touched by retirement');
+		self::assertNull($outboxRow['last_error'], 'No error is recorded for a merely-retired target');
 	}
 
 	/**
-	 * The negative control print-job-tests.php already runs for an unreadable payload and a
-	 * deleted printer: one bad job ahead of a good one in queue order must not make the good
-	 * one unreachable. A retirement dead-letter reuses the same per-row `continue`, so it
-	 * inherits the same property - asserted here rather than assumed.
+	 * Both of testRetiredLabelJobIsNeverClaimedAndStaysQueued()'s predecessors (round 1) used an
+	 * unrendered fixture, so a fix that only special-cased "no artifact yet" would have passed
+	 * them. Claim()'s retirement check is unconditional on artifact_id, and this proves it: the
+	 * job is rendered - fully claimable but for its label - before its target is deleted.
 	 */
-	public function testRetiredLabelJobDoesNotStarveAnEligibleJobBehindIt(): void
+	public function testRetiredLabelJobIsNeverClaimedEvenWhenRendered(): void
 	{
 		[$worker, $printer] = self::newPrinter();
-		$retiringLocation = self::newLocation('Lifecycle starvation retiring');
-		$retiringJob = self::tx(static fn () => (new LabelPrintJobService(self::$db))->Enqueue($retiringLocation, 0, $printer, self::$template));
-		self::$db->exec('DELETE FROM locations WHERE id = ' . $retiringLocation);
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+
+		$location = self::newLocation('Lifecycle retiring rendered shelf');
+		$jobId = self::tx(static fn () => (new LabelPrintJobService(self::$db))->Enqueue($location, 0, $printer, self::$template));
+		\renderAndAttach(self::$db, $jobId);
+
+		$rendered = self::jobRow($jobId);
+		self::assertNotNull($rendered['artifact_id'], 'Precondition: the job is fully rendered before its label retires');
+
+		self::$db->exec('DELETE FROM locations WHERE id = ' . $location);
+		$retiredAt = self::$db->query('SELECT retired_at FROM labels WHERE uid = ' . self::$db->quote($rendered['label_uid']))->fetchColumn();
+		self::assertNotNull($retiredAt, 'Precondition: deleting the location retires its label');
+
+		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
+		self::assertSame([], $claims, 'A retired label is never claimed, rendered or not');
+
+		$after = self::jobRow($jobId);
+		self::assertNull($after['outcome'], 'Retirement does not dead-letter a rendered job either; it stays queued like any other unclaimed job');
+		self::assertNull($after['cancelled_at'], 'Retirement is not a cancellation');
+	}
+
+	/**
+	 * The real starvation control the fixer assignment asks for: the claim query's own
+	 * `LIMIT 200` means a per-row PHP check after fetching cannot protect an eligible job from
+	 * 200 retired ones ahead of it in queue order - they would fill the window before the
+	 * eligible row is even read. Retirement has to be excluded in the SQL predicate itself, so
+	 * these 200 rows never occupy a slot the eligible job needs.
+	 */
+	public function testRetiredLabelJobsCannotStarveAnEligibleJobUnderTheClaimLimit(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+
+		$retired = [];
+		for ($i = 0; $i < 200; $i++) {
+			$retired[] = self::retiredJob($printer);
+		}
 
 		// renderAndAttach() below claims whatever render request is next in the whole queue,
-		// unconditional on which job it belongs to - so both the retiring job's own request
-		// (never going to be claimable anyway) and anything an earlier test in this class left
-		// pending have to be out of the way first, or the eligible job's artifact could be
-		// attached to the wrong job entirely.
+		// unconditional on which job it belongs to, so the 200 retired jobs' own (never going
+		// to be claimable) requests have to be out of the way first.
 		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
-		$eligibleJob = self::enqueue($printer, 'Lifecycle starvation eligible');
+		$eligibleJob = self::enqueue($printer, 'Lifecycle starvation-200 eligible');
 		\renderAndAttach(self::$db, $eligibleJob);
 
 		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
-		self::assertCount(1, $claims, 'The eligible job dispatches');
-		self::assertSame($eligibleJob, (int)$claims[0]['attempt']['job_id'], 'The retired-label job ahead of it in queue order did not starve it');
-		self::assertSame('dead_lettered', self::jobRow($retiringJob)['outcome'], 'The retired job was dead-lettered in the same pass');
+		self::assertCount(1, $claims, 'The eligible job dispatches even with 200 retired jobs ahead of it in queue order');
+		self::assertSame($eligibleJob, (int)$claims[0]['attempt']['job_id'], 'Retired jobs occupying the claim query\'s LIMIT window did not starve the eligible job');
+
+		foreach ($retired as $jobId) {
+			$row = self::jobRow($jobId);
+			self::assertNull($row['outcome'], 'A retired job stays queued rather than being dead-lettered for being unclaimed');
+			self::assertNull($row['cancelled_at'], 'Retirement is not a cancellation either');
+		}
 	}
 
 	// --- M16: concurrent identical idempotency reservations -----------------------------------
@@ -412,12 +465,156 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$runningRow = self::jobRow($running);
 		self::assertNull($runningRow['outcome'], 'A job a worker currently holds is left alone: a worker already talking to a printer is not something a database row can recall');
 		self::assertSame($runningAttempt, (int)$runningRow['current_attempt_id'], 'The running attempt is untouched');
+		$runningOutbox = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$runningRow['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNull($runningOutbox['dead_lettered_at'], 'The running job\'s outbox row is not touched either - only print_jobs.outcome was asserted before, and an unguarded outbox UPDATE would still have passed without this');
+		self::assertNull($runningOutbox['last_error'], 'No error is recorded against a job that is still genuinely in flight');
 
 		$cancelledRow = self::jobRow($cancelled);
 		self::assertNull($cancelledRow['outcome'], 'A cancelled job already has its terminal state; dead_lettered would claim something untrue about a physical object');
 		self::assertNotNull($cancelledRow['cancelled_at'], 'The earlier cancellation is preserved');
+		$cancelledOutbox = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$cancelledRow['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($cancelledOutbox['dead_lettered_at'], 'Cancel() itself already dead-lettered this outbox row (Cancelled: reason) - deletion must not overwrite that with "Printer deleted"');
+		self::assertStringStartsWith('Cancelled:', (string)$cancelledOutbox['last_error'], 'The cancellation\'s own last_error survives printer deletion unrewritten');
 
 		$awaitingAuthRow = self::jobRow($awaitingAuth);
 		self::assertSame('dead_lettered', $awaitingAuthRow['outcome'], 'A job merely awaiting human re-authorization (no live attempt, not cancelled) is still swept');
+	}
+
+	// --- Assignment B1: a live attempt that outlives its printer ------------------------------
+
+	/**
+	 * DeletePrinter() leaves a job with a live, unexpired attempt alone (asserted above). What
+	 * happens when that attempt is later reported as failed is a separate question the guard
+	 * alone does not answer: AuthorizeAnotherAttempt() would succeed, but Claim() inner-joins
+	 * label_printers (PrintAttemptService::Claim(), around the JOIN at its top) and can never
+	 * select this job again, so without PrintAttemptService::DeadLetterIfPrinterGone() it would
+	 * sit at authorization_state=queued/awaiting_worker forever.
+	 */
+	public function testFailedReportAfterPrinterDeletionDeadLettersTheJob(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+		$jobId = self::enqueue($printer, 'Lifecycle post-delete failed');
+		\renderAndAttach(self::$db, $jobId);
+
+		$attempt = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker))[0]['attempt'];
+
+		$response = self::Send('DELETE', '/api/labels/printers/' . $printer, self::issueAdminKey());
+		self::assertSame(200, $response['status'], 'An admin may delete a printer holding a running attempt: ' . $response['body']);
+		self::assertNull(self::jobRow($jobId)['outcome'], 'Precondition: a live attempt keeps the job untouched by deletion itself');
+
+		self::tx(static fn () => (new PrintAttemptService(self::$db))->Result($worker, (int)$attempt['id'], 'failed', ['error' => 'Device offline']));
+
+		$after = self::jobRow($jobId);
+		self::assertSame('dead_lettered', $after['outcome'], 'A failed report against a deleted printer has nowhere else to go: Claim() can never select this job again');
+		self::assertNotNull($after['outcome_at'], 'The terminal state records when it happened');
+
+		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($outboxRow['dead_lettered_at'], 'The outbox row is acknowledged the same way every other dead letter is');
+		self::assertSame('Printer deleted', $outboxRow['last_error'], 'Same wording the deletion path itself uses');
+	}
+
+	/**
+	 * The other half of the same gap: no worker ever reports, the lease simply expires. Nothing
+	 * currently calls Reap() again for this job's specific id once Claim() can no longer select
+	 * it, so without this fix it stays "uncertain"/awaiting_worker forever too.
+	 */
+	public function testExpiredLeaseAfterPrinterDeletionDeadLettersTheJob(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+		$jobId = self::enqueue($printer, 'Lifecycle post-delete expired');
+		\renderAndAttach(self::$db, $jobId);
+
+		$attempt = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker))[0]['attempt'];
+
+		$response = self::Send('DELETE', '/api/labels/printers/' . $printer, self::issueAdminKey());
+		self::assertSame(200, $response['status'], 'An admin may delete a printer holding a running attempt: ' . $response['body']);
+		self::assertNull(self::jobRow($jobId)['outcome'], 'Precondition: a live attempt keeps the job untouched by deletion itself');
+
+		// The lease's own clock running out, rather than a worker report - the attempt is left
+		// exactly as Claim() created it, only later than its lease.
+		self::$db->exec("UPDATE print_attempts SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = " . (int)$attempt['id']);
+
+		self::tx(static fn () => (new PrintAttemptService(self::$db))->Reap($jobId));
+
+		$after = self::jobRow($jobId);
+		self::assertSame('dead_lettered', $after['outcome'], 'An expired lease against a deleted printer is reaped straight to dead-lettered rather than sitting uncertain forever');
+		self::assertNotNull($after['outcome_at'], 'The terminal state records when it happened');
+
+		$attemptRow = self::$db->query('SELECT ended_at, outcome FROM print_attempts WHERE id = ' . (int)$attempt['id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($attemptRow['ended_at'], 'The attempt itself is still reaped normally');
+		self::assertSame('uncertain', $attemptRow['outcome'], 'Reap() still records its own usual attempt outcome; the job outcome is the new part');
+
+		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($outboxRow['dead_lettered_at'], 'The outbox row is acknowledged the same way every other dead letter is');
+		self::assertSame('Printer deleted', $outboxRow['last_error'], 'Same wording the deletion path itself uses');
+	}
+
+	/**
+	 * AuthorizeAnotherAttempt() itself calls Reap() before checking the job's outcome
+	 * (LabelPrintJobService::AuthorizeAnotherAttempt()). Reap() would dead-letter this job in
+	 * that same call (its printer is gone) - but BaseApiController::InRequestTransaction()'s own
+	 * docblock is explicit that "a throw rolls back and is rethrown", and self::tx() mirrors
+	 * that, so the refusal this proves rolls its own Reap() back too. What has to hold is
+	 * narrower than "ends dead-lettered": the stale pre-Reap() outcome must not let the
+	 * attempts_authorized update run regardless, or a job with a gone printer would be silently
+	 * re-authorized for an attempt it can never be offered. Actually finishing the job this way
+	 * is what the two committing tests above do (a worker's own failure report, and a bare
+	 * Reap() call outside a refusal).
+	 */
+	public function testAuthorizeAnotherAttemptDoesNotRequeueAJobWhosePrinterIsGone(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+		$jobId = self::enqueue($printer, 'Lifecycle post-delete reauth');
+		\renderAndAttach(self::$db, $jobId);
+
+		$attempt = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker))[0]['attempt'];
+		self::Send('DELETE', '/api/labels/printers/' . $printer, self::issueAdminKey());
+		self::$db->exec("UPDATE print_attempts SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = " . (int)$attempt['id']);
+
+		$before = self::jobRow($jobId);
+
+		try {
+			self::tx(static fn () => (new LabelPrintJobService(self::$db))->AuthorizeAnotherAttempt($jobId, (int)$attempt['id']));
+			self::fail('Expected a refusal: Reap() would dead-letter this job because its printer is gone');
+		} catch (LabelValidationException $error) {
+			self::assertSame('already_completed', $error->errorCode, 'Refused because Reap() saw the printer was gone before the attempts_authorized update could run');
+		}
+
+		$after = self::jobRow($jobId);
+		self::assertEquals($before, $after, 'The refused call rolled back in full, including its own Reap() - nothing here re-queues or otherwise changes the job');
+		self::assertSame((int)$before['attempts_authorized'], (int)$after['attempts_authorized'], 'attempts_authorized is not incremented by a refused call');
+	}
+
+	// --- Source-only: AttachArtifact() and a job dead-lettered before it was ever rendered ----
+
+	/**
+	 * Non-blocking finding in the assignment: AttachArtifact() checked only cancelled_at, so a
+	 * renderer result that completes after Claim() has already dead-lettered its job (here, for
+	 * an unreadable outbox payload - the same precondition print-job-tests.php exercises) would
+	 * still attach, silently reviving a job that already has a terminal outcome.
+	 */
+	public function testAttachArtifactSkipsAJobAlreadyDeadLetteredWithoutAnArtifact(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+
+		$jobId = self::enqueue($printer, 'Lifecycle attach-after-dead-letter');
+		$job = self::jobRow($jobId);
+		self::assertNull($job['artifact_id'], 'Precondition: the job is still unrendered');
+
+		self::$db->exec('UPDATE outbox SET payload = \'{"payload_version":999}\' WHERE id = ' . (int)$job['outbox_id']);
+		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
+		self::assertSame([], $claims);
+		self::assertSame('dead_lettered', self::jobRow($jobId)['outcome'], 'Precondition: the job is dead-lettered before it was ever rendered');
+
+		$artifact = \renderPending(self::$db);
+		self::assertNotNull($artifact, 'A renderer can still complete the render request that predates the dead letter');
+
+		$attached = self::tx(static fn () => (new LabelOperationsService(self::$db))->AttachArtifact((int)$artifact['render_request_id'], (int)$artifact['id']));
+		self::assertSame(0, $attached, 'A job that already has a terminal outcome takes no artifact, the same as a cancelled one');
+		self::assertNull(self::jobRow($jobId)['artifact_id'], 'artifact_id stays null on a dead-lettered job');
 	}
 }
