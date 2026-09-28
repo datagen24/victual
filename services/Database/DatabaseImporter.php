@@ -67,6 +67,41 @@ use Victual\Services\Labels\LabelIdentityService;
  *     MqttStatePublicationService owes for whatever was already published, permanently
  *     (PublicationLedger is the only record of what to retract). Left alone, exactly as
  *     everything else in this list, is the only correct answer.
+ *   - `label_idempotency_keys`, `label_captures`, `label_render_requests` and
+ *     `label_artifacts` are KEPT - never copied, never cleared, exactly as this class
+ *     already leaves them today (they are absent from NOT_COPIED_TABLES, TARGET_ONLY_TABLES
+ *     and DERIVED_STATE_TABLES alike, so GetCommonTables() simply reports them as missing
+ *     from the source and this class touches none of them). Issue #565 raised them
+ *     alongside login_attempts and stock_entry_origins as tables a replace-in-place import
+ *     might leave keyed to data it just discarded; the maintainer's resolution (issue #565)
+ *     is that, for these four specifically, "kept" is the correct classification rather than
+ *     an oversight, for reasons the other two do not share:
+ *       - None of the four exists in any source this importer accepts - all four are
+ *         PostgreSQL-only, above the SQLite freeze (SUPPORTED_SOURCE_MIGRATION_MAX, 0265),
+ *         so there is never a source-side value to reconcile against.
+ *       - In the documented flow (bin/victual-db-import migrating a fresh target before
+ *         copying into it - see this class's own opening paragraph), the target is freshly
+ *         migrated and these four tables are already empty; there is nothing to clear.
+ *       - On a --force import into a target that has been used, these four are print
+ *         history - the exact same class of survivor PR #561 (issue #496, H7b) already
+ *         chose to keep for `print_jobs`/`print_attempts`/`print_evidence`, not data this
+ *         import is about to replace. `print_jobs.idempotency_key_id`,
+ *         `.artifact_id`, `.render_request_id` and `.capture_id` (migrations/0272.pgsql.sql)
+ *         reference exactly these four tables with plain `REFERENCES ... (id)` and no
+ *         `ON DELETE` clause - PostgreSQL's default, `NO ACTION` - which
+ *         `LabelOperationsService::Reprint()` (services/Labels/LabelOperationsService.php)
+ *         relies on: a reprint reads a prior job's `artifact_id` straight through to its
+ *         `label_captures`/`label_render_requests` rows, which a clear would have to either
+ *         refuse (as the live-label guard already does for `labels` itself) or silently
+ *         break. Nothing here proposes either; kept is the answer that needs no new
+ *         decision.
+ *       - `label_idempotency_keys` rows expire within 24 hours
+ *         (migrations/0272.pgsql.sql's `expires_at`) regardless of whether an import ever
+ *         runs, and the resource ids a stored response names (`resource_kind`/`resource_id`)
+ *         are print-job-family ids, which this import does not renumber (`print_jobs` is
+ *         NOT_COPIED_TABLES, kept with its existing ids intact) - so a key surviving an
+ *         import is short-lived and still names what it always named, unlike
+ *         `label_idempotency_keys`' entry in the earlier "STOP" analysis assumed.
  *   - TARGET_ONLY_TABLES (`roles`, `role_permissions`, `user_roles`, `permission_fields`,
  *     `user_settings_defaults`, `system_db_changed_time`) are this engine's own configuration
  *     rather than a household's data, seeded fresh rather than carried from a source that (for
@@ -150,9 +185,10 @@ class DatabaseImporter
 	 *   not rebuilt: the migration's own docblock says the mapping is "NOT BACKFILLED,
 	 *   because the information does not exist" once an entry has been consumed away or
 	 *   merged, and nothing else in this class (or the source, which never recorded it)
-	 *   knows which surviving stock_id used to be whose split remainder. A surviving row
-	 *   would either point at nothing (its stock_id no longer exists) or, worse, at whichever
-	 *   unrelated stock row now happens to reuse that id.
+	 *   knows which surviving stock_id used to be whose split remainder. `stock_id` is a
+	 *   uniqid-generated text value, copied verbatim rather than reassigned by this import,
+	 *   so a surviving row simply dangles - it points at a stock_id that no longer exists,
+	 *   never at an unrelated row that happens to reuse it (nothing here reuses ids at all).
 	 *
 	 * When the source predates the table (or, for `stock_entry_origins`, always),
 	 * GetCommonTables() correctly leaves it out of the common-table set - there is nothing in
