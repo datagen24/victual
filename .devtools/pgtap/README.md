@@ -96,6 +96,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
+| `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
 
 ## Completeness
 
@@ -127,6 +128,21 @@ File `020` is the same shape, for migration 0293's `product_groups_missing`
 view previously produced a wrong shortfall for a real, reachable input (any nested
 product-group tree) - reporting an ancestor group as short by its whole minimum while a
 descendant group held enough stock to satisfy it.
+
+The [cascade qu_id_stock tests](021-cascade-qu-id-stock.sql) cover migration 0294 (issues
+#543 and #546, #487 remediation). `trg_cascade_change_qu_id_stock` now also rescales
+`product_location_min_stock.min_stock_amount` by the same conversion factor as every other
+per-product amount it already converts (#543). It also refuses the qu_id_stock change
+outright, before any row is touched, when the resolved factor is not 1 and the product has
+a measured open container (#546). That container may be live in `stock`, or only a live
+(`undone = 0`) consume booking left in `stock_log` after a full consumption deleted the
+`stock` row. This mirrors the refusal `StockService::MergeProducts()` already applies to
+the analogous merge case (commit 791389623f).
+
+Six assertions cover the minimum rescale together with `product_location_missing`'s
+correctly converted shortfall, both refusal shapes (with the row left untouched after
+each), and a negative control confirming an ordinary, unmeasured product still rescales
+exactly as it did before this migration.
 
 ## Running the checker directly
 

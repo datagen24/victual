@@ -105,6 +105,7 @@
 			<file>tests/Pgsql/StockAmountPolicyTest.php</file>
 			<file>tests/Pgsql/UndoMeasuredContainerCoherenceTest.php</file>
 			<file>tests/Pgsql/StockLogDeleteTriggerTest.php</file>
+			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
