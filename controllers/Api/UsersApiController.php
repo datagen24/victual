@@ -194,8 +194,16 @@ class UsersApiController extends BaseApiController
 		// is not derived from this cookie at all, so a live cookie left over from some other
 		// account can still ride along; treating it as "the acting session" let a flagged
 		// self-edit under DISABLE_AUTH mint a fresh session for the wrong account entirely.
+		// Issue #571: the cookie is the acting session only when the actor is editing their
+		// own account. Without $isSelf, DISABLE_AUTH and reverse-proxy authentication both
+		// make VICTUAL_USER_ID identical for every request regardless of which cookie rode
+		// along, so an administrator resetting user X's password from a browser that also
+		// carries X's live session cookie had that cookie accepted as "the acting session"
+		// merely because it belonged to $targetUserId - sparing X's session from an edit
+		// that is the administrator's, not a self-edit.
 		$rawSessionCookie = $request->getCookieParams()[SessionService::SESSION_COOKIE_NAME] ?? null;
-		$actingSessionKey = ($rawSessionCookie !== null
+		$actingSessionKey = ($isSelf
+			&& $rawSessionCookie !== null
 			&& SessionService::GetInstance()->IsValidSession($rawSessionCookie)
 			&& SessionService::GetInstance()->GetUserBySessionKey($rawSessionCookie)?->id == $targetUserId)
 			? $rawSessionCookie
