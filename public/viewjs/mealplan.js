@@ -38,6 +38,43 @@ if (Victual.MealPlanFirstDayOfWeek)
 	}
 }
 
+// Whether the current user holds a permission, from Victual.UserPermissions
+// (views/layout/default.blade.php, User::PermissionList()) - the same signal
+// recipes.blade.php's own server-rendered buttons are gated on, read here instead because
+// this page's action buttons are built client-side (FullCalendar event/toolbar rendering
+// below) rather than in a Blade loop. Added for issue #532: the consume and add-missing
+// buttons used to render unconditionally, so e.g. the built-in CHILD role (STOCK_CONSUME
+// without STOCK_PURCHASE) saw a consume button on a stock-producing entry that always 403s.
+function userHasPermission(permissionName)
+{
+	var permissionRow = FindObjectInArrayByPropertyValue(Victual.UserPermissions, "permission_name", permissionName);
+	return permissionRow !== null && permissionRow.has_permission == 1;
+}
+
+// Whether the consume button may be offered for a recipe whose resolved "produces product"
+// is outputProductId - RECIPES_VIEW + STOCK_CONSUME always, plus STOCK_PURCHASE when it
+// produces something, exactly the rule RecipesApiController::ConsumeRecipe() /
+// RecipesService::ConsumeRecipe() enforce server-side (issue #532). For a meal plan entry,
+// the caller below passes the *original* recipe's product_id (event.recipe, embedded by
+// RecipesController::MealPlan() from the RECIPE_TYPE_NORMAL row the entry names) rather than
+// the per-entry shadow's own (always empty) one - the same output the server resolves a
+// shadow to. A week recipe's own product_id is always empty (it is a pure aggregation
+// container, never a "produces product" row itself - db/pgsql/baseline/06_triggers_c.sql's
+// mealplan-week insert never sets one), so this reduces to RECIPES_VIEW + STOCK_CONSUME for
+// the week button without needing to special-case it.
+function mayConsumeMealPlanRecipe(outputProductId)
+{
+	return userHasPermission("RECIPES_VIEW") && userHasPermission("STOCK_CONSUME")
+		&& (!outputProductId || userHasPermission("STOCK_PURCHASE"));
+}
+
+// The add-missing-to-shoppinglist button needs RECIPES_VIEW + SHOPPINGLIST_ITEMS_ADD,
+// unconditionally (issue #532) - it never adds stock, so STOCK_PURCHASE is never relevant.
+function mayAddMealPlanRecipeToShoppingList()
+{
+	return userHasPermission("RECIPES_VIEW") && userHasPermission("SHOPPINGLIST_ITEMS_ADD");
+}
+
 // FullCalendar setup - one calendar instance per meal plan section; only the primary
 // (first) section shows the header/navigation, all others render as bare all-day rows
 // (minTime/maxTime squeeze the time grid away so only the all-day row remains)
@@ -127,12 +164,15 @@ $(".calendar").each(function()
 				}
 
 				var weekRecipeOrderMissingButtonHtml = "";
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
+				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST && mayAddMealPlanRecipeToShoppingList())
 				{
 					weekRecipeOrderMissingButtonHtml = '<a class="ml-2 btn btn-outline-primary btn-xs recipe-order-missing-button d-print-none ' + weekRecipeOrderMissingButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Put missing products on shopping list") + '" data-recipe-id="' + Victual.WeekRecipe.id.toString() + '" data-recipe-name="' + Victual.WeekRecipe.name + '" data-recipe-type="' + Victual.WeekRecipe.type + '"><i class="fa-solid fa-cart-plus"></i></a>';
 				}
 
-				weekRecipeConsumeButtonHtml = '<a class="ml-2 btn btn-outline-success btn-xs recipe-consume-button d-print-none" href="#" data-toggle="tooltip" title="' + __t("Consume all ingredients needed by this weeks recipes or products") + '" data-recipe-id="' + Victual.WeekRecipe.id.toString() + '" data-recipe-name="' + Victual.WeekRecipe.name + '" data-recipe-type="' + Victual.WeekRecipe.type + '"><i class="fa-solid fa-utensils"></i></a>'
+				if (mayConsumeMealPlanRecipe(Victual.WeekRecipe.product_id))
+				{
+					weekRecipeConsumeButtonHtml = '<a class="ml-2 btn btn-outline-success btn-xs recipe-consume-button d-print-none" href="#" data-toggle="tooltip" title="' + __t("Consume all ingredients needed by this weeks recipes or products") + '" data-recipe-id="' + Victual.WeekRecipe.id.toString() + '" data-recipe-name="' + Victual.WeekRecipe.name + '" data-recipe-type="' + Victual.WeekRecipe.type + '"><i class="fa-solid fa-utensils"></i></a>'
+				}
 			}
 			$(".calendar[data-primary-section='true'] .fc-header-toolbar .fc-center").html("<h4>" + weekCostsHtml + weekRecipeOrderMissingButtonHtml + weekRecipeConsumeButtonHtml + "</h4>");
 		},
@@ -209,9 +249,15 @@ $(".calendar").each(function()
 				}
 
 				var shoppingListButtonHtml = "";
-				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST)
+				if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_SHOPPINGLIST && mayAddMealPlanRecipeToShoppingList())
 				{
 					shoppingListButtonHtml = '<a class="btn btn-outline-primary btn-xs recipe-order-missing-button ' + recipeOrderMissingButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Put missing products on shopping list") + '" data-recipe-id="' + recipe.id.toString() + '" data-mealplan-servings="' + mealPlanEntry.recipe_servings + '" data-recipe-name="' + recipe.name + '" data-recipe-type="' + recipe.type + '"><i class="fa-solid fa-cart-plus"></i></a>';
+				}
+
+				var recipeConsumeButtonHtml = "";
+				if (mayConsumeMealPlanRecipe(recipe.product_id))
+				{
+					recipeConsumeButtonHtml = '<a class="ml-2 btn btn-outline-success btn-xs recipe-consume-button" href="#" data-toggle="tooltip" title="' + __t("Consume all ingredients needed by this recipe") + '" data-recipe-id="' + internalShadowRecipe.id.toString() + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '" data-recipe-name="' + recipe.name + '" data-recipe-type="' + recipe.type + '"><i class="fa-solid fa-utensils"></i></a>';
 				}
 
 				element.html('\
@@ -223,7 +269,7 @@ $(".calendar").each(function()
 					<h5 class="d-print-none"> \
 						<a class="ml-2 btn btn-outline-info btn-xs edit-meal-plan-entry-button" href="#" data-toggle="tooltip" title="' + __t("Edit this item") + '"><i class="fa-solid fa-edit"></i></a> \
 						<a class="btn btn-outline-danger btn-xs remove-recipe-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
-						<a class="ml-2 btn btn-outline-success btn-xs recipe-consume-button" href="#" data-toggle="tooltip" title="' + __t("Consume all ingredients needed by this recipe") + '" data-recipe-id="' + internalShadowRecipe.id.toString() + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '" data-recipe-name="' + recipe.name + '" data-recipe-type="' + recipe.type + '"><i class="fa-solid fa-utensils"></i></a> \
+						' + recipeConsumeButtonHtml + ' \
 						' + shoppingListButtonHtml + ' \
 						' + doneButtonHtml + ' \
 					</h5> \

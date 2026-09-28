@@ -3,6 +3,7 @@
 namespace Victual\Services;
 
 use LessQL\Result;
+use Victual\Controllers\Users\PermissionMissingException;
 use Victual\Controllers\Users\User;
 
 /**
@@ -102,22 +103,31 @@ class RecipesService extends BaseService
 	 * A self-production is a stock addition like any other, so it also requires
 	 * STOCK_PURCHASE in addition to STOCK_CONSUME (maintainer decision on issue #532,
 	 * 2026-09-26) - including when the recipe is a meal-plan shadow whose *original*
-	 * recipe produces a product. $request carries that check: RecipesApiController passes
-	 * the real request, so an HTTP call is enforced; a caller that passes none (the many
-	 * direct calls to this method from tests and dev tooling that predate this permission,
-	 * exercising the booking logic itself rather than authorization) is not checked, the
-	 * same as before this fix - the enforcement boundary stays the controller layer. This
-	 * only has to sit inside the transaction below, rather than in the controller, because
-	 * *what* is being authorized - the resolved output, after following a meal-plan shadow
-	 * to its original recipe - is only known once the lock the transaction takes is held.
+	 * recipe produces a product. The check itself is unconditional on $request (issue #532
+	 * round 2): User::HasPermissions() only ever consults the ambient VICTUAL_USER_ID, never
+	 * the request, so a caller that forgets to pass one must not be read as "skip the check" -
+	 * that silently let a caller reach self-production without STOCK_PURCHASE, and no error
+	 * at all, which is exactly the gap this check exists to close. $request only shapes the
+	 * refusal: RecipesApiController passes the real request, so a refused HTTP call still
+	 * throws the same PermissionMissingException User::CheckPermission() throws elsewhere
+	 * (HandleApiCall() answers 403, as before); a caller with no request - the direct calls
+	 * this method's own tests and dev tooling make, predating this permission - gets a plain
+	 * \Exception instead when the ambient user lacks STOCK_PURCHASE, and nothing is booked
+	 * either way. This only has to sit inside the transaction below, rather than in the
+	 * controller (the enforcement boundary for every other permission), because *what* is
+	 * being authorized - the resolved output, after following a meal-plan shadow to its
+	 * original recipe - is only known once the lock the transaction takes is held.
 	 *
 	 * @param int $recipeId
-	 * @param \Psr\Http\Message\ServerRequestInterface|null $request The current request, to
-	 *              check STOCK_PURCHASE against when the resolved output produces a
-	 *              product; null skips that check (see above).
-	 * @throws \Exception When the recipe does not exist
-	 * @throws \Victual\Controllers\Users\PermissionMissingException When $request is given
-	 *              and the caller lacks STOCK_PURCHASE for a recipe that produces stock
+	 * @param \Psr\Http\Message\ServerRequestInterface|null $request The current request, used
+	 *              only to shape the refusal when the resolved output produces a product and
+	 *              the acting (ambient VICTUAL_USER_ID) user lacks STOCK_PURCHASE - the check
+	 *              itself always runs, request or not (see above).
+	 * @throws \Exception When the recipe does not exist, or the acting user lacks
+	 *              STOCK_PURCHASE for a producing recipe and no request was given to shape a
+	 *              PermissionMissingException instead
+	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was given
+	 *              and the acting user lacks STOCK_PURCHASE for a recipe that produces stock
 	 */
 	public function ConsumeRecipe($recipeId, $request = null)
 	{
@@ -206,9 +216,24 @@ class RecipesService extends BaseService
 			// ingredient consumption below is one), against the output resolved just above so
 			// a meal-plan shadow is judged by what its original recipe produces rather than by
 			// the shadow's own (always empty) product_id.
-			if (!empty($productId) && $request !== null)
+			//
+			// Unconditional on $request (issue #532 round 2): HasPermissions() only reads the
+			// ambient VICTUAL_USER_ID, so gating the check itself on $request !== null let a
+			// caller that simply forgot the argument reach self-production with no
+			// STOCK_PURCHASE and no error - failing open. $request only decides which
+			// exception shapes the refusal: with one, the same PermissionMissingException
+			// User::CheckPermission() throws everywhere else (HandleApiCall() still answers
+			// 403); without one, a plain refusal that still aborts this transaction before any
+			// write. Either way nothing is booked - a caller with no request must instead
+			// already hold STOCK_PURCHASE, exactly like one that does.
+			if (!empty($productId) && !User::HasPermissions(User::PERMISSION_STOCK_PURCHASE))
 			{
-				User::CheckPermission($request, User::PERMISSION_STOCK_PURCHASE);
+				if ($request !== null)
+				{
+					throw new PermissionMissingException($request, User::PERMISSION_STOCK_PURCHASE);
+				}
+
+				throw new \Exception('Permission missing: ' . User::PERMISSION_STOCK_PURCHASE);
 			}
 
 			// Re-read now that every lock in the set above is held, so stock_amount
@@ -245,6 +270,33 @@ class RecipesService extends BaseService
 				StockService::GetInstance()->AddProduct($productId, $amount, null, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, date('Y-m-d'), $recipeResolvedRow->costs_per_serving, null, null, $dummyTransactionId, $product->default_stock_label_type, $recipe->name);
 			}
 		});
+	}
+
+	/**
+	 * The product id ConsumeRecipe() would try to self-produce for $recipe, resolved the same
+	 * way it resolves it: a meal-plan shadow's own product_id is always empty, so this follows
+	 * the shadow to its original recipe first, exactly as the STOCK_PURCHASE check inside
+	 * ConsumeRecipe() does. Used by views/recipes.blade.php to gate the consume button on the
+	 * same output the server will actually check (issue #532), rather than on a shadow's own
+	 * product_id, which is never a reliable signal for it.
+	 *
+	 * This is a plain, unlocked read for a UI eligibility hint, not an authorization decision -
+	 * ConsumeRecipe() re-resolves the output itself, under its own lock, before booking
+	 * anything, so a concurrent change between this read and a submit is not a race this
+	 * method needs to guard against.
+	 *
+	 * @param object $recipe A row from the recipes table (id, type and name at least)
+	 * @return int|string|null The product id, or empty when the recipe produces nothing
+	 */
+	public function GetEffectiveOutputProductId($recipe)
+	{
+		if ($recipe->type == self::RECIPE_TYPE_MEALPLAN_SHADOW)
+		{
+			$mealPlanEntry = $this->DB->meal_plan()->where('id = :1', explode('#', $recipe->name)[1])->fetch();
+			return $this->DB->recipes()->where('id = :1', $mealPlanEntry->recipe_id)->fetch()->product_id;
+		}
+
+		return $recipe->product_id;
 	}
 
 	/**
