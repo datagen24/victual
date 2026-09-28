@@ -82,11 +82,16 @@ class CalendarApiController extends BaseApiController
 			// only if nothing usable is left. The allowed set is letters, digits, '.' (a
 			// domain's label separator) and '-'; anything else - including a literal '@',
 			// which would corrupt the "type-id@domain" shape into "type-id@dom@ain" - is
-			// replaced with '-'. An empty setting sanitizes to '' and falls back to
-			// 'victual', which is also the compiled-in default, so an install that never
-			// touches this setting emits byte-identical UIDs to every prior revision.
+			// replaced with '-'. "Nothing usable" is not only an empty string: a value made
+			// entirely of disallowed characters (e.g. '@@@') sanitizes to a non-empty run of
+			// '-' ('---'), which is exactly as meaningless as an empty value and must fall
+			// back the same way. trim() against '.-' strips a value of only those two
+			// characters down to '', so the check catches both cases with one comparison.
+			// Left at the default 'victual', this release's UIDs are unchanged; changing the
+			// setting away from its current effective value gives every event a new UID, so
+			// subscribed clients replace all events once.
 			$uidDomain = preg_replace('/[^A-Za-z0-9.-]/', '-', (string)VICTUAL_CALENDAR_UID_DOMAIN);
-			if ($uidDomain === '')
+			if (trim($uidDomain, '.-') === '')
 			{
 				$uidDomain = 'victual';
 			}

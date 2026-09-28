@@ -105,9 +105,11 @@ Setting('CALENDAR_SHOW_WEEK_OF_YEAR', true);
 // globally unique; a fixed domain would make two Victual installations subscribed to
 // in the same calendar client collide on identical UIDs for different items. Change
 // this to something that identifies your installation - a hostname you control is the
-// conventional choice - if more than one install's calendar feed is ever subscribed to
-// from the same client. Left at the default, every UID this fork emits is
-// byte-identical to every prior release's.
+// conventional choice, written in punycode if internationalized - if more than one
+// install's calendar feed is ever subscribed to from the same client. Left at the
+// default, this release's UIDs are unchanged; changing the value away from its current
+// effective value gives every event a new UID, so subscribed clients replace all
+// events once.
 Setting('CALENDAR_UID_DOMAIN', 'victual');
 
 // Set this if you want to have a different start day for the weekly meal plan view,

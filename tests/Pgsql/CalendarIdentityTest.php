@@ -22,7 +22,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   testTimeZoneBoundsDoNotIncludeSentinelDates)
  * - The UID's domain part (CALENDAR_UID_DOMAIN, config-dist.php) defaults to "victual",
  *   is configurable per installation for RFC 5545 global uniqueness, and sanitizes an
- *   out-of-range or empty value rather than accepting or refusing it
+ *   out-of-range value rather than accepting or refusing it, falling back to the
+ *   default when nothing usable is left - whether the configured value was empty or
+ *   made entirely of characters the sanitizer replaces
  */
 class CalendarIdentityTest extends PgsqlSchemaTestCase
 {
@@ -376,6 +378,28 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		$this->assertStringEndsWith('@victual', $uid);
 	}
 
+	/**
+	 * A value made entirely of disallowed characters - here, three '@' signs - sanitizes
+	 * to a non-empty run of '-' ('---'), not to ''. That is exactly as meaningless as an
+	 * empty value (no letters or digits at all), so it must fall back to the same
+	 * default rather than silently becoming a real, working UID domain of '---'.
+	 */
+	public function testAllDisallowedCharactersUidDomainFallsBackToDefault()
+	{
+		// Arrange
+		$this->insertProduct('All Disallowed Domain Product', 9.0);
+		$productId = self::$db->lastInsertId();
+		$this->insertStockEntry($productId, 1.0, '2028-04-04');
+
+		// Act
+		$ical = $this->getIcalString(null, ['VICTUAL_CALENDAR_UID_DOMAIN' => '@@@']);
+
+		// Assert
+		$uid = $this->findUidForSummary($ical, 'All Disallowed Domain Product');
+		$this->assertNotNull($uid, 'Expected an event for the product');
+		$this->assertStringEndsWith('@victual', $uid);
+	}
+
 	// ===== Helper methods =====
 
 	/**
@@ -453,6 +477,14 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 			// value from this test process's own env, so a request that asks for no
 			// override has to explicitly overwrite it, matching WireContractTest::sendAs().
 			'VICTUAL_TEST_TIMEZONE' => $timezone ?? '',
+			// Same reasoning as VICTUAL_TEST_TIMEZONE above: a developer's own shell may
+			// export VICTUAL_CALENDAR_UID_DOMAIN for an unrelated reason, and $inherited
+			// would carry it straight into every request unless blanked here. Without this,
+			// the assertSame(...'@victual')-style assertions in the tests above would break
+			// on a machine that happens to have this variable set, for a reason having
+			// nothing to do with the test itself. $extraEnv (merged in after) still wins
+			// when a test deliberately wants a different domain.
+			'VICTUAL_CALENDAR_UID_DOMAIN' => '',
 		], $extraEnv);
 
 		$process = proc_open(
