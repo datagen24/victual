@@ -259,9 +259,11 @@ class ChoresService extends BaseService
 	 *              missing STOCK_CONSUME throws for a stock-consuming chore; the permission
 	 *              check itself is unconditional (see above)
 	 * @return int The id of the created log row
-	 * @throws \Exception When the chore or user does not exist, a manually scheduled chore is
-	 *              skipped, or the acting user lacks STOCK_CONSUME for a chore that consumes a
-	 *              product and no request was given to shape a PermissionMissingException instead
+	 * @throws \Exception When the chore or user does not exist, the chore is inactive, a chore
+	 *              that consumes a product on execution has no product_amount configured, a
+	 *              manually scheduled chore is skipped, or the acting user lacks STOCK_CONSUME
+	 *              for a chore that consumes a product and no request was given to shape a
+	 *              PermissionMissingException instead
 	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was given and
 	 *              the acting user lacks STOCK_CONSUME for a chore that consumes a product
 	 */
@@ -279,6 +281,26 @@ class ChoresService extends BaseService
 		}
 
 		$chore = $this->DB->chores($choreId);
+
+		// Issue #506 (audit M6, validation half): neither of these was checked at all, so an
+		// inactive chore could still be tracked (the "active" column exists purely as a list
+		// filter - ChoresController's "chores" queries already restrict to "active = 1" - and
+		// tracking bypassed it entirely), and a chore configured to consume a product on
+		// execution but left with no product_amount reached StockService::ConsumeProduct()'s
+		// non-nullable `float $amount` parameter with null, which PHP coerces to 0.0 rather
+		// than refusing: the chore silently "consumed" nothing instead of the request being
+		// rejected as the misconfiguration it is. Both are checked here, before any write
+		// (including the chores_log insert below), so a refusal leaves no row at all.
+		if ((int)$chore->active !== 1)
+		{
+			throw new \Exception('Chore is inactive');
+		}
+
+		if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id) && $chore->product_amount === null)
+		{
+			throw new \Exception('Chore consumes a product on execution but has no product_amount configured');
+		}
+
 		if ($chore->track_date_only == 1)
 		{
 			$trackedTime = substr($trackedTime, 0, 10) . ' 00:00:00';

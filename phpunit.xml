@@ -162,6 +162,7 @@
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
 			<file>tests/Pgsql/ChoreExecutionConsumePermissionTest.php</file>
+			<file>tests/Pgsql/ChoreScheduleUndoneAndValidationTest.php</file>
 		</testsuite>
 		<testsuite name="stockmaintenance">
 			<file>tests/Pgsql/StockMaintenanceCompactionTest.php</file>
