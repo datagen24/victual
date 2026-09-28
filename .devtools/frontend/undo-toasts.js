@@ -305,6 +305,25 @@ async function probe(browser, label, how, run)
 		// (.stock-consume-button-spoiled) - so this must exclude the spoiled one and stay
 		// scoped to this row, exactly like the original locator above, or it resolves to
 		// two elements.
+		// Issue #610 round 2: CI still times out here intermittently even with the
+		// synchronous-hide fix in place (evidence: PR #614, run 36475590815). Rather than
+		// guess further at which of several plausible paths is responsible - a partial
+		// consume leaving amount > 0, an unrelated 400, a stale/duplicate response - log
+		// every response this row's own refresh GET receives, so a repeat failure's CI log
+		// shows the actual server answer instead of just the timeout.
+		const entryResponses = [];
+		const entryResponseListener = async response =>
+		{
+			if (response.request().method() !== 'GET' || !new RegExp('/api/stock/entry/' + stockRowId + '(\\?|$)').test(response.url()))
+			{
+				return;
+			}
+			let body = '';
+			try { body = (await response.text()).slice(0, 300); } catch (e) { body = '<unreadable: ' + e.message + '>'; }
+			entryResponses.push({ status: response.status(), body, at: Date.now() });
+		};
+		page.on('response', entryResponseListener);
+
 		const reloadedButton = page.locator('#stock-' + stockRowId + '-row a.stock-consume-button:not(.stock-consume-button-spoiled)');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
 			reloadedButton.click());
@@ -322,12 +341,28 @@ async function probe(browser, label, how, run)
 		// applies d-none synchronously rather than in an animationend callback that a
 		// concurrent sibling-row redraw could cancel, and deliberately keeps the row's
 		// node in the DOM (rather than removing it) so Undo can find and restore it below.
-		await page.waitForFunction(id =>
+		try
 		{
-			const row = document.querySelector('#stock-' + id + '-row');
-			const err = document.querySelector('#toast-container .toast-error');
-			return (row && row.classList.contains('d-none')) || err;
-		}, stockRowId, { timeout: 15000 });
+			await page.waitForFunction(id =>
+			{
+				const row = document.querySelector('#stock-' + id + '-row');
+				const err = document.querySelector('#toast-container .toast-error');
+				return (row && row.classList.contains('d-none')) || err;
+			}, stockRowId, { timeout: 15000 });
+		}
+		catch (waitError)
+		{
+			const rowState = await page.evaluate(id =>
+			{
+				const row = document.querySelector('#stock-' + id + '-row');
+				return row ? { found: true, className: row.className, amountText: (document.querySelector('#stock-' + id + '-amount') || {}).textContent } : { found: false };
+			}, stockRowId);
+			console.log('   [debug #610] row ' + stockRowId + ' GET /stock/entry responses: ' + JSON.stringify(entryResponses));
+			console.log('   [debug #610] row ' + stockRowId + ' state at timeout: ' + JSON.stringify(rowState));
+			page.off('response', entryResponseListener);
+			throw waitError;
+		}
+		page.off('response', entryResponseListener);
 
 		if (await page.locator('#toast-container .toast-error').count() > 0)
 		{
