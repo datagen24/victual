@@ -533,12 +533,14 @@ class UsersApiController extends BaseApiController
 	 * either switched authentication backend or turned authentication back on. Random
 	 * bytes cannot be guessed regardless of what changes later.
 	 *
-	 * This mirrors, but does not reuse, the convention ReverseProxyAuthenticator
-	 * itself already uses when it auto-provisions a user on first sight of a
-	 * username: an empty string. password_verify('', $thatHash) is true - it is
-	 * safe only because PasswordLogin::Process() refuses an empty submitted password
-	 * outright, before ever calling password_verify(). Random bytes do not depend on
-	 * that (or any other) caller remembering to guard against the value it stored.
+	 * This mirrors, and since issue #556's fix is now the same convention
+	 * ReverseProxyAuthenticator itself uses when it auto-provisions a user on first
+	 * sight of a username: random_bytes(32), discarded immediately after
+	 * UsersService::CreateUser() hashes it, in place of the empty string that method
+	 * used to be given there. Random bytes do not depend on any caller remembering to
+	 * guard against the value stored, the way an empty string depended on
+	 * PasswordLogin::Process() refusing an empty submitted password before ever
+	 * calling password_verify() against it.
 	 *
 	 * @throws EInvalidApiQuery
 	 */
