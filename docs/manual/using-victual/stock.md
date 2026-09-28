@@ -64,12 +64,16 @@ booking can be undone from the stock journal.
   **`/quantityunitpluraltesting`** is a developer utility for checking plural-form strings,
   not a page a household needs day to day.
 - **`/productgroups`** / **`/productgroup/{id}`** — groups can nest. A group's
-  shortfall is its own minimum minus the summed effective stock of its active direct
-  member products. Opened stock is excluded for products configured to treat it as out
-  of stock. Each product contributes in its own stock unit, without conversion.
-  Descendant groups do not contribute yet; [ADR-0034](../../adr/0034-product-group-minimum-counts-descendant-groups.md)
-  proposes that change. The stock overview's group filter includes descendants and
-  displays full group paths.
+  shortfall is its own minimum minus the summed effective stock of its active products. A
+  product counts if it is filed in that group or in any of its descendant groups, counted
+  once even when it also counts toward an ancestor group further up. Opened stock is
+  excluded for products configured to treat it as out of stock. Each product contributes in
+  its own stock unit, without conversion. An inactive intermediate group does not stop this
+  count: its active descendants' stock still reaches an active ancestor above it, though the
+  inactive group itself never reports its own shortfall. See
+  [ADR-0034](../../adr/0034-product-group-minimum-counts-descendant-groups.md) for the full
+  decision. The stock overview's group filter includes descendants and displays full group
+  paths.
 - **`/productbarcodes/{id}`** edits one barcode-to-product mapping. **`/productsubstitutions/new`**
   records a directed substitution (e.g. "coffee grounds substitute for beans", never the
   reverse) used by recipe fulfilment.

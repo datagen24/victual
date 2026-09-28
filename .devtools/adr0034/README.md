@@ -93,3 +93,11 @@ controller and browser behavior; `rollup.sql` remains an acceptance experiment.
 ADR-0034 is Accepted as of 2026-09-28. This README records its acceptance evidence.
 Its two open questions about shopping-list automation and mixed units remain deferred
 design work, not additional acceptance gates.
+
+**Update, 2026-09-28, issue [#508](https://github.com/datagen24/victual/issues/508):**
+`rollup.sql` has since landed as `migrations/0293.pgsql.sql`, applying this experiment's
+exact `product_groups_missing` redefinition as a real migration rather than a disposable
+`CREATE OR REPLACE VIEW`. The runtime minimum calculation is no longer direct-members-only.
+The sixteen assertions in `fixtures.sql` are ported as a permanent pgTAP file,
+`.devtools/pgtap/020-product-group-rollup.sql` (see `.devtools/pgtap/README.md`), rather than
+run only through this directory's `run.sh`.

@@ -25,6 +25,21 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [product group roll-up tests](020-product-group-rollup.sql) cover migration 0293
+(issue #508, M8, ADR-0034): `product_groups_missing`'s member join now reaches every group
+in an ancestor's subtree through `product_groups_resolved`, not only a product's own direct
+group. This ports `.devtools/adr0034/fixtures.sql` and `.devtools/adr0034/rollup.sql` — the
+ADR's acceptance experiment — into a permanent test rather than a disposable rolled-back
+transaction.
+
+Sixteen assertions cover a three-level tree, direct members together with descendants, an
+empty group, and an unrelated branch. They also cover packaging parentage (not to be
+confused with group nesting), opened-stock exclusion, and a child minimum that does not
+enter its ancestor's calculation. The remaining cases cover inactive groups and products at
+every level of the tree, including an inactive intermediate group whose active descendants
+still count toward an active ancestor. Nine of the sixteen fail against the pre-0293
+direct-membership view.
+
 The [stock_log cache rebuild tests](019-stock-log-cache-rebuild.sql) cover migration 0292
 (issue #588). `trg_stock_log_UPD` and `trg_stock_log_DEL` share
 `rebuild_stock_log_cache_for_product()`, which recomputes
@@ -80,6 +95,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `reconcile_stock_log_cache` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
+| `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
 
 ## Completeness
 
@@ -105,6 +121,12 @@ why `check-pgtap-coverage.php` does not require it: that check reads
 file's own rule above that a view carrying logic is listed "where it carries logic". Each of
 the three cases qualifies: a view whose own SQL previously produced a wrong value or an
 uncatchable error for a real input, not merely a projection of other tables.
+
+File `020` is the same shape, for migration 0293's `product_groups_missing`
+(issue #508, ADR-0034): the roll-up join is logic a plain projection would not need. The
+view previously produced a wrong shortfall for a real, reachable input (any nested
+product-group tree) - reporting an ancestor group as short by its whole minimum while a
+descendant group held enough stock to satisfy it.
 
 ## Running the checker directly
 

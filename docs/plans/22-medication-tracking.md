@@ -319,10 +319,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0293** (medication master data and subjects)
-  and **0294** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0294** (medication master data and subjects)
+  and **0295** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0293–0294 until 2026-09-28, later still yet again, when issue #508's `product_groups_missing`
+    roll-up migration ([ADR-0034](../adr/0034-product-group-minimum-counts-descendant-groups.md),
+    #487 remediation) was written to disk as `0293.pgsql.sql` above this plan's still-unwritten
+    claims and moved up to 0294–0295 under the lowest-free-slot rule
   - 0292–0293 until 2026-09-28, later still again, when issue #588's fix to
     `trg_stock_log_DEL`'s id/product_id confusion (#487 remediation) was written to disk as
     `0292.pgsql.sql` above this plan's still-unwritten claims and moved up to 0293–0294 under
@@ -365,7 +369,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved nineteen times.** In order:
+  **These numbers have moved twenty times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -387,7 +391,8 @@ Collected because most of them are only visible from inside the existing code.
   - 0289–0290 for issue 461's stock location foreign key
   - 0290–0291 for PR #542's view-correction migration
   - 0291–0292 for PR #580's ADR-0033 decision-3 migration
-  - and now 0293–0294 for issue #588's `trg_stock_log_DEL` fix
+  - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
+  - and now 0294–0295 for issue #508's `product_groups_missing` roll-up migration
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
