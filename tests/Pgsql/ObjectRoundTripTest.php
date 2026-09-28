@@ -350,6 +350,11 @@ class ObjectRoundTripTest extends PgsqlSchemaTestCase
 		$body = json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR);
 		self::assertIsString($body['error_message'] ?? null, 'the 400 body must carry a non-empty error_message');
 		self::assertNotSame('', $body['error_message']);
+
+		// Contract pin: public/viewjs/stockentries.js matches this exact message to tell a
+		// gone stock entry apart from any other 400 (e.g. HandleApiCall() mapping a
+		// PDOException to 400 too). A wording change here silently breaks that check.
+		self::assertSame('Stock does not exist', $body['error_message'], 'stockentries.js matches this message verbatim - see StockApiController::StockEntry()');
 		self::assertMatchesSchema($body, 'GET /stock/entry/{entryId} -> 400', component: 'Error400');
 
 		// Regression: a real id must still answer 200 with the entry, unaffected by the fix.

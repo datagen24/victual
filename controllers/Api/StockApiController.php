@@ -1105,6 +1105,9 @@ class StockApiController extends BaseApiController
 
 			if ($entry === null)
 			{
+				// public/viewjs/stockentries.js matches this message verbatim to tell a gone
+				// entry apart from any other 400 this endpoint can answer (e.g. a database
+				// failure). Do not change this message without changing that check too.
 				throw new \Exception('Stock does not exist');
 			}
 

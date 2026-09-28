@@ -508,13 +508,38 @@ function RefreshStockEntryRow(stockRowId)
 			// a 200 "null" body (H10 / issue #499). Hide the row exactly as the old success
 			// branch did for that case, rather than showing a generic server-error dialog
 			// for what is routine upkeep, not a failure.
+			//
+			// The status alone does not tell that apart from any other 400: HandleApiCall()
+			// also maps a PDOException - e.g. a transient database failure - to 400, with an
+			// unrelated message. So the exact server message is matched too, the way
+			// Victual.FrontendHelpers.ShowApiError parses a body (xhr.response may already be
+			// parsed, or may be a JSON string). See the comment above the throw in
+			// StockApiController::StockEntry() - that message and this check must change
+			// together. Anything else, including any other 400, still goes to the default
+			// error handler below.
 			if (xhr && xhr.status === 400)
 			{
-				animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
+				var response = xhr.response;
+				var isMissingStockEntry = false;
+
+				try
 				{
-					$("#stock-" + stockRowId + "-row").addClass("d-none");
-				});
-				return;
+					var parsed = typeof response === 'string' ? JSON.parse(response) : response;
+					isMissingStockEntry = !!parsed && parsed.error_message === 'Stock does not exist';
+				}
+				catch (parseError)
+				{
+					isMissingStockEntry = false;
+				}
+
+				if (isMissingStockEntry)
+				{
+					animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
+					{
+						$("#stock-" + stockRowId + "-row").addClass("d-none");
+					});
+					return;
+				}
 			}
 
 			Victual.Api.DefaultErrorHandler(xhr);
