@@ -84,9 +84,9 @@ foreach ($arguments as $argument)
 		$rawProductId = substr($argument, strlen('--product-id='));
 
 		// (int) casting silently turned every malformed value into 0 - "--product-id=abc"
-		// and a bare "--product-id=" both compacted the whole database ($productId falls
-		// through to the sweep-everything call below) rather than refusing outright, and
-		// "--product-id=12x" silently compacted product 12 instead of being rejected
+		// and a bare "--product-id=" both targeted a product 0 that cannot exist, so the run
+		// reported "No eligible stock rows to merge." and exited 0 as if it had succeeded,
+		// and "--product-id=12x" silently compacted product 12 instead of being rejected
 		// (CodeRabbit review comment 4121171258). Validated before any database connection
 		// is opened (see below), so a refusal here never touches anything.
 		$productId = filter_var($rawProductId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
