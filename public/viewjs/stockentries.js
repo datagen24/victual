@@ -98,6 +98,16 @@ Victual.Components.ProductPicker.GetInputElement().on('keyup', function(e)
 	stockEntriesTable.draw();
 });
 
+// The stock-consume-button success handler below refreshes its own row directly, then
+// broadcasts "ProductChanged" so any other open view of the same product updates too. On
+// this page (not embedded, so Victual.GetTopmostWindow() is this window) that broadcast
+// loops straight back into this page's own "message" handler further down, which would
+// refresh the very same row a second time - racing the direct refresh's own GET with a
+// second one, and (issue #610) letting whichever redraw a *sibling* row's refresh triggers
+// interrupt the first refresh's fade before it can hide the row. Recording the row id here
+// lets the message handler skip the row this page already refreshed directly.
+var lastSelfRefreshedStockRowId = null;
+
 // Consumes (or marks spoiled) a specific stock entry's amount, shows a toast with an
 // "Undo" action, and refreshes that entry's row in place
 $(document).on('click', '.stock-consume-button', function(e)
@@ -132,6 +142,7 @@ $(document).on('click', '.stock-consume-button', function(e)
 
 					Victual.FrontendHelpers.EndUiBusy();
 					RefreshStockEntryRow(stockRowId);
+					lastSelfRefreshedStockRowId = String(stockRowId);
 					toastr.success(toastMessage);
 					Victual.GetTopmostWindow().postMessage(WindowMessageBag("BroadcastMessage", WindowMessageBag("ProductChanged", productId)), Victual.BaseUrl);
 				},
@@ -534,10 +545,27 @@ function RefreshStockEntryRow(stockRowId)
 
 				if (isMissingStockEntry)
 				{
-					animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
+					// Removes the row through the table's own API instead of a CSS fade timed
+					// by `animationend` (issue #610). This handler and the "ProductChanged"
+					// message handler below can both end up calling RefreshStockEntryRow() for
+					// this very row from the same booking (a direct call plus a self-received
+					// broadcast loopback), and separately, that broadcast also refreshes any
+					// *sibling* stock entry of the same product - whose own success handler
+					// calls stockEntriesTable.draw(). Any of those redraws reattaches every
+					// row's DOM node, including this one's, which silently cancels an in-flight
+					// CSS animation and drops its `animationend` callback with it - leaving the
+					// row stuck visible, since nothing else would ever retry hiding it.
+					// row().remove().draw() takes the row out of the table's data and DOM in
+					// one synchronous step, so no concurrent redraw - however it is triggered -
+					// can strand it half-animated. row.any() guards the case where this same
+					// row was already removed by the other, redundant call.
+					var row = stockEntriesTable.row("#stock-" + stockRowId + "-row");
+
+					if (row.any())
 					{
-						$("#stock-" + stockRowId + "-row").addClass("d-none");
-					});
+						row.remove().draw(false);
+					}
+
 					return;
 				}
 			}
@@ -548,7 +576,11 @@ function RefreshStockEntryRow(stockRowId)
 }
 
 // Reacts to a "ProductChanged" broadcast (e.g. from a stock booking elsewhere) by
-// refreshing every visible row for that product
+// refreshing every visible row for that product. On this page, consuming a row sends this
+// same broadcast (to update any *other* open view of the product) and it loops straight
+// back here, since Victual.GetTopmostWindow() is this window when not embedded - so the row
+// the consume handler already refreshed directly is skipped here (issue #610): otherwise
+// this fires a second, redundant RefreshStockEntryRow() for it, racing the first one.
 $(window).on("message", function(e)
 {
 	var data = e.originalEvent.data;
@@ -557,8 +589,17 @@ $(window).on("message", function(e)
 	{
 		$(".stock-consume-button[data-product-id='" + data.Payload + "']").each(function()
 		{
-			RefreshStockEntryRow($(this).attr("data-stockrow-id"));
+			var rowId = $(this).attr("data-stockrow-id");
+
+			if (rowId === lastSelfRefreshedStockRowId)
+			{
+				return;
+			}
+
+			RefreshStockEntryRow(rowId);
 		});
+
+		lastSelfRefreshedStockRowId = null;
 	};
 });
 
