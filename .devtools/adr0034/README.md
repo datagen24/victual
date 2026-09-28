@@ -1,7 +1,7 @@
 # ADR-0034 acceptance experiment
 
 The roll-up experiment passes sixteen PostgreSQL checks. Nine of those checks fail
-against the current view. This establishes the proposed calculation including inactive intermediate
+against the current view. This establishes the accepted calculation including inactive intermediate
 groups; the browser checks below complete [ADR-0034's prerequisites](../../docs/adr/0034-product-group-minimum-counts-descendant-groups.md#acceptance-prerequisites).
 
 ## Run

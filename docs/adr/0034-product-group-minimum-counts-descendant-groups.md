@@ -85,7 +85,7 @@ Active products under inactive subgroups still contribute to
 active ancestors. Group activity controls whether that group's own shortfall is reported;
 it does not remove active products or their stock from an ancestor's subtree. An inactive
 intermediate group does not stop traversal. The maintainer confirmed this rule on
-2026-09-28. This confirmation does not change the record's Proposed status.
+2026-09-28.
 
 ## Consequences
 
