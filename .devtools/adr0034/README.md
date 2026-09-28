@@ -90,6 +90,6 @@ Reproduce the coverage run with `SUITE_COVERAGE=1 SUITE_COVERAGE_CLOVER=clover.x
 The runtime minimum calculation remains direct-members-only. This change adds the
 controller and browser behavior; `rollup.sql` remains an acceptance experiment.
 
-The ADR remains Proposed. Acceptance needs a separate bookkeeping pull request linking this
-evidence. Its two open questions about shopping-list automation
-and mixed units are deferred design work, not additional acceptance gates.
+ADR-0034 is Accepted as of 2026-09-28. This README records its acceptance evidence.
+Its two open questions about shopping-list automation and mixed units remain deferred
+design work, not additional acceptance gates.
