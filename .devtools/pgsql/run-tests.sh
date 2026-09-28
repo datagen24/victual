@@ -1805,6 +1805,37 @@ run_chores_assignment_tests() {
 	fi
 
 	rm -rf "$pgdatapath"
+
+	# Issue #506 (#487 remediation): ChoresService::UndoChoreExecution()'s regression
+	# coverage for undoing the stock consumption an execution booked. Same shape as
+	# run_stockcoverage_tests() - an empty database PgsqlSchemaTestCase migrates itself
+	# into its own schema - kept in this phase (rather than a new one) because it is
+	# ChoresService coverage, matching the "chores" testsuite name to this target.
+	local phpunit_dbname="victual_chores_phpunit"
+	dropdb --if-exists "$phpunit_dbname" || fail "could not drop $phpunit_dbname"
+	createdb "$phpunit_dbname" || fail "could not create $phpunit_dbname"
+
+	local phpunit_datapath="$SUITE_SCRATCH/chores-phpunit-data"
+	rm -rf "$phpunit_datapath"
+	mkdir -p "$phpunit_datapath"
+	mkdir -p "$phpunit_datapath/viewcache"
+	cat > "$phpunit_datapath/config.php" <<-'PHPCONFIG'
+		<?php
+		Setting('DB_DRIVER', 'pgsql');
+		Setting('DB_HOST', getenv('PGHOST'));
+		Setting('DB_PORT', intval(getenv('PGPORT')));
+		Setting('DB_NAME', getenv('PHPUNIT_DB_NAME'));
+		Setting('DB_USER', getenv('PGUSER'));
+		Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+	PHPCONFIG
+
+	say ""
+	if ! VICTUAL_DATAPATH="$phpunit_datapath" PHPUNIT_DB_NAME="$phpunit_dbname" \
+		php "$VICTUAL_ROOT/packages/bin/phpunit" --configuration "$VICTUAL_ROOT/phpunit.xml" --testsuite chores; then
+		failures=$((failures + 1))
+	fi
+
+	rm -rf "$phpunit_datapath"
 }
 
 # Before anything is built: a migration numbering mistake means the two engines are not

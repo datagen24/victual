@@ -142,5 +142,8 @@
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>
+		<testsuite name="chores">
+			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>
