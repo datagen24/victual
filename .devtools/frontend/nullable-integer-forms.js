@@ -171,10 +171,17 @@ const assert = require('node:assert/strict');
 		// ================================================================================
 		// TASK (issue #587). category_id (a plain select), the user picker's user_id (a
 		// bootstrap-combobox-backed select, renamed to assigned_to_user_id) and due_date (a
-		// DateTimePicker, not a plain input) are all left at their default blank state:
-		// the category select's blank <option>, the user picker's blank <option value="">,
-		// and the date picker's own default - create mode does not initialise it to today
-		// (views/taskform.blade.php sets initWithNow to false).
+		// DateTimePicker, not a plain input) are all driven to blank: the category select's
+		// blank <option>, and the date picker's own default - create mode does not
+		// initialise it to today (views/taskform.blade.php sets initWithNow to false).
+		//
+		// The user picker is the one field create mode does NOT default to blank:
+		// taskform.blade.php prefills it to the logged-in user (VICTUAL_USER_ID) so a
+		// person creating a task usually assigns it to themselves without having to touch
+		// the picker at all. Leaving it untouched would therefore save a real user id, not
+		// exercise the blank-assignee path issue #587 is about - so it is cleared through
+		// the component's own public Clear() API, the same way a person removing the
+		// default assignee would via the combobox's own clear affordance.
 		// ================================================================================
 		{
 			const taskName = 'WS587 Task ' + token;
@@ -182,6 +189,7 @@ const assert = require('node:assert/strict');
 
 			await page.goto(base + '/task/new');
 			await page.locator('#name').fill(taskName);
+			await page.evaluate(() => Victual.Components.UserPicker.Clear());
 			const createTask = await save('/api/objects/tasks', 'POST', saveButton);
 			assert.equal(createTask.status(), 200, 'a task with every optional field blank should be created: ' + await createTask.text());
 			await page.waitForNavigation();
