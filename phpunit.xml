@@ -77,6 +77,7 @@
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
+			<file>tests/Pgsql/ReverseProxyAutoProvisionPasswordTest.php</file>
 		</testsuite>
 		<testsuite name="helperunits">
 			<file>tests/Pgsql/HelperUnitsTest.php</file>
