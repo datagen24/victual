@@ -4233,9 +4233,14 @@ class StockService extends BaseService
 				// call merged/deleted it - Issue() then fails cleanly with no label ever
 				// inserted) or is exactly as this call left it.
 				$placeholders = implode(',', array_fill(0, count($candidateRowIds), '?'));
+				// This exact statement - the row lock this whole re-read strategy depends on -
+				// is also the seam a test observes CompactStockEntries() genuinely paused at:
+				// see tests/Pgsql/compact-stock-subprocess-helper.php's DatabaseService subclass,
+				// installed via ReflectionProperty before this call, which pauses here when
+				// VICTUAL_TEST_COMPACT_PAUSE_AT names this checkpoint. Never set outside the
+				// test suite's own subprocess helper, so this line runs unpaused for every real
+				// caller (bin/victual-compact-stock and any future one).
 				DatabaseService::GetInstance()->ExecuteDbQuery("SELECT id FROM stock WHERE id IN ($placeholders) ORDER BY id ASC FOR UPDATE", $candidateRowIds);
-
-				$this->TestPauseHook('after_row_locks', $oneProductId);
 
 				// The re-read this fix is about: every group belonging to this product,
 				// current as of right now under the lock rather than from before it -
@@ -4243,7 +4248,6 @@ class StockService extends BaseService
 				// above and the row locks just taken removes its row from stock_splits here.
 				$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
 
-				$pausedAfterFirstRewrite = false;
 				foreach ($splittedStockEntries as $splittedStockEntry)
 				{
 					$stockIds = explode(',', $splittedStockEntry->stock_id_group);
@@ -4285,38 +4289,32 @@ class StockService extends BaseService
 
 					// Lineage confinement (ADR-0033 decision 3's last sentence): even once no
 					// outside `stock` row shares one of this group's stock_ids, an outside row
-					// can still have RecordSplitOrigin() lineage naming one of the DISAPPEARING
-					// ids as its own origin - left behind on the untouched remainder of an
-					// earlier partial open/transfer that has nothing else to do with this group.
-					// The third rewrite below (stock_entry_origins.origin_stock_id) only ever
-					// fires for a disappearing id (never for stock_id_to_keep - its own identity
-					// never changes, so a row whose origin already names it is always safe), but
-					// within that it rewrites every row naming one, group member or not, which
-					// would silently reattribute a real, unrelated entry's history to a
-					// different purchase than the one it actually split from. Skipped the same
-					// way. Deliberately narrower than the full group (stock_id_to_keep excluded):
-					// checking the kept id too would refuse a group purely because some outside
-					// row's lineage correctly and permanently names the survivor, which this
-					// merge was never going to touch in the first place.
-					$disappearingStockIds = [];
-					foreach ($stockIds as $stockId)
+					// can still be linked to this group through RecordSplitOrigin() lineage - in
+					// either direction. An outside row can name a group id, kept id included, as
+					// its own origin: left behind on the untouched remainder of an earlier partial
+					// open/transfer that has nothing else to do with this group (round 2's guard
+					// excluded the kept id here, reasoning that the kept id's own identity never
+					// changes - but that reasoning missed that the merge still moves a DIFFERENT
+					// purchase's history onto the kept id, which is exactly what the outside row's
+					// lineage did not sign up for). Symmetrically, a group member - again, kept id
+					// included - can itself be the one naming an OUTSIDE row as its origin: the
+					// kept id may be an unopened remainder whose own lineage points at an opened,
+					// price-corrected sibling this merge does not otherwise touch. Either
+					// direction entangles an outside identity with this group's once the rewrites
+					// below run, so the whole group is skipped - deliberately including the kept
+					// id in the check this time, accepting some previously-allowed merges now
+					// being refused rather than silently reattributing another purchase's
+					// price/lineage history.
+					$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+						"SELECT 1 FROM stock_entry_origins WHERE"
+						. " (stock_id IN ($stockIdPlaceholders) AND origin_stock_id NOT IN ($stockIdPlaceholders))"
+						. " OR (origin_stock_id IN ($stockIdPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders))"
+						. " LIMIT 1",
+						array_merge($stockIds, $stockIds, $stockIds, $stockIds)
+					);
+					if ($outsideLineageCheck->fetchColumn() !== false)
 					{
-						if ($stockId != $splittedStockEntry->stock_id_to_keep)
-						{
-							$disappearingStockIds[] = $stockId;
-						}
-					}
-					if (count($disappearingStockIds) > 0)
-					{
-						$disappearingPlaceholders = implode(',', array_fill(0, count($disappearingStockIds), '?'));
-						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
-							"SELECT 1 FROM stock_entry_origins WHERE origin_stock_id IN ($disappearingPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders) LIMIT 1",
-							array_merge($disappearingStockIds, $stockIds)
-						);
-						if ($outsideLineageCheck->fetchColumn() !== false)
-						{
-							continue;
-						}
+						continue;
 					}
 
 					foreach ($stockIds as $stockId)
@@ -4364,50 +4362,14 @@ class StockService extends BaseService
 						}
 					}
 
-					if (!$pausedAfterFirstRewrite)
-					{
-						$pausedAfterFirstRewrite = true;
-						$this->TestPauseHook('after_first_rewrite', $oneProductId);
-					}
+					// This exact statement - the survivor's amount rewrite, the last statement
+					// of a group actually merged - is the seam a test observes
+					// CompactStockEntries() genuinely paused after a group's first rewrite: see
+					// tests/Pgsql/compact-stock-subprocess-helper.php's DatabaseService subclass
+					// for the 'after_first_rewrite' checkpoint.
 				}
 			});
 		}
-	}
-
-	/**
-	 * Test-only synchronisation point for ADR-0033 acceptance prerequisites 1 and 2's
-	 * two-connection tests (tests/Pgsql/StockMaintenanceCompactionTest.php): letting a test
-	 * observe CompactStockEntries() genuinely paused mid-run - after it has taken its row
-	 * locks, or after its first group's rewrite, inside the same still-open transaction -
-	 * through real PostgreSQL lock contention rather than a sleep() and a hoped-for timing
-	 * window.
-	 *
-	 * A no-op unless VICTUAL_TEST_COMPACT_PAUSE_AT names this exact $checkpoint - never set
-	 * outside the test suite's own subprocess helpers (compact-stock-subprocess-helper.php),
-	 * so bin/victual-compact-stock and every real caller run entirely unaffected. When it
-	 * matches, blocks on a dedicated advisory lock class this codebase's application code
-	 * never otherwise acquires (distinct from PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS
-	 * and the migration/publication keys), keyed on $productId: a test acquires the same lock
-	 * itself before starting the run, so this call blocks until the test releases it, and the
-	 * test can confirm the block through pg_locks/pg_blocking_pids exactly as it already does
-	 * for the product and row locks, rather than relying on timing.
-	 *
-	 * @param string $checkpoint One of 'after_row_locks', 'after_first_rewrite'
-	 * @param int $productId The product currently being compacted, used as the lock's objid
-	 * @return void
-	 */
-	private function TestPauseHook(string $checkpoint, int $productId): void
-	{
-		if (getenv('VICTUAL_TEST_COMPACT_PAUSE_AT') !== $checkpoint)
-		{
-			return;
-		}
-
-		// Test-only advisory lock class, arbitrary but fixed and distinct from every class id
-		// StockService/PostgresDialect otherwise use.
-		$testLockClass = 1986600001;
-		DatabaseService::GetInstance()->ExecuteDbStatement('SELECT pg_advisory_lock(' . $testLockClass . ', ' . $productId . ')');
-		DatabaseService::GetInstance()->ExecuteDbStatement('SELECT pg_advisory_unlock(' . $testLockClass . ', ' . $productId . ')');
 	}
 
 	/**

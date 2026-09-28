@@ -628,13 +628,24 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * spare the outside row. The shared id is deliberately NOT the group's stock_id_to_keep
 	 * (MIN(stock_id)) - forced to sort after the other candidate's - so the rewrite this
 	 * guard exists to prevent would actually fire without it.
+	 *
+	 * Built from the real application flow that actually produces a shared stock_id, rather
+	 * than a bare INSERT: TransferProduct()'s partial-amount branch moves the requested
+	 * amount into a brand NEW row at the destination location, carrying the SAME stock_id as
+	 * the source row it split from - and leaves the source row itself, still carrying that
+	 * same stock_id, at the original location with the remainder (see StockService::
+	 * TransferProduct()'s split branch, `$stockEntryNew`'s `stock_id` field). The protected
+	 * (outside) row is that destination row, so it carries all five of prerequisite 1's
+	 * properties for real: an amount of its own, its shared stock_id, a genuine
+	 * TRANSFER_TO booking, its own stock_entry_origins state (a transfer records none - the
+	 * shared id itself IS the lineage here), and a live label.
 	 */
 	public function testSharedStockIdGuardSkipsTheWholeGroup(): void
 	{
 		$product = self::insertProduct('Maintenance Shared Stock Id');
 
 		self::purchase($product, 2, null, self::$locationA, 1.0);
-		self::purchase($product, 3, null, self::$locationA, 1.0);
+		self::purchase($product, 5, null, self::$locationA, 1.0);
 		$groupRows = self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
 		self::assertCount(2, $groupRows, 'Sanity: two candidate rows for the group');
 
@@ -644,17 +655,30 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::$db->exec('UPDATE stock SET stock_id = \'guardtest-a\' WHERE id = ' . $groupRows[0]);
 		self::$db->exec('UPDATE stock SET stock_id = \'guardtest-z\' WHERE id = ' . $groupRows[1]);
 
-		// An outside row: a different location keeps it out of this group's GROUP BY bucket,
-		// but it deliberately carries the same 'guardtest-z' stock_id as $groupRows[1].
-		$outsideRowId = self::insertRow('stock', [
-			'product_id' => $product,
-			'amount' => 7,
-			'best_before_date' => null,
-			'purchased_date' => '2026-01-01',
-			'stock_id' => 'guardtest-z',
-			'price' => 1.0,
-			'location_id' => self::$locationB,
-		]);
+		// A partial transfer of 2 of the 5-unit 'guardtest-z' row to Location B: the source row
+		// (id $groupRows[1]) stays at Location A carrying 'guardtest-z' with the 3-unit
+		// remainder - still a candidate, matching 'guardtest-a' on every stock_splits column -
+		// and a brand new row is created at Location B, also carrying 'guardtest-z', holding
+		// the transferred 2 units. That new row is the outside row this guard must protect.
+		$this->expectStatus(
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB, 'stock_entry_id' => 'guardtest-z']), new Response(), ['productId' => $product]),
+			200,
+			'Sanity: the partial transfer that naturally creates the shared stock_id succeeds'
+		);
+
+		$outsideRow = self::$db->query("SELECT * FROM stock WHERE stock_id = 'guardtest-z' AND location_id = " . self::$locationB)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($outsideRow, 'Sanity: the transfer\'s destination row exists, sharing guardtest-z');
+		$outsideRowId = (int)$outsideRow['id'];
+		self::assertSame(2.0, (float)$outsideRow['amount'], 'Sanity: it holds the transferred amount');
+
+		self::issueLabel($outsideRowId);
+		self::assertTrue(self::liveLabelExistsFor($outsideRowId), 'Sanity: the protected row carries a live label');
+
+		$outsideBookingsBefore = self::$db->prepare('SELECT * FROM stock_log WHERE stock_row_id = ? ORDER BY id');
+		$outsideBookingsBefore->execute([$outsideRowId]);
+		$outsideBookingsBefore = $outsideBookingsBefore->fetchAll(PDO::FETCH_ASSOC);
+		self::assertNotEmpty($outsideBookingsBefore, 'Sanity: the protected row carries a genuine TRANSFER_TO booking of its own');
+		$outsideOriginBefore = self::$db->query("SELECT * FROM stock_entry_origins WHERE stock_id = 'guardtest-z'")->fetchAll(PDO::FETCH_ASSOC);
 
 		StockService::GetInstance()->CompactStockEntries($product);
 
@@ -662,15 +686,22 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::assertCount(3, $rows, 'The group is skipped outright: the merge never runs, so all three rows survive');
 
 		$outside = array_values(array_filter($rows, fn($row) => (int)$row['id'] === $outsideRowId))[0];
-		self::assertSame('guardtest-z', $outside['stock_id'], 'The outside row keeps its own stock_id - never rewritten to the group\'s kept value');
-		self::assertSame(7.0, (float)$outside['amount'], 'and its amount is untouched');
+		self::assertSame('guardtest-z', $outside['stock_id'], 'The outside row keeps its own (shared) stock_id - never rewritten to the group\'s kept value');
+		self::assertSame(2.0, (float)$outside['amount'], 'and its amount is untouched');
 		self::assertSame((float)self::$locationB, (float)$outside['location_id'], 'and its location is untouched');
+
+		$outsideBookingsAfter = self::$db->prepare('SELECT * FROM stock_log WHERE stock_row_id = ? ORDER BY id');
+		$outsideBookingsAfter->execute([$outsideRowId]);
+		self::assertSame($outsideBookingsBefore, $outsideBookingsAfter->fetchAll(PDO::FETCH_ASSOC), 'and its bookings are byte-for-byte unchanged');
+		$outsideOriginAfter = self::$db->query("SELECT * FROM stock_entry_origins WHERE stock_id = 'guardtest-z'")->fetchAll(PDO::FETCH_ASSOC);
+		self::assertSame($outsideOriginBefore, $outsideOriginAfter, 'and its lineage (here, the absence of a stock_entry_origins row - the shared id itself IS the lineage) is unchanged');
+		self::assertTrue(self::liveLabelExistsFor($outsideRowId), 'and its label is still live');
 
 		$groupSurvivors = array_values(array_filter($rows, fn($row) => in_array((int)$row['id'], $groupRows, true)));
 		self::assertCount(2, $groupSurvivors, 'The two group rows also survive untouched, rather than one being deleted');
 		$amounts = array_map(fn($row) => (float)$row['amount'], $groupSurvivors);
 		sort($amounts);
-		self::assertSame([2.0, 3.0], $amounts, 'and neither amount was folded into the other');
+		self::assertSame([2.0, 3.0], $amounts, 'and neither amount was folded into the other - guardtest-z\'s source row kept its post-transfer remainder of 3');
 	}
 
 	/**

@@ -34,9 +34,17 @@
 // migrations/0283.pgsql.php - which UPDATEs the label it retires, under this same caller's
 // privileges since the trigger function carries none of its own); SELECT on products (that
 // same trigger's retirement_snapshot reads the product name), userfield_values and
-// userfields. No DDL, no TRUNCATE, no access to any other table. That is a subset of the
-// victual_app role deploy/postgres/roles.sql already grants; it does not yet have a role of
-// its own.
+// userfields. Also SELECT on the views stock_splits (this command's own candidate-group
+// read - CompactStockEntries()'s very first query), products_average_price and
+// products_last_purchased; and SELECT, INSERT, UPDATE on cache__products_average_price and
+// cache__products_last_purchased (SELECT too - not just the writes - because Postgres
+// requires it to evaluate ON CONFLICT DO UPDATE's exclusion values), because every
+// stock_log row this command rewrites fires the stock_log_UPD trigger
+// (trg_stock_log_UPD(), db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER
+// like every other trigger function here and so writes those two cache tables under this
+// same caller's rights, not its own. No DDL, no TRUNCATE. That is a
+// subset of the victual_app role deploy/postgres/roles.sql already grants; it does not yet
+// have a role of its own.
 //
 // Exit codes: 0 when the run completed (with or without anything to merge), 1 on failure.
 

@@ -4042,7 +4042,7 @@
 									"best_before_date": {
 										"type": "string",
 										"format": "date",
-										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. Ignored when the reading is lower or unchanged."
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. A malformed value or JSON null is refused with a 400 whatever the reading; omit the field entirely for it to have no bearing when the reading is lower or unchanged."
 									}
 								},
 								"example": {
@@ -4067,7 +4067,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit, higher reading given with no best_before_date)",
+						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit, higher reading given with no best_before_date, malformed or null best_before_date whatever the reading)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4135,7 +4135,7 @@
 									"best_before_date": {
 										"type": "string",
 										"format": "date",
-										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. Ignored when the reading is lower or unchanged."
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. A malformed value or JSON null is refused with a 400 whatever the reading; omit the field entirely for it to have no bearing when the reading is lower or unchanged."
 									}
 								},
 								"example": {
