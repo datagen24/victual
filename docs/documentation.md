@@ -40,6 +40,8 @@ consumer, or constraint rather than referring vaguely to “the shape” or “t
   whether it is available. A useful reading order is not automatically a build blocker.
 - Explain tradeoffs with observable costs: another database write, a stale snapshot,
   a changed response field, or an additional deployment component.
+- Use the [project glossary](glossary.md) for shared terminology. Update it in the same
+  change that introduces or changes a term, with a link to its authoritative source.
 - Define unfamiliar project terms. Pair plan numbers with names when a number alone
   would force the reader to follow a link to understand the sentence.
 - Use lists for parallel items and tables for comparisons. Use prose to explain causes

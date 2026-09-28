@@ -4,6 +4,7 @@ For someone running Victual, rather than changing it. Start with
 [Getting started](getting-started.md) if this is a new installation; otherwise use the
 section that matches what you are trying to do.
 
+- [Project glossary](../glossary.md) defines the terms used throughout this manual.
 - **[Getting started](getting-started.md)** — installing from a checkout or from the Nix
   images, PostgreSQL, and the first login.
 - **[Configuration](configuration.md)** — every setting in `config-dist.php`, grouped by

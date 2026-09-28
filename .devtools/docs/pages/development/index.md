@@ -7,6 +7,8 @@ Documentation for someone changing Victual. Read in this order: the
 
 ## Orientation
 
+- [Project glossary](glossary.md) defines shared domain and development terms.
+
 - **[Constitution](constitution.md)** — the standing principles. Short, and binding.
 - **[Contributing](contributing.md)** — where code and documents belong, what a pull request
   carries, how to generate the API reference, and the fork's two-layer licensing.
