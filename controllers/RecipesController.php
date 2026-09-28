@@ -67,14 +67,49 @@ class RecipesController extends BaseController
 			$productDetails = null;
 			if ($mealPlanEntry['product_id'] !== null)
 			{
-				// Redacted the same way GET /api/stock/products/{id} redacts product_details
-				// (StockApiController::ProductDetails) - this page is another product_details
-				// channel that FieldPolicy has to reach, not a second list of price fields
-				// (issue #590, the same class as #512/#573). WireBooleans::Coerce() is not
-				// applied here: that step is wire-format only (is_aggregated_amount 0/1 -> bool)
-				// and unrelated to redaction.
-				$productDetails = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']));
-				$productDetails['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $productDetails['product_barcodes']);
+				// GetProductDetails() throws when the product no longer exists or was
+				// deactivated after this meal-plan entry was created (StockService.php,
+				// ProductExists()) - a single stale entry must not break every other
+				// entry's render (issue #595), so existence/active state is checked here
+				// directly instead of calling into it and catching that failure. A missing
+				// or inactive product leaves $productDetails null; mealplan.js already
+				// skips rendering a card whose productDetails is null, the same way it
+				// already does for a meal-plan recipe entry whose recipe row is gone.
+				$product = $this->DB->products($mealPlanEntry['product_id']);
+				if ($product !== null && $product->active)
+				{
+					if (User::HasPermissions(User::PERMISSION_STOCK_VIEW))
+					{
+						// Redacted the same way GET /api/stock/products/{id} redacts
+						// product_details (StockApiController::ProductDetails) - this page
+						// is another product_details channel that FieldPolicy has to reach,
+						// not a second list of price fields (issue #590, the same class as
+						// #512/#573). WireBooleans::Coerce() is not applied here: that step
+						// is wire-format only (is_aggregated_amount 0/1 -> bool) and
+						// unrelated to redaction.
+						$productDetails = FieldPolicy::GetInstance()->RedactRow('product_details', StockService::GetInstance()->GetProductDetails($mealPlanEntry['product_id']));
+						$productDetails['product_barcodes'] = FieldPolicy::GetInstance()->RedactRows('product_barcodes', $productDetails['product_barcodes']);
+					}
+					else
+					{
+						// GetProductDetails() embeds stock-state fields (stock_amount*,
+						// next_due_date, location) that GET /api/stock/products/{id} gates
+						// wholesale behind STOCK_VIEW - StockApiController::ProductDetails
+						// refuses the entire request for a caller without it, rather than
+						// trimming the response, and FieldPolicy's product_details rows
+						// (above) only ever gated price fields, never these. A caller here
+						// who only holds MEALPLAN_VIEW must end up with the same
+						// stock-state-free result, so this builds just the fields the
+						// calendar card renders (product name/picture/calories and the
+						// stock quantity unit) directly, rather than calling
+						// GetProductDetails() and trying to strip its stock fields back out
+						// (issue #594).
+						$productDetails = [
+							'product' => $product,
+							'quantity_unit_stock' => $this->DB->quantity_units($product->qu_id_stock)
+						];
+					}
+				}
 			}
 
 			$events[] = [

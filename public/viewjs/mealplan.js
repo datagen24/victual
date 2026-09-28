@@ -307,24 +307,38 @@ $(".calendar").each(function()
 
 				element.attr("data-product-details", event.productDetails);
 
+				// A caller without STOCK_VIEW never receives stock_amount_aggregated (or
+				// any other stock-state field) at all - the server omits the key rather
+				// than sending a zero, the same distinguishable-absence contract
+				// last_price above relies on (issue #594). Whether there is "enough in
+				// stock" is then simply unknown, not "not enough" - both order/consume
+				// buttons stay disabled (neither action is safe to offer) and the
+				// fulfillment line is left blank instead of showing a guessed answer.
+				var stockStateKnown = typeof productDetails.stock_amount_aggregated !== "undefined" && productDetails.stock_amount_aggregated !== null;
+
 				var productOrderMissingButtonDisabledClasses = "disabled";
-				if (productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
+				if (stockStateKnown && productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
 				{
 					productOrderMissingButtonDisabledClasses = "";
 				}
 
 				var productConsumeButtonDisabledClasses = "disabled";
-				if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+				if (stockStateKnown && productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
 				{
 					productConsumeButtonDisabledClasses = "";
 				}
 
-				fulfillmentInfoHtml = __t('Not enough in stock');
-				var fulfillmentIconHtml = '<i class="fa-solid fa-times text-danger"></i>';
-				if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+				var fulfillmentInfoHtml = "";
+				var fulfillmentIconHtml = "";
+				if (stockStateKnown)
 				{
-					var fulfillmentInfoHtml = __t('Enough in stock');
-					var fulfillmentIconHtml = '<i class="fa-solid fa-check text-success"></i>';
+					fulfillmentInfoHtml = __t('Not enough in stock');
+					fulfillmentIconHtml = '<i class="fa-solid fa-times text-danger"></i>';
+					if (productDetails.stock_amount_aggregated >= mealPlanEntry.product_amount)
+					{
+						fulfillmentInfoHtml = __t('Enough in stock');
+						fulfillmentIconHtml = '<i class="fa-solid fa-check text-success"></i>';
+					}
 				}
 
 				var costsAndCaloriesPerServing = ""

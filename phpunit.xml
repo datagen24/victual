@@ -66,6 +66,7 @@
 			<file>tests/Pgsql/StockPagesTest.php</file>
 			<file>tests/Pgsql/StockEntryFormPriceTest.php</file>
 			<file>tests/Pgsql/MealPlanProductDetailsRedactionTest.php</file>
+			<file>tests/Pgsql/MealPlanStockStateTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
