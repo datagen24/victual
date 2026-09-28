@@ -696,6 +696,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node product-nullable-pickers.js http://127.0.0.1:8085
 
+      # Issues 574 and 587, the same shape of defect as 159 above but in the three EntityForm
+      # body() hooks it did not cover: mealplansectionform.js, userfieldform.js and
+      # taskform.js. PHP never runs public/viewjs, so no PHPUnit phase can see whether the
+      # hook that turns a blank field into null is still there - this drives each form the
+      # way leaving an optional field blank would, and catches the hook being deleted or
+      # reverted, which a server-side test that sends a correctly-typed body cannot.
+      - name: Run nullable integer form checks
+        working-directory: .devtools/frontend
+        run: node nullable-integer-forms.js http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087
