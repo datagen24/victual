@@ -587,7 +587,17 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 	// CodeRabbit review of PR #540: a fully consumed measured container's live ledger row
 	// ------------------------------------------------------------------------------
 
-	public function testMergeRefusesWhenARemovedProductsFullyConsumedMeasuredContainerHasALiveLedgerRow(): void
+	/**
+	 * Round 2 of issue #546 (Opus validator finding on PR #618): a live (undone = 0),
+	 * measured consume booking left over from a fully consumed container is permanent
+	 * history that nothing else ever clears - some rows (e.g. a stock-splitting INSERT's
+	 * own "subsequent dependent bookings") can never be undone at all. An earlier round of
+	 * this guard refused the merge outright whenever such a row existed, which locked the
+	 * merge (and, in the trigger's own equivalent guard, the product's stock unit) forever
+	 * with nothing left in `stock` to consume, weigh, or otherwise resolve. The merge must
+	 * succeed here: the ledger-only case is not this guard's to refuse.
+	 */
+	public function testMergeSucceedsWhenARemovedProductsFullyConsumedMeasuredContainerHasOnlyALiveLedgerRow(): void
 	{
 		$keep = self::insertProduct('Merge Consumed Measured Keep', [
 			'qu_id_purchase' => self::$ids['kilogram'],
@@ -622,16 +632,38 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		$liveMeasuredConsume = array_values(array_filter($liveMeasured, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_CONSUME));
 		self::assertCount(1, $liveMeasuredConsume, 'Given: the consume booking itself is one of them, mirroring the measurement it consumed (MeasureStockEntry() logs its own separate row too)');
 
-		// When: merging would rescale that booking's amount by a non-1 factor (2).
-		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: a live undoable ledger row still carries a measurement');
+		// When: merging rescales that booking's amount by a non-1 factor (2).
+		StockService::GetInstance()->MergeProducts($keep, $remove);
 
-		// Then: the refusal is this method's own clean message, and nothing changed - checking
-		// only `stock` (as this guard used to) would have missed this row entirely, since
-		// `stock` has nothing left for the removed product at all.
-		self::assertStringContainsString('measured open container', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
-		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw database exception message');
-		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
-		self::assertSame($given, self::ledgerRows($remove), 'Then: the ledger is untouched');
+		// Then: the merge succeeds - a live ledger-only measured row no longer blocks it -
+		// and the booking is repointed to the kept product with its amount rescaled, exactly
+		// like every other stock_log row this merge moves.
+		self::assertFalse(self::productExists($remove), 'Then: the merge completes instead of being refused over a ledger-only measured row');
+		$movedConsume = self::$db->query(
+			"SELECT id, amount, opened_amount FROM stock_log WHERE product_id = $keep AND transaction_type = 'consume' AND undone = 0"
+		)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($movedConsume, 'Then: the consume booking is repointed to the kept product');
+		self::assertEqualsWithDelta(-2.0, (float)$movedConsume['amount'], 1e-9, 'Then: its amount is rescaled by the factor (2), same as every other moved stock_log row');
+		self::assertEqualsWithDelta(0.5, (float)$movedConsume['opened_amount'], 1e-9, 'Then: opened_amount itself is not rescaled (it is a measurement in the original stock unit, not an amount)');
+
+		// And: undoing that now-rescaled booking is refused truthfully by UndoBooking()'s
+		// own guard (PR #598) - the protection this guard leans on instead of refusing the
+		// merge itself.
+		$caught = null;
+		try
+		{
+			StockService::GetInstance()->UndoBooking((int)$movedConsume['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused through #598\'s own truthful guard, not a raw database error'
+		);
 	}
 
 	// ------------------------------------------------------------------------------

@@ -131,18 +131,26 @@ descendant group held enough stock to satisfy it.
 
 The [cascade qu_id_stock tests](021-cascade-qu-id-stock.sql) cover migration 0294 (issues
 #543 and #546, #487 remediation). `trg_cascade_change_qu_id_stock` now also rescales
-`product_location_min_stock.min_stock_amount` by the same conversion factor as every other
-per-product amount it already converts (#543). It also refuses the qu_id_stock change
-outright, before any row is touched, when the resolved factor is not 1 and the product has
-a measured open container (#546). That container may be live in `stock`, or only a live
-(`undone = 0`) consume booking left in `stock_log` after a full consumption deleted the
-`stock` row. This mirrors the refusal `StockService::MergeProducts()` already applies to
-the analogous merge case (commit 791389623f).
+`product_location_min_stock.min_stock_amount` and `products.min_stock_amount` by the same
+conversion factor as every other per-product amount it already converts (#543). It also
+refuses the qu_id_stock change outright, before any row is touched, when the resolved
+factor is not 1 and the product has a live measured open container in `stock` (#546),
+mirroring the refusal `StockService::MergeProducts()` already applies to the analogous
+merge case (commit 791389623f).
 
-Six assertions cover the minimum rescale together with `product_location_missing`'s
-correctly converted shortfall, both refusal shapes (with the row left untouched after
-each), and a negative control confirming an ordinary, unmeasured product still rescales
-exactly as it did before this migration.
+The guard deliberately does not also check `stock_log` for a live (`undone = 0`) measured
+consume booking with no live `stock` row - the shape left behind once a whole measured
+container is fully consumed. An earlier round of this migration did, and that over-refused:
+such a booking is permanent history nothing ever clears, so it locked the product's stock
+unit forever. That booking's own undo is already refused truthfully by `UndoBooking()`'s own
+guard (PR #598). That refusal fires if and when the booking is ever undone, which is where
+this protection belongs.
+
+Seven assertions cover both minimum rescales together with `product_location_missing`'s
+correctly converted shortfall, and the live-`stock` refusal (with the row left untouched).
+They also cover a qu_id_stock change succeeding despite a live ledger-only measured booking,
+and a negative control confirming an ordinary, unmeasured product still rescales exactly as
+it did before this migration.
 
 ## Running the checker directly
 
