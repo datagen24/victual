@@ -30,6 +30,14 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 {
 	private const FAR_FUTURE_DATE = '2035-06-30';
 
+	/**
+	 * ADR-0033's "never expires" sentinel - the only real date value stock_splits admits as
+	 * a merge candidate (2026-09-27). A fixture that needs CompactStockEntries() to actually
+	 * merge a row must give it this date or NULL; FAR_FUTURE_DATE above is a real, finite
+	 * date and is never merge-eligible under the new predicate.
+	 */
+	private const NEVER_EXPIRES = '2999-12-31';
+
 	private static PDO $db;
 	private static \DI\Container $container;
 	private static StockApiController $stock;
@@ -185,11 +193,17 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Purchases two entries that match on every CompactStockEntries() grouping column
-	 * except their due date, edits one of their due dates to match the other (triggering
-	 * EditStockEntry()'s compaction call), and returns the product id and the resulting
-	 * STOCK_EDIT_OLD booking id. $editWhich selects which of the two purchases (by
+	 * except their due date, edits one of their due dates to match the other, then runs the
+	 * maintenance command explicitly to merge them, and returns the product id and the
+	 * resulting STOCK_EDIT_OLD booking id. $editWhich selects which of the two purchases (by
 	 * insertion order) is edited, so both row-id orders relative to whichever row
 	 * CompactStockEntries() keeps can be exercised (#488 C1).
+	 *
+	 * ADR-0033 (2026-09-27): EditStockEntry() no longer compacts inline, and only rows with
+	 * no real due date may merge at all - so $firstDue/$secondDue must resolve, after the
+	 * edit, to '2999-12-31' (the "never expires" sentinel) rather than an arbitrary future
+	 * date, and this helper now calls CompactStockEntries() itself, explicitly, where the
+	 * inline call used to fire.
 	 */
 	private function purchaseEditAndCompact(string $productName, float $firstAmount, string $firstDue, float $secondAmount, string $secondDue, string $editWhich): array
 	{
@@ -221,10 +235,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$edit = $this->expectStatus(
 			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => $targetAmount, 'best_before_date' => $newDue, 'open' => false, 'purchased_date' => $purchasedDate, 'price' => $price, 'location_id' => self::$locationA]), new Response(), ['entryId' => $entryId]),
 			200,
-			'Its due date is edited to match the other entry, triggering compaction'
+			'Its due date is edited to match the other entry'
 		);
+		self::assertCount(2, self::rows($product), 'The edit alone no longer merges the two entries (ADR-0033 decision 1)');
 
-		self::assertCount(1, self::rows($product), 'The edit\'s compaction call merges the two entries into one');
+		StockService::GetInstance()->CompactStockEntries($product);
+
+		self::assertCount(1, self::rows($product), 'The explicit maintenance run merges the two entries into one');
 		self::assertSame($firstAmount + $secondAmount, self::stockAmount($product), 'holding both purchases\' units');
 
 		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
@@ -656,12 +673,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 */
 	public function testUndoingAnEditAfterCompactionRefusesRatherThanDestroyingTheOtherContribution(): void
 	{
-		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction A', 3.0, '2030-01-01', 2.0, '2030-02-02', 'second');
+		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction A', 3.0, self::NEVER_EXPIRES, 2.0, '2030-02-02', 'second');
 
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldId]),
 			400,
-			'Undoing the edit after compaction merged it with the other purchase is refused, not silently overwriting the merged row'
+			'Undoing the edit after an explicit maintenance merge is refused, not silently overwriting the merged row'
 		);
 
 		self::assertSame(5.0, self::stockAmount($product), 'both purchases\' units are still intact');
@@ -677,12 +694,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 */
 	public function testUndoingAnEditAfterCompactionRefusesInTheReversedRowIdOrderToo(): void
 	{
-		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction B', 3.0, '2030-01-01', 2.0, '2030-02-02', 'first');
+		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction B', 3.0, '2030-01-01', 2.0, self::NEVER_EXPIRES, 'first');
 
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldId]),
 			400,
-			'Undoing the edit after compaction is refused in the reversed row-id order too (#488 C1)'
+			'Undoing the edit after an explicit maintenance merge is refused in the reversed row-id order too (#488 C1)'
 		);
 
 		self::assertSame(5.0, self::stockAmount($product), 'both purchases\' units are still intact');
@@ -703,7 +720,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		$product = self::insertProduct('Undo Open Compaction');
 		$purchasedDate = '2026-01-01';
-		$due = '2030-01-01';
+		// ADR-0033 (2026-09-27): only a never-expiring due date is merge-eligible, and
+		// neither EditStockEntry() nor AddProduct() compacts inline any more - every
+		// "compacting..." step below is now this test's own explicit maintenance call,
+		// placed exactly where the inline call used to fire (removing it a step late would
+		// leave the two opened portions' lineage split across groups instead of confined to
+		// one, per ADR-0033 decision 3's lineage-confinement guard).
+		$due = self::NEVER_EXPIRES;
 
 		$this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => $due, 'purchased_date' => $purchasedDate, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
@@ -715,7 +738,9 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			200,
 			'Three more, matching, purchased the same day'
 		);
+		StockService::GetInstance()->CompactStockEntries($product);
 		self::assertSame(5.0, self::stockAmount($product), 'The two purchases are compacted into one entry of five');
+		self::assertCount(1, self::rows($product), 'as a single row');
 
 		$this->expectStatus(
 			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 2]), new Response(), ['productId' => $product]),
@@ -731,8 +756,9 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 4, 'best_before_date' => $due, 'purchased_date' => $purchasedDate, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
 			200,
-			'Four more matching units are purchased, compacting the unopened remainder'
+			'Four more matching units are purchased'
 		);
+		StockService::GetInstance()->CompactStockEntries($product);
 
 		self::assertSame(3.0, self::openedAmount($product), 'Three units are opened before the undo');
 
@@ -752,27 +778,31 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Purchases a positive row at A (earlier due date, so stock_next_use() offers it
-	 * first) and a vessel row that WeighLocation() reduces to exactly zero (gross reading
-	 * equals the vessel's tare weight) at an earlier due date still, so the zero row is
-	 * always the first candidate. ConsumeProduct() must skip that legitimate zero row
-	 * rather than refuse the whole consume, and must leave it untouched.
+	 * first) and a second row reduced to exactly zero by a direct edit, at an earlier due
+	 * date still, so the zero row is always the first candidate. ConsumeProduct() must skip
+	 * that legitimate zero row rather than refuse the whole consume, and must leave it
+	 * untouched.
+	 *
+	 * The zero row used to come from weighing a vessel down to its own tare weight
+	 * (WeighLocation() -> EditStockEntry(..., 0)). ADR-0033 (2026-09-27) changed
+	 * WeighLocation() to correct the location's TOTAL: a net-zero reading is now a "lower"
+	 * reading like any other, and ConsumeProduct() takes the vessel's row whole rather than
+	 * leaving it at amount 0 - there would be no zero row left for this test to set up that
+	 * way any more. EditStockEntry(..., 'amount' => 0, ...) is unaffected by ADR-0033 and
+	 * remains a legitimate, direct zero-write path (ADR-0032 decision 4 still permits zero,
+	 * only negative amounts are refused), so it produces the same precondition this test's
+	 * own point - ConsumeProduct() skipping a legitimate zero row - depends on.
 	 */
-	public function testConsumeSkipsALegitimateZeroRowLeftByWeighLocation(): void
+	public function testConsumeSkipsALegitimateZeroRowLeftByADirectZeroEdit(): void
 	{
-		$product = self::insertProduct('Undo Zero Row Weigh');
-		// A distinct tare unit with its own explicit conversion to the product's stock unit
-		// (factor 1), the same way .devtools/pgsql/working-container-tests.php sets up its
-		// own tare-enabled fixtures - avoids relying on whether a from=to self-conversion is
-		// implicitly available.
-		$tareUnit = self::insertRow('quantity_units', ['name' => 'Zero Row Tare Unit ' . $product]);
-		self::insertRow('quantity_unit_conversions', ['from_qu_id' => $tareUnit, 'to_qu_id' => 2, 'factor' => 1, 'product_id' => $product]);
-		$vessel = self::insertRow('locations', ['name' => 'Zero Row Vessel ' . $product, 'tare_weight' => 1.0, 'tare_qu_id' => $tareUnit]);
+		$product = self::insertProduct('Undo Zero Row Edit');
 
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $vessel, 'best_before_date' => '2026-01-01', 'purchased_date' => '2026-01-01']), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationB, 'best_before_date' => '2026-01-01', 'purchased_date' => '2026-01-01']), new Response(), ['productId' => $product]),
 			200,
-			'One unit is purchased into the vessel, due first'
+			'One unit is purchased at B, due first'
 		);
+		$zeroRowId = (int)self::rows($product)[0]['id'];
 		$this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
 			200,
@@ -780,11 +810,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		);
 
 		$this->expectStatus(
-			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 1.0]), new Response(), ['locationId' => $vessel]),
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 0, 'best_before_date' => '2026-01-01', 'open' => false, 'purchased_date' => '2026-01-01', 'location_id' => self::$locationB]), new Response(), ['entryId' => $zeroRowId]),
 			200,
-			'The vessel weighs exactly its own tare - net zero'
+			'The B entry is directly edited down to exactly zero'
 		);
-		self::assertSame(0.0, self::stockAmountAtLocation($product, $vessel), 'Sanity: the vessel row is now exactly zero');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: the B row is now exactly zero');
+		self::assertCount(1, array_filter(self::rows($product), fn($row) => (int)$row['id'] === $zeroRowId), 'Sanity: the zero row itself still exists (an edit to 0 does not delete it)');
 
 		$this->expectStatus(
 			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
@@ -792,7 +823,8 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Consuming 1 succeeds by skipping the zero row and taking from A'
 		);
 
-		self::assertSame(0.0, self::stockAmountAtLocation($product, $vessel), 'The zero row is untouched, not deleted or made negative');
+		self::assertSame(0.0, self::stockAmountAtLocation($product, self::$locationB), 'The zero row is untouched, not deleted or made negative');
+		self::assertCount(1, array_filter(self::rows($product), fn($row) => (int)$row['id'] === $zeroRowId), 'and it still physically exists');
 		self::assertSame(4.0, self::stockAmountAtLocation($product, self::$locationA), 'and the positive row absorbed the consume');
 	}
 
@@ -958,15 +990,18 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		$product = self::insertProduct('Undo Purchase Real Remainder');
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'location_id' => self::$locationA, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
 			200,
 			'A 0.004-unit lot is purchased'
 		);
 		$large = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
 			200,
-			'Three matching units are purchased, compacting into one entry of 3.004'
+			'Three matching units are purchased'
 		);
+		// ADR-0033 (2026-09-27): neither purchase compacts inline any more - only an
+		// explicit maintenance run merges them, and only because both are never-expiring.
+		StockService::GetInstance()->CompactStockEntries($product);
 		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'Sanity: the two purchases are compacted');
 
 		$this->expectStatus(
@@ -988,9 +1023,9 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		$product = self::insertProduct('Undo Edit Small Merge');
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'best_before_date' => '2030-01-01', 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
 			200,
-			'A 0.004-unit lot is purchased, due 2030-01-01'
+			'A 0.004-unit lot is purchased, never expiring'
 		);
 		$this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => '2030-02-02', 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
@@ -1003,12 +1038,19 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$entryId->execute([$product, '2030-02-02']);
 		$entryId = (int)$entryId->fetchColumn();
 
+		// ADR-0033 (2026-09-27): EditStockEntry() no longer compacts inline. The edit takes
+		// the 0.004-unit lot's own never-expiring due date (rather than the other way
+		// around), since only that date keeps the merged row eligible for the explicit
+		// maintenance run right below.
 		$edit = $this->expectStatus(
-			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 3, 'best_before_date' => '2030-01-01', 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['entryId' => $entryId]),
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]), new Response(), ['entryId' => $entryId]),
 			200,
-			'Its due date is edited to match the 0.004-unit lot, compacting them into 3.004'
+			'Its due date is edited to match the 0.004-unit lot'
 		);
-		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'Sanity: the edit\'s compaction merged the two entries');
+		self::assertCount(2, self::rows($product), 'The edit alone does not merge them (ADR-0033 decision 1)');
+
+		StockService::GetInstance()->CompactStockEntries($product);
+		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'Sanity: the explicit maintenance run merged the two entries');
 
 		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
 
@@ -1258,106 +1300,109 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * stock_row_id must match that exact row or refuse, not guess from descriptive
 	 * columns that a different live booking's row can share by coincidence.
 	 */
-	private function threeWholeRowOpenedTwinsMergingTwoOfThem(string $productName, bool $moveZ1First): array
+	/**
+	 * Rebuilt for ADR-0033 (2026-09-27): the original fixture here purchased three units,
+	 * split two off by whole-row TRANSFER, and opened all three - which shared one stock_id
+	 * throughout (a whole-row transfer never mints a new one), so the two-row group this test
+	 * needs to merge always shared that id with the third, outside row and ADR-0033's
+	 * shared-stock_id guard now correctly, and permanently, skips it. No maintenance run can
+	 * reach that precondition any more.
+	 *
+	 * What W1/W2 actually protect against is still reachable, on a fixture with no shared
+	 * stock_id at all: two one-unit never-expiring purchases, each opened WHOLE via its own
+	 * stock_entry_id (no split, so no remainder and no lineage row either), then merged by one
+	 * explicit maintenance run. $openR2First controls which opening is booked last:
+	 *
+	 * - false (R1 opened first, R2 second): the newest opening targets R2, the row the merge
+	 *   KEEPS (MAX(id) - R2 is always the higher id, having been purchased second). The row
+	 *   still exists afterwards, but the merge overwrote its amount with the group's sum - the
+	 *   identity check's AMOUNT MISMATCH branch (StockService.php's UndoBooking(), PRODUCT_OPENED
+	 *   case).
+	 * - true (R2 opened first, R1 second): the newest opening targets R1, the row the merge
+	 *   DELETES. Undoing it must reach the identity check's NULL-ROW branch, not the
+	 *   subsequent-bookings guard a few lines above it in UndoBooking() - reachable only
+	 *   because nothing is undone after the row it named stops existing, since the merge
+	 *   itself never inserts a stock_log row, and this is the newest one in the group either
+	 *   way (id order, not row survival, decides "newest").
+	 *
+	 * @return array{0: int, 1: int} product id, the newest PRODUCT_OPENED booking's id
+	 */
+	private function twoWholeRowOpenedTwinsMerging(string $productName, bool $openR2First): array
 	{
 		$product = self::insertProduct($productName);
-		$locationC = self::insertRow('locations', ['name' => 'Twin C ' . $product]);
-		$locationD = self::insertRow('locations', ['name' => 'Twin D ' . $product]);
+		$purchasedDate = '2026-01-01';
+		$price = 1.0;
 
-		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+		$purchaseArgs = ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => $purchasedDate, 'price' => $price];
+		$purchase1 = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', $purchaseArgs), new Response(), ['productId' => $product]),
 			200,
-			'Three units are purchased at A'
+			'R1 (one never-expiring unit) is purchased'
 		);
-		$this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB]), new Response(), ['productId' => $product]),
+		$purchase2 = $this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', $purchaseArgs), new Response(), ['productId' => $product]),
 			200,
-			'One unit is split off to B (Z1)'
+			'R2 (a second, matching never-expiring unit) is purchased - its row id is always higher than R1\'s'
 		);
-		$this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => self::$locationA, 'location_id_to' => $locationC]), new Response(), ['productId' => $product]),
-			200,
-			'One more unit is split off to C (Z2)'
-		);
+		$stockIdR1 = $purchase1[0]['stock_id'];
+		$stockIdR2 = $purchase2[0]['stock_id'];
 
-		$rowX = self::$db->prepare('SELECT id FROM stock WHERE product_id = ? AND location_id = ?');
-		$rowX->execute([$product, self::$locationA]);
-		$rowX = (int)$rowX->fetchColumn();
-		$this->expectStatus(
-			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0, 'location_id' => self::$locationA, 'note' => 'x']), new Response(), ['entryId' => $rowX]),
-			200,
-			'The remaining A row (X) is noted "x" - kept apart from Z1/Z2 by CompactStockEntries()\'s own note column'
-		);
-
-		// X, Z1 and Z2 all share the same stock_id (splits/transfers never mint a new one
-		// for a row that keeps a live booking - only for the piece left behind), so
-		// OpenProduct()'s stock_entry_id parameter cannot tell them apart: it filters
-		// candidates by stock_id, which is identical for all three. stock_next_use()'s
-		// own candidate order can be steered instead, since it prioritises a row at the
-		// product's default consume location above due/purchased date (identical for all
-		// three here, since every row descends from the one original purchase) - setting
-		// it to A once, before opening X, is enough for the whole sequence: every open
-		// call from here on immediately follows moving that call's own target row to A,
-		// and every other candidate is either already open (excluded outright) or still
-		// at a different location (lower priority), so A's own not-yet-open row is always
-		// the one picked, without needing to change the setting again.
-		self::$db->prepare('UPDATE products SET default_consume_location_id = ? WHERE id = ?')->execute([self::$locationA, $product]);
-		$this->expectStatus(
-			fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
-			200,
-			'X (the only entry at A so far, and now the default consume location) is opened'
-		);
-
-		$moveAndOpen = function (int $fromLocation) use ($product)
+		$openWhole = function (string $stockId) use ($product)
 		{
-			$this->expectStatus(
-				fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 1, 'location_id_from' => $fromLocation, 'location_id_to' => self::$locationA]), new Response(), ['productId' => $product]),
-				200,
-				'Moved back to A'
-			);
 			return $this->expectStatus(
-				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+				fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockId]), new Response(), ['productId' => $product]),
 				200,
-				'and opened'
+				'The whole one-unit row is opened by its own stock_entry_id - no split, no remainder'
 			);
 		};
 
-		$moveAndOpen($moveZ1First ? self::$locationB : $locationC);
-		$newestOpen = $moveAndOpen($moveZ1First ? $locationC : self::$locationB);
+		$openWhole($openR2First ? $stockIdR2 : $stockIdR1);
+		$newestOpen = $openWhole($openR2First ? $stockIdR1 : $stockIdR2);
 
-		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 5, 'location_id' => $locationD, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
-			200,
-			'A matching purchase at D triggers CompactStockEntries() for the whole product, merging the two note-less opened twins at A'
-		);
+		StockService::GetInstance()->CompactStockEntries($product);
+		self::assertCount(1, self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product)->fetchAll(), 'Sanity: the explicit maintenance run merged the two opened whole rows into one');
 
-		return [$product, $newestOpen];
+		return [$product, (int)$newestOpen[0]['id']];
 	}
 
-	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesRatherThanClosingAnUnrelatedRow(): void
+	/**
+	 * W1 (rebuilt, see twoWholeRowOpenedTwinsMerging()'s own docblock): the newest opening's
+	 * row was DELETED by the merge - the identity check's NULL-ROW branch, not the
+	 * subsequent-bookings guard a merged StockMaintenanceCompactionTest fixture reaches
+	 * instead (its own second merge rewrites both openings onto the kept stock_id before
+	 * either is undone, so nothing there is left to exercise this specific branch).
+	 */
+	public function testUndoingTheNewestOpeningRefusesWhenTheMergeDeletedItsRow(): void
 	{
-		[$product, $newestOpen] = $this->threeWholeRowOpenedTwinsMergingTwoOfThem('Undo Twin Merge W1', true);
+		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Deleted', true);
 
-		self::assertSame(3.0, self::openedAmount($product), 'Sanity: all three units are open before the undo (X=1, merged Z1+Z2=2)');
-
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$newestOpen[0]['id']]),
+		$decoded = $this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
 			400,
-			'W1: undoing the newest opening (Z2) is refused, not satisfied by closing X or leaving the merged row open with 2'
+			'Undoing the newest opening is refused - the merge deleted the row it named'
 		);
+		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
+
+		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not resurrect or split the merged row');
 	}
 
-	public function testUndoingTheNewestOfThreeOpenedTwinsRefusesInTheOtherOrderToo(): void
+	/**
+	 * W2 (rebuilt, see twoWholeRowOpenedTwinsMerging()'s own docblock): the newest opening's
+	 * row SURVIVED the merge, but the merge overwrote its amount with the group's sum - the
+	 * identity check's AMOUNT MISMATCH branch.
+	 */
+	public function testUndoingTheNewestOpeningRefusesWhenTheMergeKeptButChangedItsRow(): void
 	{
-		[$product, $newestOpen] = $this->threeWholeRowOpenedTwinsMergingTwoOfThem('Undo Twin Merge W2', false);
+		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Kept', false);
 
-		self::assertSame(3.0, self::openedAmount($product), 'Sanity: all three units are open before the undo (X=1, merged Z1+Z2=2)');
-
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$newestOpen[0]['id']]),
+		$decoded = $this->expectRefusalWithUntouchedLedger(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
 			400,
-			'W2: undoing the newest opening (Z1, opened after Z2 this time) is refused - the merge instead deletes this exact row, and the fallback must not recover by closing X either'
+			'Undoing the newest opening is refused - the row it named still exists, but the merge changed its amount underneath it'
 		);
+		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its amount-mismatch branch, same text as the null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
+
+		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not split the merged row back apart');
 	}
 
 	// ------------------------------------------------------------------------------
@@ -1382,12 +1427,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	{
 		$product = self::insertProduct('Undo Whole Transfer After Compaction');
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$locationB, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'location_id' => self::$locationB, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
 			200,
 			'Two units are purchased directly at B'
 		);
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
 			200,
 			'Three units are purchased at A - a higher row id than the B purchase'
 		);
@@ -1402,10 +1447,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$locationC = self::insertRow('locations', ['name' => 'After Compaction C ' . $product]);
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $locationC, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => $locationC, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::FAR_FUTURE_DATE, 'price' => 1.0]), new Response(), ['productId' => $product]),
 			200,
-			'A purchase elsewhere triggers a product-wide compaction pass, merging the two now-identical rows at B'
+			'A purchase elsewhere (unrelated to this test beyond giving the explicit run below something else to look at too)'
 		);
+		// ADR-0033 (2026-09-27): no purchase compacts inline any more. An explicit,
+		// product-wide maintenance run is what merges the two now-identical rows at B.
+		StockService::GetInstance()->CompactStockEntries($product);
 		self::assertCount(1, array_filter(self::rows($product), fn($row) => (int)$row['location_id'] === self::$locationB), 'Sanity: B is down to a single compacted row');
 		self::assertSame(5.0, self::stockAmountAtLocation($product, self::$locationB), 'Sanity: that row holds all 5 units');
 
@@ -2062,11 +2110,15 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 	/**
 	 * The same scenario as above, but at a tare-configured vessel that is then reused
-	 * for a second, later purchase (a different due date, so CompactStockEntries()
-	 * cannot merge it with any leftover): before the fix, the stray residue row from
-	 * consuming the first purchase survived as a second entry at the vessel, and
-	 * WeighLocation() - which requires exactly one - refused it, even though nothing
-	 * a person would call a real container was left behind by the consume.
+	 * for a second, later purchase (a different due date, so no maintenance run could ever
+	 * merge it with any leftover): before the fix, the stray residue row from consuming the
+	 * first purchase survived as a second entry at the vessel, and WeighLocation() (which
+	 * used to require exactly one row) refused it, even though nothing a person would call a
+	 * real container was left behind by the consume. WeighLocation() no longer requires one
+	 * row at all (ADR-0033 decision 5, 2026-09-27; it sums whatever is there and corrects
+	 * the total), so this test now also exercises that: the weighed net (2.0) exactly
+	 * matches what the sole surviving row already holds, so nothing is booked at all - one
+	 * more reason the residue row's absence has to be real rather than merely uncounted.
 	 */
 	public function testWeighingAVesselStillWorksAfterConsumingAResidueProneAmountThere(): void
 	{
@@ -2150,5 +2202,121 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$newRow->execute([$product, '2031-02-02']);
 		$newId = (int)$newRow->fetchColumn();
 		self::assertGreaterThan($originalId, $newId, 'the new purchase\'s id is above every id that already existed, not a reused one');
+	}
+
+	/**
+	 * PostgresDialect::MAX_SEQUENCE_ADVANCE_GAP (CodeRabbit review of PR #577, inline
+	 * comment 4117658616): the previous test above shows a small gap still being closed and
+	 * the id reused, as before this cap existed. This is the other side of the cap - a gap
+	 * wide enough that closing it would mean an unbounded number of nextval() calls while
+	 * holding this product's own advisory lock. Simulated cheaply with two setval() calls
+	 * rather than a real import (the only thing that can actually open a gap this wide,
+	 * since stock_log is not otherwise editable through the API): one jumps the sequence far
+	 * ahead before the purchase, so the purchase's own ordinary insert naturally lands on a
+	 * large id without any explicit id of its own, and one drops the sequence back down to
+	 * its own pre-test position (still past every id anything else in this schema has used,
+	 * so the fallback insert below cannot collide with an earlier test's own row) before the
+	 * undo - standing in for whatever left a real import's sequence resynced from a
+	 * surviving maximum this far below an id a booking still names. Past the cap,
+	 * AdvanceIdentitySequence() refuses without drawing a single nextval(), and the rebuild
+	 * falls back to a fresh, ordinary id instead of the abandoned one - exactly what a
+	 * booking with no recorded stock_row_id at all already gets. A later TRANSFER_TO/FROM or
+	 * PRODUCT_OPENED undo naming the abandoned id would then refuse safely on its own (#488);
+	 * nothing in this test exercises that path, since nothing here is left to undo it.
+	 */
+	public function testUndoingAFullConsumeFallsBackToAFreshIdWhenTheGapExceedsTheCap(): void
+	{
+		$product = self::insertProduct('Undo Consume Sequence Gap Above Cap');
+
+		$sequenceName = self::$db->query("SELECT pg_get_serial_sequence('stock', 'id')")->fetchColumn();
+		$naturalPosition = (int)self::$db->query('SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName)->fetchColumn();
+		$farAhead = $naturalPosition + PostgresDialect::MAX_SEQUENCE_ADVANCE_GAP + 1;
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $farAhead, false)");
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'X is purchased, naturally landing on the far-advanced id'
+		);
+		$originalId = (int)self::rows($product)[0]['id'];
+		self::assertSame($farAhead, $originalId, 'Sanity: the purchase landed exactly on the far-advanced id');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'X is fully consumed, deleting its row'
+		);
+
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $naturalPosition, false)");
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is still accepted even though the gap to its original id exceeds the cap'
+		);
+
+		$rebuilt = self::rows($product)[0];
+		self::assertSame($naturalPosition, (int)$rebuilt['id'], 'the row is rebuilt under a fresh, ordinary id - the abandoned far id is above the cap');
+		self::assertSame(1.0, (float)$rebuilt['amount'], 'the consumed amount is restored correctly under the fresh id');
+
+		$sequenceAfter = (int)self::$db->query('SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName)->fetchColumn();
+		self::assertLessThan($originalId, $sequenceAfter, 'no nextval() loop ran to close the refused gap - the sequence advanced only by the fresh insert\'s own ordinary nextval() call, nowhere near the abandoned id');
+	}
+
+	// ------------------------------------------------------------------------------
+	// STOCK_EDIT_OLD undo restores shopping_location_id (#531 follow-up)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The TRANSACTION_TYPE_STOCK_EDIT_OLD booking records shopping_location_id the same as
+	 * every other edited column (see its own creation in EditStockEntry()), but the undo's
+	 * restore array omitted it - so undoing an edit that had cleared a store restored the
+	 * price and due date but left the store NULL instead of the store the edit had cleared.
+	 */
+	public function testUndoingAStockEditRestoresTheClearedShoppingLocation(): void
+	{
+		$store = self::insertRow('shopping_locations', ['name' => 'Undo Restore Store']);
+		$product = self::insertProduct('Undo Restore Shopping Location');
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', [
+				'amount' => 2,
+				'location_id' => self::$locationA,
+				'shopping_location_id' => $store,
+				'best_before_date' => self::FAR_FUTURE_DATE,
+				'purchased_date' => '2026-01-01',
+				'price' => 1.5,
+			]), new Response(), ['productId' => $product]),
+			200,
+			'Purchased with a store recorded'
+		);
+
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$entryId->execute([$product]);
+		$entryId = (int)$entryId->fetchColumn();
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The store is recorded before the edit');
+
+		$edit = $this->expectStatus(
+			// shopping_location_id: null clears the store - omitting the key entirely
+			// means "keep the current value" (StockService::KeepStoredValue()), so a null
+			// is required here to actually clear it.
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.5, 'location_id' => self::$locationA, 'shopping_location_id' => null]), new Response(), ['entryId' => $entryId]),
+			200,
+			'The edit clears the store'
+		);
+
+		self::assertNull(self::rows($product)[0]['shopping_location_id'], 'The store is cleared by the edit');
+
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+		self::assertSame($store, (int)$editOld['shopping_location_id'], 'The OLD booking records the store the edit cleared');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			204,
+			'Undoing the edit is accepted'
+		);
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The undo restores the store the edit had cleared, not NULL');
 	}
 }

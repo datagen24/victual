@@ -52,6 +52,12 @@ class RecipeOperationsTest extends PgsqlSchemaTestCase
 
 		self::$db = self::Pdo();
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'recipeoperations-caller', 'fixture')");
+		// RecipesService::ConsumeRecipe() checks STOCK_PURCHASE unconditionally on the ambient
+		// caller as of issue #532 - the producing-recipe cases below exercise booking
+		// behaviour, not authorization, so the caller needs the permission rather than the
+		// call needing a request (see RecipeRouteAuthzTest.php for the authorization coverage
+		// itself).
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name = 'ADMIN'");
 
 		self::$recipes = RecipesService::GetInstance();
 		self::$stock = StockService::GetInstance();

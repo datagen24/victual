@@ -82,11 +82,15 @@ database creates one account, `admin`, and gives it:
   password **must be changed at the first login**: every page sends you to the
   change-password form, and the API answers `403` to everything except that form's save
   (`PUT /api/users/{your id}`), `GET /api/user` and `GET /api/system/db-changed-time`. That
-  includes API keys the account already holds.
+  includes API keys the account already holds, and the save itself accepts only the
+  password while the restriction is in force — a name or picture changed alongside it
+  is refused too.
 
 The same restriction applies to any account that logs in with the password `admin` — which is
 how an installation seeded before this change, still on grocy's old `admin` / `admin`, is
-caught at its next login. Changing the password lifts it.
+caught at its next login. Changing the password lifts it, signs out every other session the
+account holds, and replaces the session that made the change with a fresh one — so the
+browser completing the change stays signed in under the new password rather than the old.
 
 If the password line was lost before anybody logged in, empty the database and migrate again
 with `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` set; the seeding happens only when the database is
@@ -106,6 +110,10 @@ older server and names the version it found. An installation whose `config.php`
 still names `sqlite` is refused at startup, with the exact command that moves it.
 
 ### Moving an existing SQLite installation across
+
+Stop the application, and stop any label workers with it, before running the import. The
+import replaces the product, stock, and print-job data those workers act on, the same reason
+[Restoring](operator/backup-restore.md#restoring) gives for a restore.
 
 ```
 php bin/victual-migrate                                    # create the schema in the empty PostgreSQL database

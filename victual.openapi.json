@@ -1619,7 +1619,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful",
+						"description": "The operation was not successful - Changing your own password, or a must_change_password-flagged account's own forced rotation to it: the current password (current_password or current_password_base64) was missing, empty or did not match. A flagged self-edit sent no new password, or one identical to the current one. first_name, last_name, password, current_password or picture_file_name was present and not a string. See this operation's own description for exactly when each applies.",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -1639,7 +1639,7 @@
 						}
 					},
 					"403": {
-						"description": "The authenticated user lacks a permission this operation requires",
+						"description": "The authenticated user lacks a permission this operation requires, or is a must_change_password-flagged account whose self-edit asked to change anything besides its own password",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -1648,7 +1648,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires USERS_EDIT to edit another user, or USERS_EDIT_SELF to edit your own account - except a must_change_password-flagged account editing itself, which needs neither permission (issue #514): the flag alone authorizes it to change its own password, with the correct current_password, and nothing else in the same request. On this flagged path only, an omitted username, first_name, last_name or picture_file_name defaults to its stored value - the 403 refusal below is about a field that is present and different, not about which fields happen to be sent at all, so a request that sends only the new password and current_password (what this same route's own 403 body, when the flag is still set, recommends) is exactly as valid as one that resubmits every field unchanged. A flagged self-edit that sends no new password, or its current password again, is refused with 400 before anything else is checked. One that does send a new password but also sends a username, first_name, last_name or picture_file_name that differs from what is stored is refused with 403, the same answer a missing permission gets - this is an authorization refusal, not a data one, and applies whether or not a current password was also supplied.\n\nChanging your own password - flagged or not - additionally requires the current one, sent as current_password (or current_password_base64). A password change that succeeds revokes every other session already open on the account (issue #513): when the account being changed is also the acting one and was not flagged, the session that made the request is spared; when it was flagged, every session on the account is revoked, including the one that made the request, and a freshly minted session cookie replaces it."
 			},
 			"delete": {
 				"summary": "Deletes the given user",
@@ -4008,7 +4009,7 @@
 		},
 		"/stock/locations/{locationId}/weigh": {
 			"post": {
-				"summary": "Weighs a vessel (a bin, a spice jar) and corrects its one stock entry to match, subtracting the location's own tare",
+				"summary": "Weighs a vessel (a bin, a spice jar) and corrects its stock total at that location to match, subtracting the location's own tare",
 				"tags": [
 					"Stock"
 				],
@@ -4037,6 +4038,11 @@
 									"gross_qu_id": {
 										"type": "integer",
 										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									},
+									"best_before_date": {
+										"type": "string",
+										"format": "date",
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. A malformed value or JSON null is refused with a 400 whatever the reading; omit the field entirely for it to have no bearing when the reading is lower or unchanged."
 									}
 								},
 								"example": {
@@ -4048,7 +4054,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The operation was successful. An empty array means the reading matched the amount already on record at this location and nothing was booked (ADR-0033)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4061,7 +4067,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit)",
+						"description": "The operation was not successful (possible errors are: not existing location, no tare configured, zero or more than one product stocked at the location, gross reading in the wrong unit, gross reading below the tare weight, unconvertible tare unit, higher reading given with no best_before_date, malformed or null best_before_date whatever the reading)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4125,6 +4131,11 @@
 									"gross_qu_id": {
 										"type": "integer",
 										"description": "Optional. When given, must equal the location's tare_qu_id, or the request is refused rather than converted"
+									},
+									"best_before_date": {
+										"type": "string",
+										"format": "date",
+										"description": "Required only when the reading is higher than the amount already on record at this location: a positive correction adds a new stock entry and cannot guess its due date. A malformed value or JSON null is refused with a 400 whatever the reading; omit the field entirely for it to have no bearing when the reading is lower or unchanged."
 									}
 								},
 								"example": {
@@ -4136,7 +4147,7 @@
 				},
 				"responses": {
 					"200": {
-						"description": "The operation was successful",
+						"description": "The operation was successful. An empty array means the reading matched the amount already on record at this location and nothing was booked (ADR-0033)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4939,7 +4950,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW to read the recipe and SHOPPINGLIST_ITEMS_ADD to add its missing ingredients to the shopping list."
 			}
 		},
 		"/recipes/{recipeId}/fulfillment": {
@@ -5045,7 +5057,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW to read the recipe and STOCK_CONSUME to consume it. A recipe that produces a product, including through a meal-plan shadow's original recipe, also requires STOCK_PURCHASE."
 			}
 		},
 		"/recipes/fulfillment": {
@@ -10324,6 +10337,7 @@
 			},
 			"User": {
 				"type": "object",
+				"description": "Write-only: the request body for POST /users and PUT /users/{userId}. Never returned by a response - GET /users returns UserDto instead, which carries no password field of any kind.",
 				"properties": {
 					"id": {
 						"type": "integer"
@@ -10332,16 +10346,39 @@
 						"type": "string"
 					},
 					"first_name": {
-						"type": "string"
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"last_name": {
-						"type": "string"
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"password": {
-						"type": "string"
+						"type": "string",
+						"description": "POST /users: required, except under externally managed (reverse-proxy) authentication, with authentication disabled, or on an embedded install - none of which ever check a local password to authenticate a request at all - where a missing or blank value is accepted and an unusable random password is stored instead, and a non-blank value sent anyway is still honored the same as under every other authentication backend. PUT /users/{userId}: optional; present and non-blank, it is treated as a password change, and changing your own account's password additionally requires current_password (see below); omitted, the stored password is left untouched. May also be sent base64-encoded, as password_base64 - a plain encoding, used because a password may contain characters a client finds awkward to send, not a secret-keeping measure - which takes precedence if both are sent."
+					},
+					"password_base64": {
+						"type": "string",
+						"description": "password, base64-encoded. See password's own description."
+					},
+					"current_password": {
+						"type": "string",
+						"description": "PUT /users/{userId} only. Required whenever the request changes your own account's password (self-edit with password present), including a must_change_password-flagged account's own forced rotation - refused with 400 (\"The current password is required to change the password, and did not match\") when missing, empty or wrong, with the same message in all three cases. A wrong one counts toward the same throttle as a failed login, and while that throttle is active every attempt is refused with that message, even a correct one. Ignored otherwise, including when an administrator changes someone else's password. May also be sent base64-encoded, as current_password_base64 - see password_base64 above."
+					},
+					"current_password_base64": {
+						"type": "string",
+						"description": "current_password, base64-encoded. See password_base64's own description."
 					},
 					"picture_file_name": {
-						"type": "string"
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "PUT /users/{userId} only: an omitted key leaves the stored picture untouched; an explicit null erases it. POST /users has no stored picture yet, so this distinction does not apply there."
 					},
 					"row_created_timestamp": {
 						"type": "string",
@@ -11521,7 +11558,7 @@
 			"GenericEntityWrite": {
 				"type": "object",
 				"additionalProperties": true,
-				"description": "A map of the entity's writable columns. Deliberately untyped, because that is what the server implements: `POST /objects/{entity}` and `PUT /objects/{entity}/{objectId}` take whatever keys the body carries, drop the two the server owns (`id` and `row_created_timestamp` - see GenericEntityApiController::WithoutServerOwnedColumns), and `PUT` writes only the keys present, so a partial body is a partial update. Nothing validates the body against a schema.\n\nThese two bodies used to be documented as the same undiscriminated `oneOf` the read response used. That was never accurate - the union was matched by declaration order so every entity's body was really a `Product`, and both of `Product`'s server-owned properties were documented as settable. Once the read union's members gained `required` properties for issue #232, continuing to share them would have meant documenting `id` as mandatory on a create and forcing a read-modify-write for every partial update. The column vocabulary to use here is the schema of the entity being written - Product, Chore, Battery, Location, QuantityUnit, ShoppingListItem, StockEntry, ProductBarcode, Userfield - minus `id` and `row_created_timestamp`."
+				"description": "A map of the entity's writable columns. Deliberately untyped, because that is what the server implements: `POST /objects/{entity}` and `PUT /objects/{entity}/{objectId}` take whatever keys the body carries, drop the two columns the server owns (`id` and `row_created_timestamp`) plus `userfields`, which is not a column at all - GetObject()/GetObjects() attach it to every read response, and a client that PUTs it back no longer fails on it (see GenericEntityApiController::WithoutServerOwnedColumns), and `PUT` writes only the keys present, so a partial body is a partial update. Nothing validates the body against a schema.\n\nThese two bodies used to be documented as the same undiscriminated `oneOf` the read response used. That was never accurate - the union was matched by declaration order so every entity's body was really a `Product`, and both of `Product`'s server-owned properties were documented as settable. Once the read union's members gained `required` properties for issue #232, continuing to share them would have meant documenting `id` as mandatory on a create and forcing a read-modify-write for every partial update. The column vocabulary to use here is the schema of the entity being written - Product, Chore, Battery, Location, QuantityUnit, ShoppingListItem, StockEntry, ProductBarcode, Userfield - minus `id`, `row_created_timestamp` and `userfields`."
 			}
 		},
 		"securitySchemes": {

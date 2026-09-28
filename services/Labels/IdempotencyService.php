@@ -55,23 +55,44 @@ class IdempotencyService extends LabelService
         $existing = $this->Query('SELECT * FROM label_idempotency_keys WHERE principal_user_id=? AND operation=? AND idempotency_key=? FOR UPDATE',
             [$userId, $operation, $key])->fetch(\PDO::FETCH_ASSOC);
 
-        if ($existing) {
-            if (!hash_equals((string)$existing['request_fingerprint'], $fingerprint)) {
-                $this->Refuse('idempotency_key', 'idempotency_conflict', 'That key was used for a different request; a second intentional action needs a new key');
+        if (!$existing) {
+            // Two Begin() calls reserving the same key race on this row. PostgreSQL blocks
+            // the second's INSERT behind the first's uncommitted one rather than letting both
+            // through - by the time it wakes, the race is already decided: the first
+            // committed, and what looked like "no existing row" a moment ago is now a
+            // same-key replay, or it rolled back, and nothing conflicts. A savepoint is
+            // required to keep using this transaction after a caught statement error -
+            // PostgreSQL aborts the whole transaction otherwise, and the SELECT below would
+            // fail with 25P02 rather than finding the row the conflict proves exists.
+            $this->db->exec('SAVEPOINT idempotency_begin');
+            try {
+                $this->Query('INSERT INTO label_idempotency_keys(principal_user_id,operation,idempotency_key,request_fingerprint,expires_at)
+                    VALUES (?,?,?,?,CURRENT_TIMESTAMP+make_interval(secs=>?))', [$userId, $operation, $key, $fingerprint, self::RETENTION_SECONDS]);
+                $this->db->exec('RELEASE SAVEPOINT idempotency_begin');
+                return ['replay' => false, 'row' => null];
+            } catch (\PDOException $error) {
+                if ($error->getCode() !== '23505') {
+                    throw $error;
+                }
+                $this->db->exec('ROLLBACK TO SAVEPOINT idempotency_begin');
+                $existing = $this->Query('SELECT * FROM label_idempotency_keys WHERE principal_user_id=? AND operation=? AND idempotency_key=? FOR UPDATE',
+                    [$userId, $operation, $key])->fetch(\PDO::FETCH_ASSOC);
+                if (!$existing) {
+                    throw $error;
+                }
             }
-            if ($existing['resource_id'] === null) {
-                // The first attempt reserved the key and did not finish. Answering "in
-                // progress" is the only truthful answer: repeating the work here could
-                // produce a second physical label.
-                $this->Refuse('idempotency_key', 'idempotency_in_progress', 'A request with that key is still in progress');
-            }
-            return ['replay' => true, 'row' => array_merge($existing, ['response' => json_decode((string)$existing['response'], true)])];
         }
 
-        $this->Query('INSERT INTO label_idempotency_keys(principal_user_id,operation,idempotency_key,request_fingerprint,expires_at)
-            VALUES (?,?,?,?,CURRENT_TIMESTAMP+make_interval(secs=>?))', [$userId, $operation, $key, $fingerprint, self::RETENTION_SECONDS]);
-
-        return ['replay' => false, 'row' => null];
+        if (!hash_equals((string)$existing['request_fingerprint'], $fingerprint)) {
+            $this->Refuse('idempotency_key', 'idempotency_conflict', 'That key was used for a different request; a second intentional action needs a new key');
+        }
+        if ($existing['resource_id'] === null) {
+            // The first attempt reserved the key and did not finish. Answering "in
+            // progress" is the only truthful answer: repeating the work here could
+            // produce a second physical label.
+            $this->Refuse('idempotency_key', 'idempotency_in_progress', 'A request with that key is still in progress');
+        }
+        return ['replay' => true, 'row' => array_merge($existing, ['response' => json_decode((string)$existing['response'], true)])];
     }
 
     public function Record(int $userId, string $operation, ?string $key, string $resourceKind, int $resourceId, array $response): void

@@ -22,6 +22,7 @@
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
 			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
+			<file>tests/Pgsql/RecipeRouteAuthzTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
@@ -29,6 +30,7 @@
 		<testsuite name="credentialsplit">
 			<file>tests/Pgsql/CredentialSplitTest.php</file>
 			<file>tests/Pgsql/MigrationRunnerAtomicityTest.php</file>
+			<file>tests/Pgsql/BaselineSeedingAtomicityTest.php</file>
 		</testsuite>
 		<testsuite name="shopliststores">
 			<file>tests/Pgsql/ShoppingListStoresTest.php</file>
@@ -45,6 +47,7 @@
 		</testsuite>
 		<testsuite name="bootstrapadmin">
 			<file>tests/Pgsql/BootstrapAdminTest.php</file>
+			<file>tests/Pgsql/PasswordRotationTest.php</file>
 		</testsuite>
 		<testsuite name="uploadclamp">
 			<file>tests/Pgsql/FileSizeLimitTest.php</file>
@@ -61,9 +64,12 @@
 		</testsuite>
 		<testsuite name="stockpages">
 			<file>tests/Pgsql/StockPagesTest.php</file>
+			<file>tests/Pgsql/StockEntryFormPriceTest.php</file>
+			<file>tests/Pgsql/MealPlanProductDetailsRedactionTest.php</file>
 		</testsuite>
 		<testsuite name="householdpages">
 			<file>tests/Pgsql/HouseholdPagesTest.php</file>
+			<file>tests/Pgsql/SortNumberFormsHttpTest.php</file>
 		</testsuite>
 		<testsuite name="labelapi">
 			<file>tests/Pgsql/LabelApiTest.php</file>
@@ -71,9 +77,12 @@
 		</testsuite>
 		<testsuite name="labelservices">
 			<file>tests/Pgsql/LabelServicesTest.php</file>
+			<file>tests/Pgsql/LabelJobLifecycleTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
+			<file>tests/Pgsql/ReverseProxyAutoProvisionPasswordTest.php</file>
+			<file>tests/Pgsql/AdminPasswordResetSessionRevocationTest.php</file>
 		</testsuite>
 		<testsuite name="helperunits">
 			<file>tests/Pgsql/HelperUnitsTest.php</file>
@@ -104,18 +113,24 @@
 			<file>tests/Pgsql/DialectPolicyTest.php</file>
 			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
 			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
+			<file>tests/Pgsql/ImporterIntegrityTest.php</file>
+			<file>tests/Pgsql/ImporterPrintJobLockConcurrencyTest.php</file>
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
+			<file>tests/Pgsql/CalendarIdentityTest.php</file>
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
+			<file>tests/Pgsql/ApiInputShapesTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
+			<file>tests/Pgsql/RollbackChangeSignalsTest.php</file>
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
 			<file>tests/Pgsql/GenericWriteAtomicityTest.php</file>
+			<file>tests/Pgsql/ObjectRoundTripTest.php</file>
 		</testsuite>
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
@@ -135,6 +150,11 @@
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
+		</testsuite>
+		<testsuite name="stockmaintenance">
+			<file>tests/Pgsql/StockMaintenanceCompactionTest.php</file>
+			<file>tests/Pgsql/StockMaintenanceLineageConfinementKeptIdTest.php</file>
+			<file>tests/Pgsql/StockMaintenanceCommandPrivilegesTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>

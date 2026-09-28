@@ -61,13 +61,50 @@ $('#save-user-button').on('click', function (e)
 		jsonData.picture_file_name = RandomString() + CleanFileName($("#user-picture")[0].files[0].name);
 	}
 
-	jsonData.password_base64 = btoa(jsonData.password);
+	// jsonData.password can be missing for two different reasons, and encoding it
+	// regardless used to send btoa(undefined) === "dW5kZWZpbmVk" - the base64 of the
+	// literal string "undefined" - answered as a real new password by the API (issue
+	// #549, in three different modes across rounds 4, 5, 6 and 8):
+	//
+	// 1. #change_password (edit mode, a backend with a local password a user can change
+	//    at all) exists and is unticked. The password inputs are then disabled, and
+	//    serializeJSON() - like a real form submit - omits a disabled field entirely. An
+	//    admin's edit of someone else's profile with the box left unticked silently set
+	//    that account's password to the word "undefined" (round 4).
+	//
+	// 2. There is no local password to change at all - externally managed (reverse-proxy)
+	//    authentication, an embedded install, or authentication disabled - so
+	//    userform.blade.php renders no password field and no checkbox in edit mode, and,
+	//    as of round 8, none in create mode either: CreateUser() itself now accepts a
+	//    missing password under all three of those and stores an unusable one instead
+	//    (UsersApiController::CreatedUserPassword()). Checking only the checkbox's
+	//    absence - "no checkbox means always encode" - was true for create mode's own
+	//    missing checkbox back when every other checkbox-less mode still rendered a
+	//    hidden field with a real value; it stopped being true the moment create mode
+	//    could be checkbox-less too, and sent the same bogus password there instead
+	//    (round 5 for reverse-proxy, round 8 for embedded installs and disabled auth -
+	//    issue #554).
+	//
+	// So neither the checkbox's state nor its mere absence is sufficient on its own:
+	// whether the field was serialized at all is what actually decides it.
+	var changePasswordCheckbox = $("#change_password");
+	var passwordWasSerialized = jsonData.hasOwnProperty("password");
+
+	if (passwordWasSerialized && (changePasswordCheckbox.length === 0 || changePasswordCheckbox.prop("checked")))
+	{
+		jsonData.password_base64 = btoa(jsonData.password);
+	}
+
 	delete jsonData.password;
 	delete jsonData.password_confirm;
 	delete jsonData.change_password;
 
 	// Only present when editing your own account, and only filled in when the password is
-	// actually being changed - the API requires it in exactly that case (sweep finding S6)
+	// actually being changed - the API requires it in exactly that case (sweep finding S6).
+	// Already safe against the same bug: current_password is disabled (and so omitted by
+	// serializeJSON()) exactly when password is, and the truthy check below additionally
+	// refuses to encode a present-but-empty value - there is no path here that can send
+	// btoa(undefined) or btoa("") disguised as a real current password (issue #549 review).
 	if (jsonData.hasOwnProperty("current_password"))
 	{
 		if (jsonData.current_password)

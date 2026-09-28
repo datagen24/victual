@@ -385,6 +385,34 @@ abstract class DatabaseDialect
 	}
 
 	/**
+	 * Captures whatever this dialect holds as a "MarkDbChanged() happened but is not yet
+	 * flushed" flag, so DatabaseService::InTransaction() can put it back after a rollback
+	 * discards the writes that set it (issue #534: a refused write must not advance
+	 * GET /api/system/db-changed-time).
+	 *
+	 * The default answers null and RestorePendingChangeState() below is a no-op, which is
+	 * the right pair for a dialect with no such flag - SqliteDialect's changed time is the
+	 * database file's own modification time, maintained by the operating system rather than
+	 * deferred in PHP, so there is nothing here to capture or roll back.
+	 *
+	 * @return mixed Opaque; pass back to RestorePendingChangeState() unchanged
+	 */
+	public function CapturePendingChangeState()
+	{
+		return null;
+	}
+
+	/**
+	 * Restores a value captured by CapturePendingChangeState(). A no-op on a dialect whose
+	 * CapturePendingChangeState() returns null.
+	 *
+	 * @param mixed $state
+	 */
+	public function RestorePendingChangeState($state): void
+	{
+	}
+
+	/**
 	 * Brings generated-id counters back in line with the data.
 	 *
 	 * SQLite's AUTOINCREMENT tracks the highest id ever used, so inserting an explicit id
@@ -400,10 +428,15 @@ abstract class DatabaseDialect
 	 * Advances one identity column's sequence to at least $minNextValue, never backward -
 	 * see PostgresDialect's own implementation. A no-op here (SQLite's AUTOINCREMENT
 	 * already tracks the highest id ever used on its own, per ResyncGeneratedIdCounters()'s
-	 * own docblock above, so there is never a sequence to advance).
+	 * own docblock above, so there is never a sequence to advance), and so always reports
+	 * success: with no sequence to advance there is also no gap PostgresDialect's own
+	 * MAX_SEQUENCE_ADVANCE_GAP would ever have reason to refuse.
+	 *
+	 * @return bool Always true.
 	 */
-	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): void
+	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): bool
 	{
+		return true;
 	}
 
 	/**

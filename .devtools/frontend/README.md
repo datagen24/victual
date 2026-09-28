@@ -144,6 +144,33 @@ and assigns/removes Child and Guest through the user permissions page while pres
 an overlapping direct grant. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an
 installed Chromium executable. CI runs it in `frontend-security` after the S29 probe.
 
+## Userform password checkbox (issue #549)
+
+`node userform-password.js <url>` runs against a disposable authenticated admin or demo
+instance. It creates a second user and edits that account's page with `#change_password`
+left unticked, intercepting the PUT to `/api/users/{id}`.
+
+It asserts the built body carries no `password_base64`. The field used to be sent
+unconditionally. A disabled, unserialized password input then became `btoa(undefined)` - a
+real new password of the literal word "undefined". A second save, box ticked, with a real
+password, asserts `password_base64` is still sent, so the first assertion is not vacuous.
+
+This is entirely a question of what the browser puts in the request body, which the
+PostgreSQL phase cannot see. CI runs it in `frontend-security` after the role workflow
+probe.
+
+Externally managed (reverse-proxy) authentication, an embedded install and
+authentication disabled entirely all render no such checkbox in either mode - there is
+no local password to change - so this probe cannot exercise any of them, and
+`frontend-security` never boots an instance under any of those backends.
+`tests/Pgsql/PasswordRotationTest.php` covers their server-side behavior instead: the
+rendered form, and the API's handling of a request shaped like what that form actually
+sends.
+
+What none of that reaches is what a real browser's own `serializeJSON()` produces from
+the form in edit mode under any of the three. That half is genuinely untested by any
+automated check in this repository.
+
 ## Location label resolution
 
 `node .devtools/frontend/location-labels.js --url http://127.0.0.1:8200` exercises the
@@ -227,3 +254,29 @@ a short ancestor must reveal its descendant through an inactive intermediate gro
 The probe also checks independent filtering of same-named groups, displayed paths,
 inactive-product exclusion, and exclusion of unrelated branches. The `frontend-security`
 CI job runs it alongside `group-min-stock.js`.
+
+## Nullable-integer and nullable-date form fields
+
+`node nullable-integer-forms.js <url>` is the regression test for the JS half of
+[issue 574](https://github.com/datagen24/victual/issues/574) and for
+[issue 587](https://github.com/datagen24/victual/issues/587): the same shape of defect as
+issue 159 above, in three `Victual.EntityForm` `body()` hooks that probe did not cover.
+`mealplansectionform.js` and `userfieldform.js` each convert a blank `sort_number`;
+`taskform.js` converts `category_id`, `assigned_to_user_id` (renamed from the user picker's
+own `user_id`) and `due_date` (read from the `DateTimePicker` component, not a plain input).
+Without the conversion, `serializeJSON()`'s `""` for the blank field reaches PostgreSQL and is
+refused the same way as the product form's pickers.
+
+No PHP phase can see this either, for the same reason: a server-side test sends a
+correctly-typed body, so it cannot tell whether the conversion is still there. This probe
+drives each form as a person leaving an optional field blank would:
+
+- **meal plan section, userfield**: create a row with `sort_number` blank and assert the
+  stored value is `null`. Resave a stored `0` row unchanged and assert `0` is kept - the same
+  case issue 574 itself was, a `!empty()` view check treating `0` as blank. Resave the blank
+  (`null`) row unchanged and assert `null` is kept with no error surfacing.
+- **task**: create a task with category, assignee and due date all blank, and assert all
+  three are `null`. Resave it unchanged and assert success.
+
+CI runs it in `frontend-security` after the product form nullable picker checks, against the
+demo instance on 8085.

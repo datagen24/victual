@@ -133,7 +133,12 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is false for this route (victual.openapi.json): an
+			// absent body defaults to [], applying list_id's own documented default
+			// rather than a 400 - issue #498/#487 H9. Without this, array_key_exists()
+			// below raised a TypeError on the null GetParsedAndFilteredRequestBody()
+			// returns for an empty body, escaping HandleApiCall() uncaught as a 500.
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 
@@ -159,7 +164,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// See AddMissingProductsToShoppingList() above: requestBody.required is false
+			// for this route too, so an absent body defaults to [] rather than 500ing on
+			// the null array_key_exists() below cannot accept (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -184,7 +192,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// See AddMissingProductsToShoppingList() above: requestBody.required is false
+			// for this route too, so an absent body defaults to [] rather than 500ing on
+			// the null array_key_exists() below cannot accept (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -307,7 +318,11 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is true for this route (victual.openapi.json):
+			// product_id has no sensible default, so an absent body is refused with 400
+			// here rather than reaching array_key_exists() below as null and 500ing
+			// (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
 
 			$listId = 1;
 			$amount = 1;
@@ -363,7 +378,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is false for this route (victual.openapi.json): an
+			// absent body defaults to [], applying list_id's and done_only's own
+			// documented defaults rather than a 500 (issue #498/#487 H9).
+			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
@@ -371,10 +389,15 @@ class StockApiController extends BaseApiController
 				$listId = $requestBody['list_id'];
 			}
 
+			// WireBooleans::RequireBoolean() rather than filter_var(...FILTER_VALIDATE_BOOLEAN):
+			// the UI always sends a real boolean (public/viewjs/shoppinglist.js), and
+			// done_only:false means "clear the whole list" - filter_var() reads null,
+			// "garbage" or "no" as false too, so a malformed value here was not merely
+			// misread, it was destructive (issue #498/#487 H9 round 2).
 			$doneOnly = false;
-			if (array_key_exists('done_only', $requestBody) && filter_var($requestBody['done_only'], FILTER_VALIDATE_BOOLEAN) !== false)
+			if (array_key_exists('done_only', $requestBody))
 			{
-				$doneOnly = boolval($requestBody['done_only']);
+				$doneOnly = WireBooleans::RequireBoolean($requestBody['done_only'], 'done_only');
 			}
 
 			StockService::GetInstance()->ClearShoppingList($listId, $doneOnly);
@@ -410,10 +433,17 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
+			// WireBooleans::RequireBoolean() (#530) rather than the raw value: spoiled is a
+			// StockService::ConsumeProduct() parameter typed `bool`, so a raw null (a JSON
+			// "spoiled": null) reached it as a TypeError and 500ed, and the word string
+			// "false" reached it as a truthy PHP value and booked a *spoiled* consumption
+			// while answering success (issue #498/#487 H9). RequireBoolean() refuses both
+			// with 400 instead - see its own docblock for why the word strings are not
+			// accepted as a third spelling of true/false.
 			$spoiled = false;
 			if (array_key_exists('spoiled', $requestBody))
 			{
-				$spoiled = $requestBody['spoiled'];
+				$spoiled = WireBooleans::RequireBoolean($requestBody['spoiled'], 'spoiled');
 			}
 
 			$transactionType = StockService::TRANSACTION_TYPE_CONSUME;
@@ -446,10 +476,15 @@ class StockApiController extends BaseApiController
 				$consumeExact = $requestBody['exact_amount'];
 			}
 
+			// Same defect and same fix as "spoiled" above: the UI always sends a real
+			// boolean (public/viewjs/consume.js, stockoverview.js), so WireBooleans::RequireBoolean()
+			// costs it nothing and stops a string "false" from being read as truthy and
+			// silently allowing substitution the caller meant to refuse (issue #498/#487 H9
+			// round 2).
 			$allowSubproductSubstitution = false;
 			if (array_key_exists('allow_subproduct_substitution', $requestBody))
 			{
-				$allowSubproductSubstitution = $requestBody['allow_subproduct_substitution'];
+				$allowSubproductSubstitution = WireBooleans::RequireBoolean($requestBody['allow_subproduct_substitution'], 'allow_subproduct_substitution');
 			}
 
 			$transactionId = null;
@@ -862,10 +897,11 @@ class StockApiController extends BaseApiController
 				$specificStockEntryId = $requestBody['stock_entry_id'];
 			}
 
+			// Same defect and same fix as ConsumeProduct() above (issue #498/#487 H9 round 2).
 			$allowSubproductSubstitution = false;
 			if (array_key_exists('allow_subproduct_substitution', $requestBody))
 			{
-				$allowSubproductSubstitution = $requestBody['allow_subproduct_substitution'];
+				$allowSubproductSubstitution = WireBooleans::RequireBoolean($requestBody['allow_subproduct_substitution'], 'allow_subproduct_substitution');
 			}
 
 			$measurement = null;
@@ -1031,7 +1067,11 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
-			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
+			// requestBody.required is true for this route (victual.openapi.json):
+			// product_id has no sensible default, so an absent body is refused with 400
+			// here rather than reaching array_key_exists() below as null and 500ing
+			// (issue #498/#487 H9).
+			$requestBody = $this->RequireRequestBody($this->GetParsedAndFilteredRequestBody($request));
 
 			$listId = 1;
 			$amount = 1;
@@ -1090,13 +1130,30 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
-	 * GET /api/stock/entry/{entryId} - returns a single stock entry by its id (200).
+	 * GET /api/stock/entry/{entryId} - returns a single stock entry by its id.
+	 * Returns 200 or a 400 error response when the entry does not exist (audit finding H10 /
+	 * issue #499: this used to answer 200 with a null body, and no 404 is documented here -
+	 * unlike the generic object endpoints - so a 400 is the documented shape, not a 404).
 	 */
 	public function StockEntry(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		$entry = FieldPolicy::GetInstance()->RedactRow('stock', StockService::GetInstance()->GetStockEntry($args['entryId']));
-		return $this->ApiResponse($response, $entry);
+
+		return $this->HandleApiCall($response, function () use ($args, $response)
+		{
+			$entry = StockService::GetInstance()->GetStockEntry($args['entryId']);
+
+			if ($entry === null)
+			{
+				// public/viewjs/stockentries.js matches this message verbatim to tell a gone
+				// entry apart from any other 400 this endpoint can answer (e.g. a database
+				// failure). Do not change this message without changing that check too.
+				throw new \Exception('Stock does not exist');
+			}
+
+			$entry = FieldPolicy::GetInstance()->RedactRow('stock', $entry);
+			return $this->ApiResponse($response, $entry);
+		});
 	}
 
 	/**
@@ -1207,12 +1264,16 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/locations/{locationId}/weigh - weighs a vessel (a bin, a spice jar)
-	 * and corrects its one stock entry to match. Requires the STOCK_EDIT permission
-	 * (403 otherwise). Body field gross_amount is required; gross_qu_id is optional and,
-	 * when given, must equal the location's own tare_qu_id - present so a client's unit
-	 * mismatch is refused rather than silently misweighed (ADR-0022 question 5's "gross"
-	 * contract; docs/plans/landed/29-working-container-replenishment.md).
-	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
+	 * and corrects its stock TOTAL at that location to match (ADR-0033 decision 5). Requires
+	 * the STOCK_EDIT permission (403 otherwise). Body field gross_amount is required;
+	 * gross_qu_id is optional and, when given, must equal the location's own tare_qu_id -
+	 * present so a client's unit mismatch is refused rather than silently misweighed
+	 * (ADR-0022 question 5's "gross" contract; docs/plans/landed/29-working-container-replenishment.md).
+	 * best_before_date is optional and used only when the reading turns out to be higher than
+	 * what is on record, in which case it is required - StockService::WeighLocation() throws
+	 * when a higher reading is given none.
+	 * Returns the stock_log rows of the resulting transaction (200), an empty array (200) when
+	 * the reading matched what was on record and nothing was booked, or a 400 error response.
 	 */
 	public function WeighLocation(Request $request, Response $response, array $args)
 	{
@@ -1236,7 +1297,28 @@ class StockApiController extends BaseApiController
 				? (int)$requestBody['gross_qu_id']
 				: null;
 
-			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId);
+			// Present-but-malformed must be refused outright (RequireIsoDate(), issue #519's
+			// pattern), not silently treated as absent: falling through to null here would
+			// report a higher reading's "best_before_date is required" refusal for a caller
+			// who did supply one, just not a valid one - the wrong error for what actually
+			// went wrong. Absence itself is still fine at this stage; StockService::
+			// WeighLocation() is the one that refuses a higher reading with none.
+			$bestBeforeDate = null;
+			if (array_key_exists('best_before_date', $requestBody))
+			{
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
+			}
+
+			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId, $bestBeforeDate);
+
+			// A matching reading books nothing (ADR-0033 decision 5) - StockService returns ''
+			// rather than a transaction id, and StockTransactions() requires one to exist, so
+			// that call is skipped in favour of answering with an empty result directly.
+			if ($transactionId === '')
+			{
+				return $this->ApiResponse($response, []);
+			}
+
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
 		});
