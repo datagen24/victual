@@ -14,12 +14,13 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * `mqtt_product_entities`, and deliberately left these four out:
  *
  *   - `label_idempotency_keys` and the label capture/render tables (`label_captures`,
- *     `label_render_requests`, `label_artifacts`) are NOT covered here - see this
- *     workstream's final report: clearing them safely runs into `print_jobs`'
- *     (NOT_COPIED_TABLES, kept as-is) own RESTRICT foreign keys onto exactly these tables
- *     (`idempotency_key_id`, `artifact_id`, `render_request_id`, `capture_id`), which the
- *     issue does not resolve and which this workstream's rules require flagging rather
- *     than deciding unilaterally.
+ *     `label_render_requests`, `label_artifacts`) are NOT covered here: the importer
+ *     contract now classifies all four as KEPT (see DatabaseImporter's own class
+ *     docblock) - none exists in any supported source, the documented flow imports
+ *     into a freshly migrated (so already empty) target, and on a --force import into
+ *     a used target they are print history that `print_jobs` (kept, NOT_COPIED_TABLES)
+ *     references via NO ACTION foreign keys that reprints rely on. These tests do not
+ *     cover them.
  *   - `login_attempts` (0262): a failed-login throttle counter keyed to a *username*, not
  *     a user id, so a row surviving an import from a source that predates the table still
  *     throttles whatever account now holds that username.
