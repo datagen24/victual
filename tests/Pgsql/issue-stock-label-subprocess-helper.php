@@ -18,6 +18,14 @@
 //
 // Reads the same PG*/RBAC_TEST_SCHEMA/VICTUAL_DATAPATH/VICTUAL_ROOT environment variables as
 // compact-stock-subprocess-helper.php, attaching to the schema the calling test migrated.
+// Also reads VICTUAL_TEST_ISSUE_PAUSE_OBJID (optional): when set, this process - after
+// Issue() itself has already succeeded (its own row lock taken, the labels row inserted, but
+// this transaction not yet committed) - blocks on a dedicated advisory lock class this test
+// helper alone uses, keyed on that objid, before committing. A calling test acquires the same
+// lock itself first, so this is how ADR-0033 acceptance prerequisite 1's "connection B runs
+// the real label Issue() and keeps its transaction open" is produced without adding any
+// test-only hook to LabelIdentityService itself - the pause lives entirely in this test
+// helper, around an unmodified production call.
 //
 // Output, in order:
 //   1. One line, immediately after connecting: {"backend_pid": N} - so the calling test can
@@ -55,6 +63,18 @@ $pdo->beginTransaction();
 try
 {
 	$uid = (new LabelIdentityService($pdo))->Issue('stock_entry', $stockRowId, $expectedEpoch);
+
+	$pauseObjId = getenv('VICTUAL_TEST_ISSUE_PAUSE_OBJID');
+	if ($pauseObjId !== false)
+	{
+		// Test-only pause, entirely in this helper - see the file header. Class id distinct
+		// from StockService::TestPauseHook()'s own (1986600001) and from every class id
+		// PostgresDialect otherwise uses.
+		$testLockClass = 1986600002;
+		$pdo->prepare('SELECT pg_advisory_lock(?, ?)')->execute([$testLockClass, (int)$pauseObjId]);
+		$pdo->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([$testLockClass, (int)$pauseObjId]);
+	}
+
 	$pdo->commit();
 	echo json_encode(['status' => 200, 'uid' => $uid]) . "\n";
 }

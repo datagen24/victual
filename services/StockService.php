@@ -4137,11 +4137,16 @@ class StockService extends BaseService
 	 * (below) rather than merged - a split (partial open/transfer) can leave two different
 	 * `stock` rows carrying the same stock_id, and rewriting "every row with this stock_id",
 	 * the only kind of statement this method can issue since stock_id rather than id is the
-	 * merge key, would corrupt that outside row's identity and history. All stock and
-	 * stock_log rows of an accepted group are rewritten to the surviving stock_id, the
-	 * redundant stock rows are deleted and the kept row is set to the group's total amount.
-	 * The split lineage in stock_entry_origins (see RecordSplitOrigin()) is rewritten with
-	 * them. stock_log.stock_row_id is never rewritten by this method.
+	 * merge key, would corrupt that outside row's identity and history. A group is likewise
+	 * skipped when an outside row's own stock_entry_origins lineage names one of this group's
+	 * stock_ids as its origin (RecordSplitOrigin() leaves exactly that on the untouched
+	 * remainder of an earlier partial open/transfer) - that outside row was never a merge
+	 * candidate and must keep recording which purchase it actually split from, not whichever
+	 * one happened to end up surviving this group's own merge. All stock and stock_log rows
+	 * of an accepted group are rewritten to the surviving stock_id, the redundant stock rows
+	 * are deleted and the kept row is set to the group's total amount. The split lineage in
+	 * stock_entry_origins (see RecordSplitOrigin()) is rewritten with them. stock_log.stock_row_id
+	 * is never rewritten by this method.
 	 *
 	 * @param int|null $productId Limit compacting to this product; null compacts all products
 	 * @return void
@@ -4212,16 +4217,36 @@ class StockService extends BaseService
 				$placeholders = implode(',', array_fill(0, count($candidateRowIds), '?'));
 				DatabaseService::GetInstance()->ExecuteDbQuery("SELECT id FROM stock WHERE id IN ($placeholders) ORDER BY id ASC FOR UPDATE", $candidateRowIds);
 
+				$this->TestPauseHook('after_row_locks', $oneProductId);
+
 				// The re-read this fix is about: every group belonging to this product,
 				// current as of right now under the lock rather than from before it -
 				// including eligibility, since a label committed between the first read
 				// above and the row locks just taken removes its row from stock_splits here.
 				$splittedStockEntries = $this->DB->stock_splits()->where('product_id = :1', $oneProductId)->fetchAll();
 
+				$pausedAfterFirstRewrite = false;
 				foreach ($splittedStockEntries as $splittedStockEntry)
 				{
 					$stockIds = explode(',', $splittedStockEntry->stock_id_group);
 					$idGroup = explode(',', $splittedStockEntry->id_group);
+
+					// Newly-eligible-since-the-first-read guard: every id in this re-read group
+					// must already be one this transaction actually locked above. Nothing that
+					// takes LockProductStock() first can add a row here between the two reads -
+					// that lock is held for the whole transaction - but ADR-0033 decision 3
+					// deliberately leaves label issuance able to race unlocked, and issuance
+					// only ever narrows eligibility (retiring an existing label is a distinct
+					// operation this guard also has no way to exclude by construction). A row
+					// that entered this group only after the lock was taken was never protected
+					// by it, so rewriting it here would act on a row this transaction could not
+					// prove nothing else was concurrently doing something to - skip the whole
+					// group rather than merge on the strength of a lock never actually held.
+					$idsOutsideLock = array_diff(array_map('intval', $idGroup), $candidateRowIds);
+					if (count($idsOutsideLock) > 0)
+					{
+						continue;
+					}
 
 					// Shared stock_id guard (ADR-0033 decision 3): skip this whole group if any
 					// of its stock_id values is also carried by a `stock` row this group does
@@ -4238,6 +4263,42 @@ class StockService extends BaseService
 					if ($outsideRowCheck->fetchColumn() !== false)
 					{
 						continue;
+					}
+
+					// Lineage confinement (ADR-0033 decision 3's last sentence): even once no
+					// outside `stock` row shares one of this group's stock_ids, an outside row
+					// can still have RecordSplitOrigin() lineage naming one of the DISAPPEARING
+					// ids as its own origin - left behind on the untouched remainder of an
+					// earlier partial open/transfer that has nothing else to do with this group.
+					// The third rewrite below (stock_entry_origins.origin_stock_id) only ever
+					// fires for a disappearing id (never for stock_id_to_keep - its own identity
+					// never changes, so a row whose origin already names it is always safe), but
+					// within that it rewrites every row naming one, group member or not, which
+					// would silently reattribute a real, unrelated entry's history to a
+					// different purchase than the one it actually split from. Skipped the same
+					// way. Deliberately narrower than the full group (stock_id_to_keep excluded):
+					// checking the kept id too would refuse a group purely because some outside
+					// row's lineage correctly and permanently names the survivor, which this
+					// merge was never going to touch in the first place.
+					$disappearingStockIds = [];
+					foreach ($stockIds as $stockId)
+					{
+						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						{
+							$disappearingStockIds[] = $stockId;
+						}
+					}
+					if (count($disappearingStockIds) > 0)
+					{
+						$disappearingPlaceholders = implode(',', array_fill(0, count($disappearingStockIds), '?'));
+						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+							"SELECT 1 FROM stock_entry_origins WHERE origin_stock_id IN ($disappearingPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders) LIMIT 1",
+							array_merge($disappearingStockIds, $stockIds)
+						);
+						if ($outsideLineageCheck->fetchColumn() !== false)
+						{
+							continue;
+						}
 					}
 
 					foreach ($stockIds as $stockId)
@@ -4284,9 +4345,51 @@ class StockService extends BaseService
 							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
 						}
 					}
+
+					if (!$pausedAfterFirstRewrite)
+					{
+						$pausedAfterFirstRewrite = true;
+						$this->TestPauseHook('after_first_rewrite', $oneProductId);
+					}
 				}
 			});
 		}
+	}
+
+	/**
+	 * Test-only synchronisation point for ADR-0033 acceptance prerequisites 1 and 2's
+	 * two-connection tests (tests/Pgsql/StockMaintenanceCompactionTest.php): letting a test
+	 * observe CompactStockEntries() genuinely paused mid-run - after it has taken its row
+	 * locks, or after its first group's rewrite, inside the same still-open transaction -
+	 * through real PostgreSQL lock contention rather than a sleep() and a hoped-for timing
+	 * window.
+	 *
+	 * A no-op unless VICTUAL_TEST_COMPACT_PAUSE_AT names this exact $checkpoint - never set
+	 * outside the test suite's own subprocess helpers (compact-stock-subprocess-helper.php),
+	 * so bin/victual-compact-stock and every real caller run entirely unaffected. When it
+	 * matches, blocks on a dedicated advisory lock class this codebase's application code
+	 * never otherwise acquires (distinct from PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS
+	 * and the migration/publication keys), keyed on $productId: a test acquires the same lock
+	 * itself before starting the run, so this call blocks until the test releases it, and the
+	 * test can confirm the block through pg_locks/pg_blocking_pids exactly as it already does
+	 * for the product and row locks, rather than relying on timing.
+	 *
+	 * @param string $checkpoint One of 'after_row_locks', 'after_first_rewrite'
+	 * @param int $productId The product currently being compacted, used as the lock's objid
+	 * @return void
+	 */
+	private function TestPauseHook(string $checkpoint, int $productId): void
+	{
+		if (getenv('VICTUAL_TEST_COMPACT_PAUSE_AT') !== $checkpoint)
+		{
+			return;
+		}
+
+		// Test-only advisory lock class, arbitrary but fixed and distinct from every class id
+		// StockService/PostgresDialect otherwise use.
+		$testLockClass = 1986600001;
+		DatabaseService::GetInstance()->ExecuteDbStatement('SELECT pg_advisory_lock(' . $testLockClass . ', ' . $productId . ')');
+		DatabaseService::GetInstance()->ExecuteDbStatement('SELECT pg_advisory_unlock(' . $testLockClass . ', ' . $productId . ')');
 	}
 
 	/**

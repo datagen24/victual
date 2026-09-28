@@ -29,19 +29,26 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   testMeasuredRemainderRowStaysSeparateFromMerge,
  *   testPerUnitLabelPrefixedRowStaysSeparateFromMerge,
  *   testSharedStockIdGuardSkipsTheWholeGroup,
+ *   testLineageConfinementSkipsAGroupThatWouldCorruptAnOutsideRowsOrigin,
+ *   testGroupContainingARowOutsideTheLockedSetIsSkipped,
  *   testLabelCommittedBeforeMaintenanceLocksProtectsItsRow,
+ *   testMaintenanceBlocksBehindARealInProgressLabelIssuanceAndHonoursItOnceCommitted,
  *   testLabelIssuanceBlocksBehindAnInProgressMergeAndFailsWithoutAnOrphan.
  * - Prerequisite 2 (PR #531's atomic undo refusal, now exercised after an explicit
  *   maintenance merge rather than an inline one; interrupted/repeat runs):
  *   testUndoRefusesStockEditOldAfterExplicitMaintenanceMergeBothRowOrders,
  *   testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge,
  *   testInterruptedMaintenanceRunRollsBack,
+ *   testInterruptedMaintenanceRunAfterItsFirstRewriteFullyRollsBack,
  *   testRepeatMaintenanceRunWithNoNewEligibleRowsChangesNothing,
+ *   testRealCompactStockBinaryRunsAsASubprocessOnAFirstAndARepeatRun,
  *   testFullConsumptionLabelRetirementIsUnrelatedToMergeExclusion.
  * - Prerequisite 4 (WeighLocation corrects a location's total):
  *   testWeighTwoIdenticalDatedRefillsThenALowerReadingConsumesTheDifference,
+ *   testWeighTwoIdenticalDatedRefillsWithALabelledRowThenALowerReadingConsumesTheDifference,
  *   testWeighAHigherReadingAddsANewRowWithTheSuppliedDueDate,
  *   testWeighAHigherReadingWithNoDueDateIsRefusedWithNoPartialWrite,
+ *   testWeighAHigherReadingWithAMalformedDueDateIsRefusedAsInvalidNotMissing,
  *   testWeighAnUnchangedReadingBooksNothing,
  *   testWeighWithALabelledRowLeavesItUntouchedWhenTheOtherRowCoversTheDifference,
  *   testWeighExactLocationIsolation,
@@ -249,12 +256,23 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * The class id issue-stock-label-subprocess-helper.php's own optional pause uses - kept in
+	 * exact sync with that file's hardcoded value; see TEST_COMPACT_PAUSE_LOCK_CLASS's own
+	 * comment above for why there is no shared constant across the production/test boundary.
+	 */
+	private const TEST_ISSUE_PAUSE_LOCK_CLASS = 1986600002;
+
+	/**
 	 * Starts issue-stock-label-subprocess-helper.php without waiting for it, so the calling
 	 * test can poll for it to block on the row lock a second connection already holds.
 	 *
+	 * @param int|null $pauseObjId When given, the subprocess blocks on
+	 *        TEST_ISSUE_PAUSE_LOCK_CLASS/$pauseObjId after Issue() succeeds but before its own
+	 *        commit - see that helper's own docblock - so B3's "connection B keeps its
+	 *        transaction open" is produced under this test's control.
 	 * @return array{0: resource, 1: array}
 	 */
-	private static function startIssueLabelSubprocess(int $stockRowId, int $expectedEpoch): array
+	private static function startIssueLabelSubprocess(int $stockRowId, int $expectedEpoch, ?int $pauseObjId = null): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -267,6 +285,10 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
+		if ($pauseObjId !== null)
+		{
+			$env['VICTUAL_TEST_ISSUE_PAUSE_OBJID'] = (string)$pauseObjId;
+		}
 
 		$process = proc_open(
 			[PHP_BINARY, __DIR__ . '/issue-stock-label-subprocess-helper.php', (string)$stockRowId, (string)$expectedEpoch],
@@ -327,11 +349,15 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * Starts compact-stock-subprocess-helper.php, which calls
 	 * StockService::CompactStockEntries($productId) directly with no ambient lock or
 	 * transaction already open - see that helper's own docblock. Not waited for: the caller
-	 * polls for it to block on the product's advisory lock first.
+	 * reads its first line for the backend pid (B3/B5) and/or polls for it to block, on
+	 * either the product's advisory lock (unpaused) or the test pause lock (paused).
 	 *
+	 * @param string|null $pauseAt When given, one of 'after_row_locks'/'after_first_rewrite' -
+	 *        see StockService::TestPauseHook() - so this run blocks mid-transaction on
+	 *        TEST_COMPACT_PAUSE_LOCK_CLASS/$productId until the calling test releases it.
 	 * @return array{0: resource, 1: array}
 	 */
-	private static function startCompactSubprocess(int $productId): array
+	private static function startCompactSubprocess(int $productId, ?string $pauseAt = null): array
 	{
 		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
 		$env = array_merge($inherited, [
@@ -344,6 +370,10 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			'PGPASSWORD' => getenv('PGPASSWORD'),
 			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
 		]);
+		if ($pauseAt !== null)
+		{
+			$env['VICTUAL_TEST_COMPACT_PAUSE_AT'] = $pauseAt;
+		}
 
 		$process = proc_open(
 			[PHP_BINARY, __DIR__ . '/compact-stock-subprocess-helper.php', (string)$productId],
@@ -354,6 +384,45 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		);
 
 		return [$process, $pipes];
+	}
+
+	/**
+	 * The class id StockService::TestPauseHook() uses for its own dedicated advisory lock -
+	 * kept in exact sync with that private method's own hardcoded value; there is no shared
+	 * constant to import across the production/test boundary, so a comment on each side names
+	 * the other.
+	 */
+	private const TEST_COMPACT_PAUSE_LOCK_CLASS = 1986600001;
+
+	/**
+	 * Blocks until compact-stock-subprocess-helper.php (started with a $pauseAt checkpoint) is
+	 * genuinely waiting on TEST_COMPACT_PAUSE_LOCK_CLASS/$productId - the same bounded pg_locks
+	 * poll as waitForAdvisoryWaiter() above, parameterised onto this different lock class.
+	 *
+	 * @return int The waiting backend's pid
+	 */
+	private static function waitForTestPauseWaiter(int $productId, float $timeoutSeconds = 10.0): int
+	{
+		$waiterCheck = self::$db->prepare(
+			'SELECT pid FROM pg_locks WHERE locktype = \'advisory\' AND NOT granted AND classid = ? AND objid = ? LIMIT 1'
+		);
+		$deadline = microtime(true) + $timeoutSeconds;
+
+		do
+		{
+			$waiterCheck->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $productId]);
+			$pid = $waiterCheck->fetchColumn();
+
+			if ($pid !== false)
+			{
+				return (int)$pid;
+			}
+
+			usleep(20000);
+		}
+		while (microtime(true) < $deadline);
+
+		self::fail('Timed out waiting for the maintenance subprocess to block on its test pause lock for product ' . $productId);
 	}
 
 	/**
@@ -604,6 +673,128 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::assertSame([2.0, 3.0], $amounts, 'and neither amount was folded into the other');
 	}
 
+	/**
+	 * Lineage confinement (ADR-0033 decision 3's last sentence) - distinct from, and not
+	 * caught by, the shared-stock_id guard just above, which only looks at `stock` rows.
+	 * Built from real application flows rather than a bare inserted row, so the protected
+	 * row carries all five properties prerequisite 1 asks to be verified unchanged: amount,
+	 * stock_id, bookings, lineage and a live label.
+	 *
+	 * Purchases A and B are otherwise identical (never-expiring, same location/price/
+	 * purchased date). Opening one unit of each - by explicit stock_entry_id, so which
+	 * physical row plays which role is pinned rather than left to FEFO's tie-breaking - keeps
+	 * each purchase's own stock_id on its one-unit opened portion and gives each one-unit
+	 * remainder a brand new stock_id, with stock_entry_origins recording which purchase it
+	 * split from (RecordSplitOrigin()). A split remainder has no booking of its own (only the
+	 * opened portion inherits the purchase's), so B's remainder is edited once - a booking
+	 * that changes nothing else - to give it one, then labelled.
+	 *
+	 * The two opened one-unit portions now match on every stock_splits column and would
+	 * merge; B's is forced to sort after A's, so it is the id that would be rewritten away -
+	 * the direction the guard has to stop, not the direction that would be safe by accident.
+	 * Without this PR's fix, that merge would proceed and silently repoint B's remainder's
+	 * origin_stock_id from B's own purchase onto A's: the remainder would go on existing,
+	 * correctly excluded from the merge itself by its label, while quietly misreporting a
+	 * different physical purchase as the one it actually came from.
+	 */
+	public function testLineageConfinementSkipsAGroupThatWouldCorruptAnOutsideRowsOrigin(): void
+	{
+		$product = self::insertProduct('Maintenance Lineage Confinement');
+		$purchasedDate = '2026-01-01';
+		$price = 1.0;
+
+		$purchaseA = self::purchase($product, 2, null, self::$locationA, $price, $purchasedDate);
+		$purchaseB = self::purchase($product, 2, null, self::$locationA, $price, $purchasedDate);
+
+		// Deterministic sort order: B's opened portion must sort AFTER A's, so it is the one
+		// CompactStockEntries() would keep A over rather than the reverse - the direction that
+		// actually exercises the guard, not one that would pass even without it.
+		foreach ([[$purchaseA[0]['stock_id'], 'lineage-a'], [$purchaseB[0]['stock_id'], 'lineage-z']] as [$old, $new])
+		{
+			self::$db->exec('UPDATE stock SET stock_id = ' . self::$db->quote($new) . ' WHERE stock_id = ' . self::$db->quote($old));
+			self::$db->exec('UPDATE stock_log SET stock_id = ' . self::$db->quote($new) . ' WHERE stock_id = ' . self::$db->quote($old));
+		}
+
+		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => 'lineage-a']), new Response(), ['productId' => $product]);
+		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => 'lineage-z']), new Response(), ['productId' => $product]);
+
+		$remainderOfB = self::$db->prepare('SELECT stock_id FROM stock_entry_origins WHERE origin_stock_id = ?');
+		$remainderOfB->execute(['lineage-z']);
+		$remainderStockId = $remainderOfB->fetchColumn();
+		self::assertNotFalse($remainderStockId, 'Sanity: opening B by stock_entry_id split off a remainder recording B as its origin');
+
+		$remainderRow = self::$db->prepare('SELECT * FROM stock WHERE stock_id = ?');
+		$remainderRow->execute([$remainderStockId]);
+		$remainderId = (int)$remainderRow->fetch(PDO::FETCH_ASSOC)['id'];
+
+		$this->expectStatus(
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'note' => 'gives the remainder a booking of its own']), new Response(), ['entryId' => $remainderId]),
+			200,
+			'Sanity: editing the remainder gives it a STOCK_EDIT booking pair of its own'
+		);
+		self::issueLabel($remainderId);
+
+		$before = self::ledger();
+		$beforeOrigin = self::$db->query('SELECT * FROM stock_entry_origins WHERE stock_id = ' . self::$db->quote($remainderStockId))->fetch(PDO::FETCH_ASSOC);
+		self::assertSame('lineage-z', $beforeOrigin['origin_stock_id'], 'Sanity: the remainder\'s recorded origin is B, the id about to disappear if this group merges unprotected');
+
+		StockService::GetInstance()->CompactStockEntries($product);
+
+		$openedRows = self::$db->query('SELECT * FROM stock WHERE product_id = ' . $product . ' AND open = 1')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(2, $openedRows, 'The two opened one-unit portions did NOT merge - doing so would have corrupted the remainder\'s lineage');
+
+		self::assertSame($before, self::ledger(), 'Every stock and stock_log row - including the remainder\'s own edit booking - is untouched: the whole group was skipped, not partially merged');
+
+		$afterOrigin = self::$db->query('SELECT * FROM stock_entry_origins WHERE stock_id = ' . self::$db->quote($remainderStockId))->fetch(PDO::FETCH_ASSOC);
+		self::assertSame($beforeOrigin, $afterOrigin, 'The remainder\'s lineage still names B, not silently repointed onto A');
+
+		$remainderAfter = self::$db->prepare('SELECT * FROM stock WHERE id = ?');
+		$remainderAfter->execute([$remainderId]);
+		$remainderAfter = $remainderAfter->fetch(PDO::FETCH_ASSOC);
+		self::assertSame(1.0, (float)$remainderAfter['amount'], 'The remainder\'s amount is untouched');
+		self::assertSame($remainderStockId, $remainderAfter['stock_id'], 'and its stock_id is untouched');
+		self::assertTrue(self::liveLabelExistsFor($remainderId), 'and its label is still live');
+	}
+
+	/**
+	 * A row that becomes newly eligible strictly BETWEEN the first (pre-lock) read and the
+	 * row-lock statement was never included in that lock, and must not be merged on the
+	 * strength of a lock this transaction never actually held on it. Demonstrated with the one
+	 * thing ADR-0033 decision 3 already documents as racing against this method without taking
+	 * its product lock: retiring a live label. The real run is paused right after taking its
+	 * row locks (TestPauseHook() 'after_row_locks'), a third row's label is retired from this
+	 * test's own connection - after the lock, before the re-read - and the run is released.
+	 */
+	public function testGroupContainingARowOutsideTheLockedSetIsSkipped(): void
+	{
+		$product = self::insertProduct('Maintenance Newly Eligible Outside Lock');
+		self::purchase($product, 1, null, self::$locationA, 1.0);
+		self::purchase($product, 1, null, self::$locationA, 1.0);
+		self::purchase($product, 1, null, self::$locationA, 1.0);
+		$thirdRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
+		self::issueLabel($thirdRowId);
+		self::assertCount(1, self::$db->query('SELECT id FROM stock_splits WHERE product_id = ' . $product)->fetchAll(), 'Sanity: only the two unlabelled rows form a candidate group before the run starts');
+
+		$control = self::secondConnection();
+		$controlBackendPid = (int)$control->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+
+		$subprocess = self::startCompactSubprocess($product, 'after_row_locks');
+		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
+
+		// The run has already locked exactly the two originally-unlabelled rows. Retire the
+		// third row's label now, directly, from this test's own connection - after the lock,
+		// before the re-read the paused run is about to perform.
+		self::$db->prepare("UPDATE labels SET retired_at = CURRENT_TIMESTAMP, target_id = NULL, retirement_snapshot = '{}'::jsonb WHERE kind = ? AND target_id = ?")->execute(['stock_entry', $thirdRowId]);
+		self::assertFalse(self::liveLabelExistsFor($thirdRowId), 'Sanity: the third row is now unlabelled, and matches the other two on every stock_splits column');
+
+		$control->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+		$result = self::finishCompactSubprocess($subprocess);
+		self::assertSame(200, $result['status'], 'The run completes rather than erroring: ' . ($result['error_message'] ?? ''));
+
+		self::assertCount(3, self::rows($product), 'Nothing merged - the re-read\'s group included a row this transaction never locked, so the whole group was skipped');
+	}
+
 	private static function insertRow(string $table, array $columns): int
 	{
 		$names = implode(', ', array_keys($columns));
@@ -639,12 +830,63 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The genuine race: a second connection holds the exact row lock
-	 * CompactStockEntries() would take on a candidate row, mid-merge, before deleting it.
-	 * A concurrent label issuance on that row must block on the same lock (real PostgreSQL
-	 * tuple contention, not a sequenced assumption) and, once the row is actually deleted and
-	 * the deleting transaction commits, fail cleanly - "not found in the requested import
-	 * epoch" - rather than resurrect the row or leave a live label with no target.
+	 * (a) Connection B runs the REAL LabelIdentityService::Issue() and keeps its transaction
+	 * open (issue-stock-label-subprocess-helper.php's own optional pause). The REAL
+	 * maintenance run is then started in a second subprocess and must genuinely block behind
+	 * B's row lock - not a sequenced assumption, real PostgreSQL tuple contention, confirmed
+	 * through pg_blocking_pids() the same way every other two-connection test in this class
+	 * confirms a block. Once B commits, the run's own re-read (ADR-0033 decision 3) sees the
+	 * now-live label and excludes that row: it survives, unmerged.
+	 */
+	public function testMaintenanceBlocksBehindARealInProgressLabelIssuanceAndHonoursItOnceCommitted(): void
+	{
+		$product = self::insertProduct('Maintenance Blocks Behind Real Issuance');
+		self::purchase($product, 1, null, self::$locationA, 1.0);
+		self::purchase($product, 1, null, self::$locationA, 1.0);
+		$targetRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product . ' ORDER BY id LIMIT 1')->fetchColumn();
+		$epoch = self::currentLabelEpoch();
+
+		// The test itself holds B's pause lock first, so the issuance subprocess - which tries
+		// to take the very same lock right after Issue() succeeds - blocks there until told to
+		// proceed, keeping its transaction (and Issue()'s own row lock) open under this test's
+		// control.
+		$control = self::secondConnection();
+		$controlBackendPid = (int)$control->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_ISSUE_PAUSE_LOCK_CLASS, $product]);
+
+		$issuance = self::startIssueLabelSubprocess($targetRowId, $epoch, $product);
+		$issuanceBackendPid = (int)self::readJsonLine($issuance[1][1])['backend_pid'];
+		self::waitUntilBlockedBy($issuanceBackendPid, $controlBackendPid);
+
+		// B is now paused with Issue()'s own row lock held and its label row inserted,
+		// uncommitted. Start the real, unpaused maintenance run and confirm it blocks behind
+		// that exact row lock.
+		$compaction = self::startCompactSubprocess($product);
+		$compactionBackendPid = (int)self::readJsonLine($compaction[1][1])['backend_pid'];
+		self::waitUntilBlockedBy($compactionBackendPid, $issuanceBackendPid);
+
+		// Release B: it commits the label.
+		$control->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([self::TEST_ISSUE_PAUSE_LOCK_CLASS, $product]);
+		$issuanceResult = self::finishIssueLabelSubprocess($issuance);
+		self::assertSame(200, $issuanceResult['status'], 'The paused issuance itself succeeds once released: ' . ($issuanceResult['error_message'] ?? ''));
+
+		$compactionResult = self::finishCompactSubprocess($compaction);
+		self::assertSame(200, $compactionResult['status'], 'The maintenance run, unblocked once B committed, completes: ' . ($compactionResult['error_message'] ?? ''));
+
+		self::assertCount(2, self::rows($product), 'The row survives, unmerged - protected by the label B committed before the run\'s re-read');
+		self::assertTrue(self::liveLabelExistsFor($targetRowId), 'and its label is live');
+	}
+
+	/**
+	 * (b) The reverse order: the REAL maintenance run is paused - via
+	 * StockService::TestPauseHook()'s 'after_row_locks' checkpoint - genuinely holding its row
+	 * locks on both candidate rows, before a real label issuance on the losing one is even
+	 * attempted. Issuance must block behind that real row lock, then, once the run is released
+	 * and actually deletes the losing row and commits, fail cleanly - "not found in the
+	 * requested import epoch" - rather than resurrect the row or leave a live label with no
+	 * target. Supersedes the old same-named test, which simulated the merge's row lock and
+	 * DELETE by hand on a raw second connection rather than running CompactStockEntries()
+	 * itself at all.
 	 */
 	public function testLabelIssuanceBlocksBehindAnInProgressMergeAndFailsWithoutAnOrphan(): void
 	{
@@ -655,30 +897,32 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		[$keptId, $losingId] = [$rows[1], $rows[0]]; // CompactStockEntries keeps MAX(id)
 		$epoch = self::currentLabelEpoch();
 
-		$second = self::secondConnection();
-		$secondBackendPid = (int)$second->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control = self::secondConnection();
+		$controlBackendPid = (int)$control->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
 
-		// Simulates exactly the moment CompactStockEntries() has locked its candidate rows
-		// (ascending id, ADR-0033 decision 3) but has not yet deleted the losing one.
-		$second->beginTransaction();
-		$second->prepare('SELECT id FROM stock WHERE id IN (?, ?) ORDER BY id ASC FOR UPDATE')->execute([$losingId, $keptId]);
+		$compaction = self::startCompactSubprocess($product, 'after_row_locks');
+		$compactionBackendPid = (int)self::readJsonLine($compaction[1][1])['backend_pid'];
+		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
+		self::assertSame($compactionBackendPid, self::waitForTestPauseWaiter($product), 'Sanity: the backend paused on the test lock is this same subprocess');
 
-		$subprocess = self::startIssueLabelSubprocess($losingId, $epoch);
-		$subprocessBackendPid = self::readJsonLine($subprocess[1][1])['backend_pid'];
+		// The run genuinely holds its row locks on both candidate rows now (taken before the
+		// pause checkpoint), but has not written anything. Issuance on the losing row must
+		// block behind that real lock.
+		$issuance = self::startIssueLabelSubprocess($losingId, $epoch);
+		$issuanceBackendPid = (int)self::readJsonLine($issuance[1][1])['backend_pid'];
+		self::waitUntilBlockedBy($issuanceBackendPid, $compactionBackendPid);
 
-		self::waitUntilBlockedBy((int)$subprocessBackendPid, $secondBackendPid);
+		// Release the run: it deletes the losing row, rewrites the kept one, and commits.
+		$control->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+		$compactionResult = self::finishCompactSubprocess($compaction);
+		self::assertSame(200, $compactionResult['status'], 'The real merge completes once released: ' . ($compactionResult['error_message'] ?? ''));
+		self::assertCount(1, self::rows($product), 'Sanity: the two rows really did merge into one');
 
-		// Now play out the rest of what CompactStockEntries() would do to the losing row -
-		// deleting it - and commit, exactly as the real merge would once it reaches this
-		// point under its own lock.
-		$second->exec('DELETE FROM stock WHERE id = ' . $losingId);
-		$second->commit();
-		$second = null;
+		$issuanceResult = self::finishIssueLabelSubprocess($issuance);
 
-		$result = self::finishIssueLabelSubprocess($subprocess);
-
-		self::assertSame(400, $result['status'], 'Issuance must fail once the row it was waiting to lock has been deleted');
-		self::assertStringContainsString('not found', strtolower($result['error_message']), 'with a clean "not found" refusal');
+		self::assertSame(400, $issuanceResult['status'], 'Issuance, unblocked once the row it targeted was actually deleted, fails rather than reviving it');
+		self::assertStringContainsString('not found', strtolower($issuanceResult['error_message']), 'with a clean "not found" refusal');
 		self::assertFalse(self::liveLabelExistsFor($losingId), 'No live label was left behind for the now-deleted row');
 		// Scoped to this test's own two rows, not a bare COUNT(*) - other test methods in
 		// this same shared schema issue labels of their own, live for the rest of the run.
@@ -855,6 +1099,51 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::assertSame([2.0, 3.0], $amounts, 'and neither amount changed');
 	}
 
+	/**
+	 * B5: the test above only proves rollback of a run cancelled before it had written
+	 * anything at all - waiting on its own first (product advisory) lock. This is the harder
+	 * case ADR-0033 acceptance prerequisite 2 actually asks for: a run cancelled AFTER it has
+	 * already issued one group's stock/stock_log/stock_entry_origins rewrite, inside the same
+	 * still-open transaction, before that transaction commits. Paused via the same
+	 * TestPauseHook() B3 uses ('after_first_rewrite'), confirmed genuinely blocked there
+	 * through pg_locks (not timing), then pg_cancel_backend()'d exactly as above. Every row -
+	 * not only the two that would have merged - must come back byte-for-byte as it was, since
+	 * the cancellation has to unwind a write that genuinely happened, not merely a lock that
+	 * was merely held; and a repeat run afterwards must complete normally and actually merge.
+	 */
+	public function testInterruptedMaintenanceRunAfterItsFirstRewriteFullyRollsBack(): void
+	{
+		$product = self::insertProduct('Maintenance Interrupted After Rewrite');
+		self::purchase($product, 2, null, self::$locationA, 1.0);
+		self::purchase($product, 3, null, self::$locationA, 1.0);
+		$before = self::ledger();
+		$beforeOrigins = self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC);
+
+		$control = self::secondConnection();
+		$controlBackendPid = (int)$control->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+
+		$subprocess = self::startCompactSubprocess($product, 'after_first_rewrite');
+		$subprocessBackendPid = (int)self::readJsonLine($subprocess[1][1])['backend_pid'];
+		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
+
+		// The run has already issued its one group's UPDATE/DELETE statements inside its own
+		// still-open transaction - genuinely written, not merely locked - when cancelled here.
+		$cancelled = (bool)self::$db->query('SELECT pg_cancel_backend(' . $subprocessBackendPid . ')')->fetchColumn();
+		self::assertTrue($cancelled, 'Sanity: pg_cancel_backend() found the paused backend');
+		$control->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+
+		$result = self::finishCompactSubprocess($subprocess);
+		self::assertSame(400, $result['status'], 'The cancelled run reports failure rather than silently succeeding: ' . ($result['error_message'] ?? ''));
+
+		self::assertSame($before, self::ledger(), 'stock and stock_log are byte-for-byte unchanged - the transaction rolled back its already-issued rewrite');
+		$afterOrigins = self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertSame($beforeOrigins, $afterOrigins, 'and stock_entry_origins is unchanged too');
+
+		StockService::GetInstance()->CompactStockEntries($product);
+		self::assertCount(1, self::rows($product), 'A repeat run afterwards completes normally and actually merges the two rows');
+	}
+
 	/** Idempotence: a run that finds nothing newly eligible changes nothing, including identity. */
 	public function testRepeatMaintenanceRunWithNoNewEligibleRowsChangesNothing(): void
 	{
@@ -870,6 +1159,65 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$afterSecondRun = self::rows($product);
 
 		self::assertSame($afterFirstRun, $afterSecondRun, 'A repeat run with nothing newly eligible (only one row remains, so stock_splits has no group for it) changes nothing at all - same id, same stock_id, same amount');
+	}
+
+	/**
+	 * R5: runs the real bin/victual-compact-stock file as its own OS subprocess - not a PHP
+	 * call into CompactStockEntries() directly, and not through a test-only helper script
+	 * either - asserting its exit status and effect on a first run (something eligible) and a
+	 * repeat run (nothing left). PGOPTIONS sets search_path to this test's own isolated schema
+	 * so the command's own, entirely unmodified VICTUAL_DB_* connection bootstrap
+	 * (PostgresDialect::CreateConnection(), config-dist.php's Setting() calls) reaches it -
+	 * the same environment-variable mechanism MigrationRunnerAtomicityTest already uses to run
+	 * bin/victual-migrate for real, plus the one extra (PGOPTIONS) a schema-per-test-class
+	 * fixture needs that a database-per-test-run fixture does not.
+	 */
+	public function testRealCompactStockBinaryRunsAsASubprocessOnAFirstAndARepeatRun(): void
+	{
+		$product = self::insertProduct('Maintenance Real Binary');
+		self::purchase($product, 2, null, self::$locationA, 1.0);
+		self::purchase($product, 3, null, self::$locationA, 1.0);
+		self::assertCount(2, self::rows($product), 'Sanity: two separate candidate rows before the real binary runs');
+
+		$runBinary = function () use ($product): array
+		{
+			$env = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+			$env['VICTUAL_DB_DRIVER'] = 'pgsql';
+			$env['VICTUAL_DB_HOST'] = (string)getenv('PGHOST');
+			$env['VICTUAL_DB_PORT'] = (string)getenv('PGPORT');
+			$env['VICTUAL_DB_NAME'] = (string)getenv('PHPUNIT_DB_NAME');
+			$env['VICTUAL_DB_USER'] = (string)getenv('PGUSER');
+			$env['VICTUAL_DB_PASSWORD'] = (string)getenv('PGPASSWORD');
+			$env['VICTUAL_DATAPATH'] = (string)getenv('VICTUAL_DATAPATH');
+			$env['PGOPTIONS'] = '-c search_path=' . self::Schema() . ',public';
+
+			$process = proc_open(
+				[PHP_BINARY, VICTUAL_ROOT_PATH . '/bin/victual-compact-stock', '--product-id=' . $product, '--quiet'],
+				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+				$pipes,
+				null,
+				$env
+			);
+			self::assertIsResource($process, 'bin/victual-compact-stock could not be started');
+
+			$stdout = stream_get_contents($pipes[1]);
+			$stderr = stream_get_contents($pipes[2]);
+			fclose($pipes[1]);
+			fclose($pipes[2]);
+			$exitCode = proc_close($process);
+
+			return [$exitCode, $stdout, $stderr];
+		};
+
+		[$firstExit, , $firstStderr] = $runBinary();
+		self::assertSame(0, $firstExit, "The first run exits 0: stderr=$firstStderr");
+		self::assertCount(1, self::rows($product), 'The real binary actually merged the two eligible rows into one');
+		self::assertSame(5.0, self::stockAmount($product), 'holding both purchases\' units');
+
+		$afterFirstRun = self::rows($product);
+		[$secondExit, , $secondStderr] = $runBinary();
+		self::assertSame(0, $secondExit, "The repeat run also exits 0, with nothing left to merge: stderr=$secondStderr");
+		self::assertSame($afterFirstRun, self::rows($product), 'and changes nothing at all - same id, same stock_id, same amount');
 	}
 
 	/**
@@ -921,11 +1269,16 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Two refills sharing a real due date (so neither is merge-eligible, and none is merged
-	 * here anyway - ADR-0033 removed WeighLocation()'s own compaction call) sit at the same
-	 * vessel; a lower reading consumes the difference in ordinary consume order (earliest due
-	 * date first - both share one here, so purchased_date breaks the tie) restricted to this
-	 * location, leaving the rest of the earlier-inserted row and the later one entirely alone.
+	 * Two refills identical in every stock_splits grouping column ADR-0033 acceptance
+	 * prerequisite 4 names - product, location, due date, price AND purchased date (a real,
+	 * non-sentinel due date, so neither is merge-eligible in the first place, and none is
+	 * merged here anyway - ADR-0033 removed WeighLocation()'s own compaction call) - sit at
+	 * the same vessel. stock_next_use's ORDER BY (migrations/0275.pgsql.sql) has no tiebreak
+	 * left once every column it sorts on is tied, so which of the two physical rows ordinary
+	 * consume order reduces first is deliberately left unpinned here: only the aggregate
+	 * outcome (the location's total, and that both rows survive a difference smaller than
+	 * either one alone) is asserted, the same way testSharedStockIdGuardSkipsTheWholeGroup
+	 * above asserts a sorted amount set rather than a specific row.
 	 */
 	public function testWeighTwoIdenticalDatedRefillsThenALowerReadingConsumesTheDifference(): void
 	{
@@ -933,7 +1286,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		$product = self::insertProduct('Maintenance Weigh Two Refills');
 
 		self::purchase($product, 3, '2028-01-01', $vessel, 2.0, '2026-01-01');
-		self::purchase($product, 5, '2028-01-01', $vessel, 2.0, '2026-02-01');
+		self::purchase($product, 5, '2028-01-01', $vessel, 2.0, '2026-01-01');
 		self::assertCount(2, self::rows($product), 'Two separate dated refills sit at the vessel');
 		self::assertSame(8.0, self::stockAmountAtLocation($product, $vessel), 'Sanity: eight units on hand there');
 
@@ -945,7 +1298,49 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 
 		self::assertSame(6.0, self::stockAmountAtLocation($product, $vessel), 'The location total now matches the reading');
 		self::assertNotEmpty($result, 'A booking was written for the lower reading');
-		self::assertCount(2, self::rows($product), 'Both rows still exist - the correction reduced the earlier-purchased one, it did not merge or replace either');
+		self::assertCount(2, self::rows($product), 'Both rows still exist - the 2-unit difference is smaller than either row alone, so whichever one ordinary consume order picked first was reduced, not removed, and the other was never touched');
+	}
+
+	/**
+	 * ADR-0033 acceptance prerequisite 4's own second half: repeats the identical-refills
+	 * scenario above with one of the two rows labelled. A live label is scoped to protecting
+	 * a row from the maintenance MERGE (ADR-0033 decision 3); it has no special meaning to
+	 * ordinary consumption, so the labelled row is exactly as eligible to absorb the weighed
+	 * difference as its unlabelled twin - this does not (and, given the two rows are tied on
+	 * every stock_next_use column, cannot) pin down which physical row that is. The 2-unit
+	 * difference is smaller than either row's own 4 units, so neither row is ever fully
+	 * consumed and the label - retired only by an actual DELETE (testFullConsumptionLabel
+	 * RetirementIsUnrelatedToMergeExclusion above) - must stay live regardless of which row
+	 * absorbed the reduction.
+	 */
+	public function testWeighTwoIdenticalDatedRefillsWithALabelledRowThenALowerReadingConsumesTheDifference(): void
+	{
+		$vessel = self::insertVesselLocation();
+		$product = self::insertProduct('Maintenance Weigh Two Refills Labelled');
+
+		self::purchase($product, 4, '2028-01-01', $vessel, 2.0, '2026-01-01');
+		self::purchase($product, 4, '2028-01-01', $vessel, 2.0, '2026-01-01');
+		$rowIds = array_map(fn($row) => (int)$row['id'], self::rows($product));
+		self::assertCount(2, $rowIds, 'Two separate, fully identical dated refills sit at the vessel');
+		$labelledId = max($rowIds);
+		self::issueLabel($labelledId);
+
+		$result = $this->expectStatus(
+			fn() => $this->weigh($vessel, 6),
+			200,
+			'Weighing to 6 (a lower reading) is accepted with one of the two tied rows labelled'
+		);
+
+		self::assertSame(6.0, self::stockAmountAtLocation($product, $vessel), 'The location total now matches the reading');
+		self::assertNotEmpty($result, 'A booking was written for the lower reading');
+
+		$rows = self::rows($product);
+		self::assertCount(2, $rows, 'Both rows still exist - the 2-unit difference is smaller than either row alone');
+		$amounts = array_map(fn($row) => (float)$row['amount'], $rows);
+		sort($amounts);
+		self::assertSame([2.0, 4.0], $amounts, 'one row absorbed the whole 2-unit difference, whichever it was');
+
+		self::assertTrue(self::liveLabelExistsFor($labelledId), 'The labelled row survived (touched or not) and its label was never retired - consumption is not merge, and nothing here deleted it');
 	}
 
 	/**
@@ -1002,6 +1397,31 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 			'A higher reading with no best_before_date is refused'
 		);
 		self::assertStringContainsString('best_before_date', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded));
+
+		self::assertCount(1, self::rows($product), 'No row was added');
+		self::assertSame(2.0, self::stockAmountAtLocation($product, $vessel), 'and the total is exactly what it was before the attempt');
+	}
+
+	/**
+	 * A malformed best_before_date (present, but not a valid ISO date) must be refused with
+	 * StockApiController::RequireIsoDate()'s own "must be a valid date" message, not silently
+	 * dropped to null and re-reported as the *absent* case's "required" refusal above - that
+	 * would tell a caller who did supply a value that they supplied nothing at all.
+	 */
+	public function testWeighAHigherReadingWithAMalformedDueDateIsRefusedAsInvalidNotMissing(): void
+	{
+		$vessel = self::insertVesselLocation();
+		$product = self::insertProduct('Maintenance Weigh Higher Malformed Date');
+		self::purchase($product, 2, '2028-01-01', $vessel, 1.0);
+
+		$decoded = $this->expectRefusalWithUntouchedLedger(
+			fn() => $this->weigh($vessel, 5, 'not-a-date'),
+			400,
+			'A higher reading with a malformed best_before_date is refused'
+		);
+		$message = strtolower($decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded));
+		self::assertStringContainsString('valid date', $message, 'with the invalid-date message, not the absent-field "required" one');
+		self::assertStringNotContainsString('required', $message, 'a supplied-but-malformed value must not be reported as missing');
 
 		self::assertCount(1, self::rows($product), 'No row was added');
 		self::assertSame(2.0, self::stockAmountAtLocation($product, $vessel), 'and the total is exactly what it was before the attempt');
