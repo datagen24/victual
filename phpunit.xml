@@ -104,6 +104,7 @@
 			<file>tests/Pgsql/StockUndoIntegrityTest.php</file>
 			<file>tests/Pgsql/StockAmountPolicyTest.php</file>
 			<file>tests/Pgsql/UndoMeasuredContainerCoherenceTest.php</file>
+			<file>tests/Pgsql/StockLogDeleteTriggerTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
@@ -122,6 +123,7 @@
 			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
 			<file>tests/Pgsql/ImporterIntegrityTest.php</file>
 			<file>tests/Pgsql/ImporterPrintJobLockConcurrencyTest.php</file>
+			<file>tests/Pgsql/ImporterTargetOnlyTableRetentionTest.php</file>
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>
@@ -160,6 +162,7 @@
 		</testsuite>
 		<testsuite name="chores">
 			<file>tests/Pgsql/ChoreExecutionStockUndoTest.php</file>
+			<file>tests/Pgsql/ChoreExecutionConsumePermissionTest.php</file>
 		</testsuite>
 		<testsuite name="stockmaintenance">
 			<file>tests/Pgsql/StockMaintenanceCompactionTest.php</file>

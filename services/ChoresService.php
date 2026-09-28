@@ -231,13 +231,41 @@ class ChoresService extends BaseService
 	 * consuming the linked product where configured, clearing any manual reschedule
 	 * and recalculating the next execution assignment.
 	 *
+	 * Authorization (issue #604, the same composite-permission class as #532 and #591):
+	 * CHORE_TRACK_EXECUTION alone authorizes tracking the chore, not consuming stock - when
+	 * the chore has consume_product_on_execution set (so this call is actually about to
+	 * consume a product, via StockService::ConsumeProduct() below), it also requires
+	 * STOCK_CONSUME, the same permission POST /api/stock/products/{id}/consume already
+	 * requires for that same booking (StockApiController::ConsumeProduct()). Checked first,
+	 * inside the transaction and before any write - including the chores_log insert itself -
+	 * so a refusal leaves no chores_log row, exactly as a chore that never reaches this method
+	 * at all. A chore that consumes nothing (consume_product_on_execution is 0, or no
+	 * product_id) needs only CHORE_TRACK_EXECUTION, unchanged.
+	 *
+	 * $request shapes the refusal the same way RecipesService::ConsumeRecipe()'s STOCK_PURCHASE
+	 * check and UndoChoreExecution()'s STOCK_EDIT check both do: User::HasPermissions() only
+	 * ever reads the ambient VICTUAL_USER_ID, never $request, so the permission is checked
+	 * unconditionally rather than only when a request happens to be given - a caller with no
+	 * request (this method's own tests, DemoDataGeneratorService) must already hold
+	 * STOCK_CONSUME for a stock-consuming chore, exactly like one that does. With a request,
+	 * the refusal is the same PermissionMissingException User::CheckPermission() throws
+	 * everywhere else (HandleApiCall() answers 403); without one, a plain \Exception. Either
+	 * way nothing is booked and no chores_log row is written.
+	 *
 	 * @param string $trackedTime "Y-m-d H:i:s"; truncated to the day for chores which track the date only
 	 * @param int $doneBy User id of the executing user, defaults to the current user
 	 * @param bool $skipped True to record a skip instead of an execution (not possible for unscheduled chores)
+	 * @param \Psr\Http\Message\ServerRequestInterface|null $request Only shapes the exception a
+	 *              missing STOCK_CONSUME throws for a stock-consuming chore; the permission
+	 *              check itself is unconditional (see above)
 	 * @return int The id of the created log row
-	 * @throws \Exception When the chore or user does not exist, or a manually scheduled chore is skipped
+	 * @throws \Exception When the chore or user does not exist, a manually scheduled chore is
+	 *              skipped, or the acting user lacks STOCK_CONSUME for a chore that consumes a
+	 *              product and no request was given to shape a PermissionMissingException instead
+	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was given and
+	 *              the acting user lacks STOCK_CONSUME for a chore that consumes a product
 	 */
-	public function TrackChore(int $choreId, string $trackedTime, $doneBy = VICTUAL_USER_ID, $skipped = false)
+	public function TrackChore(int $choreId, string $trackedTime, $doneBy = VICTUAL_USER_ID, $skipped = false, $request = null)
 	{
 		if (!$this->ChoreExists($choreId))
 		{
@@ -273,8 +301,21 @@ class ChoresService extends BaseService
 		// its own InTransaction() internally, which joins this one (DatabaseService::InTransaction()
 		// lets a nested call join rather than nest) rather than being able to commit or roll
 		// back independently of it.
-		return DatabaseService::GetInstance()->InTransaction(function () use ($choreId, $chore, $trackedTime, $doneBy, $skipped, $scheduledExecutionTime)
+		return DatabaseService::GetInstance()->InTransaction(function () use ($choreId, $chore, $trackedTime, $doneBy, $skipped, $scheduledExecutionTime, $request)
 		{
+			// Checked before any write (issue #604) - including the chores_log insert just
+			// below, so a refusal leaves no row at all, not merely an execution with no
+			// linked consumption.
+			if ($chore->consume_product_on_execution == 1 && !empty($chore->product_id) && !User::HasPermissions(User::PERMISSION_STOCK_CONSUME))
+			{
+				if ($request !== null)
+				{
+					throw new PermissionMissingException($request, User::PERMISSION_STOCK_CONSUME);
+				}
+
+				throw new \Exception('Permission missing: ' . User::PERMISSION_STOCK_CONSUME);
+			}
+
 			$logRow = $this->DB->chores_log()->createRow([
 				'chore_id' => $choreId,
 				'tracked_time' => $trackedTime,

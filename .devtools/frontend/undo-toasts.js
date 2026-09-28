@@ -5,17 +5,27 @@
 // used to be copied into five page scripts, and three Blade views pushed purchase.js
 // purely to import them; step 5 moved one of each into public/js/victual_stock_dialogs.js
 // and deleted the pushes. This probe books stock on each page that shows such a toast,
-// clicks the Undo link in the toast that page actually rendered, and asserts that the rows
+// clicks the Undo link in the toast that page actually rendered, and asserts that every row
 // the booking wrote in stock_log came back with undone = 1.
 //
-//   node undo-toasts.js --url http://127.0.0.1:8200 --db "$VDATA/victual_en.db"
+//   node undo-toasts.js --url http://127.0.0.1:8085
 //
-// stock_log has no read API, so the rows are read straight out of the database through
-// `php -r`. It books and undoes real stock, so it needs a throwaway database. Exits
-// non-zero if any page failed to undo, so it can be run as a gate.
+// Issue #579: this used to read stock_log through a raw `new PDO("sqlite:...")`, which needs
+// the SQLite runtime ADR-0008 retired (except behind DIFFTEST_SQLITE_RUNTIME) and which CI's
+// frontend-security job never ran, since it had nothing to point that flag at. It now reads
+// the ledger the way every other probe in this directory reads server state: through the
+// /api/ endpoints of the very server it is driving, using the transaction or booking id each
+// booking's own response returns rather than a side-channel database connection. It also no
+// longer waits a fixed 800ms for the consumed stock entry's row to hide (a race against
+// animate.css 3.7's 500ms "faster" fade plus the row's own refresh GET) - it waits for the
+// row's own d-none class instead.
+//
+// Issue #575: the stock entry edit form's own Undo link used to be built from `result.id`,
+// which is undefined - PUT /stock/entry/{entryId} returns an array of stock_log rows, not a
+// single object with an `id` - so the link posted to stock/bookings/undefined/undo and the
+// undo silently failed. Covered here by the 'stockentry-edit' scenario below.
 
 const { chromium } = require('playwright');
-const { execFileSync } = require('child_process');
 
 function arg(name, fallback)
 {
@@ -24,31 +34,6 @@ function arg(name, fallback)
 }
 
 const BASE = (arg('url', 'http://127.0.0.1:8200')).replace(/\/$/, '');
-const DB = arg('db', null);
-if (!DB)
-{
-	console.error('--db <path to victual_en.db> is required');
-	process.exit(2);
-}
-
-function query(sql)
-{
-	const php = '$d = new PDO("sqlite:" . $argv[1]);'
-		+ ' foreach ($d->query($argv[2], PDO::FETCH_NUM) as $r) { echo json_encode($r), "\\n"; }';
-	const out = execFileSync('php', ['-r', php, DB, sql], { encoding: 'utf8' });
-	return out.trim().split('\n').filter(Boolean).map(JSON.parse);
-}
-
-function maxLogId()
-{
-	return Number(query('SELECT COALESCE(MAX(id), 0) FROM stock_log')[0][0]);
-}
-
-function rowsAfter(id)
-{
-	return query('SELECT id, transaction_type, undone FROM stock_log WHERE id > ' + id + ' ORDER BY id')
-		.map(r => ({ id: Number(r[0]), type: r[1], undone: Number(r[2]) }));
-}
 
 const results = [];
 function record(page, how, booked, undone, note)
@@ -63,18 +48,58 @@ async function newPage(browser, label)
 	return page;
 }
 
-/** Clicks the "Undo" anchor inside the toast the page just rendered. */
+/**
+ * Clicks the "Undo" anchor inside the toast the page just rendered, and waits for the
+ * undo POST it triggers (stock/bookings/{id}/undo or stock/transactions/{id}/undo) to
+ * actually complete, rather than a fixed delay every scenario paid regardless of how
+ * long that request took.
+ */
 async function clickUndoInToast(page)
 {
 	const undo = page.locator('#toast-container a:has-text("Undo")').first();
 	await undo.waitFor({ state: 'visible', timeout: 20000 });
-	await undo.click();
-	await page.waitForTimeout(2000);
+	await Promise.all([
+		page.waitForResponse(r => r.request().method() === 'POST'
+			&& /\/api\/stock\/(bookings|transactions)\/[^/?]+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+		undo.click()
+	]);
 }
 
 async function waitForUndoToast(page)
 {
 	await page.waitForSelector('#toast-container a:has-text("Undo")', { timeout: 20000 });
+}
+
+/**
+ * Reads the ledger rows named by `path` (a single stock/bookings/{id}, or every row of a
+ * stock/transactions/{id}) through the API, using the same authenticated session the page
+ * itself runs under - the same thing every other check in this directory does instead of
+ * opening a database connection of its own (issue #579).
+ */
+async function readUndoneCount(page, path)
+{
+	return await page.evaluate(async (url) =>
+	{
+		const res = await fetch(url, { credentials: 'same-origin' });
+		const body = await res.json();
+		const rows = Array.isArray(body) ? body : [body];
+		return { booked: rows.length, undone: rows.filter(r => Number(r.undone) === 1).length };
+	}, BASE + '/api/' + path);
+}
+
+/**
+ * Performs an action that triggers exactly one booking call matching `urlPattern` and
+ * `method`, and returns the parsed JSON body of that call's response - the stock_log rows
+ * the booking wrote, per every controller method behind these buttons ("Returns the
+ * stock_log rows of the resulting transaction").
+ */
+async function bookingResponse(page, urlPattern, method, act)
+{
+	const [response] = await Promise.all([
+		page.waitForResponse(r => method === r.request().method() && urlPattern.test(r.url()), { timeout: 20000 }),
+		act()
+	]);
+	return await response.json();
 }
 
 /**
@@ -123,6 +148,33 @@ async function productWithStock(browser)
 	return id;
 }
 
+/**
+ * Issue #610: the stockentries scenario below only exercises the race it is meant to catch
+ * (a sibling stock entry of the same product being refreshed - and redrawing the table -
+ * while the just-consumed entry's own row is being hidden) when that product actually has a
+ * second stock entry. The demo data's chosen product may or may not already have one, so
+ * this purchases a small extra batch whenever /api/stock/products/{id}/entries reports
+ * fewer than two, guaranteeing the fixture the scenario needs regardless of demo data.
+ */
+async function ensureTwoStockEntries(browser, productId)
+{
+	const p = await browser.newPage();
+	await p.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+	await p.evaluate(async ({ base, id }) =>
+	{
+		const entries = await (await fetch(base + '/api/stock/products/' + id + '/entries', { credentials: 'same-origin' })).json();
+		if (Array.isArray(entries) && entries.length >= 2) return;
+
+		await fetch(base + '/api/stock/products/' + id + '/add', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ amount: 3, best_before_date: '2027-12-31' })
+		});
+	}, { base: BASE, id: productId });
+	await p.close();
+}
+
 async function probe(browser, label, how, run)
 {
 	const page = await newPage(browser, label);
@@ -153,12 +205,11 @@ async function probe(browser, label, how, run)
 	await probe(browser, 'stockoverview', 'row consume button -> toast Undo', async page =>
 	{
 		await page.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
-		const before = maxLogId();
-		await page.locator('a.product-consume-button:not(.disabled)').first().click();
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
+			page.locator('a.product-consume-button:not(.disabled)').first().click());
 		await waitForUndoToast(page);
-		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- consume page ----------------------------------------------------------------
@@ -168,12 +219,11 @@ async function probe(browser, label, how, run)
 		await pickProduct(page, productId);
 		await page.fill('#display_amount', '1');
 		await page.waitForTimeout(500);
-		const before = maxLogId();
-		await page.click('#save-consume-button');
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
+			page.click('#save-consume-button'));
 		await waitForUndoToast(page);
-		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- purchase page ---------------------------------------------------------------
@@ -184,12 +234,11 @@ async function probe(browser, label, how, run)
 		await page.fill('#display_amount', '2');
 		await setDueDate(page, '2027-12-31');
 		await page.waitForTimeout(500);
-		const before = maxLogId();
-		await page.click('#save-purchase-button');
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/add(\?|$)/, 'POST', () =>
+			page.click('#save-purchase-button'));
 		await waitForUndoToast(page);
-		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- inventory page --------------------------------------------------------------
@@ -203,12 +252,11 @@ async function probe(browser, label, how, run)
 		await page.dispatchEvent('#display_amount', 'change');
 		await setDueDate(page, '2027-12-31');
 		await page.waitForTimeout(500);
-		const before = maxLogId();
-		await page.click('#save-inventory-button');
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/inventory(\?|$)/, 'POST', () =>
+			page.click('#save-inventory-button'));
 		await waitForUndoToast(page);
-		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- transfer page ---------------------------------------------------------------
@@ -222,12 +270,11 @@ async function probe(browser, label, how, run)
 		await page.selectOption('#location_id_to', to);
 		await page.fill('#display_amount', '1');
 		await page.waitForTimeout(500);
-		const before = maxLogId();
-		await page.click('#save-transfer-button');
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/transfer(\?|$)/, 'POST', () =>
+			page.click('#save-transfer-button'));
 		await waitForUndoToast(page);
-		const booked = rowsAfter(before).length;
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- stock entries: consume one entry ---------------------------------------------
@@ -238,8 +285,29 @@ async function probe(browser, label, how, run)
 		await page.waitForTimeout(1200);
 		const button = page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first();
 		const stockRowId = await button.getAttribute('data-stockrow-id');
-		const before = maxLogId();
-		await button.click();
+
+		// Issue #610: this scenario only exercises the race it is meant to catch - a
+		// *sibling* stock entry of the same product being refreshed (and redrawing the
+		// whole table) while the just-consumed entry's own row is being hidden - when the
+		// product this row actually belongs to carries a second stock entry. The page is
+		// unfiltered, so the first consume button is not necessarily for the shared
+		// productId every other scenario books against; read the real product id off this
+		// button, ensure its fixture, then reload so the new entry is in the table before
+		// the same row is clicked.
+		const consumedProductId = await button.getAttribute('data-product-id');
+		await ensureTwoStockEntries(browser, consumedProductId);
+		await page.reload({ waitUntil: 'networkidle' });
+		await page.waitForTimeout(1200);
+
+		// Each row renders two `.stock-consume-button` anchors sharing the same
+		// data-stockrow-id - the plain consume button (views/stockentries.blade.php's
+		// btn-danger anchor) and the "mark as spoiled" dropdown item
+		// (.stock-consume-button-spoiled) - so this must exclude the spoiled one and stay
+		// scoped to this row, exactly like the original locator above, or it resolves to
+		// two elements.
+		const reloadedButton = page.locator('#stock-' + stockRowId + '-row a.stock-consume-button:not(.stock-consume-button-spoiled)');
+		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
+			reloadedButton.click());
 		await waitForUndoToast(page);
 
 		// Audit finding H10 / issue #499: this button consumes the entry's whole amount
@@ -247,10 +315,20 @@ async function probe(browser, label, how, run)
 		// own RefreshStockEntryRow() re-fetches it right after and used to get a 200 "null"
 		// body it read as "hide the row"; GET /stock/entry/{id} now answers the documented
 		// 400 for a gone id instead, which must still hide the row rather than surface
-		// DefaultErrorHandler's "A server error occured" toast. Waited rather than asserted
-		// immediately: RefreshStockEntryRow()'s own GET is a second request, fired
-		// alongside the success toast rather than awaited by it.
-		await page.waitForTimeout(800);
+		// DefaultErrorHandler's "A server error occured" toast. Waits for the row's own
+		// d-none class rather than a fixed delay (issue #579): a fixed 800ms raced
+		// animate.css 3.7's 500ms "faster" fade plus the refresh GET, and either one
+		// running long on a busy CI runner made the wait too short. Issue #610's fix
+		// applies d-none synchronously rather than in an animationend callback that a
+		// concurrent sibling-row redraw could cancel, and deliberately keeps the row's
+		// node in the DOM (rather than removing it) so Undo can find and restore it below.
+		await page.waitForFunction(id =>
+		{
+			const row = document.querySelector('#stock-' + id + '-row');
+			const err = document.querySelector('#toast-container .toast-error');
+			return (row && row.classList.contains('d-none')) || err;
+		}, stockRowId, { timeout: 15000 });
+
 		if (await page.locator('#toast-container .toast-error').count() > 0)
 		{
 			throw new Error('the consumed entry\'s row refresh surfaced a server-error toast instead of hiding the row (H10 / issue #499)');
@@ -261,9 +339,68 @@ async function probe(browser, label, how, run)
 			throw new Error('the consumed entry\'s row was not hidden after its GET /stock/entry/{id} refresh (H10 / issue #499): class="' + rowClass + '"');
 		}
 
-		const booked = rowsAfter(before).length;
+		// Issue #610: StockService::UndoBooking() rebuilds a whole-take consume's entry
+		// under its original row id, and UndoStockBookingEntry()'s own "ProductChanged"
+		// broadcast is how this page notices - RefreshStockEntryRow() gets a 200 for a row
+		// it still has marked d-none, and reloads the page so the restored entry renders
+		// normally. Wait for that reload (registering the waiter before the click, since
+		// the reload itself follows a couple of message round trips after the undo POST
+		// resolves) rather than assuming clickUndoInToast's own wait covers it, then assert
+		// the row is back and visible instead of stuck hidden.
+		const reloadWait = page.waitForEvent('load', { timeout: 20000 }).catch(() => null);
 		await clickUndoInToast(page);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		await reloadWait;
+		await page.waitForFunction(id =>
+		{
+			const row = document.querySelector('#stock-' + id + '-row');
+			return !!row && !row.classList.contains('d-none');
+		}, stockRowId, { timeout: 20000 });
+
+		return readUndoneCount(page, 'stock/bookings/' + booking[0].id);
+	});
+
+	// ---- stock entries: edit form's own Undo link --------------------------------------
+	// Issue #575: stockentryform.js built this toast's Undo link from `result.id`, which is
+	// undefined - PUT /stock/entry/{entryId} answers an array of stock_log rows, exactly
+	// like every other booking endpoint this file exercises, not a single object with an
+	// `id`. Opens the first entry's own edit dialog, resubmits it unchanged (a bare save is
+	// a valid PUT: every field already holds the entry's current, valid value) and clicks
+	// the resulting toast's Undo link the same way the consume scenario above does.
+	await probe(browser, 'stockentry-edit', 'stock entry edit form -> toast Undo (UndoStockBookingEntry)', async page =>
+	{
+		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
+		await page.waitForTimeout(1200);
+
+		const [childFrame] = await Promise.all([
+			page.waitForEvent('frameattached'),
+			page.locator('a.show-as-dialog-link[href*="/stockentry/"]').first().click()
+		]);
+		await childFrame.waitForLoadState('load');
+
+		// Waits for the modal's own scripts (datetimepickers, UserfieldsForm.Load()) to
+		// finish setting up the fields Save's own validation reads. checkValidity() stays
+		// false, and Save silently does nothing, until they have - clicking on a fixed
+		// delay instead sometimes raced that setup and left bookingResponse() waiting for
+		// a request that was never sent.
+		await childFrame.waitForFunction(() =>
+		{
+			const form = document.querySelector('#stockentry-form');
+			return !!form && form.checkValidity();
+		}, { timeout: 15000 });
+
+		const frame = page.frameLocator('iframe.embed-responsive');
+		const booking = await bookingResponse(page, /\/api\/stock\/entry\/\d+(\?|$)/, 'PUT', () =>
+			frame.locator('#save-stockentry-button').click());
+
+		await waitForUndoToast(page);
+		await clickUndoInToast(page);
+		// EditStockEntry always writes two correlated rows - STOCK_EDIT_OLD and
+		// STOCK_EDIT_NEW, sharing both a transaction_id and a correlation_id - and
+		// UndoBooking() cascades to every row sharing the clicked one's correlation_id, so
+		// the toast's single Undo link undoes both. Reading the transaction back (as the
+		// transfer scenario above does, for the same two-row-per-booking reason) is what
+		// actually checks that cascade rather than only the row named in the link.
+		return readUndoneCount(page, 'stock/transactions/' + booking[0].transaction_id);
 	});
 
 	// ---- meal plan --------------------------------------------------------------------
@@ -276,7 +413,6 @@ async function probe(browser, label, how, run)
 		await page.goto(BASE + '/mealplan', { waitUntil: 'networkidle' });
 		const defined = await page.evaluate(() => typeof UndoStockTransaction === 'function');
 		if (!defined) throw new Error('UndoStockTransaction is not defined on /mealplan');
-		const before = maxLogId();
 		const transactionId = await page.evaluate(async (a) =>
 		{
 			const res = await fetch(a.base + '/api/stock/products/' + a.id + '/consume', {
@@ -286,10 +422,9 @@ async function probe(browser, label, how, run)
 			});
 			return (await res.json())[0].transaction_id;
 		}, { base: BASE, id: productId });
-		const booked = rowsAfter(before).length;
 		await page.evaluate(id => UndoStockTransaction(id), transactionId);
 		await page.waitForTimeout(2000);
-		return { booked, undone: rowsAfter(before).filter(r => r.undone === 1).length };
+		return readUndoneCount(page, 'stock/transactions/' + transactionId);
 	});
 
 	await browser.close();

@@ -54,25 +54,48 @@ function userHasPermission(permissionName)
 // Whether the consume button may be offered for a recipe whose resolved "produces product"
 // is outputProductId - RECIPES_VIEW + STOCK_CONSUME always, plus STOCK_PURCHASE when it
 // produces something, exactly the rule RecipesApiController::ConsumeRecipe() /
-// RecipesService::ConsumeRecipe() enforce server-side (issue #532). For a meal plan entry,
-// the caller below passes the *original* recipe's product_id (event.recipe, embedded by
-// RecipesController::MealPlan() from the RECIPE_TYPE_NORMAL row the entry names) rather than
-// the per-entry shadow's own (always empty) one - the same output the server resolves a
-// shadow to. A week recipe's own product_id is always empty (it is a pure aggregation
-// container, never a "produces product" row itself - db/pgsql/baseline/06_triggers_c.sql's
-// mealplan-week insert never sets one), so this reduces to RECIPES_VIEW + STOCK_CONSUME for
-// the week button without needing to special-case it.
+// RecipesService::ConsumeRecipe() enforce server-side (issue #532), plus RECIPES_MEALPLAN
+// (issue #591). This click flow's *second* call, once the recipe is consumed, is PUT
+// objects/meal_plan/{id} to mark the entry done - GenericEntityApiController::EditObject()
+// gates that PUT on RECIPES_MEALPLAN for the meal_plan entity - so without this clause the
+// button would book the consumption and then report a failure for a "done" mark that will
+// always be refused (the defect issue #591 describes). RECIPES_MEALPLAN is required
+// unconditionally here rather than only when marking done matters, because this whole button
+// only exists to run both calls together. For a meal plan entry, the caller below passes the
+// *original* recipe's product_id (event.recipe, embedded by RecipesController::MealPlan()
+// from the RECIPE_TYPE_NORMAL row the entry names) rather than the per-entry shadow's own
+// (always empty) one - the same output the server resolves a shadow to. A week recipe's own
+// product_id is always empty (it is a pure aggregation container, never a "produces product"
+// row itself - db/pgsql/baseline/06_triggers_c.sql's mealplan-week insert never sets one), so
+// this reduces to RECIPES_VIEW + STOCK_CONSUME + RECIPES_MEALPLAN for the week button without
+// needing to special-case it.
 function mayConsumeMealPlanRecipe(outputProductId)
 {
-	return userHasPermission("RECIPES_VIEW") && userHasPermission("STOCK_CONSUME")
+	return userHasPermission("RECIPES_VIEW") && userHasPermission("STOCK_CONSUME") && userHasPermission("RECIPES_MEALPLAN")
 		&& (!outputProductId || userHasPermission("STOCK_PURCHASE"));
 }
 
-// The add-missing-to-shoppinglist button needs RECIPES_VIEW + SHOPPINGLIST_ITEMS_ADD,
-// unconditionally (issue #532) - it never adds stock, so STOCK_PURCHASE is never relevant.
+// The add-missing-to-shoppinglist button needs RECIPES_VIEW + SHOPPINGLIST_ITEMS_ADD (issue
+// #532) plus RECIPES (issue #591): the click flow's first call (below, PUT objects/recipes to
+// set desired_servings before resolving fulfillment) requires the RECIPES edit permission
+// (GenericEntityApiController::EditObject()) - it never adds stock, so STOCK_PURCHASE is never
+// relevant, but that PUT is a real write this button always performs, so RECIPES is not
+// optional the way it would be if the button never needed the PUT.
 function mayAddMealPlanRecipeToShoppingList()
 {
-	return userHasPermission("RECIPES_VIEW") && userHasPermission("SHOPPINGLIST_ITEMS_ADD");
+	return userHasPermission("RECIPES_VIEW") && userHasPermission("SHOPPINGLIST_ITEMS_ADD") && userHasPermission("RECIPES");
+}
+
+// Whether the "consume a product entry" button (a meal-plan entry of type "product", rather
+// than a recipe) may be offered - issue #591: this flow's first call is POST
+// /api/stock/products/{id}/consume (STOCK_CONSUME), and its second is PUT
+// objects/meal_plan/{id} to mark the entry done, which GenericEntityApiController::
+// EditObject() gates on RECIPES_MEALPLAN for the meal_plan entity. Unlike the recipe consume
+// button above, the product route itself never checks RECIPES_MEALPLAN, so this gate exists
+// purely to keep the button from starting a flow whose second half the server will refuse.
+function mayConsumeMealPlanProduct()
+{
+	return userHasPermission("STOCK_CONSUME") && userHasPermission("RECIPES_MEALPLAN");
 }
 
 // FullCalendar setup - one calendar instance per meal plan section; only the primary
@@ -391,6 +414,20 @@ $(".calendar").each(function()
 					productConsumeButtonDisabledClasses = "";
 				}
 
+				// Issue #591: this button's click flow consumes stock and then marks the
+				// meal plan entry done, so it is offered only to a caller who holds every
+				// permission that whole flow needs - see mayConsumeMealPlanProduct()'s own
+				// comment. Built as an empty string rather than a "disabled" class (unlike
+				// the insufficient-stock case above) because the reason is a permission the
+				// user does not have at all, not a transient stock state a click could
+				// change - the same treatment mayConsumeMealPlanRecipe() and
+				// mayAddMealPlanRecipeToShoppingList() already get below.
+				var productConsumeButtonHtml = "";
+				if (mayConsumeMealPlanProduct())
+				{
+					productConsumeButtonHtml = '<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a>';
+				}
+
 				var fulfillmentInfoHtml = "";
 				var fulfillmentIconHtml = "";
 				if (stockStateKnown)
@@ -429,7 +466,7 @@ $(".calendar").each(function()
 					<h5 class="d-print-none"> \
 						<a class="btn btn-outline-info btn-xs edit-meal-plan-entry-button" href="#" data-toggle="tooltip" title="' + __t("Edit this item") + '"><i class="fa-solid fa-edit"></i></a> \
 						<a class="btn btn-outline-danger btn-xs remove-product-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
-						<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a> \
+						' + productConsumeButtonHtml + ' \
 						' + shoppingListButtonHtml + ' \
 						' + doneButtonHtml + ' \
 					</h5> \
@@ -977,6 +1014,16 @@ $(document).on('click', '.recipe-order-missing-button', function(e)
 								Victual.Api.DefaultErrorHandler(xhr);
 							}
 						);
+					},
+					// Issue #591: this call used to have no error callback, so a refusal here
+					// (mayAddMealPlanRecipeToShoppingList() should now prevent this for a caller
+					// lacking RECIPES, but a stale button or a permission revoked mid-session
+					// can still reach it) reported nothing and left the page stuck busy forever
+					// instead of returning to the recipe-error case above.
+					function(xhr)
+					{
+						Victual.FrontendHelpers.EndUiBusy();
+						Victual.Api.DefaultErrorHandler(xhr);
 					}
 				);
 			}
@@ -1013,7 +1060,14 @@ $(document).on('click', '.product-consume-button', function(e)
 						},
 						function(xhr)
 						{
-							Victual.FrontendHelpers.ShowGenericError('Error while saving, probably this item already exists', xhr.response);
+							// Coordinator round 2 fold-in: this used to call ShowGenericError() with a fixed
+							// "probably this item already exists" message and no EndUiBusy() - wrong on both
+							// counts for this PUT (a 403, e.g. from a permission revoked mid-session, is not a
+							// uniqueness conflict, and the page stayed busy forever after the stock was already
+							// consumed). DefaultErrorHandler() shows a generic message with the server's actual
+							// error_message available on click, matching the sibling error callbacks around it.
+							Victual.FrontendHelpers.EndUiBusy();
+							Victual.Api.DefaultErrorHandler(xhr);
 						}
 					);
 				},
@@ -1059,19 +1113,44 @@ $(document).on('click', '.recipe-consume-button', function(e)
 			{
 				Victual.FrontendHelpers.BeginUiBusy();
 
+				// Consuming stock succeeded; finishes the click either by marking one meal
+				// plan entry done (the per-entry button - mealPlanEntryId is that entry's
+				// own id) or, when there is none, straight away. Coordinator round 2
+				// fold-in: the week button (weekRecipeConsumeButtonHtml above) sets no
+				// data-mealplan-entry-id at all - RECIPE_TYPE_MEALPLAN_WEEK aggregates every
+				// entry in the week, so there is no single meal_plan row "this" consume
+				// could mean - and attr() then reads back `undefined`, which string
+				// concatenation below turned into a real PUT to
+				// objects/meal_plan/undefined that always 400ed after the stock was already
+				// consumed. Adding a data-mealplan-entry-id to the week button would be
+				// wrong in the other direction - inventing an entry id that does not
+				// describe what was actually consumed - so this checks for one instead of
+				// assuming it is always there.
+				function finishConsume()
+				{
+					Victual.FrontendHelpers.EndUiBusy();
+					toastr.success(__t('Removed all in stock ingredients needed by recipe \"%s\" from stock', Victual.FrontendHelpers.EscapeHtml(objectName)));
+					window.location.reload();
+				}
+
 				Victual.Api.Post('recipes/' + objectId + '/consume', {},
 					function(result)
 					{
+						if (!mealPlanEntryId)
+						{
+							finishConsume();
+							return;
+						}
+
 						Victual.Api.Put('objects/meal_plan/' + mealPlanEntryId, { "done": 1 },
-							function(result)
-							{
-								Victual.FrontendHelpers.EndUiBusy();
-								toastr.success(__t('Removed all in stock ingredients needed by recipe \"%s\" from stock', Victual.FrontendHelpers.EscapeHtml(objectName)));
-								window.location.reload();
-							},
+							finishConsume,
 							function(xhr)
 							{
-								Victual.FrontendHelpers.ShowGenericError('Error while saving, probably this item already exists', xhr.response);
+								// Coordinator round 2 fold-in - see the product-consume-button handler's
+								// identical fix above for why: EndUiBusy() was missing and the fixed message
+								// was wrong for this PUT's own failures (e.g. a 403 read as "already exists").
+								Victual.FrontendHelpers.EndUiBusy();
+								Victual.Api.DefaultErrorHandler(xhr);
 							}
 						);
 					},

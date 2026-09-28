@@ -67,7 +67,14 @@ $('#save-stockentry-button').on('click', function(e)
 
 			Victual.Components.UserfieldsForm.Save(function()
 			{
-				var successMessage = __t('Stock entry successfully updated') + '<br><a class="btn btn-secondary btn-sm mt-2" href="#" onclick="UndoStockBookingEntry(\'' + result.id + '\',\'' + Victual.EditObjectRowId + '\')"><i class="fa-solid fa-undo"></i> ' + __t("Undo") + '</a>';
+				// result is the array of stock_log rows PUT /stock/entry/{entryId} returns
+				// (StockApiController::EditStockEntry, victual.openapi.json), not a single
+				// object - result.id is undefined, and the link used to post to
+				// stock/bookings/undefined/undo (issue #575). result[0].id is the booking
+				// this edit wrote; result[0].product_id matches what line 72 below already
+				// broadcasts, so UndoStockBookingEntry's own broadcast on a later undo stays
+				// consistent with it.
+				var successMessage = __t('Stock entry successfully updated') + '<br><a class="btn btn-secondary btn-sm mt-2" href="#" onclick="UndoStockBookingEntry(\'' + result[0].id + '\',\'' + Victual.EditObjectRowId + '\',\'' + result[0].product_id + '\')"><i class="fa-solid fa-undo"></i> ' + __t("Undo") + '</a>';
 
 				Victual.GetTopmostWindow().postMessage(WindowMessageBag("BroadcastMessage", WindowMessageBag("ProductChanged", Victual.EditObjectProductId)), Victual.BaseUrl);
 				window.parent.postMessage(WindowMessageBag("ShowSuccessMessage", successMessage), Victual.BaseUrl);

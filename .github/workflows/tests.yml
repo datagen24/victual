@@ -617,6 +617,88 @@ jobs:
           done
           curl -sS -o /dev/null -w 'labels instance /locations -> %{http_code}\n' http://127.0.0.1:8087/locations
 
+      # Issue #591's own frontend probe (mealplan-permissions.js) needs one identity per
+      # role shape (CHILD, GUEST, a full grant) actually holding that role's exact permission
+      # set, which demo/dev mode cannot give it from a single shared instance: every request
+      # there resolves to the same one identity (SessionService::GetDefaultUser(), the lowest
+      # user id), and PUT /api/users/{id}/permissions refuses granting anything the caller does
+      # not already hold (User::CheckMayGrant()) - so once that identity is reduced to one
+      # role's permissions it can never be raised back to another's or restored. Three fresh,
+      # disposable instances side-step this: the probe seeds its own fixtures and downgrades
+      # each instance's own bootstrap administrator to the target shape exactly once, while it
+      # still holds every permission - see the probe's own header comment for the full
+      # reasoning.
+      - name: Boot three meal-plan permission probe instances
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          PGPASSWORD=$PGPASSWORD createdb -h $PGHOST -p $PGPORT -U $PGUSER victual_mealplan_child
+          PGPASSWORD=$PGPASSWORD createdb -h $PGHOST -p $PGPORT -U $PGUSER victual_mealplan_guest
+          PGPASSWORD=$PGPASSWORD createdb -h $PGHOST -p $PGPORT -U $PGUSER victual_mealplan_full
+
+          CDATA=$(mktemp -d)
+          cat > "$CDATA/config.php" <<PHPCONFIG
+          <?php
+          Setting('DB_DRIVER', 'pgsql');
+          Setting('DB_HOST', getenv('PGHOST'));
+          Setting('DB_PORT', intval(getenv('PGPORT')));
+          Setting('DB_NAME', 'victual_mealplan_child');
+          Setting('DB_USER', getenv('PGUSER'));
+          Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          PHPCONFIG
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$CDATA" php bin/victual-migrate --quiet
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$CDATA" \
+            php -S 127.0.0.1:8090 -t public > /tmp/php-mealplan-child.log 2>&1 &
+
+          GDATA=$(mktemp -d)
+          cat > "$GDATA/config.php" <<PHPCONFIG
+          <?php
+          Setting('DB_DRIVER', 'pgsql');
+          Setting('DB_HOST', getenv('PGHOST'));
+          Setting('DB_PORT', intval(getenv('PGPORT')));
+          Setting('DB_NAME', 'victual_mealplan_guest');
+          Setting('DB_USER', getenv('PGUSER'));
+          Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          PHPCONFIG
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$GDATA" php bin/victual-migrate --quiet
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$GDATA" \
+            php -S 127.0.0.1:8091 -t public > /tmp/php-mealplan-guest.log 2>&1 &
+
+          FDATA=$(mktemp -d)
+          cat > "$FDATA/config.php" <<PHPCONFIG
+          <?php
+          Setting('DB_DRIVER', 'pgsql');
+          Setting('DB_HOST', getenv('PGHOST'));
+          Setting('DB_PORT', intval(getenv('PGPORT')));
+          Setting('DB_NAME', 'victual_mealplan_full');
+          Setting('DB_USER', getenv('PGUSER'));
+          Setting('DB_PASSWORD', getenv('PGPASSWORD'));
+          PHPCONFIG
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$FDATA" php bin/victual-migrate --quiet
+          VICTUAL_MODE=dev VICTUAL_DATAPATH="$FDATA" \
+            php -S 127.0.0.1:8092 -t public > /tmp/php-mealplan-full.log 2>&1 &
+
+          for port in 8090 8091 8092; do
+            for i in $(seq 1 30); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$port/about || true)
+              if [ "$code" = "200" ]; then break; fi
+              sleep 1
+            done
+            curl -sS -o /dev/null -w "mealplan probe instance $port /about -> %{http_code}\n" http://127.0.0.1:$port/about
+          done
+
+          # PIDs of the three background `php -S` processes just started above, one per
+          # line in the order child/guest/full - read back by the teardown step below,
+          # once the probe that needs them has run. `jobs -p` rather than three separate
+          # `$!` captures: this step's own shell is what backgrounded them, and `jobs -p`
+          # lists exactly its own background jobs in start order, with no risk of a `$!`
+          # capture landing on the wrong statement if this script is ever reordered.
+          jobs -p > /tmp/mealplan-probe-instance-pids.txt
+          cat /tmp/mealplan-probe-instance-pids.txt
+
       - name: Run the S29 payload probe
         working-directory: .devtools/frontend
         run: node s29-payload.js --url http://127.0.0.1:8085 --out s29-payload-ci.json
@@ -624,6 +706,41 @@ jobs:
       - name: Run role form and inheritance checks
         working-directory: .devtools/frontend
         run: node roles.js http://127.0.0.1:8085
+
+      # Issue #591. Against the three disposable instances booted above, never the shared
+      # demo instance on 8085 - see the probe's own header comment and this directory's
+      # README for why a shared instance cannot exercise three different role shapes.
+      - name: Run meal plan button permission checks
+        working-directory: .devtools/frontend
+        run: |
+          node mealplan-permissions.js --child-url http://127.0.0.1:8090 \
+            --guest-url http://127.0.0.1:8091 --full-url http://127.0.0.1:8092
+
+      # These three instances exist only for the probe just above - unlike the demo and
+      # labels instances (shared by every other probe in this job, so left running for the
+      # whole job), nothing after this point needs them. Left running, three more `php -S`
+      # processes plus their PostgreSQL connections compete with the demo instance for the
+      # runner's CPU for the rest of the job - a plausible cause of "Run stock booking Undo
+      # toast checks" later on failing with page.waitForResponse timeouts on the *demo*
+      # instance's own stock/products/{id}/consume calls (a route this probe never calls -
+      # its own consume calls are all recipes/{id}/consume, on its own ports, never 8085)
+      # even though this job's steps run one at a time, never concurrently with each other.
+      # Runs unconditionally (always(), not just on failure), always right after the probe
+      # that needs these instances alive and before anything later that does not.
+      - name: Tear down the meal-plan permission probe instances
+        if: always()
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: victual
+          PGPASSWORD: victual
+        run: |
+          if [ -f /tmp/mealplan-probe-instance-pids.txt ]; then
+            kill $(cat /tmp/mealplan-probe-instance-pids.txt) 2>/dev/null || true
+          fi
+          for dbname in victual_mealplan_child victual_mealplan_guest victual_mealplan_full; do
+            PGPASSWORD=$PGPASSWORD dropdb --if-exists -h $PGHOST -p $PGPORT -U $PGUSER "$dbname" || true
+          done
 
       # Issue #549. Whether userform.js sends password_base64 at all is entirely a
       # browser-side question - it depends on #change_password's checked state and on
@@ -717,6 +834,16 @@ jobs:
         working-directory: .devtools/frontend
         run: node nullable-integer-forms.js http://127.0.0.1:8085
 
+      # Plan 12 check 2 (last item), and issues #575/#579. Every stock booking toast's
+      # inline "Undo" link, including the stock entry edit form's, still undoes what it
+      # booked. Against the demo instance on 8085 like the checks above - nothing here needs
+      # the label subsystem. It reads the booked rows back through the API rather than a
+      # database connection of its own (issue #579's gap: the previous version needed the
+      # SQLite runtime ADR-0008 retired, and nothing in CI ran it).
+      - name: Run stock booking Undo toast checks
+        working-directory: .devtools/frontend
+        run: node undo-toasts.js --url http://127.0.0.1:8085
+
       - name: Run label printer administration checks
         working-directory: .devtools/frontend
         run: node label-printers.js --url http://127.0.0.1:8087
@@ -747,6 +874,13 @@ jobs:
       - name: The server log, if anything went wrong
         if: failure()
         run: tail -50 /tmp/php-server.log || true
+
+      - name: The meal plan permission probe instances' logs, if anything went wrong
+        if: failure()
+        run: |
+          tail -50 /tmp/php-mealplan-child.log || true
+          tail -50 /tmp/php-mealplan-guest.log || true
+          tail -50 /tmp/php-mealplan-full.log || true
 
   # The MCP sidecar's own tests (mcp/tests/tools): handler shaping against recorded
   # response shapes, and the HTTP face against a fake Victual over real sockets. The Nix
