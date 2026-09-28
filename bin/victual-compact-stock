@@ -41,13 +41,20 @@
 // userfield-eligibility check runs through the view below, which reads its underlying tables
 // as the view's OWNER, not this caller). Also SELECT on the views stock_splits (this
 // command's own candidate-group read - CompactStockEntries()'s very first query),
-// products_average_price and products_last_purchased; SELECT, INSERT, UPDATE on
-// cache__products_average_price and cache__products_last_purchased (SELECT too - not just the
-// writes - because Postgres requires it to evaluate ON CONFLICT DO UPDATE's exclusion
-// values), because every stock_log row this command rewrites fires the stock_log_UPD trigger
-// (trg_stock_log_UPD(), db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER like
-// every other trigger function here and so writes those two cache tables under this same
-// caller's rights, not its own; and SELECT, UPDATE on system_db_changed_time - not something
+// products_average_price and products_last_purchased; SELECT, INSERT, UPDATE, DELETE on
+// cache__products_average_price and cache__products_last_purchased, because every stock_log
+// row this command rewrites fires the stock_log_UPD trigger (trg_stock_log_UPD(),
+// db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER like every other trigger
+// function here and so writes those two cache tables under this same caller's rights, not
+// its own - and, since migrations/0292.pgsql.sql (issue #588), what it writes is no longer a
+// plain upsert: trg_stock_log_UPD calls rebuild_stock_log_cache_for_product(), which
+// unconditionally DELETEs the stale cache row for the product before conditionally
+// re-INSERTing it from the view. DELETE is therefore required here too, alongside SELECT
+// (still needed to evaluate that DELETE's own WHERE product_id = ... condition) and INSERT;
+// UPDATE remains listed even though this rebuild itself no longer issues one against either
+// cache table (it replaced the INSERT ... ON CONFLICT DO UPDATE upsert this comment used to
+// describe), kept least-privilege-conservatively rather than narrowed as a side effect of an
+// unrelated fix; and SELECT, UPDATE on system_db_changed_time - not something
 // CompactStockEntries() itself touches, but the process's own exit runs DatabaseService's
 // shutdown handler same as any other caller, which flushes a deferred changed-time write
 // there (PostgresDialect::FlushDbChangedTime(), a bare UPDATE ... WHERE id = 1) whenever this
