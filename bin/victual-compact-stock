@@ -31,7 +31,7 @@
 // on stock_log (rewriting stock_id only - never stock_row_id, never any other column);
 // SELECT, UPDATE, DELETE on stock_entry_origins (never INSERT - this command only ever
 // UPDATEs an existing row's origin_stock_id or DELETEs one outright; new rows are written by
-// RecordSplitOrigin(), called from OpenProduct()/TransferProduct(), never from here); SELECT,
+// RecordSplitOrigin(), called only from OpenProduct(), never from here); SELECT,
 // UPDATE on labels (read to evaluate eligibility, write because deleting a losing row fires
 // retire_stock_entry_labels - migrations/0283.pgsql.php - which UPDATEs the label it retires,
 // under this same caller's privileges since the trigger function carries none of its own);

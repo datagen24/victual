@@ -32,7 +32,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * RegisterShutdownHandler() - and DatabaseService swallows a failure there, so the command
  * exits 0 even though clients never see the merge) and drops INSERT from stock_entry_origins
  * (CompactStockEntries() only ever UPDATEs or DELETEs existing rows there; new rows are
- * written by RecordSplitOrigin(), called from OpenProduct()/TransferProduct(), never from the
+ * written by RecordSplitOrigin(), called only from OpenProduct(), never from the
  * compaction path). Every grant that remains is proved necessary below.
  *
  * Sufficiency: a role holding exactly the corrected list runs a real merge end to end AND the
