@@ -1003,11 +1003,17 @@ class DatabaseImporter
 	 * **Dead-lettering the outbox row is not enough by itself.** `print_jobs.outcome` and
 	 * `.outcome_at` are what every other consumer of a job's state actually reads -
 	 * `LabelPrintJobService::Monitor()`'s `state`/`authorization_state` columns,
-	 * `PrintAttemptService::Claim()`'s `WHERE j.outcome IS NULL` (a job whose own outcome
-	 * were left NULL would keep being offered to a worker for a delivery that can never
-	 * happen, since `Claim()`'s own `o.dead_lettered_at IS NULL` join condition is the
-	 * *outbox* row, not the job), and `LabelOperationsService::Cancel()` - so the job is
-	 * finished the same way `PrintAttemptService.php:98` and
+	 * `LabelOperationsService::Cancel()`'s claimed/completed refusals and
+	 * `LabelPrintJobService::AuthorizeAnotherAttempt()`'s completion check all read the
+	 * job's own outcome, never the outbox row it points at. Left unfinished, such a job
+	 * kept reporting a non-terminal `Monitor()` state (`awaiting_artifact` or `failed`),
+	 * `Cancel()` refused a job whose one attempt had already ended as `already_claimed`
+	 * rather than letting it be cancelled, and `AuthorizeAnotherAttempt()` would bump
+	 * `attempts_authorized` for a job that could never be delivered.
+	 * `PrintAttemptService::Claim()` was never at risk here: its own
+	 * `WHERE ... AND o.dead_lettered_at IS NULL` (PrintAttemptService.php:48) already
+	 * excludes this exact row once it is dead-lettered, independent of `print_jobs.outcome`.
+	 * So the job is finished the same way `PrintAttemptService.php:98` and
 	 * `LabelPrintersApiController.php:62-65` already finish one, reusing their exact
 	 * outcome value and columns, for every job whose outbox row was just dead-lettered and
 	 * which was not already finished (`outcome IS NULL AND cancelled_at IS NULL` - a
