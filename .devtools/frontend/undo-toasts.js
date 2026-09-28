@@ -148,6 +148,33 @@ async function productWithStock(browser)
 	return id;
 }
 
+/**
+ * Issue #610: the stockentries scenario below only exercises the race it is meant to catch
+ * (a sibling stock entry of the same product being refreshed - and redrawing the table -
+ * while the just-consumed entry's own row is being hidden) when that product actually has a
+ * second stock entry. The demo data's chosen product may or may not already have one, so
+ * this purchases a small extra batch whenever /api/stock/products/{id}/entries reports
+ * fewer than two, guaranteeing the fixture the scenario needs regardless of demo data.
+ */
+async function ensureTwoStockEntries(browser, productId)
+{
+	const p = await browser.newPage();
+	await p.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+	await p.evaluate(async ({ base, id }) =>
+	{
+		const entries = await (await fetch(base + '/api/stock/products/' + id + '/entries', { credentials: 'same-origin' })).json();
+		if (Array.isArray(entries) && entries.length >= 2) return;
+
+		await fetch(base + '/api/stock/products/' + id + '/add', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ amount: 3, best_before_date: '2027-12-31' })
+		});
+	}, { base: BASE, id: productId });
+	await p.close();
+}
+
 async function probe(browser, label, how, run)
 {
 	const page = await newPage(browser, label);
@@ -252,6 +279,13 @@ async function probe(browser, label, how, run)
 
 	// ---- stock entries: consume one entry ---------------------------------------------
 	// The only page using UndoStockBookingEntry, whose behaviour genuinely differs.
+	//
+	// Issue #610: this scenario only exercises the race it is meant to catch - a *sibling*
+	// stock entry of the same product being refreshed (and redrawing the whole table) while
+	// the just-consumed entry's own row is being hidden - when the product actually carries
+	// a second stock entry. ensureTwoStockEntries() guarantees that fixture regardless of
+	// what the demo data happens to provide.
+	await ensureTwoStockEntries(browser, productId);
 	await probe(browser, 'stockentries', 'stock entry consume -> toast Undo (UndoStockBookingEntry)', async page =>
 	{
 		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
@@ -268,24 +302,30 @@ async function probe(browser, label, how, run)
 		// body it read as "hide the row"; GET /stock/entry/{id} now answers the documented
 		// 400 for a gone id instead, which must still hide the row rather than surface
 		// DefaultErrorHandler's "A server error occured" toast. Waits for the row's own
-		// d-none class rather than a fixed delay (issue #579): a fixed 800ms raced
-		// animate.css 3.7's 500ms "faster" fade plus the refresh GET, and either one running
-		// long on a busy CI runner made the wait too short.
+		// d-none class or its removal from the DOM, rather than a fixed delay (issue #579):
+		// a fixed 800ms raced animate.css 3.7's 500ms "faster" fade plus the refresh GET,
+		// and either one running long on a busy CI runner made the wait too short. Issue
+		// #610's fix removes the row through the DataTable's own API instead of a CSS fade,
+		// so "gone from the DOM entirely" is as valid an end state as "present with d-none".
 		await page.waitForFunction(id =>
 		{
 			const row = document.querySelector('#stock-' + id + '-row');
 			const err = document.querySelector('#toast-container .toast-error');
-			return (row && row.classList.contains('d-none')) || err;
+			return !row || row.classList.contains('d-none') || err;
 		}, stockRowId, { timeout: 15000 });
 
 		if (await page.locator('#toast-container .toast-error').count() > 0)
 		{
 			throw new Error('the consumed entry\'s row refresh surfaced a server-error toast instead of hiding the row (H10 / issue #499)');
 		}
-		const rowClass = await page.locator('#stock-' + stockRowId + '-row').getAttribute('class');
-		if (!rowClass || !rowClass.split(/\s+/).includes('d-none'))
+		const rowLocator = page.locator('#stock-' + stockRowId + '-row');
+		if (await rowLocator.count() > 0)
 		{
-			throw new Error('the consumed entry\'s row was not hidden after its GET /stock/entry/{id} refresh (H10 / issue #499): class="' + rowClass + '"');
+			const rowClass = await rowLocator.getAttribute('class');
+			if (!rowClass || !rowClass.split(/\s+/).includes('d-none'))
+			{
+				throw new Error('the consumed entry\'s row was neither removed nor hidden after its GET /stock/entry/{id} refresh (H10 / issue #499 / issue #610): class="' + rowClass + '"');
+			}
 		}
 
 		await clickUndoInToast(page);
