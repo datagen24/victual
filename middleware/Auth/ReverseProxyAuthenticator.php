@@ -46,7 +46,16 @@ class ReverseProxyAuthenticator extends Authenticator
 			// No creator to compare a grant against, so DEFAULT_PERMISSIONS is the whole
 			// of what this user gets - which is why that setting no longer defaults to
 			// ADMIN. Sweep finding S5.
-			$user = UsersService::GetInstance()->CreateUser($username, '', '', '');
+			//
+			// Issue #556: an empty string here used to be hashed as-is, and
+			// password_verify('', $thatHash) is true - safe today only because
+			// PasswordLogin::Process() and UsersService::CheckCurrentPassword() both refuse
+			// an empty submitted password before ever calling password_verify() against it.
+			// Cryptographically random bytes, discarded immediately after CreateUser()
+			// hashes them, cannot be guessed regardless of what a future caller does or does
+			// not guard against - the same convention UsersApiController::CreatedUserPassword()
+			// already uses for POST /users under the same "no local password to check" logic.
+			$user = UsersService::GetInstance()->CreateUser($username, '', '', random_bytes(32));
 		}
 
 		return $user;
