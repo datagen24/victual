@@ -170,17 +170,10 @@ class ObjectRoundTripTest extends PgsqlSchemaTestCase
 		// The precondition that makes this a real reproduction of H10, not a trivial PUT:
 		// the key GetObject() attaches and WithoutServerOwnedColumns() used to leave alone.
 		self::assertArrayHasKey('userfields', $body, 'precondition: GetObject() attaches "userfields" to its response - see its own docblock');
-		self::assertNull($body['userfields'], 'precondition: this product has no userfield values set, so the attached key is null');
-
-		// Not Opis-validated against Product here: a GET response with no userfields set
-		// answers "userfields": null against a property Product types plain "object", and
-		// several sibling columns (product_group_id, picture_file_name, ...) are nullable
-		// but likewise typed as a plain non-nullable scalar - the same class of gap
-		// WireContractTest::UNION_NULLABILITY_FAILURES already tracks for Product.description,
-		// just not every instance of it (Opis reports one failure per row, so a fixture that
-		// leaves every nullable column at its default surfaces only the first). That
-		// modelling gap is unrelated to H10 and is not this test's to fix; the two explicit
-		// assertions above are the precondition this test actually needs.
+		self::assertSame([], $body['userfields']);
+		$wireBody = json_decode((string)$getResponse->getBody(), false, flags: JSON_THROW_ON_ERROR);
+		self::assertInstanceOf(\stdClass::class, $wireBody->userfields, 'empty userfields is a JSON object');
+		self::assertMatchesSchema($wireBody, 'GET /objects/products/{id}', component: 'Product');
 
 		$body['name'] = 'Round Trip Product (edited)';
 
@@ -230,6 +223,7 @@ class ObjectRoundTripTest extends PgsqlSchemaTestCase
 			flags: JSON_THROW_ON_ERROR
 		);
 		self::assertSame(['roundtrip_note' => 'kept across the round trip'], $body['userfields'], 'precondition: a populated, non-null userfields map');
+		self::assertMatchesSchema($body, 'populated product', component: 'Product');
 
 		$body['name'] = 'Userfield Round Trip Product (edited)';
 		$putResponse = $generic->EditObject(self::request('PUT', $body), new Response(), ['entity' => 'products', 'objectId' => $productId]);
@@ -373,9 +367,6 @@ class ObjectRoundTripTest extends PgsqlSchemaTestCase
 			'amount' => 3,
 			'stock_id' => 'roundtrip-stock-entry-1',
 			'location_id' => $location,
-			// Documented non-nullable on StockEntry (WireContractTest::UNION_NULLABILITY_FAILURES
-			// records 'stock' => ['StockEntry' => ['shopping_location_id']] as a separate, known
-			// gap) - set explicitly so this assertion is not tripped by that unrelated defect.
 			'shopping_location_id' => $otherLocation,
 		]);
 
@@ -385,12 +376,6 @@ class ObjectRoundTripTest extends PgsqlSchemaTestCase
 		self::assertSame($entryId, $validBody['id']);
 		self::assertSame($productId, $validBody['product_id']);
 
-		// Not Opis-validated against StockEntry here, for the same reason
-		// testReadEditWriteRoundTripSucceedsAndPersistsTheEdit() does not validate against
-		// Product: StockEntry types several nullable columns (best_before_date,
-		// purchased_date, price, note, ...) as a plain non-nullable scalar, the same class of
-		// gap WireContractTest::UNION_NULLABILITY_FAILURES already tracks for this entity's
-		// shopping_location_id - just not every instance of it. Unrelated to H10 and not this
-		// test's to fix; the id/product_id assertions above are the regression this test needs.
+		self::assertMatchesSchema(json_decode((string)$validResponse->getBody()), 'GET /stock/entry/{entryId}', component: 'StockEntry');
 	}
 }

@@ -1363,18 +1363,14 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * from this map is a candidate for none, which is the loud failure ADR-0027 decision 3
 	 * is for.
 	 *
-	 * Candidacy is not a decode: UNION_FULLY_VALID below is the second measurement, and it
-	 * says how far this one goes.
+	 * Every candidate response is also validated against its complete member schema below.
 	 *
 	 * The first ten are the intended pairings. The last three are the ones ADR-0027's
 	 * consequences name: unmodelled entities whose rows happen to carry every property some
 	 * member declares `required`, so exactly one member is a candidate - the wrong one - and
-	 * nothing else in the union's shape rules it out. Whether that becomes a wrong decode is
-	 * the reader's: a strict JSON Schema validator rejects these rows on the member's
-	 * nullability rather than selecting the member, while swift-openapi-generator accepts an
-	 * explicit null for an optional property through decodeIfPresent, so for that client
-	 * candidacy decides it. Required properties discriminate the ten from each other; they
-	 * do not discriminate them from every relation in the database.
+	 * nothing else in the union's shape rules it out. The nullable schemas accept these
+	 * three unintended pairings. Required properties discriminate the ten from each
+	 * other; they do not discriminate them from every relation in the database.
 	 *
 	 * uihelper_shopping_list is the one that cannot be fixed by requiring more: it is a
 	 * superset of shopping_list, so no property shopping_list has distinguishes them. That
@@ -1511,52 +1507,21 @@ class WireContractTest extends PgsqlSchemaTestCase
 			'an entity ADR-0027 states is ambiguous was measured off its columns rather than off a response'
 		);
 
-		// The second measurement, on the rows themselves - every row of every entity, not
-		// one representative: validity turns on values, so a later row with a non-null
-		// column can validate where the first row does not. See UNION_FULLY_VALID.
-		$fullyValid = [];
+		$failures = [];
 		foreach ($rowsByEntity as $entity => $rows)
 		{
-			foreach ($members as $member)
+			foreach ($measured[$entity] ?? [] as $member)
 			{
 				foreach ($rows as $index => $row)
 				{
-					$reason = self::validateAgainstMember($row, $member);
-
-					if ($reason === null)
+					foreach (self::validateAgainstMember($row, $member) as $reason)
 					{
-						// Recorded once per pairing however many rows reach it.
-						if (!in_array($member, $fullyValid[$entity] ?? [], true))
-						{
-							$fullyValid[$entity][] = $member;
-						}
-
-						continue;
+						$failures[] = "$entity row $index against $member: $reason";
 					}
-
-					if (!in_array($member, $measured[$entity] ?? [], true))
-					{
-						continue;
-					}
-
-					// A candidate row that does not validate: the reason has to be the
-					// nullability gap this class records, not something unexplained.
-					$allowed = self::UNION_NULLABILITY_FAILURES[$entity][$member] ?? null;
-					self::assertNotNull($allowed, "$entity is a candidate for $member and row $index fails it unrecorded: $reason");
-
-					[$property, $keyword] = explode(': ', $reason, 2);
-					self::assertSame('type', $keyword, "$entity row $index against $member: $reason");
-					self::assertContains($property, $allowed, "$entity row $index against $member fails on an unrecorded property");
-					self::assertArrayHasKey($property, $row, "$entity carries no $property");
-					self::assertNull($row[$property], "$entity.$property is not null on row $index, so 'type' is a different failure");
 				}
 			}
 		}
-
-		ksort($fullyValid);
-		$expectedValid = self::UNION_FULLY_VALID;
-		ksort($expectedValid);
-		self::assertSame($expectedValid, $fullyValid, 'the set of rows that fully validate against a member changed');
+		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
 	/**
@@ -1583,56 +1548,8 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The second measurement, and the one that says how far the first one goes. A member's
-	 * `required` decides which member `oneOf` can select; it does not decide that the row
-	 * then satisfies the rest of that member's schema. This validates each entity's real row
-	 * against every member with a JSON Schema validator, and records what survives.
-	 *
-	 * Exactly one pairing does. Every other candidate - intended and unintended alike -
-	 * fails on the same defect, and it is not discrimination: a column that is NULL in the
-	 * row is declared as a non-nullable scalar by the member. UNION_NULLABILITY_FAILURES
-	 * names the property each one dies on.
-	 *
-	 * This does not make the union safe. The client ADR-0027 was written for is
-	 * `swift-openapi-generator`, whose optional properties decode through
-	 * `decodeIfPresent`, which accepts an explicit `null` where this validator rejects it -
-	 * so the nullability failures below do not stop that client selecting the wrong member,
-	 * and the required-property measurement above remains the operative one. What this
-	 * bounds is the word: a candidate is a candidate, not a proven decode.
-	 */
-	private const UNION_FULLY_VALID = ['locations_resolved' => ['LocationResolved']];
-
-	/**
-	 * Candidate pairings that a strict JSON Schema validator rejects, and the properties a
-	 * row is allowed to die on - every one a NULL against a declared scalar. A list per
-	 * pairing because the validator reports the first failure only and rows differ in which
-	 * of their nullable columns are set; the assertion also checks the reported value really
-	 * is null on that row, so the list cannot be used to wave a real failure through.
-	 *
-	 * Six of the ten are the union's own intended pairings, which is why this is a gap in
-	 * the members' nullability rather than a defence against the three unintended ones.
-	 */
-	private const UNION_NULLABILITY_FAILURES = [
-		'products' => ['Product' => ['description']],
-		// batteries had no row until ADR-0028's cases needed one to charge, so this pairing
-		// was measured off the relation's columns only. The row behaves exactly like its
-		// five siblings above and below: a NULL description against a member that declares
-		// it a non-nullable scalar. It does not join UNION_FULLY_VALID.
-		'batteries' => ['Battery' => ['description']],
-		'chores' => ['Chore' => ['description']],
-		'locations' => ['Location' => ['description']],
-		'quantity_units' => ['QuantityUnit' => ['description']],
-		'shopping_list' => ['ShoppingListItem' => ['note']],
-		'userfields' => ['Userfield' => ['config']],
-		'stock' => ['StockEntry' => ['shopping_location_id']],
-		'stock_log' => ['StockEntry' => ['shopping_location_id']],
-		'product_barcodes_view' => ['ProductBarcode' => ['shopping_location_id']],
-		'uihelper_shopping_list' => ['ShoppingListItem' => ['note']]
-	];
-
-	/**
-	 * Validates $row against the member schema $member, returning null when it is valid and
-	 * "property: keyword" for the first failure otherwise.
+	 * Validates $row against the member schema $member, returning every leaf validation error.
+	 * An empty list means the entire response is valid.
 	 *
 	 * `allowDefaults` is turned off deliberately. Opis, left alone, drops a property from
 	 * `required` when that property declares a `default` and then writes the default into
@@ -1640,7 +1557,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 	 * a row without it would validate. A generated client does neither, and a measurement
 	 * that models the client has to say so.
 	 */
-	private static function validateAgainstMember(array $row, string $member): ?string
+	private static function validateAgainstMember(array|object $row, string $member): array
 	{
 		static $document = null;
 		if ($document === null)
@@ -1650,26 +1567,195 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 		$validator = new \Opis\JsonSchema\Validator();
 		$validator->parser()->setOption('allowDefaults', false);
+		$validator->setMaxErrors(PHP_INT_MAX);
+		$validator->setStopAtFirstError(false);
 
-		// Both sides re-encoded per call: Opis mutates neither with defaults off, but the
-		// schema objects are shared across members and the data is ours to keep clean.
+		// Keep JSON objects distinct from lists and resolve nested component references.
+		// Defaults are disabled so validation cannot change the response.
 		$result = $validator->validate(
 			json_decode(json_encode($row), false),
-			json_decode(json_encode($document->components->schemas->$member), false)
+			(object)['components' => $document->components, '$ref' => '#/components/schemas/' . $member]
 		);
 
 		if ($result->isValid())
 		{
-			return null;
+			return [];
 		}
 
-		$error = $result->error();
-		while ($error->subErrors())
+		$failures = [];
+		$visit = function ($error) use (&$visit, &$failures): void
 		{
-			$error = $error->subErrors()[0];
-		}
+			if ($error->subErrors())
+			{
+				foreach ($error->subErrors() as $child)
+				{
+					$visit($child);
+				}
+				return;
+			}
+			$failures[] = (implode('/', $error->data()->fullPath()) ?: '<root>') . ': ' . $error->keyword();
+		};
+		$visit($result->error());
+		return $failures;
+	}
 
-		return (implode('/', $error->data()->fullPath()) ?: '<root>') . ': ' . $error->keyword();
+	/** Base-column response projections audited against the migrated PostgreSQL schema. */
+	private const COLUMN_SCHEMAS = [
+		'Product' => 'products',
+		'ProductWithoutUserfields' => 'products',
+		'QuantityUnit' => 'quantity_units',
+		'Location' => 'locations',
+		'StorageClass' => 'storage_classes',
+		'ShoppingLocation' => 'shopping_locations',
+		'StockEntry' => 'stock',
+		'ProductBarcode' => 'product_barcodes',
+		'Userfield' => 'userfields',
+		'User' => 'users',
+		'UserDto' => 'users',
+		'ShoppingListItem' => 'shopping_list',
+		'Battery' => 'batteries',
+		'BatteryChargeCycleEntry' => 'battery_charge_cycles',
+		'Chore' => 'chores',
+		'ChoreLogEntry' => 'chores_log',
+		'StockLogEntry' => 'stock_log',
+		'Task' => 'tasks',
+		'TaskCategory' => 'task_categories',
+		'CurrentTaskResponse' => 'tasks',
+		'Role' => 'roles',
+	];
+
+	public function testResponseColumnNullabilityMatchesTheMigratedSchema(): void
+	{
+		$statement = self::$db->prepare('SELECT table_name, column_name, is_nullable FROM information_schema.columns WHERE table_schema = ?');
+		$statement->execute([self::Schema()]);
+		$columns = [];
+		foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $column)
+		{
+			$columns[$column['table_name']][$column['column_name']] = $column['is_nullable'] === 'YES';
+		}
+		$failures = [];
+		foreach (self::COLUMN_SCHEMAS as $schema => $table)
+		{
+			foreach (self::spec()['components']['schemas'][$schema]['properties'] as $name => $property)
+			{
+				if (!array_key_exists($name, $columns[$table]) || !isset($property['type']))
+				{
+					continue;
+				}
+				// Both BEFORE triggers replace a null start_date before it can be stored.
+				$nullable = $schema === 'Chore' && $name === 'start_date' ? false : $columns[$table][$name];
+				if ($nullable !== in_array('null', (array)$property['type'], true))
+				{
+					$failures[] = "$schema.$name: $table.$name nullable=" . (int)$nullable;
+				}
+			}
+		}
+		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	public function testExplicitNullColumnsValidateAgainstResponseSchemas(): void
+	{
+		$failures = [];
+		self::$db->beginTransaction();
+		try
+		{
+			self::$db->exec("INSERT INTO product_barcodes (id, product_id, barcode) VALUES (9599, 9500, 'nullable-contract')");
+			foreach ([
+				'Product' => ['products', 9500], 'Chore' => ['chores', 9500],
+				'Task' => ['tasks', 9500], 'ProductBarcode' => ['product_barcodes', 9599],
+				'StockEntry' => ['stock', 9500], 'QuantityUnit' => ['quantity_units', 9500],
+				'Location' => ['locations', 9500], 'Userfield' => ['userfields', 9500],
+				'ShoppingListItem' => ['shopping_list', 9500], 'Battery' => ['batteries', 9500],
+			] as $schema => [$table, $id])
+			{
+				$assignments = [];
+				foreach (self::spec()['components']['schemas'][$schema]['properties'] as $name => $property)
+				{
+					if (in_array('null', (array)($property['type'] ?? []), true))
+					{
+						$assignments[] = '"' . $name . '" = NULL';
+					}
+				}
+				self::$db->exec('UPDATE "' . $table . '" SET ' . implode(', ', $assignments) . ' WHERE id = ' . $id);
+				// Read uncommitted fixtures on this connection and apply the wire conversion.
+				// The HTTP tests above cover the controller and synthetic userfields.
+				$row = self::$db->query('SELECT * FROM "' . $table . '" WHERE id = ' . $id)->fetch(PDO::FETCH_ASSOC);
+				$row = WireBooleans::Coerce($table, $row);
+				foreach (self::validateAgainstMember($row, $schema) as $error)
+				{
+					$failures[] = "$schema: $error";
+				}
+			}
+		}
+		finally
+		{
+			self::$db->rollBack();
+		}
+		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	public function testValidationReportsEveryInvalidProperty(): void
+	{
+		$row = self::get('/api/objects/products/9500');
+		$row['userfields'] = (object)$row['userfields'];
+		$row['name'] = null;
+		$row['qu_id_stock'] = null;
+		$row['location_id'] = null;
+		$errors = self::validateAgainstMember($row, 'Product');
+		sort($errors);
+		self::assertSame(['location_id: type', 'name: type', 'qu_id_stock: type'], $errors);
+	}
+
+	public function testServedSingleObjectsValidateWithEmptyUserfields(): void
+	{
+		$failures = [];
+		foreach (self::COLUMN_SCHEMAS as $schema => $entity)
+		{
+			// StorageClass temperature NUMERIC values are strings on the wire, a separate
+			// scalar-type defect. Its column nullability is still checked above.
+			if ($schema === 'StorageClass' || !isset(self::spec()['components']['schemas'][$schema]['properties']['userfields']))
+			{
+				continue;
+			}
+			foreach (self::get("/api/objects/$entity") as $row)
+			{
+				$answer = self::send('GET', "/api/objects/$entity/{$row['id']}");
+				self::assertSame(200, $answer['status']);
+				$body = json_decode($answer['body'], false, flags: JSON_THROW_ON_ERROR);
+				self::assertInstanceOf(\stdClass::class, $body->userfields);
+				foreach (self::validateAgainstMember($body, $schema) as $error)
+				{
+					$failures[] = "$schema id {$row['id']}: $error";
+				}
+			}
+		}
+		self::assertSame([], $failures, implode("\n", $failures));
+	}
+
+	public function testDomainResponsesValidateNullableHistoryAndAssignments(): void
+	{
+		$failures = [];
+		foreach ([
+			'/api/chores/9500' => ['ChoreDetailsResponse', false],
+			'/api/batteries/9500' => ['BatteryDetailsResponse', false],
+			'/api/chores' => ['CurrentChoreResponse', true],
+			'/api/batteries' => ['CurrentBatteryResponse', true],
+			'/api/stock' => ['CurrentStockResponse', true],
+			'/api/tasks' => ['CurrentTaskResponse', true],
+		] as $path => [$schema, $list])
+		{
+			$answer = self::send('GET', $path);
+			self::assertSame(200, $answer['status'], $path);
+			$body = json_decode($answer['body'], false, flags: JSON_THROW_ON_ERROR);
+			foreach ($list ? $body : [$body] as $index => $row)
+			{
+				foreach (self::validateAgainstMember($row, $schema) as $error)
+				{
+					$failures[] = "$path row $index: $error";
+				}
+			}
+		}
+		self::assertSame([], $failures, implode("\n", $failures));
 	}
 
 	// --------------------------------------------------------------------- issue #233
