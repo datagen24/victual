@@ -147,9 +147,10 @@ const assert = require('node:assert/strict');
 			// --- create with sort_number left blank -> stored NULL, not "" -----------------
 			await page.goto(base + config.formPath);
 			const blankName = await config.fillRequired('Blank');
+			const blankNavigation = page.waitForNavigation();
 			const createBlank = await save('/api/' + apiPath, 'POST', config.saveButton);
 			await assertStatus(createBlank, 200, config.label + ': a blank-sort_number create should succeed');
-			await page.waitForNavigation();
+			await blankNavigation;
 
 			const blankRow = await findByName(apiPath, blankName);
 			const blankId = blankRow.id;
@@ -159,17 +160,19 @@ const assert = require('node:assert/strict');
 			await page.goto(base + config.formPath);
 			const zeroName = await config.fillRequired('Zero');
 			await page.locator('#sort_number').fill('0');
+			const zeroCreateNavigation = page.waitForNavigation();
 			const createZero = await save('/api/' + apiPath, 'POST', config.saveButton);
 			await assertStatus(createZero, 200, config.label + ': a sort_number of 0 should be accepted on create');
-			await page.waitForNavigation();
+			await zeroCreateNavigation;
 
 			const zeroId = (await findByName(apiPath, zeroName)).id;
 			await page.goto(base + config.editPath + zeroId);
 			assert.equal(await page.locator('#sort_number').inputValue(), '0', config.label + ': a stored 0 renders as "0", not blank');
 
+			const zeroSaveNavigation = page.waitForNavigation();
 			const saveZero = await save('/api/' + apiPath + '/' + zeroId, 'PUT', config.saveButton);
 			await assertStatus(saveZero, 204, config.label + ': saving the unchanged 0 row should succeed');
-			await page.waitForNavigation();
+			await zeroSaveNavigation;
 
 			const zeroRow = await api(apiPath + '/' + zeroId);
 			assert.equal(Number(zeroRow.sort_number), 0, config.label + ': the row keeps sort_number at exactly 0, not NULL');
@@ -178,10 +181,11 @@ const assert = require('node:assert/strict');
 			await page.goto(base + config.editPath + blankId);
 			assert.equal(await page.locator('#sort_number').inputValue(), '', config.label + ': a NULL sort_number renders blank');
 
+			const nullSaveNavigation = page.waitForNavigation();
 			const saveNull = await save('/api/' + apiPath + '/' + blankId, 'PUT', config.saveButton);
 			await assertStatus(saveNull, 204, config.label + ': saving the unchanged NULL row should succeed');
 			assert.equal(await toastText(), null, config.label + ': no error toast appears saving the unchanged NULL row');
-			await page.waitForNavigation();
+			await nullSaveNavigation;
 
 			const nullRow = await api(apiPath + '/' + blankId);
 			assert.equal(nullRow.sort_number, null, config.label + ': the row keeps sort_number at NULL');
@@ -246,9 +250,10 @@ const assert = require('node:assert/strict');
 			await page.goto(base + '/task/new');
 			await page.locator('#name').fill(taskName);
 			await page.evaluate(() => Victual.Components.UserPicker.Clear());
+			const taskCreateNavigation = page.waitForNavigation();
 			const createTask = await save('/api/objects/tasks', 'POST', saveButton);
 			await assertStatus(createTask, 200, 'a task with every optional field blank should be created');
-			await page.waitForNavigation();
+			await taskCreateNavigation;
 
 			const taskRow = await findByName('objects/tasks', taskName);
 			const taskId = taskRow.id;
@@ -258,10 +263,11 @@ const assert = require('node:assert/strict');
 
 			// --- resave unchanged -> succeeds, all three stay NULL -------------------------
 			await page.goto(base + '/task/' + taskId);
+			const taskSaveNavigation = page.waitForNavigation();
 			const saveTask = await save('/api/objects/tasks/' + taskId, 'PUT', saveButton);
 			await assertStatus(saveTask, 204, 'saving the unchanged task should succeed');
 			assert.equal(await toastText(), null, 'no error toast appears saving the unchanged task');
-			await page.waitForNavigation();
+			await taskSaveNavigation;
 
 			const resavedTask = await api('objects/tasks/' + taskId);
 			assert.equal(resavedTask.category_id, null, 'category_id stays NULL through an untouched edit save');
