@@ -625,6 +625,15 @@ jobs:
         working-directory: .devtools/frontend
         run: node roles.js http://127.0.0.1:8085
 
+      # Issue #549. Whether userform.js sends password_base64 at all is entirely a
+      # browser-side question - it depends on #change_password's checked state and on
+      # serializeJSON() omitting a disabled field the way a real form submit would - so the
+      # PostgreSQL phase structurally cannot see it: by the time a request reaches the API,
+      # the bug has already happened.
+      - name: Run userform password checkbox checks
+        working-directory: .devtools/frontend
+        run: node userform-password.js http://127.0.0.1:8085
+
       # Plan 03. The form field and the short-group list are both things the PHP phase
       # structurally cannot see: it asserts the column and the controller's row set, and this
       # asserts that a person can set the value and act on the result. A probe nothing runs is

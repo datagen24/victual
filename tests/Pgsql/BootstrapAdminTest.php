@@ -313,6 +313,15 @@ class BootstrapAdminTest extends PgsqlSchemaTestCase
 
 		self::assertSame(204, $change['status'], $change['body']);
 		self::assertSame(0, self::flag(self::CHANGES));
-		self::assertSame(200, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => 'bootstrap-changes'])['status']);
+
+		// The session that made this change was opened while the account was still
+		// flagged - the very credential this change exists to get away from - so it does
+		// not survive its own rotation either: revoked, with a fresh session minted in the
+		// same response to replace it (issue #513, validator round 2).
+		self::assertSame(401, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => 'bootstrap-changes'])['status'], 'the session that made the change is opened under a flagged credential and does not outlive it');
+		$newSessionKey = self::$db->query('SELECT session_key FROM sessions WHERE user_id = ' . self::CHANGES)->fetchColumn();
+		self::assertNotFalse($newSessionKey, 'a fresh session replaces the one just revoked');
+		self::assertNotSame('bootstrap-changes', $newSessionKey);
+		self::assertSame(200, self::request(['method' => 'GET', 'path' => '/api/objects/products', 'cookie' => $newSessionKey])['status'], 'and the fresh session is what the account uses from here on');
 	}
 }
