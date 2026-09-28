@@ -29,10 +29,14 @@
 // Database privileges (for ADR-0010 property 3's least-privilege split, wired up separately
 // - see ADR-0033 acceptance prerequisite 3): SELECT, UPDATE, DELETE on stock; SELECT, UPDATE
 // on stock_log (rewriting stock_id only - never stock_row_id, never any other column);
-// SELECT, INSERT, UPDATE, DELETE on stock_entry_origins; SELECT on labels, userfield_values
-// and userfields (read only, to evaluate eligibility). No DDL, no TRUNCATE, no access to any
-// other table. That is a subset of the victual_app role deploy/postgres/roles.sql already
-// grants; it does not yet have a role of its own.
+// SELECT, INSERT, UPDATE, DELETE on stock_entry_origins; SELECT, UPDATE on labels (read to
+// evaluate eligibility, write because deleting a losing row fires retire_stock_entry_labels -
+// migrations/0283.pgsql.php - which UPDATEs the label it retires, under this same caller's
+// privileges since the trigger function carries none of its own); SELECT on products (that
+// same trigger's retirement_snapshot reads the product name), userfield_values and
+// userfields. No DDL, no TRUNCATE, no access to any other table. That is a subset of the
+// victual_app role deploy/postgres/roles.sql already grants; it does not yet have a role of
+// its own.
 //
 // Exit codes: 0 when the run completed (with or without anything to merge), 1 on failure.
 
