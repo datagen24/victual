@@ -249,6 +249,90 @@ $('#save-mark-as-open-button').on('click', function(e)
 	);
 });
 var sumValue = 0;
+
+/**
+ * Sums a set of stock entries (as returned by GET stock/products/{id}/entries) in the current
+ * product's own stock quantity unit - mirrors StockService::SumStockEntriesInProductUnit()
+ * (issue #553, maintainer decision D4). An entry belonging to the current product
+ * (current_productDetails.product.id) is added as-is; one belonging to a sub product is
+ * converted through quantity_unit_conversions_resolved (from the current product's own stock
+ * unit to that sub product's own stock unit) and divided back out of it, and is excluded
+ * entirely - never counted 1:1 - when no such conversion is resolved, the same rule the
+ * consume/open service applies. current_productDetails must already be populated (it is, by
+ * the time either caller of this function can run).
+ * @param {Array} stockEntries Rows from stock/products/{id}/entries?include_sub_products=true
+ * @param {Function} locationMatches Predicate(stockEntry) selecting which entries to sum
+ * @param {Function} callback Called with the resulting sum (a number), once every sub product
+ *                   entry's conversion has been resolved
+ */
+function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, callback)
+{
+	var parentProductId = current_productDetails.product.id;
+	var parentQuIdStock = current_productDetails.product.qu_id_stock;
+
+	var relevantEntries = stockEntries.filter(locationMatches);
+	var ownEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id == parentProductId; });
+	var subEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id != parentProductId; });
+
+	var baseSum = 0;
+	ownEntries.forEach(function(stockEntry)
+	{
+		baseSum = baseSum + (stockEntry.amount || 0);
+	});
+
+	var subProductIds = [];
+	subEntries.forEach(function(stockEntry)
+	{
+		if (!subProductIds.includes(stockEntry.product_id))
+		{
+			subProductIds.push(stockEntry.product_id);
+		}
+	});
+
+	function Finish(factorsByProductId)
+	{
+		var sum = baseSum;
+		subEntries.forEach(function(stockEntry)
+		{
+			var factor = factorsByProductId[stockEntry.product_id];
+			if (factor != null && factor > 0)
+			{
+				sum = sum + ((stockEntry.amount || 0) / factor);
+			}
+			// else: no resolvable conversion - excluded, never counted 1:1 (decision D4)
+		});
+		callback(sum);
+	}
+
+	if (subProductIds.length === 0)
+	{
+		Finish({});
+		return;
+	}
+
+	var factorsByProductId = {};
+	var remaining = subProductIds.length;
+	subProductIds.forEach(function(subProductId)
+	{
+		Victual.Api.Get('objects/products/' + subProductId,
+			function(subProduct)
+			{
+				Victual.Api.Get('objects/quantity_unit_conversions_resolved?query[]=product_id=' + subProductId + '&query[]=from_qu_id=' + parentQuIdStock + '&query[]=to_qu_id=' + subProduct.qu_id_stock,
+					function(conversions)
+					{
+						factorsByProductId[subProductId] = (conversions && conversions.length > 0) ? Number.parseFloat(conversions[0].factor) : null;
+						remaining--;
+						if (remaining === 0)
+						{
+							Finish(factorsByProductId);
+						}
+					}
+				);
+			}
+		);
+	});
+}
+
 // Location selector changed: rebuilds the specific-stock-entry dropdown for the new location.
 // When embedded with a pre-selected stock entry (stockId URI param) or when the product was
 // scanned via Grocycode (which encodes a specific stock_id), that entry is auto-selected.
@@ -338,8 +422,6 @@ function OnLocationChange(locationId, stockId)
 							"data-id": stockEntry.id
 						}));
 
-						sumValue = sumValue + (stockEntry.amount || 0);
-
 						if (stockEntry.stock_id == stockId)
 						{
 							$("#use_specific_stock_entry").click();
@@ -348,18 +430,27 @@ function OnLocationChange(locationId, stockId)
 					}
 				});
 
-				Victual.Api.Get('stock/products/' + Victual.Components.ProductPicker.GetValue(),
-					function(productDetails)
-					{
-						current_productDetails = productDetails;
-						RefreshForm();
-					}
-				);
-
-				if (document.getElementById("product_id").getAttribute("barcode") == "null" || $("#product_id").data("grocycode"))
+				// Issue #553 (maintainer decision D4): sumValue (the form's maximum, set in
+				// RefreshForm() below) is computed in the current product's own stock unit via
+				// the same conversions the service validates against, not as a raw cross-unit
+				// total - see SumSubstitutionAwareStockEntries().
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == locationId; }, function(sum)
 				{
-					ScanModeSubmit();
-				}
+					sumValue = sum;
+
+					Victual.Api.Get('stock/products/' + Victual.Components.ProductPicker.GetValue(),
+						function(productDetails)
+						{
+							current_productDetails = productDetails;
+							RefreshForm();
+						}
+					);
+
+					if (document.getElementById("product_id").getAttribute("barcode") == "null" || $("#product_id").data("grocycode"))
+					{
+						ScanModeSubmit();
+					}
+				});
 			}
 		);
 	}
@@ -582,18 +673,18 @@ $("#specific_stock_entry").on("change", function(e)
 		Victual.Api.Get("stock/products/" + Victual.Components.ProductPicker.GetValue() + '/entries?include_sub_products=true',
 			function(stockEntries)
 			{
-				stockEntries.forEach(stockEntry =>
+				// Issue #553 (maintainer decision D4): summed in the current product's own
+				// stock unit via the same conversions the service validates against, not as a
+				// raw cross-unit total - see SumSubstitutionAwareStockEntries().
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == $("#location_id").val() || stockEntry.location_id == ""; }, function(sum)
 				{
-					if (stockEntry.location_id == $("#location_id").val() || stockEntry.location_id == "")
+					sumValue = sum;
+					$("#display_amount").attr("max", sumValue.toFixed(Victual.UserSettings.stock_decimal_places_amounts));
+					if (sumValue == 0)
 					{
-						sumValue = sumValue + stockEntry.amount_aggregated;
+						$("#display_amount").parent().find(".invalid-feedback").text(__t('There are no units available at this location'));
 					}
 				});
-				$("#display_amount").attr("max", sumValue.toFixed(Victual.UserSettings.stock_decimal_places_amounts));
-				if (sumValue == 0)
-				{
-					$("#display_amount").parent().find(".invalid-feedback").text(__t('There are no units available at this location'));
-				}
 			}
 		);
 	}
