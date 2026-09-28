@@ -21,10 +21,13 @@ use Victual\Services\Labels\LabelIdentityService;
  *   - Every table both engines have in common (GetCommonTables()) is truncated and replaced
  *     with the source's rows, verbatim - this is the import.
  *   - DERIVED_STATE_TABLES (`mqtt_product_entities`, the household's per-product MQTT
- *     opt-in) is always cleared when the source predates it, even though it has no
- *     counterpart to copy back in: it is keyed to product ids this import is about to
- *     replace wholesale, so an entry surviving under a stale id would opt a *different*
- *     product in without anyone asking. See AssertDerivedStateIsEmpty().
+ *     opt-in; `login_attempts`, per-username throttle counters; `stock_entry_origins`,
+ *     split-stock lineage - issue #565 for the latter two) is always cleared when the
+ *     source predates the table (always, for `stock_entry_origins`, whose migration is
+ *     above the SQLite freeze), even though there is no counterpart to copy back in: each
+ *     is keyed to an identity (a product id, a username, a stock_id) this import is about
+ *     to replace or renumber wholesale, so a row surviving under a stale key would apply to
+ *     *something else* without anyone asking. See AssertDerivedStateIsEmpty().
  *   - `outbox` is neither copied from the source nor blindly cleared. ClearOutbox() deletes
  *     whatever nothing else references and dead-letters the rest: a row `print_jobs` or
  *     `print_attempts` still points at survives (marked as never going to be delivered)
@@ -119,24 +122,48 @@ class DatabaseImporter
 	/**
 	 * Target tables that must not survive under a stale reference once the data they are
 	 * keyed to has been wholesale replaced, when a source within the supported span predates
-	 * the table and so has no counterpart to copy back in.
+	 * the table and so has no counterpart to copy back in - or, for a table above the SQLite
+	 * freeze, when no source in the entire supported span ever will.
 	 *
-	 * Currently one table: `mqtt_product_entities` (0257), the household's own opt-in list
-	 * of which products publish to MQTT - real, household-authored configuration, not
-	 * derived state, but keyed to product ids this import is about to replace. Left in
-	 * place, a surviving row would opt a *different* product (whichever now happens to hold
-	 * that id) in without anyone having asked for it.
+	 * Three tables, none of them "derived" in the sense of "computed from other rows" (this
+	 * constant's name is a holdover from the first entry; see that entry's own note):
 	 *
-	 * When the source predates the table, GetCommonTables() correctly leaves it out of the
-	 * common-table set - there is nothing in the source to copy - but "nothing to copy" must
-	 * not be read as "leave the target's rows alone": every other table in the target is
-	 * truncated and replaced by this import. So this is always cleared, whether or not the
-	 * source has a counterpart to repopulate it from - see ImportSnapshot() and
-	 * AssertDerivedStateIsEmpty(). When the source *does* carry the table it is already a
-	 * common table, copied and truncated the ordinary way; this list only closes the gap for
-	 * a source that predates it.
+	 * - `mqtt_product_entities` (0257), the household's own opt-in list of which products
+	 *   publish to MQTT - real, household-authored configuration, not derived state, but
+	 *   keyed to product ids this import is about to replace. Left in place, a surviving row
+	 *   would opt a *different* product (whichever now happens to hold that id) in without
+	 *   anyone having asked for it.
+	 * - `login_attempts` (0262), issue #565: failed-login throttle counters keyed to a
+	 *   username, not to a user id - so a row survives an import unscathed even though the
+	 *   account that username now names (if any) may be a different one than whichever
+	 *   account tripped the counter before the import. A source at or above 0262 already
+	 *   carries its own counters and copies them as an ordinary common table; this list only
+	 *   closes the gap for a source that predates the table, exactly as for
+	 *   `mqtt_product_entities` above.
+	 * - `stock_entry_origins` (0267, issue #565): the lineage linking a split stock entry
+	 *   back to the purchase, correction or self-production it came from (see that
+	 *   migration's own docblock, "THE LINK"), keyed to `stock_id` values this import
+	 *   replaces wholesale along with the rest of `stock`. Unlike the other two, no source in
+	 *   the *entire* supported span can ever carry it - 0267 is PostgreSQL-only, above the
+	 *   SQLite freeze (SUPPORTED_SOURCE_MIGRATION_MAX, 0265) - so this entry is always in the
+	 *   gap GetCommonTables() leaves, never in the ordinary common-table path. It is cleared,
+	 *   not rebuilt: the migration's own docblock says the mapping is "NOT BACKFILLED,
+	 *   because the information does not exist" once an entry has been consumed away or
+	 *   merged, and nothing else in this class (or the source, which never recorded it)
+	 *   knows which surviving stock_id used to be whose split remainder. A surviving row
+	 *   would either point at nothing (its stock_id no longer exists) or, worse, at whichever
+	 *   unrelated stock row now happens to reuse that id.
+	 *
+	 * When the source predates the table (or, for `stock_entry_origins`, always),
+	 * GetCommonTables() correctly leaves it out of the common-table set - there is nothing in
+	 * the source to copy - but "nothing to copy" must not be read as "leave the target's rows
+	 * alone": every other table in the target is truncated and replaced by this import. So
+	 * this is always cleared, whether or not the source has a counterpart to repopulate it
+	 * from - see ImportSnapshot() and AssertDerivedStateIsEmpty(). When the source *does*
+	 * carry the table it is already a common table, copied and truncated the ordinary way;
+	 * this list only closes the gap for a source that predates it.
 	 */
-	const DERIVED_STATE_TABLES = ['mqtt_product_entities'];
+	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins'];
 
 	/**
 	 * The SQLite-dialect migration numbers above DatabaseMigrationService::BASELINE_MIGRATION_ID
@@ -460,12 +487,16 @@ class DatabaseImporter
 			// time.
 			$this->SetTriggersEnabled($tables, false);
 
-			// DERIVED_STATE_TABLES the source happens to predate are never in $tables (see
-			// GetCommonTables()) and so would otherwise never appear in this statement at
-			// all - which would leave a stale mqtt_product_entities opt-in pointing at
-			// whatever product now holds its old id (issue #496, H7b's own class of defect,
-			// applied here). Truncated in the same statement and the same transaction as
-			// every copied table, whether or not the source has rows to put back into them.
+			// DERIVED_STATE_TABLES entries the source predates (always, for
+			// stock_entry_origins - see that constant's own docblock) are never in $tables
+			// (see GetCommonTables()) and so would otherwise never appear in this statement
+			// at all - which would leave a stale mqtt_product_entities opt-in pointing at
+			// whatever product now holds its old id, a stale login_attempts row throttling
+			// whatever account now holds its username, or a stale stock_entry_origins row
+			// pointing at whatever stock_id now holds its old value (issue #496, H7b, and
+			// issue #565's own class of defect, applied here). Truncated in the same
+			// statement and the same transaction as every copied table, whether or not the
+			// source has rows to put back into them.
 			$derivedTablesToClear = array_values(array_filter(
 				array_diff(self::DERIVED_STATE_TABLES, $tables),
 				fn($table) => $this->Target->query("SELECT to_regclass('" . $table . "')")->fetchColumn() !== null
@@ -482,7 +513,7 @@ class DatabaseImporter
 
 			foreach ($derivedTablesToClear as $table)
 			{
-				($this->Progress)('  ' . str_pad($table, 46) . ' cleared (derived state; the source predates it)');
+				($this->Progress)('  ' . str_pad($table, 46) . ' cleared (keyed to data this import replaces; the source predates or never carries this table)');
 			}
 
 			// outbox is never in $tables or $derivedTablesToClear (see NOT_COPIED_TABLES) -
@@ -955,11 +986,13 @@ class DatabaseImporter
 	/**
 	 * The same "already contains data, pass --force" rule AssertTargetIsEmpty() enforces,
 	 * extended to DERIVED_STATE_TABLES entries a source within the supported span may
-	 * predate. GetCommonTables() correctly leaves such a table out of $tables - there is
-	 * nothing there to copy - which also means AssertTargetIsEmpty() never sees it; without
-	 * this, a non-force import would go on to silently discard whatever rows are in it (see
-	 * the TRUNCATE this method's caller performs) without ever having been refused the way
-	 * every other table's pre-existing data already is. Issue #496 (H7b).
+	 * predate (or, for stock_entry_origins, always does). GetCommonTables() correctly
+	 * leaves such a table out of $tables - there is nothing there to copy - which also means
+	 * AssertTargetIsEmpty() never sees it; without this, a non-force import would go on to
+	 * silently discard whatever rows are in it (see the TRUNCATE this method's caller
+	 * performs) without ever having been refused the way every other table's pre-existing
+	 * data already is. Issue #496 (H7b) for mqtt_product_entities; issue #565 for
+	 * login_attempts and stock_entry_origins.
 	 */
 	private function AssertDerivedStateIsEmpty(array $tables, bool $force): void
 	{
