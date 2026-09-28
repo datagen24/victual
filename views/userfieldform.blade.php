@@ -81,7 +81,9 @@
 				<div class="invalid-feedback">{{ $__t('A caption is required') }}</div>
 			</div>
 
-			@php if($mode == 'edit' && !empty($userfield->sort_number)) { $value = $userfield->sort_number; } else { $value = ''; } @endphp
+			{{-- 0 is a real, meaningful sort position, not "unset" - only an actual NULL
+			sort_number renders blank here. --}}
+			@php if($mode == 'edit' && $userfield->sort_number !== null) { $value = $userfield->sort_number; } else { $value = ''; } @endphp
 			@include('components.numberpicker', array(
 			'id' => 'sort_number',
 			'label' => 'Sort number',

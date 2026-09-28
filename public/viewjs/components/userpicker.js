@@ -31,8 +31,22 @@ Victual.Components.UserPicker.SetValue = function (value)
 /** Selects the option with the given user id directly, refreshing the combobox display */
 Victual.Components.UserPicker.SetId = function (value)
 {
-	Victual.Components.UserPicker.GetPicker().val(value);
-	Victual.Components.UserPicker.GetPicker().data('combobox').refresh();
+	var picker = Victual.Components.UserPicker.GetPicker();
+	var combobox = picker.data('combobox');
+
+	picker.val(value);
+	combobox.refresh();
+
+	// bootstrap-combobox serializes the form from its own internal hidden input (its
+	// $target), not from #user_id itself - the plugin moves #user_id's name attribute onto
+	// that hidden input at init time, so #user_id is display-only from then on. Only the
+	// plugin's own select()/clearTarget() (wired to picking a dropdown item, or clicking
+	// its "x" button) keep $target in sync with #user_id; setting #user_id directly, as
+	// above, updates what's shown but left $target holding whatever id was already there,
+	// so this function silently failed to change what actually gets submitted (issue #587,
+	// surfaced through Clear() and choresoverview.js's own SetId(null) call).
+	combobox.$target.val(value === null ? '' : value).trigger('change');
+
 	Victual.Components.UserPicker.GetInputElement().trigger('change');
 }
 
