@@ -243,7 +243,7 @@ class StockController extends BaseController
 	 * Serves the stock overview view (route GET /stockoverview); lists products in
 	 * stock or below their min stock amount (or all products, depending on the
 	 * user's stock_overview_show_all_out_of_stock_products setting), plus the active
-	 * members of any product group that is below its own minimum.
+	 * products in the subtree of any product group below its own minimum.
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
@@ -270,7 +270,8 @@ class StockController extends BaseController
 			// product is present, so the union would be a more expensive way to say the same
 			// thing.
 			$where .= ' OR product_id IN (SELECT p.id FROM products p
-				JOIN product_groups_missing pgm ON p.product_group_id = pgm.id
+				JOIN product_groups_resolved pgr ON pgr.descendant_product_group_id = p.product_group_id
+				JOIN product_groups_missing pgm ON pgm.id = pgr.ancestor_product_group_id
 				WHERE COALESCE(p.active, 0) = 1)';
 
 			// Plan 29's location minimum widens the same clause the same way, for the same
@@ -282,7 +283,10 @@ class StockController extends BaseController
 		}
 
 		return $this->RenderPage($response, 'stockoverview', [
-			'currentStock' => $this->DB->uihelper_stock_current_overview()->where($where),
+			'currentStock' => $this->DB->uihelper_stock_current_overview()
+				->select('uihelper_stock_current_overview.*')
+				->select('(SELECT product_group_id FROM products WHERE products.id = uihelper_stock_current_overview.product_id) AS product_group_id')
+				->where($where),
 			'locations' => StockService::GetInstance()->GetLocationsWithPaths(true),
 			'currentStockLocations' => StockService::GetInstance()->GetCurrentStockLocations(),
 			// So that the hidden location cell can name every ancestor of each stocked
@@ -291,7 +295,8 @@ class StockController extends BaseController
 			// (plan 08 question 4).
 			'locationAncestors' => StockService::GetInstance()->GetLocationAncestorIds(),
 			'nextXDays' => $nextXDays,
-			'productGroups' => $this->DB->product_groups()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
+			'productGroups' => StockService::GetInstance()->GetProductGroupsWithPaths(true),
+			'productGroupAncestors' => StockService::GetInstance()->GetProductGroupAncestorIds(),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('products'),
 			'userfieldValues' => UserfieldsService::GetInstance()->GetAllValues('products'),
 			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS

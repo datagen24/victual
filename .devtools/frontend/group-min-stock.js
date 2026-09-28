@@ -92,7 +92,7 @@ const assert = require('node:assert/strict');
 		await page.locator('#location-filter').selectOption({ index: 1 });
 		await entry.click();
 		await page.locator('#product-group-filter').filter({ has: page.locator('option') }).waitFor();
-		assert.equal(await page.locator('#product-group-filter').inputValue(), groupName, 'the click applied the group filter');
+		assert.equal(await page.locator('#product-group-filter').inputValue(), String(created.id), 'the click applied the group filter');
 		assert.equal(await page.locator('#location-filter').inputValue(), 'all', 'the click cleared the location filter');
 		await row.waitFor({ state: 'visible' });
 

@@ -141,7 +141,7 @@
 				id="product-group-filter">
 				<option value="all">{{ $__t('All') }}</option>
 				@foreach($productGroups as $productGroup)
-				<option value="{{ $productGroup->name }}">{{ $productGroup->name }}</option>
+				<option value="{{ $productGroup->id }}">{{ $productGroup->path }}</option>
 				@endforeach
 			</select>
 		</div>
@@ -442,7 +442,9 @@
 								@if ($currentStockEntry->product_missing) belowminstockamount @endif
 					</td>
 					<td class="d-none">
-						xx{{ $currentStockEntry->product_group_name }}xx
+						@foreach($productGroupAncestors[$currentStockEntry->product_group_id] ?? [] as $groupIdOrAncestor)
+						xx{{ $groupIdOrAncestor }}xx
+						@endforeach
 					</td>
 					<td>
 						<span class="locale-number locale-number-quantity-amount">{{ $currentStockEntry->product_calories }}</span>
