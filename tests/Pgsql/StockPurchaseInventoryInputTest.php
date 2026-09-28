@@ -313,6 +313,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 
 		self::AssertRefused($result, 'POST .../add with an array best_before_date');
 		self::assertSame(0, self::stockCount($productId), 'a refused purchase must not have written a stock row (an array used to reach IsIsoDate() as a 500, not a 400)');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
 	public function testAddProductWithUnreadablePurchasedDateIsRefusedWithoutBooking(): void
@@ -326,6 +327,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 
 		self::AssertRefused($result, 'POST .../add with an unreadable purchased_date');
 		self::assertSame(0, self::stockCount($productId), 'a refused purchase must not have booked with today\'s date silently substituted');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
 	public function testAddProductWithNonNumericPriceIsRefusedWithoutBooking(): void
@@ -339,6 +341,7 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 
 		self::AssertRefused($result, 'POST .../add with a non-numeric price');
 		self::assertSame(0, self::stockCount($productId), 'a refused purchase must not have booked with no price silently substituted');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
 	public function testAddProductWithMalformedLocationIdIsRefusedWithoutBooking(): void
@@ -352,6 +355,22 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 
 		self::AssertRefused($result, 'POST .../add with a non-numeric location_id');
 		self::assertSame(0, self::stockCount($productId), 'a refused purchase must not have booked at the product\'s default location silently');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
+	}
+
+	public function testAddProductWithInactiveLocationIsRefusedWithoutBooking(): void
+	{
+		[, $productId] = self::freshProduct('544 Add Inactive Location');
+		$inactiveLocationId = self::insertRow('locations', ['name' => '544 Inactive Add Location', 'active' => 0]);
+
+		$result = self::Request('POST', "/api/stock/products/$productId/add", [
+			'amount' => 1,
+			'location_id' => $inactiveLocationId,
+		]);
+
+		self::AssertRefused($result, 'POST .../add with an inactive location_id');
+		self::assertSame(0, self::stockCount($productId), 'a refused purchase must not have booked at an inactive location');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused purchase must not have written a ledger row either');
 	}
 
 	public function testInventoryWithArrayBestBeforeDateIsRefusedWithoutBooking(): void
@@ -366,6 +385,23 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 
 		self::AssertRefused($result, 'POST .../inventory with an array best_before_date');
 		self::assertSame(1, self::stockCount($productId), 'a refused inventory correction must not have added a stock row');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused inventory correction must not have written a ledger row either');
+	}
+
+	public function testInventoryWithInactiveShoppingLocationIsRefusedWithoutBooking(): void
+	{
+		[$locationId, $productId] = self::freshProduct('544 Inventory Inactive Store');
+		self::insertStock($productId, $locationId, 1);
+		$inactiveStoreId = self::insertRow('shopping_locations', ['name' => '544 Inactive Inventory Store', 'active' => 0]);
+
+		$result = self::Request('POST', "/api/stock/products/$productId/inventory", [
+			'new_amount' => 5,
+			'shopping_location_id' => $inactiveStoreId,
+		]);
+
+		self::AssertRefused($result, 'POST .../inventory with an inactive shopping_location_id');
+		self::assertSame(1, self::stockCount($productId), 'a refused inventory correction must not have added a stock row');
+		self::assertSame(0, self::stockLogCount($productId), 'a refused inventory correction must not have written a ledger row either');
 	}
 
 	/**
@@ -419,6 +455,57 @@ class StockPurchaseInventoryInputTest extends PgsqlSchemaTestCase
 		]);
 
 		self::assertSame(200, $result['status'], "an empty-string price/shopping_location_id (the shipped UI's own \"unset\" convention) must not be refused: {$result['body']}");
+	}
+
+	/**
+	 * Positive control (Opus round-2 blocker): the purchase form's LocationPicker is not
+	 * always required (views/purchase.blade.php's isRequired=false) and sends "" for its
+	 * blank option (public/viewjs/purchase.js:95) exactly like the ShoppingLocationPicker
+	 * already does - "" must mean "use the product's default location", not be refused as
+	 * malformed. It must reach the service as null, exactly like an omitted location_id:
+	 * db/pgsql/baseline/06_triggers_b.sql's set_products_default_location_if_empty_stock
+	 * trigger is what actually resolves a null stock.location_id to the product's own
+	 * location_id on write, so a booked row's location_id is never itself null - the
+	 * product's location, not NULL, is the observable proof "" was treated as absent.
+	 */
+	public function testAddProductWithEmptyStringLocationIdBooksAtTheDefaultLocation(): void
+	{
+		[$locationId, $productId] = self::freshProduct('544 Add Empty String Location');
+
+		$result = self::Request('POST', "/api/stock/products/$productId/add", [
+			'amount' => 1,
+			'location_id' => '',
+		]);
+
+		self::assertSame(200, $result['status'], "an empty-string location_id (the shipped UI's own \"unset\" convention) must not be refused: {$result['body']}");
+
+		$statement = self::$db->prepare('SELECT location_id FROM stock WHERE product_id = ?');
+		$statement->execute([$productId]);
+		self::assertSame($locationId, (int)$statement->fetchColumn(), 'location_id:"" must book at the product\'s own default location, exactly like an omitted location_id');
+	}
+
+	/**
+	 * Positive control (Opus round-2 blocker): inventory.js drops the picker's `required`
+	 * attribute for a downward correction (inventory.js:477) and always sends its value
+	 * unchanged (inventory.js:50), so "" reaches this route too. Uses an upward correction
+	 * (new_amount > current stock) so the added stock is booked through AddProduct(),
+	 * where the same default-location trigger applies - see the test above.
+	 */
+	public function testInventoryWithEmptyStringLocationIdBooksAtTheDefaultLocation(): void
+	{
+		[$locationId, $productId] = self::freshProduct('544 Inventory Empty String Location');
+		self::insertStock($productId, $locationId, 1);
+
+		$result = self::Request('POST', "/api/stock/products/$productId/inventory", [
+			'new_amount' => 5,
+			'location_id' => '',
+		]);
+
+		self::assertSame(200, $result['status'], "an empty-string location_id must not be refused: {$result['body']}");
+
+		$statement = self::$db->prepare('SELECT location_id FROM stock WHERE product_id = ? ORDER BY id DESC LIMIT 1');
+		$statement->execute([$productId]);
+		self::assertSame($locationId, (int)$statement->fetchColumn(), 'location_id:"" must book the new entry at the product\'s own default location, exactly like an omitted location_id');
 	}
 
 	// ================================================================================

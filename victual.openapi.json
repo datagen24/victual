@@ -4208,7 +4208,7 @@
 								"properties": {
 									"list_id": {
 										"type": "integer",
-										"description": "The shopping list to use, when omitted, the default shopping list (with id 1) is used"
+										"description": "The shopping list to use; when omitted or null, the default shopping list (with id 1) is used"
 									}
 								},
 								"example": {
@@ -4270,7 +4270,7 @@
 								"properties": {
 									"list_id": {
 										"type": "integer",
-										"description": "The shopping list to use, when omitted, the default shopping list (with id 1) is used"
+										"description": "The shopping list to use; when omitted or null, the default shopping list (with id 1) is used"
 									}
 								},
 								"example": {
@@ -4332,7 +4332,7 @@
 								"properties": {
 									"list_id": {
 										"type": "integer",
-										"description": "The shopping list to use, when omitted, the default shopping list (with id 1) is used"
+										"description": "The shopping list to use; when omitted or null, the default shopping list (with id 1) is used"
 									}
 								},
 								"example": {
@@ -4394,7 +4394,7 @@
 								"properties": {
 									"list_id": {
 										"type": "integer",
-										"description": "The shopping list id to clear, when omitted, the default shopping list (with id 1) is used"
+										"description": "The shopping list id to clear; when omitted or null, the default shopping list (with id 1) is used"
 									},
 									"done_only": {
 										"type": "boolean",
@@ -4470,7 +4470,7 @@
 									},
 									"list_id": {
 										"type": "integer",
-										"description": "A valid shopping list id, when omitted, the default shopping list (with id 1) is used"
+										"description": "A valid shopping list id; when omitted or null, the default shopping list (with id 1) is used"
 									},
 									"product_amount": {
 										"type": "number",
@@ -4548,7 +4548,7 @@
 									},
 									"list_id": {
 										"type": "integer",
-										"description": "A valid shopping list id, when omitted, the default shopping list (with id 1) is used"
+										"description": "A valid shopping list id; when omitted or null, the default shopping list (with id 1) is used"
 									},
 									"product_amount": {
 										"type": "number",

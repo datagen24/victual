@@ -310,9 +310,15 @@ class StockApiController extends BaseApiController
 			// Existence, not merely format, matching RequireExistingId()'s use on
 			// EditStockEntry() (issue #544/#487): a malformed or dangling location_id used
 			// to fall straight through to is_numeric()'s false branch and silently keep
-			// the product's default location instead of refusing the request.
+			// the product's default location instead of refusing the request. null or ""
+			// both mean "use the product's default location" - unlike EditStockEntry(),
+			// this route's own LocationPicker is not always required
+			// (views/purchase.blade.php's isRequired=false) and sends "" for its blank
+			// option (public/viewjs/purchase.js:95), so refusing "" here would break an
+			// unremarkable request from the shipped UI, exactly the regression #544's own
+			// shopping_location_id handling already guards against (round 2 finding).
 			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null)
+			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null && $requestBody['location_id'] !== '')
 			{
 				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
@@ -900,8 +906,11 @@ class StockApiController extends BaseApiController
 				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
 			}
 
+			// null or "" both mean "use the product's default location" - see AddProduct()
+			// above: inventory.js:477 drops the picker's `required` attribute for a
+			// downward correction, and inventory.js:50 sends its value ("") unchanged.
 			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null)
+			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null && $requestBody['location_id'] !== '')
 			{
 				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
