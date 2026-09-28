@@ -23,8 +23,12 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *
  * #595: GetProductDetails() throws for a product that is missing or inactive
  * (StockService::ProductExists()). A single meal-plan entry naming such a product
- * must not break the whole page: the entry keeps its place in the response (with no
- * stock or price details) and every other entry in the same week still renders.
+ * must not break the whole page: the entry keeps its place in the response, marked
+ * `inactive` (product row still exists, just deactivated) or `missing` (product row is
+ * gone - meal_plan.product_id carries no FK, db/pgsql/baseline/01_tables.sql), and
+ * every other entry in the same week still renders normally. mealplan.js renders a
+ * reduced card from that marker rather than hiding the entry (round 2 review of PR
+ * #599): the entry must stay visible and deletable.
  *
  * Modeled on MealPlanProductDetailsRedactionTest.php: same direct-controller render
  * (no HTTP subprocess needed) and the same PgsqlSchemaTestCase fixture user (id 9000,
@@ -38,6 +42,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 	private const PRODUCT = 9810;
 	private const PRODUCT_TO_DEACTIVATE = 9811;
 	private const PRODUCT_INTACT = 9812;
+	private const PRODUCT_TO_DELETE = 9813;
 
 	private static PDO $db;
 	private static RecipesController $controller;
@@ -59,18 +64,48 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 
 		// Quantity unit 2 is 'Piece', seeded by the migrations - the same assumption
 		// MealPlanProductDetailsRedactionTest.php makes for its own fixture product.
-		foreach ([self::PRODUCT, self::PRODUCT_TO_DEACTIVATE, self::PRODUCT_INTACT] as $productId)
+		foreach ([self::PRODUCT, self::PRODUCT_TO_DEACTIVATE, self::PRODUCT_INTACT, self::PRODUCT_TO_DELETE] as $productId)
 		{
 			self::$db->exec('INSERT INTO products(id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ('
 				. $productId . ", 'MealPlanStockState Product $productId', " . self::LOCATION . ', 2, 2)');
 		}
 
-		// The fixture entry #594's tests are about: a product entry (not a recipe) for
-		// today, inside MealPlan()'s default +/-6 day window.
-		self::$db->exec(
-			'INSERT INTO meal_plan(day, type, product_id, product_amount, product_qu_id) VALUES (CURRENT_DATE, '
-			. "'product', " . self::PRODUCT . ', 1, 2)'
-		);
+		// One meal-plan entry per fixture product, all for today, inside MealPlan()'s
+		// default +/-6 day window - created while PRODUCT/PRODUCT_TO_DEACTIVATE/
+		// PRODUCT_INTACT are still active, exactly the scenario #595 describes ("a
+		// meal-plan entry for a deactivated product").
+		foreach ([self::PRODUCT, self::PRODUCT_TO_DEACTIVATE, self::PRODUCT_INTACT] as $productId)
+		{
+			self::$db->exec('INSERT INTO meal_plan(day, type, product_id, product_amount, product_qu_id) VALUES (CURRENT_DATE, '
+				. "'product', $productId, 1, 2)");
+		}
+
+		self::$db->exec('UPDATE products SET active = 0 WHERE id = ' . self::PRODUCT_TO_DEACTIVATE);
+
+		// PRODUCT_TO_DELETE is removed - and only then given a meal-plan entry - rather
+		// than the reverse order: db/pgsql/baseline/06_triggers_a.sql's
+		// cascade_product_removal trigger deletes any meal_plan row naming a product on
+		// that product's own removal, so deleting it after the entry already existed
+		// would just remove the entry along with it, not reproduce #595's dangling
+		// reference. meal_plan.product_id has no FK (db/pgsql/baseline/01_tables.sql),
+		// so nothing stops the entry below from naming a product id that was already
+		// gone by the time it was created - the same shape a raw import or an
+		// out-of-band deletion could leave behind.
+		self::$db->exec('DELETE FROM products WHERE id = ' . self::PRODUCT_TO_DELETE);
+
+		// meal_plan's own create_internal_recipe AFTER INSERT trigger
+		// (db/pgsql/baseline/06_triggers_c.sql) copies every product entry for the day
+		// into recipes_pos, and recipes_pos_qu_id_default (BEFORE INSERT on recipes_pos)
+		// requires a resolvable quantity-unit conversion for the named product - which
+		// requires the product to still exist. That check exists to stop *new* rows
+		// from referencing a product/QU pair that cannot be resolved; it is not what
+		// #595 is about (a row that already exists and later loses its product), so it
+		// is disabled only around this one fixture insert that intentionally recreates
+		// that already-dangling state directly, then re-enabled immediately after.
+		self::$db->exec('ALTER TABLE recipes_pos DISABLE TRIGGER recipes_pos_qu_id_default');
+		self::$db->exec('INSERT INTO meal_plan(day, type, product_id, product_amount, product_qu_id) VALUES (CURRENT_DATE, '
+			. "'product', " . self::PRODUCT_TO_DELETE . ', 1, 2)');
+		self::$db->exec('ALTER TABLE recipes_pos ENABLE TRIGGER recipes_pos_qu_id_default');
 	}
 
 	private static function permissionId(string $name): int
@@ -128,6 +163,12 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		return null;
 	}
 
+	/** Decodes an event's productDetails field the way mealplan.js's JSON.parse(event.productDetails) does. */
+	private static function productDetailsOf(array $event): mixed
+	{
+		return json_decode($event['productDetails'], true, 512, JSON_THROW_ON_ERROR);
+	}
+
 	public function testMealPlanViewWithoutStockViewReceivesNoStockStateFields(): void
 	{
 		self::grantOnly('MEALPLAN_VIEW');
@@ -135,7 +176,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		$event = self::eventForProduct(self::PRODUCT);
 		self::assertNotNull($event, 'The fixture entry is present in the response even though this identity lacks STOCK_VIEW');
 
-		$productDetails = json_decode($event['productDetails'], true, 512, JSON_THROW_ON_ERROR);
+		$productDetails = self::productDetailsOf($event);
 		self::assertIsArray($productDetails, 'A page-visible product still produces a productDetails object, just a reduced one - the page keeps working');
 
 		self::assertArrayHasKey('product', $productDetails, 'The product name/picture/calories the calendar card renders survive');
@@ -154,7 +195,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		$event = self::eventForProduct(self::PRODUCT);
 		self::assertNotNull($event);
 
-		$productDetails = json_decode($event['productDetails'], true, 512, JSON_THROW_ON_ERROR);
+		$productDetails = self::productDetailsOf($event);
 		self::assertIsArray($productDetails);
 
 		foreach (['stock_amount', 'stock_amount_aggregated', 'next_due_date', 'location'] as $field)
@@ -167,24 +208,56 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 	{
 		self::grantOnly('MEALPLAN_VIEW', 'STOCK_VIEW');
 
-		self::$db->exec('INSERT INTO meal_plan(day, type, product_id, product_amount, product_qu_id) VALUES (CURRENT_DATE, '
-			. "'product', " . self::PRODUCT_TO_DEACTIVATE . ', 1, 2)');
-		self::$db->exec('INSERT INTO meal_plan(day, type, product_id, product_amount, product_qu_id) VALUES (CURRENT_DATE, '
-			. "'product', " . self::PRODUCT_INTACT . ', 1, 2)');
-
-		// Deactivated only after its meal-plan entry already exists - exactly the
-		// scenario #595 describes ("a meal-plan entry for a deactivated product").
-		self::$db->exec('UPDATE products SET active = 0 WHERE id = ' . self::PRODUCT_TO_DEACTIVATE);
-
 		$deactivatedEvent = self::eventForProduct(self::PRODUCT_TO_DEACTIVATE);
 		self::assertNotNull($deactivatedEvent, 'The entry naming the deactivated product is still present in the response (issue #595) - the page did not fail to render');
-		self::assertSame('null', $deactivatedEvent['productDetails'] ?? 'null', 'No stock or price details are produced for a deactivated product');
+
+		$deactivatedDetails = self::productDetailsOf($deactivatedEvent);
+		self::assertIsArray($deactivatedDetails, 'The entry carries a reduced productDetails object, not null - mealplan.js renders a card from it rather than hiding the entry');
+		self::assertTrue($deactivatedDetails['inactive'] ?? false, 'The deactivated marker is set');
+		self::assertSame('MealPlanStockState Product ' . self::PRODUCT_TO_DEACTIVATE, $deactivatedDetails['product']['name'] ?? null, 'The product name survives so the reduced card can still show it');
+
+		foreach (['stock_amount', 'stock_amount_aggregated', 'stock_value', 'last_price', 'avg_price', 'current_price', 'next_due_date', 'location'] as $field)
+		{
+			self::assertArrayNotHasKey($field, $deactivatedDetails, "No stock or price field is produced for a deactivated product, field $field");
+		}
 
 		$intactEvent = self::eventForProduct(self::PRODUCT_INTACT);
 		self::assertNotNull($intactEvent, 'A second entry in the same week is unaffected by the first one\'s deactivated product');
 
-		$intactDetails = json_decode($intactEvent['productDetails'], true, 512, JSON_THROW_ON_ERROR);
+		$intactDetails = self::productDetailsOf($intactEvent);
 		self::assertIsArray($intactDetails, 'The still-active product in the same week renders normally');
 		self::assertArrayHasKey('stock_amount_aggregated', $intactDetails, 'This identity still holds STOCK_VIEW, so the intact entry keeps its stock-state fields');
+	}
+
+	public function testDeactivatedProductEntryWithoutStockViewStillGetsTheInactiveMarkerOnly(): void
+	{
+		// The inactive check runs before the STOCK_VIEW branch in
+		// RecipesController::MealPlan() - a deactivated product must never leak stock
+		// data by virtue of the caller's own permission, so this must look identical to
+		// the STOCK_VIEW-holding case above (round 2 review of PR #599).
+		self::grantOnly('MEALPLAN_VIEW');
+
+		$deactivatedEvent = self::eventForProduct(self::PRODUCT_TO_DEACTIVATE);
+		self::assertNotNull($deactivatedEvent, 'The entry naming the deactivated product is present even without STOCK_VIEW');
+
+		$deactivatedDetails = self::productDetailsOf($deactivatedEvent);
+		self::assertIsArray($deactivatedDetails);
+		self::assertTrue($deactivatedDetails['inactive'] ?? false, 'The deactivated marker is set regardless of STOCK_VIEW');
+		self::assertArrayHasKey('product', $deactivatedDetails, 'The product name still survives');
+		self::assertArrayNotHasKey('stock_amount_aggregated', $deactivatedDetails, 'No stock field leaks for a deactivated product, with or without STOCK_VIEW');
+	}
+
+	public function testDeletedProductEntryGetsTheMissingMarker(): void
+	{
+		self::grantOnly('MEALPLAN_VIEW', 'STOCK_VIEW');
+
+		$deletedEvent = self::eventForProduct(self::PRODUCT_TO_DELETE);
+		self::assertNotNull($deletedEvent, 'The entry naming a since-deleted product is still present in the response (issue #595)');
+
+		$deletedDetails = self::productDetailsOf($deletedEvent);
+		self::assertIsArray($deletedDetails, 'A reduced productDetails object is still produced, not null');
+		self::assertTrue($deletedDetails['missing'] ?? false, 'The missing marker is set');
+		self::assertArrayNotHasKey('product', $deletedDetails, 'There is no product row left to name');
+		self::assertArrayNotHasKey('stock_amount_aggregated', $deletedDetails, 'No stock field is produced for a product that no longer exists');
 	}
 }

@@ -75,6 +75,21 @@ function mayAddMealPlanRecipeToShoppingList()
 	return userHasPermission("RECIPES_VIEW") && userHasPermission("SHOPPINGLIST_ITEMS_ADD");
 }
 
+// The product path's add-to-shoppinglist button (unlike the recipe one above) has
+// always been gated purely on whether stock_amount_aggregated says there is enough in
+// stock, never on a permission check of its own - because until issue #594 that field
+// was always present. For a caller without STOCK_VIEW it no longer is, and "unknown
+// stock state" must not silently read as "definitely enough" (button disabled forever)
+// when the caller actually holds shopping-list rights. This mirrors
+// mayAddMealPlanRecipeToShoppingList() (RECIPES_VIEW is irrelevant here - a product
+// entry never involves a recipe): SHOPPINGLIST_ITEMS_ADD alone. The button always adds
+// mealPlanEntry.product_amount in full regardless of stock (see its href below), so this
+// only changes whether the nudge appears, never what gets added.
+function mayAddMealPlanProductToShoppingList()
+{
+	return userHasPermission("SHOPPINGLIST_ITEMS_ADD");
+}
+
 // FullCalendar setup - one calendar instance per meal plan section; only the primary
 // (first) section shows the header/navigation, all others render as bare all-day rows
 // (minTime/maxTime squeeze the time grid away so only the all-day row remains)
@@ -290,6 +305,37 @@ $(".calendar").each(function()
 					return false;
 				}
 
+				element.attr("data-product-details", event.productDetails);
+
+				// The product this entry names was deleted, or deactivated after the entry
+				// was created - StockService::GetProductDetails() throws for either
+				// (StockService::ProductExists()), so the server sends this reduced marker
+				// instead of calling it at all (issue #595). The entry still has to stay
+				// visible and deletable - unlike a missing recipe just above, which returns
+				// false and hides the event entirely, hiding this one would leave the user
+				// with no way to see or remove it. Editing is not offered: the edit dialog's
+				// ProductPicker change handler re-fetches GET stock/products/{id}
+				// (Victual.Components.ProductPicker.GetPicker().on('change', ...) below),
+				// which throws on exactly the same "missing or inactive" condition and is
+				// not something this fix reaches (that endpoint is out of scope here).
+				if (productDetails.missing || productDetails.inactive)
+				{
+					var productLabel = productDetails.missing ? __t("Product not found") : productDetails.product.name.escapeHTML();
+					var productNote = productDetails.missing ? __t("This product no longer exists") : __t("This product is deactivated");
+
+					element.html('\
+					<div> \
+						<h5 class="text-truncate mb-1 text-muted ' + additionalTitleCssClasses + '">' + productLabel + '</h5> \
+						<h5 class="small text-truncate mb-1 text-muted"><i class="fa-solid fa-triangle-exclamation"></i> ' + productNote + '</h5> \
+						<h5 class="d-print-none"> \
+							<a class="btn btn-outline-danger btn-xs remove-product-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
+							' + doneButtonHtml + ' \
+						</h5> \
+					</div>');
+
+					return;
+				}
+
 				// Same reason as recipe.name above: this is concatenated into markup below,
 				// and products.name is a text column, so it can contain markup as typed
 				productDetails.product.name = productDetails.product.name.escapeHTML();
@@ -305,20 +351,43 @@ $(".calendar").each(function()
 					productDetails.last_price = 0;
 				}
 
-				element.attr("data-product-details", event.productDetails);
+				// product.qu_id_stock carries no FK (db/pgsql/baseline/01_tables.sql), so the
+				// quantity unit a product names can be deleted out from under it - both
+				// StockService::GetProductDetails() and the reduced non-STOCK_VIEW lookup in
+				// RecipesController::MealPlan() then return quantity_unit_stock as null
+				// rather than throwing. Falling back first to Victual.QuantityUnits (every
+				// QU; harmless to expose, and already page-global for the product-add form)
+				// keeps the amount readable instead of a TypeError on .name; an empty unit is
+				// the last resort, for the id itself no longer resolving either.
+				var quantityUnitStock = productDetails.quantity_unit_stock;
+				if (quantityUnitStock === null || quantityUnitStock === undefined)
+				{
+					quantityUnitStock = FindObjectInArrayByPropertyValue(Victual.QuantityUnits, "id", productDetails.product.qu_id_stock) || { name: "", name_plural: "" };
+				}
 
 				// A caller without STOCK_VIEW never receives stock_amount_aggregated (or
 				// any other stock-state field) at all - the server omits the key rather
 				// than sending a zero, the same distinguishable-absence contract
 				// last_price above relies on (issue #594). Whether there is "enough in
-				// stock" is then simply unknown, not "not enough" - both order/consume
-				// buttons stay disabled (neither action is safe to offer) and the
-				// fulfillment line is left blank instead of showing a guessed answer.
+				// stock" is then simply unknown, not "not enough" - the consume button
+				// stays disabled (that action is never safe to offer without knowing) and
+				// the fulfillment line is left blank instead of showing a guessed answer.
 				var stockStateKnown = typeof productDetails.stock_amount_aggregated !== "undefined" && productDetails.stock_amount_aggregated !== null;
 
 				var productOrderMissingButtonDisabledClasses = "disabled";
-				if (stockStateKnown && productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
+				if (stockStateKnown)
 				{
+					if (productDetails.stock_amount_aggregated < mealPlanEntry.product_amount)
+					{
+						productOrderMissingButtonDisabledClasses = "";
+					}
+				}
+				else if (mayAddMealPlanProductToShoppingList())
+				{
+					// Stock state is unknown, so fall back to the caller's shopping-list
+					// permission alone (issue #594 review) - the button always adds the
+					// entry's full amount regardless of stock (see its href below), so this
+					// only changes whether the nudge appears, never what gets added.
 					productOrderMissingButtonDisabledClasses = "";
 				}
 
@@ -360,13 +429,13 @@ $(".calendar").each(function()
 				element.html('\
 				<div> \
 					<h5 class="text-truncate mb-1 cursor-link productcard-trigger ' + additionalTitleCssClasses + '" data-toggle="tooltip" title="' + __t("Display product") + '" data-product-id="' + productDetails.product.id.toString() + '">' + productDetails.product.name + '</h5> \
-					<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-quantity-amount">' + mealPlanEntry.product_amount + "</span> " + __n(mealPlanEntry.product_amount, productDetails.quantity_unit_stock.name, productDetails.quantity_unit_stock.name_plural, true) + '</h5> \
+					<h5 class="small text-truncate mb-1"><span class="locale-number locale-number-quantity-amount">' + mealPlanEntry.product_amount + "</span> " + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true) + '</h5> \
 					<h5 class="small timeago-contextual text-truncate mb-1">' + fulfillmentIconHtml + " " + fulfillmentInfoHtml + '</h5> \
 					' + costsAndCaloriesPerServing + ' \
 					<h5 class="d-print-none"> \
 						<a class="btn btn-outline-info btn-xs edit-meal-plan-entry-button" href="#" data-toggle="tooltip" title="' + __t("Edit this item") + '"><i class="fa-solid fa-edit"></i></a> \
 						<a class="btn btn-outline-danger btn-xs remove-product-button" href="#" data-toggle="tooltip" title="' + __t("Delete this item") + '"><i class="fa-solid fa-trash"></i></a> \
-						<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, productDetails.quantity_unit_stock.name, productDetails.quantity_unit_stock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a> \
+						<a class="ml-2 btn btn-outline-success btn-xs product-consume-button ' + productConsumeButtonDisabledClasses + '" href="#" data-toggle="tooltip" title="' + __t("Consume %1$s of %2$s", mealPlanEntry.product_amount.toLocaleString() + ' ' + __n(mealPlanEntry.product_amount, quantityUnitStock.name, quantityUnitStock.name_plural, true), productDetails.product.name) + '" data-product-id="' + productDetails.product.id.toString() + '" data-product-name="' + productDetails.product.name + '" data-product-amount="' + mealPlanEntry.product_amount + '" data-mealplan-entry-id="' + mealPlanEntry.id.toString() + '"><i class="fa-solid fa-utensils"></i></a> \
 						' + shoppingListButtonHtml + ' \
 						' + doneButtonHtml + ' \
 					</h5> \
