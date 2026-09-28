@@ -13,7 +13,9 @@
 //   php label-reprint-duedate-subprocess-helper.php <base64 of a JSON spec>
 //
 // Spec: {"schema": "phpunit_...", "operation": "open", "productId": N, "amount": F,
-// "specificStockEntryId": "..." (optional, default "default")}
+// "specificStockEntryId": "..." (optional, default "default")}, or
+// {"schema": "phpunit_...", "operation": "transfer", "productId": N, "amount": F,
+// "locationIdFrom": N, "locationIdTo": N, "specificStockEntryId": "..." (optional)}
 //
 // Output: one JSON object, {"status": 200, "transaction_id": "..."} or
 // {"status": 400, "error_message": "..."}. A caller-owned transaction is not needed here:
@@ -59,6 +61,16 @@ try
 		$transactionId = StockService::GetInstance()->OpenProduct(
 			(int)$spec['productId'],
 			(float)$spec['amount'],
+			$spec['specificStockEntryId'] ?? 'default'
+		);
+	}
+	elseif ($spec['operation'] === 'transfer')
+	{
+		$transactionId = StockService::GetInstance()->TransferProduct(
+			(int)$spec['productId'],
+			(float)$spec['amount'],
+			(int)$spec['locationIdFrom'],
+			(int)$spec['locationIdTo'],
 			$spec['specificStockEntryId'] ?? 'default'
 		);
 	}

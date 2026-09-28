@@ -85,14 +85,19 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		self::$templateId = (int)self::$db->query("SELECT id FROM label_templates WHERE entity_kind = 'stock_entry' ORDER BY id LIMIT 1")->fetchColumn();
 		self::assertGreaterThan(0, self::$templateId, 'migration 0283 seeds a default stock_entry template');
 
+		// Both elements a live reprint's own capture needs to be checked against directly:
+		// the due date (the original regression) and, for the freeze/thaw transfer coverage
+		// below, the location a whole-entry transfer relocates the row to.
 		$draft = $templates->GetDraft(self::$templateId);
 		$document = [
 			'schema_version' => 1, 'entity_kind' => 'stock_entry',
 			'canvas' => ['width_mm' => 58.9, 'height_mm' => 30.0, 'max_height_mm' => null,
 				'margins_mm' => ['top' => 2.0, 'right' => 2.0, 'bottom' => 2.0, 'left' => 2.0]],
 			'elements' => [
-				['type' => 'text', 'id' => 'due', 'x_mm' => 2.0, 'y_mm' => 10.0, 'width_mm' => 50.0,
+				['type' => 'text', 'id' => 'due', 'x_mm' => 2.0, 'y_mm' => 4.0, 'width_mm' => 50.0,
 					'height_mm' => 8.0, 'field' => 'stock_entry.best_before_date', 'font_asset' => $fontAssetName, 'size_pt' => 10.0],
+				['type' => 'text', 'id' => 'loc', 'x_mm' => 2.0, 'y_mm' => 14.0, 'width_mm' => 50.0,
+					'height_mm' => 8.0, 'field' => 'stock_entry.location_name', 'font_asset' => $fontAssetName, 'size_pt' => 10.0],
 			],
 		];
 		self::tx(static fn () => $templates->SaveDraft(self::$templateId, $document, $draft['revision_token'], 9000));
@@ -160,6 +165,38 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		return [$productId, $stockRowId, $labelUid];
 	}
 
+	/**
+	 * A fresh product configured for auto-reprint on freezing, one stock entry at a
+	 * non-freezer location, and a live label on it, ready to be transferred into a freezer.
+	 *
+	 * @return array{0: int, 1: int, 2: string, 3: int, 4: int} productId, stockRowId,
+	 *         labelUid, locationIdFrom (non-freezer), locationIdTo (freezer)
+	 */
+	private static function newLabelledStockEntryForFreeze(string $namePrefix, int $daysAfterFreezing): array
+	{
+		self::$db->exec("INSERT INTO locations(name) VALUES ('$namePrefix pantry')");
+		$locationIdFrom = (int)self::$db->lastInsertId();
+		self::$db->exec("INSERT INTO locations(name, is_freezer) VALUES ('$namePrefix freezer', 1)");
+		$locationIdTo = (int)self::$db->lastInsertId();
+
+		self::$db->exec("INSERT INTO quantity_units(name, name_plural) VALUES ('$namePrefix unit', '$namePrefix units')");
+		$quId = (int)self::$db->lastInsertId();
+
+		$product = self::$db->prepare('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price, auto_reprint_stock_label, default_best_before_days_after_freezing) VALUES (?, ?, ?, ?, ?, ?, 1, ?) RETURNING id');
+		$product->execute([$namePrefix . ' product', $locationIdFrom, $quId, $quId, $quId, $quId, $daysAfterFreezing]);
+		$productId = (int)$product->fetchColumn();
+
+		$stock = self::$db->prepare("INSERT INTO stock (product_id, amount, stock_id, best_before_date, purchased_date, location_id) VALUES (?, 2, ?, ?, '2026-01-01', ?) RETURNING id");
+		$stock->execute([$productId, $namePrefix . '-stock-1', self::FAR_FUTURE_DATE, $locationIdFrom]);
+		$stockRowId = (int)$stock->fetchColumn();
+
+		$job = self::tx(static fn () => self::operations()->IssueLocation(
+			'stock_entry', $stockRowId, 0, self::$printerId, self::$templateId, null, 'en', 'UTC'));
+		$labelUid = (string)$job['label_uid'];
+
+		return [$productId, $stockRowId, $labelUid, $locationIdFrom, $locationIdTo];
+	}
+
 	private static function capturedDueDate(int $captureId): ?string
 	{
 		$row = self::$db->prepare("SELECT captured_fields->>'stock_entry.best_before_date' FROM label_captures WHERE id = ?");
@@ -172,7 +209,9 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 	private static function latestJobForLabel(string $labelUid): ?array
 	{
 		$statement = self::$db->prepare(
-			"SELECT pj.id, pj.operation, pj.capture_id, lc.captured_fields->>'stock_entry.best_before_date' AS due_date
+			"SELECT pj.id, pj.operation, pj.capture_id,
+			        lc.captured_fields->>'stock_entry.best_before_date' AS due_date,
+			        lc.captured_fields->>'stock_entry.location_name' AS location_name
 			 FROM print_jobs pj JOIN label_captures lc ON lc.id = pj.capture_id
 			 WHERE pj.label_uid = ? ORDER BY pj.id DESC LIMIT 1"
 		);
@@ -223,6 +262,39 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 
 		$result = json_decode($output, true);
 		self::assertIsArray($result, "the open-product helper printed no JSON. stdout: $output\nstderr: $errors");
+		return $result;
+	}
+
+	/** @return array{status: int, transaction_id: ?string, error_message: ?string} */
+	private static function transferProduct(int $productId, float $amount, int $locationIdFrom, int $locationIdTo): array
+	{
+		$spec = ['schema' => self::Schema(), 'operation' => 'transfer', 'productId' => $productId,
+			'amount' => $amount, 'locationIdFrom' => $locationIdFrom, 'locationIdTo' => $locationIdTo];
+		$env = array_merge(array_filter(array_merge($_SERVER, $_ENV), 'is_scalar'), [
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+		]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/label-reprint-duedate-subprocess-helper.php', base64_encode(json_encode($spec))],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		proc_close($process);
+
+		$result = json_decode($output, true);
+		self::assertIsArray($result, "the transfer-product helper printed no JSON. stdout: $output\nstderr: $errors");
 		return $result;
 	}
 
@@ -280,5 +352,90 @@ class LabelReprintDueDateTest extends PgsqlSchemaTestCase
 		self::assertSame(self::FAR_FUTURE_DATE, self::stockBestBeforeDate($stockRowId), 'a refused booking leaves the due date untouched');
 		self::assertSame($before, self::printJobCount(), 'a refused booking enqueues no print job');
 		self::assertSame($jobBefore, self::latestJobForLabel($labelUid), 'the label\'s own most recent job is unchanged by the refusal');
+	}
+
+	/**
+	 * A refusal that happens deep inside ReviseStockEntryLabelIfLive() -> RevisedPrint() -
+	 * here, no active printer to resolve - must roll back the WHOLE booking, not just skip
+	 * the reprint. The fix moved the reprint call to run after $stockEntry->update(), inside
+	 * the same InTransaction() closure as that write; a refusal at that later point has to
+	 * unwind the update, the stock_log rows, and everything else the booking did, exactly as
+	 * a refusal earlier in the same method already did before this fix touched anything.
+	 */
+	public function testARefusedReprintAfterTheUpdateRollsBackTheWholeBooking(): void
+	{
+		[$productId, $stockRowId, $labelUid] = self::newLabelledStockEntry('Reprint Rollback', 3);
+
+		$beforeRow = self::$db->prepare('SELECT amount, open, best_before_date FROM stock WHERE id = ?');
+		$beforeRow->execute([$stockRowId]);
+		$beforeRow = $beforeRow->fetch(PDO::FETCH_ASSOC);
+		$beforeLogCount = (int)self::$db->query('SELECT COUNT(*) FROM stock_log')->fetchColumn();
+		$beforeJobCount = self::printJobCount();
+		$beforeCaptureCount = (int)self::$db->query('SELECT COUNT(*) FROM label_captures')->fetchColumn();
+		$jobBefore = self::latestJobForLabel($labelUid);
+
+		// ResolvePrinter(null) - which ReviseStockEntryLabelIfLive() always calls with a null
+		// printer id - refuses "No active printer is configured" once none is active.
+		self::$db->exec('UPDATE label_printers SET active = 0');
+		try
+		{
+			$response = self::openProduct($productId, 1.0);
+		}
+		finally
+		{
+			self::$db->exec('UPDATE label_printers SET active = 1 WHERE id = ' . self::$printerId);
+		}
+
+		self::assertSame(400, $response['status'], 'Opening with no active printer to reprint on is refused');
+		self::assertStringContainsString('No active printer', (string)$response['error_message']);
+
+		$afterRow = self::$db->prepare('SELECT amount, open, best_before_date FROM stock WHERE id = ?');
+		$afterRow->execute([$stockRowId]);
+		$afterRow = $afterRow->fetch(PDO::FETCH_ASSOC);
+		self::assertSame($beforeRow, $afterRow, 'a refusal deep in the booking rolls back the stock row update (amount, open, due date) too');
+
+		self::assertSame($beforeLogCount, (int)self::$db->query('SELECT COUNT(*) FROM stock_log')->fetchColumn(), 'no stock_log row survives the rollback');
+		self::assertSame($beforeJobCount, self::printJobCount(), 'no print job survives the rollback');
+		self::assertSame($beforeCaptureCount, (int)self::$db->query('SELECT COUNT(*) FROM label_captures')->fetchColumn(), 'no capture survives the rollback');
+		self::assertSame($jobBefore, self::latestJobForLabel($labelUid), 'the label\'s own most recent job is unchanged by the rollback');
+	}
+
+	/**
+	 * TransferProduct()'s freeze/thaw whole-entry fix: the reprint has to carry both the new
+	 * due date the freeze wrote AND the new location the transfer relocated the row to - not
+	 * whatever the row said before either write.
+	 */
+	public function testFreezeTransferWholeEntryReprintsWithNewDueDateAndLocation(): void
+	{
+		[$productId, $stockRowId, $labelUid, $locationIdFrom, $locationIdTo] =
+			self::newLabelledStockEntryForFreeze('Reprint Freeze', 30);
+
+		date_default_timezone_set('UTC');
+		$expectedNewDueDate = (new \DateTimeImmutable('today'))->modify('+30 days')->format('Y-m-d');
+
+		$before = self::printJobCount();
+
+		// The whole entry (amount 2) moves in one transfer, taking the whole-entry branch
+		// rather than the split branch.
+		$response = self::transferProduct($productId, 2.0, $locationIdFrom, $locationIdTo);
+		self::assertSame(200, $response['status'], 'Freezing the whole entry is accepted: ' . ($response['error_message'] ?? ''));
+
+		$row = self::$db->prepare('SELECT best_before_date, location_id FROM stock WHERE id = ?');
+		$row->execute([$stockRowId]);
+		$row = $row->fetch(PDO::FETCH_ASSOC);
+		self::assertSame($expectedNewDueDate, $row['best_before_date'], 'freezing did lengthen the due date, so the reprint check really ran');
+		self::assertSame($locationIdTo, (int)$row['location_id'], 'the whole-entry transfer relocated the row in place');
+		self::assertNotSame(self::FAR_FUTURE_DATE, $expectedNewDueDate, 'the fixture due date and the new one are different dates, or this test proves nothing');
+
+		self::assertGreaterThan($before, self::printJobCount(), 'freezing a labelled entry whose due date and location changed enqueues a reprint');
+
+		$job = self::latestJobForLabel($labelUid);
+		self::assertNotNull($job, 'a print job exists for this label');
+		self::assertSame('revised_print', $job['operation'], 'the auto-reprint is a revised print, not a fresh issue');
+		self::assertSame($expectedNewDueDate, $job['due_date'], 'the reprint must capture the NEW due date the freeze wrote');
+
+		$freezerName = self::$db->prepare('SELECT name FROM locations WHERE id = ?');
+		$freezerName->execute([$locationIdTo]);
+		self::assertSame((string)$freezerName->fetchColumn(), $job['location_name'], 'the reprint must capture the NEW location the transfer wrote, not the source location');
 	}
 }
