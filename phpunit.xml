@@ -105,6 +105,7 @@
 			<file>tests/Pgsql/SchemaIsolationFirstTest.php</file>
 			<file>tests/Pgsql/SchemaIsolationSecondTest.php</file>
 			<file>tests/Pgsql/ImporterIntegrityTest.php</file>
+			<file>tests/Pgsql/ImporterPrintJobLockConcurrencyTest.php</file>
 		</testsuite>
 		<testsuite name="httpboot">
 			<file>tests/Pgsql/HttpBootTest.php</file>

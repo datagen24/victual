@@ -236,6 +236,14 @@ class DatabaseImporter
 	 * target's user triggers disabled. Refuses to run when the schema versions differ or
 	 * (unless $force) when the target already holds data.
 	 *
+	 * Concurrency: the copy runs inside one transaction that also locks out a concurrent
+	 * `PrintAttemptService::Claim()` for its duration (see ImportSnapshot()'s `LOCK TABLE
+	 * print_jobs` and ClearOutbox()), but takes no lock a request outside the label/print
+	 * subsystem would ever queue behind. An operator still stops the application and its
+	 * label workers before importing - see docs/manual/getting-started.md - because this
+	 * import replaces the data every other request reads and writes, not because this class
+	 * leaves any of that unlocked.
+	 *
 	 * @param bool $force Skip the target-is-empty check; existing rows are truncated away
 	 * @param bool $applyRowMigrations Re-apply the migrations that rewrite rows rather than
 	 * schema - the HTML purifier and the API key hashing - to the rows this copy brought in;
@@ -399,6 +407,28 @@ class DatabaseImporter
 		try
 		{
 			LabelIdentityService::LockImport($this->Target);
+
+			// LockImport() is an advisory lock that only serialises against
+			// LabelIdentityService::Issue(); PrintAttemptService::Claim() never takes it, and
+			// claims print_jobs rows with `FOR UPDATE OF j` of its own (PrintAttemptService.php:50)
+			// instead. Without a table lock here, a worker could claim a job and be handed its
+			// payload between this line and ClearOutbox() dead-lettering the same job below -
+			// printing what this transaction is about to mark undeliverable. ACCESS EXCLUSIVE
+			// conflicts with the ROW SHARE table lock that FOR UPDATE needs before it can even
+			// start: a claim already in flight finishes first (this waits for it to commit or
+			// roll back), and a claim that has not started yet waits for this transaction instead
+			// - after which its own `o.dead_lettered_at IS NULL` check excludes the row
+			// ClearOutbox() just dead-lettered. Held until this transaction ends (commit or
+			// rollback), which covers ClearOutbox() below - see that method's docblock for the
+			// rest. Guarded on to_regclass() the same way every other optional-table check in
+			// this method is, for the synthetic single-migration-number fixtures
+			// SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE's docblock names.
+			if ($this->Target->query("SELECT to_regclass('print_jobs')")->fetchColumn() !== null)
+			{
+				$this->Target->exec('LOCK TABLE print_jobs IN ACCESS EXCLUSIVE MODE');
+				($this->Progress)('  print_jobs locked against concurrent print job claims for the rest of the import');
+			}
+
 			$hasLabels = $this->Target->query("SELECT to_regclass('labels')")->fetchColumn() !== null;
 			if ($hasLabels)
 			{
@@ -1014,19 +1044,25 @@ class DatabaseImporter
 	 * `Cancel()` refused a job whose one attempt had already ended as `already_claimed`
 	 * rather than letting it be cancelled, and `AuthorizeAnotherAttempt()` would bump
 	 * `attempts_authorized` for a job that could never be delivered.
-	 * `PrintAttemptService::Claim()` was never at risk here: its own
-	 * `WHERE ... AND o.dead_lettered_at IS NULL` (PrintAttemptService.php:48) already
-	 * excludes this exact row once it is dead-lettered, independent of `print_jobs.outcome`.
-	 * So the job is finished unconditionally, including one whose current attempt is still
-	 * outstanding: by the time this runs, ImportSnapshot()'s own copy loop has already
-	 * truncated `api_keys` - a common, replaced table - which cascades onto
-	 * `label_worker_credentials` (NOT_COPIED_TABLES; see the class docblock), so whatever
-	 * credential a worker was using to authenticate that attempt no longer exists. No
-	 * pre-import attempt can ever come back to claim or complete itself, so there is
-	 * nothing here to wait for. Reusing `PrintAttemptService.php:98`'s own outcome value
-	 * and columns, every job whose outbox row was just dead-lettered and which was not
-	 * already finished (`outcome IS NULL AND cancelled_at IS NULL` - a cancelled job stays
-	 * cancelled, and a job already `printed`/`sent` stays that) is finished the same way.
+	 * `PrintAttemptService::Claim()`'s own `WHERE ... AND o.dead_lettered_at IS NULL`
+	 * (PrintAttemptService.php:48) excludes this exact row once it is dead-lettered - but
+	 * only once it is. `LockImport()` alone does not stop a `Claim()` already running, or one
+	 * that starts right after: it is an advisory lock scoped to
+	 * `LabelIdentityService::Issue()`, and `Claim()`'s own `FOR UPDATE OF j`
+	 * (PrintAttemptService.php:50) never waits on it. ImportSnapshot() closes that gap with
+	 * `LOCK TABLE print_jobs IN ACCESS EXCLUSIVE MODE` immediately after `LockImport()` (see
+	 * that call site for how the lock mode forces a claim already in flight to finish first
+	 * and blocks a new one until this transaction ends). With it, no attempt claimed before
+	 * this transaction began is still running by the time this method dead-letters its outbox
+	 * row, and no new claim can start until the transaction commits - so the job really is
+	 * finished unconditionally, including one whose current attempt was still outstanding when
+	 * the transaction began: by then, `api_keys` (a common, replaced table) has already been
+	 * truncated too, cascading onto `label_worker_credentials` (NOT_COPIED_TABLES; see the
+	 * class docblock), so the credential that attempt authenticated with is gone as well.
+	 * Reusing `PrintAttemptService.php:98`'s own outcome value and columns, every job whose
+	 * outbox row was just dead-lettered and which was not already finished (`outcome IS NULL
+	 * AND cancelled_at IS NULL` - a cancelled job stays cancelled, and a job already
+	 * `printed`/`sent` stays that) is finished the same way.
 	 *
 	 * Never gated on $force: by the time this runs, AssertOutboxIsHandleable() has already
 	 * either refused (no --force, undelivered rows present) or been skipped (--force, or
