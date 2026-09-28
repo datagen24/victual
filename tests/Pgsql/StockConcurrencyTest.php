@@ -36,6 +36,13 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 	private const FAR_FUTURE_DATE = '2035-06-30';
 	private const PAST_DATE = '2020-01-15';
 
+	/**
+	 * ADR-0033's "never expires" sentinel (2026-09-27) - the only real date value
+	 * migrations/0290.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
+	 * above is a real, finite date and is never merge-eligible.
+	 */
+	private const NEVER_EXPIRES = '2999-12-31';
+
 	private static PDO $db;
 	private static \DI\Container $container;
 	private static StockApiController $stock;
@@ -725,8 +732,8 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		$insertStock = self::$db->prepare(
 			'INSERT INTO stock (product_id, amount, stock_id, best_before_date, purchased_date, location_id) VALUES (?, ?, ?, ?, ?, ?)'
 		);
-		$insertStock->execute([$productId, 3, $stockIdA, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
-		$insertStock->execute([$productId, 5, $stockIdB, self::FAR_FUTURE_DATE, self::PAST_DATE, self::$locationId]);
+		$insertStock->execute([$productId, 3, $stockIdA, self::NEVER_EXPIRES, self::PAST_DATE, self::$locationId]);
+		$insertStock->execute([$productId, 5, $stockIdB, self::NEVER_EXPIRES, self::PAST_DATE, self::$locationId]);
 
 		$connB = self::secondConnection();
 		$connB->beginTransaction();
@@ -741,7 +748,7 @@ class StockConcurrencyTest extends PgsqlSchemaTestCase
 		$connB->prepare('UPDATE stock SET amount = amount - 2 WHERE stock_id = ?')->execute([$stockIdB]);
 		$connB->prepare(
 			"INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, used_date, stock_id, transaction_type, price, user_id) VALUES (?, -2, ?, ?, current_date, ?, 'consume', 0, 9600)"
-		)->execute([$productId, self::FAR_FUTURE_DATE, self::PAST_DATE, $stockIdB]);
+		)->execute([$productId, self::NEVER_EXPIRES, self::PAST_DATE, $stockIdB]);
 		$connB->commit();
 
 		$result = self::finishSubprocess($subprocess);
