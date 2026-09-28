@@ -279,21 +279,29 @@ async function probe(browser, label, how, run)
 
 	// ---- stock entries: consume one entry ---------------------------------------------
 	// The only page using UndoStockBookingEntry, whose behaviour genuinely differs.
-	//
-	// Issue #610: this scenario only exercises the race it is meant to catch - a *sibling*
-	// stock entry of the same product being refreshed (and redrawing the whole table) while
-	// the just-consumed entry's own row is being hidden - when the product actually carries
-	// a second stock entry. ensureTwoStockEntries() guarantees that fixture regardless of
-	// what the demo data happens to provide.
-	await ensureTwoStockEntries(browser, productId);
 	await probe(browser, 'stockentries', 'stock entry consume -> toast Undo (UndoStockBookingEntry)', async page =>
 	{
 		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
 		await page.waitForTimeout(1200);
 		const button = page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first();
 		const stockRowId = await button.getAttribute('data-stockrow-id');
+
+		// Issue #610: this scenario only exercises the race it is meant to catch - a
+		// *sibling* stock entry of the same product being refreshed (and redrawing the
+		// whole table) while the just-consumed entry's own row is being hidden - when the
+		// product this row actually belongs to carries a second stock entry. The page is
+		// unfiltered, so the first consume button is not necessarily for the shared
+		// productId every other scenario books against; read the real product id off this
+		// button, ensure its fixture, then reload so the new entry is in the table before
+		// the same row is clicked.
+		const consumedProductId = await button.getAttribute('data-product-id');
+		await ensureTwoStockEntries(browser, consumedProductId);
+		await page.reload({ waitUntil: 'networkidle' });
+		await page.waitForTimeout(1200);
+
+		const reloadedButton = page.locator('a.stock-consume-button[data-stockrow-id="' + stockRowId + '"]');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
-			button.click());
+			reloadedButton.click());
 		await waitForUndoToast(page);
 
 		// Audit finding H10 / issue #499: this button consumes the entry's whole amount
@@ -302,33 +310,46 @@ async function probe(browser, label, how, run)
 		// body it read as "hide the row"; GET /stock/entry/{id} now answers the documented
 		// 400 for a gone id instead, which must still hide the row rather than surface
 		// DefaultErrorHandler's "A server error occured" toast. Waits for the row's own
-		// d-none class or its removal from the DOM, rather than a fixed delay (issue #579):
-		// a fixed 800ms raced animate.css 3.7's 500ms "faster" fade plus the refresh GET,
-		// and either one running long on a busy CI runner made the wait too short. Issue
-		// #610's fix removes the row through the DataTable's own API instead of a CSS fade,
-		// so "gone from the DOM entirely" is as valid an end state as "present with d-none".
+		// d-none class rather than a fixed delay (issue #579): a fixed 800ms raced
+		// animate.css 3.7's 500ms "faster" fade plus the refresh GET, and either one
+		// running long on a busy CI runner made the wait too short. Issue #610's fix
+		// applies d-none synchronously rather than in an animationend callback that a
+		// concurrent sibling-row redraw could cancel, and deliberately keeps the row's
+		// node in the DOM (rather than removing it) so Undo can find and restore it below.
 		await page.waitForFunction(id =>
 		{
 			const row = document.querySelector('#stock-' + id + '-row');
 			const err = document.querySelector('#toast-container .toast-error');
-			return !row || row.classList.contains('d-none') || err;
+			return (row && row.classList.contains('d-none')) || err;
 		}, stockRowId, { timeout: 15000 });
 
 		if (await page.locator('#toast-container .toast-error').count() > 0)
 		{
 			throw new Error('the consumed entry\'s row refresh surfaced a server-error toast instead of hiding the row (H10 / issue #499)');
 		}
-		const rowLocator = page.locator('#stock-' + stockRowId + '-row');
-		if (await rowLocator.count() > 0)
+		const rowClass = await page.locator('#stock-' + stockRowId + '-row').getAttribute('class');
+		if (!rowClass || !rowClass.split(/\s+/).includes('d-none'))
 		{
-			const rowClass = await rowLocator.getAttribute('class');
-			if (!rowClass || !rowClass.split(/\s+/).includes('d-none'))
-			{
-				throw new Error('the consumed entry\'s row was neither removed nor hidden after its GET /stock/entry/{id} refresh (H10 / issue #499 / issue #610): class="' + rowClass + '"');
-			}
+			throw new Error('the consumed entry\'s row was not hidden after its GET /stock/entry/{id} refresh (H10 / issue #499): class="' + rowClass + '"');
 		}
 
+		// Issue #610: StockService::UndoBooking() rebuilds a whole-take consume's entry
+		// under its original row id, and UndoStockBookingEntry()'s own "ProductChanged"
+		// broadcast is how this page notices - RefreshStockEntryRow() gets a 200 for a row
+		// it still has marked d-none, and reloads the page so the restored entry renders
+		// normally. Wait for that reload (registering the waiter before the click, since
+		// the reload itself follows a couple of message round trips after the undo POST
+		// resolves) rather than assuming clickUndoInToast's own wait covers it, then assert
+		// the row is back and visible instead of stuck hidden.
+		const reloadWait = page.waitForEvent('load', { timeout: 20000 }).catch(() => null);
 		await clickUndoInToast(page);
+		await reloadWait;
+		await page.waitForFunction(id =>
+		{
+			const row = document.querySelector('#stock-' + id + '-row');
+			return !!row && !row.classList.contains('d-none');
+		}, stockRowId, { timeout: 20000 });
+
 		return readUndoneCount(page, 'stock/bookings/' + booking[0].id);
 	});
 

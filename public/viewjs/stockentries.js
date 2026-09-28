@@ -368,10 +368,18 @@ function RefreshStockEntryRow(stockRowId)
 
 			if (result.amount == 0)
 			{
-				animateCSS("#stock-" + stockRowId + "-row", "fadeOut", function()
-				{
-					$("#stock-" + stockRowId + "-row").addClass("d-none");
-				});
+				// Hides the row synchronously rather than waiting on the animate.css
+				// `animationend` event (issue #610): refreshing a *sibling* stock entry of
+				// the same product - which the "ProductChanged" broadcast below also
+				// triggers - ends by calling stockEntriesTable.draw(), a full DataTables
+				// redraw that reattaches every row's DOM node. That silently cancels any
+				// in-flight CSS animation on this row and drops its `animationend`
+				// callback right along with it, leaving the row stuck visible forever.
+				// Adding `d-none` immediately removes that dependency, and (unlike
+				// removing the row through the DataTable API) leaves its node in the DOM
+				// so a later Undo restoring this same id can still find it via the
+				// `stockRow.hasClass("d-none")` reload branch above.
+				$("#stock-" + stockRowId + "-row").addClass("d-none");
 			}
 			else
 			{
@@ -545,27 +553,24 @@ function RefreshStockEntryRow(stockRowId)
 
 				if (isMissingStockEntry)
 				{
-					// Removes the row through the table's own API instead of a CSS fade timed
-					// by `animationend` (issue #610). This handler and the "ProductChanged"
-					// message handler below can both end up calling RefreshStockEntryRow() for
-					// this very row from the same booking (a direct call plus a self-received
-					// broadcast loopback), and separately, that broadcast also refreshes any
-					// *sibling* stock entry of the same product - whose own success handler
-					// calls stockEntriesTable.draw(). Any of those redraws reattaches every
-					// row's DOM node, including this one's, which silently cancels an in-flight
-					// CSS animation and drops its `animationend` callback with it - leaving the
-					// row stuck visible, since nothing else would ever retry hiding it.
-					// row().remove().draw() takes the row out of the table's data and DOM in
-					// one synchronous step, so no concurrent redraw - however it is triggered -
-					// can strand it half-animated. row.any() guards the case where this same
-					// row was already removed by the other, redundant call.
-					var row = stockEntriesTable.row("#stock-" + stockRowId + "-row");
-
-					if (row.any())
-					{
-						row.remove().draw(false);
-					}
-
+					// Hides the row synchronously instead of a CSS fade timed by
+					// `animationend` (issue #610): refreshing a *sibling* stock entry of the
+					// same product - which the same "ProductChanged" broadcast that reaches
+					// this row also triggers - ends by calling stockEntriesTable.draw(), a
+					// full DataTables redraw that reattaches every row's DOM node. That
+					// silently cancels any in-flight CSS animation on this row and drops its
+					// `animationend` callback right along with it, leaving the row stuck
+					// visible forever, since nothing else would ever retry hiding it.
+					//
+					// This deliberately does NOT remove the row from the table (e.g. via
+					// row().remove()): an Undo of this exact booking recreates the entry
+					// under the same id (StockService::UndoBooking()), and the
+					// "ProductChanged" broadcast that follows is how this row notices and
+					// restores itself - by finding this same "#stock-<id>-row" node still
+					// d-none'd and reloading the page (the branch above). Removing the node
+					// would leave nothing for that lookup, and for the .stock-consume-button
+					// selector the message handler below matches rows by, to find.
+					$("#stock-" + stockRowId + "-row").addClass("d-none");
 					return;
 				}
 			}
@@ -581,6 +586,15 @@ function RefreshStockEntryRow(stockRowId)
 // back here, since Victual.GetTopmostWindow() is this window when not embedded - so the row
 // the consume handler already refreshed directly is skipped here (issue #610): otherwise
 // this fires a second, redundant RefreshStockEntryRow() for it, racing the first one.
+//
+// lastSelfRefreshedStockRowId is cleared at the end of *this* handling, before control
+// returns to the browser's event loop, so it only ever suppresses this one echo of the
+// consume's own broadcast. A later "ProductChanged" - in particular the one
+// UndoStockBookingEntry() sends after the user clicks the toast's Undo link, which is how
+// this row notices the entry StockService::UndoBooking() recreated under the same id and
+// restores itself (the reload branch in RefreshStockEntryRow() above) - always arrives
+// after this clears it back to null, so Undo's own refresh of this same row is never
+// skipped.
 $(window).on("message", function(e)
 {
 	var data = e.originalEvent.data;
