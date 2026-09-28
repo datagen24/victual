@@ -12,32 +12,30 @@ use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * Issue #584, StockService::UndoBooking() end of the fix: with the `stock` identity
- * sequence deliberately left at X - 1 (only a migration or import resync does this in
- * production, #555) and nothing else drawing from it, undoing a whole-take CONSUME
- * booking must still reuse its deleted row's own id (X) exactly as #531/#577 intended.
+ * Issue #584, the unraced control case (this class does NOT exercise any race - see
+ * tests/Pgsql/UndoSequenceForcedRaceTest.php and tests/Pgsql/UndoStolenRowInsertTest.php
+ * for the two windows #584 actually closes, both forced deterministically through a test
+ * seam rather than timed): with the `stock` identity sequence deliberately left at X - 1
+ * (only a migration or import resync does this in production, #555) and nothing else
+ * drawing from it or contending for it, undoing a whole-take CONSUME booking must still
+ * reuse its deleted row's own id (X) exactly as #531/#577 intended - confirming the fix
+ * does not regress the ordinary path once layered underneath the real undo endpoint.
  *
- * The raced case itself (a concurrent nextval() landing inside
- * PostgresDialect::AdvanceIdentitySequence()'s own read-to-draw window) was not
- * reproducible through this repository's suite.sh harness: that window is two back-to-
- * back statements on one connection, open for at most a handful of microseconds, and
- * tests/Pgsql/sequence-race-subprocess-helper.php's subprocess - the only concurrency
- * primitive available here, per this remediation's rules against writing a bespoke
- * runner - either has not yet connected (losing the race entirely, the whole call
- * completing first) or, once its tight loop is running, draws roughly 14,000 values/second
- * in this environment, well over two orders of magnitude faster than any of this harness's
- * own round trips - so by the time this method's own internal read executes, the sequence
- * has invariably already advanced far past the target, landing in the (explicitly
- * unguarded, per the issue's own text - "when the sequence is already past X, keep
- * today's true") already-past fast path rather than the read-to-draw window the fix
- * actually closes. A repeated-iteration variant of this same setup, run directly against
- * PostgresDialect::AdvanceIdentitySequence() over a 4-second window, produced zero false
- * results across 4,701 attempts even with the fix applied, confirming this rather than
- * a flawed one-shot attempt; reported to the master rather than reproduced. This class
- * instead confirms the fix does not regress the unraced, ordinary path once layered
- * underneath the real undo endpoint.
+ * An earlier version of this class attempted the race with a genuinely separate OS
+ * process (tests/Pgsql/sequence-race-subprocess-helper.php) hammering nextval() on the
+ * same sequence. That subprocess could not reliably land inside
+ * PostgresDialect::AdvanceIdentitySequence()'s own read-to-draw window - two back-to-back
+ * statements on one connection, open for at most a handful of microseconds - either
+ * because it had not yet connected (losing the race entirely) or because, once running,
+ * it drew roughly 14,000 values/second in this environment, well over two orders of
+ * magnitude faster than any round trip this harness could make, so the sequence was
+ * invariably already past the target by the time the read executed. A repeated-iteration
+ * variant of that same setup, run directly against AdvanceIdentitySequence() over a
+ * 4-second window, produced zero false results across 4,701 attempts even with the fix
+ * applied, confirming the harness could not discriminate the fix either way rather than
+ * indicating a flawed one-shot attempt.
  */
-class UndoSequenceRaceRebuildTest extends PgsqlSchemaTestCase
+class UndoSequenceReuseUnracedTest extends PgsqlSchemaTestCase
 {
 	private static PDO $db;
 	private static \DI\Container $container;

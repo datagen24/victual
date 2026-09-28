@@ -17,7 +17,7 @@ use PDOStatement;
  * orders of magnitude faster than any round trip this test environment can make - so the
  * sequence is invariably already far past the target by the time the read executes,
  * landing in AdvanceIdentitySequence()'s own already-past fast path rather than the
- * window this fix actually closes (see tests/Pgsql/UndoSequenceRaceRebuildTest.php's own
+ * window this fix actually closes (see tests/Pgsql/UndoSequenceReuseUnracedTest.php's own
  * docblock for that empirical finding).
  *
  * AdvanceIdentitySequence() already receives its connection as a plain \PDO parameter

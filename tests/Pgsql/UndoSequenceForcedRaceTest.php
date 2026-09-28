@@ -15,7 +15,7 @@ use Victual\Tests\Support\SequenceReadRacingPdo;
 
 /**
  * Issue #584, forced deterministically rather than raced by timing (see
- * tests/Pgsql/UndoSequenceRaceRebuildTest.php's own docblock for why a genuinely
+ * tests/Pgsql/UndoSequenceReuseUnracedTest.php's own docblock for why a genuinely
  * concurrent OS process could not land inside the actual race window in this
  * environment).
  *
