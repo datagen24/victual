@@ -335,6 +335,7 @@
 							<div class="d-flex justify-content-between align-items-center">
 								<h3 class="card-title mb-0">{{ $recipe->name }}</h3>
 								<div class="card-icons d-flex flex-wrap justify-content-end flex-shrink-1">
+									@if(Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_STOCK_CONSUME) && (empty($recipe->product_id) || Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_STOCK_PURCHASE)))
 									<a class="btn @if(!VICTUAL_FEATURE_FLAG_STOCK) d-none @endif recipe-consume"
 										href="#"
 										data-toggle="tooltip"
@@ -343,6 +344,8 @@
 										data-recipe-name="{{ $recipe->name }}">
 										<i class="fa-solid fa-utensils"></i>
 									</a>
+									@endif
+									@if(Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_SHOPPINGLIST_ITEMS_ADD))
 									<a class="btn @if(!VICTUAL_FEATURE_FLAG_SHOPPINGLIST) d-none @endif recipe-shopping-list @if(FindObjectInArrayByPropertyValue($recipesResolved, 'recipe_id', $recipe->id)->need_fulfilled_with_shopping_list == 1) disabled @endif"
 										href="#"
 										data-toggle="tooltip"
@@ -351,6 +354,7 @@
 										data-recipe-name="{{ $recipe->name }}">
 										<i class="fa-solid fa-cart-plus"></i>
 									</a>
+									@endif
 									<a class="btn recipe-fullscreen hide-when-embedded"
 										id="selectedRecipeToggleFullscreenButton"
 										href="#"
@@ -371,6 +375,7 @@
 						<div class="mb-4 @if(!empty($recipe->picture_file_name)) d-none @else d-flex @endif d-print-block justify-content-between align-items-center">
 							<h1 class="card-title mb-0">{{ $recipe->name }}</h1>
 							<div class="card-icons d-flex flex-wrap justify-content-end flex-shrink-1 d-print-none">
+								@if(Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_STOCK_CONSUME) && (empty($recipe->product_id) || Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_STOCK_PURCHASE)))
 								<a class="btn recipe-consume"
 									href="#"
 									data-toggle="tooltip"
@@ -379,6 +384,8 @@
 									data-recipe-name="{{ $recipe->name }}">
 									<i class="fa-solid fa-utensils"></i>
 								</a>
+								@endif
+								@if(Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_SHOPPINGLIST_ITEMS_ADD))
 								<a class="btn recipe-shopping-list @if(FindObjectInArrayByPropertyValue($recipesResolved, 'recipe_id', $recipe->id)->need_fulfilled_with_shopping_list == 1) disabled @endif"
 									href="#"
 									data-toggle="tooltip"
@@ -387,6 +394,7 @@
 									data-recipe-name="{{ $recipe->name }}">
 									<i class="fa-solid fa-cart-plus"></i>
 								</a>
+								@endif
 								<a class=" btn recipe-fullscreen hide-when-embedded"
 									href="#"
 									data-toggle="tooltip"

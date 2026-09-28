@@ -3,6 +3,7 @@
 namespace Victual\Services;
 
 use LessQL\Result;
+use Victual\Controllers\Users\User;
 
 /**
  * Recipe operations beyond plain CRUD: shopping list integration, consuming a recipe's
@@ -98,10 +99,27 @@ class RecipesService extends BaseService
 	 * amount back in as self-production. For meal plan shadow recipes the produced
 	 * product and servings come from the original recipe / meal plan entry.
 	 *
+	 * A self-production is a stock addition like any other, so it also requires
+	 * STOCK_PURCHASE in addition to STOCK_CONSUME (maintainer decision on issue #532,
+	 * 2026-09-26) - including when the recipe is a meal-plan shadow whose *original*
+	 * recipe produces a product. $request carries that check: RecipesApiController passes
+	 * the real request, so an HTTP call is enforced; a caller that passes none (the many
+	 * direct calls to this method from tests and dev tooling that predate this permission,
+	 * exercising the booking logic itself rather than authorization) is not checked, the
+	 * same as before this fix - the enforcement boundary stays the controller layer. This
+	 * only has to sit inside the transaction below, rather than in the controller, because
+	 * *what* is being authorized - the resolved output, after following a meal-plan shadow
+	 * to its original recipe - is only known once the lock the transaction takes is held.
+	 *
 	 * @param int $recipeId
+	 * @param \Psr\Http\Message\ServerRequestInterface|null $request The current request, to
+	 *              check STOCK_PURCHASE against when the resolved output produces a
+	 *              product; null skips that check (see above).
 	 * @throws \Exception When the recipe does not exist
+	 * @throws \Victual\Controllers\Users\PermissionMissingException When $request is given
+	 *              and the caller lacks STOCK_PURCHASE for a recipe that produces stock
 	 */
-	public function ConsumeRecipe($recipeId)
+	public function ConsumeRecipe($recipeId, $request = null)
 	{
 		if (!$this->RecipeExists($recipeId))
 		{
@@ -136,7 +154,7 @@ class RecipesService extends BaseService
 			$outputProductId = $this->DB->recipes()->where('id = :1', $outputMealPlanEntry->recipe_id)->fetch()->product_id;
 		}
 
-		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $outputProductId, $recipeId, &$transactionId)
+		DatabaseService::GetInstance()->InTransaction(function () use ($ingredientProductIds, $outputProductId, $recipeId, $request, &$transactionId)
 		{
 			// A recipe can name several ingredient products, and ConsumeProduct() below
 			// always substitutes sub products for a recipe consume, so each ingredient's own
@@ -164,31 +182,11 @@ class RecipesService extends BaseService
 			}
 			DatabaseService::GetInstance()->LockProductsStock($lockSet);
 
-			// Re-read now that every lock in the set above is held, so stock_amount
-			// reflects any booking that committed while this call waited on it.
-			$recipePositions = $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll();
-
-			foreach ($recipePositions as $recipePosition)
-			{
-				if ($recipePosition->only_check_single_unit_in_stock == 0 && StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0)
-				{
-					$amount = $recipePosition->recipe_amount;
-					if (StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0 && StockService::CompareAmounts($recipePosition->stock_amount, $recipePosition->recipe_amount) < 0)
-					{
-						$amount = $recipePosition->stock_amount;
-					}
-
-					StockService::GetInstance()->ConsumeProduct($recipePosition->product_id, $amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', $recipeId, null, $transactionId, true, true);
-				}
-			}
-
-			// The recipe's own "produces product" is booked back in as self-production inside
-			// the same transaction as the ingredient consumption above (issue #494/H5): an
-			// output product that cannot be booked - inactive, for instance - must not leave
-			// the ingredients it was made from consumed. Re-read fresh under the lock, for the
-			// same reason the ingredient positions above are: recipes_resolved.costs_per_serving
-			// depends on ingredient prices a concurrent purchase could have changed while this
-			// call queued.
+			// The recipe's own "produces product", resolved once now that every lock in the
+			// set above is held (issue #532): following a meal-plan shadow to its original
+			// recipe here, rather than separately at booking time below, is what lets the
+			// STOCK_PURCHASE check right after and the self-production booking further down
+			// agree on what "the output" is, instead of each asking the question on its own.
 			$recipe = $this->DB->recipes()->where('id = :1', $recipeId)->fetch();
 			$productId = $recipe->product_id;
 			$amount = $recipe->desired_servings;
@@ -201,6 +199,44 @@ class RecipesService extends BaseService
 				$amount = $mealPlanEntry->recipe_servings;
 			}
 
+			// A consumption that produces stock is a stock addition like any other and needs
+			// STOCK_PURCHASE in addition to STOCK_CONSUME (maintainer decision on issue #532,
+			// 2026-09-26): the built-in CHILD role holds STOCK_CONSUME without STOCK_PURCHASE,
+			// and used to be able to add stock this way. Checked here, before any write (the
+			// ingredient consumption below is one), against the output resolved just above so
+			// a meal-plan shadow is judged by what its original recipe produces rather than by
+			// the shadow's own (always empty) product_id.
+			if (!empty($productId) && $request !== null)
+			{
+				User::CheckPermission($request, User::PERMISSION_STOCK_PURCHASE);
+			}
+
+			// Re-read now that every lock in the set above is held, so stock_amount
+			// reflects any booking that committed while this call waited on it.
+			$recipePositions = $this->DB->recipes_pos_resolved()->where('recipe_id', $recipeId)->fetchAll();
+
+			foreach ($recipePositions as $recipePosition)
+			{
+				if ($recipePosition->only_check_single_unit_in_stock == 0 && StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0)
+				{
+					$consumeAmount = $recipePosition->recipe_amount;
+					if (StockService::CompareAmounts($recipePosition->stock_amount, 0) > 0 && StockService::CompareAmounts($recipePosition->stock_amount, $recipePosition->recipe_amount) < 0)
+					{
+						$consumeAmount = $recipePosition->stock_amount;
+					}
+
+					StockService::GetInstance()->ConsumeProduct($recipePosition->product_id, $consumeAmount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', $recipeId, null, $transactionId, true, true);
+				}
+			}
+
+			// The recipe's own "produces product" is booked back in as self-production inside
+			// the same transaction as the ingredient consumption above (issue #494/H5): an
+			// output product that cannot be booked - inactive, for instance - must not leave
+			// the ingredients it was made from consumed. $recipe/$productId/$amount are the
+			// single resolution from above (issue #532), not re-read here - recipes_resolved
+			// below is still re-read fresh under the lock, because unlike them,
+			// costs_per_serving depends on ingredient prices a concurrent purchase could have
+			// changed while this call queued.
 			if (!empty($productId))
 			{
 				$product = $this->DB->products()->where('id = :1', $productId)->fetch();

@@ -19,11 +19,14 @@ class RecipesApiController extends BaseApiController
 	 * POST /api/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist - puts all
 	 * ingredients not currently in stock onto the shopping list; the optional body field
 	 * excludedProductIds (array of product ids) skips the given products.
-	 * Requires the SHOPPINGLIST_ITEMS_ADD permission (403 otherwise).
+	 * Requires RECIPES_VIEW to read the recipe and SHOPPINGLIST_ITEMS_ADD to write the
+	 * shopping list (403 otherwise; checked in that order, so a caller without RECIPES_VIEW
+	 * cannot learn whether the recipe exists - issue #532).
 	 * Returns 204 on success or a 400 error response.
 	 */
 	public function AddNotFulfilledProductsToShoppingList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		User::CheckPermission($request, User::PERMISSION_SHOPPINGLIST_ITEMS_ADD);
 
 		$requestBody = $this->GetParsedAndFilteredRequestBody($request);
@@ -44,16 +47,21 @@ class RecipesApiController extends BaseApiController
 
 	/**
 	 * POST /api/recipes/{recipeId}/consume - consumes all ingredients of the recipe
-	 * from stock. Requires the STOCK_CONSUME permission (403 otherwise).
+	 * from stock. Requires RECIPES_VIEW to read the recipe and STOCK_CONSUME to consume it
+	 * (403 otherwise; checked in that order, so a caller without RECIPES_VIEW cannot learn
+	 * whether the recipe exists). A recipe that produces a product also requires
+	 * STOCK_PURCHASE, checked once the output is resolved - including through a meal-plan
+	 * shadow's original recipe (maintainer decision on issue #532, 2026-09-26).
 	 * Returns 204 on success or a 400 error response.
 	 */
 	public function ConsumeRecipe(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
 		User::CheckPermission($request, User::PERMISSION_STOCK_CONSUME);
 
-		return $this->HandleApiCall($response, function () use ($args, $response)
+		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			RecipesService::GetInstance()->ConsumeRecipe($args['recipeId']);
+			RecipesService::GetInstance()->ConsumeRecipe($args['recipeId'], $request);
 			return $this->EmptyApiResponse($response);
 		});
 	}

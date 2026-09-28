@@ -22,6 +22,7 @@
 		<testsuite name="rbac">
 			<file>tests/Pgsql/RbacTest.php</file>
 			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
+			<file>tests/Pgsql/RecipeRouteAuthzTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>
