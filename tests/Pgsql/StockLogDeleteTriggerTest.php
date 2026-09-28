@@ -66,6 +66,11 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 		// (trg_cascade_product_removal -> `DELETE FROM stock_log WHERE product_id = OLD.id`).
 		self::insertProduct(9614, 'DelTrigProductE');
 		self::insertProduct(9615, 'DelTrigProductF');
+
+		// productG (9616, corrupted with a missing cache row) and productH (9617, corrupted
+		// with a stale one): reconcile_stock_log_cache()'s own regression test.
+		self::insertProduct(9616, 'DelTrigProductG');
+		self::insertProduct(9617, 'DelTrigProductH');
 	}
 
 	private static function insertProduct(int $id, string $name): void
@@ -271,5 +276,49 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 
 		self::assertSame($productFAveragePriceBefore, self::averagePriceCacheRow(9615), 'productF average-price cache row must be unaffected by deleting an unrelated product with a coinciding ledger-row id');
 		self::assertSame($productFLastPurchasedBefore, self::lastPurchasedCacheRow(9615), 'productF last-purchased cache row must be unaffected by deleting an unrelated product with a coinciding ledger-row id');
+	}
+
+	/**
+	 * CodeRabbit finding 4124417575 (Major, data integrity): fixing the triggers only
+	 * repairs FUTURE writes. An install that already ran under the old triggers can have
+	 * corruption on disk right now - a stale cache row for a product the views no longer
+	 * return anything for, and a missing cache row for a product the views still do.
+	 * migrations/0292.pgsql.sql also calls reconcile_stock_log_cache() once, reusing
+	 * rebuild_stock_log_cache_for_product() rather than a second copy of the view logic.
+	 *
+	 * This deliberately builds both kinds of corruption directly against the cache
+	 * tables - they have no trigger of their own, so writing to them bypasses the (already
+	 * fixed) stock_log triggers entirely, reproducing exactly what the OLD triggers left
+	 * behind on an upgraded install without needing to un-fix anything - then calls
+	 * reconcile_stock_log_cache() the same way migrations/0292.pgsql.sql does, and asserts
+	 * both caches end up equal to what their views compute.
+	 */
+	public function testReconcileRepairsHistoricCacheCorruption(): void
+	{
+		// productG: a real booking (the view has a price for it), but no cache row -
+		// the "missing row" corruption.
+		self::$db->exec("INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) "
+			. "VALUES (9616, 1, '2035-01-01', '2026-01-01', 'deltrig-stock-g', 'purchase', 12.00, 0, 9000)");
+		self::$db->exec('DELETE FROM cache__products_average_price WHERE product_id = 9616');
+		self::$db->exec('DELETE FROM cache__products_last_purchased WHERE product_id = 9616');
+
+		self::assertNotNull(self::averagePriceViewRow(9616), 'sanity: the view has a price for productG');
+		self::assertNull(self::averagePriceCacheRow(9616), 'sanity: the cache was deliberately corrupted to have no row for productG');
+
+		// productH: no stock_log rows at all (the view returns nothing for it), but a
+		// cache row exists anyway - the "stale row" corruption.
+		self::$db->exec("INSERT INTO cache__products_average_price (product_id, price) VALUES (9617, 999.99)");
+		self::$db->exec("INSERT INTO cache__products_last_purchased (product_id, amount, price) VALUES (9617, 5, 999.99)");
+
+		self::assertNull(self::averagePriceViewRow(9617), 'sanity: the view has nothing for productH (no bookings)');
+		self::assertNotNull(self::averagePriceCacheRow(9617), 'sanity: the cache was deliberately corrupted to have a stale row for productH');
+
+		self::$db->exec('SELECT reconcile_stock_log_cache()');
+
+		self::assertSame(self::averagePriceViewRow(9616), self::averagePriceCacheRow(9616), 'reconcile_stock_log_cache() rebuilds the missing average-price cache row for productG to match the view');
+		self::assertSame(self::lastPurchasedViewRow(9616), self::lastPurchasedCacheRow(9616), 'reconcile_stock_log_cache() rebuilds the missing last-purchased cache row for productG to match the view');
+
+		self::assertNull(self::averagePriceCacheRow(9617), 'reconcile_stock_log_cache() removes the stale average-price cache row for productH');
+		self::assertNull(self::lastPurchasedCacheRow(9617), 'reconcile_stock_log_cache() removes the stale last-purchased cache row for productH');
 	}
 }

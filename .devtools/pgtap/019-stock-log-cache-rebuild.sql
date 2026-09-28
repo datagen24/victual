@@ -20,8 +20,14 @@
 -- D. DELETE with the original issue #588 id coincidence (a stock_log row's own id equal
 --    to an unrelated product's id) - that other product's cache must be untouched
 --    (trg_stock_log_DEL keyed on OLD.product_id, not OLD.id).
+--
+-- E. CodeRabbit finding 4124417575: reconcile_stock_log_cache() repairs corruption that
+--    already exists on disk from the OLD triggers - a stale cache row nothing backs any
+--    more, and a missing cache row for a product the view still returns a price for -
+--    reusing rebuild_stock_log_cache_for_product() rather than a second copy of the view
+--    logic, exactly as this migration calls it once for every existing installation.
 
-SELECT plan(8);
+SELECT plan(10);
 
 INSERT INTO locations (name) VALUES ('Spike19 location');
 INSERT INTO quantity_units (name) VALUES ('Spike19 qu');
@@ -109,6 +115,41 @@ SELECT is(
 	(SELECT price FROM cache__products_average_price WHERE product_id = (SELECT id FROM products WHERE name = 'Spike19 productF')),
 	8.00::double precision,
 	'productF''s cache is untouched by deleting an unrelated booking whose own id happens to equal productF''s id (stock_log_DEL)'
+);
+
+-- E: reconcile_stock_log_cache() repairs historic corruption directly, bypassing the
+-- (already-fixed) triggers entirely - cache__ rows have no trigger of their own, so
+-- writing to them directly reproduces exactly what the OLD triggers left behind on an
+-- upgraded install without needing to un-fix anything.
+INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES
+	('Spike19 productG', (SELECT id FROM locations WHERE name = 'Spike19 location'), (SELECT id FROM quantity_units WHERE name = 'Spike19 qu'), (SELECT id FROM quantity_units WHERE name = 'Spike19 qu'));
+INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) VALUES (
+	(SELECT id FROM products WHERE name = 'Spike19 productG'), 1, '2035-01-01', '2026-01-01', 'spike19-stock-g', 'purchase', 12.00, 0, 9000
+);
+-- Missing-row corruption: the view still returns a price for productG, but its cache row
+-- is gone (as the old UPD trigger's "never removes, never (re)inserts on this path" gap
+-- could leave it, or a row simply never written by whatever wrote it upstream).
+DELETE FROM cache__products_average_price WHERE product_id = (SELECT id FROM products WHERE name = 'Spike19 productG');
+DELETE FROM cache__products_last_purchased WHERE product_id = (SELECT id FROM products WHERE name = 'Spike19 productG');
+
+-- Stale-row corruption: productH has no stock_log rows at all (a deleted product, or one
+-- the old DEL trigger's OLD.id confusion wrote into by mistake), yet a cache row exists
+-- for it.
+INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES
+	('Spike19 productH', (SELECT id FROM locations WHERE name = 'Spike19 location'), (SELECT id FROM quantity_units WHERE name = 'Spike19 qu'), (SELECT id FROM quantity_units WHERE name = 'Spike19 qu'));
+INSERT INTO cache__products_average_price (product_id, price) VALUES
+	((SELECT id FROM products WHERE name = 'Spike19 productH'), 999.99);
+
+SELECT reconcile_stock_log_cache();
+
+SELECT is(
+	(SELECT price FROM cache__products_average_price WHERE product_id = (SELECT id FROM products WHERE name = 'Spike19 productG')),
+	12.00::double precision,
+	'reconcile_stock_log_cache() rebuilds a missing cache row for a product the view still returns a price for'
+);
+SELECT ok(
+	(SELECT count(*) FROM cache__products_average_price WHERE product_id = (SELECT id FROM products WHERE name = 'Spike19 productH')) = 0,
+	'reconcile_stock_log_cache() removes a stale cache row for a product the view returns nothing for'
 );
 
 SELECT * FROM finish();

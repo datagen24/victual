@@ -125,3 +125,64 @@ END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER stock_log_DEL AFTER DELETE ON stock_log
 FOR EACH ROW EXECUTE FUNCTION trg_stock_log_DEL();
+
+-- CodeRabbit finding 4124417575 (Major, data integrity): everything above fixes FUTURE
+-- writes only. An install that already ran under the old triggers can have both kinds of
+-- corruption on disk right now - a cache row for some unrelated product that the old DEL
+-- trigger's OLD.id confusion wiped in the past leaves that product looking like it has no
+-- price at all, and a cache row the old UPD trigger left behind after an undo (the bug
+-- round 2 of this issue fixed) shows a stale price nothing backs any more. Recomputing
+-- trigger definitions does not touch a single existing row, so this migration also
+-- reconciles both cache tables once, reusing the same rebuild_stock_log_cache_for_product()
+-- the fixed triggers call rather than a second copy of the view logic.
+--
+-- reconcile_stock_log_cache() is its own function, not an inline DO block, for the same
+-- reason rebuild_stock_log_cache_for_product() is its own function: so a regression test
+-- can call it directly (StockLogCacheReconcileTest.php builds the exact corruption this
+-- migration fixes on an already-migrated schema, calls this function the same way the
+-- migration does below, and asserts both caches end up equal to their views) rather than
+-- being limited to re-running the whole migration.
+--
+-- Runs as the migration owner (deploy/postgres/roles.sql: victual_migrate owns the schema
+-- and everything in it), so no grant beyond what migrations already have is needed for
+-- this or for any narrower runtime role - neither victual_app (already has SELECT/INSERT/
+-- UPDATE/DELETE on every table) nor bin/victual-compact-stock's own separate role, which
+-- never runs a migration. It also runs inside this migration's own transaction: every
+-- migration file - SQL or PHP - is applied inside a single transaction by
+-- DatabaseMigrationService (services/DatabaseMigrationService.php), the same one the
+-- CREATE FUNCTION/CREATE TRIGGER statements above already run in, so a reconciliation that
+-- fails partway rolls back with the rest of this file rather than leaving the schema
+-- migrated but the data only partly repaired.
+CREATE OR REPLACE FUNCTION reconcile_stock_log_cache() RETURNS VOID AS $$
+DECLARE
+	affected_product_id INTEGER;
+BEGIN
+	-- Every product_id either cache table currently has a row for, plus every product_id
+	-- stock_log has a row for (a product whose cache is entirely missing a row, never
+	-- written at all by some already-fixed path, is exactly the "missing row" corruption
+	-- this reconciliation also has to repair) - rebuilt one at a time through the same
+	-- helper the triggers use, which itself replaces or removes each cache row to match
+	-- what the views currently compute.
+	FOR affected_product_id IN
+		SELECT product_id FROM cache__products_average_price
+		UNION
+		SELECT product_id FROM cache__products_last_purchased
+		UNION
+		SELECT product_id FROM stock_log
+	LOOP
+		PERFORM rebuild_stock_log_cache_for_product(affected_product_id);
+	END LOOP;
+
+	-- Belt and braces beyond the loop above: a cache row for a product_id that is not in
+	-- `products` at all (the deleted-product orphan this same issue's DEL fix already stops
+	-- happening going forward) is removed outright, whether or not that id still has any
+	-- stock_log row of its own to have driven the loop above.
+	DELETE FROM cache__products_average_price
+	WHERE product_id NOT IN (SELECT id FROM products);
+
+	DELETE FROM cache__products_last_purchased
+	WHERE product_id NOT IN (SELECT id FROM products);
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT reconcile_stock_log_cache();

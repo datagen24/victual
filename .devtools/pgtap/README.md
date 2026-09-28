@@ -39,6 +39,12 @@ UPDATE that moves a booking to a different `product_id`
 (`StockService::MergeProducts()`'s shape), a DELETE that leaves another booking of the same
 product, and a DELETE with the issue's own id/`product_id` coincidence.
 
+CodeRabbit finding 4124417575 (Major): fixing the triggers repairs future writes only.
+Migration 0292 also calls `reconcile_stock_log_cache()` once, reusing
+`rebuild_stock_log_cache_for_product()` to repair corruption the old triggers already left
+on an upgraded install. A fifth case in the same file covers a missing cache row and a
+stale one.
+
 ## The list
 
 Migrations 0001-0255 are SQLite-only history that PostgreSQL never runs (it loads the
@@ -71,6 +77,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
 | `rebuild_stock_log_cache_for_product` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
+| `reconcile_stock_log_cache` | function | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 
