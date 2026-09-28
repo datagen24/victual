@@ -1,8 +1,9 @@
 # ADR-0034 acceptance experiment
 
-The roll-up experiment passes sixteen PostgreSQL checks. Nine of those checks fail
-against the current view. This establishes the accepted calculation including inactive intermediate
-groups; the browser checks below complete [ADR-0034's prerequisites](../../docs/adr/0034-product-group-minimum-counts-descendant-groups.md#acceptance-prerequisites).
+The roll-up experiment passes sixteen PostgreSQL checks. Nine of those checks failed
+against the pre-0293 direct-membership view (commit `956c5a07`). This establishes the
+accepted calculation including inactive intermediate groups; the browser checks below
+complete [ADR-0034's prerequisites](../../docs/adr/0034-product-group-minimum-counts-descendant-groups.md#acceptance-prerequisites).
 
 ## Run
 
@@ -16,10 +17,22 @@ Set `PGHOST`, `PGPORT`, `PGUSER`, and `PGPASSWORD` for that database server.
 .devtools/adr0034/run.sh victual_group_min_stock candidate
 ```
 
-The `current` run is a negative control and must exit 1 with nine failed assertions
-against commit `956c5a07`. The `candidate` run must exit 0 with sixteen passing assertions.
-Both runs use a transaction and roll back the fixture rows, extension creation, and
-view replacement. A SQL error terminates the connection and rolls back the transaction.
+`current` and `candidate` differ only in whether `fixtures.sql` applies `rollup.sql` inside
+its own transaction before asserting: `candidate` does, `current` does not. So `current`
+exercises whatever `product_groups_missing` already is in the database being tested, not a
+fixed prior state.
+
+Before migration 0293 shipped, that view was direct-membership-only, and the `current` run
+served as a negative control: it exited 1 with nine failed assertions against commit
+`956c5a07` (recorded below as historical evidence of the pre-0293 view). Migration 0293 made
+the roll-up the real view, so a database migrated by this checkout already carries it.
+`current` is no longer a negative control against anything: it now exits 0 with all sixteen
+assertions passing, the same as `candidate`, because both assert against the same (rolled-up)
+view. The `candidate` run remains useful as a check that `rollup.sql` itself still matches the
+shipped migration.
+
+Both runs use a transaction and roll back the fixture rows, extension creation, and any view
+replacement. A SQL error terminates the connection and rolls back the transaction.
 
 `rollup.sql` is an experiment, not a migration. It joins active products to every
 ancestor through `product_groups_resolved`, then sums their effective stock once per
