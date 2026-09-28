@@ -236,9 +236,10 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 
 	/**
 	 * Dead-lettering the outbox row is necessary but not sufficient: LabelPrintJobService::Monitor()
-	 * (the same query the label print dashboard reads), PrintAttemptService::Claim() (what a
-	 * worker actually calls) and LabelOperationsService::Cancel() all read `print_jobs.outcome`
-	 * directly, not the outbox row it points at. Two jobs, matching the two shapes the
+	 * (the same query the label print dashboard reads) and LabelOperationsService::Cancel() read
+	 * `print_jobs.outcome` directly, not the outbox row it points at. (PrintAttemptService::Claim()
+	 * also checks the outbox row's `dead_lettered_at`, so it never offered these jobs again - see
+	 * the note in the test body.) Two jobs, matching the two shapes the
 	 * `authorization_state` column distinguishes: one with no attempt at all (would otherwise
 	 * read `awaiting_artifact`) and one whose only attempt already failed (would otherwise read
 	 * `failed`, which a monitor or an operator could reasonably retry) - neither is a terminal
