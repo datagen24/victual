@@ -111,6 +111,10 @@ still names `sqlite` is refused at startup, with the exact command that moves it
 
 ### Moving an existing SQLite installation across
 
+Stop the application, and stop any label workers with it, before running the import. The
+import replaces the product, stock, and print-job data those workers act on, the same reason
+[Restoring](operator/backup-restore.md#restoring) gives for a restore.
+
 ```
 php bin/victual-migrate                                    # create the schema in the empty PostgreSQL database
 php bin/victual-db-import /path/to/victual.db --force

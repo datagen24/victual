@@ -49,7 +49,12 @@ if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 	echo "  Copies an existing SQLite database into the database configured in config.php.\n";
 	echo '  The source must be at migration ' . DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN
 		. ' through ' . DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX . ".\n";
-	echo "  --force  Overwrite a target that already contains data.\n";
+	echo "  --force  Overwrite a target that already contains data.\n\n";
+	echo "  Replacement scope: every table both engines share is replaced verbatim; a few\n";
+	echo "  target tables are always kept (this engine's own configuration, print/label\n";
+	echo "  history, the target's own MQTT broker state) or are cleared/repaired/recomputed\n";
+	echo "  rather than copied or left alone. See DatabaseImporter's own docblock for the\n";
+	echo "  exact, table-by-table list.\n";
 	exit(0);
 }
 
