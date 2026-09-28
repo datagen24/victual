@@ -51,6 +51,15 @@ class PrintAttemptService extends LabelService
         $claimed = [];
         foreach ($jobs as $job) {
             $this->Reap((int)$job['id']);
+            // Retirement first, then the bytes (LabelOperationsService::Reprint()'s rule):
+            // a retired label's job is refused about the *thing*, not about its payload or
+            // its printer, and it is refused every time this runs until somebody notices,
+            // which is what leaving it silently queued forever does not do.
+            $retiredAt = $this->Query('SELECT retired_at FROM labels WHERE uid=?', [$job['label_uid']])->fetchColumn();
+            if ($retiredAt !== false && $retiredAt !== null) {
+                $this->DeadLetter($job, 'Label retired; the printed target no longer exists');
+                continue;
+            }
             $payload = json_decode($job['payload'], true);
             $error = PrintJobPayload::DescribeUnreadable($payload);
             if ($error !== null) {
@@ -65,7 +74,12 @@ class PrintAttemptService extends LabelService
             }
             $printer = $resolved['printer'];
             $advertised = $this->Query('SELECT id FROM label_worker_capabilities WHERE worker_id=? AND driver_id=? AND schema_version=?', [$workerId,$printer['driver_id'],$printer['driver_schema_version']])->fetchColumn();
-            if ($advertised && !$this->ArtifactReady($job)) {
+            // A job whose artifact has not been validated and attached is not claimable,
+            // full stop (ADR-0019 section 4) - not only when the worker also advertises the
+            // right capability. Gating this on $advertised let an unrendered job with no
+            // matching advertisement fall through to the block below and spend its sole
+            // authorized attempt on a claim that was never really offered to anyone.
+            if (!$this->ArtifactReady($job)) {
                 continue;
             }
             $attempt = $this->Query("INSERT INTO print_attempts(outbox_id,job_id,attempt_number,worker_id,lease_expires_at,lease_hard_deadline,acknowledged_on)
