@@ -182,6 +182,7 @@
                 "row_created_timestamp": "string",
                 "scheduled_execution_time": "null",
                 "skipped": "integer",
+                "stock_transaction_id": "null",
                 "tracked_time": "string",
                 "undone": "integer",
                 "undone_timestamp": "null|string"

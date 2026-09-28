@@ -75,14 +75,24 @@ have recorded it.
 | 0288 | [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md), [issue 461](https://github.com/datagen24/victual/issues/461) — stock location foreign key | in this tree |
 | 0289 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #542) — `stock_current`, `uihelper_stock_journal` and `chores_current` recreated from their latest definitions to fix issues [501](https://github.com/datagen24/victual/issues/501), [505](https://github.com/datagen24/victual/issues/505), [497](https://github.com/datagen24/victual/issues/497) and the weekly-schedule half of [506](https://github.com/datagen24/victual/issues/506) | in this tree |
 | 0290 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation (PR #580), [ADR-0033](../docs/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 3 — `stock_splits` narrowed to never-expiring, unlabelled rows (issues [488](https://github.com/datagen24/victual/issues/488), [491](https://github.com/datagen24/victual/issues/491)) | in this tree |
-| 0291 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0292 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0291 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issue [#506](https://github.com/datagen24/victual/issues/506) decision D5 — `chores_log.stock_transaction_id`, the explicit link between a chore execution and the stock consumption it booked | in this tree |
+| 0292 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0293 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
 The file under 0262 was edited in place during review rather than followed by a migration
 that drops a column, because it has never existed in `master`. The retirement rule above is
 about numbers that have, and a branch that has not merged is still deciding what its
 migration says. What changed is that `login_attempts` lost its `ip_address` column — see that
 file for why a per-address count is the proxy's job and not this application's.
+
+Renumbered 2026-09-28, later still: issue [#506](https://github.com/datagen24/victual/issues/506)'s
+maintainer decision D5 is being written on this branch as `0291.pgsql.sql`. It adds an explicit
+`chores_log.stock_transaction_id` column. This replaces an earlier round's `xmin`-based link,
+after a second validator round showed `xmin` identifies a whole transaction rather than one
+execution. 0291 is the lowest free slot now that PR #580's move (below) has settled `0290`.
+Plan 22's two unwritten claims move up in turn, from 0291–0292 to **0292–0293**, keeping their
+own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+table. The next unclaimed number is now **0294**.
 
 Renumbered 2026-09-28: issue [#487](https://github.com/datagen24/victual/issues/487)
 remediation's ADR-0033 decision-3 migration (PR #580, narrowing `stock_splits` to

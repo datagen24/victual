@@ -286,6 +286,16 @@ class ChoresService extends BaseService
 			{
 				$transactionId = uniqid();
 				StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
+
+				// Issue #506 (maintainer decision D5, round 4): the explicit link
+				// UndoChoreExecution() undoes this consumption through - recorded here,
+				// inside this same transaction, rather than derived after the fact (an
+				// earlier round tried deriving it from PostgreSQL's `xmin`, which a
+				// validator proved identifies a whole transaction rather than one
+				// execution - see migrations/0291.pgsql.sql).
+				$logRow->update([
+					'stock_transaction_id' => $transactionId
+				]);
 			}
 
 			if (!empty($chore->rescheduled_date))
@@ -310,19 +320,35 @@ class ChoresService extends BaseService
 
 	/**
 	 * Marks a chore execution log entry as undone (the row is kept, not deleted),
-	 * undoes the stock consumption it booked when one can be identified without
-	 * ambiguity, and recalculates the next execution assignment.
+	 * undoes the stock consumption it booked (when there is one), and recalculates the
+	 * next execution assignment.
 	 *
 	 * Issue #506 (maintainer decision D1, #487 remediation): undoing an execution that
 	 * consumed stock must undo that consumption too, atomically with the chore undo - if
 	 * the stock undo is refused (e.g. a later booking now depends on it), nothing here
-	 * commits either. An execution whose consumption cannot be linked (see
-	 * FindLinkedStockConsumptionTransactionId()) undoes the chore alone, exactly as
-	 * before this decision, rather than refusing.
+	 * commits either.
+	 *
+	 * The link is chores_log.stock_transaction_id (migrations/0291.pgsql.sql, maintainer
+	 * decision D5, round 4): TrackChore() records the transaction_id its own consumption
+	 * booked, in the same database transaction, directly on the row. Two earlier rounds
+	 * tried to derive the link after the fact instead - first from (product_id,
+	 * row_created_timestamp), then from PostgreSQL's `xmin` system column - and a
+	 * validator broke each: a timestamp match reversed an unrelated same-second
+	 * consumption, and `xmin` identifies a whole database transaction rather than one
+	 * execution, so every chores_log row DatabaseImporter::Import() writes in its single
+	 * transaction shared an `xmin` with every stock_log row it also wrote. An explicit
+	 * column has neither failure mode: it names one specific transaction_id, or it is
+	 * NULL, decided once, when the execution's own consumption (if any) was booked.
+	 *
+	 * A NULL stock_transaction_id - an execution that never consumed anything
+	 * (consume_product_on_execution was 0, or the chore named no product), one recorded
+	 * before this column existed, or one an import brought in from another database -
+	 * undoes the chore alone, exactly as before decision D1 (its "legacy executions"
+	 * case), rather than refusing.
 	 *
 	 * @param int $executionId
-	 * @throws \Exception When the entry does not exist or was already undone, or when a
-	 *                     linked stock consumption exists but can no longer be undone
+	 * @throws \Exception When the entry does not exist or was already undone, or when the
+	 *                     linked stock transaction exists but can no longer be undone
 	 */
 	public function UndoChoreExecution($executionId)
 	{
@@ -334,13 +360,12 @@ class ChoresService extends BaseService
 				throw new \Exception('Execution does not exist or was already undone');
 			}
 
-			$transactionId = $this->FindLinkedStockConsumptionTransactionId($logRow);
-			if ($transactionId !== null)
+			if (!empty($logRow->stock_transaction_id))
 			{
 				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
 				// later booking now depends on this one), the exception unwinds this
 				// whole InTransaction() and the chores_log update below never happens.
-				StockService::GetInstance()->UndoTransaction($transactionId);
+				StockService::GetInstance()->UndoTransaction($logRow->stock_transaction_id);
 			}
 
 			// Update log entry
@@ -351,143 +376,6 @@ class ChoresService extends BaseService
 
 			$this->CalculateNextExecutionAssignment($logRow->chore_id);
 		});
-	}
-
-	/**
-	 * Finds the single stock_log transaction_id that TrackChore()'s consumption booked
-	 * for this execution, if it can be identified without ambiguity.
-	 *
-	 * chores_log carries no transaction_id column (issue #506 decision D1: no
-	 * migration), so the link is derived rather than stored, from PostgreSQL's own
-	 * `xmin` system column (this codebase's only supported engine - decision D1 again):
-	 * every row a transaction writes carries that transaction's id as its `xmin`, and
-	 * TrackChore() inserts the chores_log row and calls StockService::ConsumeProduct()
-	 * inside the very same database transaction (DatabaseService::InTransaction() lets
-	 * the nested call join rather than open a second one), so the stock_log row(s) that
-	 * consumption wrote share the chores_log row's own `xmin` - compared as text
-	 * (xmin::text) to sidestep PDO's handling of Postgres's internal xid type.
-	 *
-	 * `xmin` alone is NOT sufficient (issue #506 round 3, a second Opus validator probe):
-	 * it identifies the *transaction* that wrote a row, not a single business operation
-	 * within it, and DatabaseImporter::Import() (services/Database/DatabaseImporter.php)
-	 * writes an entire imported database - every chores_log row and every stock_log row
-	 * alike - inside one such transaction (round 2's docblock called this "entirely
-	 * separate", which round 3 correction: it shares this method's exact identity space).
-	 * After a SQLite -> PostgreSQL import, every imported chores_log row therefore shares
-	 * one `xmin` with every imported stock_log row, including consumptions that belong to
-	 * a different chore entirely, or none at all. Postgres transaction ids also wrap
-	 * around (they are 32-bit) on a long-lived database, which is a second, independent
-	 * reason two genuinely unrelated transactions could in principle share a raw `xmin`
-	 * value; the three conditions below defend against both.
-	 *
-	 * A link is accepted only when ALL of the following hold; if any fails, this returns
-	 * null and the caller undoes the chore alone (decision D1's "legacy executions" case
-	 * - never a refusal):
-	 *
-	 * 1. EXCLUSIVE WRITER - exactly one chores_log row shares this row's `xmin`.
-	 *    TrackChore() writes exactly one chores_log row per transaction; a bulk importer
-	 *    writes many in one transaction, so an imported execution's `xmin` is never
-	 *    exclusive to it and correctly falls back to chore-only.
-	 * 2. SINGLE CONSUMPTION TRANSACTION - among every still-live (undone = 0),
-	 *    consume-type stock_log row sharing that `xmin` (no product or timestamp filter
-	 *    at this step - the whole point is to first see everything the transaction
-	 *    wrote), exactly one distinct transaction_id appears. TrackChore()'s own
-	 *    consumption booking always shares one transaction_id (ConsumeProduct() may split
-	 *    it across several stock_log rows, but writes them all under the same id); an
-	 *    importer's shared transaction, or a chore transaction that happens to coincide
-	 *    with another one after wraparound, can hold more than one, and this method
-	 *    refuses to guess which is this execution's own.
-	 * 3. SAME SECOND - every one of those same rows has a row_created_timestamp equal to
-	 *    this chores_log row's own. Both defaults are `date_trunc('second',
-	 *    LOCALTIMESTAMP)`, fixed for the whole transaction by PostgreSQL, so this holds
-	 *    automatically whenever conditions 1 and 2 do; it catches nothing conditions 1
-	 *    and 2 do not already rule out on its own, but costs nothing extra to assert and
-	 *    documents the invariant the other two conditions are supposed to guarantee.
-	 *
-	 * No product_id filter is applied anywhere in this method: TrackChore() always calls
-	 * ConsumeProduct() with allowSubproductSubstitution = true, so the booking a chore's
-	 * own consumption produces can legitimately name a child product rather than the
-	 * chore's own (round 2's fix for the same reason); the three conditions above are
-	 * what makes the match safe without needing to know which product to expect.
-	 *
-	 * The one case this cannot distinguish, and does not try to: an imported database
-	 * that happens to hold *exactly* one chore execution and *exactly* one consumption
-	 * transaction_id, both landing in the same second, all within the importer's one
-	 * transaction. That satisfies all three conditions and links as if it had been
-	 * tracked live. It is indistinguishable from a live execution in the data available,
-	 * and accepted as the residual risk - a real but narrow case (a database imported
-	 * with only a single chore execution ever recorded), not the routine multi-row
-	 * import scenario this method is built to refuse.
-	 *
-	 * Verified before relying on any of this (issue #506 round 2's required check, still
-	 * true in round 3): nothing on any path from TrackChore() to ConsumeProduct() opens a
-	 * SAVEPOINT or subtransaction. TrackChore()'s own InTransaction() call,
-	 * ConsumeProduct()'s nested one, and every composed operation that can reach either
-	 * (RecipesService::ConsumeRecipe(), StockService::InventoryProduct(),
-	 * UndoTransaction()'s own loop over UndoBooking()) all go through
-	 * DatabaseService::InTransaction(), whose docblock states this explicitly: an inner
-	 * call is a no-op precisely because nothing here wants a savepoint's partial-rollback
-	 * semantics. Grepping the whole application tree (excluding vendored packages) for
-	 * SAVEPOINT/savepoint confirms it. DatabaseMigrationService and DatabaseImporter open
-	 * their own transactions directly, and (as above) DatabaseImporter's is exactly the
-	 * shared-transaction case these three conditions defend against - not a call graph
-	 * that can be dismissed as irrelevant. A row written inside a genuine subtransaction
-	 * would carry that subtransaction's own xid rather than the top-level transaction's,
-	 * silently defeating this match; there being none anywhere on the TrackChore()/
-	 * UndoChoreExecution() path is what makes relying on `xmin` sound there at all.
-	 *
-	 * @param \LessQL\Row $logRow The chores_log row being undone
-	 * @return string|null
-	 */
-	private function FindLinkedStockConsumptionTransactionId($logRow)
-	{
-		$db = DatabaseService::GetInstance();
-
-		// Condition 1: EXCLUSIVE WRITER.
-		$writerCount = (int)$db->ExecuteDbQuery(
-			'SELECT COUNT(*) FROM chores_log WHERE xmin::text = (SELECT xmin::text FROM chores_log WHERE id = ?)',
-			[$logRow->id]
-		)->fetchColumn();
-
-		if ($writerCount !== 1)
-		{
-			return null;
-		}
-
-		// Conditions 2 and 3 both read from the same row set: every still-live,
-		// consume-type stock_log row sharing this chores_log row's xmin, with no
-		// product or timestamp filter applied yet.
-		$candidateBookings = $db->ExecuteDbQuery(
-			'SELECT transaction_id, row_created_timestamp
-			 FROM stock_log
-			 WHERE undone = 0
-			   AND transaction_type = ?
-			   AND xmin::text = (SELECT xmin::text FROM chores_log WHERE id = ?)',
-			[StockService::TRANSACTION_TYPE_CONSUME, $logRow->id]
-		)->fetchAll(\PDO::FETCH_ASSOC);
-
-		if (count($candidateBookings) === 0)
-		{
-			return null;
-		}
-
-		// Condition 2: SINGLE CONSUMPTION TRANSACTION.
-		$transactionIds = array_values(array_unique(array_column($candidateBookings, 'transaction_id')));
-		if (count($transactionIds) !== 1 || empty($transactionIds[0]))
-		{
-			return null;
-		}
-
-		// Condition 3: SAME SECOND.
-		foreach ($candidateBookings as $booking)
-		{
-			if ($booking['row_created_timestamp'] !== $logRow->row_created_timestamp)
-			{
-				return null;
-			}
-		}
-
-		return $transactionIds[0];
 	}
 
 	/**
