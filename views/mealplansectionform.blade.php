@@ -41,7 +41,15 @@
 				<div class="invalid-feedback">{{ $__t('A name is required') }}</div>
 			</div>
 
-			@php if($mode == 'edit' && !empty($mealplanSection->sort_number)) { $value = $mealplanSection->sort_number; } else { $value = ''; } @endphp
+			{{-- Not empty(): '0' is empty to PHP the same way 0.0 is (issue #545's stock entry
+			price), and a section can genuinely sort at position 0 - a real, meaningful value,
+			unlike a NULL sort_number, which means "unordered". empty() rendered a stored 0 as
+			a blank field, and saving the untouched form then sent "" for this nullable
+			INTEGER column - not the price view's silent-NULLing, but a 400 ("The database
+			rejected this request"), because the generic entity endpoint has no clearing idiom
+			for this column the way PUT /api/stock/entry/{id} does for price. Only an actual
+			NULL should render blank (issue #574). --}}
+			@php if($mode == 'edit' && $mealplanSection->sort_number !== null) { $value = $mealplanSection->sort_number; } else { $value = ''; } @endphp
 			@include('components.numberpicker', array(
 			'id' => 'sort_number',
 			'label' => 'Sort number',

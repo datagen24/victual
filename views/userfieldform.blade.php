@@ -81,7 +81,12 @@
 				<div class="invalid-feedback">{{ $__t('A caption is required') }}</div>
 			</div>
 
-			@php if($mode == 'edit' && !empty($userfield->sort_number)) { $value = $userfield->sort_number; } else { $value = ''; } @endphp
+			{{-- Not empty(): same reasoning as mealplansectionform.blade.php - a userfield can
+			genuinely sort at position 0, empty() treats that the same as unset, and the
+			untouched-save this caused sends "" for this nullable INTEGER column, refused with
+			400 rather than silently cleared (issue #574, same class of defect as #545). Only
+			an actual NULL should render blank. --}}
+			@php if($mode == 'edit' && $userfield->sort_number !== null) { $value = $userfield->sort_number; } else { $value = ''; } @endphp
 			@include('components.numberpicker', array(
 			'id' => 'sort_number',
 			'label' => 'Sort number',
