@@ -345,4 +345,83 @@ class DialectPolicyTest extends PgsqlSchemaTestCase
 		self::assertGreaterThan($highestIssuedId, $nextId,
 			'the next id issued after a resync must be above every id ever issued, not one reused from a deleted row');
 	}
+
+	// ----- PostgresDialect::AdvanceIdentitySequence ----------------------------------
+
+	/**
+	 * setval(GREATEST(...), false) reads the sequence's current position and then writes a
+	 * new one in two separate steps, so a concurrent nextval() landing between the two was
+	 * silently undone - a two-connection loop against that version of this method reissued
+	 * 34-46 ids in 3.5s. AdvanceIdentitySequence() now calls nextval() itself, exactly as
+	 * many times as generate_series() produces rows, rather than computing and writing a
+	 * target - nextval() alone is atomic, so nothing here can undo a concurrent caller's
+	 * own claim regardless of how the two interleave.
+	 *
+	 * The race needs genuine overlap at the database engine level, which alternating two
+	 * PDO connections within one PHP process cannot produce: each blocking call fully
+	 * completes before the next begins, so the two never actually overlap in wall-clock
+	 * time (confirmed empirically - a same-process version of this test passed even
+	 * against the unfixed setval() implementation). sequence-race-subprocess-helper.php
+	 * runs as a genuinely separate OS process, calling bare nextval() - not an INSERT,
+	 * which would hit the identity column's own PRIMARY KEY constraint and throw on a
+	 * reissued id rather than silently produce an observable duplicate - in a tight loop,
+	 * started (not yet finished) before this method's own loop of AdvanceIdentitySequence()
+	 * calls on the very same sequence begins.
+	 */
+	public function testAdvanceIdentitySequenceNeverReissuesAConcurrentlyClaimedId(): void
+	{
+		$dialect = new PostgresDialect();
+
+		$sequenceName = self::$db->query("SELECT pg_get_serial_sequence('locations', 'id')")->fetchColumn();
+		$target = (int)self::$db->query('SELECT last_value FROM ' . $sequenceName)->fetchColumn();
+		$durationSeconds = 4.0;
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$env = array_merge($inherited, [
+			'RBAC_TEST_SCHEMA' => self::Schema(),
+			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+			'PGHOST' => getenv('PGHOST'),
+			'PGPORT' => getenv('PGPORT'),
+			'PGUSER' => getenv('PGUSER'),
+			'PGPASSWORD' => getenv('PGPASSWORD'),
+		]);
+
+		$process = proc_open(
+			[PHP_BINARY, __DIR__ . '/sequence-race-subprocess-helper.php', $sequenceName, (string)$durationSeconds],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$pipes,
+			null,
+			$env
+		);
+
+		// The subprocess is now started, not yet finished - proc_open() returns as soon as
+		// it launches, so this loop genuinely overlaps with it rather than running before
+		// or after. Matches the subprocess's own wall-clock budget rather than a fixed
+		// iteration count, so neither side can finish before the other has properly
+		// started.
+		$callCount = 0;
+		$deadline = microtime(true) + $durationSeconds;
+		while (microtime(true) < $deadline)
+		{
+			$target += 3;
+			$dialect->AdvanceIdentitySequence(self::$db, 'locations', 'id', $target);
+			$callCount++;
+		}
+
+		$output = stream_get_contents($pipes[1]);
+		$errors = stream_get_contents($pipes[2]);
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		$status = proc_close($process);
+
+		self::assertSame(0, $status, "the sequence-race subprocess failed.\nstdout: $output\nstderr: $errors");
+
+		$values = json_decode($output, true);
+		self::assertIsArray($values, "the subprocess printed no JSON.\nstdout: $output\nstderr: $errors");
+		self::assertGreaterThan(0, count($values), 'the subprocess drew at least one value');
+		self::assertGreaterThan(0, $callCount, 'this process called AdvanceIdentitySequence at least once');
+
+		self::assertCount(count($values), array_unique($values),
+			'every value the subprocess drew from the sequence via nextval() must be unique - a duplicate means a concurrent AdvanceIdentitySequence call overwrote, rather than consumed through, a value the subprocess had already been handed');
+	}
 }

@@ -429,6 +429,16 @@ class PostgresDialect extends DatabaseDialect
 	 * Sets every identity column's sequence to MAX(id) + 1, or leaves it where it already
 	 * is if that is higher (at least 1 either way), needed after inserting rows with
 	 * explicit ids (migrations, demo data, database import).
+	 *
+	 * Uses setval(), which is not atomic against a concurrent nextval() the way
+	 * AdvanceIdentitySequence() below is - deliberately left this way here. Every caller
+	 * of this method (InitialDataSeeder, DatabaseMigrationService, DatabaseImporter,
+	 * DemoDataGeneratorService) runs as a single process against a database nothing else
+	 * is concurrently writing to yet - a migration or an import in progress, not a live
+	 * application serving requests - so there is no concurrent nextval() for the
+	 * read-then-write race to lose. AdvanceIdentitySequence() exists because its own
+	 * caller (UndoBooking()'s CONSUME rebuild) runs at request time, where that
+	 * assumption does not hold.
 	 */
 	public function ResyncGeneratedIdCounters(\PDO $pdo): void
 	{
@@ -488,11 +498,10 @@ class PostgresDialect extends DatabaseDialect
 	 * same id still finds it) bypasses the sequence entirely - nothing else moves it past
 	 * that id on its own, and DatabaseImporter::Import()'s own resync (from the target's
 	 * surviving row maximum, not from an id a booking merely names) can leave the
-	 * sequence sitting at or below an id that is nonetheless taken again by then.
-	 * CredentialSplitTest.php confirms the runtime app role holds UPDATE on its own
-	 * sequences (setval() needs it, nextval() alone does not), so this is safe to call
-	 * from request-time code, not only from a migration or import running as a more
-	 * privileged role.
+	 * sequence sitting at or below an id that is nonetheless taken again by then. Unlike
+	 * ResyncGeneratedIdCounters() above, this runs at request time, where a concurrent
+	 * nextval() is a real possibility - see the advance query's own comment for why it
+	 * never calls setval().
 	 */
 	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): void
 	{
@@ -505,15 +514,28 @@ class PostgresDialect extends DatabaseDialect
 			return;
 		}
 
-		// GREATEST keeps this idempotent and forward-only: the sequence's own current next
-		// value (last_value, plus one only if is_called - an untouched sequence's
-		// last_value is just its seed, not something already issued) never moves backward,
-		// even though $minNextValue is itself a fixed floor the caller already knows it
-		// needs. $sequenceName is interpolated (not bound) because a FROM target cannot be
-		// a bind parameter; it is safe here because it came back from
-		// pg_get_serial_sequence() above, not from anything a caller supplies directly.
+		// setval() is not atomic: it reads the sequence's current position and then writes
+		// a new one in two separate steps, and a concurrent nextval() landing between the
+		// two is silently undone - setval() simply overwrites whatever nextval() just
+		// returned, so that caller's own claimed id collides with whatever the next
+		// nextval() after this setval() hands out (a two-connection loop against the
+		// read-then-setval version of this method reissued 34-46 ids in 3.5s). nextval()
+		// itself IS atomic, so this advances by calling it however many times are actually
+		// needed - once per row generate_series() produces - rather than jumping straight
+		// to a computed target: a concurrent nextval() landing in the middle of that still
+		// atomically claims its own unique value, this call's own among them, and the only
+		// visible effect of the two interleaving is a gap in the sequence, which is
+		// already normal, documented sequence behaviour that nothing here relies on being
+		// gap-free. GREATEST(0, ...) makes the call a true no-op - zero nextval() calls -
+		// when the sequence's own current next value (last_value, plus one only if
+		// is_called - an untouched sequence's last_value is just its seed, not something
+		// already issued) is already at or past $minNextValue, which this method's only
+		// caller (UndoBooking()'s CONSUME rebuild) usually finds it already is.
+		// $sequenceName is interpolated (not bound) because a FROM target cannot be a bind
+		// parameter; it is safe here because it came back from pg_get_serial_sequence()
+		// above, not from anything a caller supplies directly.
 		$advance = $pdo->prepare(
-			'SELECT setval(?, GREATEST((SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName . '), ?), false)'
+			'SELECT count(nextval(?)) FROM generate_series(1, GREATEST(0, ? - (SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName . ')))'
 		);
 		$advance->execute([$sequenceName, $minNextValue]);
 	}
