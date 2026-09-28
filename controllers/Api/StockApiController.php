@@ -1090,13 +1090,27 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
-	 * GET /api/stock/entry/{entryId} - returns a single stock entry by its id (200).
+	 * GET /api/stock/entry/{entryId} - returns a single stock entry by its id.
+	 * Returns 200 or a 400 error response when the entry does not exist (audit finding H10 /
+	 * issue #499: this used to answer 200 with a null body, and no 404 is documented here -
+	 * unlike the generic object endpoints - so a 400 is the documented shape, not a 404).
 	 */
 	public function StockEntry(Request $request, Response $response, array $args)
 	{
 		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		$entry = FieldPolicy::GetInstance()->RedactRow('stock', StockService::GetInstance()->GetStockEntry($args['entryId']));
-		return $this->ApiResponse($response, $entry);
+
+		return $this->HandleApiCall($response, function () use ($args, $response)
+		{
+			$entry = StockService::GetInstance()->GetStockEntry($args['entryId']);
+
+			if ($entry === null)
+			{
+				throw new \Exception('Stock does not exist');
+			}
+
+			$entry = FieldPolicy::GetInstance()->RedactRow('stock', $entry);
+			return $this->ApiResponse($response, $entry);
+		});
 	}
 
 	/**

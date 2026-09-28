@@ -991,9 +991,27 @@
         }
     },
     "GET /api/objects/{entity}/{objectId} (stock)": {
-        "status": 404,
+        "status": 200,
         "shape": {
-            "error_message": "string"
+            "amount": "integer",
+            "best_before_date": "string",
+            "id": "integer",
+            "import_epoch": "integer",
+            "location_id": "integer",
+            "note": "null",
+            "open": "integer",
+            "opened_amount": "null",
+            "opened_date": "null",
+            "opened_measured_at": "null",
+            "opened_qu_id": "null",
+            "opened_tare": "null",
+            "price": "number",
+            "product_id": "integer",
+            "purchased_date": "string",
+            "row_created_timestamp": "string",
+            "shopping_location_id": "null",
+            "stock_id": "string",
+            "userfields": "null"
         }
     },
     "GET /api/objects/{entity}/{objectId} (task_categories)": {
@@ -2152,91 +2170,91 @@
     "POST /api/objects/{entity} (batteries)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (chores)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (chores, spare)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (equipment)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (locations)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (product_barcodes)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (product_groups)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (product_substitutions)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (products)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (recipes)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (recipes_pos)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (shopping_locations)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (task_categories)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (tasks)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/objects/{entity} (tasks, spare)": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/recipes/{recipeId}/add-not-fulfilled-products-to-shoppinglist": {
@@ -2250,7 +2268,7 @@
     "POST /api/recipes/{recipeId}/copy": {
         "status": 200,
         "shape": {
-            "created_object_id": "string"
+            "created_object_id": "integer"
         }
     },
     "POST /api/stock/bookings/{bookingId}/undo": {

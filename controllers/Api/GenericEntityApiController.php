@@ -29,7 +29,7 @@ class GenericEntityApiController extends BaseApiController
 	 * below-min-stock products to the shopping list (per user setting).
 	 * The columns the server owns (id, row_created_timestamp) are dropped from the body
 	 * before it is written - see WithoutServerOwnedColumns().
-	 * Returns { "created_object_id": int|string } (200) or a 400 error response
+	 * Returns { "created_object_id": int } (200) or a 400 error response
 	 * (unknown/not exposed/not editable entity, invalid body, or a body that sets no
 	 * column at all and would therefore create nothing).
 	 */
@@ -136,10 +136,13 @@ class GenericEntityApiController extends BaseApiController
 					//
 					// LessQL's Row::save() already asks the right question - it looks the id
 					// up as lastInsertId($db->getSequence($table)) and leaves it on the row -
-					// so the value is there to be read. SQLite is unaffected either way, and
-					// the "nothing was inserted" case is unchanged: save() skips a row with
-					// no modified columns, the primary is never set, and this stays null (the
-					// difference from upstream that issue #47 records).
+					// so the value is there to be read. SQLite is unaffected either way. save()
+					// would leave this null for a row with no modified columns (the difference
+					// from upstream that issue #47 records), but the empty($requestBody) check
+					// above already refuses that request with 400 before execution reaches
+					// here, so this line does not see it today - the response below still
+					// treats a null defensively rather than depending on that guard being the
+					// only way here.
 					$newObjectId = $newRow->id;
 
 					// TODO: This should be better done somehow in StockService
@@ -148,8 +151,18 @@ class GenericEntityApiController extends BaseApiController
 						StockService::GetInstance()->AddMissingProductsToShoppingList(UsersService::GetInstance()->GetUserSetting(VICTUAL_USER_ID, 'shopping_list_auto_add_below_min_stock_amount_list_id'));
 					}
 
+					// PDO::lastInsertId() - what LessQL's Row::save() reads $newObjectId from,
+					// per the comment above - always returns a string in PHP, whatever the
+					// column's own type. victual.openapi.json has documented this property
+					// integer on every route that carries it since before this cast existed
+					// (RolesApiController::AddRole() already did the same cast); audit finding
+					// H10 / issue #499 is the wire catching up to the document, not the other
+					// way around. Guarded rather than a blind cast: (int)null is 0, not null,
+					// and a fabricated id that looks like a real answer would be worse than the
+					// type this fixes - see $newObjectId's own comment above for why null is
+					// not believed to be reachable here today, and why the guard stays anyway.
 					return $this->ApiResponse($response, [
-						'created_object_id' => $newObjectId
+						'created_object_id' => $newObjectId === null ? null : (int)$newObjectId
 					]);
 				});
 			});
@@ -580,6 +593,18 @@ class GenericEntityApiController extends BaseApiController
 		{
 			unset($requestBody[$column]);
 		}
+
+		// "userfields" is not a column of any entity table - UserfieldsService keeps them in
+		// their own table, keyed by entity name and object id (see GetObject()'s and
+		// GetObjects()'s own docblocks for the key this drops). A body that still carries it
+		// - what a client sends back after reading an object, since GetObject()/GetObjects()
+		// attach it to every response - made LessQL answer "SQLSTATE[42703]: undefined
+		// column" when writing back, which HandleApiCall() turns into a 400: exactly the
+		// read-edit-write round trip this function's own docblock says a client gets to rely
+		// on. A body that means to change Userfield values uses SetUserfields()
+		// (PUT /api/userfields/{entity}/{objectId}), the only path that writes them. Audit
+		// finding H10 / issue #499.
+		unset($requestBody['userfields']);
 
 		return $requestBody;
 	}
