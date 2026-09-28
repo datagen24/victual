@@ -88,8 +88,9 @@ class RecipesController extends BaseController
 					// GetProductDetails() throws on. The entry must still render (name only)
 					// and stay deletable; no stock or price field is sent at all, regardless
 					// of STOCK_VIEW, since none of it can be trusted for a product no longer
-					// in use.
-					$productDetails = ['product' => $product, 'inactive' => true];
+					// in use. Only the allowlisted card fields are sent, not the row itself -
+					// see MealPlanProductCardFields() below.
+					$productDetails = ['product' => $this->MealPlanProductCardFields($product), 'inactive' => true];
 				}
 				elseif (User::HasPermissions(User::PERMISSION_STOCK_VIEW))
 				{
@@ -113,14 +114,20 @@ class RecipesController extends BaseController
 					// (above) only ever gated price fields, never these. A caller here
 					// who only holds MEALPLAN_VIEW must end up with the same
 					// stock-state-free result, so this builds just the fields the
-					// calendar card renders (product name/picture/calories and the
-					// stock quantity unit) directly, rather than calling
+					// calendar card renders directly, rather than calling
 					// GetProductDetails() and trying to strip its stock fields back out
-					// (issue #594). qu_id_stock carries no FK either, so this lookup can
-					// itself be null - mealplan.js falls back to Victual.QuantityUnits
-					// for that.
+					// (issue #594). The product itself is reduced to the same
+					// allowlisted card fields as the inactive branch above (round 4
+					// review of PR #599, CodeRabbit comment 4123093457): the full products
+					// row also carries location_id, min_stock_amount, qu_id_price,
+					// default_purchase_price_type and other stock/price configuration
+					// that /api/objects/products already gates behind STOCK_VIEW
+					// (EntityReadPolicy.php), so serialising it whole here would be
+					// exactly the kind of second, ungated channel #594 itself was about.
+					// qu_id_stock carries no FK either, so this lookup can itself be null
+					// - mealplan.js falls back to Victual.QuantityUnits for that.
 					$productDetails = [
-						'product' => $product,
+						'product' => $this->MealPlanProductCardFields($product),
 						'quantity_unit_stock' => $this->DB->quantity_units($product->qu_id_stock)
 					];
 				}
@@ -174,6 +181,35 @@ class RecipesController extends BaseController
 			'usedMealplanSectionsCount' => $usedMealplanSections->count(),
 			'weekRecipe' => $weekRecipe
 		]);
+	}
+
+	/**
+	 * The product master-data fields MealPlan()'s reduced product card needs -
+	 * mealplan.js's "product" branch, when the caller lacks STOCK_VIEW or the
+	 * product is inactive: id/name/picture_file_name/calories for the card itself,
+	 * qu_id_stock for its quantity-unit-name fallback (Victual.QuantityUnits lookup,
+	 * since quantity_unit_stock is not sent in that case either).
+	 *
+	 * Selected explicitly rather than serialising the whole products row, which also
+	 * carries location_id, min_stock_amount, qu_id_price,
+	 * default_purchase_price_type and other stock/price configuration -
+	 * /api/objects/products already gates all of that behind STOCK_VIEW
+	 * (EntityReadPolicy.php), so embedding the row whole here would be exactly the
+	 * kind of second, ungated channel issue #594 was about in the first place (round
+	 * 4 review of PR #599, CodeRabbit comment 4123093457).
+	 *
+	 * @param object $product A products row (e.g. $this->DB->products($id))
+	 * @return array<string, mixed>
+	 */
+	private function MealPlanProductCardFields($product): array
+	{
+		return [
+			'id' => $product->id,
+			'name' => $product->name,
+			'picture_file_name' => $product->picture_file_name,
+			'calories' => $product->calories,
+			'qu_id_stock' => $product->qu_id_stock
+		];
 	}
 
 	/**

@@ -44,6 +44,16 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 	private const PRODUCT_INTACT = 9812;
 	private const PRODUCT_TO_DELETE = 9813;
 
+	/**
+	 * The exact keys RecipesController::MealPlanProductCardFields() allowlists (round
+	 * 4 review of PR #599, CodeRabbit comment 4123093457) - everything mealplan.js's
+	 * reduced product card and its quantity-unit fallback read, and nothing else from
+	 * the full products row (location_id, min_stock_amount, qu_id_price,
+	 * default_purchase_price_type, ... - all of which /api/objects/products already
+	 * gates behind STOCK_VIEW, EntityReadPolicy.php:20).
+	 */
+	private const ALLOWLISTED_PRODUCT_CARD_FIELDS = ['id', 'name', 'picture_file_name', 'calories', 'qu_id_stock'];
+
 	private static PDO $db;
 	private static RecipesController $controller;
 
@@ -169,6 +179,22 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		return json_decode($event['productDetails'], true, 512, JSON_THROW_ON_ERROR);
 	}
 
+	/**
+	 * Asserts that a reduced productDetails.product array carries exactly
+	 * self::ALLOWLISTED_PRODUCT_CARD_FIELDS - no more (no stock/price configuration
+	 * from the full products row) and no less (the calendar card still needs all of
+	 * them).
+	 */
+	private static function assertIsAllowlistedProductCard(array $product): void
+	{
+		self::assertEqualsCanonicalizing(self::ALLOWLISTED_PRODUCT_CARD_FIELDS, array_keys($product), 'The reduced product card carries exactly the allowlisted fields, nothing more and nothing less');
+
+		foreach (['location_id', 'min_stock_amount', 'qu_id_price', 'default_purchase_price_type', 'shopping_location_id', 'qu_id_purchase'] as $stockOrPriceField)
+		{
+			self::assertArrayNotHasKey($stockOrPriceField, $product, "The full products row's $stockOrPriceField must not reach this reduced card - /api/objects/products already gates it behind STOCK_VIEW");
+		}
+	}
+
 	public function testMealPlanViewWithoutStockViewReceivesNoStockStateFields(): void
 	{
 		self::grantOnly('MEALPLAN_VIEW');
@@ -181,6 +207,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 
 		self::assertArrayHasKey('product', $productDetails, 'The product name/picture/calories the calendar card renders survive');
 		self::assertArrayHasKey('quantity_unit_stock', $productDetails, 'The stock quantity unit the calendar card renders survives');
+		self::assertIsAllowlistedProductCard($productDetails['product']);
 
 		foreach (['stock_amount', 'stock_value', 'stock_amount_opened', 'stock_amount_aggregated', 'stock_amount_opened_aggregated', 'stock_amount_measured', 'next_due_date', 'location', 'is_aggregated_amount'] as $field)
 		{
@@ -227,6 +254,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		self::assertIsArray($deactivatedDetails, 'The entry carries a reduced productDetails object, not null - mealplan.js renders a card from it rather than hiding the entry');
 		self::assertTrue($deactivatedDetails['inactive'] ?? false, 'The deactivated marker is set');
 		self::assertSame('MealPlanStockState Product ' . self::PRODUCT_TO_DEACTIVATE, $deactivatedDetails['product']['name'] ?? null, 'The product name survives so the reduced card can still show it');
+		self::assertIsAllowlistedProductCard($deactivatedDetails['product']);
 
 		foreach (['stock_amount', 'stock_amount_aggregated', 'stock_value', 'last_price', 'avg_price', 'current_price', 'next_due_date', 'location'] as $field)
 		{
@@ -256,6 +284,7 @@ class MealPlanStockStateTest extends PgsqlSchemaTestCase
 		self::assertIsArray($deactivatedDetails);
 		self::assertTrue($deactivatedDetails['inactive'] ?? false, 'The deactivated marker is set regardless of STOCK_VIEW');
 		self::assertArrayHasKey('product', $deactivatedDetails, 'The product name still survives');
+		self::assertIsAllowlistedProductCard($deactivatedDetails['product']);
 		self::assertArrayNotHasKey('stock_amount_aggregated', $deactivatedDetails, 'No stock field leaks for a deactivated product, with or without STOCK_VIEW');
 	}
 
