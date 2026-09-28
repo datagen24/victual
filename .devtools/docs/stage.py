@@ -41,6 +41,7 @@ PHPDOC_PHAR_SHA256 = "fe1e7c23ba3329aa6f19ac3c807446159a431a195ec5d9163b0c281a15
 # Repository path -> path within the staged tree. Anything not named here is not
 # published, and a link to it is rewritten to GitHub.
 PAGES = {
+    "docs/glossary.md": "development/glossary.md",
     "docs/constitution.md": "development/constitution.md",
     "docs/documentation.md": "development/documentation-conventions.md",
     "docs/style-guide.md": "development/writing-style.md",

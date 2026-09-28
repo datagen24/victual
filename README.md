@@ -63,6 +63,8 @@ dependencies; the [ADR index](docs/adr/README.md) records decisions and proposal
 
 ## Getting started
 
+- [Project glossary](docs/glossary.md): shared terms for stock, labels, permissions, and project records.
+
 - [Manual](docs/manual/index.md): installation, configuration, day-to-day use, and operator
   topics (the REST API, backup and restore, updating).
 - [Deployment](deploy/README.md): pod bootstrap and configuration.
