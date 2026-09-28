@@ -24,10 +24,15 @@ use LessQL\Database;
  *
  * The query callback therefore no longer marks anything itself; it only registers, via
  * SetOnWriteSucceeded(), the mark it would have made. This class fires that registration
- * exactly once, immediately after insert()/update()/delete() returns *without throwing* -
- * a statement that throws propagates straight out of the overridden method, so the
- * registration set for it is simply discarded (not fired) instead of being cleared. A
- * later, different write callable can then set a callback of its own.
+ * exactly once, immediately after insert()/update()/delete() returns *without throwing*.
+ * A statement that throws propagates straight out of the overridden method, but the slot
+ * is cleared unconditionally either way (each override's finally block does this): a
+ * refused write's registration must not survive to be fired by some later, unrelated call
+ * that never registers one of its own (a RunAsBookkeeping() write, or an update()/insert()
+ * that returns early with nothing to write) - that stale-fire is exactly what a bare
+ * "clear only on success" would let happen, and it is not a hypothetical: the earlier
+ * version of this class did exactly that and a refused write's discarded mark could
+ * resurface on the very next bookkeeping write in the same request.
  *
  * The callback is one slot, not a stack: insert()/update()/delete() are never reentrant
  * with each other for the same call - PDOStatement::execute() throws or returns before
@@ -35,6 +40,17 @@ use LessQL\Database;
  * per-row loop only ever re-registers the same, functionally identical closure on every
  * iteration, so firing the last one registered is exactly firing the one true mark for
  * the whole call.
+ *
+ * One further seam this leaves open, not closed by this class: in autocommit, a multi-row
+ * insert() whose later row fails leaves the earlier rows' writes committed (LessQL's own
+ * insertPrepared()/insertBatch() execute each row's statement immediately, with no
+ * transaction of their own) but never signalled, since the callback registered for the
+ * call is cleared, not fired, the moment any row throws. The one caller that passes more
+ * than one row today, UsersService::CreateUser() via `$this->DB->user_permissions()->
+ * insert($permList)` (services/UsersService.php), always runs inside
+ * DatabaseService::InTransaction(), so a mid-batch failure there rolls the whole
+ * transaction back - the earlier rows do not stay committed - and this seam cannot be
+ * reached. A future autocommit multi-row insert() caller would reopen it.
  */
 class ChangeTrackingLessQlDatabase extends Database
 {
@@ -56,38 +72,62 @@ class ChangeTrackingLessQlDatabase extends Database
 
 	public function insert($table, $rows, $method = null)
 	{
-		$result = parent::insert($table, $rows, $method);
-		$this->FireOnWriteSucceeded();
+		try
+		{
+			$result = parent::insert($table, $rows, $method);
+			$this->FireOnWriteSucceeded();
 
-		return $result;
+			return $result;
+		}
+		finally
+		{
+			// Unconditional, not only on the success path above: a throw must clear
+			// whatever this call registered just as surely as a return does, or it stays
+			// in the slot to be fired by a later, unrelated call - see this class's own
+			// docblock.
+			$this->onWriteSucceeded = null;
+		}
 	}
 
 	public function update($table, $data, $where = array(), $params = array())
 	{
-		$result = parent::update($table, $data, $where, $params);
-		$this->FireOnWriteSucceeded();
+		try
+		{
+			$result = parent::update($table, $data, $where, $params);
+			$this->FireOnWriteSucceeded();
 
-		return $result;
+			return $result;
+		}
+		finally
+		{
+			$this->onWriteSucceeded = null;
+		}
 	}
 
 	public function delete($table, $where = array(), $params = array())
 	{
-		$result = parent::delete($table, $where, $params);
-		$this->FireOnWriteSucceeded();
+		try
+		{
+			$result = parent::delete($table, $where, $params);
+			$this->FireOnWriteSucceeded();
 
-		return $result;
+			return $result;
+		}
+		finally
+		{
+			$this->onWriteSucceeded = null;
+		}
 	}
 
 	/**
-	 * Fires whatever was registered for the write that just succeeded, then clears it -
-	 * a write that never re-registers (no write statement reached the database, e.g.
-	 * insert() with no columns) must not fire a stale callback left over from an earlier,
-	 * unrelated call.
+	 * Fires whatever was registered for the write that just succeeded. Clearing the slot
+	 * is the caller's job (each override's own finally block) precisely so that it happens
+	 * whether this method runs or not - a throw from the parent call never reaches here at
+	 * all, and the slot still has to be cleared.
 	 */
 	private function FireOnWriteSucceeded(): void
 	{
 		$callback = $this->onWriteSucceeded;
-		$this->onWriteSucceeded = null;
 
 		if ($callback !== null)
 		{

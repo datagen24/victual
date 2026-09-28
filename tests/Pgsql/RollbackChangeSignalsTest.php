@@ -511,6 +511,53 @@ class RollbackChangeSignalsTest extends PgsqlSchemaTestCase
 			'and must not advance db-changed-time either, even though both the outer and inner writes reached the database');
 	}
 
+	/**
+	 * Given a refused autocommit LessQL write - no InTransaction() around it at all, the
+	 * same shape GenericEntityApiController::DeleteObject() has - that correctly leaves
+	 * HasDataChanged() false,
+	 * When a later, unrelated RunAsBookkeeping() write then runs one that, by design,
+	 * registers no change-tracking callback of its own (DatabaseService::GetDbConnection()'s
+	 * query callback gates registration on !IsBookkeeping()),
+	 * Then that bookkeeping write must not flip HasDataChanged() to true by firing the
+	 * refused write's own, stale registration - ChangeTrackingLessQlDatabase has to clear
+	 * its one callback slot on a throw, not merely leave whatever was in it for the next
+	 * successful call to inherit.
+	 */
+	public function testARefusedAutocommitWriteLeavesNoStaleCallbackForALaterBookkeepingWrite(): void
+	{
+		$service = DatabaseService::GetInstance();
+		$before = self::changedTime();
+
+		$productId = self::insertProduct('Rollback Signals Stale Callback Product');
+		self::insertProductLocationMinStock($productId);
+
+		try
+		{
+			$service->GetDbConnection()->products($productId)->delete();
+
+			self::fail('the FOREIGN KEY violation must propagate');
+		}
+		catch (\PDOException $exception)
+		{
+			self::assertSame('23503', $exception->errorInfo[0] ?? $exception->getCode());
+		}
+
+		self::assertFalse($service->HasDataChanged(),
+			'the refused delete itself must not be recorded as a data change - issue #534');
+
+		$service->RunAsBookkeeping(function () use ($service)
+		{
+			$service->GetDbConnection()->locations(self::$pantryLocationId)->update(['description' => 'stale-callback-bookkeeping']);
+		});
+
+		self::assertFalse($service->HasDataChanged(),
+			'a bookkeeping write that registers no callback of its own must not fire the refused delete\'s stale one');
+
+		$service->GetDbChangedTime(); // must be a no-op: nothing is pending to flush
+		self::assertSame($before, self::changedTime(),
+			'db-changed-time must not move either');
+	}
+
 	// ------------------------------------------------------------------------------
 	// HTTP coverage: the real chore-consumption refusal from issue #494/#527
 	// ------------------------------------------------------------------------------
