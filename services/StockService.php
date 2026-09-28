@@ -3281,6 +3281,26 @@ class StockService extends BaseService
 					'opened_measured_at' => $logRow->opened_measured_at
 				];
 
+				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
+				// amount = 1 (and open = 1) on any row carrying a measurement. An ordinary
+				// whole-take consume of a measured container always logs amount -1, so this
+				// rebuild's amount is always exactly 1 - but a ledger rescale of this
+				// booking's own amount (MergeProducts() itself now refuses this before
+				// writing when the factor is not 1 - issue #546 - but
+				// trg_cascade_change_qu_id_stock*'s own rescale of stock_log on a single
+				// product's own qu_id_stock change is not guarded the same way) can leave a
+				// measured consume booking whose amount is no longer -1. Inserting that
+				// rebuild would violate the CHECK outright with a raw 23514, which
+				// BaseApiController's own generic PDOException handling would surface only
+				// as a generic "database rejected this request" message - never explaining
+				// what specifically could not be restored. Refuse truthfully here instead,
+				// before any row is touched, exactly as this class refuses every other
+				// undo shape it cannot safely reverse.
+				if ($rebuiltStockRow['opened_amount'] !== null && self::CompareAmounts($rebuiltStockRow['amount'], 1.0) !== 0)
+				{
+					throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+				}
+
 				// A booking with a stock_row_id (set by ConsumeProduct() above for every
 				// CONSUME and negative INVENTORY_CORRECTION booking from here on) whose own
 				// row is gone at undo time - a whole-take consume deletes it, and
@@ -3336,8 +3356,66 @@ class StockService extends BaseService
 					}
 				}
 
-				$stockRow = $this->DB->stock()->createRow($rebuiltStockRow);
-				$stockRow->save();
+				// The existence check above and the insert below are two separate
+				// statements: AdvanceIdentitySequence() closes the narrower window between
+				// its own read and its own nextval() draw (#584), but a wider one remains
+				// open the whole time this method runs between that existence check and
+				// this insert - an entirely different connection can insert and commit a
+				// real row under this exact id in between, which no sequence check can see
+				// (a real INSERT never has to draw from the sequence at all if its own
+				// caller already resolved its id some other way, and even when it does,
+				// nothing here observes that connection's commit until this statement
+				// itself runs). A plain explicit-id INSERT would then collide outright.
+				//
+				// ON CONFLICT (id) DO NOTHING - rather than a savepoint plus catching the
+				// resulting unique-violation - makes the INSERT itself the single
+				// authoritative check of whether this id is still free, at the exact moment
+				// it actually runs rather than at the moment this method decided to try it;
+				// no savepoint is needed because a no-op ON CONFLICT arm never aborts the
+				// enclosing transaction the way an uncaught unique-violation would. Booleans
+				// are normalised to int first: unlike LessQL's own createRow()->save() below,
+				// a raw PDOStatement::execute() array binds every value as a string, and
+				// PHP's (string) cast of false is "" - not "0" - which the `open` column's
+				// own SMALLINT type rejects outright.
+				if (isset($rebuiltStockRow['id']))
+				{
+					$columns = array_keys($rebuiltStockRow);
+					$values = array_map(fn($value) => is_bool($value) ? (int)$value : $value, array_values($rebuiltStockRow));
+
+					$insert = DatabaseService::GetInstance()->GetDbConnectionRaw()->prepare(
+						'INSERT INTO stock (' . implode(', ', $columns) . ') VALUES (' . implode(', ', array_fill(0, count($columns), '?')) . ') ON CONFLICT (id) DO NOTHING'
+					);
+					$insert->execute($values);
+
+					if ($insert->rowCount() === 0)
+					{
+						// Someone else's real, committed row already holds this id - the
+						// same fresh-id fallback a lost sequence-advance race already takes.
+						unset($rebuiltStockRow['id']);
+					}
+					else
+					{
+						// This bypasses LessQL (the only reason the explicit-id case ever
+						// needed a raw statement at all), so the changed-time and MQTT/Influx
+						// "did this request write anything" bookkeeping LessQL's own query
+						// callback would otherwise have handled for this insert has to be
+						// done here instead - DatabaseService::MarkDbChanged()'s own docblock
+						// names exactly this situation ("code that prepares its own
+						// statements on the raw connection").
+						DatabaseService::GetInstance()->MarkDbChanged();
+
+						if (!DatabaseService::GetInstance()->IsBookkeeping())
+						{
+							DatabaseService::GetInstance()->MarkDataChanged();
+						}
+					}
+				}
+
+				if (!isset($rebuiltStockRow['id']))
+				{
+					$stockRow = $this->DB->stock()->createRow($rebuiltStockRow);
+					$stockRow->save();
+				}
 
 				// Update log entry
 				$this->MarkBookingUndone($logRow);

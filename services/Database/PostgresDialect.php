@@ -560,10 +560,32 @@ class PostgresDialect extends DatabaseDialect
 	 * sequence in between, so a decision to proceed made here never ends up drawing more
 	 * nextval() calls than it already accounted for.
 	 *
-	 * @return bool True if the sequence is now at or past $minNextValue - whether or not
-	 *              this call needed to move it there itself. False if $minNextValue was
-	 *              more than MAX_SEQUENCE_ADVANCE_GAP past the sequence's current position,
-	 *              in which case the sequence was left completely untouched.
+	 * Issue #584: when this read finds the sequence already at or past $minNextValue, the
+	 * id this call cares about ($minNextValue - 1, "X" below) was necessarily drawn once
+	 * already by *something* - X can only be handed out through nextval() on this same
+	 * sequence - so true is returned exactly as before, with no draws at all. It is NOT
+	 * guaranteed once this read finds the sequence at or below X: closing that gap still
+	 * takes as many nextval() calls as before, but nothing reserves X for this call in
+	 * particular - a concurrent caller can draw X first, in which case this call's own
+	 * draws land on whatever the sequence has moved on to instead, past X, and the caller
+	 * that named X (UndoBooking()'s CONSUME rebuild) would collide with whoever the
+	 * concurrent caller's own INSERT/booking already gave X to if it went ahead and reused
+	 * it anyway. So in that branch this method checks whether X was actually among the
+	 * values its own nextval() draws returned - `nextval()` itself is atomic and every
+	 * value it ever returns on a given sequence is unique, so if this call's own draws
+	 * include X, nothing else can have drawn it, ever, and reusing it is safe; if they do
+	 * not, X went to a concurrent caller (or was already skipped over, another sequence
+	 * artefact `AdvanceIdentitySequence()`'s own callers already rely on being tolerable)
+	 * and this method refuses so its own caller falls back to a fresh id instead of racing
+	 * an explicit-id INSERT against whatever already holds X.
+	 *
+	 * @return bool True if the sequence was already at or past $minNextValue, or if this
+	 *              call's own nextval() draws (needed to reach it) included
+	 *              $minNextValue - 1 itself. False if $minNextValue was more than
+	 *              MAX_SEQUENCE_ADVANCE_GAP past the sequence's current position (left
+	 *              completely untouched), or if this call's own draws did not include
+	 *              $minNextValue - 1 (the sequence was still advanced - just not through a
+	 *              draw this call can vouch for).
 	 */
 	public function AdvanceIdentitySequence(\PDO $pdo, string $table, string $column, int $minNextValue): bool
 	{
@@ -589,6 +611,13 @@ class PostgresDialect extends DatabaseDialect
 			return false;
 		}
 
+		if ($currentPosition >= $minNextValue)
+		{
+			// The sequence is already at or past $minNextValue, so $minNextValue - 1 was
+			// necessarily drawn once already (#584) - nothing to do, exactly as before.
+			return true;
+		}
+
 		// setval() is not atomic: it reads the sequence's current position and then writes
 		// a new one in two separate steps, and a concurrent nextval() landing between the
 		// two is silently undone - setval() simply overwrites whatever nextval() just
@@ -602,17 +631,22 @@ class PostgresDialect extends DatabaseDialect
 		// that still atomically claims its own unique value, this call's own among them,
 		// and the only visible effect of the two interleaving is a gap in the sequence,
 		// which is already normal, documented sequence behaviour that nothing here relies
-		// on being gap-free. GREATEST(0, ...) makes the call a true no-op - zero nextval()
-		// calls - when the sequence's own current next value is already at or past
-		// $minNextValue, which this method's only caller (UndoBooking()'s CONSUME rebuild)
-		// usually finds it already is. $sequenceName is interpolated (not bound) because a
-		// FROM target cannot be a bind parameter; it is safe here because it came back from
+		// on being gap-free. $sequenceName is interpolated (not bound) because a FROM
+		// target cannot be a bind parameter; it is safe here because it came back from
 		// pg_get_serial_sequence() above, not from anything a caller supplies directly.
+		//
+		// bool_or(v = ?) (#584) rather than a bare count(): the number of draws needed to
+		// close the gap is unaffected by a concurrent nextval() racing in - each call's own
+		// nextval() still returns exactly one atomically-unique value per row
+		// generate_series() produces - but WHICH values those are is not, once the sequence
+		// sits at or below X. Checking whether X itself is among this call's own draws (not
+		// merely that it drew the right count) is the only way to know it was this call,
+		// and not some concurrent caller, that was actually handed X.
 		$advance = $pdo->prepare(
-			'SELECT count(nextval(?)) FROM generate_series(1, GREATEST(0, ? - (SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName . ')))'
+			'SELECT coalesce(bool_or(v = ?), false) FROM (SELECT nextval(?) AS v FROM generate_series(1, ?)) advance_draws'
 		);
-		$advance->execute([$sequenceName, $minNextValue]);
-		return true;
+		$advance->execute([$minNextValue - 1, $sequenceName, $minNextValue - $currentPosition]);
+		return (bool)$advance->fetchColumn();
 	}
 
 	/**
