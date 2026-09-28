@@ -148,6 +148,33 @@ async function productWithStock(browser)
 	return id;
 }
 
+/**
+ * Issue #610: the stockentries scenario below only exercises the race it is meant to catch
+ * (a sibling stock entry of the same product being refreshed - and redrawing the table -
+ * while the just-consumed entry's own row is being hidden) when that product actually has a
+ * second stock entry. The demo data's chosen product may or may not already have one, so
+ * this purchases a small extra batch whenever /api/stock/products/{id}/entries reports
+ * fewer than two, guaranteeing the fixture the scenario needs regardless of demo data.
+ */
+async function ensureTwoStockEntries(browser, productId)
+{
+	const p = await browser.newPage();
+	await p.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+	await p.evaluate(async ({ base, id }) =>
+	{
+		const entries = await (await fetch(base + '/api/stock/products/' + id + '/entries', { credentials: 'same-origin' })).json();
+		if (Array.isArray(entries) && entries.length >= 2) return;
+
+		await fetch(base + '/api/stock/products/' + id + '/add', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ amount: 3, best_before_date: '2027-12-31' })
+		});
+	}, { base: BASE, id: productId });
+	await p.close();
+}
+
 async function probe(browser, label, how, run)
 {
 	const page = await newPage(browser, label);
@@ -258,8 +285,29 @@ async function probe(browser, label, how, run)
 		await page.waitForTimeout(1200);
 		const button = page.locator('a.stock-consume-button:not(.stock-consume-button-spoiled)').first();
 		const stockRowId = await button.getAttribute('data-stockrow-id');
+
+		// Issue #610: this scenario only exercises the race it is meant to catch - a
+		// *sibling* stock entry of the same product being refreshed (and redrawing the
+		// whole table) while the just-consumed entry's own row is being hidden - when the
+		// product this row actually belongs to carries a second stock entry. The page is
+		// unfiltered, so the first consume button is not necessarily for the shared
+		// productId every other scenario books against; read the real product id off this
+		// button, ensure its fixture, then reload so the new entry is in the table before
+		// the same row is clicked.
+		const consumedProductId = await button.getAttribute('data-product-id');
+		await ensureTwoStockEntries(browser, consumedProductId);
+		await page.reload({ waitUntil: 'networkidle' });
+		await page.waitForTimeout(1200);
+
+		// Each row renders two `.stock-consume-button` anchors sharing the same
+		// data-stockrow-id - the plain consume button (views/stockentries.blade.php's
+		// btn-danger anchor) and the "mark as spoiled" dropdown item
+		// (.stock-consume-button-spoiled) - so this must exclude the spoiled one and stay
+		// scoped to this row, exactly like the original locator above, or it resolves to
+		// two elements.
+		const reloadedButton = page.locator('#stock-' + stockRowId + '-row a.stock-consume-button:not(.stock-consume-button-spoiled)');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
-			button.click());
+			reloadedButton.click());
 		await waitForUndoToast(page);
 
 		// Audit finding H10 / issue #499: this button consumes the entry's whole amount
@@ -269,8 +317,11 @@ async function probe(browser, label, how, run)
 		// 400 for a gone id instead, which must still hide the row rather than surface
 		// DefaultErrorHandler's "A server error occured" toast. Waits for the row's own
 		// d-none class rather than a fixed delay (issue #579): a fixed 800ms raced
-		// animate.css 3.7's 500ms "faster" fade plus the refresh GET, and either one running
-		// long on a busy CI runner made the wait too short.
+		// animate.css 3.7's 500ms "faster" fade plus the refresh GET, and either one
+		// running long on a busy CI runner made the wait too short. Issue #610's fix
+		// applies d-none synchronously rather than in an animationend callback that a
+		// concurrent sibling-row redraw could cancel, and deliberately keeps the row's
+		// node in the DOM (rather than removing it) so Undo can find and restore it below.
 		await page.waitForFunction(id =>
 		{
 			const row = document.querySelector('#stock-' + id + '-row');
@@ -288,7 +339,23 @@ async function probe(browser, label, how, run)
 			throw new Error('the consumed entry\'s row was not hidden after its GET /stock/entry/{id} refresh (H10 / issue #499): class="' + rowClass + '"');
 		}
 
+		// Issue #610: StockService::UndoBooking() rebuilds a whole-take consume's entry
+		// under its original row id, and UndoStockBookingEntry()'s own "ProductChanged"
+		// broadcast is how this page notices - RefreshStockEntryRow() gets a 200 for a row
+		// it still has marked d-none, and reloads the page so the restored entry renders
+		// normally. Wait for that reload (registering the waiter before the click, since
+		// the reload itself follows a couple of message round trips after the undo POST
+		// resolves) rather than assuming clickUndoInToast's own wait covers it, then assert
+		// the row is back and visible instead of stuck hidden.
+		const reloadWait = page.waitForEvent('load', { timeout: 20000 }).catch(() => null);
 		await clickUndoInToast(page);
+		await reloadWait;
+		await page.waitForFunction(id =>
+		{
+			const row = document.querySelector('#stock-' + id + '-row');
+			return !!row && !row.classList.contains('d-none');
+		}, stockRowId, { timeout: 20000 });
+
 		return readUndoneCount(page, 'stock/bookings/' + booking[0].id);
 	});
 
