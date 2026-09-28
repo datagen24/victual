@@ -195,27 +195,42 @@ async function checkShape(browser, shapeName, shape)
 	// objects/meal_plan/undefined after a successful consume - attr() reads back `undefined`
 	// for a missing attribute, and string concatenation stringifies that into the URL. Only
 	// exercised for "full", the one shape whose gate lets the button render at all.
+	//
+	// CodeRabbit finding 4124891538 (round 3): a fixed delay after a best-effort
+	// waitForLoadState() let this check pass vacuously - if the consume POST itself failed,
+	// no reload and no meal_plan PUT would happen either, and the "no /undefined PUT" assertion
+	// would still hold for the wrong reason. The consume POST's own response is now awaited and
+	// asserted 2xx first, so a refusal there fails loudly instead of silently satisfying the
+	// PUT assertion that follows.
 	if (shapeName === 'full')
 	{
 		const weekButton = page.locator('a.recipe-consume-button:not([data-mealplan-entry-id])');
 		assert.equal(await weekButton.count(), 1, 'the week consume button should have rendered once for the pinned week');
+		const weekRecipeId = await weekButton.getAttribute('data-recipe-id');
 
-		const requestUrls = [];
-		function record(request) { requestUrls.push(request.url()); }
+		const requests = [];
+		function record(request) { requests.push({ method: request.method(), url: request.url() }); }
 		page.on('request', record);
+
+		const consumePostPattern = new RegExp('/api/recipes/' + weekRecipeId + '/consume$');
+		const consumeResponsePromise = page.waitForResponse(response =>
+			response.request().method() === 'POST' && consumePostPattern.test(new URL(response.url()).pathname));
 
 		await weekButton.click();
 		await page.getByRole('button', { name: 'Yes', exact: true }).click();
-		// A successful consume reloads the page (navigation); a refusal along the way would
-		// not - either way, give every request this click could have made time to fire before
-		// reading requestUrls back.
+
+		const consumeResponse = await consumeResponsePromise;
+		assert.ok(consumeResponse.ok(), 'the week consume POST must succeed (2xx), got ' + consumeResponse.status());
+
+		// A successful consume reloads the page (navigation) once the response above handler
+		// finishes running; wait for that so a would-be meal_plan PUT the old code fired
+		// afterward has had its chance to fire too, before reading `requests` back.
 		await page.waitForLoadState('load').catch(() => {});
-		await page.waitForTimeout(500);
 		page.off('request', record);
 
-		const undefinedPut = requestUrls.find(url => url.includes('/objects/meal_plan/undefined'));
-		assert.equal(undefinedPut, undefined, 'the week consume button must never PUT to .../meal_plan/undefined: ' + JSON.stringify(requestUrls));
-		console.log('full: week consume button did not PUT to .../meal_plan/undefined');
+		const mealPlanPuts = requests.filter(r => r.method === 'PUT' && r.url.includes('/objects/meal_plan/'));
+		assert.equal(mealPlanPuts.length, 0, 'the week consume button must never PUT to objects/meal_plan/* (including /undefined): ' + JSON.stringify(mealPlanPuts));
+		console.log('full: week consume POST succeeded (' + consumeResponse.status() + ') and PUT objects/meal_plan/* was never sent');
 	}
 
 	await page.close();
