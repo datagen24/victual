@@ -79,6 +79,23 @@ class GenericEntityApiController extends BaseApiController
 					// A new product is never already tare-enabled, so any truthy value here
 					// is an enable. See RefuseTareEnable().
 					$this->RefuseTareEnable($requestBody, false);
+
+					// Maintainer decision D4 (issue #553): a new product's stock unit
+					// defaults to its parent's own stock unit when a parent is given and the
+					// caller did not supply one of its own - mirroring productform.js's own
+					// default, which likewise only ever preselects the picker and never
+					// overrides a value already chosen. This method only ever creates (edits
+					// go through EditObject() below), so there is no existing product whose
+					// own choice this could clobber, and the default is not enforced
+					// afterwards - qu_id_stock remains freely editable both here and there.
+					if (!empty($requestBody['parent_product_id']) && empty($requestBody['qu_id_stock']))
+					{
+						$parentProduct = $this->DB->products($requestBody['parent_product_id']);
+						if ($parentProduct !== null)
+						{
+							$requestBody['qu_id_stock'] = $parentProduct->qu_id_stock;
+						}
+					}
 				}
 
 				if (empty($requestBody))

@@ -614,6 +614,19 @@ Victual.Components.ProductPicker.GetPicker().on('change', function (e)
 				{
 					$('#min_stock_amount').removeAttr("disabled");
 				}
+
+				// New product only (issue #553, maintainer decision D4): preselects this
+				// product's stock unit from the parent's own. Never overrides a unit already
+				// chosen - selectedIndex 0 is the select's blank placeholder option, so this
+				// only fires when nothing has been picked yet, whether by the user directly
+				// or by an earlier parent selection's own default; a later manual change
+				// simply sticks, exactly like every other field this form defaults. Editing
+				// an existing product leaves qu_id_stock untouched even if its parent changes.
+				if (Victual.EditMode == "create" && $("#qu_id_stock")[0].selectedIndex === 0 && parentProduct.qu_id_stock != null)
+				{
+					$("#qu_id_stock").val(parentProduct.qu_id_stock);
+					$("#qu_id_stock").trigger("change");
+				}
 			}
 		);
 	}
