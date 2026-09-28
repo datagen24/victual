@@ -157,6 +157,42 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertSame('Beef (renamed)', self::Pdo()->query('SELECT name FROM products WHERE id = 8002')->fetchColumn());
 	}
 
+	/**
+	 * RepairProductNesting()'s own SELECT joins products p_child, so a middle product with
+	 * more than one child used to join once per child: count($affected) counted the middle
+	 * product twice and the progress line named it twice, both wrong for a single product
+	 * that was repaired exactly once. This is the two-child case that regresses without the
+	 * SELECT's DISTINCT.
+	 */
+	public function testImportRepairsAMultiLevelChainWhoseMiddleProductHasTwoChildrenOnce(): void
+	{
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
+		$source->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock, parent_product_id)
+			VALUES (8011, 'Protein', 1, 2, 2, NULL), (8012, 'Beef', 1, 2, 2, 8011), (8013, 'Chuck roast', 1, 2, 2, 8012), (8014, 'Ground beef', 1, 2, 2, 8012)");
+
+		$messages = [];
+		$this->importer($source, function ($message) use (&$messages)
+		{
+			$messages[] = $message;
+		})->Import(true);
+
+		$rows = self::Pdo()->query('SELECT id, parent_product_id FROM products WHERE id >= 8011 ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR);
+		self::assertSame([8011 => null, 8012 => null, 8013 => 8012, 8014 => 8012], $rows,
+			'the middle product (8012) has its parent link cleared exactly once; both children (8013, 8014) stay under it; the root (8011) is untouched');
+
+		$repairLines = preg_grep('/repaired.*nesting/', $messages);
+		self::assertCount(1, $repairLines, 'exactly one repair line, not one per child: ' . implode("\n", $messages));
+
+		// The count and the per-product list must both reflect one distinct product, not
+		// one entry per child join row.
+		self::assertSame(
+			'  repaired 1 unsupported product nesting chain: unset parent_product_id on product 8012 (Beef), was parented under 8011'
+				. ' - dependent fields a trigger recomputes from this relationship (e.g. cumulated min_stock_amount) may have changed too',
+			reset($repairLines),
+			'product 8012 must be counted and named once despite having two children: ' . implode("\n", $messages)
+		);
+	}
+
 	public function testImportWithNoNestingDefectReportsNothingAndLeavesGuardIntact(): void
 	{
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
@@ -574,6 +610,55 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		$rebuilt = (float)self::Pdo()->query('SELECT price FROM cache__products_average_price WHERE product_id = ' . $productId)->fetchColumn();
 		self::assertEqualsWithDelta(20 / 9, $rebuilt, 0.0001,
 			'the weighted average of purchases 4@2, 3@2 and 2@3 is 2.2222..., not the 2.0 the source (and a verbatim copy of it) cached');
+		self::assertNotEmpty(preg_grep('/rebuilt price cache/', $messages), 'the rebuild must be reported: ' . implode("\n", $messages));
+	}
+
+	/**
+	 * RebuildPriceCaches() used to only upsert from the views, which cannot remove a row
+	 * for a product neither view returns a row for any more - only add or correct one for
+	 * a product a view still names. A source that undid its only purchase of a product is
+	 * exactly that case: trg_stock_log_UPD (fired by the UPDATE below, marking the purchase
+	 * undone) re-selects from the view for that product alone, finds nothing now that
+	 * "undone = 0" excludes it, and - an upsert whose SELECT returns no row inserts
+	 * nothing - leaves the row the purchase's own INSERT had cached exactly as it was. A
+	 * verbatim copy carries that stale row into the target untouched; the rebuild must
+	 * remove it, and must leave a product that still has a purchase alone.
+	 */
+	public function testImportClearsAStaleCacheRowForAProductWithNoPurchaseLeftInTheViews(): void
+	{
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$undoneProductId = 8502;
+		$keptProductId = 8503;
+
+		$source->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES "
+			. "($undoneProductId, 'Undone purchase fixture', 1, 2, 2), "
+			. "($keptProductId, 'Kept purchase fixture', 1, 2, 2)");
+
+		$source->exec("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id, purchased_date) VALUES "
+			. "($undoneProductId, 5, 'undone-cache-fixture', 'purchase', 3, 0, 1, '2026-01-01')");
+		$source->exec("UPDATE stock_log SET undone = 1, undone_timestamp = CURRENT_TIMESTAMP WHERE stock_id = 'undone-cache-fixture'");
+
+		$source->exec("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id, purchased_date) VALUES "
+			. "($keptProductId, 2, 'kept-cache-fixture', 'purchase', 4, 0, 1, '2026-01-02')");
+
+		self::assertSame(1, (int)$source->query("SELECT count(*) FROM cache__products_average_price WHERE product_id = $undoneProductId")->fetchColumn(),
+			"the fixture's own trigger must leave exactly one stale cache row behind for the undone product, not zero or none written in the first place");
+
+		$messages = [];
+		$this->importer($source, function ($message) use (&$messages)
+		{
+			$messages[] = $message;
+		})->Import(true);
+
+		self::assertSame(0, (int)self::Pdo()->query('SELECT count(*) FROM cache__products_average_price WHERE product_id = ' . $undoneProductId)->fetchColumn(),
+			'a verbatim copy carries the stale row in; the rebuild must remove it, since no view returns a row for this product any more');
+		self::assertSame(0, (int)self::Pdo()->query('SELECT count(*) FROM cache__products_last_purchased WHERE product_id = ' . $undoneProductId)->fetchColumn(),
+			'the same clear-then-rebuild applies to the last-purchased cache');
+
+		$keptPrice = (float)self::Pdo()->query('SELECT price FROM cache__products_average_price WHERE product_id = ' . $keptProductId)->fetchColumn();
+		self::assertSame(4.0, $keptPrice,
+			"a product that still has a purchase must carry the view's own value, undisturbed by the other product's row being cleared");
+
 		self::assertNotEmpty(preg_grep('/rebuilt price cache/', $messages), 'the rebuild must be reported: ' . implode("\n", $messages));
 	}
 

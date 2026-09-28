@@ -332,8 +332,12 @@ class DatabaseImporter
 	 */
 	private function RepairProductNesting(): void
 	{
+		// DISTINCT: a middle product with more than one child joins to p_child once per
+		// child, so without it the same id (and name, and parent) repeats once per child -
+		// inflating count($affected) and the progress line's list below well past the
+		// number of products actually repaired.
 		$affected = $this->Target->query(
-			'SELECT p_middle.id, p_middle.name, p_middle.parent_product_id
+			'SELECT DISTINCT p_middle.id, p_middle.name, p_middle.parent_product_id
 			FROM products p_middle
 			JOIN products p_child ON p_child.parent_product_id = p_middle.id
 			WHERE p_middle.parent_product_id IS NOT NULL'
@@ -1013,11 +1017,16 @@ class DatabaseImporter
 	 * `PrintAttemptService::Claim()` was never at risk here: its own
 	 * `WHERE ... AND o.dead_lettered_at IS NULL` (PrintAttemptService.php:48) already
 	 * excludes this exact row once it is dead-lettered, independent of `print_jobs.outcome`.
-	 * So the job is finished the same way `PrintAttemptService.php:98` and
-	 * `LabelPrintersApiController.php:62-65` already finish one, reusing their exact
-	 * outcome value and columns, for every job whose outbox row was just dead-lettered and
-	 * which was not already finished (`outcome IS NULL AND cancelled_at IS NULL` - a
-	 * cancelled job stays cancelled, and a job already `printed`/`sent` stays that).
+	 * So the job is finished unconditionally, including one whose current attempt is still
+	 * outstanding: by the time this runs, ImportSnapshot()'s own copy loop has already
+	 * truncated `api_keys` - a common, replaced table - which cascades onto
+	 * `label_worker_credentials` (NOT_COPIED_TABLES; see the class docblock), so whatever
+	 * credential a worker was using to authenticate that attempt no longer exists. No
+	 * pre-import attempt can ever come back to claim or complete itself, so there is
+	 * nothing here to wait for. Reusing `PrintAttemptService.php:98`'s own outcome value
+	 * and columns, every job whose outbox row was just dead-lettered and which was not
+	 * already finished (`outcome IS NULL AND cancelled_at IS NULL` - a cancelled job stays
+	 * cancelled, and a job already `printed`/`sent` stays that) is finished the same way.
 	 *
 	 * Never gated on $force: by the time this runs, AssertOutboxIsHandleable() has already
 	 * either refused (no --force, undelivered rows present) or been skipped (--force, or
@@ -1101,11 +1110,34 @@ class DatabaseImporter
 	 * engine's current, corrected view logic (`products_average_price` /
 	 * `products_last_purchased`) computes from the very rows this import just copied.
 	 *
+	 * A third way a cached row can be wrong, and the reason this method clears each cache
+	 * table before it rebuilds them: a row can survive for a product neither view returns
+	 * a row for any more - the source undid every purchase of a product, say. The source's
+	 * own trg_stock_log_UPD (db/pgsql/baseline/06_triggers_b.sql) only ever upserts
+	 * `WHERE product_id = NEW.product_id`, so when the view it selects from stops naming
+	 * that product, the INSERT finds nothing to insert and the stale row is never removed.
+	 * A verbatim copy carries that row into the target exactly as the source had it.
+	 * 0261.pgsql.sql's and 0267.pgsql.sql's own statements, reused verbatim below, are
+	 * upsert-only for the same structural reason a migration has to be: it runs once,
+	 * against a database that already holds rows in the table it is touching, and an
+	 * `INSERT ... ON CONFLICT DO UPDATE` has no way to remove a row the view it just
+	 * changed no longer accounts for. So rebuilding by upsert alone would only be *the
+	 * same answer bin/victual-migrate would give re-running 0261 and 0267 today* - not
+	 * exact, because those migrations were never able to be exact either. Clearing first
+	 * is what an importer can promise that a migration cannot: nothing else has written to
+	 * the target's copy of these two tables before this method runs, so after it, each
+	 * holds precisely the rows its view returns right now, and no others.
+	 *
 	 * Rebuilding from the views (after RepairProductNesting(), so a repaired chain's own
-	 * products are already correct too) gives the same answer bin/victual-migrate would if
-	 * it re-ran 0261 and 0267 today. Guarded on the cache table's existence rather than on
-	 * `$tables` containing `stock` or `products`: the views these statements select from
-	 * read every table they need directly, so there is nothing else to gate on.
+	 * products are already correct too) is guarded on the cache table's existence rather
+	 * than on `$tables` containing `stock` or `products`: the views these statements select
+	 * from read every table they need directly, so there is nothing else to gate on.
+	 *
+	 * Each table's DELETE and INSERT run inside one transaction. This method runs in
+	 * autocommit - ImportSnapshot()'s own transaction around the copy has already
+	 * committed by the time it is called - so without one, a crash between the DELETE and
+	 * the INSERT would leave that cache table empty rather than merely stale, which is
+	 * worse than anything this method exists to fix.
 	 */
 	private function RebuildPriceCaches(): void
 	{
@@ -1114,28 +1146,53 @@ class DatabaseImporter
 			return;
 		}
 
-		$averagePrice = $this->Target->exec(
-			'INSERT INTO cache__products_average_price (product_id, price)
-			SELECT product_id, price
-			FROM products_average_price
-			ON CONFLICT (product_id) DO UPDATE SET
-				price = EXCLUDED.price'
-		);
+		$this->Target->beginTransaction();
 
-		$lastPurchased = $this->Target->exec(
-			'INSERT INTO cache__products_last_purchased
-				(product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id)
-			SELECT product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id
-			FROM products_last_purchased
-			ON CONFLICT (product_id) DO UPDATE SET
-				amount = EXCLUDED.amount,
-				best_before_date = EXCLUDED.best_before_date,
-				purchased_date = EXCLUDED.purchased_date,
-				price = EXCLUDED.price,
-				location_id = EXCLUDED.location_id,
-				shopping_location_id = EXCLUDED.shopping_location_id'
-		);
+		try
+		{
+			// Cleared, not just upserted into - see the docblock above for why an upsert
+			// alone leaves behind a row for a product the view no longer returns.
+			$this->Target->exec('DELETE FROM cache__products_average_price');
 
+			$averagePrice = $this->Target->exec(
+				'INSERT INTO cache__products_average_price (product_id, price)
+				SELECT product_id, price
+				FROM products_average_price
+				ON CONFLICT (product_id) DO UPDATE SET
+					price = EXCLUDED.price'
+			);
+
+			$this->Target->exec('DELETE FROM cache__products_last_purchased');
+
+			$lastPurchased = $this->Target->exec(
+				'INSERT INTO cache__products_last_purchased
+					(product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id)
+				SELECT product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id
+				FROM products_last_purchased
+				ON CONFLICT (product_id) DO UPDATE SET
+					amount = EXCLUDED.amount,
+					best_before_date = EXCLUDED.best_before_date,
+					purchased_date = EXCLUDED.purchased_date,
+					price = EXCLUDED.price,
+					location_id = EXCLUDED.location_id,
+					shopping_location_id = EXCLUDED.shopping_location_id'
+			);
+		}
+		catch (\Throwable $ex)
+		{
+			if ($this->Target->inTransaction())
+			{
+				$this->Target->rollBack();
+			}
+
+			throw $ex;
+		}
+
+		$this->Target->commit();
+
+		// Rows inserted, per exec()'s own return value - and, since each table was cleared
+		// immediately before its INSERT ran, exactly the rows now in each cache, not merely
+		// the rows the upsert happened to change.
 		($this->Progress)('  rebuilt price cache(s): ' . $averagePrice . ' average-price row(s), '
 			. $lastPurchased . ' last-purchased row(s)');
 	}
