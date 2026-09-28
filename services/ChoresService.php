@@ -2,6 +2,9 @@
 
 namespace Victual\Services;
 
+use Victual\Controllers\Users\PermissionMissingException;
+use Victual\Controllers\Users\User;
+
 /**
  * Business logic for chore tracking: execution journal, next-execution user assignment
  * and merging of chores.
@@ -286,6 +289,16 @@ class ChoresService extends BaseService
 			{
 				$transactionId = uniqid();
 				StockService::GetInstance()->ConsumeProduct($chore->product_id, $chore->product_amount, false, StockService::TRANSACTION_TYPE_CONSUME, 'default', null, null, $transactionId, true);
+
+				// Issue #506 (maintainer decision D5, round 4): the explicit link
+				// UndoChoreExecution() undoes this consumption through - recorded here,
+				// inside this same transaction, rather than derived after the fact (an
+				// earlier round tried deriving it from PostgreSQL's `xmin`, which a
+				// validator proved identifies a whole transaction rather than one
+				// execution - see migrations/0291.pgsql.sql).
+				$logRow->update([
+					'stock_transaction_id' => $transactionId
+				]);
 			}
 
 			if (!empty($chore->rescheduled_date))
@@ -309,27 +322,128 @@ class ChoresService extends BaseService
 	}
 
 	/**
-	 * Marks a chore execution log entry as undone (the row is kept, not deleted) and
-	 * recalculates the next execution assignment.
+	 * Marks a chore execution log entry as undone (the row is kept, not deleted),
+	 * undoes the stock consumption it booked (when there is one), and recalculates the
+	 * next execution assignment.
+	 *
+	 * Issue #506 (maintainer decision D1, #487 remediation): undoing an execution that
+	 * consumed stock must undo that consumption too, atomically with the chore undo - if
+	 * the stock undo is refused (e.g. a later booking now depends on it), nothing here
+	 * commits either.
+	 *
+	 * The link is chores_log.stock_transaction_id (migrations/0291.pgsql.sql, maintainer
+	 * decision D5, round 4): TrackChore() records the transaction_id its own consumption
+	 * booked, in the same database transaction, directly on the row. Two earlier rounds
+	 * tried to derive the link after the fact instead - first from (product_id,
+	 * row_created_timestamp), then from PostgreSQL's `xmin` system column - and a
+	 * validator broke each: a timestamp match reversed an unrelated same-second
+	 * consumption, and `xmin` identifies a whole database transaction rather than one
+	 * execution, so every chores_log row DatabaseImporter::Import() writes in its single
+	 * transaction shared an `xmin` with every stock_log row it also wrote. An explicit
+	 * column has neither failure mode: it names one specific transaction_id, or it is
+	 * NULL, decided once, when the execution's own consumption (if any) was booked.
+	 *
+	 * A NULL stock_transaction_id - an execution that never consumed anything
+	 * (consume_product_on_execution was 0, or the chore named no product), one recorded
+	 * before this column existed, or one an import brought in from another database -
+	 * undoes the chore alone, exactly as before decision D1 (its "legacy executions"
+	 * case), rather than refusing.
+	 *
+	 * A stock_transaction_id that is set but names no still-live (undone = 0) stock_log
+	 * row also undoes the chore alone (issue #506 round 5): the stock side of this
+	 * execution was already undone by some other path - directly through the stock
+	 * journal, for instance - and StockService::UndoTransaction() refuses outright when
+	 * every booking of a transaction id is already undone ("This transaction was not
+	 * found or already undone"). Calling it anyway would make this chore's own undo fail
+	 * every time, forever, over stock that is already back the way it was - the chore
+	 * would never be undoable again. A transaction with *some* bookings still live and
+	 * some already undone is different and is not this method's problem to solve:
+	 * UndoTransaction() itself only ever reverses the still-live remainder of a
+	 * transaction (never the whole original set), which is exactly right here too, so
+	 * that ordinary partial case reaches it unchanged, still atomic, still refusing
+	 * whole when any one of that remainder cannot be undone.
+	 *
+	 * Authorization (CWE-863, CodeRabbit finding on this PR): CHORE_UNDO_EXECUTION alone
+	 * authorizes undoing the chore itself, not reversing stock - the same composite-
+	 * operation rule issue #532 applied to recipe consumption (RecipesService::
+	 * ConsumeRecipe(), which checks STOCK_PURCHASE before a self-production booking).
+	 * So when - and only when - a live linked booking is actually about to be reversed,
+	 * this also requires STOCK_EDIT, the same permission POST /api/stock/transactions/
+	 * {id}/undo and POST /api/stock/bookings/{id}/undo already require for reversing
+	 * stock this way (StockApiController::UndoTransaction()/UndoBooking()). A NULL link,
+	 * or one whose booking is already gone, is chore-only regardless, and stays
+	 * available on CHORE_UNDO_EXECUTION alone, exactly as before this check existed.
+	 *
+	 * $request shapes the refusal the same way RecipesService::ConsumeRecipe()'s own
+	 * STOCK_PURCHASE check does: User::HasPermissions() only ever reads the ambient
+	 * VICTUAL_USER_ID, never $request, so the permission is checked unconditionally
+	 * rather than only when a request happens to be given (that gate is exactly the
+	 * fail-open shape issue #532 closed) - a caller with no request must already hold
+	 * STOCK_EDIT, exactly like one that does. With a request, the refusal is the same
+	 * PermissionMissingException User::CheckPermission() throws everywhere else
+	 * (HandleApiCall() answers 403); without one, a plain \Exception. Either way nothing
+	 * is booked, and this whole InTransaction() unwinds before the chores_log update
+	 * below runs.
 	 *
 	 * @param int $executionId
-	 * @throws \Exception When the entry does not exist or was already undone
+	 * @param \Psr\Http\Message\ServerRequestInterface|null $request Only shapes the
+	 *              exception a missing STOCK_EDIT throws; the permission check itself is
+	 *              unconditional (see above)
+	 * @throws \Exception When the entry does not exist or was already undone, when the
+	 *                     linked stock transaction has a live booking that can no longer
+	 *                     be undone, or when a live linked booking would be reversed but
+	 *                     the acting user lacks STOCK_EDIT
+	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was
+	 *              given and the acting user lacks STOCK_EDIT for an execution that will
+	 *              reverse a live linked booking
 	 */
-	public function UndoChoreExecution($executionId)
+	public function UndoChoreExecution($executionId, $request = null)
 	{
-		$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
-		if ($logRow == null)
+		return DatabaseService::GetInstance()->InTransaction(function () use ($executionId, $request)
 		{
-			throw new \Exception('Execution does not exist or was already undone');
-		}
+			$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
+			if ($logRow == null)
+			{
+				throw new \Exception('Execution does not exist or was already undone');
+			}
 
-		// Update log entry
-		$logRow->update([
-			'undone' => 1,
-			'undone_timestamp' => date('Y-m-d H:i:s')
-		]);
+			if (!empty($logRow->stock_transaction_id) && $this->HasLiveStockBooking($logRow->stock_transaction_id))
+			{
+				if (!User::HasPermissions(User::PERMISSION_STOCK_EDIT))
+				{
+					if ($request !== null)
+					{
+						throw new PermissionMissingException($request, User::PERMISSION_STOCK_EDIT);
+					}
 
-		$this->CalculateNextExecutionAssignment($logRow->chore_id);
+					throw new \Exception('Permission missing: ' . User::PERMISSION_STOCK_EDIT);
+				}
+
+				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
+				// later booking now depends on this one), the exception unwinds this
+				// whole InTransaction() and the chores_log update below never happens.
+				StockService::GetInstance()->UndoTransaction($logRow->stock_transaction_id);
+			}
+
+			// Update log entry
+			$logRow->update([
+				'undone' => 1,
+				'undone_timestamp' => date('Y-m-d H:i:s')
+			]);
+
+			$this->CalculateNextExecutionAssignment($logRow->chore_id);
+		});
+	}
+
+	/**
+	 * Whether $transactionId still has at least one not-yet-undone stock_log booking.
+	 *
+	 * @param string $transactionId
+	 * @return bool
+	 */
+	private function HasLiveStockBooking(string $transactionId): bool
+	{
+		return $this->DB->stock_log()->where('undone = 0 AND transaction_id = :1', $transactionId)->count() > 0;
 	}
 
 	/**

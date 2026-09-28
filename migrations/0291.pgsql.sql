@@ -1,0 +1,27 @@
+-- Issue #506 (#487 remediation) maintainer decision D5 (round 4): an explicit link between
+-- a chore execution and the stock consumption TrackChore() booked for it, replacing an
+-- earlier round's derived PostgreSQL `xmin` match. A second validator round showed `xmin`
+-- identifies a whole database transaction rather than one business operation within it -
+-- DatabaseImporter imports an entire database in one transaction, so every imported
+-- chores_log row shared an xmin with every imported stock_log row - and no amount of extra
+-- filtering on top of `xmin` closed that gap for good. An explicit column removes the need
+-- to infer the link from transaction metadata at all.
+--
+-- TEXT, matching stock_log.transaction_id's own type (migrations/0095.sql), so the column
+-- can hold exactly the value ChoresService::TrackChore() passes to
+-- StockService::ConsumeProduct() and StockService::UndoTransaction() takes back.
+--
+-- Nullable, with no backfill: NULL means "no stock consumption is linked to this execution",
+-- true both for an execution that never consumed anything (consume_product_on_execution was
+-- 0) and for one recorded before this column existed, or imported from another database -
+-- the "legacy executions" case maintainer decision D1 already requires ChoresService::
+-- UndoChoreExecution() to undo as chore-only rather than refuse. Every existing row stays
+-- NULL; only a chore tracked after this migration ever has this column set.
+--
+-- No index: UndoChoreExecution() only ever reads this column off the one chores_log row it
+-- already fetched by id, never looks a row up by stock_transaction_id.
+--
+-- PostgreSQL only, above DatabaseMigrationService::SQLITE_FROZEN_MIGRATION_ID, per
+-- ADR-0008's retirement.
+
+ALTER TABLE chores_log ADD COLUMN stock_transaction_id TEXT;

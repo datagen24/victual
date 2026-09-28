@@ -147,8 +147,13 @@ class ChoresApiController extends BaseApiController
 
 	/**
 	 * POST /api/chores/executions/{executionId}/undo - undoes a tracked chore execution.
-	 * Requires the CHORE_UNDO_EXECUTION permission (403 otherwise).
-	 * Returns 204 on success or a 400 error response.
+	 * Requires the CHORE_UNDO_EXECUTION permission (403 otherwise); an execution that
+	 * will also undo a live linked stock booking (issue #506) additionally requires
+	 * STOCK_EDIT - the same permission POST /api/stock/transactions/{id}/undo and
+	 * POST /api/stock/bookings/{id}/undo already require for reversing stock this way -
+	 * checked once ChoresService::UndoChoreExecution() knows whether a live booking is
+	 * actually going to be reversed (CWE-863, CodeRabbit finding on this PR).
+	 * Returns 204 on success or a 400/403 error response.
 	 */
 	public function UndoChoreExecution(Request $request, Response $response, array $args)
 	{
@@ -156,7 +161,7 @@ class ChoresApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			$this->ApiResponse($response, ChoresService::GetInstance()->UndoChoreExecution($args['executionId']));
+			$this->ApiResponse($response, ChoresService::GetInstance()->UndoChoreExecution($args['executionId'], $request));
 			return $this->EmptyApiResponse($response);
 		});
 	}
