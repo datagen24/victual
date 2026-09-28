@@ -696,7 +696,10 @@ class DatabaseMigrationService extends BaseService
 					$migrationCounter++;
 				}
 			}
-			catch (\Exception $ex)
+			// Issue #557: same fix as ApplyBaselineSchemaWhenNeeded() and
+			// FlagGeneratedAdminPasswordForChange() above - \Exception left an \Error
+			// uncaught and this transaction open.
+			catch (\Throwable $ex)
 			{
 				DatabaseService::GetInstance()->GetDbConnectionRaw()->rollback();
 				throw $ex;
