@@ -2151,4 +2151,120 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		$newId = (int)$newRow->fetchColumn();
 		self::assertGreaterThan($originalId, $newId, 'the new purchase\'s id is above every id that already existed, not a reused one');
 	}
+
+	/**
+	 * PostgresDialect::MAX_SEQUENCE_ADVANCE_GAP (CodeRabbit review of PR #577, inline
+	 * comment 4117658616): the previous test above shows a small gap still being closed and
+	 * the id reused, as before this cap existed. This is the other side of the cap - a gap
+	 * wide enough that closing it would mean an unbounded number of nextval() calls while
+	 * holding this product's own advisory lock. Simulated cheaply with two setval() calls
+	 * rather than a real import (the only thing that can actually open a gap this wide,
+	 * since stock_log is not otherwise editable through the API): one jumps the sequence far
+	 * ahead before the purchase, so the purchase's own ordinary insert naturally lands on a
+	 * large id without any explicit id of its own, and one drops the sequence back down to
+	 * its own pre-test position (still past every id anything else in this schema has used,
+	 * so the fallback insert below cannot collide with an earlier test's own row) before the
+	 * undo - standing in for whatever left a real import's sequence resynced from a
+	 * surviving maximum this far below an id a booking still names. Past the cap,
+	 * AdvanceIdentitySequence() refuses without drawing a single nextval(), and the rebuild
+	 * falls back to a fresh, ordinary id instead of the abandoned one - exactly what a
+	 * booking with no recorded stock_row_id at all already gets. A later TRANSFER_TO/FROM or
+	 * PRODUCT_OPENED undo naming the abandoned id would then refuse safely on its own (#488);
+	 * nothing in this test exercises that path, since nothing here is left to undo it.
+	 */
+	public function testUndoingAFullConsumeFallsBackToAFreshIdWhenTheGapExceedsTheCap(): void
+	{
+		$product = self::insertProduct('Undo Consume Sequence Gap Above Cap');
+
+		$sequenceName = self::$db->query("SELECT pg_get_serial_sequence('stock', 'id')")->fetchColumn();
+		$naturalPosition = (int)self::$db->query('SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName)->fetchColumn();
+		$farAhead = $naturalPosition + PostgresDialect::MAX_SEQUENCE_ADVANCE_GAP + 1;
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $farAhead, false)");
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'X is purchased, naturally landing on the far-advanced id'
+		);
+		$originalId = (int)self::rows($product)[0]['id'];
+		self::assertSame($farAhead, $originalId, 'Sanity: the purchase landed exactly on the far-advanced id');
+
+		$consume = $this->expectStatus(
+			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$locationA]), new Response(), ['productId' => $product]),
+			200,
+			'X is fully consumed, deleting its row'
+		);
+
+		self::$db->exec("SELECT setval(pg_get_serial_sequence('stock', 'id'), $naturalPosition, false)");
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $consume[0]['transaction_id']]),
+			204,
+			'Undoing the consume is still accepted even though the gap to its original id exceeds the cap'
+		);
+
+		$rebuilt = self::rows($product)[0];
+		self::assertSame($naturalPosition, (int)$rebuilt['id'], 'the row is rebuilt under a fresh, ordinary id - the abandoned far id is above the cap');
+		self::assertSame(1.0, (float)$rebuilt['amount'], 'the consumed amount is restored correctly under the fresh id');
+
+		$sequenceAfter = (int)self::$db->query('SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM ' . $sequenceName)->fetchColumn();
+		self::assertLessThan($originalId, $sequenceAfter, 'no nextval() loop ran to close the refused gap - the sequence advanced only by the fresh insert\'s own ordinary nextval() call, nowhere near the abandoned id');
+	}
+
+	// ------------------------------------------------------------------------------
+	// STOCK_EDIT_OLD undo restores shopping_location_id (#531 follow-up)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The TRANSACTION_TYPE_STOCK_EDIT_OLD booking records shopping_location_id the same as
+	 * every other edited column (see its own creation in EditStockEntry()), but the undo's
+	 * restore array omitted it - so undoing an edit that had cleared a store restored the
+	 * price and due date but left the store NULL instead of the store the edit had cleared.
+	 */
+	public function testUndoingAStockEditRestoresTheClearedShoppingLocation(): void
+	{
+		$store = self::insertRow('shopping_locations', ['name' => 'Undo Restore Store']);
+		$product = self::insertProduct('Undo Restore Shopping Location');
+
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', [
+				'amount' => 2,
+				'location_id' => self::$locationA,
+				'shopping_location_id' => $store,
+				'best_before_date' => self::FAR_FUTURE_DATE,
+				'purchased_date' => '2026-01-01',
+				'price' => 1.5,
+			]), new Response(), ['productId' => $product]),
+			200,
+			'Purchased with a store recorded'
+		);
+
+		$entryId = self::$db->prepare('SELECT id FROM stock WHERE product_id = ?');
+		$entryId->execute([$product]);
+		$entryId = (int)$entryId->fetchColumn();
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The store is recorded before the edit');
+
+		$edit = $this->expectStatus(
+			// shopping_location_id: null clears the store - omitting the key entirely
+			// means "keep the current value" (StockService::KeepStoredValue()), so a null
+			// is required here to actually clear it.
+			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'open' => false, 'purchased_date' => '2026-01-01', 'price' => 1.5, 'location_id' => self::$locationA, 'shopping_location_id' => null]), new Response(), ['entryId' => $entryId]),
+			200,
+			'The edit clears the store'
+		);
+
+		self::assertNull(self::rows($product)[0]['shopping_location_id'], 'The store is cleared by the edit');
+
+		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
+		self::assertSame($store, (int)$editOld['shopping_location_id'], 'The OLD booking records the store the edit cleared');
+
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
+			204,
+			'Undoing the edit is accepted'
+		);
+
+		self::assertSame($store, (int)self::rows($product)[0]['shopping_location_id'], 'The undo restores the store the edit had cleared, not NULL');
+	}
 }
