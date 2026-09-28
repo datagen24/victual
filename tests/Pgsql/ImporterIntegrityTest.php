@@ -5,6 +5,8 @@ namespace Victual\Tests\Pgsql;
 use PDO;
 use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\DatabaseService;
+use Victual\Services\Labels\LabelPrintJobService;
+use Victual\Services\Labels\PrintAttemptService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -205,18 +207,6 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertNotEmpty(preg_grep('/outbox: deleted 1 unreferenced row/', $messages), 'the deletion must be reported: ' . implode("\n", $messages));
 	}
 
-	public function testImportDeletesAnUnreferencedOutboxRow(): void
-	{
-		$db = self::Pdo();
-		$outboxId = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('stock.transaction_booked', '{}') RETURNING id")->fetchColumn();
-
-		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
-		$this->importer($source)->Import(true);
-
-		self::assertSame(0, (int)$db->query('SELECT count(*) FROM outbox WHERE id = ' . $outboxId)->fetchColumn(),
-			'nothing references this row, so it must be deleted outright rather than kept around forever as inert history');
-	}
-
 	public function testImportKeepsADeliveredPrintJobsOutboxRowUntouched(): void
 	{
 		$db = self::Pdo();
@@ -245,16 +235,31 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			'the print attempt survives for the same reason');
 	}
 
-	public function testImportDeadLettersAPendingPrintJobsOutboxRowAndNeverDeliversIt(): void
+	/**
+	 * Dead-lettering the outbox row is necessary but not sufficient: LabelPrintJobService::Monitor()
+	 * (the same query the label print dashboard reads), PrintAttemptService::Claim() (what a
+	 * worker actually calls) and LabelOperationsService::Cancel() all read `print_jobs.outcome`
+	 * directly, not the outbox row it points at. Two jobs, matching the two shapes the
+	 * `authorization_state` column distinguishes: one with no attempt at all (would otherwise
+	 * read `awaiting_artifact`) and one whose only attempt already failed (would otherwise read
+	 * `failed`, which a monitor or an operator could reasonably retry) - neither is a terminal
+	 * state, and neither job may ever be delivered once its outbox row is dead-lettered.
+	 */
+	public function testImportDeadLettersAPendingPrintJobsOutboxRowAndFinishesTheJob(): void
 	{
 		$db = self::Pdo();
 		[$workerId, $printerId] = $this->labelPrinterFixture();
 
-		$outboxId = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id")->fetchColumn();
-		$jobId = (int)$db->query('INSERT INTO print_jobs (outbox_id, printer_id, label_uid) VALUES ('
-			. $outboxId . ', ' . $printerId . ", 'PENDING1DEKTSV4RRFFQ69G5F') RETURNING id")->fetchColumn();
-		$attemptId = (int)$db->query('INSERT INTO print_attempts (outbox_id, job_id, attempt_number, worker_id, lease_expires_at, lease_hard_deadline, acknowledged_on) VALUES ('
-			. $outboxId . ', ' . $jobId . ", 1, $workerId, CURRENT_TIMESTAMP + INTERVAL '5 minutes', CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'report') RETURNING id")->fetchColumn();
+		$outboxA = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id")->fetchColumn();
+		$jobA = (int)$db->query('INSERT INTO print_jobs (outbox_id, printer_id, label_uid) VALUES ('
+			. $outboxA . ', ' . $printerId . ", 'PENDING1DEKTSV4RRFFQ69G5F') RETURNING id")->fetchColumn();
+
+		$outboxB = (int)$db->query("INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id")->fetchColumn();
+		$jobB = (int)$db->query('INSERT INTO print_jobs (outbox_id, printer_id, label_uid, attempts_made) VALUES ('
+			. $outboxB . ', ' . $printerId . ", 'PENDING2DEKTSV4RRFFQ69G5F', 1) RETURNING id")->fetchColumn();
+		$attemptB = (int)$db->query('INSERT INTO print_attempts (outbox_id, job_id, attempt_number, worker_id, lease_expires_at, lease_hard_deadline, acknowledged_on, ended_at, outcome, error_text) VALUES ('
+			. $outboxB . ', ' . $jobB . ", 1, $workerId, CURRENT_TIMESTAMP - INTERVAL '5 minutes', CURRENT_TIMESTAMP, 'report', CURRENT_TIMESTAMP - INTERVAL '6 minutes', 'failed', 'paper out') RETURNING id")->fetchColumn();
+		$db->exec('UPDATE print_jobs SET current_attempt_id = ' . $attemptB . ' WHERE id = ' . $jobB);
 
 		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
 
@@ -264,18 +269,53 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			$messages[] = $message;
 		})->Import(true);
 
-		$row = $db->query('SELECT delivered_at, dead_lettered_at FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
-		self::assertNotFalse($row, 'the referenced outbox row must not be deleted');
-		self::assertNull($row['delivered_at'], 'it was never delivered and must not be reported as if it had been');
-		self::assertNotNull($row['dead_lettered_at'], 'a pending, referenced row must be dead-lettered rather than left live');
+		foreach ([$outboxA, $outboxB] as $outboxId)
+		{
+			$row = $db->query('SELECT delivered_at, dead_lettered_at FROM outbox WHERE id = ' . $outboxId)->fetch(PDO::FETCH_ASSOC);
+			self::assertNotFalse($row, "outbox row $outboxId must not be deleted - it is referenced");
+			self::assertNull($row['delivered_at'], 'it was never delivered and must not be reported as if it had been');
+			self::assertNotNull($row['dead_lettered_at'], 'a pending, referenced row must be dead-lettered rather than left live');
+		}
 
-		self::assertSame(0,
-			(int)$db->query('SELECT count(*) FROM outbox WHERE id = ' . $outboxId . ' AND delivered_at IS NULL AND dead_lettered_at IS NULL')->fetchColumn(),
-			"OutboxService::GetUndelivered()'s own WHERE clause (delivered_at IS NULL AND dead_lettered_at IS NULL) must now exclude this row"
-		);
-		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_jobs WHERE id = ' . $jobId)->fetchColumn(), 'the print job survives');
-		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_attempts WHERE id = ' . $attemptId)->fetchColumn(), 'the print attempt survives');
-		self::assertNotEmpty(preg_grep('/outbox: deleted 0 unreferenced row.*dead-lettered 1 row/', $messages),
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_jobs WHERE id = ' . $jobA)->fetchColumn(), 'job A survives');
+		self::assertSame(1, (int)$db->query('SELECT count(*) FROM print_attempts WHERE id = ' . $attemptB)->fetchColumn(), "job B's attempt survives");
+
+		$monitor = [];
+		foreach ((new LabelPrintJobService($db))->Monitor() as $row)
+		{
+			if (in_array((int)$row['id'], [$jobA, $jobB], true))
+			{
+				$monitor[(int)$row['id']] = $row;
+			}
+		}
+		self::assertArrayHasKey($jobA, $monitor);
+		self::assertArrayHasKey($jobB, $monitor);
+		self::assertSame('dead_lettered', $monitor[$jobA]['state'],
+			'a job with no attempt must be reported dead_lettered, not awaiting_artifact: ' . json_encode($monitor[$jobA]));
+		self::assertSame('dead_lettered', $monitor[$jobB]['state'],
+			'a job whose only attempt failed must be reported dead_lettered, not failed: ' . json_encode($monitor[$jobB]));
+		self::assertSame('dead_lettered', $monitor[$jobA]['outcome']);
+		self::assertNotNull($monitor[$jobA]['outcome_at']);
+		self::assertSame('dead_lettered', $monitor[$jobB]['outcome']);
+
+		// The real claim path, not only the SQL predicate: PrintAttemptService::Claim() is
+		// what a worker process actually calls, and it must never offer either job again.
+		$db->beginTransaction();
+		try
+		{
+			$claimed = array_column((new PrintAttemptService($db))->Claim($workerId, 50), 'id');
+		}
+		finally
+		{
+			if ($db->inTransaction())
+			{
+				$db->rollBack();
+			}
+		}
+		self::assertNotContains($jobA, array_map('intval', $claimed), 'a dead-lettered job with no attempt must never become claimable');
+		self::assertNotContains($jobB, array_map('intval', $claimed), 'neither must one whose only attempt already failed');
+
+		self::assertNotEmpty(preg_grep('/outbox: deleted 0 unreferenced row.*dead-lettered 2 row/', $messages),
 			'the dead-lettering must be reported: ' . implode("\n", $messages));
 	}
 
@@ -344,24 +384,33 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The other half of the property above, proven against the real publication code rather
-	 * than only against the schema: a ledger row that survived with nothing currently opting
-	 * its product in - exactly testImportKeepsTheMqttPublicationLedgerButClearsTheProductOptIn()'s
-	 * own end state - must still cause MqttStatePublicationService::Retract() to send an empty
-	 * payload for its topic and forget the row, the next time publication runs. Seeded
-	 * directly (mqttcoverage-subprocess-helper.php's `seedledgerrow` step) rather than by
-	 * running a full import first: the previous test already proves an import produces this
-	 * exact state, so this one starts from it and asks the question a broker can actually
-	 * answer, using the same stand-in broker infrastructure MqttCoverageTest.php's own
-	 * scenarios do (see that class for the fuller pattern this borrows a reduced copy of).
+	 * The other half of the property above, proven end to end against the real publication
+	 * code and a real import, not seeded state: a ledger entry the target owned *before* an
+	 * import - surviving it untouched, exactly as
+	 * testImportKeepsTheMqttPublicationLedgerButClearsTheProductOptIn() already proves at the
+	 * schema level - must still be retracted by the very next normal publish afterwards, using
+	 * the same stand-in broker infrastructure MqttCoverageTest.php's own scenarios do (see that
+	 * class for the fuller pattern this borrows a reduced copy of). Uses the `state` scenario
+	 * step (MqttStatePublicationService::PublishState(), the request-end publish path) rather
+	 * than the separate `retract` step: the normal publish path does its own ledger-diff and
+	 * retraction internally, and that - not a caller reaching for retraction explicitly - is
+	 * what a real import leaves this installation waiting on.
 	 */
-	public function testARetractionForALedgerEntryThatSurvivedAnImportReachesTheBroker(): void
+	public function testARealImportKeepsTheNextPublishAbleToRetractASurvivingLedgerEntry(): void
 	{
-		$productId = 8402;
-		$objectId = 'product_' . $productId;
 		$db = self::Pdo();
-		$statement = $db->prepare('INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES (?, ?)');
-		$statement->execute([$objectId, hash('sha256', 'importer-integrity-retraction-fixture')]);
+		$db->exec("INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES "
+			. "('product_7', 'pre-import-hash-7'), ('product_8601', 'pre-import-hash-8601')");
+		$db->exec('INSERT INTO mqtt_product_entities (product_id) VALUES (8601)');
+
+		// 0265 carries both mqtt tables, so a source at that end of the span is the case
+		// master and round 1 lost the ledger in - the harder case for this fix to prove.
+		$this->importer($this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX))->Import(true);
+
+		$ledgerAfterImport = $db->query('SELECT object_id FROM mqtt_published_entities ORDER BY object_id')->fetchAll(PDO::FETCH_COLUMN);
+		self::assertSame(['product_7', 'product_8601'], $ledgerAfterImport, 'both ledger rows must survive the import untouched');
+		self::assertSame(0, (int)$db->query('SELECT count(*) FROM mqtt_product_entities WHERE product_id = 8601')->fetchColumn(),
+			'the opt-in flag must not survive under the stale product id');
 
 		$port = $this->reserveTcpPort();
 		$logFile = sys_get_temp_dir() . '/importer-integrity-mqtt-' . uniqid() . '.log';
@@ -386,7 +435,7 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			]);
 
 			$process = proc_open(
-				[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'retract', $resultFile],
+				[PHP_BINARY, __DIR__ . '/mqttcoverage-subprocess-helper.php', 'scenario', 'state', $resultFile],
 				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
 				$pipes,
 				null,
@@ -405,8 +454,8 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			@unlink($resultFile);
 			self::assertIsArray($result, "the scenario helper wrote no JSON.\nstdout: $output\nstderr: $errors");
 			self::assertArrayHasKey('error', $result, 'malformed result: ' . json_encode($result));
-			self::assertNull($result['error'], 'the retraction scenario must not error: ' . json_encode($result));
-			self::assertTrue($result['steps']['0:retract'] ?? false, 'the retraction reports success');
+			self::assertNull($result['error'], 'the publish must not error: ' . json_encode($result));
+			self::assertTrue($result['steps']['0:state'] ?? false, 'the publish reports success');
 
 			$waited = 0;
 			while ($waited < 100 && !str_contains((string)@file_get_contents($logFile), '=== end'))
@@ -416,23 +465,25 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 			}
 			self::assertStringContainsString('=== end', (string)@file_get_contents($logFile), 'the stand-in broker never finished the connection');
 
-			$topics = [];
+			$retracted = [];
 			foreach (file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line)
 			{
-				$fields = explode("\t", $line);
-				if ($fields[0] === '=== connect' || str_starts_with($line, '==='))
+				if (str_starts_with($line, '==='))
 				{
 					continue;
 				}
-				$topics[$fields[0]] = (int)($fields[1] ?? 0);
+				$fields = explode("\t", $line);
+				if ((int)($fields[1] ?? -1) === 0 && preg_match('#product/(7|8601)$#', $fields[0]))
+				{
+					$retracted[] = $fields[0];
+				}
 			}
 
-			$expectedTopic = 'victual/state/product/' . $productId;
-			self::assertArrayHasKey($expectedTopic, $topics, "the surviving ledger entry's topic must be retracted: " . json_encode($topics));
-			self::assertSame(0, $topics[$expectedTopic], 'a retraction clears the retained message with an empty payload');
+			self::assertContains('victual/state/product/7', $retracted, 'the survived ledger entry for product 7 must be retracted with an empty payload: ' . json_encode($retracted));
+			self::assertContains('victual/state/product/8601', $retracted, 'and the one for product 8601, whose opt-in the import correctly cleared: ' . json_encode($retracted));
 
-			self::assertSame(0, (int)$db->query('SELECT count(*) FROM mqtt_published_entities WHERE object_id = ' . $db->quote($objectId))->fetchColumn(),
-				'Retract() forgets a ledger row once its topic has actually been retracted');
+			self::assertSame([], $db->query('SELECT object_id FROM mqtt_published_entities')->fetchAll(PDO::FETCH_COLUMN),
+				'both ledger rows are forgotten once their topics are actually retracted');
 		}
 		finally
 		{
@@ -563,6 +614,42 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		self::assertNotNull($thrown, 'an import from a source with a recorded hole below its maximum must be refused');
 		self::assertStringContainsString((string)$holeNumber, $thrown->getMessage());
 		self::assertStringContainsString((string)$max, $thrown->getMessage());
+		self::assertSame($before, $this->targetState());
+	}
+
+	/**
+	 * The regression the previous version of this fix introduced: bounding the source's
+	 * required set to SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE alone (0256-0265)
+	 * silently dropped 1-0255 from the check entirely, so a hole at, say, 0200 - a real,
+	 * portable migration every source at or above 0255 must have run - went unnoticed. This
+	 * is deliberately the *minimum* fixture (0255): the hole is below the frozen baseline
+	 * itself, not merely below the source's own claimed maximum.
+	 */
+	public function testImportRefusesASourceWithAMigrationHoleBelowTheBaseline(): void
+	{
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN);
+		$holeNumber = 200;
+
+		self::assertSame(1, (int)$source->query('SELECT count(*) FROM migrations WHERE migration = ' . $holeNumber)->fetchColumn(),
+			'the fixture must actually have this migration recorded, or deleting it proves nothing');
+		$source->exec('DELETE FROM migrations WHERE migration = ' . $holeNumber);
+		self::assertSame(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MIN, (int)$source->query('SELECT max(migration) FROM migrations')->fetchColumn(),
+			'the maximum must be unaffected by the hole - a hole below it is exactly what a maximum cannot see');
+
+		$before = $this->targetState();
+		$thrown = null;
+
+		try
+		{
+			$this->importer($source)->Import(true);
+		}
+		catch (\Exception $ex)
+		{
+			$thrown = $ex;
+		}
+
+		self::assertNotNull($thrown, 'a source missing an interior migration below the baseline must be refused, not accepted because its maximum still matches');
+		self::assertStringContainsString((string)$holeNumber, $thrown->getMessage());
 		self::assertSame($before, $this->targetState());
 	}
 

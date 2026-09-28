@@ -38,15 +38,24 @@ use Victual\Services\Labels\LabelIdentityService;
  *     current view logic computes from the very rows just copied, because 0267 is
  *     PostgreSQL-only and no source in the supported span ever ran it. Issue #496's
  *     "recompute derived state where necessary."
- *   - NOT_COPIED_TABLES are never touched by the copy or the truncate. `migrations` is the
- *     target's own record of its own schema history, restored rather than replaced (see
- *     AssertSchemaVersionsMatch()). The label-family tables are guarded instead of cleared:
- *     a live (non-retired) label refuses the whole import outright, --force included, so
- *     that nothing here ever leaves a live label pointing at data the import just replaced;
- *     a *retired* label's dead snapshot is history and survives. `label_import_state`'s
- *     epoch is bumped by one on every import instead, which is what actually invalidates any
- *     in-flight label request composed against the pre-import identities - see ADR-0021 and
- *     plan 25's "import epoch" and LabelIdentityService::Issue(). `mqtt_published_entities`
+ *   - NOT_COPIED_TABLES are never touched *directly* by the copy or the truncate - this
+ *     class names none of them in a TRUNCATE statement and copies rows into none of them.
+ *     One of them, `label_worker_credentials`, is nonetheless emptied *indirectly*: its
+ *     `api_key_id` column references `api_keys` (migrations/0270.pgsql.sql:100), which *is*
+ *     a common, replaced table, and PostgreSQL's `TRUNCATE ... CASCADE` empties every table
+ *     that references a table it truncates regardless of that table's own membership in the
+ *     statement. This is correct, not a leak this class should plug: a worker's stored
+ *     credential is meaningless once the `api_keys` row it authenticates as is gone, so it
+ *     should not survive attached to nothing, or silently attached to a different key that
+ *     later reuses the same id. `migrations` is the target's own record of its own schema
+ *     history, restored rather than replaced (see AssertSchemaVersionsMatch()). The
+ *     remaining label-family tables are guarded instead of cleared: a live (non-retired)
+ *     label refuses the whole import outright, --force included, so that nothing here ever
+ *     leaves a live label pointing at data the import just replaced; a *retired* label's
+ *     dead snapshot is history and survives. `label_import_state`'s epoch is bumped by one
+ *     on every import instead, which is what actually invalidates any in-flight label
+ *     request composed against the pre-import identities - see ADR-0021 and plan 25's
+ *     "import epoch" and LabelIdentityService::Issue(). `mqtt_published_entities`
  *     belongs here too, for a different reason than the label tables: it describes what the
  *     *target's own broker connection* currently believes is published, not anything about
  *     the source's data, so an import - which is entirely about the data - has no correct
@@ -99,6 +108,11 @@ class DatabaseImporter
 	 * or the target's pre-import data, it is a record of the *target's own broker
 	 * connection*'s state, which an import has no business touching in either direction. See
 	 * the class docblock's replacement-scope list.
+	 *
+	 * None of this promises every table below is untouched in every sense:
+	 * `label_worker_credentials` is emptied indirectly, by `TRUNCATE ... CASCADE` on
+	 * `api_keys` (a common table, not in this list) - see the class docblock's
+	 * replacement-scope list for why that is correct rather than an oversight.
 	 */
 	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials', 'outbox', 'mqtt_published_entities'];
 
@@ -151,10 +165,18 @@ class DatabaseImporter
 	 * migrations/RESERVATIONS.md) - and is excluded for exactly that reason: it was never
 	 * required on SQLite, so a source missing it has not skipped anything, and the committed
 	 * victual-265.db fixture's own migrations table proves it, recording exactly the other
-	 * nine of these ten numbers. Migrations 1-0255 are not listed at all:
-	 * BASELINE_MIGRATION_ID treats that whole range as the one atomic prerequisite a source
-	 * at or above it has already satisfied by definition, which is the entire reason the
-	 * constant exists rather than the span being spelled out as "run every migration from 1".
+	 * nine of these ten numbers.
+	 *
+	 * Migrations 1-0255 are deliberately *not* listed here - not because that range is
+	 * skipped, but because it needs no exception list: every one of those 255 numbers has a
+	 * real, portable (pre-dual-engine) migration file, confirmed by enumeration, so it is
+	 * checked at the AssertSchemaVersionsMatch() call site as a plain `range(1,
+	 * BASELINE_MIGRATION_ID)` - arithmetic, not a directory read - merged with this list. An
+	 * earlier version of this fix treated 1-0255 as implicitly satisfied by
+	 * BASELINE_MIGRATION_ID alone and left it out of the check entirely, which is a
+	 * regression this one number list cannot show by itself: it silently accepted a 0255
+	 * source missing an interior migration such as 0200. See AssertSchemaVersionsMatch()'s
+	 * call site and MigrationSetMismatch()'s own docblock.
 	 *
 	 * A number here is retired the moment it is spent, per migrations/RESERVATIONS.md's own
 	 * rule, and SUPPORTED_SOURCE_MIGRATION_MAX is frozen - so, like those two constants,
@@ -745,17 +767,16 @@ class DatabaseImporter
 		// MigrationSetMismatch()'s docblock.
 		if ($applyRowMigrations)
 		{
-			// The source's required set is the fixed SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE
-			// list (see its own docblock for why a fixed list rather than a directory read),
-			// bounded at its own claimed version; $floor excludes 1-0255 from the "unknown"
-			// side too, since that whole range is the one atomic prerequisite
-			// BASELINE_MIGRATION_ID already treats a source at or above it as having met, not
-			// nine individually-named numbers the way 0256-0265 are here.
+			// The source's required set is 1-BASELINE_MIGRATION_ID (0255) - a plain,
+			// gap-free numeric range, not a directory read: every one of those 255 numbers
+			// has a real, portable migration file (verified; there is no exception list to
+			// maintain the way 0256-0265 needs one) - plus the fixed
+			// SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE list for what comes after it,
+			// bounded at the source's own claimed version.
 			[$sourceMissing, $sourceUnknown] = $this->MigrationSetMismatch(
 				$this->Source,
-				self::SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE,
-				intval($sourceVersion),
-				DatabaseMigrationService::BASELINE_MIGRATION_ID
+				array_merge(range(1, DatabaseMigrationService::BASELINE_MIGRATION_ID), self::SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE),
+				intval($sourceVersion)
 			);
 
 			if (!empty($sourceMissing) || !empty($sourceUnknown))
@@ -807,19 +828,20 @@ class DatabaseImporter
 	 * whether $required came from a dialect's directory scan (the target) or a fixed list (the
 	 * source; see SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE).
 	 *
-	 * @param int[] $required Every migration number that connection must have recorded, before
-	 * $ceiling/$floor narrow it further
+	 * @param int[] $required Every migration number that connection must have recorded,
+	 * before $ceiling narrows it further. Callers pass a *complete* set - there is no floor
+	 * parameter here, on purpose: an earlier version of this method took one, to let the
+	 * source's required set stop at 0256 and treat 1-0255 as implicitly satisfied, and that
+	 * silently dropped the "missing" check for that whole range along with the "unknown"
+	 * one - a real regression (a 0255 source missing an interior migration such as 0200
+	 * was wrongly accepted). Passing the complete set, as both call sites now do, checks
+	 * "missing" and "unknown" symmetrically with no such gap.
 	 * @param int $ceiling Bounds $required at the claimed version rather than its own full
 	 * range - a database legitimately has not yet run migrations past the one it is at, and
 	 * only a hole *below* that is issue #518's (M18) finding.
-	 * @param int $floor Excludes numbers at or below it from the "unknown" side of the answer
-	 * - for a $required that (like the source's fixed list) does not itself enumerate a range
-	 * treated as one atomic prerequisite, so that range's own numbers are not reported as
-	 * unknown to it merely for being unlisted. 0 (excludes nothing) unless the caller needs
-	 * otherwise.
 	 * @return array{0: int[], 1: int[]} [missing, unknown], both ascending
 	 */
-	private function MigrationSetMismatch(\PDO $db, array $required, int $ceiling, int $floor = 0): array
+	private function MigrationSetMismatch(\PDO $db, array $required, int $ceiling): array
 	{
 		$required = array_values(array_filter($required, fn($number) => $number <= $ceiling));
 
@@ -833,7 +855,7 @@ class DatabaseImporter
 
 		return [
 			array_values(array_diff($required, $applied)),
-			array_values(array_diff(array_filter($applied, fn($number) => $number > $floor), $required)),
+			array_values(array_diff($applied, $required)),
 		];
 	}
 
@@ -978,6 +1000,19 @@ class DatabaseImporter
 	 * delivered or already dead-lettered referenced row needs neither treatment and is
 	 * left exactly as it is.
 	 *
+	 * **Dead-lettering the outbox row is not enough by itself.** `print_jobs.outcome` and
+	 * `.outcome_at` are what every other consumer of a job's state actually reads -
+	 * `LabelPrintJobService::Monitor()`'s `state`/`authorization_state` columns,
+	 * `PrintAttemptService::Claim()`'s `WHERE j.outcome IS NULL` (a job whose own outcome
+	 * were left NULL would keep being offered to a worker for a delivery that can never
+	 * happen, since `Claim()`'s own `o.dead_lettered_at IS NULL` join condition is the
+	 * *outbox* row, not the job), and `LabelOperationsService::Cancel()` - so the job is
+	 * finished the same way `PrintAttemptService.php:98` and
+	 * `LabelPrintersApiController.php:62-65` already finish one, reusing their exact
+	 * outcome value and columns, for every job whose outbox row was just dead-lettered and
+	 * which was not already finished (`outcome IS NULL AND cancelled_at IS NULL` - a
+	 * cancelled job stays cancelled, and a job already `printed`/`sent` stays that).
+	 *
 	 * Never gated on $force: by the time this runs, AssertOutboxIsHandleable() has already
 	 * either refused (no --force, undelivered rows present) or been skipped (--force, or
 	 * nothing undelivered to protect), so every row this method touches was already
@@ -1011,41 +1046,58 @@ class DatabaseImporter
 
 		$deleted = $this->Target->exec('DELETE FROM outbox WHERE id NOT IN (' . $referencedIds . ')');
 
-		$deadLettered = $this->Target->exec(
+		$deadLetteredIds = $this->Target->query(
 			"UPDATE outbox SET dead_lettered_at = CURRENT_TIMESTAMP, attempts = attempts + 1, "
 			. "last_error = 'Replaced by an import: the print job or attempt referencing this event is kept for history, "
 			. "but the event itself described data the import discarded and will never be delivered' "
-			. 'WHERE delivered_at IS NULL AND dead_lettered_at IS NULL AND id IN (' . $referencedIds . ')'
-		);
+			. 'WHERE delivered_at IS NULL AND dead_lettered_at IS NULL AND id IN (' . $referencedIds . ') RETURNING id'
+		)->fetchAll(\PDO::FETCH_COLUMN);
 
-		if ($deleted > 0 || $deadLettered > 0)
+		if (!empty($deadLetteredIds) && in_array('print_jobs', $referencing, true))
+		{
+			$this->Target->exec(
+				"UPDATE print_jobs SET outcome = 'dead_lettered', outcome_at = CURRENT_TIMESTAMP "
+				. 'WHERE outcome IS NULL AND cancelled_at IS NULL AND outbox_id IN (' . implode(',', $deadLetteredIds) . ')'
+			);
+		}
+
+		if ($deleted > 0 || !empty($deadLetteredIds))
 		{
 			($this->Progress)('  outbox: deleted ' . $deleted . ' unreferenced row(s), dead-lettered '
-				. $deadLettered . ' row(s) still referenced by print history');
+				. count($deadLetteredIds) . ' row(s) still referenced by print history');
 		}
 	}
 
 	/**
 	 * Recomputes cache__products_average_price and cache__products_last_purchased from
 	 * the copy, reusing migrations/0267.pgsql.sql's own rebuild statements verbatim (see
-	 * that migration, and 0261.pgsql.sql before it) rather than inventing a second version
-	 * of the same two `INSERT ... ON CONFLICT` statements. Issue #496's "recompute derived
-	 * state where necessary."
+	 * that migration, and 0261.pgsql.sql before it, which the two `INSERT ... ON CONFLICT`
+	 * statements are unchanged since) rather than inventing a second version of them.
+	 * Issue #496's "recompute derived state where necessary."
 	 *
 	 * Why a verbatim copy is not enough here, unlike cache__quantity_unit_conversions_resolved
 	 * (whose maintaining triggers and format have never changed since before the SQLite
-	 * freeze): migrations/0267.pgsql.sql is PostgreSQL-only, above the freeze, and fixes a
-	 * split-entry defect these two caches could already be wrong about. No source in the
-	 * supported span (0255-0265) ever ran it - the SQLite line is frozen below it - so a
-	 * source's own cached values can already be stale relative to what this engine's
-	 * current, corrected view logic (`products_average_price` / `products_last_purchased`)
-	 * computes from the very rows this import just copied. Confirmed: a source at 0255
-	 * with purchases 4@2, 3@2 and 2@3 carries a cached average_price of 2.0, while the
-	 * view - reading the same, correctly copied stock_log - computes 2.2222.
+	 * freeze) - two independent reasons, from two different migrations:
+	 *
+	 * - migrations/0261.pgsql.sql fixes SQLite's own integer division over these caches'
+	 *   NUMERIC-affinity columns (see that migration's SQLite half for the full mechanism).
+	 *   It is dual-engine, so a source at 0261 or later already carries the fix in its own
+	 *   cached values - but a source between SUPPORTED_SOURCE_MIGRATION_MIN (0255) and 0260
+	 *   does not yet, and this is where the confirmed example comes from: a source at 0255
+	 *   with purchases 4@2, 3@2 and 2@3 carries a cached average_price of 2.0, where the
+	 *   view - reading the same, correctly copied stock_log - computes 2.2222.
+	 * - migrations/0267.pgsql.sql (PostgreSQL-only, above the freeze) separately fixes a
+	 *   split-entry defect in the same two caches. No source in the supported span ever ran
+	 *   it - the SQLite line is frozen below it - so this half of the staleness risk applies
+	 *   across the *entire* span (0255-0265), not only below 0261.
+	 *
+	 * Either way, a source's own cached values can already be stale relative to what this
+	 * engine's current, corrected view logic (`products_average_price` /
+	 * `products_last_purchased`) computes from the very rows this import just copied.
 	 *
 	 * Rebuilding from the views (after RepairProductNesting(), so a repaired chain's own
 	 * products are already correct too) gives the same answer bin/victual-migrate would if
-	 * it re-ran 0267 today. Guarded on the cache table's existence rather than on
+	 * it re-ran 0261 and 0267 today. Guarded on the cache table's existence rather than on
 	 * `$tables` containing `stock` or `products`: the views these statements select from
 	 * read every table they need directly, so there is nothing else to gate on.
 	 */
