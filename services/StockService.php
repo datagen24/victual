@@ -2294,6 +2294,7 @@ class StockService extends BaseService
 				}
 
 				$newBestBeforeDate = $stockEntry->best_before_date;
+				$shouldReviseStockEntryLabel = false;
 				if ($product->default_best_before_days_after_open > 0)
 				{
 					$newBestBeforeDate = date('Y-m-d', strtotime('+' . $product->default_best_before_days_after_open . ' days'));
@@ -2304,10 +2305,12 @@ class StockService extends BaseService
 						$newBestBeforeDate = $stockEntry->best_before_date;
 					}
 
-					if (VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $newBestBeforeDate != $stockEntry->best_before_date)
-					{
-						$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
-					}
+					// Deferred until after $stockEntry->update() below writes the new due date
+					// (issue #523): calling ReviseStockEntryLabelIfLive() here, before that write,
+					// captured the due date the entry still had - the one about to be replaced -
+					// so an auto-reprint always reflected the *previous* opening's due date
+					// instead of the one this booking is making current.
+					$shouldReviseStockEntryLabel = VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $newBestBeforeDate != $stockEntry->best_before_date;
 				}
 
 				if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
@@ -2449,6 +2452,16 @@ class StockService extends BaseService
 					], $measurementColumns));
 
 					$amount = 0;
+				}
+
+				// Now that $stockEntry->update() above has written $newBestBeforeDate (issue
+				// #523): both branches update this same row in place (the split branch turns
+				// it into the opened portion), so its id is the row a reprint has to describe
+				// either way, and the capture below reads the due date that is now actually
+				// on the row rather than the one it is replacing.
+				if ($shouldReviseStockEntryLabel)
+				{
+					$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
 				}
 
 				if ($product->move_on_open == 1)
@@ -2735,10 +2748,15 @@ class StockService extends BaseService
 						$newBestBeforeDate = date('Y-m-d', strtotime('+' . $productDetails->product->default_best_before_days_after_thawing . ' days'));
 					}
 
-					if (VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $stockEntry->best_before_date != $newBestBeforeDate)
-					{
-						$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
-					}
+					// Deferred until after the row that actually receives $newBestBeforeDate is
+					// written below (issue #523; same reasoning as OpenProduct()'s own fix):
+					// capturing here read the due date the entry still had, before the write
+					// that changes it.
+					$shouldReviseStockEntryLabel = VICTUAL_FEATURE_FLAG_LABELS && $productDetails->product->auto_reprint_stock_label == 1 && $stockEntry->best_before_date != $newBestBeforeDate;
+				}
+				else
+				{
+					$shouldReviseStockEntryLabel = false;
 				}
 
 				$correlationId = uniqid();
@@ -2810,6 +2828,15 @@ class StockService extends BaseService
 						'best_before_date' => $newBestBeforeDate
 					]);
 
+					// Now that the write above has actually put $newBestBeforeDate on this row
+					// (issue #523): the whole-entry transfer relocates $stockEntry in place, so
+					// its id is still the row a live label describes and the capture below reads
+					// the due date this transfer is making current, not the one it replaced.
+					if ($shouldReviseStockEntryLabel)
+					{
+						$this->ReviseStockEntryLabelIfLive((int)$stockEntry->id);
+					}
+
 					$amount = self::CompareAmounts($amount, $stockEntry->amount) == 0 ? 0.0 : $amount - $stockEntry->amount;
 				}
 				else
@@ -2817,6 +2844,14 @@ class StockService extends BaseService
 					// Stock entry amount is > than needed amount by more than the shared tolerance
 					// -> split the stock entry resp. update the amount. $restStockAmount is a
 					// real remainder, not a float artifact, by construction.
+					//
+					// No reprint call here even when $shouldReviseStockEntryLabel is true: a split
+					// transfer leaves $stockEntry (the only row that could already carry a live
+					// label) at the source with its ORIGINAL due date - only the brand new
+					// $stockEntryNew below gets $newBestBeforeDate, and a row created this instant
+					// cannot yet have a live label of its own (ReviseStockEntryLabelIfLive() would
+					// no-op for it regardless). There is no row here where "reprint the live label
+					// with the new due date" is a coherent action.
 					$restStockAmount = $stockEntry->amount - $amount;
 
 					$logRowForLocationFrom = $this->DB->stock_log()->createRow([
