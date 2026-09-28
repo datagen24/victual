@@ -50,6 +50,14 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	/** Pinned far in the future, so an entry carrying it is never due during a run. */
 	private const FAR_FUTURE_DATE = '2035-06-30';
 
+	/**
+	 * ADR-0033's "never expires" sentinel (2026-09-27) - the only real date value
+	 * migrations/0292.pgsql.sql's stock_splits admits as a merge candidate. FAR_FUTURE_DATE
+	 * above is a real, finite date and is never merge-eligible; a fixture that needs
+	 * CompactStockEntries() to actually merge two rows must use this one, or NULL, instead.
+	 */
+	private const NEVER_EXPIRES = '2999-12-31';
+
 	/** Pinned in a month that is always over, so the spendings default range must exclude it. */
 	private const CLOSED_MONTH_DATE = '2026-03-05';
 
@@ -1072,7 +1080,9 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 
 		// 1120 g gross - 120 g of vessel = 1000 g, and a gram is a thousandth of the
-		// kilogram this product is stocked in.
+		// kilogram this product is stocked in. The vessel holds 2 kg, so this is a lower
+		// reading: ADR-0033 decision 5 (2026-09-27) consumes the difference through the
+		// ordinary inventory-correction path rather than editing the one row in place.
 		$rows = $this->expectStatus(
 			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 1120, 'gross_qu_id' => self::$ids['gram']]), new Response(), ['locationId' => self::$ids['vessel']]),
 			200,
@@ -1080,8 +1090,9 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		);
 
 		$types = array_column($rows, 'transaction_type');
-		self::assertContains(StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD, $types, 'The correction records what the entry was');
-		self::assertContains(StockService::TRANSACTION_TYPE_STOCK_EDIT_NEW, $types, 'and what it became');
+		self::assertContains(StockService::TRANSACTION_TYPE_INVENTORY_CORRECTION, $types, 'The correction is booked as an ordinary inventory correction');
+		$correction = array_values(array_filter($rows, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_INVENTORY_CORRECTION))[0];
+		self::assertSame(-1.0, (float)$correction['amount'], 'for exactly the difference between the 2 kg on hand and the 1 kg weighed');
 		self::assertSame(1.0, self::stockAmount(self::$ids['bulk']), 'The entry now holds the weighed net contents in the stock unit');
 	}
 
@@ -2179,15 +2190,18 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::$ids['undo_compacted'] = self::insertProduct('Coverage Undo Compacted Purchase');
 
 		$firstPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
 			200,
 			'Two units are purchased'
 		);
 		$secondPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.5]), new Response(), ['productId' => self::$ids['undo_compacted']]),
 			200,
 			'Three more, matching every grouping column, are purchased the same day'
 		);
+		// ADR-0033 (2026-09-27): no purchase compacts inline any more - only an explicit
+		// maintenance run merges never-expiring, unlabelled matches like these two.
+		StockService::GetInstance()->CompactStockEntries(self::$ids['undo_compacted']);
 
 		$entries = self::$db->query('SELECT id, stock_id, amount FROM stock WHERE product_id = ' . self::$ids['undo_compacted'])->fetchAll(PDO::FETCH_ASSOC);
 		self::assertCount(1, $entries, 'The two purchases were compacted into a single stock entry');
@@ -2254,15 +2268,16 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::$ids['undo_compacted_refused'] = self::insertProduct('Coverage Undo Compacted Refused');
 
 		$firstPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
 			200,
 			'Two units are purchased'
 		);
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
 			200,
 			'Three more, matching every grouping column, are purchased the same day'
 		);
+		StockService::GetInstance()->CompactStockEntries(self::$ids['undo_compacted_refused']);
 		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_refused']), 'The two purchases are compacted into one entry of five');
 
 		$firstLogId = (int)$firstPurchase[0]['id'];
@@ -2328,15 +2343,16 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::$ids['undo_compacted_residue'] = self::insertProduct('Coverage Undo Compacted Float Residue');
 
 		$firstPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
 			200,
 			'Two units are purchased'
 		);
 		$secondPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_compacted_residue']]),
 			200,
 			'Three more, matching every grouping column, are purchased the same day'
 		);
+		StockService::GetInstance()->CompactStockEntries(self::$ids['undo_compacted_residue']);
 		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_residue']), 'The two purchases are compacted into one entry of five');
 
 		// Simulates a SUM()-over-doubles residue: a literal SQL float (not a bound parameter,
@@ -2443,15 +2459,16 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::$ids['undo_ambiguous_split'] = self::insertProduct('Coverage Undo Ambiguous Split');
 
 		$this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
 			200,
 			'Two units are purchased'
 		);
 		$secondPurchase = $this->expectStatus(
-			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
 			200,
 			'Three more, matching every grouping column, are purchased the same day'
 		);
+		StockService::GetInstance()->CompactStockEntries(self::$ids['undo_ambiguous_split']);
 		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'The two purchases are compacted into one entry of five');
 
 		$consume = $this->expectStatus(
@@ -4150,9 +4167,15 @@ PLUGIN);
 	}
 
 	/**
-	 * A vessel holding two separate stock entries of its product cannot be weighed: one
-	 * physical container is one row to correct, and compaction cannot merge entries that
-	 * differ (here, in their due date).
+	 * A vessel holding two separate, differently-dated entries of the SAME product is no
+	 * longer refused (ADR-0033 decision 5, 2026-09-27): WeighLocation() sums every row it
+	 * finds there and corrects the total, precisely so a vessel need not have been merged
+	 * down to one row first. A second PRODUCT at the same vessel is still refused - weighing
+	 * a shared shelf still makes no sense, and that half of the old rule is unchanged.
+	 * StockMaintenanceCompactionTest covers the sum-and-correct behaviour itself in depth
+	 * (its own testWeighTwoIdenticalDatedRefillsThenALowerReadingConsumesTheDifference and
+	 * neighbours); this regression is specifically about the multi-product refusal surviving
+	 * that change.
 	 */
 	#[Depends('testWeighingByLabelResolvesTheVesselAndRefusesAnUnknownCode')]
 	public function testWeighingRefusesAVesselHoldingMoreThanOneEntry(): void
@@ -4160,17 +4183,31 @@ PLUGIN);
 		$this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$ids['vessel'], 'best_before_date' => '2032-02-02', 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => self::$ids['bulk']]),
 			200,
-			'A second, differently dated entry arrives in the vessel'
+			'A second, differently dated entry of the same product arrives in the vessel'
 		);
-
 		$entries = self::$db->prepare('SELECT COUNT(*) FROM stock WHERE product_id = ? AND location_id = ?');
 		$entries->execute([self::$ids['bulk'], self::$ids['vessel']]);
-		self::assertSame(2, (int)$entries->fetchColumn(), 'The vessel now holds two entries that cannot be compacted together');
+		self::assertSame(2, (int)$entries->fetchColumn(), 'Sanity: the vessel now holds two entries of the one product');
+
+		$beforeSecondProduct = self::stockAmount(self::$ids['bulk']);
+		$this->expectStatus(
+			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 620]), new Response(), ['locationId' => self::$ids['vessel']]),
+			200,
+			'Weighing a vessel holding two dated entries of the same product is now accepted - it sums them rather than requiring one merged row'
+		);
+		self::assertNotSame($beforeSecondProduct, self::stockAmount(self::$ids['bulk']), 'Sanity: the weighing actually corrected something, rather than happening to already match');
+
+		$secondProduct = self::insertProduct('Coverage Weigh Vessel Second Product');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 1, 'location_id' => self::$ids['vessel'], 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::CLOSED_MONTH_DATE]), new Response(), ['productId' => $secondProduct]),
+			200,
+			'A different product also arrives in the vessel'
+		);
 
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->WeighLocation(self::request('POST', ['gross_amount' => 620]), new Response(), ['locationId' => self::$ids['vessel']]),
 			400,
-			'Weighing a vessel that holds more than one entry is refused'
+			'Weighing a vessel that holds more than one PRODUCT is still refused'
 		);
 	}
 }
