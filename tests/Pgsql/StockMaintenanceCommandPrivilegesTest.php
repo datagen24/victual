@@ -33,7 +33,17 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * exits 0 even though clients never see the merge) and drops INSERT from stock_entry_origins
  * (CompactStockEntries() only ever UPDATEs or DELETEs existing rows there; new rows are
  * written by RecordSplitOrigin(), called only from OpenProduct(), never from the
- * compaction path). Every grant that remains is proved necessary below.
+ * compaction path).
+ *
+ * Issue #588 round 3 adds DELETE on cache__products_average_price and
+ * cache__products_last_purchased: migrations/0292.pgsql.sql redefined trg_stock_log_UPD to
+ * call rebuild_stock_log_cache_for_product(), which unconditionally DELETEs the stale cache
+ * row for a product before conditionally re-INSERTing it from the view, rather than the
+ * plain INSERT ... ON CONFLICT DO UPDATE upsert this list's SELECT/INSERT/UPDATE trio was
+ * originally granted for. Every stock_log row this command rewrites still fires that same
+ * trigger, under this same caller's own rights, so the caller now needs DELETE on both cache
+ * tables too or the merge fails with "permission denied for table
+ * cache__products_average_price". Every grant that remains is proved necessary below.
  *
  * Sufficiency: a role holding exactly the corrected list runs a real merge end to end AND the
  * same shutdown changed-time flush the real command's process exit runs afterwards, asserting
@@ -62,8 +72,8 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		['GRANT SELECT ON %SCHEMA%.stock_splits TO %ROLE%', 'stock_splits (view)'],
 		['GRANT SELECT ON %SCHEMA%.products_average_price TO %ROLE%', 'products_average_price (view)'],
 		['GRANT SELECT ON %SCHEMA%.products_last_purchased TO %ROLE%', 'products_last_purchased (view)'],
-		['GRANT SELECT, INSERT, UPDATE ON %SCHEMA%.cache__products_average_price TO %ROLE%', 'cache__products_average_price'],
-		['GRANT SELECT, INSERT, UPDATE ON %SCHEMA%.cache__products_last_purchased TO %ROLE%', 'cache__products_last_purchased'],
+		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.cache__products_average_price TO %ROLE%', 'cache__products_average_price'],
+		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.cache__products_last_purchased TO %ROLE%', 'cache__products_last_purchased'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.system_db_changed_time TO %ROLE%', 'system_db_changed_time'],
 	];
 
