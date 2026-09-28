@@ -21,15 +21,21 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * because neither view's shared form factory (public/js/victual_entity.js) had any
  * empty-string-to-null conversion for this field at all.
  *
- * Fixed at two layers, per the assignment: the view's prefill now checks
- * `$x->sort_number !== null` instead of `!empty($x->sort_number)` (so a stored 0 renders as
- * "0"), and each form's viewjs file (mealplansectionform.js, userfieldform.js) now supplies
- * the shared factory's existing `body` hook (Victual.EntityForm's documented
- * `(jsonData, context) => body actually sent` extension point) to turn an empty
- * sort_number into `null` before the request is sent - the same idiom
- * locationform.js already uses for parent_location_id, storage_class_id and tare_weight.
- * Neither the shared factory itself nor the server's handling of "" for other integer
- * columns was touched.
+ * Fixed at two layers: the view's prefill now checks `$x->sort_number !== null` instead of
+ * `!empty($x->sort_number)` (so a stored 0 renders as "0"), and each form's viewjs file
+ * (mealplansectionform.js, userfieldform.js) now supplies the shared factory's existing
+ * `body` hook (Victual.EntityForm's documented `(jsonData, context) => body actually sent`
+ * extension point) to turn an empty sort_number into `null` before the request is sent - the
+ * same idiom locationform.js already uses for parent_location_id, storage_class_id and
+ * tare_weight. Neither the shared factory itself nor the server's handling of "" for other
+ * integer columns was touched.
+ *
+ * This class covers the view (the render assertions below) and the server accepting the
+ * body the fixed JS sends (the PUT assertions). It cannot see the body() hook itself - PHP
+ * never runs public/viewjs - so it cannot reproduce the "" -> 400 failure the hook exists to
+ * prevent; that half is covered by the browser-driven
+ * .devtools/frontend/nullable-integer-forms.js, run in CI's frontend-security job. See each
+ * test method's own docblock for which half it covers.
  *
  * Tier 1 per ADR-0025. Every request goes through the real middleware stack - including
  * session authentication and User::CheckPermission() - via
@@ -40,7 +46,7 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * The PUT body each test sends is exactly what serializeJSON() plus the fixed body() hook
  * produce for an *unchanged* save of the fixture row - every field the form carries, not
  * only sort_number - derived by reading the view and the two viewjs files rather than
- * assumed; see this class's own PR description for the quoted lines.
+ * assumed.
  */
 class SortNumberFormsHttpTest extends PgsqlSchemaTestCase
 {
@@ -179,9 +185,11 @@ class SortNumberFormsHttpTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The other half of issue #574: a NULL sort_number already rendered blank correctly, but
-	 * saving that untouched, blank form still sent sort_number: "" - nothing converted the
-	 * empty field to null - and was refused the same way as the stored-0 case above.
+	 * Covers the render (a NULL sort_number renders blank) and the server accepting a
+	 * correctly-typed null for the PUT. It does not reproduce the "" -> 400 failure the
+	 * missing body() hook caused for this case: the PUT body below sends a real null, not
+	 * the "" serializeJSON() reports for a blank field, because this class cannot run the
+	 * browser code that makes that conversion. See the class docblock.
 	 */
 	public function testMealPlanSectionFormRendersNullSortNumberBlankAndSavingUnchangedKeepsItNull(): void
 	{
@@ -253,8 +261,10 @@ class SortNumberFormsHttpTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * NULL-fixture counterpart of the userfield test above, matching
-	 * testMealPlanSectionFormRendersNullSortNumberBlankAndSavingUnchangedKeepsItNull().
+	 * NULL-fixture counterpart of the userfield test above: covers the render and the server
+	 * accepting a correctly-typed null for the PUT, not the "" -> 400 failure - see
+	 * testMealPlanSectionFormRendersNullSortNumberBlankAndSavingUnchangedKeepsItNull()'s
+	 * docblock.
 	 */
 	public function testUserfieldFormRendersNullSortNumberBlankAndSavingUnchangedKeepsItNull(): void
 	{
