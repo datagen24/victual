@@ -2890,3 +2890,15 @@ msgstr ""
 
 msgid "Printer saved"
 msgstr ""
+
+msgid "Product not found"
+msgstr ""
+
+msgid "This product is deactivated"
+msgstr ""
+
+msgid "This product no longer exists"
+msgstr ""
+
+msgid "Stock access is required to add this to the shopping list"
+msgstr ""
