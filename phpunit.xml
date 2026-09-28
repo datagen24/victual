@@ -136,5 +136,8 @@
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>
+		<testsuite name="stockmaintenance">
+			<file>tests/Pgsql/StockMaintenanceCompactionTest.php</file>
+		</testsuite>
 	</testsuites>
 </phpunit>
