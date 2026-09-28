@@ -74,33 +74,14 @@ if (PHP_SAPI !== 'cli')
 }
 
 $arguments = array_slice($argv, 1);
-$quiet = in_array('--quiet', $arguments, true);
 
-$productId = null;
-foreach ($arguments as $argument)
-{
-	if (str_starts_with($argument, '--product-id='))
-	{
-		$rawProductId = substr($argument, strlen('--product-id='));
-
-		// (int) casting silently turned every malformed value into 0 - "--product-id=abc"
-		// and a bare "--product-id=" both targeted a product 0 that cannot exist, so the run
-		// reported "No eligible stock rows to merge." and exited 0 as if it had succeeded,
-		// and "--product-id=12x" silently compacted product 12 instead of being rejected
-		// (CodeRabbit review comment 4121171258). Validated before any database connection
-		// is opened (see below), so a refusal here never touches anything.
-		$productId = filter_var($rawProductId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-		if ($productId === false)
-		{
-			fwrite(STDERR, 'Invalid --product-id value: "' . $rawProductId . '" (must be a positive integer)' . PHP_EOL);
-			exit(1);
-		}
-	}
-}
-
+// --help/-h is checked before anything else, and independently of whether the rest of the
+// command line would otherwise be rejected below - it is the one escape hatch that must
+// always work, the same way it would if it appeared alongside a typo the caller was trying
+// to get help about.
 if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 {
-	echo "Usage: php bin/victual-compact-stock [--product-id=N] [--quiet]\n\n";
+	echo "Usage: php bin/victual-compact-stock [--product-id=N] [--quiet] [--help|-h]\n\n";
 	echo "  Merges stock rows which agree on every grouping column (product, due date,\n";
 	echo "  purchased date, price, open state/date, location, shopping location, note) and\n";
 	echo "  are each eligible to merge: no real due date (only NULL or the 2999-12-31\n";
@@ -108,10 +89,72 @@ if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
 	echo "  no userfield value, no measured remainder. Run it on a schedule (a CronJob is\n";
 	echo "  the intended deployment, per ADR-0010's workload standard); safe to run\n";
 	echo "  repeatedly and concurrently with ordinary stock bookings.\n\n";
-	echo "  --product-id=N  Limit the run to one product's stock rows. Omit to sweep every\n";
-	echo "                  product that currently has anything eligible.\n";
+	echo "  --product-id=N  Limit the run to one product's stock rows (N attached with '=',\n";
+	echo "                  not a separate argument). Omit to sweep every product that\n";
+	echo "                  currently has anything eligible.\n";
 	echo "  --quiet         Only print errors.\n";
+	echo "  --help, -h      Show this message and exit.\n\n";
+	echo "  Any other argument - a bare --product-id, --product-id given as two words\n";
+	echo "  (--product-id 12), --product-id repeated, or anything unrecognised - is\n";
+	echo "  refused before anything else runs.\n";
 	exit(0);
+}
+
+// Every other argument is walked strictly: only --product-id=<positive int> and --quiet are
+// recognised, and anything else - a bare --product-id (whether alone, or immediately
+// followed by its intended value as a SEPARATE argument, "--product-id 12": the space
+// rather than "=" means this loop never sees the two as one option and its value - the "12"
+// that follows is itself then rejected in its own right, as an unrecognised positional, one
+// iteration later), a malformed --product-id=value, a repeated --product-id=, or any unknown
+// flag or bare positional - is refused with an error naming it, before any database
+// connection is opened (CodeRabbit review comment 4121713761: "--product-id 12", with a
+// space, previously matched nothing at all, silently leaving $productId null and sweeping
+// every product instead of the one requested). A repeated --product-id= is deliberately
+// treated the same as any other malformed input rather than "last one wins" or "first one
+// wins": silently picking either would hide a caller's own scripting mistake (a duplicated
+// flag from a badly constructed argument list) behind whichever value happened to win, on a
+// command that mutates data.
+$quiet = false;
+$productId = null;
+$sawProductId = false;
+
+foreach ($arguments as $argument)
+{
+	if ($argument === '--quiet')
+	{
+		$quiet = true;
+
+		continue;
+	}
+
+	if (str_starts_with($argument, '--product-id='))
+	{
+		if ($sawProductId)
+		{
+			fwrite(STDERR, 'Invalid arguments: --product-id was given more than once' . PHP_EOL);
+			exit(1);
+		}
+		$sawProductId = true;
+
+		$rawProductId = substr($argument, strlen('--product-id='));
+
+		// (int) casting silently turned every malformed value into 0 - "--product-id=abc"
+		// and a bare "--product-id=" both targeted a product 0 that cannot exist, so the run
+		// reported "No eligible stock rows to merge." and exited 0 as if it had succeeded,
+		// and "--product-id=12x" silently compacted product 12 instead of being rejected
+		// (CodeRabbit review comment 4121171258).
+		$productId = filter_var($rawProductId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+		if ($productId === false)
+		{
+			fwrite(STDERR, 'Invalid --product-id value: "' . $rawProductId . '" (must be a positive integer)' . PHP_EOL);
+			exit(1);
+		}
+
+		continue;
+	}
+
+	fwrite(STDERR, 'Unrecognised argument: "' . $argument . '" (use --product-id=N, with = rather than a space; run --help for usage)' . PHP_EOL);
+	exit(1);
 }
 
 if (!defined('VICTUAL_DATAPATH'))

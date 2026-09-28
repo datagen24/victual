@@ -291,14 +291,22 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 	 * every malformed value into 0 or a truncated prefix instead of refusing - "--product-id="
 	 * and "--product-id=abc" both became 0 (the whole-database sweep, reported as "No eligible
 	 * stock rows to merge." and exit 0 - the OPPOSITE of a refusal), and "--product-id=12x"
-	 * silently became 12 (compacting the wrong, unintended product). Seeds one real eligible
-	 * pair so a silently-accepted malformed value would visibly merge it; asserts the exit
-	 * code, the STDERR message, AND that `stock` is byte-for-byte unchanged - not only that the
-	 * process failed, since a refusal that still touched the database would be worse than this
-	 * bug, not a fix for it.
+	 * silently became 12 (compacting the wrong, unintended product).
+	 *
+	 * Extended for CodeRabbit review comment 4121713761: "--product-id 12", with a space
+	 * instead of "=", matched nothing at all - str_starts_with($argument, '--product-id=')
+	 * is false for the bare token "--product-id" - so $productId silently stayed null and the
+	 * real command swept every product instead of the one named. The strict argument walk
+	 * this now exercises also refuses a bare --product-id with no value at all, and any other
+	 * unrecognised argument (--bogus below).
+	 *
+	 * Every case seeds one real eligible pair so a silently-accepted bad command line would
+	 * visibly merge it; asserts the exit code, that STDERR names the offending token, AND that
+	 * `stock` is byte-for-byte unchanged - not only that the process failed, since a refusal
+	 * that still touched the database would be worse than this bug, not a fix for it.
 	 */
-	#[DataProvider('malformedProductIdValues')]
-	public function testMalformedProductIdIsRefusedWithoutTouchingTheDatabase(string $value): void
+	#[DataProvider('rejectedArgumentSets')]
+	public function testRejectedArgumentsAreRefusedWithoutTouchingTheDatabase(array $args, string $expectedInStderr): void
 	{
 		$product = self::seedMergeableProduct('Privileges CLI ' . bin2hex(random_bytes(4)));
 		$before = self::$db->prepare('SELECT * FROM stock WHERE product_id = ? ORDER BY id');
@@ -306,23 +314,26 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		$before = $before->fetchAll(PDO::FETCH_ASSOC);
 		self::assertCount(2, $before, 'Sanity: two still-separate candidate rows before the binary runs');
 
-		[$exitCode, , $stderr] = self::runBinary(['--product-id=' . $value, '--quiet']);
+		[$exitCode, , $stderr] = self::runBinary(array_merge($args, ['--quiet']));
 
-		self::assertSame(1, $exitCode, "--product-id=$value must exit 1, not silently succeed: stderr=$stderr");
-		self::assertStringContainsString($value, $stderr, "The STDERR message must name the bad value ($value): got \"$stderr\"");
-		self::assertStringContainsString('product-id', strtolower($stderr), 'and identify which option was bad');
+		$argsDescription = implode(' ', $args);
+		self::assertSame(1, $exitCode, "\"$argsDescription\" must exit 1, not silently succeed: stderr=$stderr");
+		self::assertStringContainsString($expectedInStderr, $stderr, "The STDERR message must name the offending argument ($expectedInStderr): got \"$stderr\"");
 
 		$after = self::$db->prepare('SELECT * FROM stock WHERE product_id = ? ORDER BY id');
 		$after->execute([$product]);
-		self::assertSame($before, $after->fetchAll(PDO::FETCH_ASSOC), 'A refusal must leave stock byte-for-byte unchanged - it must never compact product 0 or a truncated-prefix product instead');
+		self::assertSame($before, $after->fetchAll(PDO::FETCH_ASSOC), 'A refusal must leave stock byte-for-byte unchanged - it must never compact product 0, a truncated-prefix product, or (worse) every product instead');
 	}
 
-	public static function malformedProductIdValues(): array
+	public static function rejectedArgumentSets(): array
 	{
 		return [
-			'non-numeric' => ['abc'],
-			'empty' => [''],
-			'numeric prefix with trailing garbage' => ['12x'],
+			'non-numeric value' => [['--product-id=abc'], 'abc'],
+			'empty value' => [['--product-id='], 'product-id'],
+			'numeric prefix with trailing garbage' => [['--product-id=12x'], '12x'],
+			'space instead of = (two separate arguments)' => [['--product-id', '12'], '--product-id'],
+			'bare --product-id with no value at all' => [['--product-id'], '--product-id'],
+			'unrecognised flag' => [['--bogus'], '--bogus'],
 		];
 	}
 }
