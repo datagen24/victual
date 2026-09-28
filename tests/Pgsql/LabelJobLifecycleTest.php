@@ -392,9 +392,12 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 	}
 
 	/** @return array{status: int, body: string, json: mixed} */
-	private static function Send(string $method, string $path, string $key): array
+	private static function Send(string $method, string $path, string $key, ?array $body = null): array
 	{
 		$spec = ['method' => $method, 'path' => $path, 'headers' => ['VICTUAL-API-KEY' => $key]];
+		if ($body !== null) {
+			$spec['body'] = $body;
+		}
 		$environment = array_filter(array_merge($_SERVER, $_ENV, [
 			'RBAC_TEST_SCHEMA' => self::Schema(),
 			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
@@ -553,17 +556,26 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 
 	/**
 	 * AuthorizeAnotherAttempt() itself calls Reap() before checking the job's outcome
-	 * (LabelPrintJobService::AuthorizeAnotherAttempt()). Reap() would dead-letter this job in
-	 * that same call (its printer is gone) - but BaseApiController::InRequestTransaction()'s own
-	 * docblock is explicit that "a throw rolls back and is rethrown", and self::tx() mirrors
-	 * that, so the refusal this proves rolls its own Reap() back too. What has to hold is
-	 * narrower than "ends dead-lettered": the stale pre-Reap() outcome must not let the
-	 * attempts_authorized update run regardless, or a job with a gone printer would be silently
-	 * re-authorized for an attempt it can never be offered. Actually finishing the job this way
-	 * is what the two committing tests above do (a worker's own failure report, and a bare
-	 * Reap() call outside a refusal).
+	 * (LabelPrintJobService::AuthorizeAnotherAttempt()). Reap() dead-letters this job in that
+	 * same call (its printer is gone, PrintAttemptService::DeadLetterIfPrinterGone()) - and
+	 * that dead-letter must survive the call, not be undone by it. This test previously
+	 * asserted the opposite: that the whole transaction rolled back, including Reap()'s own
+	 * write, and that the call always answered "already_completed". That was the defect
+	 * (round 2 validator, remainder of B1): a job in this state can never be claimed again
+	 * (Claim() inner-joins label_printers) and Reap() is the only thing that can still finish
+	 * it, so refusing and rolling back left the job permanently outcome NULL, its attempt never
+	 * ended, its outbox row never acknowledged, Monitor() stuck on "awaiting_authorization", and
+	 * every subsequent authorize call refusing the same way forever.
+	 *
+	 * The corrected rule is narrower than "always refuse": a job that already had an outcome
+	 * *before* this call is still refused (unchanged, asserted by the same-shaped case in
+	 * testDeletingPrinterDeadLettersOnlyQueuedAndAwaitingAuthorizationJobs, whose cancelled job
+	 * already carries no outcome to begin with, and by the ordinary already-completed path
+	 * exercised elsewhere in the suite via print-job-tests.php). But when Reap() is what just
+	 * produced the outcome inside this same call, that has to commit, and the call returns the
+	 * now-dead-lettered job instead of refusing - no new attempt authorised either way.
 	 */
-	public function testAuthorizeAnotherAttemptDoesNotRequeueAJobWhosePrinterIsGone(): void
+	public function testAuthorizeAnotherAttemptCommitsDeadLetterForJobWhosePrinterIsGone(): void
 	{
 		[$worker, $printer] = self::newPrinter();
 		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
@@ -575,17 +587,71 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		self::$db->exec("UPDATE print_attempts SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = " . (int)$attempt['id']);
 
 		$before = self::jobRow($jobId);
+		self::assertNull($before['outcome'], 'Precondition: nothing has dead-lettered this job yet');
 
-		try {
-			self::tx(static fn () => (new LabelPrintJobService(self::$db))->AuthorizeAnotherAttempt($jobId, (int)$attempt['id']));
-			self::fail('Expected a refusal: Reap() would dead-letter this job because its printer is gone');
-		} catch (LabelValidationException $error) {
-			self::assertSame('already_completed', $error->errorCode, 'Refused because Reap() saw the printer was gone before the attempts_authorized update could run');
-		}
+		$result = self::tx(static fn () => (new LabelPrintJobService(self::$db))->AuthorizeAnotherAttempt($jobId, (int)$attempt['id']));
+
+		self::assertSame('dead_lettered', $result['outcome'], 'The call returns the now-dead-lettered job rather than refusing');
 
 		$after = self::jobRow($jobId);
-		self::assertEquals($before, $after, 'The refused call rolled back in full, including its own Reap() - nothing here re-queues or otherwise changes the job');
-		self::assertSame((int)$before['attempts_authorized'], (int)$after['attempts_authorized'], 'attempts_authorized is not incremented by a refused call');
+		self::assertSame('dead_lettered', $after['outcome'], "Reap()'s dead-letter commits instead of being rolled back");
+		self::assertNotNull($after['outcome_at'], 'The terminal state records when it happened');
+		self::assertSame((int)$before['attempts_authorized'], (int)$after['attempts_authorized'], 'attempts_authorized is not incremented: no new attempt is authorised for a job whose printer is gone');
+		self::assertSame((int)$before['attempts_made'], (int)$after['attempts_made'], 'attempts_made is untouched by this call');
+
+		$attemptRow = self::$db->query('SELECT ended_at, outcome FROM print_attempts WHERE id = ' . (int)$attempt['id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($attemptRow['ended_at'], "The attempt Reap() reaped stays ended, not rolled back to live");
+		self::assertSame('uncertain', $attemptRow['outcome'], "Reap()'s own attempt outcome commits too");
+
+		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($outboxRow['dead_lettered_at'], 'The outbox row is acknowledged the same way every other dead letter is');
+		self::assertSame('Printer deleted', $outboxRow['last_error'], 'Same wording the deletion path itself uses');
+	}
+
+	/**
+	 * The same scenario as immediately above, but through the real HTTP route, middleware and
+	 * JSON encoding rather than calling the service directly - the required regression for the
+	 * B1 finding. A deleted printer, then its held attempt's lease expiring, then a POST to
+	 * /labels/jobs/{id}/authorize-attempt: the response and the committed database state must
+	 * agree that the job ended dead-lettered, not "already_completed" with everything rolled
+	 * back.
+	 */
+	public function testAuthorizeAttemptHttpCommitsDeadLetterForJobWhosePrinterIsGone(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+		$jobId = self::enqueue($printer, 'Lifecycle post-delete http-reauth');
+		\renderAndAttach(self::$db, $jobId);
+
+		$attempt = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker))[0]['attempt'];
+
+		$adminKey = self::issueAdminKey();
+		$deleteResponse = self::Send('DELETE', '/api/labels/printers/' . $printer, $adminKey);
+		self::assertSame(200, $deleteResponse['status'], 'Printer delete failed: ' . $deleteResponse['body']);
+		self::assertNull(self::jobRow($jobId)['outcome'], 'Precondition: a live attempt keeps the job untouched by deletion itself');
+
+		self::$db->exec("UPDATE print_attempts SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = " . (int)$attempt['id']);
+
+		$before = self::jobRow($jobId);
+
+		$response = self::Send('POST', '/api/labels/jobs/' . $jobId . '/authorize-attempt', $adminKey, ['attempt_id' => (int)$attempt['id']]);
+
+		self::assertSame(200, $response['status'], 'The committed dead-letter is a success response, not a refusal: ' . $response['body']);
+		self::assertSame('dead_lettered', $response['json']['outcome'] ?? null, 'The response body hands back the now-dead-lettered job');
+
+		$after = self::jobRow($jobId);
+		self::assertSame('dead_lettered', $after['outcome'], 'print_jobs.outcome committed as dead_lettered');
+		self::assertNotNull($after['outcome_at'], 'The terminal state records when it happened');
+		self::assertSame((int)$before['attempts_authorized'], (int)$after['attempts_authorized'], 'No new attempt is authorised');
+		self::assertSame((int)$attempt['id'], (int)$after['current_attempt_id'], 'current_attempt_id is unchanged: no new attempt claimed its place');
+
+		$attemptRow = self::$db->query('SELECT ended_at, outcome FROM print_attempts WHERE id = ' . (int)$attempt['id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($attemptRow['ended_at'], 'The attempt is ended, not left live');
+		self::assertSame('uncertain', $attemptRow['outcome'], "Reap()'s own attempt outcome");
+
+		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
+		self::assertNotNull($outboxRow['dead_lettered_at'], 'The outbox row is acknowledged the same way every other dead letter is');
+		self::assertSame('Printer deleted', $outboxRow['last_error'], 'Same wording the deletion path itself uses');
 	}
 
 	// --- Source-only: AttachArtifact() and a job dead-lettered before it was ever rendered ----
