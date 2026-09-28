@@ -3,6 +3,9 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use ReflectionProperty;
+use Victual\Services\BaseService;
+use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
@@ -13,11 +16,18 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * OTHER product's id wiped out that unrelated product's cached average price and
  * last-purchase data instead of the row's own product's.
  *
- * migrations/0292.pgsql.sql redefines the trigger function to filter by `OLD.product_id`.
- * This class drives the trigger directly with SQL - what is under test is the trigger's own
- * behaviour, not any particular caller of it - and engineers the exact id coincidence the
- * bug depends on: productB's own id is used, unmodified, as the explicit id of the
- * stock_log row that belongs to productA and gets deleted.
+ * Round 2: a validator found the fix was incomplete. `trg_stock_log_UPD` has a related but
+ * different bug - reachable from the UI, not just an id coincidence - and never removes a
+ * cache row once the view it reads stops returning anything for a product (only ever
+ * upserts). `StockService::UndoBooking()` undoing a product's only purchase hits exactly
+ * this: `undone` flips to 1, `products_average_price`/`products_last_purchased` then return
+ * no row for that product, but the stale cache row from before the undo stays forever.
+ *
+ * migrations/0292.pgsql.sql (same migration number both rounds) now redefines
+ * `trg_stock_log_UPD` and `trg_stock_log_DEL` to share one rebuild
+ * (`rebuild_stock_log_cache_for_product`): recompute what the two views return for a
+ * product id and either replace the cache row or remove it, rather than only ever upserting
+ * or only ever deleting.
  */
 class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 {
@@ -29,16 +39,39 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 
 		self::$db = self::Pdo();
 
+		// Issue #533 (see MergeProductsTest's own setUpBeforeClass): this file runs last in
+		// the "stockcoverage" testsuite phase, after other classes have already constructed
+		// StockService against their own (by now dropped) schemas. testUndoOnlyPurchase...()
+		// below drives StockService directly, so the cached instance has to be dropped first.
+		(new ReflectionProperty(BaseService::class, 'Instances'))->setValue(null, []);
+
 		self::$db->exec("INSERT INTO quantity_units (id, name, name_plural) VALUES (9610, 'DelTrigQU', 'DelTrigQUs')");
 		self::$db->exec("INSERT INTO locations (id, name) VALUES (9610, 'DelTrigShelf')");
 
 		// productB's id (9611) is deliberately reused below as the explicit id of a
 		// stock_log row belonging to productA - the exact coincidence the buggy trigger
 		// mistook for a product id.
-		self::$db->exec('INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) '
-			. "VALUES (9610, 'DelTrigProductA', 9610, 9610, 9610)");
-		self::$db->exec('INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) '
-			. "VALUES (9611, 'DelTrigProductB', 9610, 9610, 9610)");
+		self::insertProduct(9610, 'DelTrigProductA');
+		self::insertProduct(9611, 'DelTrigProductB');
+
+		// productC (9612): undone via the real StockService::UndoBooking() path.
+		self::insertProduct(9612, 'DelTrigProductC');
+
+		// productD (9613): two independent bookings, one of them deleted directly.
+		self::insertProduct(9613, 'DelTrigProductD');
+
+		// productE (9614, deleted via the product-delete cascade) and productF (9615, kept)
+		// - the same id coincidence as A/B, but reached by deleting a PRODUCT rather than a
+		// ledger row directly, per the issue's own example
+		// (trg_cascade_product_removal -> `DELETE FROM stock_log WHERE product_id = OLD.id`).
+		self::insertProduct(9614, 'DelTrigProductE');
+		self::insertProduct(9615, 'DelTrigProductF');
+	}
+
+	private static function insertProduct(int $id, string $name): void
+	{
+		self::$db->exec('INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price) '
+			. "VALUES ($id, '$name', 9610, 9610, 9610, 9610, 9610)");
 	}
 
 	/** @return array<string, mixed>|null */
@@ -54,7 +87,29 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 	/** @return array<string, mixed>|null */
 	private static function lastPurchasedCacheRow(int $productId): ?array
 	{
-		$statement = self::$db->prepare('SELECT product_id, amount, price FROM cache__products_last_purchased WHERE product_id = ?');
+		$statement = self::$db->prepare('SELECT product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id '
+			. 'FROM cache__products_last_purchased WHERE product_id = ?');
+		$statement->execute([$productId]);
+		$row = $statement->fetch(PDO::FETCH_ASSOC);
+
+		return $row === false ? null : $row;
+	}
+
+	/** What products_average_price itself currently computes for a product - the source of truth the cache must agree with. @return array<string, mixed>|null */
+	private static function averagePriceViewRow(int $productId): ?array
+	{
+		$statement = self::$db->prepare('SELECT product_id, price FROM products_average_price WHERE product_id = ?');
+		$statement->execute([$productId]);
+		$row = $statement->fetch(PDO::FETCH_ASSOC);
+
+		return $row === false ? null : $row;
+	}
+
+	/** @return array<string, mixed>|null */
+	private static function lastPurchasedViewRow(int $productId): ?array
+	{
+		$statement = self::$db->prepare('SELECT product_id, amount, best_before_date, purchased_date, price, location_id, shopping_location_id '
+			. 'FROM products_last_purchased WHERE product_id = ?');
 		$statement->execute([$productId]);
 		$row = $statement->fetch(PDO::FETCH_ASSOC);
 
@@ -68,8 +123,9 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 	 * With the pre-fix trigger (`OLD.id`), deleting stock_log row 9611 (productA's booking,
 	 * given that explicit id) matches `product_id = 9611`, which is productB's id - so
 	 * productB's cache rows are wiped even though nothing about productB changed. With the
-	 * fix (`OLD.product_id`), the same delete instead clears productA's own cache rows
-	 * (its only booking is gone) and leaves productB's cache exactly as it was.
+	 * fix (`OLD.product_id`), the same delete instead rebuilds productA's own cache rows
+	 * (its only booking is gone, so they are removed) and leaves productB's cache exactly
+	 * as it was - compared here as full rows, not just a spot-checked column.
 	 */
 	public function testDeletingLedgerRowClearsOnlyItsOwnProductsCache(): void
 	{
@@ -108,9 +164,112 @@ class StockLogDeleteTriggerTest extends PgsqlSchemaTestCase
 		self::assertNull(self::lastPurchasedCacheRow(9610), 'productA last-purchased cache row should be gone once its only booking is deleted');
 
 		// productB never had anything deleted - its cache rows must be byte-for-byte
-		// unchanged. Under the pre-fix trigger, this is exactly what broke: OLD.id (9611)
-		// matched productB's id, and productB's cache rows were wiped instead.
+		// unchanged (every column, not just price). Under the pre-fix trigger, this is
+		// exactly what broke: OLD.id (9611) matched productB's id, and productB's cache
+		// rows were wiped instead.
 		self::assertSame($productBAveragePriceBefore, self::averagePriceCacheRow(9611), 'productB average-price cache row must be unaffected by deleting an unrelated product\'s ledger row');
 		self::assertSame($productBLastPurchasedBefore, self::lastPurchasedCacheRow(9611), 'productB last-purchased cache row must be unaffected by deleting an unrelated product\'s ledger row');
+	}
+
+	/**
+	 * The bug Opus's validator found in round 2: undoing a product's only purchase through
+	 * the real `StockService::UndoBooking()` path (which `undone = 1` UPDATEs the row,
+	 * firing `trg_stock_log_UPD`) must leave no stale cache row behind once
+	 * `products_average_price`/`products_last_purchased` return nothing for that product.
+	 */
+	public function testUndoOnlyPurchaseRemovesCacheRows(): void
+	{
+		$stock = StockService::GetInstance();
+
+		$transactionId = null;
+		$stock->AddProduct(9612, 3, '2035-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-01-01', 9.0, 9610, null, $transactionId);
+
+		$statement = self::$db->prepare("SELECT id FROM stock_log WHERE product_id = 9612 AND transaction_type = 'purchase' ORDER BY id DESC LIMIT 1");
+		$statement->execute();
+		$bookingId = (int)$statement->fetchColumn();
+		self::assertGreaterThan(0, $bookingId, 'the purchase above should have produced a stock_log row');
+
+		// Sanity: the purchase built cache rows the way trg_stock_log_INS always has.
+		self::assertNotNull(self::averagePriceCacheRow(9612), 'productC should have an average-price cache row after its only purchase');
+		self::assertNotNull(self::lastPurchasedCacheRow(9612), 'productC should have a last-purchased cache row after its only purchase');
+		self::assertSame(9.0, self::averagePriceCacheRow(9612)['price']);
+
+		$stock->UndoBooking($bookingId);
+
+		// The view itself now returns nothing for productC - its only booking is undone.
+		self::assertNull(self::averagePriceViewRow(9612), 'products_average_price should return no row for productC once its only booking is undone');
+		self::assertNull(self::lastPurchasedViewRow(9612), 'products_last_purchased should return no row for productC once its only booking is undone');
+
+		// The cache must agree: no stale row left over from before the undo.
+		self::assertNull(self::averagePriceCacheRow(9612), 'productC average-price cache row must be removed once its only booking is undone');
+		self::assertNull(self::lastPurchasedCacheRow(9612), 'productC last-purchased cache row must be removed once its only booking is undone');
+
+		// And a reader that LEFT JOINs the cache (uihelper_product_details, which
+		// StockService::GetProductDetails() exposes as avg_price/last_price) must show no
+		// price rather than the undone booking's stale 9.0.
+		$details = $stock->GetProductDetails(9612);
+		self::assertNull($details['avg_price'], 'GetProductDetails()[\'avg_price\'] must be null once the only purchase is undone, not the stale 9.0');
+		self::assertNull($details['last_price'], 'GetProductDetails()[\'last_price\'] must be null once the only purchase is undone, not the stale 9.0');
+	}
+
+	/**
+	 * Deleting one of two bookings must leave the cache holding exactly what the view
+	 * computes from the remaining one - not empty (a blanket DELETE by product_id, as
+	 * round 1 alone left behind) and not the deleted booking's own stale values.
+	 */
+	public function testDeletingOneOfTwoBookingsRebuildsCacheFromTheOtherBooking(): void
+	{
+		self::$db->exec("INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) "
+			. "VALUES (9613, 1, '2035-01-01', '2026-01-01', 'deltrig-stock-d1', 'purchase', 4.00, 0, 9000)");
+		self::$db->exec("INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) "
+			. "VALUES (9613, 1, '2035-01-01', '2026-01-02', 'deltrig-stock-d2', 'purchase', 6.00, 0, 9000)");
+
+		$statement = self::$db->prepare("SELECT id FROM stock_log WHERE product_id = 9613 AND stock_id = 'deltrig-stock-d1'");
+		$statement->execute();
+		$firstBookingId = (int)$statement->fetchColumn();
+		self::assertGreaterThan(0, $firstBookingId);
+
+		self::$db->exec('DELETE FROM stock_log WHERE id = ' . $firstBookingId);
+
+		// The second booking (price 6.00) is still there - the cache must reflect exactly
+		// what the views now compute from it, not be empty and not still show 4.00/5.00
+		// (the average of both).
+		self::assertSame(self::averagePriceViewRow(9613), self::averagePriceCacheRow(9613), 'average-price cache must equal the view after one of two bookings is deleted');
+		self::assertSame(self::lastPurchasedViewRow(9613), self::lastPurchasedCacheRow(9613), 'last-purchased cache must equal the view after one of two bookings is deleted');
+		self::assertSame(6.0, self::averagePriceCacheRow(9613)['price']);
+	}
+
+	/**
+	 * The issue's own example: ledger rows deleted in bulk by the product-delete cascade
+	 * (trg_cascade_product_removal), with the same id coincidence as the first test - this
+	 * time reached by deleting a product rather than a ledger row directly.
+	 */
+	public function testDeletingProductCascadeWithCoincidingIdsLeavesTheOtherProductsCacheUntouched(): void
+	{
+		// productF's own booking, ordinary auto-assigned id.
+		self::$db->exec("INSERT INTO stock_log (product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) "
+			. "VALUES (9615, 2, '2035-01-01', '2026-01-01', 'deltrig-stock-f', 'purchase', 8.00, 0, 9000)");
+
+		// productE's booking, EXPLICIT id 9615 - productF's own id. productE is the one
+		// about to be deleted; this is the id coincidence the cascade delete below hits.
+		self::$db->exec("INSERT INTO stock_log (id, product_id, amount, best_before_date, purchased_date, stock_id, transaction_type, price, undone, user_id) "
+			. "VALUES (9615, 9614, 1, '2035-01-01', '2026-01-01', 'deltrig-stock-e', 'purchase', 2.00, 0, 9000)");
+
+		$productFAveragePriceBefore = self::averagePriceCacheRow(9615);
+		$productFLastPurchasedBefore = self::lastPurchasedCacheRow(9615);
+		self::assertNotNull($productFAveragePriceBefore);
+		self::assertNotNull($productFLastPurchasedBefore);
+		self::assertNotNull(self::averagePriceCacheRow(9614), 'productE should have a cache row before it is deleted');
+
+		// Delete the product itself - trg_cascade_product_removal deletes its stock_log
+		// rows (product_id = 9614), each firing trg_stock_log_DEL with OLD.id = 9615 for
+		// the row above.
+		self::$db->exec('DELETE FROM products WHERE id = 9614');
+
+		self::assertNull(self::averagePriceCacheRow(9614), 'the deleted productE should have no cache row left');
+		self::assertNull(self::lastPurchasedCacheRow(9614), 'the deleted productE should have no cache row left');
+
+		self::assertSame($productFAveragePriceBefore, self::averagePriceCacheRow(9615), 'productF average-price cache row must be unaffected by deleting an unrelated product with a coinciding ledger-row id');
+		self::assertSame($productFLastPurchasedBefore, self::lastPurchasedCacheRow(9615), 'productF last-purchased cache row must be unaffected by deleting an unrelated product with a coinciding ledger-row id');
 	}
 }
