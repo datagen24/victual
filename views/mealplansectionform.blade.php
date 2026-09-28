@@ -41,7 +41,9 @@
 				<div class="invalid-feedback">{{ $__t('A name is required') }}</div>
 			</div>
 
-			@php if($mode == 'edit' && !empty($mealplanSection->sort_number)) { $value = $mealplanSection->sort_number; } else { $value = ''; } @endphp
+			{{-- 0 is a real, meaningful sort position, not "unset" - only an actual NULL
+			sort_number renders blank here. --}}
+			@php if($mode == 'edit' && $mealplanSection->sort_number !== null) { $value = $mealplanSection->sort_number; } else { $value = ''; } @endphp
 			@include('components.numberpicker', array(
 			'id' => 'sort_number',
 			'label' => 'Sort number',

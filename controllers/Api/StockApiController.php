@@ -1264,12 +1264,16 @@ class StockApiController extends BaseApiController
 
 	/**
 	 * POST /api/stock/locations/{locationId}/weigh - weighs a vessel (a bin, a spice jar)
-	 * and corrects its one stock entry to match. Requires the STOCK_EDIT permission
-	 * (403 otherwise). Body field gross_amount is required; gross_qu_id is optional and,
-	 * when given, must equal the location's own tare_qu_id - present so a client's unit
-	 * mismatch is refused rather than silently misweighed (ADR-0022 question 5's "gross"
-	 * contract; docs/plans/landed/29-working-container-replenishment.md).
-	 * Returns the stock_log rows of the resulting transaction (200) or a 400 error response.
+	 * and corrects its stock TOTAL at that location to match (ADR-0033 decision 5). Requires
+	 * the STOCK_EDIT permission (403 otherwise). Body field gross_amount is required;
+	 * gross_qu_id is optional and, when given, must equal the location's own tare_qu_id -
+	 * present so a client's unit mismatch is refused rather than silently misweighed
+	 * (ADR-0022 question 5's "gross" contract; docs/plans/landed/29-working-container-replenishment.md).
+	 * best_before_date is optional and used only when the reading turns out to be higher than
+	 * what is on record, in which case it is required - StockService::WeighLocation() throws
+	 * when a higher reading is given none.
+	 * Returns the stock_log rows of the resulting transaction (200), an empty array (200) when
+	 * the reading matched what was on record and nothing was booked, or a 400 error response.
 	 */
 	public function WeighLocation(Request $request, Response $response, array $args)
 	{
@@ -1293,7 +1297,28 @@ class StockApiController extends BaseApiController
 				? (int)$requestBody['gross_qu_id']
 				: null;
 
-			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId);
+			// Present-but-malformed must be refused outright (RequireIsoDate(), issue #519's
+			// pattern), not silently treated as absent: falling through to null here would
+			// report a higher reading's "best_before_date is required" refusal for a caller
+			// who did supply one, just not a valid one - the wrong error for what actually
+			// went wrong. Absence itself is still fine at this stage; StockService::
+			// WeighLocation() is the one that refuses a higher reading with none.
+			$bestBeforeDate = null;
+			if (array_key_exists('best_before_date', $requestBody))
+			{
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
+			}
+
+			$transactionId = StockService::GetInstance()->WeighLocation((int)$args['locationId'], (float)$requestBody['gross_amount'], $grossQuId, $bestBeforeDate);
+
+			// A matching reading books nothing (ADR-0033 decision 5) - StockService returns ''
+			// rather than a transaction id, and StockTransactions() requires one to exist, so
+			// that call is skipped in favour of answering with an empty result directly.
+			if ($transactionId === '')
+			{
+				return $this->ApiResponse($response, []);
+			}
+
 			$args['transactionId'] = $transactionId;
 			return $this->StockTransactions($request, $response, $args);
 		});

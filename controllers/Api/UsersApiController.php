@@ -194,8 +194,16 @@ class UsersApiController extends BaseApiController
 		// is not derived from this cookie at all, so a live cookie left over from some other
 		// account can still ride along; treating it as "the acting session" let a flagged
 		// self-edit under DISABLE_AUTH mint a fresh session for the wrong account entirely.
+		// Issue #571: the cookie is the acting session only when the actor is editing their
+		// own account. Without $isSelf, DISABLE_AUTH and reverse-proxy authentication both
+		// make VICTUAL_USER_ID identical for every request regardless of which cookie rode
+		// along, so an administrator resetting user X's password from a browser that also
+		// carries X's live session cookie had that cookie accepted as "the acting session"
+		// merely because it belonged to $targetUserId - sparing X's session from an edit
+		// that is the administrator's, not a self-edit.
 		$rawSessionCookie = $request->getCookieParams()[SessionService::SESSION_COOKIE_NAME] ?? null;
-		$actingSessionKey = ($rawSessionCookie !== null
+		$actingSessionKey = ($isSelf
+			&& $rawSessionCookie !== null
 			&& SessionService::GetInstance()->IsValidSession($rawSessionCookie)
 			&& SessionService::GetInstance()->GetUserBySessionKey($rawSessionCookie)?->id == $targetUserId)
 			? $rawSessionCookie
@@ -525,12 +533,14 @@ class UsersApiController extends BaseApiController
 	 * either switched authentication backend or turned authentication back on. Random
 	 * bytes cannot be guessed regardless of what changes later.
 	 *
-	 * This mirrors, but does not reuse, the convention ReverseProxyAuthenticator
-	 * itself already uses when it auto-provisions a user on first sight of a
-	 * username: an empty string. password_verify('', $thatHash) is true - it is
-	 * safe only because PasswordLogin::Process() refuses an empty submitted password
-	 * outright, before ever calling password_verify(). Random bytes do not depend on
-	 * that (or any other) caller remembering to guard against the value it stored.
+	 * This mirrors, and since issue #556's fix is now the same convention
+	 * ReverseProxyAuthenticator itself uses when it auto-provisions a user on first
+	 * sight of a username: random_bytes(32), discarded immediately after
+	 * UsersService::CreateUser() hashes it, in place of the empty string that method
+	 * used to be given there. Random bytes do not depend on any caller remembering to
+	 * guard against the value stored, the way an empty string depended on
+	 * PasswordLogin::Process() refusing an empty submitted password before ever
+	 * calling password_verify() against it.
 	 *
 	 * @throws EInvalidApiQuery
 	 */

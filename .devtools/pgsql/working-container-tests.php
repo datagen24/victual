@@ -406,13 +406,19 @@ catch (\Exception $e)
 
 // 20. A CONVERSION THAT DOES EXIST. The ounce-to-weight-unit conversion set up at the top:
 //     a location tared in ounces, weighed gross at 20 oz against a 4 oz tare, nets 16 oz =
-//     1 lb in the product's own stock unit.
+//     1 lb in the product's own stock unit. 0.5 lb is already on hand, so this is a HIGHER
+//     reading (ADR-0033 decision 5, 2026-09-27) and needs an explicit due date for the new
+//     row - nothing here can guess one.
 $ounceLocation = MakeLocation('Ounce Location ' . uniqid(), 4.0, $quOunce);
 $ounceProduct = MakeProduct($quWeight);
-AddStock($ounceProduct, $ounceLocation, 0.5);
-StockService::GetInstance()->WeighLocation($ounceLocation, 20, $quOunce);
+AddStock($ounceProduct, $ounceLocation, 0.5); // AddStock() always dates its row 2027-06-01
+StockService::GetInstance()->WeighLocation($ounceLocation, 20, $quOunce, '2028-01-01');
 $ounceResult = (float)$pdo->query('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ' . $ounceProduct . ' AND location_id = ' . $ounceLocation)->fetchColumn();
 check(abs($ounceResult - 1.0) < 0.000001, 'a tare unit that differs from the stock unit converts correctly: got ' . $ounceResult . ', expected 1.0');
+$ounceRowCount = (int)$pdo->query('SELECT COUNT(*) FROM stock WHERE product_id = ' . $ounceProduct . ' AND location_id = ' . $ounceLocation)->fetchColumn();
+check($ounceRowCount === 2, 'the original 0.5 lb row is kept, not merged - a second row holds the added 0.5 lb: got ' . $ounceRowCount . ' row(s)');
+$originalRowDue = $pdo->query("SELECT best_before_date FROM stock WHERE product_id = $ounceProduct AND location_id = $ounceLocation AND best_before_date = '2027-06-01'")->fetchColumn();
+check($originalRowDue === '2027-06-01', 'the original row keeps its own due date, untouched by the correction');
 
 // --- The entities -----------------------------------------------------------------------
 

@@ -483,7 +483,11 @@ class DatabaseMigrationService extends BaseService
 				DatabaseService::GetInstance()->ExecuteDbStatement('INSERT INTO migrations (migration) VALUES (' . $migration . ')');
 			}
 		}
-		catch (\Exception $ex)
+		// Issue #557: \Exception here left a \TypeError/\ValueError/\Error uncaught, so the
+		// rollback below never ran and this left the transaction open on $pdo - in a
+		// long-lived process (the test runner, CLI tools), later statements ran inside it.
+		// Commit 9fa11873 already made this fix for ExecutePhpMigrationWhenNeeded().
+		catch (\Throwable $ex)
 		{
 			$pdo->rollback();
 			throw $ex;
@@ -564,7 +568,9 @@ class DatabaseMigrationService extends BaseService
 				$clear->execute([(int)$userId, InitialDataSeeder::PENDING_FORCED_CHANGE_KEY]);
 			}
 		}
-		catch (\Exception $ex)
+		// Issue #557: same fix as ApplyBaselineSchemaWhenNeeded() above - \Exception left an
+		// \Error uncaught and this transaction open.
+		catch (\Throwable $ex)
 		{
 			$pdo->rollback();
 			throw $ex;
@@ -690,7 +696,10 @@ class DatabaseMigrationService extends BaseService
 					$migrationCounter++;
 				}
 			}
-			catch (\Exception $ex)
+			// Issue #557: same fix as ApplyBaselineSchemaWhenNeeded() and
+			// FlagGeneratedAdminPasswordForChange() above - \Exception left an \Error
+			// uncaught and this transaction open.
+			catch (\Throwable $ex)
 			{
 				DatabaseService::GetInstance()->GetDbConnectionRaw()->rollback();
 				throw $ex;
