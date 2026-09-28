@@ -11,17 +11,22 @@ use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * ADR-0033 acceptance prerequisite 3 / round 3 item 2: bin/victual-compact-stock's own
+ * ADR-0033 acceptance prerequisite 3 / round 3b item 2: bin/victual-compact-stock's own
  * documented privilege list, proved against a real PostgreSQL role holding EXACTLY those
  * grants (see V580R2ProbeTest.php's testProbe3DocumentedPrivilegesSuffice, a round-2
  * throwaway validator probe this test supersedes with the corrected, complete list).
  *
  * Round 2's list was missing SELECT on the views stock_splits, products_average_price and
  * products_last_purchased (stock_splits is CompactStockEntries()'s very first read), and
- * INSERT/UPDATE on cache__products_average_price and cache__products_last_purchased (written
- * by the stock_log_UPD trigger, which is SECURITY INVOKER - see
+ * SELECT/INSERT/UPDATE on cache__products_average_price and cache__products_last_purchased
+ * (written by the stock_log_UPD trigger, which is SECURITY INVOKER - see
  * db/pgsql/baseline/06_triggers_b.sql - and so runs under this caller's own rights whenever a
- * merge rewrites a stock_log row).
+ * merge rewrites a stock_log row). Round 3 kept userfield_values/userfields from round 2's
+ * list without being able to prove they were needed; round 3b removes them outright -
+ * retire_stock_entry_labels() (migrations/0283.pgsql.php) reads only `products`, and
+ * stock_splits' own userfield-eligibility check runs through the view, which reads its
+ * underlying tables as the view's OWNER, not this caller. Every grant that remains is proved
+ * necessary below.
  *
  * Sufficiency: a role holding exactly the corrected list runs a real merge end to end.
  * Necessity: dropping any ONE grant from that list makes the same run fail - proving every
@@ -45,8 +50,6 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.stock_entry_origins TO %ROLE%', 'stock_entry_origins'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.labels TO %ROLE%', 'labels'],
 		['GRANT SELECT ON %SCHEMA%.products TO %ROLE%', 'products'],
-		['GRANT SELECT ON %SCHEMA%.userfield_values TO %ROLE%', 'userfield_values'],
-		['GRANT SELECT ON %SCHEMA%.userfields TO %ROLE%', 'userfields'],
 		['GRANT SELECT ON %SCHEMA%.stock_splits TO %ROLE%', 'stock_splits (view)'],
 		['GRANT SELECT ON %SCHEMA%.products_average_price TO %ROLE%', 'products_average_price (view)'],
 		['GRANT SELECT ON %SCHEMA%.products_last_purchased TO %ROLE%', 'products_last_purchased (view)'],
@@ -191,20 +194,8 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		self::assertFalse($success, "Omitting the '$label' grant must fail the run - every grant on the documented list is load-bearing, not merely harmless");
 	}
 
-	/**
-	 * Every grant except userfield_values/userfields: retire_stock_entry_labels()
-	 * (migrations/0283.pgsql.php) only ever reads `products` for its retirement_snapshot, not
-	 * userfield_values/userfields, and stock_splits' own userfield-eligibility check runs
-	 * through the view (a plain, non-security_invoker view executes with ITS OWNER's rights
-	 * against the tables it reads, not the caller's), so no code path this test can drive
-	 * actually requires the caller itself to hold those two grants. They are kept in the
-	 * documented list and the sufficiency test above because they are harmless if unneeded and
-	 * match this command's pre-round-3 history, but their necessity could not be proven and is
-	 * reported to the master rather than asserted here as fact either way.
-	 */
 	public static function grantLabels(): array
 	{
-		$provable = array_filter(self::GRANTS, fn($grant) => !in_array($grant[1], ['userfield_values', 'userfields'], true));
-		return array_map(fn($grant) => [$grant[1]], $provable);
+		return array_map(fn($grant) => [$grant[1]], self::GRANTS);
 	}
 }

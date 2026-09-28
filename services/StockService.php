@@ -4287,34 +4287,91 @@ class StockService extends BaseService
 						continue;
 					}
 
-					// Lineage confinement (ADR-0033 decision 3's last sentence): even once no
-					// outside `stock` row shares one of this group's stock_ids, an outside row
-					// can still be linked to this group through RecordSplitOrigin() lineage - in
-					// either direction. An outside row can name a group id, kept id included, as
-					// its own origin: left behind on the untouched remainder of an earlier partial
-					// open/transfer that has nothing else to do with this group (round 2's guard
-					// excluded the kept id here, reasoning that the kept id's own identity never
-					// changes - but that reasoning missed that the merge still moves a DIFFERENT
-					// purchase's history onto the kept id, which is exactly what the outside row's
-					// lineage did not sign up for). Symmetrically, a group member - again, kept id
-					// included - can itself be the one naming an OUTSIDE row as its origin: the
-					// kept id may be an unopened remainder whose own lineage points at an opened,
-					// price-corrected sibling this merge does not otherwise touch. Either
-					// direction entangles an outside identity with this group's once the rewrites
-					// below run, so the whole group is skipped - deliberately including the kept
-					// id in the check this time, accepting some previously-allowed merges now
-					// being refused rather than silently reattributing another purchase's
-					// price/lineage history.
-					$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
-						"SELECT 1 FROM stock_entry_origins WHERE"
-						. " (stock_id IN ($stockIdPlaceholders) AND origin_stock_id NOT IN ($stockIdPlaceholders))"
-						. " OR (origin_stock_id IN ($stockIdPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders))"
-						. " LIMIT 1",
-						array_merge($stockIds, $stockIds, $stockIds, $stockIds)
-					);
-					if ($outsideLineageCheck->fetchColumn() !== false)
+					// Lineage confinement (ADR-0033 decision 3's last sentence). Two guards,
+					// for two different failure modes. RecordSplitOrigin() always stores the
+					// FLATTENED origin (the ultimate purchase a chain of splits descends from,
+					// never an intermediate parent - see its own docblock), so this table can
+					// only ever link a stock_id to its true root: there is no chain to walk and
+					// no cycle it could form, so "the root of X" is a single lookup, not a
+					// recursion.
+					//
+					// Guard 1 (round 2, unchanged): an outside row can have RecordSplitOrigin()
+					// lineage naming one of the group's DISAPPEARING ids as its own origin - left
+					// behind on the untouched remainder of an earlier partial open/transfer that
+					// has nothing else to do with this group. The rewrite below only ever fires
+					// for a disappearing id (stock_id_to_keep's own identity never changes), but
+					// within that it rewrites every row naming one, group member or not, which
+					// would silently reattribute a real, unrelated entry's history to a different
+					// purchase than the one it actually split from. Unconditional: flattening
+					// means a disappearing id can only ever be named directly by an outside row
+					// when that id is itself a root, and round 3's probes below show exactly why
+					// that can never be let through.
+					$disappearingStockIds = [];
+					foreach ($stockIds as $stockId)
 					{
-						continue;
+						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						{
+							$disappearingStockIds[] = $stockId;
+						}
+					}
+					if (count($disappearingStockIds) > 0)
+					{
+						$disappearingPlaceholders = implode(',', array_fill(0, count($disappearingStockIds), '?'));
+						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+							"SELECT 1 FROM stock_entry_origins WHERE origin_stock_id IN ($disappearingPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders) LIMIT 1",
+							array_merge($disappearingStockIds, $stockIds)
+						);
+						if ($outsideLineageCheck->fetchColumn() !== false)
+						{
+							continue;
+						}
+					}
+
+					// Guard 2 (round 3): round 2's guard alone still misses two shapes, both
+					// real application flows, and both share one structural trait round 2's
+					// guard ignored - the group spans MORE THAN ONE ORIGIN ROOT (two originally
+					// separate purchases, only one of which has since been split):
+					//   - An outside row can name the group's KEPT id as its origin instead of a
+					//     disappearing one. The kept id's own identity never changes, but the
+					//     merge still moves a DIFFERENT root's history onto it, which the outside
+					//     row's lineage never signed up for.
+					//   - A group member's OWN lineage can name an outside row as ITS origin (the
+					//     member is an unopened remainder of a different root than its sibling).
+					// Merging either silently reattributes one root's purchase price/history onto
+					// the other, which prerequisite 1 forbids. But merging portions that all
+					// descend from a SINGLE shared root changes no purchase's resolved root and
+					// no root's total - that is ordinary compaction (e.g.
+					// testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge's second merge:
+					// two opened portions of the same original purchase, one of them a second-
+					// generation remainder of the other) and must stay allowed even though an
+					// unrelated, still-live remainder of that same shared root sits outside the
+					// group - that remainder's resolved root does not change either, only the
+					// surviving id's spelling does. So this guard only ever runs when the group's
+					// members resolve to more than one distinct root; when they all share one
+					// root it is skipped entirely, deliberately including the kept id in the
+					// outside-link check when it does run.
+					$originRows = DatabaseService::GetInstance()->ExecuteDbQuery(
+						"SELECT stock_id, origin_stock_id FROM stock_entry_origins WHERE stock_id IN ($stockIdPlaceholders)",
+						$stockIds
+					)->fetchAll(\PDO::FETCH_KEY_PAIR);
+					$roots = [];
+					foreach ($stockIds as $stockId)
+					{
+						$roots[$originRows[$stockId] ?? $stockId] = true;
+					}
+					if (count($roots) > 1)
+					{
+						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
+							"SELECT 1 FROM stock_entry_origins WHERE"
+							. " (stock_id IN ($stockIdPlaceholders) AND origin_stock_id NOT IN ($stockIdPlaceholders))"
+							. " OR (origin_stock_id IN ($stockIdPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders))"
+							. " LIMIT 1",
+							array_merge($stockIds, $stockIds, $stockIds, $stockIds)
+						);
+						if ($outsideLineageCheck->fetchColumn() !== false)
+						{
+							continue;
+						}
 					}
 
 					foreach ($stockIds as $stockId)

@@ -33,8 +33,11 @@
 // evaluate eligibility, write because deleting a losing row fires retire_stock_entry_labels -
 // migrations/0283.pgsql.php - which UPDATEs the label it retires, under this same caller's
 // privileges since the trigger function carries none of its own); SELECT on products (that
-// same trigger's retirement_snapshot reads the product name), userfield_values and
-// userfields. Also SELECT on the views stock_splits (this command's own candidate-group
+// same trigger's retirement_snapshot reads only the product name - not userfield_values or
+// userfields, which round 3 wrongly kept on this list: no statement this command or its
+// triggers run needs them directly, and stock_splits' own userfield-eligibility check runs
+// through the view below, which reads its underlying tables as the view's OWNER, not this
+// caller). Also SELECT on the views stock_splits (this command's own candidate-group
 // read - CompactStockEntries()'s very first query), products_average_price and
 // products_last_purchased; and SELECT, INSERT, UPDATE on cache__products_average_price and
 // cache__products_last_purchased (SELECT too - not just the writes - because Postgres

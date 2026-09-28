@@ -11,7 +11,7 @@ use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * ADR-0033 decision 3, round 3: StockMaintenanceCompactionTest's own
+ * ADR-0033 decision 3, round 3b: StockMaintenanceCompactionTest's own
  * testLineageConfinementSkipsAGroupThatWouldCorruptAnOutsideRowsOrigin only covers an OUTSIDE
  * row naming a DISAPPEARING group id as its origin. Round 2's guard checked exactly that
  * direction and excluded the kept id, reasoning that the kept id's own identity never changes.
@@ -25,6 +25,20 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   kept id is an unopened remainder of an earlier partial open, and the opened, price-corrected
  *   sibling is outside the merge). Merging pulls another purchase's booking under an identity
  *   whose lineage already points elsewhere.
+ *
+ * Round 3 tried "the kept id counts too, unconditionally" and broke two pre-existing tests that
+ * legitimately merge two opened portions descended from the SAME purchase. Round 3b's guard
+ * (StockService::CompactStockEntries(), the "Guard 2" block) only runs the broadened,
+ * kept-id-inclusive check when the group's members resolve to MORE THAN ONE distinct origin
+ * root; both probes below are two-root groups, so both conditions of that guard fire:
+ *
+ * - Probe 1: root(kp1-a) = kp1-a, root(kp1-z) = kp1-z - two distinct roots (the multi-root
+ *   condition). The outside-link condition then finds the remainder's own row
+ *   (stock_id = R, origin_stock_id = 'kp1-a'): R is outside the group, 'kp1-a' is a member.
+ * - Probe 2: root(remainder) = A (via the remainder's own stock_entry_origins row), root(B) = B
+ *   - two distinct roots. The very same row (stock_id = remainder, origin_stock_id = A) is
+ *   also what satisfies the outside-link condition: the remainder is a group member (in fact
+ *   the kept one) and A is outside.
  *
  * Both are demonstrated with ordinary API flows and asserted against product-details avg_price
  * and stock_edited_entries.edited_origin_amount - the values round 2's independent validator
@@ -222,5 +236,53 @@ class StockMaintenanceLineageConfinementKeptIdTest extends PgsqlSchemaTestCase
 		self::assertSame($remainderBefore, self::rowsOf('SELECT * FROM stock WHERE id = ?', [(int)$remainder['id']]), 'The remainder row (amount, stock_id) is byte-for-byte unchanged');
 		self::assertSame($avgBefore, self::avgApi($product), 'product-details avg_price must be unchanged: the merge must not reprice purchase B through the outside opened unit\'s correction');
 		self::assertSame($editedBefore, self::editedOriginAmount((string)$b[0]['stock_id']), 'stock_edited_entries.edited_origin_amount for purchase B must be unchanged');
+	}
+
+	/**
+	 * The positive counterpart: a group whose members all descend from a SINGLE origin root
+	 * merges normally, even though Guard 2's multi-root gate would otherwise apply to any group
+	 * containing a split remainder. One purchase (K) opened twice in succession - the second
+	 * open splits the first opened portion itself, so K's opened portion and the second opened
+	 * portion (R1) share root K (R1's own stock_entry_origins row already names K directly, since
+	 * RecordSplitOrigin() flattens through R1's own prior origin - there is no intermediate
+	 * parent to preserve). root(K) = K, root(R1) = K: one root, so Guard 2 never runs at all,
+	 * and Guard 1 (disappearing-id direction) does not fire either, matching
+	 * testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge's own second merge. Asserts the
+	 * merge actually happens (unlike the two "must skip" tests above) and that avg_price and
+	 * stock_edited_entries are unchanged by it - merging same-root portions changes no
+	 * purchase's resolved root or total, so there is nothing to reprice.
+	 */
+	public function testTwiceOpenedSingleRootChainMerges(): void
+	{
+		$product = self::insertProduct('KeptId Single Root Chain');
+		$purchase = self::purchaseNull($product, 6, 1.0);
+		$stockIdK = $purchase[0]['stock_id'];
+
+		[$s1, $b1] = self::call(fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 2, 'stock_entry_id' => $stockIdK]), new Response(), ['productId' => $product]));
+		self::assertSame(200, $s1, 'open 2 of K: ' . json_encode($b1));
+
+		$remainderR1 = self::rowsOf('SELECT s.* FROM stock s JOIN stock_entry_origins o ON o.stock_id = s.stock_id WHERE o.origin_stock_id = ? AND s.product_id = ?', [$stockIdK, $product]);
+		self::assertCount(1, $remainderR1, 'Sanity: K\'s unopened remainder (R1) exists with lineage naming K');
+		$stockIdR1 = $remainderR1[0]['stock_id'];
+
+		[$s2, $b2] = self::call(fn() => self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockIdR1]), new Response(), ['productId' => $product]));
+		self::assertSame(200, $s2, 'open 1 of R1 (splitting it in turn): ' . json_encode($b2));
+
+		$rootOfR1 = self::scalar('SELECT origin_stock_id FROM stock_entry_origins WHERE stock_id = ?', [$stockIdR1]);
+		self::assertSame($stockIdK, $rootOfR1, 'Sanity: R1\'s own lineage is already flattened straight to K, not to some intermediate parent');
+
+		$groups = self::rowsOf('SELECT stock_id_group, stock_id_to_keep FROM stock_splits WHERE product_id = ?', [$product]);
+		self::assertCount(1, $groups, 'Sanity: K\'s opened portion and R1\'s opened portion are one candidate group - a single shared root');
+
+		$avgBefore = self::avgApi($product);
+		$editedBefore = self::rowsOf('SELECT stock_id, edited_origin_amount FROM stock_edited_entries WHERE stock_id IN (?, ?) ORDER BY stock_id', [$stockIdK, $stockIdR1]);
+
+		StockService::GetInstance()->CompactStockEntries($product);
+
+		$openedRows = self::rowsOf('SELECT id FROM stock WHERE product_id = ? AND open = 1', [$product]);
+		self::assertCount(1, $openedRows, 'The single-root group DOES merge: Guard 2 never runs (one root), Guard 1 does not fire either');
+		self::assertSame($avgBefore, self::avgApi($product), 'product-details avg_price is unchanged by a same-root merge');
+		$editedAfter = self::rowsOf('SELECT stock_id, edited_origin_amount FROM stock_edited_entries WHERE stock_id IN (?, ?) ORDER BY stock_id', [$stockIdK, $stockIdR1]);
+		self::assertSame($editedBefore, $editedAfter, 'stock_edited_entries is unchanged by a same-root merge');
 	}
 }
