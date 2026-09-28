@@ -48,13 +48,21 @@ async function newPage(browser, label)
 	return page;
 }
 
-/** Clicks the "Undo" anchor inside the toast the page just rendered. */
+/**
+ * Clicks the "Undo" anchor inside the toast the page just rendered, and waits for the
+ * undo POST it triggers (stock/bookings/{id}/undo or stock/transactions/{id}/undo) to
+ * actually complete, rather than a fixed delay every scenario paid regardless of how
+ * long that request took.
+ */
 async function clickUndoInToast(page)
 {
 	const undo = page.locator('#toast-container a:has-text("Undo")').first();
 	await undo.waitFor({ state: 'visible', timeout: 20000 });
-	await undo.click();
-	await page.waitForTimeout(2000);
+	await Promise.all([
+		page.waitForResponse(r => r.request().method() === 'POST'
+			&& /\/api\/stock\/(bookings|transactions)\/[^/?]+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+		undo.click()
+	]);
 }
 
 async function waitForUndoToast(page)
@@ -295,14 +303,25 @@ async function probe(browser, label, how, run)
 	{
 		await page.goto(BASE + '/stockentries', { waitUntil: 'networkidle' });
 		await page.waitForTimeout(1200);
-		await page.locator('a.show-as-dialog-link[href*="/stockentry/"]').first().click();
-		const frame = page.frameLocator('iframe.embed-responsive');
-		await frame.locator('#stockentry-form').waitFor({ timeout: 15000 });
-		// Lets the modal's datetimepickers and userfields widgets finish initialising
-		// before the form is submitted, the same margin pickProduct() gives the product
-		// picker's own change chain elsewhere in this file.
-		await page.waitForTimeout(1500);
 
+		const [childFrame] = await Promise.all([
+			page.waitForEvent('frame'),
+			page.locator('a.show-as-dialog-link[href*="/stockentry/"]').first().click()
+		]);
+		await childFrame.waitForLoadState('load');
+
+		// Waits for the modal's own scripts (datetimepickers, UserfieldsForm.Load()) to
+		// finish setting up the fields Save's own validation reads. checkValidity() stays
+		// false, and Save silently does nothing, until they have - clicking on a fixed
+		// delay instead sometimes raced that setup and left bookingResponse() waiting for
+		// a request that was never sent.
+		await childFrame.waitForFunction(() =>
+		{
+			const form = document.querySelector('#stockentry-form');
+			return !!form && form.checkValidity();
+		}, { timeout: 15000 });
+
+		const frame = page.frameLocator('iframe.embed-responsive');
 		const booking = await bookingResponse(page, /\/api\/stock\/entry\/\d+(\?|$)/, 'PUT', () =>
 			frame.locator('#save-stockentry-button').click());
 
