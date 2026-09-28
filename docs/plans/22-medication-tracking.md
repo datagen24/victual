@@ -323,7 +323,7 @@ Collected because most of them are only visible from inside the existing code.
   and **0295** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
-  - 0293–0294 until 2026-09-28, later still yet again, when issue #508's `product_groups_missing`
+  - 0293–0294 until 2026-09-28 once more, when issue #508's `product_groups_missing`
     roll-up migration ([ADR-0034](../adr/0034-product-group-minimum-counts-descendant-groups.md),
     #487 remediation) was written to disk as `0293.pgsql.sql` above this plan's still-unwritten
     claims and moved up to 0294–0295 under the lowest-free-slot rule

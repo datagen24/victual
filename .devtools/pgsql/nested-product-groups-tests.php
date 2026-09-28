@@ -424,9 +424,9 @@ $statement->execute([$waitingLeft, $waitingRight]);
 check((int)$statement->fetchColumn() === 2,
 	'both groups are still reachable from a root, so neither has vanished from the pickers');
 
-// --- 8. product_groups_missing is unaffected (plan 30 question 1 is unanswered) ----------
+// --- 8. product_groups_missing is unaffected by nesting alone (roll-up needs stock) ------
 
-echo "\n8. product_groups_missing tree is unaffected by the tree shape alone\n";
+echo "\n8. product_groups_missing: an empty subtree is short by the full minimum\n";
 
 $pdo->prepare('UPDATE product_groups SET min_stock_amount = 3 WHERE id = ?')->execute([$spices]);
 

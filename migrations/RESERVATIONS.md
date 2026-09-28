@@ -81,7 +81,7 @@ have recorded it.
 | 0294 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
 | 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
-Renumbered 2026-09-28, later still yet again: issue [#508](https://github.com/datagen24/victual/issues/508)
+Renumbered again on 2026-09-28: issue [#508](https://github.com/datagen24/victual/issues/508)
 (M8, #487 remediation)'s `product_groups_missing` roll-up migration, deciding
 [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md), is being
 written on this branch as `0293.pgsql.sql`, above plan 22's still-unwritten claims. Per the
