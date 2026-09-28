@@ -4940,7 +4940,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW to read the recipe and SHOPPINGLIST_ITEMS_ADD to add its missing ingredients to the shopping list."
 			}
 		},
 		"/recipes/{recipeId}/fulfillment": {
@@ -5046,7 +5047,8 @@
 							}
 						}
 					}
-				}
+				},
+				"description": "Requires RECIPES_VIEW to read the recipe and STOCK_CONSUME to consume it. A recipe that produces a product, including through a meal-plan shadow's original recipe, also requires STOCK_PURCHASE."
 			}
 		},
 		"/recipes/fulfillment": {
