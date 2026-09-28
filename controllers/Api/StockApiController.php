@@ -104,6 +104,27 @@ class StockApiController extends BaseApiController
 	}
 
 	/**
+	 * Validates a body field is a positive integer id (an id, unlike RequireIntegerId()'s
+	 * other callers, is never zero or negative) - used for the shopping-list routes'
+	 * list_id, where a caller-supplied 0 or a negative number is exactly as unreadable as
+	 * "abc" or an array, but RequireIntegerId() alone would accept it (issue #582/#487).
+	 *
+	 * @return int The validated id from $requestBody[$field]
+	 * @throws \Exception When $requestBody[$field] is not a positive integer
+	 */
+	private function RequirePositiveIntegerId(array $requestBody, string $field): int
+	{
+		$id = $this->RequireIntegerId($requestBody, $field);
+
+		if ($id < 1)
+		{
+			throw new \Exception('The ' . str_replace('_', ' ', $field) . ' must be a positive integer');
+		}
+
+		return $id;
+	}
+
+	/**
 	 * Validates a body field is a valid ISO 8601 date (Y-m-d) before it reaches a service
 	 * method: falling through to a default on an unreadable value would silently overwrite
 	 * whatever the column already stored (issue #519) instead of refusing the request.
@@ -142,9 +163,14 @@ class StockApiController extends BaseApiController
 
 			$listId = 1;
 
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			StockService::GetInstance()->AddMissingProductsToShoppingList($listId);
@@ -170,9 +196,14 @@ class StockApiController extends BaseApiController
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			StockService::GetInstance()->AddOverdueProductsToShoppingList($listId);
@@ -198,9 +229,14 @@ class StockApiController extends BaseApiController
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			StockService::GetInstance()->AddExpiredProductsToShoppingList($listId);
@@ -236,34 +272,69 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'amount');
 
+			// Absent, null and "" all keep the derived default (AddProduct() resolves the
+			// product's own default due date); a present value that cannot be read as an
+			// ISO date - including an array, which used to reach IsIsoDate() as a 500
+			// rather than a 400 - is refused instead of silently falling back to that
+			// default (issues #544/#487). "" is treated the same as absent/null rather
+			// than refused: is_string("") is true but IsIsoDate("") is false, and neither
+			// the purchase form nor any other caller has a reason to distinguish "no due
+			// date entered" from "no due date field sent" here.
 			$bestBeforeDate = null;
-			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
+			if (array_key_exists('best_before_date', $requestBody) && $requestBody['best_before_date'] !== null && $requestBody['best_before_date'] !== '')
 			{
-				$bestBeforeDate = $requestBody['best_before_date'];
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
+			// Same contract as best_before_date above, but the default is today rather
+			// than null (issues #544/#487).
 			$purchasedDate = date('Y-m-d');
-			if (array_key_exists('purchased_date', $requestBody) && IsIsoDate($requestBody['purchased_date']))
+			if (array_key_exists('purchased_date', $requestBody) && $requestBody['purchased_date'] !== null && $requestBody['purchased_date'] !== '')
 			{
-				$purchasedDate = $requestBody['purchased_date'];
+				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
 			}
 
+			// "" is left alone rather than refused: public/viewjs/purchase.js sends
+			// jsonData.price = 0 when price tracking is on with nothing entered, but
+			// public/viewjs/inventory.js's own price field (shared markup) still defaults
+			// to "" wherever a price isn't computed, so treating "" as malformed here
+			// would refuse an unremarkable request from the shipped UI. A value that is
+			// present, non-null, non-"" and still not numeric is refused (issue #544/#487).
 			$price = null;
-			if (array_key_exists('price', $requestBody) && is_numeric($requestBody['price']))
+			if (array_key_exists('price', $requestBody) && $requestBody['price'] !== null && $requestBody['price'] !== '')
 			{
+				$this->RequireNumericAmount($requestBody, 'price');
 				$price = $requestBody['price'];
 			}
 
+			// Existence, not merely format, matching RequireExistingId()'s use on
+			// EditStockEntry() (issue #544/#487): a malformed or dangling location_id used
+			// to fall straight through to is_numeric()'s false branch and silently keep
+			// the product's default location instead of refusing the request.
 			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && is_numeric($requestBody['location_id']))
+			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null)
 			{
-				$locationId = $requestBody['location_id'];
+				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
 
+			// null or "" means "no store" - matching EditStockEntry()'s own shopping_location_id
+			// handling and the ShoppingLocationPicker widget, which sends "" for its blank
+			// option (public/viewjs/components/shoppinglocationpicker.js). Anything else
+			// present must name an existing, active shopping location or the request is
+			// refused with 400 and nothing is booked - the dangling stock/stock_log
+			// reference issue #535 reports, and the same malformed-value default issue #544
+			// reports for the other fields in this method.
 			$shoppingLocationId = null;
-			if (array_key_exists('shopping_location_id', $requestBody) && is_numeric($requestBody['shopping_location_id']))
+			if (array_key_exists('shopping_location_id', $requestBody))
 			{
-				$shoppingLocationId = $requestBody['shopping_location_id'];
+				if ($requestBody['shopping_location_id'] === null || $requestBody['shopping_location_id'] === '')
+				{
+					$shoppingLocationId = null;
+				}
+				else
+				{
+					$shoppingLocationId = $this->RequireExistingId($requestBody, 'shopping_location_id', 'shopping_locations', 'shopping location');
+				}
 			}
 
 			$transactionType = StockService::TRANSACTION_TYPE_PURCHASE;
@@ -330,9 +401,14 @@ class StockApiController extends BaseApiController
 			$productId = null;
 			$note = null;
 
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))
@@ -384,9 +460,14 @@ class StockApiController extends BaseApiController
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request) ?? [];
 
 			$listId = 1;
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			// WireBooleans::RequireBoolean() rather than filter_var(...FILTER_VALIDATE_BOOLEAN):
@@ -733,10 +814,14 @@ class StockApiController extends BaseApiController
 				throw new \Exception('A qu_id is required');
 			}
 
+			// WireBooleans::RequireBoolean() rather than boolval(): boolval("false") is
+			// true, so a client sending the word string "false" had its reading treated as
+			// gross and its tare subtracted regardless - the exact mismeasurement ADR-0022
+			// names "gross" explicitly to rule out (issue #583/#487).
 			$measurement = [
 				'amount' => $requestBody['amount'],
 				'qu_id' => $requestBody['qu_id'],
-				'is_gross' => array_key_exists('gross', $requestBody) ? boolval($requestBody['gross']) : false,
+				'is_gross' => array_key_exists('gross', $requestBody) ? WireBooleans::RequireBoolean($requestBody['gross'], 'gross') : false,
 				'tare' => array_key_exists('tare', $requestBody) ? $requestBody['tare'] : null,
 			];
 
@@ -798,34 +883,52 @@ class StockApiController extends BaseApiController
 
 			$this->RequireNumericAmount($requestBody, 'new_amount');
 
+			// See AddProduct() above for the reasoning behind each of these blocks
+			// (issues #535/#544/#487): absent, null and "" all keep this method's own
+			// default (resolved by StockService::InventoryProduct() itself for an upward
+			// correction); a present value that cannot be read as its documented type is
+			// refused with 400 instead of silently keeping that default.
 			$bestBeforeDate = null;
-			if (array_key_exists('best_before_date', $requestBody) && IsIsoDate($requestBody['best_before_date']))
+			if (array_key_exists('best_before_date', $requestBody) && $requestBody['best_before_date'] !== null && $requestBody['best_before_date'] !== '')
 			{
-				$bestBeforeDate = $requestBody['best_before_date'];
+				$bestBeforeDate = $this->RequireIsoDate($requestBody, 'best_before_date');
 			}
 
 			$purchasedDate = null;
-			if (array_key_exists('purchased_date', $requestBody) && IsIsoDate($requestBody['purchased_date']))
+			if (array_key_exists('purchased_date', $requestBody) && $requestBody['purchased_date'] !== null && $requestBody['purchased_date'] !== '')
 			{
-				$purchasedDate = $requestBody['purchased_date'];
+				$purchasedDate = $this->RequireIsoDate($requestBody, 'purchased_date');
 			}
 
 			$locationId = null;
-			if (array_key_exists('location_id', $requestBody) && is_numeric($requestBody['location_id']))
+			if (array_key_exists('location_id', $requestBody) && $requestBody['location_id'] !== null)
 			{
-				$locationId = $requestBody['location_id'];
+				$locationId = $this->RequireExistingId($requestBody, 'location_id', 'locations', 'location');
 			}
 
+			// public/viewjs/inventory.js sends price:"" whenever it has not computed one
+			// (no price entered) - see AddProduct() above.
 			$price = null;
-			if (array_key_exists('price', $requestBody) && is_numeric($requestBody['price']))
+			if (array_key_exists('price', $requestBody) && $requestBody['price'] !== null && $requestBody['price'] !== '')
 			{
+				$this->RequireNumericAmount($requestBody, 'price');
 				$price = $requestBody['price'];
 			}
 
+			// null or "" means "no store", matching AddProduct()/EditStockEntry() (issue
+			// #535/#487): a supplied value that names no active shopping location is
+			// refused rather than persisted as a dangling stock/stock_log reference.
 			$shoppingLocationId = null;
-			if (array_key_exists('shopping_location_id', $requestBody) && is_numeric($requestBody['shopping_location_id']))
+			if (array_key_exists('shopping_location_id', $requestBody))
 			{
-				$shoppingLocationId = $requestBody['shopping_location_id'];
+				if ($requestBody['shopping_location_id'] === null || $requestBody['shopping_location_id'] === '')
+				{
+					$shoppingLocationId = null;
+				}
+				else
+				{
+					$shoppingLocationId = $this->RequireExistingId($requestBody, 'shopping_location_id', 'shopping_locations', 'shopping location');
+				}
 			}
 
 			$stockLabelType = 0;
@@ -907,10 +1010,21 @@ class StockApiController extends BaseApiController
 			$measurement = null;
 			if (array_key_exists('measurement', $requestBody) && is_array($requestBody['measurement']))
 			{
+				// array_key_exists() rather than the "?? false" this replaced: "??" treats
+				// an explicit null the same as an absent key, which would have let a null
+				// gross through to boolval() as false rather than refusing it. See
+				// MeasureStockEntry() above for why boolval() itself is wrong here (issue
+				// #583/#487).
+				$isGross = false;
+				if (array_key_exists('gross', $requestBody['measurement']))
+				{
+					$isGross = WireBooleans::RequireBoolean($requestBody['measurement']['gross'], 'measurement.gross');
+				}
+
 				$measurement = [
 					'amount' => $requestBody['measurement']['amount'] ?? null,
 					'qu_id' => $requestBody['measurement']['qu_id'] ?? null,
-					'is_gross' => boolval($requestBody['measurement']['gross'] ?? false),
+					'is_gross' => $isGross,
 					'tare' => $requestBody['measurement']['tare'] ?? null,
 				];
 			}
@@ -1077,9 +1191,14 @@ class StockApiController extends BaseApiController
 			$amount = 1;
 			$productId = null;
 
-			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
+			// A present list_id is refused with 400 unless it is a positive integer -
+			// "abc", an array, 0 and a negative number are exactly as unreadable as each
+			// other, and used to fall through to this same default silently (issue
+			// #582/#487). An explicit null is left as absent/default, unchanged from
+			// today's behaviour: RequirePositiveIntegerId() is not even reached for it.
+			if (array_key_exists('list_id', $requestBody) && $requestBody['list_id'] !== null)
 			{
-				$listId = $requestBody['list_id'];
+				$listId = $this->RequirePositiveIntegerId($requestBody, 'list_id');
 			}
 
 			if (array_key_exists('product_amount', $requestBody) && !empty($requestBody['product_amount']) && is_numeric($requestBody['product_amount']))

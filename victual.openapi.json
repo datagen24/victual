@@ -2500,7 +2500,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing stock entry, entry is not a coherent single opened container, measurement unit does not convert to the product's stock unit)",
+						"description": "The operation was not successful (possible errors are: Not existing stock entry, entry is not a coherent single opened container, measurement unit does not convert to the product's stock unit, or gross could not be read as a real boolean - the word strings \"true\"/\"false\" are refused)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -2917,7 +2917,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, invalid transaction type)",
+						"description": "The operation was not successful (possible errors are: Not existing product, invalid transaction type, or a supplied best_before_date/purchased_date/price/location_id/shopping_location_id that could not be read as its documented type - including a location_id/shopping_location_id naming no active row)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3231,7 +3231,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product)",
+						"description": "The operation was not successful (possible errors are: Not existing product, or a supplied best_before_date/purchased_date/price/location_id/shopping_location_id that could not be read as its documented type - including a location_id/shopping_location_id naming no active row)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3348,7 +3348,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount, a measurement without a specific single-unit stock entry, or a measurement unit that does not convert to the product's stock unit)",
+						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount, a measurement without a specific single-unit stock entry, a measurement unit that does not convert to the product's stock unit, or measurement.gross not readable as a real boolean - the word strings \"true\"/\"false\" are refused)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3565,7 +3565,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, invalid transaction type)",
+						"description": "The operation was not successful (possible errors are: Not existing product, invalid transaction type, or a supplied best_before_date/purchased_date/price/location_id/shopping_location_id that could not be read as its documented type - including a location_id/shopping_location_id naming no active row)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3837,7 +3837,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product)",
+						"description": "The operation was not successful (possible errors are: Not existing product, or a supplied best_before_date/purchased_date/price/location_id/shopping_location_id that could not be read as its documented type - including a location_id/shopping_location_id naming no active row)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -3918,7 +3918,7 @@
 						}
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount)",
+						"description": "The operation was not successful (possible errors are: Not existing product, given amount > current unopened stock amount, or measurement.gross not readable as a real boolean - the word strings \"true\"/\"false\" are refused)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4223,7 +4223,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4285,7 +4285,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4347,7 +4347,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4414,7 +4414,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4496,7 +4496,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list, Invalid product id supplied)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, Invalid product id supplied, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
@@ -4569,7 +4569,7 @@
 						"description": "The operation was successful"
 					},
 					"400": {
-						"description": "The operation was not successful (possible errors are: Not existing shopping list, Invalid product id supplied)",
+						"description": "The operation was not successful (possible errors are: Not existing shopping list, Invalid product id supplied, or a present list_id that is not a positive integer)",
 						"content": {
 							"application/json": {
 								"schema": {
