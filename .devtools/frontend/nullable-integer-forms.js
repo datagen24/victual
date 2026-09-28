@@ -45,15 +45,28 @@ const assert = require('node:assert/strict');
 			}, { path, method, body });
 		}
 
-		/** The toast toastr renders, if any - null once the container is empty. */
+		/**
+		 * The toast toastr renders, if any - null once the container is empty. Called right
+		 * after a save that is expected to succeed, which triggers the form's own navigation
+		 * away almost immediately - so a destroyed-execution-context error from a navigation
+		 * that wins the race is read the same as "no toast": an error toast would have
+		 * blocked that very navigation from starting at all.
+		 */
 		async function toastText()
 		{
-			return page.evaluate(() =>
+			try
 			{
-				const el = document.querySelector('#toast-container');
-				// The first line of innerText is the close button's glyph, which says nothing.
-				return el ? el.innerText.split('\n').filter(l => l.trim() && l.trim() !== '×').join(' ') : null;
-			});
+				return await page.evaluate(() =>
+				{
+					const el = document.querySelector('#toast-container');
+					// The first line of innerText is the close button's glyph, which says nothing.
+					return el ? el.innerText.split('\n').filter(l => l.trim() && l.trim() !== '×').join(' ') : null;
+				});
+			}
+			catch (error)
+			{
+				return null;
+			}
 		}
 
 		/**
@@ -69,6 +82,22 @@ const assert = require('node:assert/strict');
 			]);
 
 			return response;
+		}
+
+		/**
+		 * Asserts a response's status, reading the body only on failure. A save that
+		 * succeeds triggers the form's own navigation away almost immediately (the same
+		 * response handler that resolves this response also fires it), which can race
+		 * Chromium's DevTools protocol into reporting the response body already gone by the
+		 * time it is read - so the body must never be read unconditionally, only when the
+		 * status is already wrong and there is a real failure to explain.
+		 */
+		async function assertStatus(response, expected, message)
+		{
+			if (response.status() !== expected)
+			{
+				throw new Error(message + ' (got ' + response.status() + ': ' + await response.text() + ')');
+			}
 		}
 
 		await page.goto(base + '/stockoverview');
@@ -98,7 +127,7 @@ const assert = require('node:assert/strict');
 			await page.goto(base + config.formPath);
 			await config.fillRequired('Blank');
 			const createBlank = await save('/api/' + apiPath, 'POST', config.saveButton);
-			assert.equal(createBlank.status(), 200, config.label + ': a blank-sort_number create should succeed: ' + await createBlank.text());
+			await assertStatus(createBlank, 200, config.label + ': a blank-sort_number create should succeed');
 			await page.waitForNavigation();
 
 			const blankId = (await createBlank.json()).created_object_id;
@@ -110,7 +139,7 @@ const assert = require('node:assert/strict');
 			await config.fillRequired('Zero');
 			await page.locator('#sort_number').fill('0');
 			const createZero = await save('/api/' + apiPath, 'POST', config.saveButton);
-			assert.equal(createZero.status(), 200, config.label + ': a sort_number of 0 should be accepted on create: ' + await createZero.text());
+			await assertStatus(createZero, 200, config.label + ': a sort_number of 0 should be accepted on create');
 			await page.waitForNavigation();
 
 			const zeroId = (await createZero.json()).created_object_id;
@@ -118,7 +147,7 @@ const assert = require('node:assert/strict');
 			assert.equal(await page.locator('#sort_number').inputValue(), '0', config.label + ': a stored 0 renders as "0", not blank');
 
 			const saveZero = await save('/api/' + apiPath + '/' + zeroId, 'PUT', config.saveButton);
-			assert.equal(saveZero.status(), 204, config.label + ': saving the unchanged 0 row should succeed: ' + await saveZero.text());
+			await assertStatus(saveZero, 204, config.label + ': saving the unchanged 0 row should succeed');
 			await page.waitForNavigation();
 
 			const zeroRow = await api(apiPath + '/' + zeroId);
@@ -129,7 +158,7 @@ const assert = require('node:assert/strict');
 			assert.equal(await page.locator('#sort_number').inputValue(), '', config.label + ': a NULL sort_number renders blank');
 
 			const saveNull = await save('/api/' + apiPath + '/' + blankId, 'PUT', config.saveButton);
-			assert.equal(saveNull.status(), 204, config.label + ': saving the unchanged NULL row should succeed: ' + await saveNull.text());
+			await assertStatus(saveNull, 204, config.label + ': saving the unchanged NULL row should succeed');
 			assert.equal(await toastText(), null, config.label + ': no error toast appears saving the unchanged NULL row');
 			await page.waitForNavigation();
 
@@ -191,7 +220,7 @@ const assert = require('node:assert/strict');
 			await page.locator('#name').fill(taskName);
 			await page.evaluate(() => Victual.Components.UserPicker.Clear());
 			const createTask = await save('/api/objects/tasks', 'POST', saveButton);
-			assert.equal(createTask.status(), 200, 'a task with every optional field blank should be created: ' + await createTask.text());
+			await assertStatus(createTask, 200, 'a task with every optional field blank should be created');
 			await page.waitForNavigation();
 
 			const taskId = (await createTask.json()).created_object_id;
@@ -203,7 +232,7 @@ const assert = require('node:assert/strict');
 			// --- resave unchanged -> succeeds, all three stay NULL -------------------------
 			await page.goto(base + '/task/' + taskId);
 			const saveTask = await save('/api/objects/tasks/' + taskId, 'PUT', saveButton);
-			assert.equal(saveTask.status(), 204, 'saving the unchanged task should succeed: ' + await saveTask.text());
+			await assertStatus(saveTask, 204, 'saving the unchanged task should succeed');
 			assert.equal(await toastText(), null, 'no error toast appears saving the unchanged task');
 			await page.waitForNavigation();
 
