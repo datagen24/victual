@@ -103,13 +103,33 @@ const assert = require('node:assert/strict');
 		await page.goto(base + '/stockoverview');
 
 		/**
+		 * Looks a just-created row up by name through the read-only, non-CDP-backed api()
+		 * helper, rather than reading the id out of the save response: reading any part of
+		 * a save response's body - even .json(), even after the status is already known -
+		 * races the same-tick navigation a successful EntityForm save triggers, and lost
+		 * that race in CI (twice: once via a .text() read building an assertion message,
+		 * once via a .json() read for the id - see the commits that added and then fixed
+		 * this probe). Only page.waitForResponse()'s own status/headers are ever read from
+		 * a save's response; every value is re-fetched from the server once the page is
+		 * stable, the same way product-nullable-pickers.js (issue #159) finds its own
+		 * created row by name rather than by reading its create response.
+		 */
+		async function findByName(apiPath, name)
+		{
+			const row = (await api(apiPath)).find(candidate => candidate.name === name);
+			assert.ok(row, 'a row named ' + JSON.stringify(name) + ' exists at ' + apiPath);
+
+			return row;
+		}
+
+		/**
 		 * The create-blank / create-zero / resave-both-unchanged sequence issue #574's JS
 		 * half needs, shared between mealplansectionform.js and userfieldform.js: identical
 		 * body() hook shape (sort_number only), identical three assertions, differing only in
 		 * the entity endpoint, the form's own other required fields, and the id each create
 		 * redirects away from (neither form's afterSave is overridden, so both land on their
-		 * list page rather than the new row's edit page - the created id is read from the
-		 * POST response body instead).
+		 * list page rather than the new row's edit page - the created id is looked up by
+		 * name instead, per findByName()'s own docblock).
 		 *
 		 * @param {Object} config
 		 * @param {string} config.label       Short name for assertion messages, e.g. 'meal plan section'
@@ -117,7 +137,8 @@ const assert = require('node:assert/strict');
 		 * @param {string} config.editPath    Root-relative edit form path prefix, e.g. '/mealplansection/'
 		 * @param {string} config.entity      Generic entity API segment, e.g. 'meal_plan_sections'
 		 * @param {string} config.saveButton  Save button selector
-		 * @param {Function} config.fillRequired  async (variant) => void - fills every other required field
+		 * @param {Function} config.fillRequired  async (variant) => string - fills every other
+		 *        required field and returns the unique name it gave the row
 		 */
 		async function checkNullableSortNumberForm(config)
 		{
@@ -125,24 +146,24 @@ const assert = require('node:assert/strict');
 
 			// --- create with sort_number left blank -> stored NULL, not "" -----------------
 			await page.goto(base + config.formPath);
-			await config.fillRequired('Blank');
+			const blankName = await config.fillRequired('Blank');
 			const createBlank = await save('/api/' + apiPath, 'POST', config.saveButton);
 			await assertStatus(createBlank, 200, config.label + ': a blank-sort_number create should succeed');
 			await page.waitForNavigation();
 
-			const blankId = (await createBlank.json()).created_object_id;
-			const blankRow = await api(apiPath + '/' + blankId);
+			const blankRow = await findByName(apiPath, blankName);
+			const blankId = blankRow.id;
 			assert.equal(blankRow.sort_number, null, config.label + ': a blank sort_number is stored as NULL, not coerced from ""');
 
 			// --- create with sort_number 0, then resave that row unchanged -> stays 0 ------
 			await page.goto(base + config.formPath);
-			await config.fillRequired('Zero');
+			const zeroName = await config.fillRequired('Zero');
 			await page.locator('#sort_number').fill('0');
 			const createZero = await save('/api/' + apiPath, 'POST', config.saveButton);
 			await assertStatus(createZero, 200, config.label + ': a sort_number of 0 should be accepted on create');
 			await page.waitForNavigation();
 
-			const zeroId = (await createZero.json()).created_object_id;
+			const zeroId = (await findByName(apiPath, zeroName)).id;
 			await page.goto(base + config.editPath + zeroId);
 			assert.equal(await page.locator('#sort_number').inputValue(), '0', config.label + ': a stored 0 renders as "0", not blank');
 
@@ -176,7 +197,10 @@ const assert = require('node:assert/strict');
 			saveButton: '#save-mealplansection-button',
 			fillRequired: async (variant) =>
 			{
-				await page.locator('#name').fill('WS587 MealPlanSection ' + variant + ' ' + token);
+				const name = 'WS587 MealPlanSection ' + variant + ' ' + token;
+				await page.locator('#name').fill(name);
+
+				return name;
 			}
 		});
 
@@ -190,10 +214,13 @@ const assert = require('node:assert/strict');
 			{
 				// #name is pattern-restricted to [a-zA-Z0-9_] (it doubles as the API field
 				// name); #caption carries no such restriction.
+				const name = 'ws587_userfield_' + variant.toLowerCase() + '_' + token;
 				await page.locator('#entity').selectOption({ index: 1 });
-				await page.locator('#name').fill('ws587_userfield_' + variant.toLowerCase() + '_' + token);
+				await page.locator('#name').fill(name);
 				await page.locator('#caption').fill('WS587 Userfield ' + variant + ' ' + token);
 				await page.locator('#type').selectOption({ index: 1 });
+
+				return name;
 			}
 		});
 
@@ -223,8 +250,8 @@ const assert = require('node:assert/strict');
 			await assertStatus(createTask, 200, 'a task with every optional field blank should be created');
 			await page.waitForNavigation();
 
-			const taskId = (await createTask.json()).created_object_id;
-			const taskRow = await api('objects/tasks/' + taskId);
+			const taskRow = await findByName('objects/tasks', taskName);
+			const taskId = taskRow.id;
 			assert.equal(taskRow.category_id, null, 'a blank category is stored as NULL, not coerced from ""');
 			assert.equal(taskRow.assigned_to_user_id, null, 'a blank assignee is stored as NULL, not coerced from ""');
 			assert.equal(taskRow.due_date, null, 'a blank due date is stored as NULL, not coerced from ""');
