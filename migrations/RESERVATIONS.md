@@ -206,7 +206,7 @@ Master's own table, at the point this branch merged it, already had plan 22's tw
 sitting at 0299–0300 with no other claim recorded between them. That collides with this
 branch's own written `0299.pgsql.sql`.
 
-Separately, open PR [#634](https://github.com/datagen24/victual/pull/634) (issue #622's
+Separately, open PR [#634](https://github.com/datagen24/victual/pull/634) (issue #629's
 recipe cost/calorie follow-up) has since claimed 0300 on its own branch. Per the
 lowest-free-slot rule, a number with a file, or a number another still-open branch has
 already claimed, both outrank an unscheduled draft's placeholder. Plan 22's two claims yield

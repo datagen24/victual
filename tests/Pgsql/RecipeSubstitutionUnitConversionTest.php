@@ -31,6 +31,7 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 		parent::setUpBeforeClass();
 
 		self::$db = self::Pdo();
+		self::createFixtures();
 	}
 
 	private static function insertRow(string $table, array $columns): int
@@ -77,7 +78,14 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 		return $statement->fetch(PDO::FETCH_ASSOC);
 	}
 
-	public function testCreatesFixtures(): void
+	/**
+	 * Builds the fixture graph, called from setUpBeforeClass() rather than from a test method:
+	 * PHPUnit does not guarantee test method execution order even with a depends-annotated
+	 * chain, and a single test run in isolation (`--filter`) would otherwise find no fixtures
+	 * at all. Assertions
+	 * that the fixture graph came out as expected live in testCreatesFixtures() below, not here.
+	 */
+	private static function createFixtures(): void
 	{
 		self::$ids['location'] = self::insertRow('locations', ['name' => 'RecipeSub629 location']);
 
@@ -142,11 +150,20 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 			'amount' => 1,
 			'qu_id' => self::$ids['parent_unit'],
 		]);
+	}
 
-		// A meaningful check that the fixture graph is what the tests below assume, rather
-		// than only a set of INSERTs with no assertion of their own: both sub products exist,
-		// both are recorded as sub products of the same parent, and the recipe has exactly
-		// the one ingredient position it's meant to.
+	/**
+	 * A meaningful check that the fixture graph createFixtures() built (called from
+	 * setUpBeforeClass(), not from here) is what every test below assumes, rather than only a
+	 * set of INSERTs with no assertion of their own: both sub products exist, both are
+	 * recorded as sub products of the same parent, and the recipe has exactly the one
+	 * ingredient position it's meant to. No depends-annotated chain is needed here, or on the
+	 * tests below: the fixtures already exist by the time any test method runs, since
+	 * setUpBeforeClass() runs once before the whole class, not after this particular test
+	 * method.
+	 */
+	public function testCreatesFixtures(): void
+	{
 		$productNames = self::$db->query(
 			'SELECT name FROM products WHERE parent_product_id = ' . self::$ids['parent'] . ' ORDER BY name'
 		)->fetchAll(PDO::FETCH_COLUMN);
@@ -161,9 +178,6 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 		self::assertSame(1, (int)$statement->fetchColumn(), 'the recipe has exactly the one ingredient position the tests below assume');
 	}
 
-	/**
-	 * @depends testCreatesFixtures
-	 */
 	public function testConvertibleSubIsChosenOverUnconvertibleOne(): void
 	{
 		$row = self::fetchResolvedPosition(self::$ids['recipe']);
@@ -175,9 +189,6 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 		);
 	}
 
-	/**
-	 * @depends testCreatesFixtures
-	 */
 	public function testCostsUseTheConvertibleSubsRealFactorNotTheUnconvertibleSubAtFaceValue(): void
 	{
 		$row = self::fetchResolvedPosition(self::$ids['recipe']);
@@ -189,9 +200,6 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 			'recipes_pos_resolved.costs prices the convertible substitute at its real conversion factor, not the unconvertible sub 1:1 (issue #629)');
 	}
 
-	/**
-	 * @depends testCreatesFixtures
-	 */
 	public function testCaloriesUseTheConvertibleSubsRealFactorNotTheUnconvertibleSubAtFaceValue(): void
 	{
 		$row = self::fetchResolvedPosition(self::$ids['recipe']);
@@ -203,8 +211,6 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * @depends testCreatesFixtures
-	 *
 	 * stock_amount/need_fulfilled/missing_amount read stock_current.amount_aggregated for
 	 * the recipe position's own product_id (the parent), never for product_id_effective, so
 	 * this migration cannot have changed them - asserted here as a live equality against

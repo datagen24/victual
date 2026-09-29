@@ -326,7 +326,7 @@ Collected because most of them are only visible from inside the existing code.
   - 0299–0300 until PRs #624, #626, #627 and #628 had all merged to `master`. At that point
     issue #521's view-permission migration (#487 remediation, `BATTERIES_VIEW`,
     `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) kept the **0299** it had already written to disk,
-    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #622's recipe
+    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #629's recipe
     cost/calorie follow-up) claimed **0300** on its own branch ahead of this plan. Per the
     lowest-free-slot rule this plan's two claims move up once more, from 0299–0300 to
     **0301–0302**.
