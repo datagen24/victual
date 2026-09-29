@@ -110,6 +110,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
 | `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
+| `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
 
 ## Completeness
 
@@ -231,6 +232,19 @@ reported failed, and re-authorized for another attempt still carries a non-null
 `current_attempt_id` (pointing at the ended first attempt), so retirement's cancellation
 skips it. `PrintAttemptService::Claim()`'s own retired-label exclusion is the only thing
 that still stops it from being reclaimed once its label retires.
+
+The [stock amount non-negative tests](024-stock-amount-non-negative.sql) cover migration
+0297 (issue #492, H3, ADR-0032 acceptance gate 6). `stock_amount_non_negative_check` is a
+database-level `amount >= 0` CHECK constraint on `stock`. It backs up the negative-amount
+refusal `StockService`'s entry points already apply in PHP (commit 2039d5947).
+
+Six assertions cover a positive insert, a legitimate zero insert (the empty-vessel case
+`WeighLocation()` writes), a negative insert refused with SQLSTATE 23514, a negative update
+refused the same way with the row left unchanged, and the constraint's validated,
+non-deferrable shape. This is a constraint, not a function or trigger, so
+`check-pgtap-coverage.php` does not require it - listed here anyway per this file's own
+rule for logic-carrying schema objects, the same reason file 017 lists migration 0288's
+foreign key.
 
 ## Running the checker directly
 
