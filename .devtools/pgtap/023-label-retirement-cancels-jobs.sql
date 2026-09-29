@@ -1,21 +1,24 @@
 -- migrations/0296.pgsql.sql (issue #516, M16, #487 remediation, maintainer decision D2):
 -- retiring a label now cancels its queued, unclaimed print jobs and leaves a claimed job
--- (current_attempt_id set) or one already in a terminal state untouched. Every retirement
--- trigger calls the new cancel_queued_label_jobs() after it retires a label; this file
--- exercises it directly against retire_product_labels, retire_stock_entry_labels and
--- trg_cascade_product_removal (the three retirement sites reachable without a full label
--- printer/driver/worker-capability fixture) - retire_location_labels, retire_recipe_labels,
--- retire_chore_labels and retire_battery_labels share the exact single-row pattern this file
--- already proves for retire_product_labels (same UPDATE ... RETURNING uid INTO v_uid; IF
--- v_uid IS NOT NULL THEN PERFORM cancel_queued_label_jobs(v_uid); END IF shape), so they are
--- not repeated here.
+-- (current_attempt_id set), an already-cancelled job or one already in a terminal outcome
+-- untouched. Every retirement trigger calls the new cancel_queued_label_jobs() after it
+-- retires a label. This file exercises it against all six single-row retirement triggers
+-- (retire_location_labels, retire_product_labels, retire_stock_entry_labels,
+-- retire_recipe_labels, retire_chore_labels, retire_battery_labels - each the same
+-- UPDATE ... RETURNING uid INTO v_uid; IF v_uid IS NOT NULL THEN PERFORM
+-- cancel_queued_label_jobs(v_uid); END IF shape) and trg_cascade_product_removal (a product
+-- delete cascading to more than one labelled stock entry), plus the terminal-state cases
+-- cancellation must leave alone: a job already claimed, a job already cancelled (idempotent -
+-- its original reason survives), and a job already dead-lettered.
 --
 -- The concurrent case D2 also names - a job claimed by one connection while a second
 -- concurrently retires its label must not be cancelled by that retirement - needs two real
 -- connections contending for the same row lock, which a single-connection pgTAP script
--- cannot drive; that is tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php instead.
+-- cannot drive; that is tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php instead,
+-- along with the analogous race for a reprint or revised print racing a retirement
+-- (LabelOperationsService::AssertLabelLive()'s and RevisedPrint()'s own `FOR SHARE` lock).
 
-SELECT plan(9);
+SELECT plan(14);
 
 INSERT INTO locations (name) VALUES ('Spike23 location');
 INSERT INTO quantity_units (name) VALUES ('Spike23 qu');
@@ -57,7 +60,7 @@ WHERE printer_id = 9002;
 DELETE FROM products WHERE name = 'Spike23 product1';
 
 SELECT ok(
-	(SELECT cancelled_at IS NOT NULL AND cancelled_reason = 'Label retired' FROM print_jobs WHERE printer_id = 9001),
+	(SELECT cancelled_at IS NOT NULL AND cancelled_reason = 'label retired' FROM print_jobs WHERE printer_id = 9001),
 	'A queued job for a retired product label is cancelled (retire_product_labels)'
 );
 SELECT ok(
@@ -160,4 +163,104 @@ SELECT ok(
 SELECT ok(
 	(SELECT cancelled_at IS NOT NULL FROM print_jobs WHERE printer_id = 9006),
 	'...and the second, not only the first the join touches'
+);
+
+-- Case 5: a job already cancelled (by an operator, through LabelOperationsService::Cancel())
+-- before its label retires keeps its own original reason - cancel_queued_label_jobs()'s own
+-- `cancelled_at IS NULL` guard excludes it, so retirement never overwrites it.
+INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES (
+	'Spike23 product5', (SELECT id FROM locations WHERE name = 'Spike23 location'),
+	(SELECT id FROM quantity_units WHERE name = 'Spike23 qu'), (SELECT id FROM quantity_units WHERE name = 'Spike23 qu')
+);
+INSERT INTO labels (uid, kind, target_id) VALUES (
+	'F' || upper(substr(md5(random()::text), 1, 12)), 'product',
+	(SELECT id FROM products WHERE name = 'Spike23 product5')
+);
+WITH o AS (INSERT INTO outbox (event_type, payload, dead_lettered_at, last_error) VALUES ('label.print_requested', '{}', CURRENT_TIMESTAMP, 'Cancelled: Cancelled by an operator') RETURNING id)
+INSERT INTO print_jobs (outbox_id, printer_id, label_uid, cancelled_at, cancelled_reason)
+SELECT o.id, 9007, (SELECT uid FROM labels WHERE kind = 'product' AND target_id = (SELECT id FROM products WHERE name = 'Spike23 product5')),
+	CURRENT_TIMESTAMP, 'Cancelled by an operator'
+FROM o;
+
+DELETE FROM products WHERE name = 'Spike23 product5';
+
+SELECT is(
+	(SELECT cancelled_reason FROM print_jobs WHERE printer_id = 9007),
+	'Cancelled by an operator',
+	'A job already cancelled before its label retires keeps its own original cancel reason, not overwritten with "label retired"'
+);
+
+-- Case 6: a job already dead-lettered (outcome set, not cancellation) before its label
+-- retires keeps that outcome untouched - cancel_queued_label_jobs()'s own `outcome IS NULL`
+-- guard excludes it, the same as the already-'printed' job in case 2 above.
+INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES (
+	'Spike23 product6', (SELECT id FROM locations WHERE name = 'Spike23 location'),
+	(SELECT id FROM quantity_units WHERE name = 'Spike23 qu'), (SELECT id FROM quantity_units WHERE name = 'Spike23 qu')
+);
+INSERT INTO labels (uid, kind, target_id) VALUES (
+	'0' || upper(substr(md5(random()::text), 1, 12)), 'product',
+	(SELECT id FROM products WHERE name = 'Spike23 product6')
+);
+WITH o AS (INSERT INTO outbox (event_type, payload, dead_lettered_at, last_error) VALUES ('label.print_requested', '{}', CURRENT_TIMESTAMP, 'Printer deleted') RETURNING id)
+INSERT INTO print_jobs (outbox_id, printer_id, label_uid, outcome, outcome_at)
+SELECT o.id, 9008, (SELECT uid FROM labels WHERE kind = 'product' AND target_id = (SELECT id FROM products WHERE name = 'Spike23 product6')),
+	'dead_lettered', CURRENT_TIMESTAMP
+FROM o;
+
+DELETE FROM products WHERE name = 'Spike23 product6';
+
+SELECT ok(
+	(SELECT cancelled_at IS NULL AND outcome = 'dead_lettered' FROM print_jobs WHERE printer_id = 9008),
+	'A job already dead-lettered before its label retires keeps that outcome, not cancelled'
+);
+
+-- Cases 7-9: the three single-row retirement triggers case 1 does not already cover
+-- (retire_recipe_labels, retire_chore_labels, retire_battery_labels) - each the identical
+-- shape, one queued job per kind.
+INSERT INTO recipes (name) VALUES ('Spike23 recipe');
+INSERT INTO labels (uid, kind, target_id) VALUES (
+	'1' || upper(substr(md5(random()::text), 1, 12)), 'recipe', (SELECT id FROM recipes WHERE name = 'Spike23 recipe')
+);
+WITH o AS (INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id)
+INSERT INTO print_jobs (outbox_id, printer_id, label_uid)
+SELECT o.id, 9009, (SELECT uid FROM labels WHERE kind = 'recipe' AND target_id = (SELECT id FROM recipes WHERE name = 'Spike23 recipe'))
+FROM o;
+
+DELETE FROM recipes WHERE name = 'Spike23 recipe';
+
+SELECT ok(
+	(SELECT cancelled_at IS NOT NULL FROM print_jobs WHERE printer_id = 9009),
+	'A queued job for a retired recipe label is cancelled (retire_recipe_labels)'
+);
+
+INSERT INTO chores (name, period_type) VALUES ('Spike23 chore', 'manually');
+INSERT INTO labels (uid, kind, target_id) VALUES (
+	'2' || upper(substr(md5(random()::text), 1, 12)), 'chore', (SELECT id FROM chores WHERE name = 'Spike23 chore')
+);
+WITH o AS (INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id)
+INSERT INTO print_jobs (outbox_id, printer_id, label_uid)
+SELECT o.id, 9010, (SELECT uid FROM labels WHERE kind = 'chore' AND target_id = (SELECT id FROM chores WHERE name = 'Spike23 chore'))
+FROM o;
+
+DELETE FROM chores WHERE name = 'Spike23 chore';
+
+SELECT ok(
+	(SELECT cancelled_at IS NOT NULL FROM print_jobs WHERE printer_id = 9010),
+	'A queued job for a retired chore label is cancelled (retire_chore_labels)'
+);
+
+INSERT INTO batteries (name) VALUES ('Spike23 battery');
+INSERT INTO labels (uid, kind, target_id) VALUES (
+	'3' || upper(substr(md5(random()::text), 1, 12)), 'battery', (SELECT id FROM batteries WHERE name = 'Spike23 battery')
+);
+WITH o AS (INSERT INTO outbox (event_type, payload) VALUES ('label.print_requested', '{}') RETURNING id)
+INSERT INTO print_jobs (outbox_id, printer_id, label_uid)
+SELECT o.id, 9011, (SELECT uid FROM labels WHERE kind = 'battery' AND target_id = (SELECT id FROM batteries WHERE name = 'Spike23 battery'))
+FROM o;
+
+DELETE FROM batteries WHERE name = 'Spike23 battery';
+
+SELECT ok(
+	(SELECT cancelled_at IS NOT NULL FROM print_jobs WHERE printer_id = 9011),
+	'A queued job for a retired battery label is cancelled (retire_battery_labels)'
 );

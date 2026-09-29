@@ -190,7 +190,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 	 * retire_location_labels here, is that decision. A job never claimed, retired while still
 	 * queued, is now cancelled - not merely left queued - and this asserts that instead.
 	 */
-	public function testRetiredLabelJobIsNeverClaimedAndStaysQueued(): void
+	public function testRetiredLabelJobIsNeverClaimedAndIsCancelled(): void
 	{
 		[$worker, $printer] = self::newPrinter();
 		$location = self::newLocation('Lifecycle retiring shelf');
@@ -204,7 +204,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 
 		$before = self::jobRow($jobId);
 		self::assertNotNull($before['cancelled_at'], 'Retirement cancels a queued, unclaimed job (issue #516, D2), before this test ever tries to claim it');
-		self::assertSame('Label retired', $before['cancelled_reason']);
+		self::assertSame('label retired', $before['cancelled_reason']);
 
 		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
 		self::assertSame([], $claims, 'A cancelled job is not claimable either way - Claim()\'s own query already excludes it by cancelled_at, on top of the retired-label exclusion');
@@ -220,7 +220,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Both of testRetiredLabelJobIsNeverClaimedAndStaysQueued()'s predecessors (round 1) used an
+	 * Both of testRetiredLabelJobIsNeverClaimedAndIsCancelled()'s predecessors (round 1) used an
 	 * unrendered fixture, so a fix that only special-cased "no artifact yet" would have passed
 	 * them. Claim()'s retirement check is unconditional on artifact_id, and this proves it: the
 	 * job is rendered - fully claimable but for its label - before its target is deleted.
@@ -247,7 +247,7 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		$after = self::jobRow($jobId);
 		self::assertNull($after['outcome'], 'Cancellation is not dead-lettering (issue #516, D2): outcome stays unset for a rendered job too');
 		self::assertNotNull($after['cancelled_at'], 'A rendered but still-queued, unclaimed job is cancelled when its label retires just like an unrendered one (issue #516, D2)');
-		self::assertSame('Label retired', $after['cancelled_reason']);
+		self::assertSame('label retired', $after['cancelled_reason']);
 	}
 
 	/**
@@ -282,6 +282,50 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			self::assertNull($row['outcome'], 'A retired job is cancelled, not dead-lettered, for being unclaimed (issue #516, D2)');
 			self::assertNotNull($row['cancelled_at'], 'Every one of the 200 retired jobs is cancelled when its own label retires');
 		}
+	}
+
+	/**
+	 * cancel_queued_label_jobs() (migrations/0296.pgsql.sql) only cancels a job whose
+	 * current_attempt_id IS NULL - "leave running jobs untouched" (D2) has to mean something
+	 * for a job that was attempted once, failed, and was re-authorized for another attempt:
+	 * its current_attempt_id still points at the first (ended) attempt, so it is not touched
+	 * by retirement's cancellation either. Sequence: claim, report failure,
+	 * AuthorizeAnotherAttempt() (attempts_authorized: 1 -> 2), then retire the label.
+	 *
+	 * PrintAttemptService::Claim()'s own retired-label exclusion (the
+	 * `AND NOT EXISTS (SELECT 1 FROM labels lb WHERE lb.uid=j.label_uid AND lb.retired_at IS
+	 * NOT NULL)` clause) is the *only* thing that still stops this job from being reclaimed:
+	 * its ended first attempt no longer blocks the "no live attempt" check, and
+	 * attempts_made (1) is still less than attempts_authorized (2). Replacing that clause
+	 * with a no-op (`AND TRUE`) makes this test fail with a non-empty claim, which is exactly
+	 * why 0296's job-level cancellation is not a substitute for it.
+	 */
+	public function testRetiredLabelJobWithAFailedAttemptAndReauthorizationIsNeverReclaimed(): void
+	{
+		[$worker, $printer] = self::newPrinter();
+		self::$db->exec("UPDATE label_render_requests SET state = 'failed' WHERE state IN ('pending', 'rendering')");
+		$location = self::newLocation('Lifecycle reauthorized-then-retired shelf');
+		$jobId = self::tx(static fn () => (new LabelPrintJobService(self::$db))->Enqueue($location, 0, $printer, self::$template));
+		\renderAndAttach(self::$db, $jobId);
+
+		$attempt = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker))[0]['attempt'];
+		self::tx(static fn () => (new PrintAttemptService(self::$db))->Result($worker, (int)$attempt['id'], 'failed', ['error' => 'Device offline']));
+		self::tx(static fn () => (new LabelPrintJobService(self::$db))->AuthorizeAnotherAttempt($jobId, (int)$attempt['id']));
+
+		$beforeRetire = self::jobRow($jobId);
+		self::assertSame(2, (int)$beforeRetire['attempts_authorized'], 'Precondition: a second attempt was authorized');
+		self::assertNotNull($beforeRetire['current_attempt_id'], 'Precondition: the job still points at its ended first attempt');
+		self::assertNull($beforeRetire['cancelled_at'],
+			'Precondition: cancel_queued_label_jobs() does not cancel this job - its current_attempt_id is not NULL, since it was attempted once already');
+
+		self::$db->exec('DELETE FROM locations WHERE id = ' . $location);
+		$retiredAt = self::$db->query('SELECT retired_at FROM labels WHERE uid = ' . self::$db->quote($beforeRetire['label_uid']))->fetchColumn();
+		self::assertNotNull($retiredAt, 'Precondition: deleting the location retires its label');
+
+		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
+		self::assertSame([], $claims,
+			'A job re-authorized after a failed attempt must never be reclaimed once its label retires, even though cancellation does not reach it - '
+			. 'Claim()\'s own retired-label exclusion is what stops it');
 	}
 
 	// --- M16: concurrent identical idempotency reservations -----------------------------------

@@ -14,7 +14,7 @@
 -- ever sets retired_at, and every one of them fires from an application-initiated DELETE:
 -- GenericEntityApiController::DeleteObject()'s `$row->delete()` for five of the six kinds
 -- (locations, products, recipes, chores, batteries — "the application path" D2 names), and
--- StockService's own `DELETE FROM stock` for a fully-consumed entry (StockService.php:4657)
+-- StockService's own `DELETE FROM stock` for a fully-consumed entry (StockService.php:4730)
 -- for the sixth ("the stock retirement trigger" D2 names specifically, because it is the one
 -- fired from application code that is not the generic entity-delete controller). Cancelling
 -- unclaimed jobs at the trigger level, once, covers both paths uniformly rather than
@@ -74,7 +74,7 @@ DECLARE
 BEGIN
 	FOR v_outbox_id IN
 		UPDATE print_jobs
-		SET cancelled_at = CURRENT_TIMESTAMP, cancelled_reason = 'Label retired'
+		SET cancelled_at = CURRENT_TIMESTAMP, cancelled_reason = 'label retired'
 		WHERE label_uid = p_label_uid
 			AND cancelled_at IS NULL
 			AND outcome IS NULL
@@ -118,7 +118,7 @@ END
 $$;
 
 -- Unchanged from migration 0283 otherwise: this is still the trigger a direct
--- `DELETE FROM stock` fires (StockService.php:4657's full-consumption path, and any other
+-- `DELETE FROM stock` fires (StockService.php:4730's full-consumption path, and any other
 -- direct deletion of a stock row). A stock entry retired instead by a *product* delete's
 -- cascade is covered by trg_cascade_product_removal below, per #624 - this trigger's own
 -- `retired_at IS NULL` guard makes it a no-op for that path, so it never double-cancels.

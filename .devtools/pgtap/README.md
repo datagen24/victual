@@ -25,6 +25,18 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
+migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
+retires those labels with the product's own name, not null. `trg_cascade_product_removal`
+retires them before deleting the stock rows, rather than after the product row (and
+`retire_stock_entry_labels`' own product lookup) is gone. The same migration's foreign keys
+on all six of `products`' upstream reference columns (`location_id`, `qu_id_purchase`,
+`qu_id_stock`, `qu_id_consume`, `qu_id_price`, `product_group_id`; issue #552, D4) are covered
+by `tests/Pgsql/ProductReferenceIntegrityTest.php` at the httpboot phase, the same shape
+`tests/Pgsql/ReferenceRefusalTest.php` already uses for the other enforced foreign keys in
+this tree, and by `DatabaseImporter::AssertProductReferences()`'s own import-time refusal,
+covered by `tests/Pgsql/StockLocationImportTest.php`.
+
 The [product group roll-up tests](020-product-group-rollup.sql) cover migration 0293
 (issue #508, M8, ADR-0034): `product_groups_missing`'s member join now reaches every group
 in an ancestor's subtree through `product_groups_resolved`, not only a product's own direct
@@ -82,7 +94,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_enfore_product_nesting_level` (trigger `enfore_product_nesting_level`) | function + trigger | 0277 | `013-product-nesting-guard.sql` |
 | `trg_product_groups_check_parent` (trigger `check_product_group_parent`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
 | `trg_product_groups_guard_children` (trigger `guard_product_group_children`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
-| `trg_cascade_product_removal` | function | 0279, redefined 0295 (PR #624, unmerged), redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql` (PR #624), `023-label-retirement-cancels-jobs.sql` |
+| `trg_cascade_product_removal` | function | 0279, redefined 0295 (PR #624), redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_product_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_stock_entry_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_recipe_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
@@ -163,23 +175,43 @@ already claimed (`current_attempt_id` set) is left exactly as it was — D2's "l
 jobs untouched". So is a job already in a terminal state (`outcome` set), or already
 cancelled.
 
-Nine assertions cover:
+Fourteen assertions cover:
 
 - a queued job cancelled by a direct product delete (`retire_product_labels`);
 - a queued job left alone by a claimed sibling on the same label being cancelled, proving
   the cancellation is scoped to the one label, not every queued job;
 - a claimed job (`current_attempt_id` set) surviving its label's retirement untouched, with
   its outbox row undelivered and undead-lettered;
-- a job with an outcome already set surviving retirement with that outcome unchanged;
-- a queued job cancelled by a direct `DELETE FROM stock` (`retire_stock_entry_labels`); and
+- the label itself still retiring even though one of its jobs could not be cancelled;
+- a job with a `printed` outcome already set surviving retirement with that outcome
+  unchanged;
+- a queued job cancelled by a direct `DELETE FROM stock` (`retire_stock_entry_labels`);
 - a queued job cancelled by a product delete that cascades to its stock entry's label via
   `trg_cascade_product_removal`, run twice over one product holding two labelled stock
-  entries to show every one of them is cancelled, not only the first the join touches.
+  entries to show every one of them is cancelled, not only the first the join touches;
+- a job already cancelled (by an operator, through `LabelOperationsService::Cancel()`)
+  keeping its own original `cancelled_reason` rather than having retirement overwrite it;
+- a job already `dead_lettered` surviving retirement with that outcome unchanged, the same
+  as the already-`printed` case above; and
+- a queued job cancelled by each of the three single-row retirement triggers case 1 does not
+  already cover: `retire_recipe_labels`, `retire_chore_labels`, `retire_battery_labels`.
 
-`tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php` covers the concurrent case a
-single-connection pgTAP script cannot drive: a job claimed by one connection while a second
-connection concurrently retires its label. That job must not be cancelled by the retirement.
-The test proves it with two real PostgreSQL connections and a row lock, not with timing.
+Two more tests cover concurrent cases a single-connection pgTAP script cannot drive.
+`tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php`: a job claimed by one connection
+while a second connection concurrently retires its label must not be cancelled by that
+retirement. `tests/Pgsql/LabelRetirementRacesReprintTest.php`: a reprint racing a retirement
+of the same label must not commit a new queued job after that retirement's own cancellation
+has already run. `LabelOperationsService::AssertLabelLive()` (covering `Reprint()` and
+`PromotePreview()`) and `RevisedPrint()`'s own inline check now take a `FOR SHARE` lock on
+the label's row for exactly this reason. Both are proven with two real
+PostgreSQL connections and a row lock, not with timing.
+
+`tests/Pgsql/LabelJobLifecycleTest.php::testRetiredLabelJobWithAFailedAttemptAndReauthorizationIsNeverReclaimed()`
+covers a case `cancel_queued_label_jobs()` deliberately does not reach: a job attempted once,
+reported failed, and re-authorized for another attempt still carries a non-null
+`current_attempt_id` (pointing at the ended first attempt), so retirement's cancellation
+skips it. `PrintAttemptService::Claim()`'s own retired-label exclusion is the only thing
+that still stops it from being reclaimed once its label retires.
 
 ## Running the checker directly
 

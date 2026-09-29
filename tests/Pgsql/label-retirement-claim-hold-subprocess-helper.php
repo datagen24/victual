@@ -50,6 +50,11 @@ DatabaseService::GetInstance()->GetDialect()->OnConnected($pdo);
 
 try
 {
+	// A bounded wait, not an unbounded one, on the deliberate pg_advisory_lock() pause below
+	// too: if the calling test crashed or failed to release the gate, this fails loudly
+	// after 20s instead of hanging the shared suite lock the way a hung concurrency test
+	// once did.
+	$pdo->exec("SET statement_timeout = '20s'");
 	$pdo->beginTransaction();
 
 	$outboxId = (int)$pdo->query('SELECT outbox_id FROM print_jobs WHERE id = ' . $jobId)->fetchColumn();

@@ -1,17 +1,29 @@
 <?php
 
-// Deletes a product on its own connection - the real production path
-// (GenericEntityApiController::DeleteObject()'s own `$row->delete()`, in autocommit, fires
-// exactly this statement) - and reports whether it returned. Run concurrently with
-// label-retirement-claim-hold-subprocess-helper.php, this is the "a label retires while a
-// worker already holds its job" half of LabelRetirementCancelsClaimedJobRaceTest's race
-// (issue #516, M16, #487 remediation, maintainer decision D2): retire_product_labels
-// (BEFORE DELETE ON products) fires cancel_queued_label_jobs() (migrations/0296.pgsql.sql),
-// whose own UPDATE ... WHERE current_attempt_id IS NULL blocks on the row lock the other
-// subprocess holds, and is expected to resolve without cancelling the job once that lock is
-// released with current_attempt_id already set.
+// Deletes one row of a labelled entity table on its own connection - the real production
+// path for a retirement (GenericEntityApiController::DeleteObject()'s own `$row->delete()`,
+// in autocommit, fires exactly this statement for every kind but stock entries) - and
+// reports whether it returned. Run concurrently with another subprocess holding a
+// conflicting lock, this is the "a label retires while something else is mid-transaction"
+// half of two different races (issue #516, M16, #487 remediation, maintainer decision D2):
 //
-//   php label-retirement-delete-subprocess-helper.php <productId>
+//   - LabelRetirementCancelsClaimedJobRaceTest: a worker already holds the job
+//     (label-retirement-claim-hold-subprocess-helper.php's row lock on print_jobs).
+//     retire_product_labels (BEFORE DELETE ON products) fires cancel_queued_label_jobs()
+//     (migrations/0296.pgsql.sql), whose own UPDATE ... WHERE current_attempt_id IS NULL
+//     blocks on that row lock, and is expected to resolve without cancelling the job once
+//     the lock is released with current_attempt_id already set.
+//   - LabelRetirementRacesReprintTest: a revised print is mid-transaction
+//     (label-revised-print-hold-subprocess-helper.php's FOR SHARE lock on the labels row).
+//     retire_location_labels' own UPDATE on that same row (migrations/0296.pgsql.sql) blocks
+//     on it, and is expected to resolve - and cancel the job the revised print just
+//     committed - once that lock is released.
+//
+//   php label-retirement-delete-subprocess-helper.php <table> <id>
+//
+// <table> is one of products, locations, recipes, chores, batteries, stock - the six tables
+// a retirement trigger fires from (migrations/0269.pgsql.sql, 0283.pgsql.php) - checked
+// against that fixed list rather than interpolated as given.
 //
 // Reads the same PG*/RBAC_TEST_SCHEMA/VICTUAL_DATAPATH/VICTUAL_ROOT environment variables as
 // request-subprocess-helper.php, attaching to the schema the calling test migrated.
@@ -29,7 +41,15 @@ define('VICTUAL_USER_ID', 9000);
 
 use Victual\Services\DatabaseService;
 
-$productId = (int)($argv[1] ?? 0);
+const ALLOWED_TABLES = ['products', 'locations', 'recipes', 'chores', 'batteries', 'stock'];
+
+$table = (string)($argv[1] ?? '');
+$id = (int)($argv[2] ?? 0);
+
+if (!in_array($table, ALLOWED_TABLES, true)) {
+	echo json_encode(['status' => 400, 'error_message' => "Unknown table '$table'"]);
+	exit;
+}
 
 $pdo = new PDO(
 	'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
@@ -46,7 +66,7 @@ try
 	// never released (the unfixed-code case, or a genuine defect), this fails loudly after
 	// 20s instead of holding the shared suite lock the way a hung concurrency test once did.
 	$pdo->exec("SET statement_timeout = '20s'");
-	$pdo->exec('DELETE FROM products WHERE id = ' . $productId);
+	$pdo->exec('DELETE FROM ' . $table . ' WHERE id = ' . $id);
 	echo json_encode(['status' => 200]);
 }
 catch (\Throwable $ex)

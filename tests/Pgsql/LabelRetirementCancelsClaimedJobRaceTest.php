@@ -95,10 +95,10 @@ class LabelRetirementCancelsClaimedJobRaceTest extends PgsqlSchemaTestCase
 	}
 
 	/** @return array{0: resource, 1: array} */
-	private static function startDeleteSubprocess(int $productId): array
+	private static function startDeleteSubprocess(string $table, int $id): array
 	{
 		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/label-retirement-delete-subprocess-helper.php', (string)$productId],
+			[PHP_BINARY, __DIR__ . '/label-retirement-delete-subprocess-helper.php', $table, (string)$id],
 			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
 			$pipes,
 			null,
@@ -242,7 +242,7 @@ class LabelRetirementCancelsClaimedJobRaceTest extends PgsqlSchemaTestCase
 			// subprocess-helper.php.
 			self::waitForGateWaiter(self::GATE_CLASS, $gateObject);
 
-			$deleteProcess = self::startDeleteSubprocess($productId);
+			$deleteProcess = self::startDeleteSubprocess('products', $productId);
 
 			// The decisive assertion: with the fix in place, the retirement's own row-level
 			// UPDATE inside cancel_queued_label_jobs() conflicts with the row lock the

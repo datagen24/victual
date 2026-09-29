@@ -103,7 +103,11 @@ class LabelOperationsService extends LabelService
     {
         $this->Transaction();
 
-        $uid = $this->Query('SELECT uid FROM labels WHERE kind=? AND target_id=? AND retired_at IS NULL', [$kind, $targetId])->fetchColumn();
+        // FOR SHARE for the same reason AssertLabelLive() takes it: held through CreateJob()
+        // below, so a concurrent retirement's own UPDATE on this exact row has to wait for
+        // this transaction to finish rather than racing a new job into existence after that
+        // retirement's cancellation has already run (issue #516, D2).
+        $uid = $this->Query('SELECT uid FROM labels WHERE kind=? AND target_id=? AND retired_at IS NULL FOR SHARE', [$kind, $targetId])->fetchColumn();
         if (!$uid) {
             $this->Refuse('target_id', 'no_live_label', 'That target has no live label; a revised print keeps an existing identity rather than minting one');
         }
@@ -282,9 +286,23 @@ class LabelOperationsService extends LabelService
         return $version;
     }
 
+    /**
+     * `FOR SHARE`, not a bare read: this call's own transaction holds the row lock through
+     * CreateJob() below, so a concurrent retirement's own `UPDATE labels ... WHERE
+     * retired_at IS NULL` (every retire_*_labels trigger, migrations/0296.pgsql.sql) has to
+     * wait for it to release. Without that lock, a reprint or a promoted preview could read
+     * "still live" from an uncommitted retirement's perspective, create a new queued job
+     * after that retirement's own cancel_queued_label_jobs() call had already run over the
+     * jobs that existed at that moment, and leave the newly created job queued forever -
+     * eligible to print by no code path (Claim()'s own retired-label check still excludes
+     * it), but never cancelled either, which is exactly the inaccurate monitor state issue
+     * #516 (D2) exists to prevent. `FOR SHARE` (not `FOR UPDATE`) is enough: two readers of a
+     * still-live label do not need to block each other, only a concurrent writer does, and
+     * the retirement trigger's `UPDATE` is the only writer of this row.
+     */
     private function AssertLabelLive(string $uid): void
     {
-        $retired = $this->Query('SELECT retired_at FROM labels WHERE uid=?', [$uid])->fetchColumn();
+        $retired = $this->Query('SELECT retired_at FROM labels WHERE uid=? FOR SHARE', [$uid])->fetchColumn();
         if ($retired === false) {
             $this->Refuse('label_uid', 'unknown_label', 'That label is not known');
         }
