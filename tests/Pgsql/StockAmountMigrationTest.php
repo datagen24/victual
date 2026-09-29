@@ -21,7 +21,7 @@ class StockAmountMigrationTest extends PgsqlSchemaTestCase
 	{
 		$db = self::Pdo();
 		$db->exec('ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_amount_non_negative_check; '
-			. 'DELETE FROM migrations WHERE migration>=297; '
+			. 'DELETE FROM migrations WHERE migration=297; '
 			. 'TRUNCATE stock, stock_log, products, locations CASCADE');
 		$db->exec("INSERT INTO locations(id, name) VALUES(601, 'Amount migration'); "
 			. "INSERT INTO products(id, name, location_id, qu_id_purchase, qu_id_stock) VALUES(601, 'Amount migration', 601, 2, 2)");

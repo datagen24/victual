@@ -373,11 +373,15 @@ class DatabaseImporter
 	 * silent clamp that would invent a value the source never recorded.
 	 *
 	 * Gated on `stock` actually being among the tables this import copies ($tables, the same
-	 * list ImportSnapshot() builds via GetCommonTables() before calling this): a source or
-	 * target schema that has no `stock` table at all - the synthetic single-migration-number
-	 * fixtures SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE's docblock names, the same
-	 * ones several other optional-table checks in this class guard on - has nothing for this
-	 * check to refuse.
+	 * list ImportSnapshot() builds via GetCommonTables() before calling this) and on `amount`
+	 * actually being one of that table's columns in both engines (GetCommonColumns(), the
+	 * same source CopyTable()/CollectValueMismatches() use): a source or target schema that
+	 * has no `stock` table, or a reduced fixture whose `stock` table carries no `amount`
+	 * column at all - the synthetic single-migration-number fixtures
+	 * SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE's docblock names, and
+	 * StockLocationImportTest.php's own minimal in-memory fixtures for round 2 findings -
+	 * has nothing for this check to refuse; querying a column that is not there is a driver
+	 * error ("no such column"), not a negative amount, and must not be raised as either.
 	 *
 	 * **Tolerance (maintainer decision, #492 follow-up).** A source amount within
 	 * `StockService::AMOUNT_TOLERANCE` of zero on the negative side - a `-2.7e-17` residue
@@ -392,7 +396,7 @@ class DatabaseImporter
 	 */
 	private function AssertStockAmounts(array $tables): void
 	{
-		if (!in_array('stock', $tables, true))
+		if (!in_array('stock', $tables, true) || !in_array('amount', $this->GetCommonColumns('stock'), true))
 		{
 			return;
 		}
