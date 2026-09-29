@@ -83,6 +83,12 @@
 			<file>tests/Pgsql/LabelServicesTest.php</file>
 			<file>tests/Pgsql/LabelJobLifecycleTest.php</file>
 			<file>tests/Pgsql/LabelReprintDueDateTest.php</file>
+			<file>tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php</file>
+			<file>tests/Pgsql/LabelRetirementRacesReprintTest.php</file>
+			<file>tests/Pgsql/LabelRevisedPrintNeverDeadlocksWithRetirementTest.php</file>
+			<file>tests/Pgsql/LabelReprintNeverDeadlocksWithRetirementTest.php</file>
+			<file>tests/Pgsql/LabelRevisedPrintCascadeCancelsStockEntryJobTest.php</file>
+			<file>tests/Pgsql/LabelRevisedPrintLockOrderMutationTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
@@ -111,6 +117,8 @@
 			<file>tests/Pgsql/SubProductUnitConvertibilityTest.php</file>
 			<file>tests/Pgsql/ProductParentStockUnitDefaultTest.php</file>
 			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
+			<file>tests/Pgsql/StockAggregatedSubProductConvertibilityTest.php</file>
+			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
@@ -167,6 +175,7 @@
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
 			<file>tests/Pgsql/ProductReferenceMigrationTest.php</file>
+			<file>tests/Pgsql/StockAmountMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>
 		<testsuite name="chores">

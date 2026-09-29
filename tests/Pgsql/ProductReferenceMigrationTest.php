@@ -25,7 +25,16 @@ class ProductReferenceMigrationTest extends PgsqlSchemaTestCase
 			$db->exec('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_' . $column . '_fkey');
 			$db->exec('DROP INDEX IF EXISTS products_' . $column . '_idx');
 		}
-		$db->exec('DELETE FROM migrations WHERE migration >= 295');
+		// Only 295's own record is rewound: DELETE ... >= 295 would also rewind migration 297
+		// (stock_amount_non_negative_check, issue #492) without dropping that constraint
+		// first, so a rerun's ALTER TABLE ... ADD CONSTRAINT would collide with the one this
+		// schema's setUpBeforeClass() migration already installed. (Migration 296, issue
+		// #516's cancel_queued_label_jobs and trigger redefinitions, is all CREATE OR REPLACE
+		// and safe to rerun on its own - it is 297's non-idempotent DDL that matters here.)
+		// The migration runner checks each number individually, so rewinding exactly one
+		// number is sufficient and does not require this file to know about migrations it
+		// does not own.
+		$db->exec('DELETE FROM migrations WHERE migration = 295');
 		$db->exec('TRUNCATE stock, stock_log, products CASCADE');
 		$db->exec('DELETE FROM quantity_unit_conversions WHERE product_id >= 600');
 		$db->exec("INSERT INTO locations(id, name) VALUES(601, 'Upgrade') ON CONFLICT (id) DO NOTHING");

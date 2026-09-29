@@ -4,6 +4,7 @@ namespace Victual\Services\Database;
 
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\Labels\LabelIdentityService;
+use Victual\Services\StockService;
 
 /**
  * Copies the contents of an existing SQLite database into another engine, so that an
@@ -357,6 +358,68 @@ class DatabaseImporter
 	}
 
 	/**
+	 * Migration 0297's stock_amount_non_negative_check (issue #492, ADR-0032) refuses a
+	 * negative `stock.amount` at the schema level. Without this check, a source whose
+	 * amount went negative - an upstream bug, or exactly the defect #492 itself fixed on the
+	 * application side, both of which can leave one in an existing SQLite file this importer
+	 * still has to accept - fails the COPY with a raw PostgreSQL SQLSTATE 23514 partway
+	 * through CopyTable(), inside the same transaction TRUNCATE already opened. The rollback
+	 * is clean (see Import()'s and ImportSnapshot()'s own transaction), so no target data is
+	 * lost, but the message a caller sees is a bare constraint-violation error naming neither
+	 * the row nor why it matters. This is the maintainer's standing rule for dirty legacy
+	 * data (ADR-0029's pattern, followed here the same way AssertStockLocations() above
+	 * follows it for a dangling location): a dangling-source report and a refusal before
+	 * truncation, not a migration that repairs rows nothing here has ever seen, and not a
+	 * silent clamp that would invent a value the source never recorded.
+	 *
+	 * Gated on `stock` actually being among the tables this import copies ($tables, the same
+	 * list ImportSnapshot() builds via GetCommonTables() before calling this) and on `amount`
+	 * actually being one of that table's columns in both engines (GetCommonColumns(), the
+	 * same source CopyTable()/CollectValueMismatches() use): a source or target schema that
+	 * has no `stock` table, or a reduced fixture whose `stock` table carries no `amount`
+	 * column at all - the synthetic single-migration-number fixtures
+	 * SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE's docblock names, and
+	 * StockLocationImportTest.php's own minimal in-memory fixtures for round 2 findings -
+	 * has nothing for this check to refuse; querying a column that is not there is a driver
+	 * error ("no such column"), not a negative amount, and must not be raised as either.
+	 *
+	 * **Tolerance (maintainer decision, #492 follow-up).** A source amount within
+	 * `StockService::AMOUNT_TOLERANCE` of zero on the negative side - a `-2.7e-17` residue
+	 * float arithmetic can leave, the exact shape issue #492 fixed going forward - is treated
+	 * the same way `CompareAmounts()` already treats it everywhere else: as zero. That
+	 * translation happens in the copy itself (see SourceColumnExpression()), not here; this
+	 * check only refuses what the translation does not cover - `amount < -tolerance`, a
+	 * genuine negative no reasonable amount of float noise explains. `--force` does not
+	 * bypass this, and nothing here repairs a row this class did not itself corrupt; an
+	 * operator with a genuinely negative row chooses and applies that source repair before
+	 * retrying.
+	 */
+	private function AssertStockAmounts(array $tables): void
+	{
+		if (!in_array('stock', $tables, true) || !in_array('amount', $this->GetCommonColumns('stock'), true))
+		{
+			return;
+		}
+
+		$tolerance = sprintf('%.17h', StockService::AMOUNT_TOLERANCE);
+		$query = 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < -' . $tolerance;
+		$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') negative')->fetchColumn();
+		if ($count > 0)
+		{
+			$sample = $this->Source->query($query . ' ORDER BY id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+			throw new \RuntimeException('Import refused: ' . $count . ' source stock row(s) hold an amount more negative than '
+				. 'StockService::AMOUNT_TOLERANCE (' . $tolerance . ') below zero, which the target refuses outright '
+				. '(migration 0297, stock_amount_non_negative_check; issue #492). '
+				. 'Sample (id, product_id, stock_id, amount): ' . json_encode($sample) . '. '
+				. 'A residue within tolerance of zero (e.g. -2.7e-17) is imported as exactly 0, the same tolerance '
+				. 'CompareAmounts() treats as zero everywhere else; these rows are more negative than that and are refused '
+				. 'rather than clamped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
+				. 'List all rows: ' . $query . ' ORDER BY id;');
+		}
+	}
+
+	/**
 	 * The same refusal as AssertStockLocations(), extended to every foreign key
 	 * migrations/0295.pgsql.sql adds on products (issue #552): location_id, qu_id_purchase,
 	 * qu_id_stock, qu_id_consume, qu_id_price and product_group_id. Following ADR-0029's own
@@ -441,23 +504,42 @@ class DatabaseImporter
 	}
 
 	/**
-	 * Issue #552 (N3): upstream Grocy migrations 0210 and 0219 test `IFNULL(column, 0) = 0`
-	 * to decide whether products.qu_id_consume/qu_id_price are "unset" - 0 has always meant
-	 * the same as NULL there, in every source this importer accepts. Both columns now carry
-	 * a NOT DEFERRABLE foreign key (migrations/0295.pgsql.sql), and there is no
-	 * quantity_units row with id 0, so copying a literal 0 verbatim would violate that
-	 * foreign key immediately - not because the source is wrong, but because this schema
-	 * spells the same "unset" meaning differently (NULL only, never 0). CopyTable() and
-	 * CollectValueMismatches() both read these two columns through NULLIF(column, 0) instead
-	 * of verbatim, so the copy (and the assertion that proves it copied faithfully) judge it
-	 * against upstream's own meaning of the column, not its literal bytes. No other common
-	 * column gets this treatment - see AssertProductReferences() for why product_group_id
-	 * does not.
+	 * The SELECT expression CopyTable() and CollectValueMismatches() each read a source
+	 * column through, keyed by table and column name so a translation lives in exactly one
+	 * place both call sites share - the actual copy and its own verbatim-copy proof - and
+	 * never resolve a column differently between them, which would give the copy one value
+	 * and the comparison another it would then flag as a mismatch of the copy's own making.
+	 *
+	 * Two translations live here, each named at the exact column it changes; a plain quoted
+	 * reference covers every other column:
+	 *
+	 * - `stock.amount` (issue #492 follow-up, maintainer decision): a negative residue within
+	 *   `StockService::AMOUNT_TOLERANCE` of zero imports as exactly `0`, the same tolerance
+	 *   `CompareAmounts()` already treats as zero everywhere else - see AssertStockAmounts()'s
+	 *   own docblock for the refusal boundary this pairs with.
+	 * - `products.qu_id_consume`/`qu_id_price` (issue #552, N3): a stored `0` means the same
+	 *   as NULL - "unset" - matching upstream Grocy's own AFTER INSERT default-fill triggers
+	 *   (migrations 0210/0219 both test `IFNULL(column, 0) = 0`); translated to NULL here so a
+	 *   legacy 0 does not violate the NOT DEFERRABLE foreign key migration 0295 adds. See
+	 *   AssertProductReferences()'s own docblock for why product_group_id does not get the
+	 *   same treatment.
+	 *
+	 * Each translated column is aliased back to its own name (`AS "column"`) because
+	 * InsertBatch() and CollectValueMismatches() both read the fetched row by that name, not
+	 * by column position, and neither a CASE expression's nor NULLIF()'s own default alias is
+	 * it.
 	 */
 	private const PRODUCT_ZERO_MEANS_UNSET_COLUMNS = ['qu_id_consume', 'qu_id_price'];
 
 	private function SourceColumnExpression(string $table, string $column): string
 	{
+		if ($table === 'stock' && $column === 'amount')
+		{
+			$tolerance = sprintf('%.17h', StockService::AMOUNT_TOLERANCE);
+
+			return 'CASE WHEN "amount" < 0 AND "amount" >= -' . $tolerance . ' THEN 0 ELSE "amount" END AS "amount"';
+		}
+
 		if ($table === 'products' && in_array($column, self::PRODUCT_ZERO_MEANS_UNSET_COLUMNS, true))
 		{
 			return 'NULLIF("' . $column . '", 0) AS "' . $column . '"';
@@ -566,6 +648,7 @@ class DatabaseImporter
 		$this->AssertSchemaVersionsMatch($applyRowMigrations);
 		$this->AssertStockLocations();
 		$this->AssertProductReferences($tables);
+		$this->AssertStockAmounts($tables);
 
 		$report = [];
 

@@ -41,18 +41,40 @@ executable lines; **85% or better** is the target and **90%** the ideal. New cod
 covered, a change never lowers a file or the total below the floor, and the number is
 measured by the suite CI runs, not by a separate unit-test tier this fork does not have.
 
-The floor was chosen by the maintainer on 2026-09-17; the tree is below it, and
-[issue 192](https://github.com/datagen24/victual/issues/192) holds the backlog: its first step —
-a CI ratchet that only rises — is wired; its last turns on the floor itself. A threshold
+The floor was chosen by the maintainer on 2026-09-17. [Issue 192](https://github.com/datagen24/victual/issues/192)
+tracked the backlog to close it and was closed 2026-09-22: [plan 33](plans/33-coverage-floor.md)
+recorded 10,002 of 10,385 executable lines covered (96.31%), all 140 executable files at
+or above 75%, in [PR #256](https://github.com/datagen24/victual/pull/256) at
+`6ce5bf496a97370154cea801a46b68fdd2cef06c`. `tests.yml`'s `suite` job gates on that figure
+as a ratchet (`report.php --min=96.31198844487241217394`) that only rises; per-file CI
+enforcement beyond the aggregate ratchet remains optional follow-up work. A threshold
 nobody chose gets tuned until it stops failing; this one was chosen, which is why it is
 written here rather than in a workflow comment.
 
 **A Proposed record constrains nothing; an Accepted one constrains everything.** Work in
-flight follows the accepted state of the world. Acceptance is also not delivery:
-[ADR-0008](adr/0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31 and the
-dual-engine discipline still holds in full, because the retirement work it calls for is
-not scheduled yet. An accepted record binds the next decision; it does not retroactively
-relax a discipline the tree is still running on.
+flight follows the accepted state of the world. Acceptance is also not delivery, but it is
+not permanently deferred either.
+
+[ADR-0008](adr/0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31. Its
+retirement work landed 2026-09-05 with
+[plan 24](plans/landed/24-sqlite-runtime-retirement.md): ordinary runtime configuration
+restricts `DB_DRIVER` to `pgsql` alone, and the SQLite migration line is frozen at 0265.
+`DatabaseDialect::Create()` and `ConfigurationValidator::checkDatabaseDriver()` still
+permit `DB_DRIVER=sqlite` when `DatabaseDialect::SQLITE_TOOLING_ENV` is set - the
+differential suite's own escape hatch, not a second runtime configuration.
+
+Two pieces of dual-engine apparatus survive that landing on purpose, not as an oversight.
+The differential harness in `.devtools/pgsql/` still builds a SQLite side until
+[plan 14](plans/landed/14-contract-and-regression-scaffolding.md) piece 2's response
+snapshot replaces it. It is buildable only through `DatabaseDialect::SQLITE_TOOLING_ENV`,
+an environment variable rather than a setting, so it is not a way to run this fork.
+Migrations 0256–0265 stay a matched two-engine set under
+[ADR-0004](adr/0004-engine-specific-migrations.md), because that range is history the
+suite replays.
+
+An accepted record binds the next decision; it does not retroactively relax a discipline
+the tree is still running on. Here the tree finished running on it and kept only the two
+pieces named above.
 
 ## The workload standard
 
