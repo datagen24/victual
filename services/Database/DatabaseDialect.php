@@ -282,10 +282,11 @@ abstract class DatabaseDialect
 	 *
 	 * Uses pg_advisory_xact_lock's two-integer form, keyed on a class id
 	 * (PostgresDialect::STOCK_BOOKING_ADVISORY_LOCK_CLASS) and the product id as the object
-	 * id. That form's lock identity is the 64-bit concatenation of the two integers, so it
-	 * only shares a keyspace with WithMigrationLock()'s and WithPublicationLock()'s
-	 * single-bigint locks when the class id is zero; a nonzero class id keeps this
-	 * incapable of colliding with either regardless of which product id is locked.
+	 * id. PostgreSQL keeps the two-integer form and the single-bigint form that
+	 * WithMigrationLock() and WithPublicationLock() use in separate key spaces that never
+	 * overlap, whatever the class id, so this lock cannot collide with either of them
+	 * regardless of which product id is locked
+	 * (https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS).
 	 *
 	 * A caller touching more than one product in the same transaction (MergeProducts(),
 	 * RecipesService::ConsumeRecipe() consuming several ingredients) must lock every

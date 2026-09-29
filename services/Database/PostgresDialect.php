@@ -45,13 +45,14 @@ class PostgresDialect extends DatabaseDialect
 	 * The class id LockProductStock() takes its advisory lock's two-integer form on, with
 	 * the product id as the object id.
 	 *
-	 * A class id of its own rather than 0 (which would make the lock identity just the
-	 * product id) is what keeps this keyspace from ever overlapping
-	 * MIGRATION_ADVISORY_LOCK_KEY's or PUBLICATION_ADVISORY_LOCK_KEY's single-bigint locks:
-	 * pg_advisory_xact_lock(classid, objid)'s identity is those two 32-bit integers
-	 * concatenated into one 64-bit value, which only coincides with a single-bigint lock's
-	 * identity when classid is 0. It is the ASCII bytes of "vicS" ("vic" for the same
-	 * reason as the other two, "S" for stock), 0x76696353.
+	 * The class id does not separate this lock from MIGRATION_ADVISORY_LOCK_KEY's or
+	 * PUBLICATION_ADVISORY_LOCK_KEY's single-bigint locks: PostgreSQL keeps the two-integer
+	 * form and the single-bigint form in separate key spaces that never overlap, whatever
+	 * the class id
+	 * (https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS).
+	 * A class id of its own keeps it apart from any other two-integer advisory lock and
+	 * recognisable in pg_locks. It is the ASCII bytes of "vicS" ("vic" for the same reason
+	 * as the other two, "S" for stock), 0x76696353.
 	 */
 	const STOCK_BOOKING_ADVISORY_LOCK_CLASS = 1986618195;
 
