@@ -615,9 +615,15 @@ class StockService extends BaseService
 	 * take from these same candidates. This mirrors that loop's own per-entry conversion: an
 	 * entry belonging to a product other than $productId is converted through the same
 	 * cache__quantity_unit_conversions_resolved row the loop looks up, from $productId's own
-	 * stock unit to that entry's product's stock unit, and divided back out of it; with no
-	 * resolvable conversion the amount is added unconverted, exactly as the loop would then
-	 * compare it unconverted.
+	 * stock unit to that entry's product's stock unit, and divided back out of it.
+	 *
+	 * $stockEntries is drawn from GetProductStockEntries() (directly, or via
+	 * GetProductStockEntriesForLocation()), which - with substitution allowed - already excludes
+	 * a sub product with no such resolvable conversion from the candidate set entirely
+	 * (maintainer decision D4, issue #553): it is never handed to this method or to the loop, so
+	 * neither ever falls back to counting it unconverted (1:1). The `$conversion != null` check
+	 * below is therefore never false for a real candidate; it stays as a defensive fallback
+	 * (matching the loop's own) rather than a live branch.
 	 *
 	 * @param iterable $stockEntries Candidate stock entries already narrowed to the exact scope being validated
 	 * @param int $productId The product the result is expressed in terms of
@@ -1993,16 +1999,25 @@ class StockService extends BaseService
 	 *
 	 * @param int $productId
 	 * @param bool $excludeOpened When true, only unopened entries are returned
-	 * @param bool $allowSubproductSubstitution When true, entries of resolved sub products are included
+	 * @param bool $allowSubproductSubstitution When true, entries of resolved sub products are included -
+	 *             but only for a sub product whose stock unit resolves to $productId's own stock unit
+	 *             through cache__quantity_unit_conversions_resolved. A sub product with no such
+	 *             resolved conversion is excluded from the candidate set entirely (maintainer decision
+	 *             D4, issue #553): it must never be counted 1:1 by SumStockEntriesInProductUnit()'s
+	 *             availability check or by the consume/open loop that iterates this same result, both
+	 *             of which convert (or, for a product-owned entry, pass through unconverted) exactly
+	 *             the candidates this method hands them. cache__quantity_unit_conversions_resolved
+	 *             always carries the identity row (factor 1.0) for a sub product sharing $productId's
+	 *             own stock unit (db/pgsql/baseline/03_views_group2.sql, "Priority 2" of
+	 *             product_conversions), so this only ever excludes a genuinely unconvertible sub
+	 *             product, never a same-unit one.
 	 * @return \LessQL\Result Iterable stock entry rows (amounts in the entry's product's stock quantity unit)
 	 */
 	public function GetProductStockEntries(int $productId, $excludeOpened = false, $allowSubproductSubstitution = false)
 	{
-		$sqlWhereProductId = 'product_id = ' . $productId;
-		if ($allowSubproductSubstitution)
-		{
-			$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
-		}
+		$sqlWhereProductId = $allowSubproductSubstitution
+			? $this->SubstitutionAwareProductIdWhereClause($productId)
+			: 'product_id = ' . $productId;
 
 		$sqlWhereAndOpen = 'AND open IN (0, 1)';
 		if ($excludeOpened)
@@ -2011,6 +2026,56 @@ class StockService extends BaseService
 		}
 
 		return $this->DB->stock_next_use()->where($sqlWhereProductId . ' ' . $sqlWhereAndOpen);
+	}
+
+	/**
+	 * The `product_id = ...` (or, with substitution, `product_id IN (...) OR product_id = ...`)
+	 * WHERE fragment shared by GetProductStockEntries() and GetProductStockLocations(): with
+	 * substitution, a sub product is admitted only when its own stock unit resolves from
+	 * $productId's own stock unit through cache__quantity_unit_conversions_resolved (maintainer
+	 * decision D4, issue #553) - excluded entirely, never counted 1:1, when no such conversion
+	 * exists. See GetProductStockEntries()'s own docblock for why this must not be a plain
+	 * `products_resolved` membership test.
+	 *
+	 * @param int $productId
+	 * @return string A SQL boolean expression on `product_id`, safe to AND with further conditions
+	 */
+	private function SubstitutionAwareProductIdWhereClause(int $productId): string
+	{
+		// A nonexistent $productId (neither caller has an existence check of its own - the raw
+		// API routes behind both don't either) previously just produced an always-empty result
+		// via the plain IN (...) below; kept that behaviour here instead of a null-property fatal.
+		$parentProduct = $this->DB->products($productId);
+		if ($parentProduct === null)
+		{
+			return '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
+		}
+
+		$parentQuIdStock = (int)$parentProduct->qu_id_stock;
+		return '('
+			. 'product_id IN ('
+			. 'SELECT pr.sub_product_id FROM products_resolved pr '
+			. 'JOIN products p_sub ON p_sub.id = pr.sub_product_id '
+			. 'JOIN cache__quantity_unit_conversions_resolved qucr '
+			. 'ON qucr.product_id = pr.sub_product_id '
+			. 'AND qucr.from_qu_id = ' . $parentQuIdStock . ' '
+			. 'AND qucr.to_qu_id = p_sub.qu_id_stock '
+			// qucr.factor is declared TEXT on both engines (db/pgsql/baseline/01_tables.sql,
+			// migrations/0225.sql), so a plain `> 0` needs an explicit numeric CAST to even
+			// type-check on PostgreSQL; CAST(... AS NUMERIC) rather than the PG-only `::` sugar
+			// keeps this valid under DatabaseDialect::SQLITE_TOOLING_ENV too, where the
+			// differential suite can run this same code path against SQLite. Nothing puts a
+			// CHECK on quantity_unit_conversions.factor, so a NEGATIVE factor can reach this
+			// cache table (a factor of exactly 0 cannot: quantity_unit_conversions_INS's own
+			// inverse-row computation divides by it and raises first - see MergeProducts()'s
+			// equivalent guard, StockService.php ~4177). Admitting a sub product on a
+			// non-positive factor would let SumStockEntriesInProductUnit()'s availability check
+			// divide by it and Consume/Open multiply by it; exclude it here exactly like "no
+			// resolved conversion at all" (maintainer decision D4).
+			. 'AND CAST(qucr.factor AS NUMERIC) > 0 '
+			. 'WHERE pr.parent_product_id = ' . $productId
+			. ') OR product_id = ' . $productId
+			. ')';
 	}
 
 	/**
@@ -2051,16 +2116,18 @@ class StockService extends BaseService
 	 * (rows of the stock_current_locations view).
 	 *
 	 * @param int $productId
-	 * @param bool $allowSubproductSubstitution When true, locations of resolved sub products are included
+	 * @param bool $allowSubproductSubstitution When true, locations of resolved sub products are included -
+	 *             but, like GetProductStockEntries(), only for a sub product whose stock unit
+	 *             resolves to $productId's own (maintainer decision D4, issue #553). A location
+	 *             holding only an unconvertible sub product's stock is not offered here - it
+	 *             would otherwise show a location whose real (converted) maximum is 0.
 	 * @return \LessQL\Result Iterable row objects
 	 */
 	public function GetProductStockLocations(int $productId, $allowSubproductSubstitution = false)
 	{
-		$sqlWhereProductId = 'product_id = ' . $productId;
-		if ($allowSubproductSubstitution)
-		{
-			$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
-		}
+		$sqlWhereProductId = $allowSubproductSubstitution
+			? $this->SubstitutionAwareProductIdWhereClause($productId)
+			: 'product_id = ' . $productId;
 
 		return $this->DB->stock_current_locations()->where($sqlWhereProductId);
 	}

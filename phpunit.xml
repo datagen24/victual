@@ -106,6 +106,8 @@
 			<file>tests/Pgsql/UndoMeasuredContainerCoherenceTest.php</file>
 			<file>tests/Pgsql/StockLogDeleteTriggerTest.php</file>
 			<file>tests/Pgsql/MeasuredContainerPartialOperationsTest.php</file>
+			<file>tests/Pgsql/SubProductUnitConvertibilityTest.php</file>
+			<file>tests/Pgsql/ProductParentStockUnitDefaultTest.php</file>
 			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">

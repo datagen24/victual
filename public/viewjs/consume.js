@@ -249,6 +249,121 @@ $('#save-mark-as-open-button').on('click', function(e)
 	);
 });
 var sumValue = 0;
+
+/**
+ * Sums a set of stock entries (as returned by GET stock/products/{id}/entries) in the current
+ * product's own stock quantity unit - mirrors StockService::SumStockEntriesInProductUnit()
+ * (issue #553, maintainer decision D4). An entry belonging to the current product
+ * (parentProductId) is added as-is; one belonging to a sub product is converted through
+ * quantity_unit_conversions_resolved (from the current product's own stock unit to that sub
+ * product's own stock unit) and divided back out of it, and is excluded entirely - never
+ * counted 1:1 - when no such conversion is resolved, the same rule the consume/open service
+ * applies.
+ *
+ * parentProductId and parentQuIdStock are passed in by the caller rather than read from the
+ * mutable current_productDetails global: this function does its own async lookups (one GET
+ * pair per distinct sub product), and by the time they resolve the user may have picked a
+ * different product or location, which would have already overwritten current_productDetails.
+ * Passing the identity the request was made for lets the caller compare it against the form's
+ * present state once the callback fires and drop a stale result instead of applying it.
+ *
+ * Either lookup (the sub product's own record, or its resolved conversion) can fail as an API
+ * call like any other; a failure is treated the same as "no resolvable conversion" for that one
+ * sub product - excluded from the sum, never counted 1:1 - rather than left pending: both
+ * callers' callers (OnLocationChange()'s RefreshForm()/ScanModeSubmit(), the "any entry"
+ * handler's max attribute) must still run once every lookup has settled one way or another, or
+ * the form would hang mid-refresh. Victual.Api.DefaultErrorHandler() surfaces the failure to the
+ * user the same way every other API call in this file already does.
+ * @param {Array} stockEntries Rows from stock/products/{id}/entries?include_sub_products=true
+ * @param {Function} locationMatches Predicate(stockEntry) selecting which entries to sum
+ * @param {number|string} parentProductId The current product's id, captured when the request
+ *                        that produced stockEntries was made
+ * @param {number} parentQuIdStock The current product's own stock quantity unit id, captured at
+ *                 the same time
+ * @param {Function} callback Called with the resulting sum (a number), once every sub product
+ *                   entry's conversion has resolved or failed
+ */
+function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, parentProductId, parentQuIdStock, callback)
+{
+	var relevantEntries = stockEntries.filter(locationMatches);
+	var ownEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id == parentProductId; });
+	var subEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id != parentProductId; });
+
+	var baseSum = 0;
+	ownEntries.forEach(function(stockEntry)
+	{
+		baseSum = baseSum + (stockEntry.amount || 0);
+	});
+
+	var subProductIds = [];
+	subEntries.forEach(function(stockEntry)
+	{
+		if (!subProductIds.includes(stockEntry.product_id))
+		{
+			subProductIds.push(stockEntry.product_id);
+		}
+	});
+
+	function Finish(factorsByProductId)
+	{
+		var sum = baseSum;
+		subEntries.forEach(function(stockEntry)
+		{
+			var factor = factorsByProductId[stockEntry.product_id];
+			if (factor != null && factor > 0)
+			{
+				sum = sum + ((stockEntry.amount || 0) / factor);
+			}
+			// else: no resolvable conversion - excluded, never counted 1:1 (decision D4)
+		});
+		callback(sum);
+	}
+
+	if (subProductIds.length === 0)
+	{
+		Finish({});
+		return;
+	}
+
+	var factorsByProductId = {};
+	var remaining = subProductIds.length;
+
+	function SettleOne(subProductId, factor)
+	{
+		factorsByProductId[subProductId] = factor;
+		remaining--;
+		if (remaining === 0)
+		{
+			Finish(factorsByProductId);
+		}
+	}
+
+	subProductIds.forEach(function(subProductId)
+	{
+		Victual.Api.Get('objects/products/' + subProductId,
+			function(subProduct)
+			{
+				Victual.Api.Get('objects/quantity_unit_conversions_resolved?query[]=product_id=' + subProductId + '&query[]=from_qu_id=' + parentQuIdStock + '&query[]=to_qu_id=' + subProduct.qu_id_stock,
+					function(conversions)
+					{
+						SettleOne(subProductId, (conversions && conversions.length > 0) ? Number.parseFloat(conversions[0].factor) : null);
+					},
+					function(xhr)
+					{
+						Victual.Api.DefaultErrorHandler(xhr);
+						SettleOne(subProductId, null);
+					}
+				);
+			},
+			function(xhr)
+			{
+				Victual.Api.DefaultErrorHandler(xhr);
+				SettleOne(subProductId, null);
+			}
+		);
+	});
+}
+
 // Location selector changed: rebuilds the specific-stock-entry dropdown for the new location.
 // When embedded with a pre-selected stock entry (stockId URI param) or when the product was
 // scanned via Grocycode (which encodes a specific stock_id), that entry is auto-selected.
@@ -312,7 +427,14 @@ function OnLocationChange(locationId, stockId)
 			$("#location_id").val(locationId);
 		}
 
-		Victual.Api.Get("stock/products/" + Victual.Components.ProductPicker.GetValue() + '/entries?include_sub_products=true',
+		// Captured now, before the async lookups below, so a stale response - the product or
+		// location changing again while this request is in flight - can be told apart from a
+		// still-current one and dropped instead of overwriting a newer selection's state.
+		var requestProductId = Victual.Components.ProductPicker.GetValue();
+		var requestLocationId = locationId;
+		var requestParentQuIdStock = current_productDetails.product.qu_id_stock;
+
+		Victual.Api.Get("stock/products/" + requestProductId + '/entries?include_sub_products=true',
 			function(stockEntries)
 			{
 				stockEntries.forEach(stockEntry =>
@@ -338,8 +460,6 @@ function OnLocationChange(locationId, stockId)
 							"data-id": stockEntry.id
 						}));
 
-						sumValue = sumValue + (stockEntry.amount || 0);
-
 						if (stockEntry.stock_id == stockId)
 						{
 							$("#use_specific_stock_entry").click();
@@ -348,18 +468,40 @@ function OnLocationChange(locationId, stockId)
 					}
 				});
 
-				Victual.Api.Get('stock/products/' + Victual.Components.ProductPicker.GetValue(),
-					function(productDetails)
-					{
-						current_productDetails = productDetails;
-						RefreshForm();
-					}
-				);
-
-				if (document.getElementById("product_id").getAttribute("barcode") == "null" || $("#product_id").data("grocycode"))
+				// Issue #553 (maintainer decision D4): sumValue (the form's maximum, set in
+				// RefreshForm() below) is computed in the current product's own stock unit via
+				// the same conversions the service validates against, not as a raw cross-unit
+				// total - see SumSubstitutionAwareStockEntries().
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == locationId; }, requestProductId, requestParentQuIdStock, function(sum)
 				{
-					ScanModeSubmit();
-				}
+					// Drop a stale response: the product or location has moved on since this
+					// request was made, and whichever newer request is now in flight (or has
+					// already settled) owns sumValue/the form refresh instead.
+					if (requestProductId !== Victual.Components.ProductPicker.GetValue() || requestLocationId != $("#location_id").val())
+					{
+						return;
+					}
+
+					sumValue = sum;
+
+					Victual.Api.Get('stock/products/' + requestProductId,
+						function(productDetails)
+						{
+							if (requestProductId !== Victual.Components.ProductPicker.GetValue())
+							{
+								return;
+							}
+
+							current_productDetails = productDetails;
+							RefreshForm();
+						}
+					);
+
+					if (document.getElementById("product_id").getAttribute("barcode") == "null" || $("#product_id").data("grocycode"))
+					{
+						ScanModeSubmit();
+					}
+				});
 			}
 		);
 	}
@@ -579,21 +721,34 @@ $("#specific_stock_entry").on("change", function(e)
 	if ($(e.target).val() == "")
 	{
 		sumValue = 0;
-		Victual.Api.Get("stock/products/" + Victual.Components.ProductPicker.GetValue() + '/entries?include_sub_products=true',
+
+		// Captured now, before the async lookups below, so a stale response - the product or
+		// location changing again while this request is in flight - can be told apart from a
+		// still-current one and dropped instead of overwriting a newer selection's max.
+		var requestProductId = Victual.Components.ProductPicker.GetValue();
+		var requestLocationId = $("#location_id").val();
+		var requestParentQuIdStock = current_productDetails.product.qu_id_stock;
+
+		Victual.Api.Get("stock/products/" + requestProductId + '/entries?include_sub_products=true',
 			function(stockEntries)
 			{
-				stockEntries.forEach(stockEntry =>
+				// Issue #553 (maintainer decision D4): summed in the current product's own
+				// stock unit via the same conversions the service validates against, not as a
+				// raw cross-unit total - see SumSubstitutionAwareStockEntries().
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == requestLocationId || stockEntry.location_id == ""; }, requestProductId, requestParentQuIdStock, function(sum)
 				{
-					if (stockEntry.location_id == $("#location_id").val() || stockEntry.location_id == "")
+					if (requestProductId !== Victual.Components.ProductPicker.GetValue() || requestLocationId != $("#location_id").val())
 					{
-						sumValue = sumValue + stockEntry.amount_aggregated;
+						return;
+					}
+
+					sumValue = sum;
+					$("#display_amount").attr("max", sumValue.toFixed(Victual.UserSettings.stock_decimal_places_amounts));
+					if (sumValue == 0)
+					{
+						$("#display_amount").parent().find(".invalid-feedback").text(__t('There are no units available at this location'));
 					}
 				});
-				$("#display_amount").attr("max", sumValue.toFixed(Victual.UserSettings.stock_decimal_places_amounts));
-				if (sumValue == 0)
-				{
-					$("#display_amount").parent().find(".invalid-feedback").text(__t('There are no units available at this location'));
-				}
 			}
 		);
 	}
