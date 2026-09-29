@@ -2,7 +2,7 @@
 -- other StockService entry points now refuse a negative amount in PHP (commit 2039d5947),
 -- but nothing in the schema itself stopped a negative amount reaching `stock.amount` through
 -- any other writer (a future application bug, a direct import path, manual SQL). Migration
--- 0295 adds a database-level backstop: `amount >= 0`. Zero remains writable - WeighLocation()
+-- 0297 adds a database-level backstop: `amount >= 0`. Zero remains writable - WeighLocation()
 -- legitimately zeroes a vessel's stock row when its gross reading equals its tare weight
 -- (issue #487 correction 3), and stock_measurement_coherence_check (migration 0275) already
 -- requires exactly amount = 1 for a measured, opened row, a stricter constraint than

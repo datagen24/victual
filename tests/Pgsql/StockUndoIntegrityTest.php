@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use PDOException;
 use Slim\Exception\HttpException;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
@@ -387,14 +388,32 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		// defect elsewhere in the ledger. Its aggregate with the valid row (3 - 1 = 2)
 		// still covers the amount requested below, so only the per-row guard - not the
 		// aggregate availability check earlier in ConsumeProduct() - can refuse this.
-		self::$db->prepare('INSERT INTO stock (product_id, amount, stock_id, best_before_date, location_id) VALUES (?, -1, ?, ?, ?)')
-			->execute([$product, 'corrupt-' . $product, '2026-01-01', self::$locationA]);
+		//
+		// Migration 0297's stock_amount_non_negative_check (issue #492) now makes a negative
+		// stock.amount unreachable through any INSERT/UPDATE, including this test's own raw
+		// SQL fixture - which is the point of that constraint, and makes this test's guard
+		// defence in depth rather than the only line of defence. The constraint is dropped
+		// for the width of this one fixture insert, in this test's own private schema
+		// (PgsqlSchemaTestCase gives every test class its own, so this never touches another
+		// class's connection or constraint), and reinstated in `finally`, exactly as
+		// migration 0297 defines it, before the test returns - whether it passes or fails.
+		self::$db->exec('ALTER TABLE stock DROP CONSTRAINT stock_amount_non_negative_check');
+		try
+		{
+			self::$db->prepare('INSERT INTO stock (product_id, amount, stock_id, best_before_date, location_id) VALUES (?, -1, ?, ?, ?)')
+				->execute([$product, 'corrupt-' . $product, '2026-01-01', self::$locationA]);
 
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
-			400,
-			'Consuming against a non-positive persisted row is refused rather than booked as a positive consume'
-		);
+			$this->expectRefusalWithUntouchedLedger(
+				fn() => self::$stock->ConsumeProduct(self::request('POST', ['amount' => 1]), new Response(), ['productId' => $product]),
+				400,
+				'Consuming against a non-positive persisted row is refused rather than booked as a positive consume'
+			);
+		}
+		finally
+		{
+			self::$db->prepare('DELETE FROM stock WHERE stock_id = ?')->execute(['corrupt-' . $product]);
+			self::$db->exec('ALTER TABLE stock ADD CONSTRAINT stock_amount_non_negative_check CHECK (amount >= 0)');
+		}
 	}
 
 	// ------------------------------------------------------------------------------
@@ -648,13 +667,70 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Two units are moved to B (three remain at A)'
 		);
 
-		self::$db->prepare('UPDATE stock SET amount = -5 WHERE product_id = ? AND location_id = ?')->execute([$product, self::$locationA]);
+		// Migration 0297's stock_amount_non_negative_check (issue #492) now refuses this
+		// UPDATE outright, the same way it now refuses the analogous INSERT above this
+		// class's testConsumeRefusesWhenACandidateStockRowIsNonPositive() - making that
+		// guard, and this one, defence in depth rather than the only line of defence. The
+		// constraint is dropped for the width of this one corrupting UPDATE, in this test's
+		// own private schema, and reinstated in `finally` before the test returns.
+		self::$db->exec('ALTER TABLE stock DROP CONSTRAINT stock_amount_non_negative_check');
+		try
+		{
+			self::$db->prepare('UPDATE stock SET amount = -5 WHERE product_id = ? AND location_id = ?')->execute([$product, self::$locationA]);
 
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
-			400,
-			'Undoing a transfer back onto an already-corrupted negative source entry is refused, not compounded'
+			$this->expectRefusalWithUntouchedLedger(
+				fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
+				400,
+				'Undoing a transfer back onto an already-corrupted negative source entry is refused, not compounded'
+			);
+		}
+		finally
+		{
+			self::$db->prepare('DELETE FROM stock WHERE product_id = ? AND location_id = ?')->execute([$product, self::$locationA]);
+			self::$db->exec('ALTER TABLE stock ADD CONSTRAINT stock_amount_non_negative_check CHECK (amount >= 0)');
+		}
+	}
+
+	/**
+	 * Migration 0297's stock_amount_non_negative_check (issue #492) is the primary defence
+	 * the two tests above drop it to reach around; this asserts that defence directly, with
+	 * the constraint left exactly as every other test in this class finds it (no drop, no
+	 * finally). Both raw-SQL shapes those tests simulate - a corrupt INSERT and a corrupting
+	 * UPDATE - are refused by the database itself, before StockService ever sees the row,
+	 * and neither one leaves a partial write behind.
+	 */
+	public function testDatabaseRefusesTheRawSqlCorruptionTheGuardTestsAboveSimulate(): void
+	{
+		$product = self::insertProduct('Amount Check Guard');
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'location_id' => self::$locationA, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $product]),
+			200,
+			'Three valid units are purchased'
 		);
+
+		try
+		{
+			self::$db->prepare('INSERT INTO stock (product_id, amount, stock_id, best_before_date, location_id) VALUES (?, -1, ?, ?, ?)')
+				->execute([$product, 'refused-insert-' . $product, '2026-01-01', self::$locationA]);
+			self::fail('A negative stock.amount INSERT must be refused by stock_amount_non_negative_check');
+		}
+		catch (PDOException $exception)
+		{
+			self::assertSame('23514', $exception->getCode(), 'INSERT must fail with the CHECK violation SQLSTATE');
+		}
+
+		try
+		{
+			self::$db->prepare('UPDATE stock SET amount = -5 WHERE product_id = ? AND location_id = ?')->execute([$product, self::$locationA]);
+			self::fail('A negative stock.amount UPDATE must be refused by stock_amount_non_negative_check');
+		}
+		catch (PDOException $exception)
+		{
+			self::assertSame('23514', $exception->getCode(), 'UPDATE must fail with the CHECK violation SQLSTATE');
+		}
+
+		self::assertSame(1, count(self::rows($product)), 'Neither refused write left a row behind or altered the existing one');
+		self::assertSame(3.0, self::stockAmount($product), 'The valid row is untouched by either refused write');
 	}
 
 	// ------------------------------------------------------------------------------

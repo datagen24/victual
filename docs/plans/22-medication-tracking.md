@@ -319,15 +319,19 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0296** (medication master data and subjects)
-  and **0297** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0298** (medication master data and subjects)
+  and **0299** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
-  - 0295–0296 until 2026-09-29, when issue #492's (H3, #487 remediation)
-    `stock_amount_non_negative_check` fix was written to disk as `0295.pgsql.sql` above this
-    plan's still-unwritten claims. It is ADR-0032's database-level `amount >= 0` backstop for
-    `stock`, behind the application refusal commit 2039d5947 already added, and moved up to
-    0296–0297 under the lowest-free-slot rule
+  - 0295–0296 until 2026-09-29, when three branches claimed the same lowest free slots in
+    parallel. PR #624 (issues #552/#558, products foreign keys and stock-entry label
+    retirement) writes `0295.pgsql.sql`. PR #626 (issue #516, cancel queued print jobs on
+    label retirement) writes `0296.pgsql.sql`. Issue #492's (H3, #487 remediation)
+    `stock_amount_non_negative_check` fix — ADR-0032's database-level `amount >= 0` backstop
+    for `stock`, behind the application refusal commit 2039d5947 already added — is written to
+    disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
+    this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
+    the lowest-free-slot rule
   - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
     `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
     `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales
@@ -405,7 +409,10 @@ Collected because most of them are only visible from inside the existing code.
   - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
   - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
   - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
-  - and now 0296–0297 for issue #492's `stock_amount_non_negative_check` fix
+  - 0296–0297 for issue #492's `stock_amount_non_negative_check` fix, before PRs #624 and
+    #626 also claimed 0295–0296
+  - and now 0298–0299, once PR #624 (0295) and PR #626 (0296) took the two slots ahead of
+    issue #492's fix at 0297
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

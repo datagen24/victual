@@ -79,17 +79,28 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediation), [ADR-0032](../docs/adr/0032-stock-amounts-compare-within-one-tolerance.md) — `stock_amount_non_negative_check`, a database-level `amount >= 0` backstop for `stock` behind the application refusal commit 2039d5947 already added | in this tree |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0297 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issues [#552](https://github.com/datagen24/victual/issues/552) and [#558](https://github.com/datagen24/victual/issues/558) (#487 remediation), PR [#624](https://github.com/datagen24/victual/pull/624) — products foreign keys and the stock-entry label retirement repair | in this tree |
+| 0296 | issue [#516](https://github.com/datagen24/victual/issues/516) (#487 remediation), PR [#626](https://github.com/datagen24/victual/pull/626) — cancel queued print jobs when a label retires | in this tree |
+| 0297 | issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediation), [ADR-0032](../docs/adr/0032-stock-amounts-compare-within-one-tolerance.md) — `stock_amount_non_negative_check`, a database-level `amount >= 0` backstop for `stock` behind the application refusal commit 2039d5947 already added | in this tree |
+| 0298 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0299 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
 
-Renumbered again on 2026-09-29: issue [#492](https://github.com/datagen24/victual/issues/492)
-(H3, #487 remediation)'s `stock_amount_non_negative_check` fix is being written on this branch
-as `0295.pgsql.sql`, above plan 22's still-unwritten claims. Per the lowest-free-slot rule, the
-file the branch is actually writing takes the lowest free slot and plan 22's two unwritten
-claims move up in turn, from 0295–0296 to **0296–0297**, keeping their own order.
-[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table. The
-next unclaimed number is now **0298**.
+Renumbered again on 2026-09-29, yet again: three branches claimed the same lowest free slots
+in parallel. PR [#624](https://github.com/datagen24/victual/pull/624) (issues #552/#558) writes
+`0295.pgsql.sql`. PR [#626](https://github.com/datagen24/victual/pull/626) (issue #516) writes
+`0296.pgsql.sql`. Both take the lowest free slots ahead of this branch.
+
+Issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediation)'s
+`stock_amount_non_negative_check` fix is written on this branch as `0297.pgsql.sql`, the next
+lowest free slot once 0295–0296 are spoken for, above plan 22's still-unwritten claims. Per the
+lowest-free-slot rule, plan 22's two unwritten claims move up in turn, from 0295–0296 to
+**0298–0299**, keeping their own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s
+numbering note moves with this table.
+
+This table is written as it will read once PRs #624, #626 and this one all merge in that
+order. Whichever of the three merges first resolves the migration-number conflict the other
+two then carry, the same way every earlier collision in this table was resolved. The next
+unclaimed number is now **0300**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s
