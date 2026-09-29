@@ -150,6 +150,24 @@ class QuIdStockCascadeMinStockAndMeasurementTest extends PgsqlSchemaTestCase
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	/** @return array<int, array<string, mixed>> */
+	private static function allLedgerRows(int $productId): array
+	{
+		$statement = self::$db->prepare('SELECT id, transaction_type, amount, undone, opened_amount, opened_qu_id FROM stock_log WHERE product_id = ? ORDER BY id');
+		$statement->execute([$productId]);
+
+		return $statement->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	private static function stockEditOldLogRow(int $productId): ?array
+	{
+		$statement = self::$db->prepare("SELECT id, amount, undone, opened_amount FROM stock_log WHERE product_id = ? AND transaction_type = 'stock-edit-old' AND undone = 0");
+		$statement->execute([$productId]);
+		$row = $statement->fetch(PDO::FETCH_ASSOC);
+
+		return $row === false ? null : $row;
+	}
+
 	/**
 	 * Attempts the qu_id_stock change directly through `products` (a raw UPDATE, the same
 	 * event the trigger's WHEN clause fires on), asserting it throws, and returns the
@@ -373,6 +391,81 @@ class QuIdStockCascadeMinStockAndMeasurementTest extends PgsqlSchemaTestCase
 			$caught->getMessage(),
 			'Then: refused through #598\'s own truthful guard'
 		);
+	}
+
+	/**
+	 * CodeRabbit review of PR #618, finding 4128248701: a STOCK_EDIT_OLD booking mirrors a
+	 * measured entry's pre-edit amount (always 1) and opened_amount onto itself
+	 * (EditStockEntry()'s own comment), then sits live (undone = 0) for as long as the edit
+	 * is not undone - exactly like a CONSUME booking sits live until its own undo. This
+	 * migration's own narrowing (round 2) permits a ledger-only rescale of a live booking's
+	 * amount, which trg_cascade_change_qu_id_stock's `UPDATE stock_log SET amount = amount *
+	 * v_factor ...` applies to every stock_log row of the product, not only CONSUME ones. A
+	 * rescaled STOCK_EDIT_OLD booking (amount != 1, opened_amount still set) must refuse its
+	 * own undo truthfully - the same protection the CONSUME branch already has - rather than
+	 * let the restore violate stock_measurement_coherence_check.
+	 */
+	public function testChangingStockUnitLeavesAStockEditOldBookingRefusingItsOwnUndoAfterRescale(): void
+	{
+		$productId = self::insertProduct('QuCascade Edited Measured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($productId, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		$stock->OpenProduct($productId, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		// Editing the amount away from 1 drops the live measurement from `stock` (it would
+		// no longer be coherent), but mirrors the pre-edit amount (1) and measurement onto
+		// the STOCK_EDIT_OLD booking exactly as EditStockEntry()'s own comment describes.
+		$keep = StockService::KeepStoredValue();
+		$stock->EditStockEntry($stockRowId, 2, $keep, $keep, $keep, $keep, $keep, $keep);
+
+		$editedRow = self::stockRows($productId);
+		self::assertCount(1, $editedRow, 'Given: fixture sanity check');
+		self::assertEqualsWithDelta(2.0, (float)$editedRow[0]['amount'], 1e-9, 'Given: the entry now holds the edited amount');
+		self::assertNull($editedRow[0]['opened_amount'], 'Given: the live measurement was dropped by the edit (amount 2 is not coherent with a measurement)');
+
+		$oldBooking = self::stockEditOldLogRow($productId);
+		self::assertNotNull($oldBooking, 'Given: a live STOCK_EDIT_OLD booking exists');
+		self::assertEqualsWithDelta(1.0, (float)$oldBooking['amount'], 1e-9, 'Given: it mirrors the pre-edit amount (1)');
+		self::assertEqualsWithDelta(0.5, (float)$oldBooking['opened_amount'], 1e-9, 'Given: it mirrors the pre-edit measurement (0.5)');
+
+		// When: the stock unit changes by a non-1 factor. No live `stock` row is measured
+		// for this product any more, so this succeeds under the narrowed guard.
+		self::changeStockUnit($productId, self::$ids['kilogram']);
+
+		$rescaledOldBooking = self::stockEditOldLogRow($productId);
+		self::assertNotNull($rescaledOldBooking, 'Then: the booking is still live');
+		self::assertEqualsWithDelta(0.001, (float)$rescaledOldBooking['amount'], 1e-9, 'Then: its amount is rescaled by the factor (1 * 0.001), same as every other stock_log row');
+		self::assertEqualsWithDelta(0.5, (float)$rescaledOldBooking['opened_amount'], 1e-9, 'Then: opened_amount itself is not touched by the rescale');
+
+		$given = self::allLedgerRows($productId);
+
+		// And: undoing this now-rescaled booking is refused truthfully, not left to crash
+		// on stock_measurement_coherence_check.
+		$caught = null;
+		try
+		{
+			$stock->UndoBooking((int)$rescaledOldBooking['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused with the same message style as the CONSUME branch\'s own guard'
+		);
+		self::assertSame($given, self::allLedgerRows($productId), 'Then: the refusal leaves every stock_log row for this product exactly as it found them');
 	}
 
 	public function testChangingStockUnitStillRescalesAnUnmeasuredProductsStockAndLedger(): void
