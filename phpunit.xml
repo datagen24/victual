@@ -115,6 +115,7 @@
 			<file>tests/Pgsql/SubProductUnitConvertibilityTest.php</file>
 			<file>tests/Pgsql/ProductParentStockUnitDefaultTest.php</file>
 			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
+			<file>tests/Pgsql/StockAggregatedSubProductConvertibilityTest.php</file>
 			<file>tests/Pgsql/CrossOperationLedgerInvariantTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">

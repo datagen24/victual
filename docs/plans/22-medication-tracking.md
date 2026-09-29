@@ -319,10 +319,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0298** (medication master data and subjects)
-  and **0299** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0299** (medication master data and subjects)
+  and **0300** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0298–0299 until 2026-09-29, later still, when issue #622's `stock_current` aggregation
+    fix (#487 remediation) took **0298**, the lowest free slot below PRs #624, #626 and
+    #627 - all three merged to `master` by then - moving this plan's claims up to
+    **0299–0300** under the lowest-free-slot rule
   - 0295–0296 until 2026-09-29, when three branches claimed the same lowest free slots in
     parallel. PR #624 (issues #552/#558, products foreign keys and stock-entry label
     retirement) writes `0295.pgsql.sql`. PR #626 (issue #516, cancel queued print jobs on
@@ -331,9 +335,8 @@ Collected because most of them are only visible from inside the existing code.
     for `stock`, behind the application refusal commit 2039d5947 already added — is written to
     disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
     this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
-    the lowest-free-slot rule. PR #624 has since merged to `master` (18d0389d), and PR #626
-    has since merged too (11783f76) - both 0295 and 0296 are landed migrations now, and only
-    0297 (issue #492) remains unmerged among the three
+    the lowest-free-slot rule at the time. PR #624, PR #626 and PR #627 have since all merged
+    to `master` (18d0389d, 11783f76, 46cb862d) - 0295, 0296 and 0297 are landed migrations now
   - 0296–0297 until 2026-09-29, briefly, on PR #626's own branch before it knew about issue
     #492's claim. Issue #516's (M16, #487 remediation) print-job cancellation fix was written
     to disk as `0296.pgsql.sql` above this plan's still-unwritten claims. That moved them to
@@ -396,7 +399,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved twenty-three times.** In order:
+  **These numbers have moved twenty-four times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -423,8 +426,10 @@ Collected because most of them are only visible from inside the existing code.
   - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
   - 0296–0297 for issue #492's `stock_amount_non_negative_check` fix, before PRs #624 and
     #626 also claimed 0295–0296
-  - and now 0298–0299, once PR #624 (0295) and PR #626 (0296) took the two slots ahead of
-    issue #492's fix at 0297
+  - 0298–0299, once PR #624 (0295) and PR #626 (0296) took the two slots ahead of issue
+    #492's fix at 0297
+  - and now 0299–0300, once issue #622's `stock_current` aggregation fix took 0298, the
+    lowest free slot below all three of those branches - by then all merged to `master`
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

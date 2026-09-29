@@ -111,6 +111,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
 | `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
 | `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
+| `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 
 ## Completeness
 
@@ -245,6 +246,36 @@ non-deferrable shape. This is a constraint, not a function or trigger, so
 `check-pgtap-coverage.php` does not require it - listed here anyway per this file's own
 rule for logic-carrying schema objects, the same reason file 017 lists migration 0288's
 foreign key.
+
+The [unconvertible sub-product aggregation tests](025-unconvertible-subproduct-aggregation.sql)
+cover migration 0298 (issue #622, #487 remediation). `stock_current`'s `amount_aggregated`,
+`amount_opened_aggregated` and `amount_measured` each rolled a sub product's stock into its
+parent by `COALESCE(qucr.factor, 1.0)`, which only falls back on a NULL `qucr.factor` - a
+missing conversion. A resolved factor, positive or not, was never NULL. It was multiplied
+in as-is instead: a negative factor subtracted from the aggregate rather than being
+excluded. A resolved factor of exactly 0 already contributed nothing on its own arithmetic,
+not the fallback (`quantity_unit_conversions_INS`'s inverse-row computation cannot store 0
+there in the first place).
+
+That is #553's own defect (maintainer decision D4, fixed on the write side by
+`StockService::SubstitutionAwareProductIdWhereClause()`, PR #621) on the read side. An
+unconvertible sub product was counted 1:1. A sub product whose only resolved conversion had
+a non-positive factor was multiplied into the aggregate by that factor. Neither should
+contribute anything.
+
+Five assertions cover the fix:
+
+- `amount_aggregated` with a mix of one convertible, one unconvertible and one
+  negative-factor sub product, together with the parent's own stock - which must still
+  count at factor 1, since it has no cache entry to resolve either, and the fix must not
+  zero it out.
+- The same exclusion applied to `amount_opened_aggregated`.
+- The same exclusion applied to `amount_measured`, where an unconvertible sub product's
+  own, unrelated measurement conversion resolves fine and must still be excluded by the
+  missing parent-rollup conversion.
+- A negative control: an ordinary single-conversion sub product still aggregates exactly
+  as before.
+- A negative control: a standalone product with no sub products of its own is unaffected.
 
 ## Running the checker directly
 
