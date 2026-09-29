@@ -47,9 +47,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *     (label-retirement-delete-subprocess-helper.php) runs the real production DELETE a
  *     location's own retirement path uses - which fires retire_location_labels, which fires
  *     cancel_queued_label_jobs(), whose own UPDATE contends for the same labels row;
- *   - the test asserts the retire subprocess is observed genuinely blocked (a
- *     `transactionid` wait - see LabelRetirementCancelsClaimedJobRaceTest::
- *     waitForRowLockWaiter()'s own comment for why that locktype, not `relation`);
+ *   - the test asserts the retire subprocess is observed genuinely blocked, matched by its
+ *     own `application_name` in `pg_stat_activity` (see this class's own
+ *     waitForRowLockWaiter());
  *   - only then does the test release the reprint holder's pause, letting it commit (the
  *     reprint's job now exists, committed);
  *   - the previously queued retirement then proceeds - now able to see the job the reprint
@@ -195,13 +195,20 @@ class LabelRetirementRacesReprintTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * See LabelRetirementCancelsClaimedJobRaceTest::waitForRowLockWaiter()'s own comment for
-	 * why a row-level lock conflict shows up as a `transactionid` wait, not a `relation`
-	 * wait.
+	 * Matches the delete subprocess by its own `application_name`
+	 * (label-retirement-delete-subprocess-helper.php sets it precisely so this can), rather
+	 * than polling for "any" backend blocked on "any" lock: an unrelated wait elsewhere
+	 * (another test's leftover activity, a background autovacuum, anything) would otherwise
+	 * make this method return early without the delete subprocess actually being blocked at
+	 * all - which is exactly what happened before this fix: the assertion below did not
+	 * reliably fail the way the "before" evidence in this method's own history describes;
+	 * the test instead ran to completion and failed at its own final assertion
+	 * (`cancelled_at` still null) rather than here. Scoping the poll to the one backend this
+	 * test actually cares about makes the failure land at the right place.
 	 */
 	private static function waitForRowLockWaiter(float $timeoutSeconds = 10.0): void
 	{
-		$check = self::Pdo()->prepare("SELECT pid FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted LIMIT 1");
+		$check = self::Pdo()->prepare("SELECT pid FROM pg_stat_activity WHERE application_name = 'label-retirement-delete-helper' AND wait_event_type = 'Lock' LIMIT 1");
 		$deadline = microtime(true) + $timeoutSeconds;
 
 		do
@@ -215,21 +222,27 @@ class LabelRetirementRacesReprintTest extends PgsqlSchemaTestCase
 		}
 		while (microtime(true) < $deadline);
 
-		self::fail('Timed out waiting for a backend to block on the reprint holder\'s FOR SHARE lock - a concurrent label retirement must queue behind a mid-transaction reprint, not run unobstructed while it is still creating its job');
+		self::fail('Timed out waiting for the delete subprocess to block on the reprint holder\'s FOR SHARE lock - a concurrent label retirement must queue behind a mid-transaction reprint, not run unobstructed while it is still creating its job');
 	}
 
 	/**
 	 * See this class's own docblock for the full scenario. Before the fix (`FOR SHARE`
-	 * removed from AssertLabelLive()), this fails at waitForRowLockWaiter() - the delete
-	 * subprocess is never observed blocked, because a bare SELECT takes no row lock for a
-	 * concurrent retirement's UPDATE to conflict with:
+	 * removed from AssertLabelLive()), this fails at its own final assertion - the reprint
+	 * job's `cancelled_at` is still null - because with no lock to hold, the delete
+	 * subprocess never blocks and instead runs straight through: it retires the label and
+	 * cancels whatever is queued for it *before* the reprint holder's job even exists,
+	 * committing without cancelling anything. `waitForRowLockWaiter()` itself may or may not
+	 * observe a wait in that state (there is nothing left to wait *for*), so it is the final
+	 * assertion - not that intermediate poll - that is the reliable "before" evidence:
 	 *
 	 *   1) testConcurrentReprintCommitsAJobThatRetirementStillCancels
-	 *      Timed out waiting for a backend to block on the reprint holder's FOR SHARE lock -
-	 *      a concurrent label retirement must queue behind a mid-transaction reprint, not
-	 *      run unobstructed while it is still creating its job
+	 *      The reprint job, committed only after the retirement waited behind its FOR SHARE
+	 *      lock, is still visible to that retirement's cancellation - it does not escape as
+	 *      an uncancellable, permanently queued job
+	 *      Failed asserting that null is not null.
 	 *
-	 * After the fix, the retirement is observed blocked, the reprint holder is then allowed
+	 * After the fix, the retirement is observed blocked (waitForRowLockWaiter() passes
+	 * because there really is something to wait for now), the reprint holder is then allowed
 	 * to commit its job, and the retirement - unblocked only once that commit landed - is
 	 * asserted to have cancelled the very job that was racing it into existence.
 	 */

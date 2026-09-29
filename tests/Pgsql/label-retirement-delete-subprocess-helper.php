@@ -13,11 +13,11 @@
 //     (migrations/0296.pgsql.sql), whose own UPDATE ... WHERE current_attempt_id IS NULL
 //     blocks on that row lock, and is expected to resolve without cancelling the job once
 //     the lock is released with current_attempt_id already set.
-//   - LabelRetirementRacesReprintTest: a revised print is mid-transaction
-//     (label-revised-print-hold-subprocess-helper.php's FOR SHARE lock on the labels row).
+//   - LabelRetirementRacesReprintTest: a reprint is mid-transaction
+//     (label-reprint-hold-subprocess-helper.php's FOR SHARE lock on the labels row).
 //     retire_location_labels' own UPDATE on that same row (migrations/0296.pgsql.sql) blocks
-//     on it, and is expected to resolve - and cancel the job the revised print just
-//     committed - once that lock is released.
+//     on it, and is expected to resolve - and cancel the job the reprint just committed -
+//     once that lock is released.
 //
 //   php label-retirement-delete-subprocess-helper.php <table> <id>
 //
@@ -58,6 +58,10 @@ $pdo = new PDO(
 	[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
 );
 $pdo->exec('SET search_path TO ' . getenv('RBAC_TEST_SCHEMA') . ', public');
+// A distinguishing application_name, so a calling test can identify this exact backend in
+// pg_stat_activity - by name, not by guessing at "any" waiter of some lock type - when it
+// polls for this specific connection to be genuinely blocked.
+$pdo->exec("SET application_name = 'label-retirement-delete-helper'");
 DatabaseService::GetInstance()->GetDialect()->OnConnected($pdo);
 
 try

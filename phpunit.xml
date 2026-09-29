@@ -83,6 +83,8 @@
 			<file>tests/Pgsql/LabelReprintDueDateTest.php</file>
 			<file>tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php</file>
 			<file>tests/Pgsql/LabelRetirementRacesReprintTest.php</file>
+			<file>tests/Pgsql/LabelRevisedPrintNeverDeadlocksWithRetirementTest.php</file>
+			<file>tests/Pgsql/LabelReprintLockOrderNeverDeadlocksWithRetirementTest.php</file>
 		</testsuite>
 		<testsuite name="authstack">
 			<file>tests/Pgsql/AuthStackTest.php</file>
