@@ -401,7 +401,7 @@ class DatabaseImporter
 			return;
 		}
 
-		$tolerance = sprintf('%.17g', StockService::AMOUNT_TOLERANCE);
+		$tolerance = sprintf('%.17h', StockService::AMOUNT_TOLERANCE);
 		$query = 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < -' . $tolerance;
 		$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') negative')->fetchColumn();
 		if ($count > 0)
@@ -535,7 +535,7 @@ class DatabaseImporter
 	{
 		if ($table === 'stock' && $column === 'amount')
 		{
-			$tolerance = sprintf('%.17g', StockService::AMOUNT_TOLERANCE);
+			$tolerance = sprintf('%.17h', StockService::AMOUNT_TOLERANCE);
 
 			return 'CASE WHEN "amount" < 0 AND "amount" >= -' . $tolerance . ' THEN 0 ELSE "amount" END AS "amount"';
 		}
