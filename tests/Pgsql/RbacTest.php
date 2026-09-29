@@ -16,7 +16,9 @@ use Victual\Controllers\Users\User;
 use Victual\Controllers\UsersController;
 use Victual\Services\RolesService;
 use Victual\Services\UsersService;
+use Victual\Tests\Support\Operation;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\RouteInventory;
 
 /**
  * ADR-0025 spike 2: the largest bespoke phase (its own check()/status() helpers, session
@@ -34,6 +36,111 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class RbacTest extends PgsqlSchemaTestCase
 {
+	/**
+	 * Issue #521 (M21): every controller class behind a registered GET route, derived from
+	 * RouteInventory rather than hand-copied, must appear in exactly one of the two lists
+	 * below - PROTECTED_CONTROLLERS (swept here: every GET method on the controller must
+	 * refuse without any grant, verified by testRoutedReadsRefuseWithoutGrants()) or
+	 * EXCEPTED_GET_CONTROLLERS (documented reason, no grant-refusal assumed).
+	 * testEveryGetRouteControllerIsSweptOrExcepted() asserts the partition is complete and
+	 * that no excepted entry has gone stale (a controller no longer behind any GET route).
+	 *
+	 * Every method of a listed controller is assumed uniformly gated - true for every
+	 * entry below, each checked by reading the controller's source (grep for
+	 * CheckPermission) rather than assumed from its name. A controller with a mix of gated
+	 * and self-scoped GET methods (UsersController, UsersApiController, RolesApiController,
+	 * LabelsApiController, LabelPrintersApiController, LabelTemplatesApiController) is
+	 * excepted instead, with the mix explained, rather than forced into this uniform sweep.
+	 */
+	private const PROTECTED_CONTROLLERS = [
+		'StockController', 'StockReportsController', 'RecipesController', 'ChoresController',
+		'TasksController', 'StockApiController', 'RecipesApiController', 'ChoresApiController',
+		'TasksApiController', 'PrintApiController',
+	];
+
+	/**
+	 * Controller classes behind a GET route that testRoutedReadsRefuseWithoutGrants()
+	 * deliberately does not sweep, and why. A `FINDING:` reason is a genuine gap this issue
+	 * surfaced - reported to the master rather than fixed here (out of this issue's scope) -
+	 * everything else is a documented, verified reason the blanket "refuses without any
+	 * grant" assumption does not apply.
+	 */
+	private const EXCEPTED_GET_CONTROLLERS = [
+		// Pre-authentication or data-free: reachable before login, or serving no household
+		// data (the SPA shell, static informational pages, the API's own documentation).
+		'LoginController' => 'Pre-authentication pages (login form itself)',
+		'SystemController' => 'Root/about/manifest/barcode-scanner-testing carry no household data',
+		'SystemApiController' => 'GetConfig is a deliberate, documented allowlist of non-sensitive settings (SystemApiController::EXPOSED_SETTINGS); GetSystemInfo/GetSystemTime/GetDbChangedTime/GetLocalizationStrings carry no household data either',
+		'OpenApiController' => 'ApiKeysList is the caller\'s own keys (self-scoped); DocumentationSpec/DocumentationUi describe the API shape, not data',
+
+		// Explicitly ADMIN-gated - verified by grep for User::CheckPermission(...PERMISSION_ADMIN) in each file.
+		'LabelPrintJobsController' => 'Both GET methods (Index, Printers) require PERMISSION_ADMIN directly',
+		'LabelTemplatesController' => 'Both GET methods (TemplatesList, TemplateEditor) require PERMISSION_ADMIN directly',
+
+		// Mixed gated/self-scoped controllers: the gated methods are individually verified
+		// (grep for User::CheckPermission), and the self-scoped ones return only the calling
+		// session's own data by design, matching UsersApiController::CurrentUser's pattern.
+		'UsersController' => 'PermissionList/UsersList/RolesList/RoleEditForm require USERS_READ, UserEditForm requires USERS_CREATE or USERS_EDIT(_SELF); UserSettings is the caller\'s own settings page (self-scoped)',
+		'UsersApiController' => 'GetUsers/ListPermissions require USERS_READ; CurrentUser/CurrentUserCapabilities/GetUserSettings/GetUserSetting are the caller\'s own data (self-scoped)',
+		'RolesApiController' => 'ListRoles/ListPermissions/ListUserRoles all require USERS_READ directly',
+		'LabelsApiController' => 'LocationContext requires STOCK_VIEW and Context requires FieldCatalogue::DomainPermission($kind); Resolve is the public grocycode/label lookup, deliberately reachable pre-authentication (it has to resolve a scanned label before anyone is logged in)',
+		'LabelPrintersApiController' => 'Dispatch requires PERMISSION_ADMIN before routing to any sub-action',
+		'LabelTemplatesApiController' => 'Dispatch and PreviewImage both require PERMISSION_ADMIN directly',
+
+		// Machine-credential authenticated, not household-permission gated - the paired
+		// render worker's own crypto material stands in for a permission check, the same
+		// distinction ContractTest's class docblock draws for excluding the label subsystem.
+		'LabelRenderApiController' => 'Authenticated by paired render-worker credentials (LabelWorkerCredentialService), not a household permission - see ContractTest\'s docblock on the same subsystem',
+
+		// Already swept by a derived (not hand-written) sweep elsewhere in this file.
+		'GenericEntityApiController' => 'Covered by testExposedEntityReadPoliciesRequireGrant(), derived from victual.openapi.json\'s ExposedEntity enum',
+		'FilesApiController' => 'Covered by testFileGroupReadPolicies(), derived from victual.openapi.json\'s FileGroups enum',
+
+		// FINDING (reported to the master, not fixed here - out of issue #521's scope):
+		// BatteriesController's seven GET page routes (Overview, TrackChargeCycle, Journal,
+		// BatteriesList, BatteryEditForm, BatteriesSettings, BatteryGrocycodeImage) call
+		// User::CheckPermission() nowhere in the file, unlike every sibling domain
+		// (StockController, RecipesController, ChoresController, TasksController all gate
+		// every GET method on a *_VIEW permission). PERMISSION_BATTERIES exists
+		// (controllers/Users/User.php) and gates the write endpoints
+		// (BATTERIES_TRACK_CHARGE_CYCLE/BATTERIES_UNDO_CHARGE_CYCLE) and the generic-entity
+		// route for the "batteries" entity, but nothing gates these page reads: any
+		// authenticated session, holding no permissions at all, can view every battery.
+		'BatteriesController' => 'FINDING: no permission check on any of its seven GET page routes',
+		// FINDING, the same gap on the API side: BatteriesApiController::Current() and
+		// ::BatteryDetails() (GET /api/batteries, GET /api/batteries/{batteryId}) call
+		// User::CheckPermission() nowhere - only the write methods (TrackChargeCycle,
+		// UndoChargeCycle) do. Every sibling API controller in PROTECTED_CONTROLLERS
+		// (Stock/Recipes/Chores/Tasks) checks a *_VIEW permission on every GET method; there
+		// is no BATTERIES_VIEW leaf for this one to check.
+		'BatteriesApiController' => 'FINDING: Current/BatteryDetails (GET) have no permission check; only the charge-cycle write methods do',
+		// FINDING: CalendarController::Overview (GET /calendar) calls User::CheckPermission()
+		// nowhere in the file. PERMISSION_CALENDAR exists (controllers/Users/User.php) but is
+		// used only by SystemController::EntryPagePermission() to decide whether the SPA nav
+		// shows the calendar link - never enforced server-side on the route itself.
+		'CalendarController' => 'FINDING: no permission check; PERMISSION_CALENDAR is used only for client-side nav visibility, never enforced on this route',
+		// FINDING, the same gap on the API side: CalendarApiController::Ical() and
+		// ::IcalSharingLink() (GET /api/calendar/ical, GET /api/calendar/ical/sharing-link)
+		// have no permission check either, and Ical() exports every stock due date, chore,
+		// task and meal-plan entry in the household (CalendarService::GetEvents()) to any
+		// authenticated caller regardless of granted permissions.
+		'CalendarApiController' => 'FINDING: no permission check; Ical exports every household due-date/chore/task/meal-plan event to any authenticated caller',
+		// FINDING: GenericEntityController's userentities/userfields/userobjects pages
+		// (UserentitiesList, UserentityEditForm, UserfieldsList, UserfieldEditForm,
+		// UserobjectsList, UserobjectEditForm) call User::CheckPermission() nowhere, unlike
+		// their API equivalents - GenericEntityApiController gates a write to a non-builtin
+		// entity's rows behind MASTER_DATA_EDIT (or ADMIN for an entity IsEntityWithEditRequiresAdmin
+		// names). These pages let any authenticated session view and edit custom entity/field
+		// definitions with no permission at all.
+		'GenericEntityController' => 'FINDING: no permission check anywhere in the file, unlike GenericEntityApiController\'s MASTER_DATA_EDIT/ADMIN-gated writes to the same data',
+		// FINDING: EquipmentController::Overview/EditForm (GET /equipment, GET
+		// /equipment/{equipmentId}) call User::CheckPermission() nowhere. PERMISSION_EQUIPMENT
+		// exists and gates writes through the generic-entity API
+		// (GenericEntityApiController::AddObject/EditObject/DeleteObject for the "equipment"
+		// entity) but nothing gates these page reads.
+		'EquipmentController' => 'FINDING: no permission check; PERMISSION_EQUIPMENT gates the generic-entity API writes to this data but not these page reads',
+	];
+
 	private static PDO $db;
 	private static \DI\Container $container;
 	private static RolesApiController $roleApi;
@@ -135,22 +242,108 @@ class RbacTest extends PgsqlSchemaTestCase
 		self::assertSame(3, (int)self::$db->query('SELECT COUNT(*) FROM users WHERE id IN (9000, 9001, 9002)')->fetchColumn(), 'Fixture users seeded');
 	}
 
+	/** The short class name RouteInventory reports an Operation's controller under - e.g. "StockController" from "Victual\Controllers\StockController". */
+	private static function shortControllerName(string $fullyQualified): string
+	{
+		return substr($fullyQualified, strrpos($fullyQualified, '\\') + 1);
+	}
+
+	/**
+	 * Every {placeholder} in a route pattern, filled with the dummy value 1 - fine for every
+	 * PROTECTED_CONTROLLERS route, none of which constrains a placeholder to a non-numeric
+	 * shape (that only happens on the /api side - see PathParameterMiddleware).
+	 *
+	 * @return array<string, int>
+	 */
+	private static function dummyPathArgs(string $pattern): array
+	{
+		preg_match_all('/\{([^}]+)\}/', $pattern, $params);
+
+		return array_fill_keys($params[1], 1);
+	}
+
+	/**
+	 * Issue #521 (M21): the sweep this class docblock describes, over PROTECTED_CONTROLLERS.
+	 * The route list comes from RouteInventory - the live Slim route table - rather than a
+	 * regular expression read over routes.php's source text, so a route registered any way
+	 * other than the one literal pattern the old regex matched (a different quote style, a
+	 * route added via a helper, a Post() typo like the one plan 14 already found once) is not
+	 * silently skipped.
+	 */
 	#[Depends('testSeedFixtureUsers')]
 	public function testRoutedReadsRefuseWithoutGrants(): void
 	{
 		self::grant([]);
-		$source = file_get_contents(VICTUAL_ROOT_PATH . '/routes.php');
-		preg_match_all("/\\\$group->get\\('([^']+)', \\[([A-Za-z]+Controller)::class, '([^']+)'\\]\\)/", $source, $matches, PREG_SET_ORDER);
-		$protected = ['StockController', 'StockReportsController', 'RecipesController', 'ChoresController', 'TasksController', 'StockApiController', 'RecipesApiController', 'ChoresApiController', 'TasksApiController', 'PrintApiController'];
-		foreach ($matches as [, $path, $controllerName, $method])
+
+		$swept = 0;
+		foreach (RouteInventory::All() as $operation)
 		{
-			if (!in_array($controllerName, $protected)) continue;
-			$class = 'Victual\\Controllers\\' . (str_contains($controllerName, 'Api') ? 'Api\\' : '') . $controllerName;
-			$controller = new $class(self::$container);
-			preg_match_all('/\{([^}]+)\}/', $path, $params);
-			$args = array_fill_keys($params[1], 1);
+			if ($operation->Method !== 'GET' || $operation->ControllerClass === null)
+			{
+				continue;
+			}
+
+			$controllerName = self::shortControllerName($operation->ControllerClass);
+			if (!in_array($controllerName, self::PROTECTED_CONTROLLERS, true))
+			{
+				continue;
+			}
+
+			$controller = new ($operation->ControllerClass)(self::$container);
+			$method = $operation->ControllerMethod;
+			$args = self::dummyPathArgs($operation->Path);
 			$this->expectStatus(fn() => $controller->$method(self::request(), new Response(), $args), 403, "$controllerName::$method refuses no grants");
+			$swept++;
 		}
+
+		self::assertGreaterThan(0, $swept, 'Sanity: the protected-controller sweep matched no routes - RouteInventory or PROTECTED_CONTROLLERS likely drifted');
+	}
+
+	/**
+	 * Issue #521 (M21)'s completeness leg: every controller class behind a registered GET
+	 * route is accounted for, either swept above or excepted with a reason - so a new
+	 * controller (or a route moved onto an existing one this sweep does not already cover)
+	 * fails here until it is one or the other, rather than silently falling through a hand
+	 * list nobody updated.
+	 */
+	public function testEveryGetRouteControllerIsSweptOrExcepted(): void
+	{
+		$registered = [];
+		foreach (RouteInventory::All() as $operation)
+		{
+			if ($operation->Method === 'GET' && $operation->ControllerClass !== null)
+			{
+				$registered[self::shortControllerName($operation->ControllerClass)] = true;
+			}
+		}
+		$registered = array_keys($registered);
+		sort($registered);
+
+		$excepted = array_keys(self::EXCEPTED_GET_CONTROLLERS);
+
+		$overlap = array_intersect(self::PROTECTED_CONTROLLERS, $excepted);
+		self::assertSame([], $overlap, 'Controller(s) listed in both PROTECTED_CONTROLLERS and EXCEPTED_GET_CONTROLLERS: ' . implode(', ', $overlap));
+
+		$accounted = array_merge(self::PROTECTED_CONTROLLERS, $excepted);
+		sort($accounted);
+
+		$unaccounted = array_diff($registered, $accounted);
+		self::assertSame(
+			[],
+			$unaccounted,
+			'Controller(s) behind a registered GET route are neither swept (PROTECTED_CONTROLLERS) nor '
+				. 'excepted (EXCEPTED_GET_CONTROLLERS): ' . implode(', ', $unaccounted)
+		);
+
+		// Stale exceptions: an excepted controller no route registers any more should be
+		// removed rather than left to document a route that no longer exists.
+		$stale = array_diff($excepted, $registered);
+		self::assertSame(
+			[],
+			$stale,
+			'EXCEPTED_GET_CONTROLLERS names a controller no longer behind any registered GET route - remove the stale exception: '
+				. implode(', ', $stale)
+		);
 	}
 
 	#[Depends('testRoutedReadsRefuseWithoutGrants')]

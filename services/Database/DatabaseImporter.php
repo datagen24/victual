@@ -357,6 +357,116 @@ class DatabaseImporter
 	}
 
 	/**
+	 * The same refusal as AssertStockLocations(), extended to every foreign key
+	 * migrations/0295.pgsql.sql adds on products (issue #552): location_id, qu_id_purchase,
+	 * qu_id_stock, qu_id_consume, qu_id_price and product_group_id. Following ADR-0029's own
+	 * import precedent (docs/adr/0029-stock-locations-reference-existing-locations.md,
+	 * decision 8): report and refuse before anything is truncated, never invent a location,
+	 * quantity unit or product group nobody chose. This is the only route by which a dangling
+	 * one of these six can reach a target database at all - the migration itself adds no
+	 * repair step because nothing before it could have created a dangling reference; see that
+	 * migration's own header comment.
+	 *
+	 * Every column is checked before refusing (round 2 finding N3), rather than stopping at
+	 * the first: an operator repairing one dangling column at a time, retrying after each,
+	 * would otherwise discover the next one only on the next run - up to five more times for
+	 * six columns.
+	 *
+	 * qu_id_consume and qu_id_price treat a stored `0` the same as NULL - "unset" - matching
+	 * upstream Grocy itself: migrations 0210 and 0219 (the ones that added these two columns)
+	 * each test `IFNULL(column, 0) = 0` in their own AFTER INSERT default-fill trigger, so a
+	 * legacy source has always been free to store literal 0 there and have upstream read it
+	 * as unset. CopyTable() and CollectValueMismatches() apply the same NULLIF() translation
+	 * on the way in (see PRODUCT_ZERO_MEANS_UNSET_COLUMNS/SourceColumnExpression()), so a
+	 * dangling 0 here is never actually reached - checked anyway, in case some other value
+	 * mapped through a future change ever reintroduces a literal 0 story. product_group_id
+	 * was checked against the same upstream migrations for an equivalent sentinel and has
+	 * none: migrations/0037.sql declares it a plain nullable INTEGER with no default, and no
+	 * later migration tests it against 0 the way 0210/0219 test qu_id_consume/qu_id_price, so
+	 * it is read verbatim.
+	 *
+	 * @param string[] $tables GetCommonTables()'s own list - tables the source and target
+	 * both have. A source lacking `products` entirely (.devtools/labels/identity-tests.php's
+	 * own minimal fixture is exactly this: `migrations`, `stock`, `locations`, nothing else)
+	 * has no product rows to check and no reason to be asked about one; querying `products`
+	 * directly against such a source is a driver error ("no such table"), not a dangling
+	 * reference, and must not be raised as either. Each column's own referenced table
+	 * (locations/quantity_units/product_groups) is checked present the same way, though
+	 * every supported source has always carried all three.
+	 */
+	private function AssertProductReferences(array $tables): void
+	{
+		if (!in_array('products', $tables, true))
+		{
+			return;
+		}
+
+		$checks = [
+			['column' => 'location_id', 'table' => 'locations', 'zeroMeansUnset' => false],
+			['column' => 'qu_id_purchase', 'table' => 'quantity_units', 'zeroMeansUnset' => false],
+			['column' => 'qu_id_stock', 'table' => 'quantity_units', 'zeroMeansUnset' => false],
+			['column' => 'qu_id_consume', 'table' => 'quantity_units', 'zeroMeansUnset' => true],
+			['column' => 'qu_id_price', 'table' => 'quantity_units', 'zeroMeansUnset' => true],
+			['column' => 'product_group_id', 'table' => 'product_groups', 'zeroMeansUnset' => false],
+		];
+
+		$problems = [];
+
+		foreach ($checks as ['column' => $column, 'table' => $table, 'zeroMeansUnset' => $zeroMeansUnset])
+		{
+			if (!in_array($table, $tables, true))
+			{
+				continue;
+			}
+
+			$unsetCondition = 'p.' . $column . ' IS NOT NULL' . ($zeroMeansUnset ? ' AND p.' . $column . ' != 0' : '');
+			$query = 'SELECT p.id, p.name, p.' . $column . ' FROM products p LEFT JOIN ' . $table . ' t ON t.id = p.' . $column
+				. ' WHERE ' . $unsetCondition . ' AND t.id IS NULL';
+			$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') dangling')->fetchColumn();
+			if ($count > 0)
+			{
+				$sample = $this->Source->query($query . ' ORDER BY p.id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+				$problems[] = $count . ' source product rows reference missing ' . $table
+					. ' via ' . $column . '. Sample (id, name, ' . $column . '): ' . json_encode($sample) . '. '
+					. 'List all references: ' . $query . ' ORDER BY p.id;';
+			}
+		}
+
+		if (!empty($problems))
+		{
+			throw new \RuntimeException('Import refused: ' . count($problems) . ' of products\' six reference columns '
+				. 'have at least one dangling value.' . "\n - " . implode("\n - ", $problems) . "\n"
+				. 'Choose an explicit source repair for each and retry; --force does not bypass this check.');
+		}
+	}
+
+	/**
+	 * Issue #552 (N3): upstream Grocy migrations 0210 and 0219 test `IFNULL(column, 0) = 0`
+	 * to decide whether products.qu_id_consume/qu_id_price are "unset" - 0 has always meant
+	 * the same as NULL there, in every source this importer accepts. Both columns now carry
+	 * a NOT DEFERRABLE foreign key (migrations/0295.pgsql.sql), and there is no
+	 * quantity_units row with id 0, so copying a literal 0 verbatim would violate that
+	 * foreign key immediately - not because the source is wrong, but because this schema
+	 * spells the same "unset" meaning differently (NULL only, never 0). CopyTable() and
+	 * CollectValueMismatches() both read these two columns through NULLIF(column, 0) instead
+	 * of verbatim, so the copy (and the assertion that proves it copied faithfully) judge it
+	 * against upstream's own meaning of the column, not its literal bytes. No other common
+	 * column gets this treatment - see AssertProductReferences() for why product_group_id
+	 * does not.
+	 */
+	private const PRODUCT_ZERO_MEANS_UNSET_COLUMNS = ['qu_id_consume', 'qu_id_price'];
+
+	private function SourceColumnExpression(string $table, string $column): string
+	{
+		if ($table === 'products' && in_array($column, self::PRODUCT_ZERO_MEANS_UNSET_COLUMNS, true))
+		{
+			return 'NULLIF("' . $column . '", 0) AS "' . $column . '"';
+		}
+
+		return '"' . $column . '"';
+	}
+
+	/**
 	 * Applies migrations/0277.pgsql.sql's own repair rule to whatever products the copy just
 	 * brought in - reusing its rule rather than inventing a second one, per issue #496 (H7a):
 	 * a product may not both have a parent and be one, so whichever product is the "middle"
@@ -455,6 +565,7 @@ class DatabaseImporter
 
 		$this->AssertSchemaVersionsMatch($applyRowMigrations);
 		$this->AssertStockLocations();
+		$this->AssertProductReferences($tables);
 
 		$report = [];
 
@@ -542,7 +653,7 @@ class DatabaseImporter
 				. implode(', ', array_map(fn($t) => $this->TargetDialect->QuoteIdentifier($t), array_merge($tables, $derivedTablesToClear)))
 				. ' RESTART IDENTITY CASCADE');
 
-			foreach ($tables as $table)
+			foreach ($this->OrderTablesForCopy($tables) as $table)
 			{
 				$report[$table] = $this->CopyTable($table);
 			}
@@ -665,7 +776,7 @@ class DatabaseImporter
 		$quotedColumns = implode(', ', array_map(fn($c) => $this->TargetDialect->QuoteIdentifier($c), $columns));
 		$rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
 
-		$select = $this->Source->query('SELECT ' . implode(', ', array_map(fn($c) => '"' . $c . '"', $columns)) . ' FROM "' . $table . '"');
+		$select = $this->Source->query('SELECT ' . implode(', ', array_map(fn($c) => $this->SourceColumnExpression($table, $c), $columns)) . ' FROM "' . $table . '"');
 
 		$copied = 0;
 		$batch = [];
@@ -750,6 +861,39 @@ class DatabaseImporter
 		}
 
 		return $common;
+	}
+
+	/**
+	 * GetCommonTables() lists common tables in alphabetical order (`ORDER BY table_name`
+	 * above), and the copy loop in ImportSnapshot() used that order directly until this was
+	 * added. That was safe only by coincidence, as long as every foreign key among common
+	 * tables happened to point at a table earlier in alphabetical order - e.g. "locations"
+	 * sorts before "stock", so migrations/0288.pgsql.sql's stock_location_id_fkey never saw a
+	 * row copied before the location it names.
+	 *
+	 * migrations/0295.pgsql.sql's foreign keys on products.qu_id_purchase/qu_id_stock/
+	 * qu_id_consume/qu_id_price break that coincidence: "quantity_units" sorts *after*
+	 * "products" alphabetically, so copying products before quantity_units violates those
+	 * foreign keys on the first product row that names one - not because any row is invalid,
+	 * but because the referenced quantity_units row has not been copied back into the target
+	 * yet at that point in the same transaction. "locations" and "product_groups" need no
+	 * entry here: both already sort before "products".
+	 *
+	 * TABLES_COPIED_FIRST names every common table that some other common table's foreign key
+	 * references, moving it to the front of the copy order (stable otherwise) so it is always
+	 * fully repopulated before anything that might reference it. This is an ordering
+	 * correction for the copy loop only - GetCommonTables()'s own alphabetical list is still
+	 * used unchanged for the TRUNCATE statement, which names every table in one statement and
+	 * has no order dependency.
+	 */
+	private const TABLES_COPIED_FIRST = ['quantity_units'];
+
+	private function OrderTablesForCopy(array $tables): array
+	{
+		$first = array_values(array_intersect(self::TABLES_COPIED_FIRST, $tables));
+		$rest = array_values(array_diff($tables, self::TABLES_COPIED_FIRST));
+
+		return array_merge($first, $rest);
 	}
 
 	/**
@@ -1409,7 +1553,7 @@ class DatabaseImporter
 			}
 
 			$list = implode(', ', array_map(fn($c) => $this->TargetDialect->QuoteIdentifier($c), $columns));
-			$sourceList = implode(', ', array_map(fn($c) => '"' . $c . '"', $columns));
+			$sourceList = implode(', ', array_map(fn($c) => $this->SourceColumnExpression($table, $c), $columns));
 
 			$sourceRows = array_map(
 				[ValueComparison::class, 'NormaliseRow'],

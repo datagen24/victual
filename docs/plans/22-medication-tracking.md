@@ -323,11 +323,16 @@ Collected because most of them are only visible from inside the existing code.
   and **0301** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
-  - 0295–0296 until issue #521's view-permission gating (#487 remediation, `BATTERIES_VIEW`,
-    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) took **0299** — the lowest free slot below open PRs
-    #624/#626/#627/#628, which already hold 0295 through 0298 unwritten on this table. Per the
-    lowest-free-slot rule this plan's two claims move up once more, from 0295–0296 to
-    **0300–0301**
+  - 0296–0297 until issue #521's view-permission gating (#487 remediation, `BATTERIES_VIEW`,
+    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) took **0299** — the lowest free slot below the three
+    still-open PRs #626/#627/#628, which hold 0296 through 0298 unwritten on this table. PR
+    #624, which this plan's own claim had been yielding to at 0295, merged instead as issue
+    #552/#558's product foreign-key migration, not #521's. Per the lowest-free-slot rule this
+    plan's two claims move up once more, from 0296–0297 to **0300–0301**
+  - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
+    (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
+    as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
+    under the lowest-free-slot rule.
   - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
     `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
     `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales
@@ -380,7 +385,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved twenty-two times.** In order:
+  **These numbers have moved twenty-three times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -405,8 +410,9 @@ Collected because most of them are only visible from inside the existing code.
   - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
   - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
   - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
-  - and now **0300–0301** for issue #521's view-permission gating, which took 0299 ahead of
-    open PRs #624/#626/#627/#628's still-unwritten 0295–0298
+  - 0296–0297 for issue #552's products foreign-key migration (PR #624, merged as `0295.pgsql.sql`)
+  - and now **0300–0301** for issue #521's view-permission gating, which took 0299 ahead of the
+    three still-open PRs #626/#627/#628's still-unwritten 0296–0298
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
