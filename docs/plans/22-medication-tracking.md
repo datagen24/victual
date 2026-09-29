@@ -331,8 +331,14 @@ Collected because most of them are only visible from inside the existing code.
     for `stock`, behind the application refusal commit 2039d5947 already added — is written to
     disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
     this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
-    the lowest-free-slot rule. PR #624 has since merged to `master` (18d0389d); PR #626 has
-    not yet
+    the lowest-free-slot rule. PR #624 has since merged to `master` (18d0389d), and PR #626
+    has since merged too (11783f76) - both 0295 and 0296 are landed migrations now, and only
+    0297 (issue #492) remains unmerged among the three
+  - 0296–0297 until 2026-09-29, briefly, on PR #626's own branch before it knew about issue
+    #492's claim. Issue #516's (M16, #487 remediation) print-job cancellation fix was written
+    to disk as `0296.pgsql.sql` above this plan's still-unwritten claims. That moved them to
+    0297–0298 under the lowest-free-slot rule at the time, superseded by the three-way
+    collision above once both branches merged
   - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
     (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
     as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
@@ -390,7 +396,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved twenty-one times.** In order:
+  **These numbers have moved twenty-three times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
