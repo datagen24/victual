@@ -95,6 +95,73 @@ queries. These are `StoredHtmlPurifier` (re-purifies rich text already in the da
 `ColumnTypeManifest` (semantic types for columns the catalogue cannot classify, used by
 the API's generic filter validation), and `DatabaseImporter`.
 
+## Concurrency: the stock advisory lock
+
+This section records the policy the code implements (issue #458, shipped for
+0.2.0-MVP: `docs/releases/0.2.0-MVP.md` lists "stock bookings of the same product are
+serialised with a transaction-scoped advisory lock"). No ADR or plan owns this decision;
+it is written down here because it did not exist anywhere outside the code comments.
+
+Every `StockService` booking path takes a transaction-scoped PostgreSQL advisory lock on
+the product it is about to read and write. It takes the lock before reading the
+`stock` / `stock_log` state its decision depends on. This closes a read-then-write race
+(issue #458): two concurrent bookings of the same product could otherwise both read the
+pre-write state and both pass whatever check that state supports. Together they could then
+do something neither read alone justified — an over-consume past zero, or an undo racing
+the very booking its own guard exists to catch.
+
+- **Mechanism:** `pg_advisory_xact_lock(classid, objid)`
+  (`services/Database/PostgresDialect.php:340`), keyed on a fixed class id,
+  `STOCK_BOOKING_ADVISORY_LOCK_CLASS` (`PostgresDialect.php:45-52`, the ASCII bytes of
+  `"vicS"`, `0x76696353`) and the product id as the object id. PostgreSQL's single-bigint
+  form (`WithMigrationLock()`, `WithPublicationLock()`) and its two-integer form use
+  separate key spaces that never overlap, regardless of the class id
+  ([PostgreSQL: Advisory Lock Functions](https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS)),
+  so this lock cannot collide with either of those two locks.
+- **Scope: transaction, not session.** It releases automatically at the commit or
+  rollback of whichever transaction is open when it is taken, wherever in the call graph
+  that was, not when the innermost call returns. This matters because
+  `DatabaseService::InTransaction()` lets an inner call join a transaction its caller
+  already opened: `RecipesService::ConsumeRecipe()` calling `ConsumeProduct()` per
+  ingredient, `UndoTransaction()` calling `UndoBooking()` per line, `OpenProduct()` calling
+  `TransferProduct()` on "move on open." A lock taken by an inner call therefore has to
+  survive until the outermost commit, not the inner call's return. Locking the same
+  product again in the same transaction is a no-op, not a self-deadlock.
+- **Caller-facing API:** `DatabaseService::LockProductStock(int $productId)`
+  (`DatabaseService.php:374`) throws a `LogicException` if called with no transaction
+  already open, because a transaction-scoped lock taken outside one releases before the
+  caller's next statement runs — indistinguishable from not locking at all except that it
+  looks like it worked. `DatabaseService::LockProductsStock(array $productIds)`
+  (`DatabaseService.php:387-407`) locks a set of products in ascending numeric order. That
+  ordering is required, not a style choice: it is what lets two callers touching an
+  overlapping product set (`MergeProducts()`, `ConsumeRecipe()` over several ingredients)
+  avoid deadlocking against each other. Both always request their first conflicting lock
+  in the same order.
+- **Blocking, not refusing:** `pg_advisory_xact_lock` blocks until it can be taken; a
+  second booking waits behind the first rather than being refused.
+- **SQLite:** `SqliteDialect::LockProductStock()` is a deliberate no-op
+  (`services/Database/SqliteDialect.php:167`), for the same reason as the migration and
+  publication locks — under [ADR-0008](adr/0008-postgresql-only-runtime-engine.md) SQLite
+  is not a concurrent runtime engine, so there is no second stock booking to interleave
+  with.
+
+**Open architectural questions** (unresolved; for the maintainer, not decided here):
+
+1. No ADR or plan records this decision; it exists only in code comments and, as of this
+   write-up, here. Whether it needs a formal ADR — alongside
+   [ADR-0007](adr/0007-auth-state-outlives-the-process.md) and the other concurrency
+   decisions already recorded — is undecided.
+2. The lock is per-product. A caller that must touch more than one product in a
+   transaction is required to call `LockProductsStock()` up front, in ascending order,
+   before writing any of them. Nothing in the type system enforces that a new booking path
+   added later does this correctly. A future write path that locks late or out of order
+   would reintroduce the race or a deadlock silently.
+3. The lock protects `StockService` write paths specifically. `stock` is in
+   `ExposedEntityNoEdit` in `victual.openapi.json`, so `GenericEntityApiController` refuses
+   a direct write to it; whether every other route that can reach `stock` / `stock_log` —
+   present and future — goes through a `StockService` method that takes this lock was not
+   independently audited as part of this write-up.
+
 ## The tables
 
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before

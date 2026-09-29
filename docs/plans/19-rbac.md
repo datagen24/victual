@@ -876,6 +876,16 @@ filters those domains by the caller's view leaves. Navigation and the default la
 choice respect read permissions. Batteries, equipment and custom entities retain their
 previous read policy; this wave does not add view leaves for them.
 
+> **2026-09-29:** superseded by
+> [ADR-0035](../adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md).
+> PR [#630](https://github.com/datagen24/victual/pull/630)'s derived route sweep (issue #521,
+> part of #487) found that "retain their previous read policy" meant no permission check at
+> all on the battery, equipment and custom-entity pages (and the calendar page, never named
+> above). `BATTERIES_VIEW`, `EQUIPMENT_VIEW` and `CALENDAR_VIEW` gate them now; custom
+> entities are gated on their existing write policy (`MASTER_DATA_EDIT`/`ADMIN`) instead of a
+> new leaf. The sentence above is left as written, for a reader tracing what piece 1 actually
+> shipped.
+
 Implementation differences and remaining scope:
 
 - Migration 0266 is PostgreSQL-only PHP so its transaction can execute the schema and

@@ -5,28 +5,26 @@ Read-only MCP sidecar for Victual, built from
 rather than a separate one — see the spec's Open Question 1 amendment (2026-09-19) and
 [ADR-0013](../docs/adr/0013-nix-built-container-images.md).
 
-## Status (2026-09-19)
+## Status (2026-09-19, auth update 2026-09-29)
 
 Built, tested and running on a Kubernetes cluster (kind, v1.37) beside Victual. The six
 §5 tools answer against a production-mode Victual over both protocol revisions §1 names:
 `2026-07-28` (stateless, `server/discover`) and `2025-11-25` (the stateless legacy
 fallback). Checked with the official SDK v2 client, not hand-built envelopes.
 
+**Victual's side of the auth seam — issue #208 — has since shipped** (`4b9c0d1e`,
+2026-09-19): `API_KEY_TYPE_MCP`, the per-key `read_only` flag (migration 0287), and
+`GET /api/user/capabilities` all exist. This section is not re-verified against a
+redeployed sidecar; it records what Victual now offers.
+
 **Not done, and what it gates:**
 
-- **Victual's side of the auth seam — issue #208.** Until it lands:
-  - Any regular API key works. MCP-type keys (`API_KEY_TYPE_MCP`) are what keep MCP access
-    separately grantable and revocable (§4.2), and they don't exist yet.
-  - There is no per-key `read_only` flag. For the six read tools this changes nothing,
-    but the write tools (issue #209) must not ship without it.
-  - `GET /api/user/capabilities` answers 404, so `tools/list` is **served unfiltered**.
-    That also means a key Victual would reject still gets a tool list; its first
-    `tools/call` then answers `unauthorized`. This is a UX gap, not a security one:
-    every call is still permission-checked by Victual as the key's user (§5, §7).
 - **Contract replay against plan 14's fixtures (§11.1).** The handler tests use the
   recorded *shapes*, but not the frozen fixtures themselves.
 - **The actual client (§11.4).** The two motivating questions have not yet been asked
   through Claude in real use.
+- **The three write tools — issue #209.** Not started; they gate on this read-only v1
+  being deployed and used, not merely built.
 
 ## Layout
 

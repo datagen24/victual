@@ -76,13 +76,17 @@ principles), then the [ADR index](docs/adr/README.md) (decisions in force), then
 - **Coverage floor: 75%, target 85+, ideal 90.** Line coverage of application code by the
   suite `.devtools/pgsql/run-tests.sh` runs under `SUITE_COVERAGE=1`, measured per
   [.devtools/coverage/README.md](.devtools/coverage/README.md). A change that adds code adds
-  the tests that reach it; a change never drops a file or the total below the floor. The
-  tree is below the floor today ([issue 192](https://github.com/datagen24/victual/issues/192)
-  holds the backlog), and its first step is wired: `tests.yml`'s `suite` job gates on
-  `report.php --min` in a dedicated ratchet step, raised by hand as the number climbs, so
-  the operative rule until the hard gate replaces it is that every pull request leaves the
-  number no lower than it found it, and a file it touches no lower than 75% or higher than
-  before. Say in the PR's Verification section what the run reported.
+  the tests that reach it; a change never drops a file or the total below the floor.
+  [Issue 192](https://github.com/datagen24/victual/issues/192) tracked the backlog to
+  clear the floor and closed 2026-09-22: [plan 33](docs/plans/33-coverage-floor.md)
+  recorded 96.31% aggregate coverage (10,002/10,385 lines), all 140 executable files at or
+  above 75%, in PR #256 at `6ce5bf496a97370154cea801a46b68fdd2cef06c`. `tests.yml`'s
+  `suite` job gates on that figure as a ratchet (`report.php --min=96.31198844487241217394`)
+  that only rises, raised by hand as the number climbs, so the operative rule is that every
+  pull request leaves the number no lower than it found it, and a file it touches no lower
+  than 75% or higher than before. Per-file CI enforcement beyond the aggregate ratchet
+  remains optional follow-up work. Say in the PR's Verification section what the run
+  reported.
 
 ## Tone and response style
 Start with the answer, finding, or required action. Include the reasons and evidence

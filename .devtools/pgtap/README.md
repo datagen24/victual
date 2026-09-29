@@ -25,6 +25,18 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
+migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
+retires those labels with the product's own name, not null. `trg_cascade_product_removal`
+retires them before deleting the stock rows, rather than after the product row (and
+`retire_stock_entry_labels`' own product lookup) is gone. The same migration's foreign keys
+on all six of `products`' upstream reference columns (`location_id`, `qu_id_purchase`,
+`qu_id_stock`, `qu_id_consume`, `qu_id_price`, `product_group_id`; issue #552, D4) are covered
+by `tests/Pgsql/ProductReferenceIntegrityTest.php` at the httpboot phase, the same shape
+`tests/Pgsql/ReferenceRefusalTest.php` already uses for the other enforced foreign keys in
+this tree, and by `DatabaseImporter::AssertProductReferences()`'s own import-time refusal,
+covered by `tests/Pgsql/StockLocationImportTest.php`.
+
 The [product group roll-up tests](020-product-group-rollup.sql) cover migration 0293
 (issue #508, M8, ADR-0034): `product_groups_missing`'s member join now reaches every group
 in an ancestor's subtree through `product_groups_resolved`, not only a product's own direct
@@ -71,7 +83,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 
 | Name | Kind | Migration | Test file |
 |---|---|---|---|
-| `retire_location_labels` | function + trigger | 0269 | `010-locations-trigger-family.sql` |
+| `retire_location_labels` | function + trigger | 0269, redefined 0296 | `010-locations-trigger-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `hierarchy_depth_limit` | function | 0273 | `010-locations-trigger-family.sql` |
 | `trg_locations_check_parent` (trigger `check_location_parent`) | function + trigger | 0273 | `010-locations-trigger-family.sql` |
 | `trg_locations_guard_children` (trigger `guard_location_children`) | function + trigger | 0273 | `010-locations-trigger-family.sql` |
@@ -82,12 +94,13 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_enfore_product_nesting_level` (trigger `enfore_product_nesting_level`) | function + trigger | 0277 | `013-product-nesting-guard.sql` |
 | `trg_product_groups_check_parent` (trigger `check_product_group_parent`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
 | `trg_product_groups_guard_children` (trigger `guard_product_group_children`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
-| `trg_cascade_product_removal` | function | 0279 | `015-product-removal-cascade.sql` |
-| `retire_product_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_stock_entry_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_recipe_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_chore_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_battery_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
+| `trg_cascade_product_removal` | function | 0279, redefined 0295, redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_product_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_stock_entry_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_recipe_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_chore_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_battery_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `cancel_queued_label_jobs` | function | 0296 | `023-label-retirement-cancels-jobs.sql` |
 | `stock_current` (opened aggregate, mixed conversion factors) | view | 0289 | `018-audit-view-corrections.sql` |
 | `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
@@ -97,6 +110,8 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
 | `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
+| `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
+| `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 | `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
 
 ## Completeness
@@ -130,21 +145,6 @@ view previously produced a wrong shortfall for a real, reachable input (any nest
 product-group tree) - reporting an ancestor group as short by its whole minimum while a
 descendant group held enough stock to satisfy it.
 
-The [recipe substitution unit tests](026-recipe-substitution-units.sql) cover migration
-0300 (issue #629, #487 remediation). `products_current_substitutions` now only ever
-chooses a sub product as `product_id_effective` when a resolved, positive quantity-unit
-conversion exists from the parent's own stock unit to its own. This is the same
-admissibility rule `StockService::SubstitutionAwareProductIdWhereClause()` applies on the
-consume side (maintainer decision D4, issue #553).
-
-Eleven assertions cover both of D4's exclusion cases - no resolved conversion at all, and
-one whose only resolved conversion has a negative factor. They check that
-`recipes_pos_resolved`'s `costs`, `calories`, `stock_amount`, `need_fulfilled` and
-`missing_amount` all agree once the unconvertible candidate is excluded, rather than
-counted 1:1. This ports the pattern PR #628 (migrations/0298.pgsql.sql, issue #622)
-already applied to `stock_current`'s own rollup, to the recipe side of the same
-parent/sub-product hierarchy.
-
 The [cascade qu_id_stock tests](021-cascade-qu-id-stock.sql) cover migration 0294 (issues
 #543 and #546, #487 remediation). `trg_cascade_change_qu_id_stock` now also rescales
 `product_location_min_stock.min_stock_amount` and `products.min_stock_amount` by the same
@@ -167,6 +167,131 @@ correctly converted shortfall, and the live-`stock` refusal (with the row left u
 They also cover a qu_id_stock change succeeding despite a live ledger-only measured booking,
 and a negative control confirming an ordinary, unmeasured product still rescales exactly as
 it did before this migration.
+
+The [label retirement job cancellation tests](023-label-retirement-cancels-jobs.sql) cover
+migration 0296 (issue #516, M16, #487 remediation, maintainer decision D2). Every label
+retirement trigger now calls `cancel_queued_label_jobs()` after it retires a label. A queued,
+unclaimed `print_jobs` row for that label is cancelled (`cancelled_at`/`cancelled_reason`
+set) and its `outbox` row is dead-lettered. The print-job monitor then shows an accurate
+final state, instead of a job stuck behind a label that can never be printed again. A job
+already claimed (`current_attempt_id` set) is left exactly as it was — D2's "leave running
+jobs untouched". So is a job already in a terminal state (`outcome` set), or already
+cancelled.
+
+Fourteen assertions cover:
+
+- a queued job cancelled by a direct product delete (`retire_product_labels`);
+- the cancelled job's outbox row dead-lettered;
+- a claimed job (`current_attempt_id` set) on the same label surviving retirement untouched;
+- the claimed job's outbox row left undelivered and undead-lettered too;
+- the label itself still retiring even though one of its jobs could not be cancelled;
+- a job with a `printed` outcome already set surviving retirement with that outcome
+  unchanged;
+- a queued job cancelled by a direct `DELETE FROM stock` (`retire_stock_entry_labels`);
+- a queued job cancelled by a single product delete that cascades, via
+  `trg_cascade_product_removal`, to the first of two stock entries it held, each carrying
+  its own labelled job;
+- the second of those two jobs cancelled as well, not only the first the join touches;
+- a job already cancelled (by an operator, through `LabelOperationsService::Cancel()`)
+  keeping its own original `cancelled_reason` rather than having retirement overwrite it;
+- a job already `dead_lettered` surviving retirement with that outcome unchanged, the same
+  as the already-`printed` case above; and
+- a queued job cancelled by each of the three single-row retirement triggers case 1 does not
+  already cover: `retire_recipe_labels`, `retire_chore_labels`, `retire_battery_labels`.
+
+Several more tests cover concurrent cases a single-connection pgTAP script cannot drive.
+`tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php`: a job claimed by one connection
+while a second connection concurrently retires its label must not be cancelled by that
+retirement. `tests/Pgsql/LabelRetirementRacesReprintTest.php`: a reprint racing a retirement
+of the same label must not commit a new queued job after that retirement's own cancellation
+has already run. `LabelOperationsService::AssertLabelLive()` (called by `Reprint()`,
+`PromotePreview()`, and now `RevisedPrint()` too) takes a `FOR SHARE` lock on the label's row
+for exactly this reason. All are proven with two real PostgreSQL connections and a row lock,
+not with timing.
+
+Getting that lock's *order* right relative to every other lock the same call takes turned out
+to need its own tests.
+
+`tests/Pgsql/LabelRevisedPrintNeverDeadlocksWithRetirementTest.php` and `tests/Pgsql/
+LabelReprintNeverDeadlocksWithRetirementTest.php` each prove a genuine PostgreSQL deadlock
+(SQLSTATE 40P01) is impossible between a concurrent `RevisedPrint()`/`Reprint()` and a
+retirement of the same label. `RevisedPrint()` locks the target entity row
+(`LabelIdentityService::Issue()`'s own `FOR UPDATE`) before the label. `Reprint()` has no
+entity row of its own; it locks the label before its source `print_jobs` row instead. Both
+orders match what a retirement itself locks first.
+
+`tests/Pgsql/LabelRevisedPrintCascadeCancelsStockEntryJobTest.php` covers the specific path
+that motivated getting this right. `trg_cascade_product_removal` (migrations/0296.pgsql.sql)
+retires a deleted product's stock-entry labels. It now locks every affected `stock` row
+(`PERFORM ... FOR UPDATE`) before touching `labels` - the same entity-before-labels order as
+every other retirement site. So a concurrent `RevisedPrint('stock_entry', ...)` can never
+read a label as live and queue a job after the retirement's own cancellation has already run
+past it.
+
+`tests/Pgsql/LabelJobLifecycleTest.php::testRetiredLabelJobWithAFailedAttemptAndReauthorizationIsNeverReclaimed()`
+covers a case `cancel_queued_label_jobs()` deliberately does not reach: a job attempted once,
+reported failed, and re-authorized for another attempt still carries a non-null
+`current_attempt_id` (pointing at the ended first attempt), so retirement's cancellation
+skips it. `PrintAttemptService::Claim()`'s own retired-label exclusion is the only thing
+that still stops it from being reclaimed once its label retires.
+
+The [stock amount non-negative tests](024-stock-amount-non-negative.sql) cover migration
+0297 (issue #492, H3, ADR-0032 acceptance gate 6). `stock_amount_non_negative_check` is a
+database-level `amount >= 0` CHECK constraint on `stock`. It backs up the negative-amount
+refusal `StockService`'s entry points already apply in PHP (commit 2039d5947).
+
+Six assertions cover a positive insert, a legitimate zero insert (the empty-vessel case
+`WeighLocation()` writes), a negative insert refused with SQLSTATE 23514, a negative update
+refused the same way with the row left unchanged, and the constraint's validated,
+non-deferrable shape. This is a constraint, not a function or trigger, so
+`check-pgtap-coverage.php` does not require it - listed here anyway per this file's own
+rule for logic-carrying schema objects, the same reason file 017 lists migration 0288's
+foreign key.
+
+The [unconvertible sub-product aggregation tests](025-unconvertible-subproduct-aggregation.sql)
+cover migration 0298 (issue #622, #487 remediation). `stock_current`'s `amount_aggregated`,
+`amount_opened_aggregated` and `amount_measured` each rolled a sub product's stock into its
+parent by `COALESCE(qucr.factor, 1.0)`, which only falls back on a NULL `qucr.factor` - a
+missing conversion. A resolved factor, positive or not, was never NULL. It was multiplied
+in as-is instead: a negative factor subtracted from the aggregate rather than being
+excluded. A resolved factor of exactly 0 already contributed nothing on its own arithmetic,
+not the fallback (`quantity_unit_conversions_INS`'s inverse-row computation cannot store 0
+there in the first place).
+
+That is #553's own defect (maintainer decision D4, fixed on the write side by
+`StockService::SubstitutionAwareProductIdWhereClause()`, PR #621) on the read side. An
+unconvertible sub product was counted 1:1. A sub product whose only resolved conversion had
+a non-positive factor was multiplied into the aggregate by that factor. Neither should
+contribute anything.
+
+Five assertions cover the fix:
+
+- `amount_aggregated` with a mix of one convertible, one unconvertible and one
+  negative-factor sub product, together with the parent's own stock - which must still
+  count at factor 1, since it has no cache entry to resolve either, and the fix must not
+  zero it out.
+- The same exclusion applied to `amount_opened_aggregated`.
+- The same exclusion applied to `amount_measured`, where an unconvertible sub product's
+  own, unrelated measurement conversion resolves fine and must still be excluded by the
+  missing parent-rollup conversion.
+- A negative control: an ordinary single-conversion sub product still aggregates exactly
+  as before.
+- A negative control: a standalone product with no sub products of its own is unaffected.
+
+The [recipe substitution unit tests](026-recipe-substitution-units.sql) cover migration
+0300 (issue #629, #487 remediation). `products_current_substitutions` now only ever
+chooses a sub product as `product_id_effective` when a resolved, positive quantity-unit
+conversion exists from the parent's own stock unit to its own. This is the same
+admissibility rule `StockService::SubstitutionAwareProductIdWhereClause()` applies on the
+consume side (maintainer decision D4, issue #553).
+
+Eleven assertions cover both of D4's exclusion cases - no resolved conversion at all, and
+one whose only resolved conversion has a negative factor. They check that
+`recipes_pos_resolved`'s `costs`, `calories`, `stock_amount`, `need_fulfilled` and
+`missing_amount` all agree once the unconvertible candidate is excluded, rather than
+counted 1:1. This ports the pattern PR #628 (migrations/0298.pgsql.sql, issue #622)
+already applied to `stock_current`'s own rollup, to the recipe side of the same
+parent/sub-product hierarchy.
 
 ## Running the checker directly
 

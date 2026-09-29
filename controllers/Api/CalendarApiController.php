@@ -12,6 +12,7 @@ use Eluceo\iCal\Domain\ValueObject\TimeSpan;
 use Eluceo\iCal\Domain\ValueObject\UniqueIdentifier;
 use Eluceo\iCal\Presentation\Factory\CalendarFactory;
 use Slim\Exception\HttpInternalServerErrorException;
+use Victual\Controllers\Users\User;
 use Victual\Services\ApiKeyService;
 use Victual\Services\CalendarService;
 use Victual\Services\Mqtt\StateSnapshotAssembler;
@@ -43,6 +44,27 @@ class CalendarApiController extends BaseApiController
 	 */
 	public function Ical(Request $request, Response $response, array $args)
 	{
+		// The shared "secret" query parameter is meant to be reachable by an external calendar
+		// application with no session at all (docs/manual, ApiKeyAuthenticator's
+		// CalendarSharingSecret() - this route is the one place that parameter is accepted).
+		// Whoever holds a valid special-purpose calendar key *is* authorized by holding it -
+		// that is the whole design of a shareable calendar link, the same way a stock
+		// print-job link or a password reset link authorizes by possession rather than by a
+		// permission grant looked up afterwards. So CALENDAR_VIEW is required only for the
+		// session-authenticated path; a request carrying a secret that validates against
+		// ApiKeyService is let through on the strength of the secret alone, matching exactly
+		// what ApiKeyAuthenticator::Authenticate() already validated to reach this controller
+		// at all. The check is repeated here (not read off request state) because nothing
+		// upstream records *which* branch authenticated the request, only that one did.
+		$secret = $request->getQueryParams()['secret'] ?? null;
+		$hasValidCalendarSecret = is_string($secret) && $secret !== ''
+			&& ApiKeyService::GetInstance()->IsValidApiKey($secret, ApiKeyService::API_KEY_TYPE_SPECIAL_PURPOSE_CALENDAR_ICAL);
+
+		if (!$hasValidCalendarSecret)
+		{
+			User::CheckPermission($request, User::PERMISSION_CALENDAR_VIEW);
+		}
+
 		return $this->HandleApiCall($response, function () use ($request, $response)
 		{
 			$events = CalendarService::GetInstance()->GetEvents();
@@ -199,6 +221,8 @@ class CalendarApiController extends BaseApiController
 	 */
 	public function IcalSharingLink(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CALENDAR_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($response)
 		{
 			return $this->ApiResponse($response, [

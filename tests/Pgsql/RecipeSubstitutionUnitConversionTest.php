@@ -142,6 +142,23 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 			'amount' => 1,
 			'qu_id' => self::$ids['parent_unit'],
 		]);
+
+		// A meaningful check that the fixture graph is what the tests below assume, rather
+		// than only a set of INSERTs with no assertion of their own: both sub products exist,
+		// both are recorded as sub products of the same parent, and the recipe has exactly
+		// the one ingredient position it's meant to.
+		$productNames = self::$db->query(
+			'SELECT name FROM products WHERE parent_product_id = ' . self::$ids['parent'] . ' ORDER BY name'
+		)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertSame(
+			['RecipeSub629 Convertible Sub', 'RecipeSub629 Unconvertible Sub'],
+			$productNames,
+			'both sub products were created as sub products of the parent'
+		);
+
+		$statement = self::$db->prepare('SELECT COUNT(*) FROM recipes_pos WHERE recipe_id = ?');
+		$statement->execute([self::$ids['recipe']]);
+		self::assertSame(1, (int)$statement->fetchColumn(), 'the recipe has exactly the one ingredient position the tests below assume');
 	}
 
 	/**

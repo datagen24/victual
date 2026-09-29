@@ -19,6 +19,8 @@ class BatteriesApiController extends BaseApiController
 	 */
 	public function BatteryDetails(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
 			return $this->ApiResponse($response, BatteriesService::GetInstance()->GetBatteryDetails($args['batteryId']));
@@ -31,6 +33,8 @@ class BatteriesApiController extends BaseApiController
 	 */
 	public function Current(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		return $this->FilteredApiResponse($request, $response, BatteriesService::GetInstance()->GetCurrent(), $request->getQueryParams());
 	}
 

@@ -5,7 +5,11 @@
   record names no acceptance prerequisites, so this is bookkeeping only per the lifecycle
   rule. Two things plan 19's Executed section records stay as they are and are not changed
   by acceptance: existing direct grants remain effective when a narrower role is assigned,
-  and prices are not hidden from Child or Guest until piece 2.
+  and prices are not hidden from Child or Guest until piece 2. **Partly superseded by
+  [ADR-0035](0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md)**
+  2026-09-29: the batteries/equipment/custom-entity clause below, and plan 19's Executed
+  section statement that piece 1 does not add view leaves for them, no longer hold. Every
+  other part of this record is unchanged.
 - **Decider:** datagen24
 - **Recorded:** 2026-09-05, alongside wave 3a implementation
 - **Referenced by:** [plan 19](../plans/19-rbac.md)
