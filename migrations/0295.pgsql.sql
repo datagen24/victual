@@ -29,6 +29,9 @@
 -- handling (issue #515/PR #551) and answers the documented 400, same as every other enforced
 -- foreign key in this tree (see tests/Pgsql/ReferenceRefusalTest.php,
 -- tests/Pgsql/ProductReferenceIntegrityTest.php).
+-- Bounded blocking, as 0288 does: the index builds and FK additions take write-blocking locks.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
 CREATE INDEX products_location_id_idx ON products (location_id);
 CREATE INDEX products_qu_id_purchase_idx ON products (qu_id_purchase);
 CREATE INDEX products_qu_id_stock_idx ON products (qu_id_stock);
