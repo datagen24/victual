@@ -13,10 +13,13 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * "no resolved conversion means 1:1" defect #553 fixed on the write side
  * (StockService::SubstitutionAwareProductIdWhereClause()) also lived in stock_current
  * itself, which computes amount_aggregated (and amount_opened_aggregated, amount_measured)
- * by summing `s.amount * COALESCE(qucr.factor, 1.0)` per sub product row. A sub product
- * whose stock unit has no resolved conversion to its parent's own - or whose only resolved
- * conversion has a non-positive factor - was rolled into the parent 1:1 instead of
- * contributing nothing (maintainer decision D4, issue #553). This overstated or understated
+ * by summing `s.amount * COALESCE(qucr.factor, 1.0)` per sub product row - a fallback that
+ * only applies to a NULL qucr.factor, a missing conversion. A sub product whose stock unit
+ * has no resolved conversion to its parent's own was rolled in 1:1 by that fallback; one
+ * whose only resolved conversion has a non-positive factor was never NULL, so it was
+ * multiplied in as resolved instead - a negative factor subtracted from the aggregate
+ * rather than being excluded. Neither contributes anything once fixed (maintainer decision
+ * D4, issue #553). This overstated or understated
  * every page and API response that reads a parent product's aggregated amount, GET
  * /api/stock/products/{productId} (StockApiController::ProductDetails(), asserted below)
  * among them - it is one of the read paths issue #622 names, and the stock overview screen
@@ -99,6 +102,20 @@ class StockAggregatedSubProductConvertibilityTest extends PgsqlSchemaTestCase
 		$stmt->execute([$productId, $amount, 'aggconv-' . bin2hex(random_bytes(6)), $locationId]);
 	}
 
+	/**
+	 * Asserts $details carries a genuinely numeric value at $key and returns it as a
+	 * float. `(float)` alone would turn a missing key (json_decode's null), a string, or
+	 * any other non-numeric value into 0.0 - indistinguishable from a real zero
+	 * aggregate - so a wrong or absent response shape would still pass an assertion that
+	 * only compared `(float)$details[$key]` against an expected 0.0.
+	 */
+	private static function numericField(array $details, string $key): float
+	{
+		self::assertArrayHasKey($key, $details, "Response is missing the '$key' field entirely");
+		self::assertTrue(is_numeric($details[$key]), "'$key' must be numeric on the wire, got: " . var_export($details[$key], true));
+		return (float)$details[$key];
+	}
+
 	public function testProductDetailsAggregatesAParentWithOneConvertibleAndOneUnconvertibleSubProduct(): void
 	{
 		// Given: a parent with its own stock (1 unit), one sub product whose unit
@@ -131,7 +148,7 @@ class StockAggregatedSubProductConvertibilityTest extends PgsqlSchemaTestCase
 		// units contribute nothing. Before this fix it read 1 + 4 + 5 = 10 (the
 		// unconvertible child counted 1:1).
 		self::assertSame(200, $response->getStatusCode());
-		self::assertSame(5.0, (float)$details['stock_amount_aggregated'], 'An unconvertible sub product must contribute nothing to amount_aggregated, not be counted 1:1');
+		self::assertSame(5.0, self::numericField($details, 'stock_amount_aggregated'), 'An unconvertible sub product must contribute nothing to amount_aggregated, not be counted 1:1');
 		self::assertTrue($details['is_aggregated_amount'], 'The parent has genuine sub products, so the amount is reported as aggregated');
 	}
 
@@ -158,6 +175,6 @@ class StockAggregatedSubProductConvertibilityTest extends PgsqlSchemaTestCase
 		// factor must exclude the sub product exactly like no resolved conversion at
 		// all, never be multiplied into the aggregate.
 		self::assertSame(200, $response->getStatusCode());
-		self::assertSame(0.0, (float)$details['stock_amount_aggregated'], 'A sub product whose only resolved conversion has a non-positive factor must contribute nothing');
+		self::assertSame(0.0, self::numericField($details, 'stock_amount_aggregated'), 'A sub product whose only resolved conversion has a non-positive factor must contribute nothing');
 	}
 }

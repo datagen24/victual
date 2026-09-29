@@ -156,14 +156,18 @@ it did before this migration.
 The [unconvertible sub-product aggregation tests](025-unconvertible-subproduct-aggregation.sql)
 cover migration 0298 (issue #622, #487 remediation). `stock_current`'s `amount_aggregated`,
 `amount_opened_aggregated` and `amount_measured` each rolled a sub product's stock into its
-parent by `COALESCE(qucr.factor, 1.0)`. That fell back to a factor of 1 whenever no
-conversion was resolved between the sub product's stock unit and the parent's own, and also
-when the only resolved conversion had a non-positive factor.
+parent by `COALESCE(qucr.factor, 1.0)`, which only falls back on a NULL `qucr.factor` - a
+missing conversion. A resolved factor, positive or not, was never NULL. It was multiplied
+in as-is instead: a negative factor subtracted from the aggregate rather than being
+excluded. A resolved factor of exactly 0 already contributed nothing on its own arithmetic,
+not the fallback (`quantity_unit_conversions_INS`'s inverse-row computation cannot store 0
+there in the first place).
 
 That is #553's own defect (maintainer decision D4, fixed on the write side by
-`StockService::SubstitutionAwareProductIdWhereClause()`, PR #621) on the read side: an
-unconvertible sub product, or one at a non-positive factor, was counted 1:1 instead of
-contributing nothing.
+`StockService::SubstitutionAwareProductIdWhereClause()`, PR #621) on the read side. An
+unconvertible sub product was counted 1:1. A sub product whose only resolved conversion had
+a non-positive factor was multiplied into the aggregate by that factor. Neither should
+contribute anything.
 
 Five assertions cover the fix:
 
