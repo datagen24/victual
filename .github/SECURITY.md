@@ -45,8 +45,8 @@ not exhaustively:
 - One user reading, modifying or deleting another user's data
 - Authentication or session handling flaws — fixation, forgery, tokens that are guessable
   or that outlive what they should
-- Injection of any kind reaching the database, the filesystem, the label-printer webhook,
-  or an external barcode-lookup service
+- Injection of any kind reaching the database, the filesystem, the label print jobs that
+  label workers fetch, or an external barcode-lookup service
 - Anything that leaks configuration, credentials, or another user's data into a response,
   a log, or a URL
 - Anything exploitable purely by network reachability, authenticated or not
