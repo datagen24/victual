@@ -1,41 +1,14 @@
 {
     "GET /api/batteries": {
-        "status": 200,
-        "shape": [
-            {
-                "battery": {
-                    "active": "integer",
-                    "charge_interval_days": "integer",
-                    "description": "null",
-                    "id": "integer",
-                    "import_epoch": "integer",
-                    "name": "string",
-                    "row_created_timestamp": "string",
-                    "used_in": "null"
-                },
-                "battery_id": "integer",
-                "id": "integer",
-                "last_tracked_time": "string",
-                "next_estimated_charge_time": "string"
-            }
-        ]
+        "status": 403,
+        "shape": {
+            "error_message": "string"
+        }
     },
     "GET /api/batteries/{batteryId}": {
-        "status": 200,
+        "status": 403,
         "shape": {
-            "battery": {
-                "active": "integer",
-                "charge_interval_days": "integer",
-                "description": "null",
-                "id": "integer",
-                "import_epoch": "integer",
-                "name": "string",
-                "row_created_timestamp": "string",
-                "used_in": "null"
-            },
-            "charge_cycles_count": "integer",
-            "last_charged": "string",
-            "next_estimated_charge_time": "string"
+            "error_message": "string"
         }
     },
     "GET /api/calendar/ical": {
