@@ -178,17 +178,17 @@ cancelled.
 Fourteen assertions cover:
 
 - a queued job cancelled by a direct product delete (`retire_product_labels`);
-- a queued job left alone by a claimed sibling on the same label being cancelled, proving
-  the cancellation is scoped to the one label, not every queued job;
-- a claimed job (`current_attempt_id` set) surviving its label's retirement untouched, with
-  its outbox row undelivered and undead-lettered;
+- the cancelled job's outbox row dead-lettered;
+- a claimed job (`current_attempt_id` set) on the same label surviving retirement untouched;
+- the claimed job's outbox row left undelivered and undead-lettered too;
 - the label itself still retiring even though one of its jobs could not be cancelled;
 - a job with a `printed` outcome already set surviving retirement with that outcome
   unchanged;
 - a queued job cancelled by a direct `DELETE FROM stock` (`retire_stock_entry_labels`);
-- a queued job cancelled by a product delete that cascades to its stock entry's label via
-  `trg_cascade_product_removal`, run twice over one product holding two labelled stock
-  entries to show every one of them is cancelled, not only the first the join touches;
+- a queued job cancelled by a single product delete that cascades, via
+  `trg_cascade_product_removal`, to the first of two stock entries it held, each carrying
+  its own labelled job;
+- the second of those two jobs cancelled as well, not only the first the join touches;
 - a job already cancelled (by an operator, through `LabelOperationsService::Cancel()`)
   keeping its own original `cancelled_reason` rather than having retirement overwrite it;
 - a job already `dead_lettered` surviving retirement with that outcome unchanged, the same

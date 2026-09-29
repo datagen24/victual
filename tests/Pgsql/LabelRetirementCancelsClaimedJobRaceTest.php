@@ -154,18 +154,23 @@ class LabelRetirementCancelsClaimedJobRaceTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The assertion this whole class exists for: a backend genuinely queued, in PostgreSQL's
-	 * own lock manager, behind the row lock the claim holder's own UPDATE already took.
+	 * The assertion this whole class exists for: the delete subprocess genuinely queued, in
+	 * PostgreSQL's own lock manager, behind the row lock the claim holder's own UPDATE
+	 * already took. Matched by the delete subprocess's own `application_name`
+	 * (label-retirement-delete-subprocess-helper.php sets it precisely so this can), the same
+	 * reasoning LabelRetirementRacesReprintTest::waitForRowLockWaiter() already uses - an
+	 * earlier version of this method polled `pg_locks` for "any" ungranted `transactionid`
+	 * lock on the whole server (CodeRabbit review of PR #626), which could return true for a
+	 * wait that has nothing to do with this test's own two subprocesses.
 	 *
 	 * Unlike ImporterPrintJobLockConcurrencyTest's own waitForRelationWaiter() - which polls
 	 * for a `locktype = 'relation'` wait, because that class's contention is a table-level
 	 * `LOCK TABLE ... ACCESS EXCLUSIVE` conflicting with `FOR UPDATE OF j`'s table-level ROW
 	 * SHARE request - this class's contention is two ordinary row-level UPDATEs on the exact
-	 * same row. PostgreSQL represents a session waiting on another session's uncommitted
-	 * row-level lock as a wait on `locktype = 'transactionid'` (it is queuing to acquire a
-	 * share lock on the blocking transaction's own virtual id, which is only released when
-	 * that transaction ends) - not as a `relation` wait, since both UPDATEs already hold
-	 * (and share) the same ROW EXCLUSIVE table-level lock without conflict.
+	 * same row, which PostgreSQL represents as a wait on `locktype = 'transactionid'` rather
+	 * than `relation`. `wait_event_type = 'Lock'` alone is enough here without naming that
+	 * locktype explicitly: the delete subprocess never takes any other kind of lock this test
+	 * could mistake for it.
 	 *
 	 * Fails the test after $timeoutSeconds, which is exactly what happens with
 	 * cancel_queued_label_jobs()'s row lock removed (an unfixed UPDATE with no WHERE clause
@@ -175,7 +180,7 @@ class LabelRetirementCancelsClaimedJobRaceTest extends PgsqlSchemaTestCase
 	 */
 	private static function waitForRowLockWaiter(float $timeoutSeconds = 10.0): void
 	{
-		$check = self::Pdo()->prepare("SELECT pid FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted LIMIT 1");
+		$check = self::Pdo()->prepare("SELECT pid FROM pg_stat_activity WHERE application_name = 'label-retirement-delete-helper' AND wait_event_type = 'Lock' LIMIT 1");
 		$deadline = microtime(true) + $timeoutSeconds;
 
 		do
@@ -189,7 +194,7 @@ class LabelRetirementCancelsClaimedJobRaceTest extends PgsqlSchemaTestCase
 		}
 		while (microtime(true) < $deadline);
 
-		self::fail('Timed out waiting for a backend to block on the claim holder\'s row lock - a concurrent label retirement must queue behind an already-claimed job\'s row lock, not run unobstructed while it is mid-transaction');
+		self::fail('Timed out waiting for the delete subprocess to block on the claim holder\'s row lock - a concurrent label retirement must queue behind an already-claimed job\'s row lock, not run unobstructed while it is mid-transaction');
 	}
 
 	/**
