@@ -40,11 +40,18 @@ class McpAuthTest extends PgsqlSchemaTestCase
 		// the key's flag and not for a missing permission.
 		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9400, 'mcp-cook', 'fixture'), (9401, 'mcp-shopper', 'fixture')");
 		$grant = self::$db->prepare('INSERT INTO user_permissions (user_id, permission_id) SELECT ?, id FROM permission_hierarchy WHERE name = ?');
-		foreach (['STOCK_VIEW', 'SHOPPINGLIST_VIEW', 'RECIPES_VIEW', 'TASKS', 'TASKS_VIEW', 'MASTER_DATA_EDIT'] as $permission)
+		// CALENDAR_VIEW (issue #521, #487 remediation, migration 0299) is granted to both -
+		// testTwoUsersDifferingInOnePermissionDifferInExactlyThatPermission() depends on
+		// RECIPES_VIEW staying the only difference between them - because
+		// CalendarApiController::IcalSharingLink() now requires it even for a non-read-only
+		// key (testAReadOnlyKeyMayNotCallTheGetRoutesThatWrite() calls it as 'mcp-writable',
+		// issued for user 9400, and expects 200, not a permission refusal - the read-only
+		// flag is what that test is about, not CALENDAR_VIEW).
+		foreach (['STOCK_VIEW', 'SHOPPINGLIST_VIEW', 'RECIPES_VIEW', 'TASKS', 'TASKS_VIEW', 'MASTER_DATA_EDIT', 'CALENDAR_VIEW'] as $permission)
 		{
 			$grant->execute([9400, $permission]);
 		}
-		foreach (['STOCK_VIEW', 'SHOPPINGLIST_VIEW', 'TASKS', 'TASKS_VIEW', 'MASTER_DATA_EDIT'] as $permission)
+		foreach (['STOCK_VIEW', 'SHOPPINGLIST_VIEW', 'TASKS', 'TASKS_VIEW', 'MASTER_DATA_EDIT', 'CALENDAR_VIEW'] as $permission)
 		{
 			$grant->execute([9401, $permission]);
 		}
