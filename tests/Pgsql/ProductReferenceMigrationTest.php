@@ -25,7 +25,7 @@ class ProductReferenceMigrationTest extends PgsqlSchemaTestCase
 			$db->exec('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_' . $column . '_fkey');
 			$db->exec('DROP INDEX IF EXISTS products_' . $column . '_idx');
 		}
-		$db->exec('DELETE FROM migrations WHERE migration >= 295');
+		$db->exec('DELETE FROM migrations WHERE migration = 295');
 		$db->exec('TRUNCATE stock, stock_log, products CASCADE');
 		$db->exec('DELETE FROM quantity_unit_conversions WHERE product_id >= 600');
 		$db->exec("INSERT INTO locations(id, name) VALUES(601, 'Upgrade') ON CONFLICT (id) DO NOTHING");

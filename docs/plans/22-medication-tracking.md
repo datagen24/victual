@@ -319,10 +319,13 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0296** (medication master data and subjects)
-  and **0297** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0297** (medication master data and subjects)
+  and **0298** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0296–0297 until 2026-09-29, when issue #516's (M16, #487 remediation) print-job
+    cancellation fix was written to disk as `0296.pgsql.sql` above this plan's still-unwritten
+    claims. It moved up to 0297–0298 under the lowest-free-slot rule.
   - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
     (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
     as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
