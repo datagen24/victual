@@ -94,7 +94,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_enfore_product_nesting_level` (trigger `enfore_product_nesting_level`) | function + trigger | 0277 | `013-product-nesting-guard.sql` |
 | `trg_product_groups_check_parent` (trigger `check_product_group_parent`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
 | `trg_product_groups_guard_children` (trigger `guard_product_group_children`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
-| `trg_cascade_product_removal` | function | 0279, redefined 0295 (PR #624), redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `trg_cascade_product_removal` | function | 0279, redefined 0295, redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_product_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_stock_entry_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_recipe_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |

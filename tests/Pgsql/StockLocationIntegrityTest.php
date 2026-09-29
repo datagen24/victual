@@ -79,7 +79,15 @@ class StockLocationIntegrityTest extends PgsqlSchemaTestCase
 		$before = self::state();
 		self::assertError(self::$objects->DeleteObject(self::request('DELETE'), new Response(), ['entity' => 'locations', 'objectId' => 501]), StockLocationConstraint::DELETE_MESSAGE);
 		self::assertSame($before, self::state());
-		self::assertSame(204, self::$objects->DeleteObject(self::request('DELETE'), new Response(), ['entity' => 'locations', 'objectId' => 502])->getStatusCode());
+
+		// 502 is fixture product 501's own location_id (see setUp()), so migrations/
+		// 0295.pgsql.sql's products_location_id_fkey (issue #552) refuses it too, through the
+		// same generic reference-refusal path ReferenceRefusalTest.php and
+		// ProductReferenceIntegrityTest.php already cover for the other five product foreign
+		// keys - not asserted again here. A location genuinely unused by anything - no stock,
+		// no product - still deletes normally.
+		self::$db->exec("INSERT INTO locations(id, name) VALUES (503, 'Unused')");
+		self::assertSame(204, self::$objects->DeleteObject(self::request('DELETE'), new Response(), ['entity' => 'locations', 'objectId' => 503])->getStatusCode());
 	}
 
 	public function testForeignKeyAndNullableDefaultBehavior(): void
@@ -99,13 +107,39 @@ class StockLocationIntegrityTest extends PgsqlSchemaTestCase
 		catch (\PDOException $ex) { self::assertTrue(StockLocationConstraint::IsViolation($ex)); }
 	}
 
-	public function testStaleDefaultIsAReadableBookingRefusalWithoutPartialWrites(): void
+	/**
+	 * Before migrations/0295.pgsql.sql (issue #552), this test deleted location 502
+	 * directly to construct a product whose own default location had gone stale, then
+	 * asserted the runtime "Location does not exist" refusal StockService::AddProduct()
+	 * raises for exactly that case. products_location_id_fkey closes that path at the
+	 * schema level instead: product 501 names location 502 as its own location_id
+	 * (setUp()), so the direct DELETE this test used to rely on is now itself refused -
+	 * proved once here rather than repeated, since ProductReferenceIntegrityTest.php
+	 * already covers the same foreign key through the application's own delete route.
+	 * The location is therefore never actually gone, so the runtime check this test used
+	 * to exercise never fires: booking against product 501's default location succeeds.
+	 */
+	public function testDeletingAProductsOwnLocationIsRefusedSoItsDefaultNeverGoesStale(): void
 	{
-		self::$db->exec('DELETE FROM locations WHERE id=502');
 		$before = self::state();
-		$response = self::$api->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => '2035-01-01']), new Response(), ['productId' => 501]);
-		self::assertError($response, 'Location does not exist');
+		try
+		{
+			self::$db->exec('DELETE FROM locations WHERE id=502');
+			self::fail('Deleting a location a product names as its own location_id must be refused');
+		}
+		catch (\PDOException $ex)
+		{
+			self::assertSame('23503', $ex->errorInfo[0] ?? $ex->getCode());
+			self::assertStringContainsString('"products_location_id_fkey"', $ex->errorInfo[2] ?? $ex->getMessage());
+		}
 		self::assertSame($before, self::state());
+
+		$response = self::$api->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => '2035-01-01']), new Response(), ['productId' => 501]);
+		self::assertLessThan(300, $response->getStatusCode(), 'The location was never actually deleted, so the booking must succeed: ' . (string)$response->getBody());
+		self::assertSame(
+			[['location_id' => 502, 'amount' => '2']],
+			self::$db->query("SELECT location_id, amount::text FROM stock WHERE best_before_date='2035-01-01'")->fetchAll(PDO::FETCH_ASSOC)
+		);
 	}
 
 	public static function restoringTypes(): array
