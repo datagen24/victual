@@ -323,10 +323,30 @@ Collected because most of them are only visible from inside the existing code.
   and **0300** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
-  - 0295–0296 until issue #622's `stock_current` aggregation fix (#487 remediation) took
-    **0298** (behind PRs #624 and #626, which took 0295 and 0296 first, and #627, which
-    takes 0297), moving this plan's claims up to **0299–0300** under the lowest-free-slot
-    rule
+  - 0298–0299 until 2026-09-29, later still, when issue #622's `stock_current` aggregation
+    fix (#487 remediation) took **0298**, the lowest free slot below PRs #624, #626 and
+    #627 - all three merged to `master` by then - moving this plan's claims up to
+    **0299–0300** under the lowest-free-slot rule
+  - 0295–0296 until 2026-09-29, when three branches claimed the same lowest free slots in
+    parallel. PR #624 (issues #552/#558, products foreign keys and stock-entry label
+    retirement) writes `0295.pgsql.sql`. PR #626 (issue #516, cancel queued print jobs on
+    label retirement) writes `0296.pgsql.sql`. Issue #492's (H3, #487 remediation)
+    `stock_amount_non_negative_check` fix — ADR-0032's database-level `amount >= 0` backstop
+    for `stock`, behind the application refusal commit 2039d5947 already added — is written to
+    disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
+    this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
+    the lowest-free-slot rule at the time. PR #624, PR #626 and PR #627 have since all merged
+    to `master` (18d0389d, 11783f76, 46cb862d) - 0295, 0296 and 0297 are landed migrations now
+  - 0296–0297 until 2026-09-29, briefly, on PR #626's own branch before it knew about issue
+    #492's claim. Issue #516's (M16, #487 remediation) print-job cancellation fix was written
+    to disk as `0296.pgsql.sql` above this plan's still-unwritten claims. That moved them to
+    0297–0298 under the lowest-free-slot rule at the time, superseded by the three-way
+    collision above once both branches merged
+  - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
+    (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
+    as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
+    under the lowest-free-slot rule, before PR #626 and issue #492's fix also claimed that
+    range and it moved again as above
   - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
     `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
     `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales
@@ -379,7 +399,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved twenty-two times.** In order:
+  **These numbers have moved twenty-four times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -404,8 +424,12 @@ Collected because most of them are only visible from inside the existing code.
   - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
   - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
   - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
-  - and now 0299–0300 for issue #622's `stock_current` aggregation fix, behind #624's and
-    #626's own 0295 and 0296 and #627's 0297
+  - 0296–0297 for issue #492's `stock_amount_non_negative_check` fix, before PRs #624 and
+    #626 also claimed 0295–0296
+  - 0298–0299, once PR #624 (0295) and PR #626 (0296) took the two slots ahead of issue
+    #492's fix at 0297
+  - and now 0299–0300, once issue #622's `stock_current` aggregation fix took 0298, the
+    lowest free slot below all three of those branches - by then all merged to `master`
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

@@ -388,7 +388,17 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 		$objectId = 'product_' . $productId;
 		$payloadHash = hash('sha256', 'importer-integrity-fixture');
 
-		$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ($productId, 'Ledger fixture', 1, 2, 2)");
+		// A real location/quantity unit, not a bare literal id: migrations/0295.pgsql.sql's
+		// products_location_id_fkey/qu_id_purchase_fkey/qu_id_stock_fkey (issue #552) now
+		// enforce that these ids actually exist in the target, and this class's own
+		// testNonForceImportRefusesAPreExistingUndeliveredOutboxRowRatherThanSilentlyDiscardingIt
+		// TRUNCATEs every common table, including locations and quantity_units, on the shared
+		// target this class's methods all reuse - so neither a bare literal nor the target's
+		// InitialDataSeeder-seeded default id can be assumed still present here, whichever
+		// method order PHPUnit happens to run in.
+		$locationId = (int)$db->query("INSERT INTO locations (name) VALUES ('Ledger fixture location') RETURNING id")->fetchColumn();
+		$quId = (int)$db->query("INSERT INTO quantity_units (name) VALUES ('Ledger fixture unit') RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES ($productId, 'Ledger fixture', $locationId, $quId, $quId)");
 		$db->exec('INSERT INTO mqtt_product_entities (product_id) VALUES (' . $productId . ')');
 		$statement = $db->prepare('INSERT INTO mqtt_published_entities (object_id, payload_hash) VALUES (?, ?)');
 		$statement->execute([$objectId, $payloadHash]);

@@ -86,10 +86,17 @@ SELECT is(
 -- references it, not stock_log), then delete the location.
 -- ---------------------------------------------------------------------------------------
 
+-- "Audit505 product home" is the product's own location_id, distinct from "Audit505
+-- location" (the booking location this block deletes): migrations/0295.pgsql.sql's
+-- products_location_id_fkey (issue #552) now refuses deleting a location a product names as
+-- its own, so the two must differ for this block to still exercise stock_log.location_id,
+-- which ADR-0029 decision 3 leaves deliberately unconstrained ("a historical booking may
+-- retain a deleted location identifier... other location references, including product
+-- defaults, are outside this constraint's scope").
 INSERT INTO quantity_units (name) VALUES ('Audit505 qu');
-INSERT INTO locations (name) VALUES ('Audit505 location');
+INSERT INTO locations (name) VALUES ('Audit505 location'), ('Audit505 product home');
 INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES
-	('Audit505 product', (SELECT id FROM locations WHERE name = 'Audit505 location'),
+	('Audit505 product', (SELECT id FROM locations WHERE name = 'Audit505 product home'),
 		(SELECT id FROM quantity_units WHERE name = 'Audit505 qu'),
 		(SELECT id FROM quantity_units WHERE name = 'Audit505 qu'));
 INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, location_id, user_id) VALUES
