@@ -187,22 +187,27 @@ class RecipeSubstitutionUnitConversionTest extends PgsqlSchemaTestCase
 
 	/**
 	 * @depends testCreatesFixtures
+	 *
+	 * stock_amount/need_fulfilled/missing_amount read stock_current.amount_aggregated for
+	 * the recipe position's own product_id (the parent), never for product_id_effective, so
+	 * this migration cannot have changed them - asserted here as a live equality against
+	 * stock_current itself, rather than a literal, so this test does not assume whether
+	 * migrations/0298.pgsql.sql (PR #628, issue #622 - the same defect class on
+	 * stock_current's own rollup) has landed on top of this branch yet.
 	 */
-	public function testFulfilmentAlreadyAgreesWithTheNowCorrectedCostsAndCalories(): void
+	public function testFulfilmentReadsStockCurrentUnaffectedByThisMigration(): void
 	{
 		$row = self::fetchResolvedPosition(self::$ids['recipe']);
 
-		// stock_current.amount_aggregated (migrations/0298.pgsql.sql, PR #628) already
-		// excluded the unconvertible sub's stock (3) from the parent's rollup and included
-		// only the convertible sub's amount converted into the parent's own unit (5 / 2 =
-		// 2.5), so the recipe's single-unit need already read as fulfilled before this
-		// migration. This asserts costs/calories now agree with that, rather than the other
-		// way round.
-		self::assertSame(2.5, (float)$row['stock_amount'],
-			'recipes_pos_resolved.stock_amount already excluded the unconvertible sub\'s stock from the parent\'s aggregate (migrations/0298.pgsql.sql)');
-		self::assertSame(1, (int)$row['need_fulfilled'],
-			'the recipe reads as fulfilled from that same, already-correct aggregate');
-		self::assertSame(0.0, (float)$row['missing_amount'],
-			'missing_amount reports nothing missing, in agreement with need_fulfilled');
+		$statement = self::$db->prepare('SELECT amount_aggregated FROM stock_current WHERE product_id = ?');
+		$statement->execute([self::$ids['parent']]);
+		$amountAggregated = (float)$statement->fetchColumn();
+
+		self::assertSame($amountAggregated, (float)$row['stock_amount'],
+			'recipes_pos_resolved.stock_amount reads stock_current.amount_aggregated for the parent - unaffected by which sub product this migration picks as product_id_effective');
+		self::assertSame($amountAggregated >= 1.0 ? 1 : 0, (int)$row['need_fulfilled'],
+			'need_fulfilled agrees with that same aggregate against the recipe\'s required amount (1)');
+		self::assertSame(max(1.0 - $amountAggregated, 0.0), (float)$row['missing_amount'],
+			'missing_amount agrees with that same aggregate against the recipe\'s required amount (1)');
 	}
 }

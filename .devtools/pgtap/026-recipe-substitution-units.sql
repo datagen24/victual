@@ -140,23 +140,28 @@ SELECT is(
 	80.0::double precision,
 	'recipes_pos_resolved.calories credits the convertible substitute at its real conversion factor, not the no-conversion sub at 1:1 (issue #629)'
 );
--- Fulfilment already agreed before this migration (migrations/0298.pgsql.sql,
--- stock_current.amount_aggregated), asserted here so the same row shows costs/calories and
--- fulfilment in agreement: stock_current excludes the no-conversion sub's amount (3) from
--- the parent's aggregate and includes only the convertible sub's amount converted into the
--- parent's own unit (5 convertible units / 2 per parent unit = 2.5 parent units), so 1
--- parent unit is available and the recipe's single-unit need is fulfilled.
+-- Fulfilment (stock_amount/need_fulfilled/missing_amount) reads stock_current.amount_aggregated
+-- for the recipe position's own rp.product_id (the parent) - never product_id_effective - so
+-- it is structurally untouched by this migration. Asserted here as a live equality against
+-- stock_current itself, rather than a literal, so this test does not assume whether
+-- migrations/0298.pgsql.sql (PR #628, issue #622 - the same defect class on stock_current's
+-- own rollup) has landed on top of this branch: whatever stock_current currently aggregates
+-- for the parent, recipes_pos_resolved.stock_amount must read the same value, and
+-- need_fulfilled must agree with it against the recipe's own required amount (1, since
+-- desired_servings = base_servings = 1 and the ingredient is not nested or rounded up).
 SELECT is(
 	(SELECT stock_amount FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 No-Conversion Recipe')),
-	2.5::double precision,
-	'recipes_pos_resolved.stock_amount already excluded the no-conversion sub''s stock from the parent''s aggregate (migrations/0298.pgsql.sql) and agrees with the now-fixed costs/calories'
+	(SELECT amount_aggregated FROM stock_current
+		WHERE product_id = (SELECT id FROM products WHERE name = 'M629 No-Conversion Parent')),
+	'recipes_pos_resolved.stock_amount reads stock_current.amount_aggregated for the parent - unaffected by which sub product this migration picks as product_id_effective'
 );
 SELECT is(
 	(SELECT need_fulfilled FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 No-Conversion Recipe')),
-	1,
-	'...and the recipe reads as fulfilled from that same, already-correct aggregate'
+	(SELECT CASE WHEN amount_aggregated >= 1 THEN 1 ELSE 0 END FROM stock_current
+		WHERE product_id = (SELECT id FROM products WHERE name = 'M629 No-Conversion Parent')),
+	'...and need_fulfilled agrees with that same aggregate against the recipe''s required amount (1)'
 );
 
 -- ----------------------------------------------------------------------------------------
@@ -244,26 +249,30 @@ SELECT is(
 	5.0::double precision,
 	'recipes_pos_resolved.calories falls back to the parent product''s own calories, never to the negative-factor sub 1:1 (issue #629, D4)'
 );
--- stock_current already excludes the negative-factor sub's stock from the parent's
--- aggregate (migrations/0298.pgsql.sql), so the parent reads as having none of its own
--- ingredient in stock and the recipe is not fulfilled.
+-- Same structural check as case 1: stock_amount/need_fulfilled/missing_amount read from
+-- stock_current for the parent, never from product_id_effective, so this migration cannot
+-- have changed them - asserted as a live equality rather than a literal, for the same
+-- reason as case 1 above (independent of whether migrations/0298.pgsql.sql has landed).
 SELECT is(
 	(SELECT stock_amount FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 Negative-Factor Recipe')),
-	0.0::double precision,
-	'recipes_pos_resolved.stock_amount agrees: the negative-factor sub''s stock was already excluded from the parent''s aggregate'
+	(SELECT amount_aggregated FROM stock_current
+		WHERE product_id = (SELECT id FROM products WHERE name = 'M629 Negative-Factor Parent')),
+	'recipes_pos_resolved.stock_amount agrees with stock_current.amount_aggregated for the parent even when product_id_effective falls back to the parent itself'
 );
 SELECT is(
 	(SELECT need_fulfilled FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 Negative-Factor Recipe')),
-	0,
-	'...and the recipe reads as unfulfilled, in agreement with the now-corrected costs/calories'
+	(SELECT CASE WHEN amount_aggregated >= 1 THEN 1 ELSE 0 END FROM stock_current
+		WHERE product_id = (SELECT id FROM products WHERE name = 'M629 Negative-Factor Parent')),
+	'...and need_fulfilled agrees with that same aggregate against the recipe''s required amount (1)'
 );
 SELECT is(
 	(SELECT missing_amount FROM recipes_pos_resolved
 		WHERE recipe_id = (SELECT id FROM recipes WHERE name = 'M629 Negative-Factor Recipe')),
-	1.0::double precision,
-	'...and missing_amount reports the whole ingredient amount missing, not offset by the negative-factor sub''s stock'
+	(SELECT CASE WHEN amount_aggregated - 1 < 0 THEN ABS(amount_aggregated - 1) ELSE 0 END FROM stock_current
+		WHERE product_id = (SELECT id FROM products WHERE name = 'M629 Negative-Factor Parent')),
+	'...and missing_amount agrees with the same aggregate, never offset by the negative-factor sub''s stock at face value'
 );
 
 SELECT * FROM finish();
