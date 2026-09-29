@@ -37,8 +37,11 @@ itself, and its warning about what stays read-only in this fork.
 
 ## Resolving a label
 
-`GET /api/labels/resolve/{code}` looks a scanned code up against whichever payload format it
-matches — Victual's own opaque label identities, and grocy's `grcy:` Grocycode, which this
-fork continues to read but never mints. **`/locationlabels`**
-([Stock](../using-victual/stock.md#labels)) is the stateless page built on the same lookup,
-for checking what a label resolves to without booking anything against it.
+`GET /api/labels/resolve/{code}` looks a scanned code up against Victual's own opaque label
+identities only — it does not read grocy's `grcy:` Grocycode.
+[ADR-0011](../../adr/0011-label-namespace.md) keeps Grocycode parsing where it already
+lived: the consume and transfer pages described above, which read a scanned `grcy:` code the
+same way they always have. **`/locationlabels`**
+([Stock](../using-victual/stock.md#labels)) is the stateless page built on the same
+label-resolve lookup, for checking what a label resolves to without booking anything against
+it.
