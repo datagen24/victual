@@ -23,6 +23,8 @@
 			<file>tests/Pgsql/RbacTest.php</file>
 			<file>tests/Pgsql/RecipeCopyPermissionTest.php</file>
 			<file>tests/Pgsql/RecipeRouteAuthzTest.php</file>
+			<file>tests/Pgsql/ViewPermissionGatingTest.php</file>
+			<file>tests/Pgsql/ViewPermissionMigrationTest.php</file>
 		</testsuite>
 		<testsuite name="contract">
 			<file>tests/Pgsql/ContractTest.php</file>

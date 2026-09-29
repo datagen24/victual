@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers;
 
+use Victual\Controllers\Users\User;
 use Victual\Services\CalendarService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -17,6 +18,8 @@ class CalendarController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_CALENDAR_VIEW);
+
 		return $this->RenderPage($response, 'calendar', [
 			'fullcalendarEventSources' => CalendarService::GetInstance()->GetEvents()
 		]);

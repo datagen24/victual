@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers;
 
+use Victual\Controllers\Users\User;
 use Victual\Services\UserfieldsService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -19,6 +20,8 @@ class EquipmentController extends BaseController
 	 */
 	public function EditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_EQUIPMENT_VIEW);
+
 		if ($args['equipmentId'] == 'new')
 		{
 			return $this->RenderPage($response, 'equipmentform', [
@@ -41,6 +44,8 @@ class EquipmentController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_EQUIPMENT_VIEW);
+
 		return $this->RenderPage($response, 'equipment', [
 			'equipment' => $this->DB->equipment()->orderBy('name', 'COLLATE NOCASE'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('equipment'),

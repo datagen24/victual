@@ -79,8 +79,25 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation, PR #624) | **claimed, unwritten** (open PR) |
+| 0296 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation, PR #626) | **claimed, unwritten** (open PR) |
+| 0297 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation, PR #627) | **claimed, unwritten** (open PR) |
+| 0298 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation, PR #628) | **claimed, unwritten** (open PR) |
+| 0299 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation) — `BATTERIES_VIEW`, `CALENDAR_VIEW`, `EQUIPMENT_VIEW` permission leaves, nested under `BATTERIES`/`CALENDAR`/`EQUIPMENT` the same way `STOCK_PRICES_VIEW` (0281) nests under `STOCK_PURCHASE` | in this tree |
+| 0300 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0301 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+**Renumbered 2026-09-29:** issue [#521](https://github.com/datagen24/victual/issues/521)'s
+view-permission migration (`BATTERIES_VIEW`/`CALENDAR_VIEW`/`EQUIPMENT_VIEW`, #487 remediation)
+is being written on this branch. Four open PRs — #624, #626, #627 and #628 — each independently
+claimed one of 0295 through 0298 for their own #487 remediation work. All four are still
+unmerged. This table now records all four as post-merge placeholders, in the order their PR
+numbers were opened, rather than leaving this branch to guess which of the four lands first.
+
+This branch's own migration is the lowest free slot below them, **0299**. Plan 22's two
+still-unwritten claims move up in turn, from 0295–0296 to **0300–0301**, keeping their own
+order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+table. The next unclaimed number is now **0302**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s

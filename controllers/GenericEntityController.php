@@ -2,6 +2,7 @@
 
 namespace Victual\Controllers;
 
+use Victual\Controllers\Users\User;
 use Victual\Services\UserfieldsService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -14,10 +15,30 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 class GenericEntityController extends BaseController
 {
 	/**
+	 * The permission(s) required to view a page for the given generic-entity kind, mirroring
+	 * GenericEntityApiController's write gate for the same entity exactly (MASTER_DATA_EDIT
+	 * for every kind here, plus ADMIN for 'userentities'/'userfields' -
+	 * ExposedEntityEditRequiresAdmin in victual.openapi.json) rather than inventing a new
+	 * *_VIEW leaf for data that already has no separate read policy
+	 * (controllers/Users/EntityReadPolicy.php maps all three to null).
+	 */
+	private static function CheckViewPermission(Request $request, string $entity): void
+	{
+		User::CheckPermission($request, User::PERMISSION_MASTER_DATA_EDIT);
+
+		if ($entity === 'userentities' || $entity === 'userfields')
+		{
+			User::CheckPermission($request, User::PERMISSION_ADMIN);
+		}
+	}
+
+	/**
 	 * Serves the userentities list view (route GET /userentities).
 	 */
 	public function UserentitiesList(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userentities');
+
 		return $this->RenderPage($response, 'userentities', [
 			'userentities' => $this->DB->userentities()->orderBy('name', 'COLLATE NOCASE')
 		]);
@@ -30,6 +51,8 @@ class GenericEntityController extends BaseController
 	 */
 	public function UserentityEditForm(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userentities');
+
 		if ($args['userentityId'] == 'new')
 		{
 			return $this->RenderPage($response, 'userentityform', [
@@ -52,6 +75,8 @@ class GenericEntityController extends BaseController
 	 */
 	public function UserfieldEditForm(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userfields');
+
 		if ($args['userfieldId'] == 'new')
 		{
 			return $this->RenderPage($response, 'userfieldform', [
@@ -76,6 +101,8 @@ class GenericEntityController extends BaseController
 	 */
 	public function UserfieldsList(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userfields');
+
 		return $this->RenderPage($response, 'userfields', [
 			'userfields' => UserfieldsService::GetInstance()->GetAllFields(),
 			'entities' => UserfieldsService::GetInstance()->GetEntities()
@@ -90,6 +117,8 @@ class GenericEntityController extends BaseController
 	 */
 	public function UserobjectEditForm(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userobjects');
+
 		$userentity = $this->DB->userentities()->where('name = :1', $args['userentityName'])->fetch();
 
 		if ($args['userobjectId'] == 'new')
@@ -116,6 +145,8 @@ class GenericEntityController extends BaseController
 	 */
 	public function UserobjectsList(Request $request, Response $response, array $args)
 	{
+		self::CheckViewPermission($request, 'userobjects');
+
 		$userentity = $this->DB->userentities()->where('name = :1', $args['userentityName'])->fetch();
 
 		return $this->RenderPage($response, 'userobjects', [

@@ -245,7 +245,7 @@
 				</li>
 				@endif
 				@if(VICTUAL_FEATURE_FLAG_EQUIPMENT)
-				<li class="nav-item nav-item-sidebar permission-EQUIPMENT @if($viewName == 'equipment') active-page @endif"
+				<li class="nav-item nav-item-sidebar permission-EQUIPMENT_VIEW @if($viewName == 'equipment') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
 					title="{{ $__t('Equipment') }}">
@@ -258,7 +258,7 @@
 				@endif
 				@if(VICTUAL_FEATURE_FLAG_CALENDAR)
 				<div class="nav-item-divider"></div>
-				<li class="nav-item nav-item-sidebar permission-CALENDAR @if($viewName == 'calendar') active-page @endif"
+				<li class="nav-item nav-item-sidebar permission-CALENDAR_VIEW @if($viewName == 'calendar') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
 					title="{{ $__t('Calendar') }}">
