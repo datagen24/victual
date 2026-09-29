@@ -80,6 +80,39 @@ class StockLocationImportTest extends PgsqlSchemaTestCase
 		self::assertFalse(self::Pdo()->inTransaction());
 	}
 
+	/**
+	 * DatabaseImporter::AssertProductReferences() (issue #552, following ADR-0029's own
+	 * import precedent): the same "report and refuse before anything is truncated" shape
+	 * as testDanglingSourceIsActionableAndForceCannotTruncateTarget() above, extended from
+	 * stock.location_id to one of the six foreign keys migrations/0295.pgsql.sql added on
+	 * products. product_group_id stands in for all six here - it is the one of the six no
+	 * legacy Grocy trigger reads (qu_id_purchase/qu_id_stock/qu_id_consume/qu_id_price all
+	 * feed products_default_qu_conversions_*, which would insert its own
+	 * quantity_unit_conversions row for a dangling value and fail on an unrelated unique
+	 * constraint before AssertProductReferences() is ever reached; location_id has a
+	 * default-fill trigger of its own). Each column has its own message built from the same
+	 * template (AssertProductReferences()'s own $checks array), so one case proves the
+	 * mechanism without repeating it six times.
+	 */
+	#[DataProvider('versions')]
+	public function testDanglingProductReferenceIsActionableAndForceCannotTruncateTarget(int $version): void
+	{
+		$source = $this->source($version);
+		$source->exec('UPDATE products SET product_group_id=999999 WHERE id=(SELECT MIN(id) FROM products)');
+		$before = self::targetState();
+		try { $this->importer($source)->Import(true); self::fail('Dangling source must refuse'); }
+		catch (\RuntimeException $ex)
+		{
+			self::assertStringContainsString('1 source product rows reference missing product_groups via product_group_id', $ex->getMessage());
+			self::assertStringContainsString('"product_group_id":999999', $ex->getMessage());
+			self::assertStringContainsString('Choose an explicit source repair', $ex->getMessage());
+			self::assertStringContainsString('SELECT p.id, p.name, p.product_group_id', $ex->getMessage());
+		}
+		self::assertSame($before, self::targetState());
+		self::assertFalse($source->inTransaction());
+		self::assertFalse(self::Pdo()->inTransaction());
+	}
+
 	public function testSourcePreflightAndCopyUseOneSnapshot(): void
 	{
 		$source = $this->source(265);

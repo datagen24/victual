@@ -7,15 +7,17 @@ use Victual\Services\ApiKeyService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
- * Regression coverage for issue #552 (D4, #487 remediation): products.product_group_id,
- * qu_id_consume and qu_id_price carried no FOREIGN KEY anywhere in the schema
- * (db/pgsql/baseline/01_tables.sql), so deleting a product group or a quantity unit a product
- * still named succeeded and left the product pointing at a row that no longer existed.
- * migrations/0295.pgsql.sql, modelled on ADR-0029 (docs/adr/0029-stock-locations-reference-
- * existing-locations.md), adds the three foreign keys - see that migration's own header
- * comment for why products.location_id, qu_id_purchase and qu_id_stock (the other three
- * columns issue #552 names) are NOT NULL and left unconstrained pending a maintainer decision
- * on a repair rule for a dangling NOT NULL reference.
+ * Regression coverage for issue #552 (D4, #487 remediation): none of products' six upstream
+ * reference columns - location_id, qu_id_purchase, qu_id_stock, qu_id_consume, qu_id_price,
+ * product_group_id - carried a FOREIGN KEY anywhere in the schema
+ * (db/pgsql/baseline/01_tables.sql), so deleting a location, quantity unit or product group a
+ * product still named succeeded and left the product pointing at a row that no longer
+ * existed. migrations/0295.pgsql.sql, modelled on ADR-0029 (docs/adr/0029-stock-locations-
+ * reference-existing-locations.md), adds all six foreign keys, with no repair step: see that
+ * migration's own header comment for why (the maintainer's own correction - the migration
+ * system is one-time and runs on a fresh install, so a dangling reference can only arrive
+ * through `bin/victual-db-import`, which DatabaseImporter::AssertProductReferences() now
+ * validates separately, per tests/Pgsql/StockLocationImportTest.php).
  *
  * This runs at the httpboot phase, through request-subprocess-helper.php, for the same reason
  * ReferenceRefusalTest.php does: the refusal has to be observed through the real routing/
@@ -222,12 +224,110 @@ class ProductReferenceIntegrityTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
+	// products.location_id REFERENCES locations(id)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The "location" reference class the issue names, through products' own location_id -
+	 * NOT NULL, unlike the three columns above, but the maintainer's rework of this migration
+	 * (see its header comment) drops all six into the same plain-foreign-key shape, so this
+	 * refuses exactly like the nullable cases.
+	 */
+	public function testDeletingALocationReferencedByAProductIsRefused(): void
+	{
+		$locationId = self::insertRow('locations', ['name' => 'PRI referenced location']);
+		$productId = self::insertRow('products', [
+			'name' => 'PRI product with its own location',
+			'location_id' => $locationId,
+			'qu_id_purchase' => self::$quId,
+			'qu_id_stock' => self::$quId,
+		]);
+
+		$result = self::delete('locations', $locationId);
+
+		$this->assertOrdinaryReferenceRefusal($result, 'Deleting a location referenced by a product');
+		self::assertTrue(self::rowExists('locations', $locationId), 'The location must survive the refused delete');
+
+		$storedLocationId = self::$db->prepare('SELECT location_id FROM products WHERE id = ?');
+		$storedLocationId->execute([$productId]);
+		self::assertSame($locationId, (int)$storedLocationId->fetchColumn(), 'The referencing product must still name the location');
+	}
+
+	// ------------------------------------------------------------------------------
+	// products.qu_id_purchase REFERENCES quantity_units(id)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The other NOT NULL column: a quantity unit still used as a product's purchase unit.
+	 * qu_id_price is set explicitly to self::$quId, not left to default - trg_default_qu_id_
+	 * price (db/pgsql/baseline/06_triggers_a.sql) fills a null qu_id_price from qu_id_purchase
+	 * on insert, which would otherwise point qu_id_price at $quId too and leave this refusal
+	 * ambiguous between qu_id_purchase_fkey and qu_id_price_fkey.
+	 */
+	public function testDeletingAQuantityUnitReferencedByAProductsPurchaseUnitIsRefused(): void
+	{
+		$quId = self::insertRow('quantity_units', ['name' => 'PRI referenced purchase unit']);
+		$productId = self::insertRow('products', [
+			'name' => 'PRI product with purchase unit',
+			'location_id' => self::$locationId,
+			'qu_id_purchase' => $quId,
+			'qu_id_stock' => self::$quId,
+			'qu_id_price' => self::$quId,
+		]);
+
+		$result = self::delete('quantity_units', $quId);
+
+		$this->assertOrdinaryReferenceRefusal($result, 'Deleting a quantity unit referenced by a product purchase unit');
+		self::assertTrue(self::rowExists('quantity_units', $quId), 'The quantity unit must survive the refused delete');
+
+		$storedQuId = self::$db->prepare('SELECT qu_id_purchase FROM products WHERE id = ?');
+		$storedQuId->execute([$productId]);
+		self::assertSame($quId, (int)$storedQuId->fetchColumn(), 'The referencing product must still name the unit');
+	}
+
+	// ------------------------------------------------------------------------------
+	// products.qu_id_stock REFERENCES quantity_units(id)
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * The last NOT NULL column: a quantity unit still used as a product's stock unit.
+	 * qu_id_consume is set explicitly to self::$quId for the same reason the purchase-unit
+	 * test above sets qu_id_price: trg_default_qu_id_consume fills a null qu_id_consume from
+	 * qu_id_stock on insert, which would otherwise point it at $quId too.
+	 */
+	public function testDeletingAQuantityUnitReferencedByAProductsStockUnitIsRefused(): void
+	{
+		$quId = self::insertRow('quantity_units', ['name' => 'PRI referenced stock unit']);
+		$productId = self::insertRow('products', [
+			'name' => 'PRI product with stock unit',
+			'location_id' => self::$locationId,
+			'qu_id_purchase' => self::$quId,
+			'qu_id_stock' => $quId,
+			'qu_id_consume' => self::$quId,
+		]);
+
+		$result = self::delete('quantity_units', $quId);
+
+		$this->assertOrdinaryReferenceRefusal($result, 'Deleting a quantity unit referenced by a product stock unit');
+		self::assertTrue(self::rowExists('quantity_units', $quId), 'The quantity unit must survive the refused delete');
+
+		$storedQuId = self::$db->prepare('SELECT qu_id_stock FROM products WHERE id = ?');
+		$storedQuId->execute([$productId]);
+		self::assertSame($quId, (int)$storedQuId->fetchColumn(), 'The referencing product must still name the unit');
+	}
+
+	// ------------------------------------------------------------------------------
 	// Negative control
 	// ------------------------------------------------------------------------------
 
-	/** The fix must not turn every product group / quantity unit delete into a 400. */
-	public function testDeletingAnUnreferencedProductGroupOrQuantityUnitStillSucceeds(): void
+	/** The fix must not turn every location / product group / quantity unit delete into a 400. */
+	public function testDeletingAnUnreferencedLocationProductGroupOrQuantityUnitStillSucceeds(): void
 	{
+		$locationId = self::insertRow('locations', ['name' => 'PRI unreferenced location']);
+		$locationResult = self::delete('locations', $locationId);
+		self::assertSame(204, $locationResult['status'], "An unreferenced location must still delete: {$locationResult['body']}");
+		self::assertFalse(self::rowExists('locations', $locationId));
+
 		$groupId = self::insertRow('product_groups', ['name' => 'PRI unreferenced group']);
 		$groupResult = self::delete('product_groups', $groupId);
 		self::assertSame(204, $groupResult['status'], "An unreferenced product group must still delete: {$groupResult['body']}");

@@ -357,6 +357,44 @@ class DatabaseImporter
 	}
 
 	/**
+	 * The same refusal as AssertStockLocations(), extended to every foreign key
+	 * migrations/0295.pgsql.sql adds on products (issue #552): location_id, qu_id_purchase,
+	 * qu_id_stock, qu_id_consume, qu_id_price and product_group_id. Following ADR-0029's own
+	 * import precedent (docs/adr/0029-stock-locations-reference-existing-locations.md,
+	 * decision 8): report and refuse before anything is truncated, never invent a location,
+	 * quantity unit or product group nobody chose. This is the only route by which a dangling
+	 * one of these six can reach a target database at all - the migration itself adds no
+	 * repair step because nothing before it could have created a dangling reference; see that
+	 * migration's own header comment.
+	 */
+	private function AssertProductReferences(): void
+	{
+		$checks = [
+			['column' => 'location_id', 'table' => 'locations'],
+			['column' => 'qu_id_purchase', 'table' => 'quantity_units'],
+			['column' => 'qu_id_stock', 'table' => 'quantity_units'],
+			['column' => 'qu_id_consume', 'table' => 'quantity_units'],
+			['column' => 'qu_id_price', 'table' => 'quantity_units'],
+			['column' => 'product_group_id', 'table' => 'product_groups'],
+		];
+
+		foreach ($checks as ['column' => $column, 'table' => $table])
+		{
+			$query = 'SELECT p.id, p.name, p.' . $column . ' FROM products p LEFT JOIN ' . $table . ' t ON t.id = p.' . $column
+				. ' WHERE p.' . $column . ' IS NOT NULL AND t.id IS NULL';
+			$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') dangling')->fetchColumn();
+			if ($count > 0)
+			{
+				$sample = $this->Source->query($query . ' ORDER BY p.id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+				throw new \RuntimeException('Import refused: ' . $count . ' source product rows reference missing ' . $table
+					. ' via ' . $column . '. Sample (id, name, ' . $column . '): ' . json_encode($sample) . '. '
+					. 'Choose an explicit source repair and retry; --force does not bypass this check. List all references: '
+					. $query . ' ORDER BY p.id;');
+			}
+		}
+	}
+
+	/**
 	 * Applies migrations/0277.pgsql.sql's own repair rule to whatever products the copy just
 	 * brought in - reusing its rule rather than inventing a second one, per issue #496 (H7a):
 	 * a product may not both have a parent and be one, so whichever product is the "middle"
@@ -455,6 +493,7 @@ class DatabaseImporter
 
 		$this->AssertSchemaVersionsMatch($applyRowMigrations);
 		$this->AssertStockLocations();
+		$this->AssertProductReferences();
 
 		$report = [];
 
@@ -542,7 +581,7 @@ class DatabaseImporter
 				. implode(', ', array_map(fn($t) => $this->TargetDialect->QuoteIdentifier($t), array_merge($tables, $derivedTablesToClear)))
 				. ' RESTART IDENTITY CASCADE');
 
-			foreach ($tables as $table)
+			foreach ($this->OrderTablesForCopy($tables) as $table)
 			{
 				$report[$table] = $this->CopyTable($table);
 			}
@@ -750,6 +789,39 @@ class DatabaseImporter
 		}
 
 		return $common;
+	}
+
+	/**
+	 * GetCommonTables() lists common tables in alphabetical order (`ORDER BY table_name`
+	 * above), and the copy loop in ImportSnapshot() used that order directly until this was
+	 * added. That was safe only by coincidence, as long as every foreign key among common
+	 * tables happened to point at a table earlier in alphabetical order - e.g. "locations"
+	 * sorts before "stock", so migrations/0288.pgsql.sql's stock_location_id_fkey never saw a
+	 * row copied before the location it names.
+	 *
+	 * migrations/0295.pgsql.sql's foreign keys on products.qu_id_purchase/qu_id_stock/
+	 * qu_id_consume/qu_id_price break that coincidence: "quantity_units" sorts *after*
+	 * "products" alphabetically, so copying products before quantity_units violates those
+	 * foreign keys on the first product row that names one - not because any row is invalid,
+	 * but because the referenced quantity_units row has not been copied back into the target
+	 * yet at that point in the same transaction. "locations" and "product_groups" need no
+	 * entry here: both already sort before "products".
+	 *
+	 * TABLES_COPIED_FIRST names every common table that some other common table's foreign key
+	 * references, moving it to the front of the copy order (stable otherwise) so it is always
+	 * fully repopulated before anything that might reference it. This is an ordering
+	 * correction for the copy loop only - GetCommonTables()'s own alphabetical list is still
+	 * used unchanged for the TRUNCATE statement, which names every table in one statement and
+	 * has no order dependency.
+	 */
+	private const TABLES_COPIED_FIRST = ['quantity_units'];
+
+	private function OrderTablesForCopy(array $tables): array
+	{
+		$first = array_values(array_intersect(self::TABLES_COPIED_FIRST, $tables));
+		$rest = array_values(array_diff($tables, self::TABLES_COPIED_FIRST));
+
+		return array_merge($first, $rest);
 	}
 
 	/**
