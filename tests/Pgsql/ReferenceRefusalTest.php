@@ -33,14 +33,17 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *
  * What is deliberately not covered here: the audit's own list also named "quantity unit /
  * product group referenced by products" (products.qu_id_purchase/qu_id_stock/qu_id_consume/
- * qu_id_price, products.product_group_id). None of those columns carries a FOREIGN KEY
- * anywhere in the schema - confirmed by the same reading - so deleting a quantity unit or
- * product group a product depends on does not raise a \PDOException at all today; it
- * succeeds and leaves a dangling reference. That is a different, deeper defect (missing
- * referential integrity, not a mishandled violation) than this issue's "500 instead of 400",
- * and fixing it needs a maintainer decision - a new FOREIGN KEY migration, or new
- * application-level pre-delete checks - rather than a code-only change to this refusal path.
- * Reported to the master rather than decided here.
+ * qu_id_price, products.product_group_id). At the time this was written, none of those
+ * columns carried a FOREIGN KEY anywhere in the schema, so deleting a quantity unit or
+ * product group a product depended on succeeded and left a dangling reference rather than
+ * raising a \PDOException at all.
+ *
+ * Issue #552 (D4, #487 remediation) resolved that for three of the six -
+ * product_group_id, qu_id_consume, qu_id_price - via migrations/0295.pgsql.sql; those cases
+ * are covered by tests/Pgsql/ProductReferenceIntegrityTest.php, in this same shape. The other
+ * three - location_id, qu_id_purchase, qu_id_stock - are NOT NULL and still carry no FOREIGN
+ * KEY: see that migration's own header comment for why a dangling NOT NULL reference has no
+ * established repair rule, and the PR body for the options left to the maintainer.
  */
 class ReferenceRefusalTest extends PgsqlSchemaTestCase
 {
