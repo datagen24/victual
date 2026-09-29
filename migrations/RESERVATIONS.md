@@ -79,8 +79,18 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issue [#552](https://github.com/datagen24/victual/issues/552) (D4, #487 remediation), modelled on [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md) — plain foreign keys on all six of `products`' upstream reference columns (`location_id`, `qu_id_purchase`, `qu_id_stock`, `qu_id_consume`, `qu_id_price`, `product_group_id`), no repair step (migrations run once, on a fresh install; `DatabaseImporter::AssertProductReferences()` validates a dangling import separately); also issue [#558](https://github.com/datagen24/victual/issues/558) — `trg_cascade_product_removal` retires a deleted product's stock-entry labels with its own name before deleting the stock rows | in this tree |
+| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0297 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered again on 2026-09-28, once more: issue [#552](https://github.com/datagen24/victual/issues/552)
+(D4, #487 remediation)'s products foreign-key migration, also carrying issue
+[#558](https://github.com/datagen24/victual/issues/558)'s label-retirement fix, is being
+written on this branch as `0295.pgsql.sql`, above plan 22's still-unwritten claims. Per the
+lowest-free-slot rule, the file the branch is actually writing takes the lowest free slot and
+plan 22's two unwritten claims move up in turn, from 0295–0296 to **0296–0297**, keeping their
+own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this
+table. The next unclaimed number is now **0298**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s

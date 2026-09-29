@@ -140,10 +140,15 @@ class ViewCorrectionsHttpTest extends PgsqlSchemaTestCase
 	 */
 	public function testStockJournalPageRendersARowWhoseLocationWasDeleted(): void
 	{
+		// "WS15 product home" is the product's own location_id, distinct from "WS15 deleted
+		// location" (the booking location this test deletes): migrations/0295.pgsql.sql's
+		// products_location_id_fkey (issue #552) now refuses deleting a location a product
+		// names as its own, so the two must differ here - stock_log.location_id (unlike
+		// products.location_id) stays deliberately unconstrained per ADR-0029 decision 3.
 		self::$db->exec("INSERT INTO quantity_units (name) VALUES ('WS15 qu')");
-		self::$db->exec("INSERT INTO locations (name) VALUES ('WS15 deleted location')");
+		self::$db->exec("INSERT INTO locations (name) VALUES ('WS15 deleted location'), ('WS15 product home')");
 		self::$db->exec('INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES '
-			. "('WS15 journal product', (SELECT id FROM locations WHERE name = 'WS15 deleted location'), "
+			. "('WS15 journal product', (SELECT id FROM locations WHERE name = 'WS15 product home'), "
 			. "(SELECT id FROM quantity_units WHERE name = 'WS15 qu'), (SELECT id FROM quantity_units WHERE name = 'WS15 qu'))");
 		// note is asserted on below rather than the product name: StockController::Journal()
 		// also passes every active product into the page for the unrelated product-*filter*

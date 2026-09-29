@@ -25,6 +25,18 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
+migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
+retires those labels with the product's own name, not null. `trg_cascade_product_removal`
+retires them before deleting the stock rows, rather than after the product row (and
+`retire_stock_entry_labels`' own product lookup) is gone. The same migration's foreign keys
+on all six of `products`' upstream reference columns (`location_id`, `qu_id_purchase`,
+`qu_id_stock`, `qu_id_consume`, `qu_id_price`, `product_group_id`; issue #552, D4) are covered
+by `tests/Pgsql/ProductReferenceIntegrityTest.php` at the httpboot phase, the same shape
+`tests/Pgsql/ReferenceRefusalTest.php` already uses for the other enforced foreign keys in
+this tree, and by `DatabaseImporter::AssertProductReferences()`'s own import-time refusal,
+covered by `tests/Pgsql/StockLocationImportTest.php`.
+
 The [product group roll-up tests](020-product-group-rollup.sql) cover migration 0293
 (issue #508, M8, ADR-0034): `product_groups_missing`'s member join now reaches every group
 in an ancestor's subtree through `product_groups_resolved`, not only a product's own direct
@@ -82,7 +94,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_enfore_product_nesting_level` (trigger `enfore_product_nesting_level`) | function + trigger | 0277 | `013-product-nesting-guard.sql` |
 | `trg_product_groups_check_parent` (trigger `check_product_group_parent`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
 | `trg_product_groups_guard_children` (trigger `guard_product_group_children`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
-| `trg_cascade_product_removal` | function | 0279 | `015-product-removal-cascade.sql` |
+| `trg_cascade_product_removal` | function | 0279, redefined 0295 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql` |
 | `retire_product_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
 | `retire_stock_entry_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
 | `retire_recipe_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
