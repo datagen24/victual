@@ -254,12 +254,18 @@ var sumValue = 0;
  * Sums a set of stock entries (as returned by GET stock/products/{id}/entries) in the current
  * product's own stock quantity unit - mirrors StockService::SumStockEntriesInProductUnit()
  * (issue #553, maintainer decision D4). An entry belonging to the current product
- * (current_productDetails.product.id) is added as-is; one belonging to a sub product is
- * converted through quantity_unit_conversions_resolved (from the current product's own stock
- * unit to that sub product's own stock unit) and divided back out of it, and is excluded
- * entirely - never counted 1:1 - when no such conversion is resolved, the same rule the
- * consume/open service applies. current_productDetails must already be populated (it is, by
- * the time either caller of this function can run).
+ * (parentProductId) is added as-is; one belonging to a sub product is converted through
+ * quantity_unit_conversions_resolved (from the current product's own stock unit to that sub
+ * product's own stock unit) and divided back out of it, and is excluded entirely - never
+ * counted 1:1 - when no such conversion is resolved, the same rule the consume/open service
+ * applies.
+ *
+ * parentProductId and parentQuIdStock are passed in by the caller rather than read from the
+ * mutable current_productDetails global: this function does its own async lookups (one GET
+ * pair per distinct sub product), and by the time they resolve the user may have picked a
+ * different product or location, which would have already overwritten current_productDetails.
+ * Passing the identity the request was made for lets the caller compare it against the form's
+ * present state once the callback fires and drop a stale result instead of applying it.
  *
  * Either lookup (the sub product's own record, or its resolved conversion) can fail as an API
  * call like any other; a failure is treated the same as "no resolvable conversion" for that one
@@ -270,14 +276,15 @@ var sumValue = 0;
  * user the same way every other API call in this file already does.
  * @param {Array} stockEntries Rows from stock/products/{id}/entries?include_sub_products=true
  * @param {Function} locationMatches Predicate(stockEntry) selecting which entries to sum
+ * @param {number|string} parentProductId The current product's id, captured when the request
+ *                        that produced stockEntries was made
+ * @param {number} parentQuIdStock The current product's own stock quantity unit id, captured at
+ *                 the same time
  * @param {Function} callback Called with the resulting sum (a number), once every sub product
  *                   entry's conversion has resolved or failed
  */
-function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, callback)
+function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, parentProductId, parentQuIdStock, callback)
 {
-	var parentProductId = current_productDetails.product.id;
-	var parentQuIdStock = current_productDetails.product.qu_id_stock;
-
 	var relevantEntries = stockEntries.filter(locationMatches);
 	var ownEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id == parentProductId; });
 	var subEntries = relevantEntries.filter(function(stockEntry) { return stockEntry.product_id != parentProductId; });
@@ -420,7 +427,14 @@ function OnLocationChange(locationId, stockId)
 			$("#location_id").val(locationId);
 		}
 
-		Victual.Api.Get("stock/products/" + Victual.Components.ProductPicker.GetValue() + '/entries?include_sub_products=true',
+		// Captured now, before the async lookups below, so a stale response - the product or
+		// location changing again while this request is in flight - can be told apart from a
+		// still-current one and dropped instead of overwriting a newer selection's state.
+		var requestProductId = Victual.Components.ProductPicker.GetValue();
+		var requestLocationId = locationId;
+		var requestParentQuIdStock = current_productDetails.product.qu_id_stock;
+
+		Victual.Api.Get("stock/products/" + requestProductId + '/entries?include_sub_products=true',
 			function(stockEntries)
 			{
 				stockEntries.forEach(stockEntry =>
@@ -458,13 +472,26 @@ function OnLocationChange(locationId, stockId)
 				// RefreshForm() below) is computed in the current product's own stock unit via
 				// the same conversions the service validates against, not as a raw cross-unit
 				// total - see SumSubstitutionAwareStockEntries().
-				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == locationId; }, function(sum)
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == locationId; }, requestProductId, requestParentQuIdStock, function(sum)
 				{
+					// Drop a stale response: the product or location has moved on since this
+					// request was made, and whichever newer request is now in flight (or has
+					// already settled) owns sumValue/the form refresh instead.
+					if (requestProductId !== Victual.Components.ProductPicker.GetValue() || requestLocationId != $("#location_id").val())
+					{
+						return;
+					}
+
 					sumValue = sum;
 
-					Victual.Api.Get('stock/products/' + Victual.Components.ProductPicker.GetValue(),
+					Victual.Api.Get('stock/products/' + requestProductId,
 						function(productDetails)
 						{
+							if (requestProductId !== Victual.Components.ProductPicker.GetValue())
+							{
+								return;
+							}
+
 							current_productDetails = productDetails;
 							RefreshForm();
 						}
@@ -694,14 +721,27 @@ $("#specific_stock_entry").on("change", function(e)
 	if ($(e.target).val() == "")
 	{
 		sumValue = 0;
-		Victual.Api.Get("stock/products/" + Victual.Components.ProductPicker.GetValue() + '/entries?include_sub_products=true',
+
+		// Captured now, before the async lookups below, so a stale response - the product or
+		// location changing again while this request is in flight - can be told apart from a
+		// still-current one and dropped instead of overwriting a newer selection's max.
+		var requestProductId = Victual.Components.ProductPicker.GetValue();
+		var requestLocationId = $("#location_id").val();
+		var requestParentQuIdStock = current_productDetails.product.qu_id_stock;
+
+		Victual.Api.Get("stock/products/" + requestProductId + '/entries?include_sub_products=true',
 			function(stockEntries)
 			{
 				// Issue #553 (maintainer decision D4): summed in the current product's own
 				// stock unit via the same conversions the service validates against, not as a
 				// raw cross-unit total - see SumSubstitutionAwareStockEntries().
-				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == $("#location_id").val() || stockEntry.location_id == ""; }, function(sum)
+				SumSubstitutionAwareStockEntries(stockEntries, function(stockEntry) { return stockEntry.location_id == requestLocationId || stockEntry.location_id == ""; }, requestProductId, requestParentQuIdStock, function(sum)
 				{
+					if (requestProductId !== Victual.Components.ProductPicker.GetValue() || requestLocationId != $("#location_id").val())
+					{
+						return;
+					}
+
 					sumValue = sum;
 					$("#display_amount").attr("max", sumValue.toFixed(Victual.UserSettings.stock_decimal_places_amounts));
 					if (sumValue == 0)

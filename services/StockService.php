@@ -2060,6 +2060,19 @@ class StockService extends BaseService
 			. 'ON qucr.product_id = pr.sub_product_id '
 			. 'AND qucr.from_qu_id = ' . $parentQuIdStock . ' '
 			. 'AND qucr.to_qu_id = p_sub.qu_id_stock '
+			// qucr.factor is declared TEXT on both engines (db/pgsql/baseline/01_tables.sql,
+			// migrations/0225.sql), so a plain `> 0` needs an explicit numeric CAST to even
+			// type-check on PostgreSQL; CAST(... AS NUMERIC) rather than the PG-only `::` sugar
+			// keeps this valid under DatabaseDialect::SQLITE_TOOLING_ENV too, where the
+			// differential suite can run this same code path against SQLite. Nothing puts a
+			// CHECK on quantity_unit_conversions.factor, so a NEGATIVE factor can reach this
+			// cache table (a factor of exactly 0 cannot: quantity_unit_conversions_INS's own
+			// inverse-row computation divides by it and raises first - see MergeProducts()'s
+			// equivalent guard, StockService.php ~4177). Admitting a sub product on a
+			// non-positive factor would let SumStockEntriesInProductUnit()'s availability check
+			// divide by it and Consume/Open multiply by it; exclude it here exactly like "no
+			// resolved conversion at all" (maintainer decision D4).
+			. 'AND CAST(qucr.factor AS NUMERIC) > 0 '
 			. 'WHERE pr.parent_product_id = ' . $productId
 			. ') OR product_id = ' . $productId
 			. ')';

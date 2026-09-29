@@ -236,4 +236,36 @@ class SubProductUnitConvertibilityTest extends PgsqlSchemaTestCase
 		self::assertContains($locationA, $locationIds);
 		self::assertNotContains($locationB, $locationIds);
 	}
+
+	// ---- A non-positive resolved factor is excluded exactly like no conversion at all -----
+
+	public function testGetProductStockEntriesExcludesASubProductWhoseOnlyResolvedConversionHasANonPositiveFactor(): void
+	{
+		// Given: a sub product whose only resolved conversion to the parent's own stock unit
+		// carries a NEGATIVE factor. Nothing in db/pgsql/baseline/01_tables.sql puts a CHECK
+		// on quantity_unit_conversions.factor (MergeProducts() guards against exactly this at
+		// StockService.php ~4177, "Cannot merge: quantity unit conversion factor must be
+		// greater than zero" - MergeProductsTest::testMergeRefusesWhenTheResolvedConversionFactorIsNotPositive
+		// stores one directly the same way this test does). A factor of exactly 0 cannot reach
+		// this table at all - quantity_unit_conversions_INS's own inverse-row computation,
+		// "1 / COALESCE(NEW.factor, 1)", raises a division-by-zero before the row commits - but
+		// a negative factor has no such obstacle. Before this fix,
+		// SubstitutionAwareProductIdWhereClause() admitted this sub product into the
+		// substitution candidate set on the strength of the conversion existing at all, letting
+		// SumStockEntriesInProductUnit()'s availability check divide by a negative factor and
+		// Consume/Open multiply by one.
+		$locationA = self::location('Non-Positive Factor Location');
+		$badUnit = self::quantityUnit('Non-Positive Factor Unit');
+		$parentId = self::product('Non-Positive Factor Parent', $locationA, 2);
+		$childId = self::product('Non-Positive Factor Child', $locationA, $badUnit, $parentId);
+		self::conversion($childId, 2, $badUnit, -3.0);
+		self::stockRow($childId, 4, $locationA);
+
+		// When: listing this product's stock entries with substitution allowed.
+		$productIds = array_map(fn($row) => (int)$row->product_id, iterator_to_array(self::$stock->GetProductStockEntries($parentId, false, true)));
+
+		// Then: the child holding the negative-factor conversion is excluded entirely, exactly
+		// as a sub product with no resolved conversion at all would be.
+		self::assertNotContains($childId, $productIds, 'A sub product whose only resolved conversion has a non-positive factor must be excluded, never counted 1:1');
+	}
 }

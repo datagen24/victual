@@ -605,6 +605,15 @@ Victual.Components.ProductPicker.GetPicker().on('change', function (e)
 		Victual.Api.Get('objects/products/' + parentProductId,
 			function (parentProduct)
 			{
+				// Requests can resolve out of order (pick parent A then quickly parent B - B's
+				// response can land first). Ignore a stale response whose parent no longer
+				// matches what is currently selected; the in-flight request for the current
+				// selection will apply its own result.
+				if (parentProductId !== Victual.Components.ProductPicker.GetValue())
+				{
+					return;
+				}
+
 				if (BoolVal(parentProduct.cumulate_min_stock_amount_of_sub_products))
 				{
 
