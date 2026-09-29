@@ -678,8 +678,8 @@
             {
                 "active": "integer",
                 "id": "integer",
-                "max_temp_c": "string",
-                "min_temp_c": "string",
+                "max_temp_c": "integer",
+                "min_temp_c": "integer",
                 "name": "string",
                 "row_created_timestamp": "string",
                 "sort_order": "integer",
@@ -750,7 +750,9 @@
             "name": "string",
             "row_created_timestamp": "string",
             "used_in": "null",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (chores)": {
@@ -777,7 +779,9 @@
             "row_created_timestamp": "string",
             "start_date": "string",
             "track_date_only": "boolean",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (equipment)": {
@@ -788,7 +792,9 @@
             "instruction_manual_file_name": "null",
             "name": "string",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (locations)": {
@@ -804,7 +810,9 @@
             "storage_class_id": "null",
             "tare_qu_id": "null",
             "tare_weight": "null",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (locations_resolved)": {
@@ -825,7 +833,9 @@
             "qu_id": "integer",
             "row_created_timestamp": "string",
             "shopping_location_id": "null",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (product_groups)": {
@@ -838,7 +848,9 @@
             "name": "string",
             "parent_product_group_id": "null",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (product_groups_resolved)": {
@@ -849,7 +861,9 @@
             "descendant_product_group_id": "integer",
             "id": "integer",
             "path": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (products)": {
@@ -897,7 +911,9 @@
             "should_not_be_frozen": "integer",
             "tare_weight": "integer",
             "treat_opened_as_out_of_stock": "integer",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (recipes)": {
@@ -915,7 +931,9 @@
             "product_id": "null",
             "row_created_timestamp": "string",
             "type": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (recipes_pos)": {
@@ -933,7 +951,9 @@
             "recipe_id": "integer",
             "round_up": "integer",
             "row_created_timestamp": "string",
-            "userfields": "null",
+            "userfields": {
+                "__empty_list__": true
+            },
             "variable_amount": "null"
         }
     },
@@ -965,7 +985,9 @@
             "recipe_type": "string",
             "recipe_variable_amount": "null",
             "stock_amount": "integer",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (roles)": {
@@ -977,7 +999,9 @@
             "id": "integer",
             "name": "string",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (shopping_locations)": {
@@ -988,7 +1012,9 @@
             "id": "integer",
             "name": "string",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (stock)": {
@@ -1012,7 +1038,9 @@
             "row_created_timestamp": "string",
             "shopping_location_id": "null",
             "stock_id": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (task_categories)": {
@@ -1023,7 +1051,9 @@
             "id": "integer",
             "name": "string",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/objects/{entity}/{objectId} (tasks)": {
@@ -1038,7 +1068,9 @@
             "id": "integer",
             "name": "string",
             "row_created_timestamp": "string",
-            "userfields": "null"
+            "userfields": {
+                "__empty_list__": true
+            }
         }
     },
     "GET /api/print/shoppinglist/thermal": {
@@ -1281,6 +1313,7 @@
                 "id": "integer",
                 "is_freezer": "integer",
                 "name": "string",
+                "parent_location_id": "null",
                 "row_created_timestamp": "string"
             },
             "next_due_date": "string",
@@ -1412,6 +1445,7 @@
                 "id": "integer",
                 "is_freezer": "integer",
                 "name": "string",
+                "parent_location_id": "null",
                 "row_created_timestamp": "string"
             },
             "next_due_date": "string",

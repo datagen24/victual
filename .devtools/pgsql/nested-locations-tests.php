@@ -693,12 +693,12 @@ check(array_keys($listed[0]) === ['id', 'name', 'min_temp_c', 'max_temp_c', 'tre
 	'with the documented column set');
 
 $response = $api->GetObject(request(), new Response(), ['entity' => 'storage_classes', 'objectId' => $freezerClassId]);
-$oneClass = json_decode((string)$response->getBody(), true);
+$oneClass = json_decode((string)$response->getBody());
 
-check($response->getStatusCode() === 200 && $oneClass['name'] === 'Freezer' && (int)$oneClass['treats_as_freezer'] === 1,
+check($response->getStatusCode() === 200 && $oneClass->name === 'Freezer' && (int)$oneClass->treats_as_freezer === 1,
 	'/objects/storage_classes/{id} answers about one class');
-check(array_key_exists('userfields', $oneClass) && $oneClass['userfields'] === null,
-	'GetObject always carries a userfields key, null here since none are configured');
+check(isset($oneClass->userfields) && $oneClass->userfields instanceof \stdClass && get_object_vars($oneClass->userfields) === [],
+	'GetObject carries an empty userfields object when none are configured');
 
 echo "\n";
 

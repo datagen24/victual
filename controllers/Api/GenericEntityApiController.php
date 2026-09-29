@@ -431,7 +431,7 @@ class GenericEntityApiController extends BaseApiController
 
 	/**
 	 * GET /api/objects/{entity}/{objectId} - returns a single object including its
-	 * Userfield values under the "userfields" key (null when none exist).
+	 * Userfield values under the "userfields" key (an empty object when none exist).
 	 * Returns 400 for an unknown/not listable entity and 404 when the object does not exist.
 	 */
 	public function GetObject(Request $request, Response $response, array $args)
@@ -462,14 +462,14 @@ class GenericEntityApiController extends BaseApiController
 			$referencingId = $object->stock_id;
 		}
 		$userfields = UserfieldsService::GetInstance()->GetValues($args['entity'], $referencingId);
-		if (count($userfields) === 0)
-		{
-			$userfields = null;
-		}
-		$object['userfields'] = $userfields;
+		$object['userfields'] = (object)$userfields;
 
 		$object = FieldPolicy::GetInstance()->RedactRow($args['entity'], $object);
 		$object = WireBooleans::Coerce($args['entity'], $object);
+		if ($args['entity'] === 'storage_classes')
+		{
+			self::NormalizeStorageClassTemperatures($object);
+		}
 
 		return $this->ApiResponse($response, $object);
 	}
@@ -532,8 +532,27 @@ class GenericEntityApiController extends BaseApiController
 
 		$objects = FieldPolicy::GetInstance()->RedactRows($args['entity'], $objects);
 		$objects = WireBooleans::CoerceRows($args['entity'], $objects);
+		if ($args['entity'] === 'storage_classes')
+		{
+			foreach ($objects as $object)
+			{
+				self::NormalizeStorageClassTemperatures($object);
+			}
+		}
 
 		return $this->ApiResponse($response, $objects);
+	}
+
+	/** PostgreSQL NUMERIC arrives as a string; these two documented fields are numbers. */
+	private static function NormalizeStorageClassTemperatures(object $row): void
+	{
+		foreach (['min_temp_c', 'max_temp_c'] as $column)
+		{
+			if (isset($row->$column))
+			{
+				$row->$column = (float)$row->$column;
+			}
+		}
 	}
 
 	/**
