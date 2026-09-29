@@ -62,8 +62,8 @@ INSERT INTO stock (product_id, amount, stock_id, best_before_date) VALUES
 	((SELECT id FROM products WHERE name = 'Spike22 product2'), 2, 'spike22-stock-b', '2027-03-01'),
 	((SELECT id FROM products WHERE name = 'Spike22 product2'), 5, 'spike22-stock-c', '2027-04-01');
 INSERT INTO labels (uid, kind, target_id) VALUES
-	('G' || upper(substr(md5(random()::text), 1, 12)), 'stock_entry', (SELECT id FROM stock WHERE stock_id = 'spike22-stock-b')),
-	('H' || upper(substr(md5(random()::text), 1, 12)), 'stock_entry', (SELECT id FROM stock WHERE stock_id = 'spike22-stock-c'));
+	('1' || upper(substr(md5(random()::text), 1, 12)), 'stock_entry', (SELECT id FROM stock WHERE stock_id = 'spike22-stock-b')),
+	('2' || upper(substr(md5(random()::text), 1, 12)), 'stock_entry', (SELECT id FROM stock WHERE stock_id = 'spike22-stock-c'));
 
 DELETE FROM products WHERE name = 'Spike22 product2';
 
