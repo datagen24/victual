@@ -169,17 +169,26 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 			'No attempt row records a claim that never really happened');
 	}
 
-	// --- M16: retirement leaves a queued job uncancelled --------------------------------------
+	// --- M16: retirement cancels a queued, unclaimed job (issue #516, D2) ---------------------
 
 	/**
 	 * "Retirement first, then the bytes" (LabelOperationsService::Reprint()) and "retirement
 	 * stops new claims" (LabelOperationsService::AssertLabelLive(), and now Claim()'s own
-	 * claim-query SQL) are the whole of the decided contract. What a retired label's queued job
-	 * *becomes* is explicitly undecided: ADR-0019 (around "Unclaimed jobs stay queued,
-	 * indefinitely, and nothing dead-letters for being unclaimed ... Dead-lettering stays for
-	 * [a payload no version can read, plus] decision item 4's deleted-printer case") rules out
-	 * inventing a terminal state here, so this asserts only what is decided - not claimed, and
-	 * otherwise untouched - and leaves the open question open.
+	 * claim-query SQL) were the whole of the decided contract when this test was first
+	 * written. What a retired label's queued job *becomes* was explicitly undecided at that
+	 * time - ADR-0019's "Unclaimed jobs stay queued, indefinitely, and nothing dead-letters
+	 * for being unclaimed" ruled out inventing a terminal state, but said nothing about
+	 * cancellation, which is a different final state from dead-lettering
+	 * (LabelOperationsService::Cancel()'s own docblock: "a cancelled job never printed, and
+	 * recording it as dead_lettered would claim something about a physical object that did
+	 * not happen").
+	 *
+	 * Issue #516 (M16, #487 remediation) closed that open question: maintainer decision D2
+	 * is "cancel queued, unclaimed print jobs when their label is retired... Cancelling them
+	 * gives the monitor an accurate final state and stays within ADR-0019's stated meaning of
+	 * 'undeliverable.'" migrations/0296.pgsql.sql's cancel_queued_label_jobs(), called from
+	 * retire_location_labels here, is that decision. A job never claimed, retired while still
+	 * queued, is now cancelled - not merely left queued - and this asserts that instead.
 	 */
 	public function testRetiredLabelJobIsNeverClaimedAndStaysQueued(): void
 	{
@@ -194,19 +203,20 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		self::assertNotNull($retiredAt, 'Precondition: deleting the location retires its label (migration 0269 trigger)');
 
 		$before = self::jobRow($jobId);
+		self::assertNotNull($before['cancelled_at'], 'Retirement cancels a queued, unclaimed job (issue #516, D2), before this test ever tries to claim it');
+		self::assertSame('Label retired', $before['cancelled_reason']);
 
 		$claims = self::tx(static fn () => (new PrintAttemptService(self::$db))->Claim($worker));
-		self::assertSame([], $claims, 'A retired label is never claimed');
+		self::assertSame([], $claims, 'A cancelled job is not claimable either way - Claim()\'s own query already excludes it by cancelled_at, on top of the retired-label exclusion');
 
 		$after = self::jobRow($jobId);
-		self::assertNull($after['outcome'], 'Retirement stops new claims; it does not dead-letter a job for merely being unclaimed (ADR-0019)');
-		self::assertNull($after['cancelled_at'], 'Retirement is not a user-initiated cancellation (LabelOperationsService::Cancel()) either');
+		self::assertNull($after['outcome'], 'Cancellation is not the same terminal state as dead-lettering (LabelOperationsService::Cancel()\'s own reasoning): outcome stays unset');
 		self::assertSame(0, (int)$after['attempts_made'], 'No attempt is spent discovering the label is retired');
-		self::assertEquals($before, $after, 'The job row is otherwise untouched by an unclaimable retirement');
+		self::assertEquals($before, $after, 'A failed claim attempt against an already-cancelled job changes nothing further');
 
 		$outboxRow = self::$db->query('SELECT dead_lettered_at, last_error FROM outbox WHERE id = ' . (int)$after['outbox_id'])->fetch(PDO::FETCH_ASSOC);
-		self::assertNull($outboxRow['dead_lettered_at'], 'The outbox row is not touched by retirement');
-		self::assertNull($outboxRow['last_error'], 'No error is recorded for a merely-retired target');
+		self::assertNotNull($outboxRow['dead_lettered_at'], 'The cancelled job\'s outbox row is dead-lettered too, so nothing keeps trying to deliver it');
+		self::assertSame('Cancelled: label retired', $outboxRow['last_error']);
 	}
 
 	/**
@@ -235,8 +245,9 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 		self::assertSame([], $claims, 'A retired label is never claimed, rendered or not');
 
 		$after = self::jobRow($jobId);
-		self::assertNull($after['outcome'], 'Retirement does not dead-letter a rendered job either; it stays queued like any other unclaimed job');
-		self::assertNull($after['cancelled_at'], 'Retirement is not a cancellation');
+		self::assertNull($after['outcome'], 'Cancellation is not dead-lettering (issue #516, D2): outcome stays unset for a rendered job too');
+		self::assertNotNull($after['cancelled_at'], 'A rendered but still-queued, unclaimed job is cancelled when its label retires just like an unrendered one (issue #516, D2)');
+		self::assertSame('Label retired', $after['cancelled_reason']);
 	}
 
 	/**
@@ -268,8 +279,8 @@ class LabelJobLifecycleTest extends PgsqlSchemaTestCase
 
 		foreach ($retired as $jobId) {
 			$row = self::jobRow($jobId);
-			self::assertNull($row['outcome'], 'A retired job stays queued rather than being dead-lettered for being unclaimed');
-			self::assertNull($row['cancelled_at'], 'Retirement is not a cancellation either');
+			self::assertNull($row['outcome'], 'A retired job is cancelled, not dead-lettered, for being unclaimed (issue #516, D2)');
+			self::assertNotNull($row['cancelled_at'], 'Every one of the 200 retired jobs is cancelled when its own label retires');
 		}
 	}
 
