@@ -134,29 +134,36 @@ class LabelOperationsService extends LabelService
     {
         $this->Transaction();
 
-        // A bare read, deliberately not FOR SHARE: PR #626 review found that locking this row
-        // here deadlocked (SQLSTATE 40P01) against a concurrent retirement. Issue() below
-        // takes its own FOR UPDATE on the target *entity* row (locations.id, etc.) - a
-        // retirement's own DELETE of that exact row has to lock it first too, so that lock
-        // already serialises RevisedPrint() against a concurrent retirement of the same
-        // target, with nothing extra to gain from also locking labels. Locking labels here
-        // as well, on top of that, created a second, reversed order for the same two
-        // resources: this call took labels then the entity row; a retirement's own DELETE
-        // takes the entity row first (as part of the DELETE itself), then labels (inside its
-        // BEFORE DELETE trigger, migrations/0296.pgsql.sql's cancel_queued_label_jobs()
-        // caller). Two transactions taking the same two locks in opposite orders is exactly
-        // what deadlocks.
+        // A cheap, unlocked preview first: refuses "no_live_label" outright, without taking
+        // any lock, for the ordinary case where the target simply has none. This is not the
+        // read RevisedPrint() acts on - see the FOR SHARE re-check below, after the entity
+        // row is locked - it exists only to hand Issue() (and, if the label really is live,
+        // AssertLabelLive() below) the uid to work with.
         $uid = $this->Query('SELECT uid FROM labels WHERE kind=? AND target_id=? AND retired_at IS NULL', [$kind, $targetId])->fetchColumn();
         if (!$uid) {
             $this->Refuse('target_id', 'no_live_label', 'That target has no live label; a revised print keeps an existing identity rather than minting one');
         }
-        // The epoch guard applies here too: a request composed before an import and executed
-        // after it would otherwise capture whatever now holds that id. Issue()'s own FOR
-        // UPDATE on the entity row is what actually serialises this against a concurrent
-        // retirement (see this method's own comment above) - if the row was deleted between
-        // the read above and here, Issue() refuses with a stale-epoch error rather than
-        // resurrecting a job for a target that is already gone.
+
+        // Entity row first (Issue()'s own FOR UPDATE on the target table), then the label -
+        // the same order every retirement path uses. PR #626 review, second delta round:
+        // locking labels *before* the entity row (an earlier version of this fix) reversed
+        // that order and deadlocked (SQLSTATE 40P01) against a concurrent retirement, whose
+        // own DELETE locks the entity row first (as part of the DELETE itself) and only then
+        // locks labels (inside its BEFORE DELETE trigger). The epoch guard Issue() itself
+        // applies is also why it has to run first here regardless of locking: a request
+        // composed before an import and executed after it would otherwise capture whatever
+        // now holds that id.
         (new LabelIdentityService($this->db))->Issue($kind, $targetId, $epoch);
+
+        // Re-checked now that the entity row is locked, not trusted from the unlocked read
+        // above: AssertLabelLive()'s own FOR SHARE is what actually serialises this against a
+        // concurrent retirement reaching the label after this call already holds the entity
+        // row - migrations/0296.pgsql.sql's trg_cascade_product_removal, in particular, locks
+        // every affected stock row (PERFORM ... FOR UPDATE) before it ever touches `labels`,
+        // for exactly this reason. Retirement either finishes first (and this refuses,
+        // correctly, on a now-retired label) or waits behind this call's own entity lock (and
+        // then sees - and cancels - whatever job this call went on to create).
+        $this->AssertLabelLive((string)$uid);
 
         $resolved = $this->ResolvePrinter($printerId);
         $version = $this->ResolveTemplate($kind, $templateId, $templateVersionId, $resolved['profile']);
@@ -343,20 +350,36 @@ class LabelOperationsService extends LabelService
      * still-live label do not need to block each other, only a concurrent writer does, and
      * the retirement trigger's `UPDATE` is the only writer of this row.
      *
-     * LOCK ORDER (PR #626 review, SQLSTATE 40P01 reproduced twice before this comment existed):
-     * every caller must take this lock *before* locking anything else cancel_queued_label_jobs()
-     * itself locks, in the same order that function does - labels first. It already retires
-     * the label (its own `UPDATE`) before it ever touches `print_jobs`
-     * (migrations/0296.pgsql.sql). Reprint() used to lock its source `print_jobs` row before
-     * calling this method; it now locks the label first (see Reprint()'s own comment).
-     * PromotePreview() was checked too: it locks nothing at all before this call, and the one
-     * lock it takes afterwards (`ArtifactService::Promote()`'s `label_artifacts` row) is a
-     * table cancel_queued_label_jobs() never touches, so no reordering was needed there.
-     * RevisedPrint() does not call this method - seemingly needing the identical protection,
-     * it deadlocked for the same reason lock reversal always does, against `LabelIdentityService::
-     * Issue()`'s own `FOR UPDATE` on the target entity row; that existing lock already
-     * serialises RevisedPrint() against a concurrent retirement of the same target, and
-     * RevisedPrint()'s own comment explains why no lock on `labels` is needed there at all.
+     * LOCK ORDER (PR #626 review, SQLSTATE 40P01 reproduced multiple times before this
+     * comment existed): a caller must take this lock *after* any entity-row lock its own
+     * operation takes, and *before* anything else cancel_queued_label_jobs() itself locks -
+     * `print_jobs`. That function already retires the label (its own `UPDATE`) before it
+     * ever touches `print_jobs` (migrations/0296.pgsql.sql), and every retirement site locks
+     * its entity row before it ever touches `labels` (a direct `DELETE` locks its own row as
+     * part of the statement itself, before its `BEFORE DELETE` trigger runs;
+     * `trg_cascade_product_removal`'s product -> stock_entry cascade locks every affected
+     * `stock` row with its own `PERFORM ... FOR UPDATE` before touching `labels`, for the
+     * same reason). So the rule for every caller of this method is: entity row (if this
+     * operation has one), then this lock, then nothing else that touches `print_jobs` until
+     * after it.
+     *
+     * - Reprint() has no entity row at all - it locks its source `print_jobs` row instead.
+     *   It used to lock that row *before* calling this method, the reverse of
+     *   cancel_queued_label_jobs()'s own order; it now calls this method first (see its own
+     *   comment).
+     * - RevisedPrint() has an entity row (`LabelIdentityService::Issue()`'s own `FOR UPDATE`)
+     *   and now calls this method *after* that lock, not instead of it: an earlier version of
+     *   this fix left RevisedPrint() with no lock on `labels` at all, reasoning that Issue()'s
+     *   entity lock was enough on its own - true for the direct single-row retirement
+     *   triggers, but not for the product cascade above, whose `UPDATE labels ... FROM stock`
+     *   join takes no lock on the `stock` rows it reads until the `PERFORM` this same review
+     *   round added. Without a lock on `labels` too, RevisedPrint('stock_entry', S) could
+     *   still read a label as live and queue a job after a concurrent product delete had
+     *   already retired it and cancelled everything queued at that moment - D2 violated, with
+     *   no deadlock and nothing to catch it.
+     * - PromotePreview() locks nothing at all before this call, and the one lock it takes
+     *   afterwards (`ArtifactService::Promote()`'s `label_artifacts` row) is a table
+     *   cancel_queued_label_jobs() never touches, so no reordering was needed there.
      */
     private function AssertLabelLive(string $uid): void
     {

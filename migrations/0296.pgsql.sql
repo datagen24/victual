@@ -14,7 +14,7 @@
 -- ever sets retired_at, and every one of them fires from an application-initiated DELETE:
 -- GenericEntityApiController::DeleteObject()'s `$row->delete()` for five of the six kinds
 -- (locations, products, recipes, chores, batteries — "the application path" D2 names), and
--- StockService's own `DELETE FROM stock` for a fully-consumed entry (StockService.php:4730)
+-- StockService's own `DELETE FROM stock` for a fully-consumed entry (StockService.php:903)
 -- for the sixth ("the stock retirement trigger" D2 names specifically, because it is the one
 -- fired from application code that is not the generic entity-delete controller). Cancelling
 -- unclaimed jobs at the trigger level, once, covers both paths uniformly rather than
@@ -118,7 +118,7 @@ END
 $$;
 
 -- Unchanged from migration 0283 otherwise: this is still the trigger a direct
--- `DELETE FROM stock` fires (StockService.php:4730's full-consumption path, and any other
+-- `DELETE FROM stock` fires (StockService.php:903's full-consumption path, and any other
 -- direct deletion of a stock row). A stock entry retired instead by a *product* delete's
 -- cascade is covered by trg_cascade_product_removal below, per #624 - this trigger's own
 -- `retired_at IS NULL` guard makes it a no-op for that path, so it never double-cancels.
@@ -187,16 +187,37 @@ END
 $$;
 
 -- Redefines #624's own redefinition of trg_cascade_product_removal (migrations/0279.pgsql.sql,
--- 0295 per PR #624) a second time. Every line below the FOR loop is #624's body verbatim
--- (issue #558's fix: retire a deleted product's stock-entry labels with OLD.name before the
--- cascade deletes the stock rows). The FOR loop is the only addition: it walks every label
--- that UPDATE actually retired - there can be more than one, one per stock row the product
--- held - and cancels that label's own queued jobs the same way the five single-row triggers
--- above do.
+-- 0295 per PR #624) a second time. Every line below the FOR loop's own body is #624's body
+-- verbatim (issue #558's fix: retire a deleted product's stock-entry labels with OLD.name
+-- before the cascade deletes the stock rows). Two additions: the PERFORM before the labels
+-- UPDATE (see its own comment - PR #626 review, second delta round), and the FOR loop itself,
+-- which walks every label that UPDATE actually retired - there can be more than one, one per
+-- stock row the product held - and cancels that label's own queued jobs the same way the five
+-- single-row triggers above do.
+--
+-- LOCK ORDER (PR #626 review, second delta round): every other retirement site locks its
+-- entity row before it ever touches `labels` - a direct `DELETE FROM stock`, `DELETE FROM
+-- locations`, etc. all lock that row as part of the DELETE itself, before their BEFORE DELETE
+-- trigger runs. This site did not: `UPDATE labels ... FROM stock s ... WHERE s.product_id =
+-- OLD.id` reads `stock` through a join, which takes no lock on the rows it reads, and the
+-- `DELETE FROM stock` below - which would have locked them - ran *after* labels were already
+-- retired and their jobs already cancelled. That let LabelOperationsService::RevisedPrint()
+-- (kind='stock_entry') read a label as still live, queue a new job, and commit *after* this
+-- trigger's cancellation had already run over "whatever was queued at that moment" - a job
+-- that then sat queued forever, D2 violated, because RevisedPrint()'s own lock order
+-- (Issue()'s entity FOR UPDATE, then AssertLabelLive()'s labels FOR SHARE - see
+-- LabelOperationsService.php) had nothing on this side to serialise against. The PERFORM
+-- below locks every affected stock row first, in a stable order, closing that gap: a
+-- concurrent RevisedPrint('stock_entry', S) either gets there first (this PERFORM then waits
+-- for it to finish, sees whatever job it created, and cancels it) or gets there second
+-- (blocks on this PERFORM until the whole cascade, including cancellation, commits, then
+-- finds the label already retired and refuses).
 CREATE OR REPLACE FUNCTION trg_cascade_product_removal() RETURNS TRIGGER AS $$
 DECLARE
 	r RECORD;
 BEGIN
+	PERFORM 1 FROM stock WHERE product_id = OLD.id ORDER BY id FOR UPDATE;
+
 	FOR r IN
 		UPDATE labels
 		SET retired_at = CURRENT_TIMESTAMP, target_id = NULL,

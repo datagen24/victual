@@ -196,15 +196,34 @@ Fourteen assertions cover:
 - a queued job cancelled by each of the three single-row retirement triggers case 1 does not
   already cover: `retire_recipe_labels`, `retire_chore_labels`, `retire_battery_labels`.
 
-Two more tests cover concurrent cases a single-connection pgTAP script cannot drive.
+Several more tests cover concurrent cases a single-connection pgTAP script cannot drive.
 `tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php`: a job claimed by one connection
 while a second connection concurrently retires its label must not be cancelled by that
 retirement. `tests/Pgsql/LabelRetirementRacesReprintTest.php`: a reprint racing a retirement
 of the same label must not commit a new queued job after that retirement's own cancellation
-has already run. `LabelOperationsService::AssertLabelLive()` (covering `Reprint()` and
-`PromotePreview()`) and `RevisedPrint()`'s own inline check now take a `FOR SHARE` lock on
-the label's row for exactly this reason. Both are proven with two real
-PostgreSQL connections and a row lock, not with timing.
+has already run. `LabelOperationsService::AssertLabelLive()` (called by `Reprint()`,
+`PromotePreview()`, and now `RevisedPrint()` too) takes a `FOR SHARE` lock on the label's row
+for exactly this reason. All are proven with two real PostgreSQL connections and a row lock,
+not with timing.
+
+Getting that lock's *order* right relative to every other lock the same call takes turned out
+to need its own tests.
+
+`tests/Pgsql/LabelRevisedPrintNeverDeadlocksWithRetirementTest.php` and `tests/Pgsql/
+LabelReprintNeverDeadlocksWithRetirementTest.php` each prove a genuine PostgreSQL deadlock
+(SQLSTATE 40P01) is impossible between a concurrent `RevisedPrint()`/`Reprint()` and a
+retirement of the same label. `RevisedPrint()` locks the target entity row
+(`LabelIdentityService::Issue()`'s own `FOR UPDATE`) before the label. `Reprint()` has no
+entity row of its own; it locks the label before its source `print_jobs` row instead. Both
+orders match what a retirement itself locks first.
+
+`tests/Pgsql/LabelRevisedPrintCascadeCancelsStockEntryJobTest.php` covers the specific path
+that motivated getting this right. `trg_cascade_product_removal` (migrations/0296.pgsql.sql)
+retires a deleted product's stock-entry labels. It now locks every affected `stock` row
+(`PERFORM ... FOR UPDATE`) before touching `labels` - the same entity-before-labels order as
+every other retirement site. So a concurrent `RevisedPrint('stock_entry', ...)` can never
+read a label as live and queue a job after the retirement's own cancellation has already run
+past it.
 
 `tests/Pgsql/LabelJobLifecycleTest.php::testRetiredLabelJobWithAFailedAttemptAndReauthorizationIsNeverReclaimed()`
 covers a case `cancel_queued_label_jobs()` deliberately does not reach: a job attempted once,

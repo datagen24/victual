@@ -18,12 +18,20 @@
 // (AssertLabelLive()). So Reprint() is the one operation whose race protection depends
 // entirely on AssertLabelLive()'s own `FOR SHARE` lock, with nothing else to fall back on.
 //
+// A gate connection that pre-holds the *source* print_jobs row FOR UPDATE externally (rather
+// than relying on this script's own advisory-lock pause) forces Reprint()'s own internal
+// `SELECT * FROM print_jobs WHERE id=? FOR UPDATE` to block there naturally - the technique
+// LabelReprintNeverDeadlocksWithRetirementTest uses, passing a gateClass/gateObject nobody
+// else holds so this script's own pause passes straight through.
+//
 //   php label-reprint-hold-subprocess-helper.php <sourceJobId> <printerId> <gateClass> <gateObject>
 //
 // Reads the same PG*/RBAC_TEST_SCHEMA/VICTUAL_DATAPATH/VICTUAL_ROOT environment variables as
 // request-subprocess-helper.php, attaching to the schema the calling test migrated.
-// Output: {"status": 200, "job_id": ...} on success, or {"status": 400, "error_message": "..."}
-// on a thrown exception.
+// Output: {"status": 200, "job_id": ...} on success, or {"status": 400, "error_message": "...",
+// "sqlstate": "..."} on a thrown exception - "sqlstate" is set only for a \PDOException, so
+// the calling test can tell a genuine SQLSTATE 40P01 deadlock apart from an ordinary
+// application-level refusal.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
@@ -49,6 +57,10 @@ $pdo = new PDO(
 	[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
 );
 $pdo->exec('SET search_path TO ' . getenv('RBAC_TEST_SCHEMA') . ', public');
+// A distinguishing application_name, so a calling test can identify this exact backend in
+// pg_stat_activity by name, the same reasoning label-retirement-delete-subprocess-helper.php's
+// own application_name follows.
+$pdo->exec("SET application_name = 'label-reprint-hold-helper'");
 DatabaseService::GetInstance()->GetDialect()->OnConnected($pdo);
 
 try
@@ -78,5 +90,13 @@ catch (\Throwable $ex)
 	{
 		$pdo->rollBack();
 	}
-	echo json_encode(['status' => 400, 'error_message' => $ex->getMessage()]);
+
+	$result = ['status' => 400, 'error_message' => $ex->getMessage()];
+
+	if ($ex instanceof \PDOException)
+	{
+		$result['sqlstate'] = $ex->errorInfo[0] ?? $ex->getCode();
+	}
+
+	echo json_encode($result);
 }

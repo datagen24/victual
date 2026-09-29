@@ -11,30 +11,32 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
  * Issue #516 (M16, #487 remediation), maintainer decision D2 - a race a PR validator found
- * in review: `LabelOperationsService::AssertLabelLive()` (used by `Reprint()` and
- * `PromotePreview()`) and `RevisedPrint()`'s own equivalent inline check both read whether a
- * label is still live with a bare `SELECT`, no row lock. A retirement's own `UPDATE labels
- * ... WHERE retired_at IS NULL` (every retire_*_labels trigger, migrations/0296.pgsql.sql)
- * could therefore commit *after* one of these had already read "still live" and gone on to
- * create a new `print_jobs` row - a row that did not exist yet when the retirement's own
- * `cancel_queued_label_jobs()` ran over "whatever is queued for this label right now". That
- * job would never be cancelled: `PrintAttemptService::Claim()`'s own retired-label exclusion
- * still stops it from ever printing, but it sits queued forever instead of cancelled, which
- * is exactly the inaccurate monitor state D2 exists to prevent.
+ * in review: `LabelOperationsService::AssertLabelLive()` (used by `Reprint()`,
+ * `PromotePreview()`, and now `RevisedPrint()` too) read whether a label is still live with a
+ * bare `SELECT`, no row lock. A retirement's own `UPDATE labels ... WHERE retired_at IS NULL`
+ * (every retire_*_labels trigger, migrations/0296.pgsql.sql) could therefore commit *after*
+ * one of these had already read "still live" and gone on to create a new `print_jobs` row -
+ * a row that did not exist yet when the retirement's own `cancel_queued_label_jobs()` ran
+ * over "whatever is queued for this label right now". That job would never be cancelled:
+ * `PrintAttemptService::Claim()`'s own retired-label exclusion still stops it from ever
+ * printing, but it sits queued forever instead of cancelled, which is exactly the inaccurate
+ * monitor state D2 exists to prevent.
  *
- * The fix: `AssertLabelLive()` and `RevisedPrint()`'s own label read now take `FOR SHARE` on
- * the label's row, held through job creation by the same caller-owned transaction every
- * other write in this class already relies on.
+ * The fix: `AssertLabelLive()` now takes `FOR SHARE` on the label's row, held through job
+ * creation by the same caller-owned transaction every other write in this class already
+ * relies on.
  *
  * This test exercises **`Reprint()`**, not `RevisedPrint()`, deliberately.
  * `RevisedPrint()` also calls `LabelIdentityService::Issue()`, which takes its own `FOR
- * UPDATE` on the target *entity* row (`locations.id` for a location) - already enough, on
- * its own, to serialise against a concurrent `DELETE` of that same row, which would make a
- * test built around `RevisedPrint()` pass even with the `FOR SHARE` fix reverted, and prove
- * nothing about it. `Reprint()` never touches the entity table: it locks only the source
- * `print_jobs` row (`FOR UPDATE`) and reads the label. So `Reprint()`'s race protection
- * depends entirely on `AssertLabelLive()`'s own `FOR SHARE` lock, with no other lock to fall
- * back on - the one operation that actually isolates what this fix does.
+ * UPDATE` on the target *entity* row (`locations.id` for a location) first - already enough,
+ * on its own, to serialise against a concurrent `DELETE` of that same row (see
+ * LabelRevisedPrintNeverDeadlocksWithRetirementTest for that call chain's own race), which
+ * would make a test built around `RevisedPrint()` pass even with `AssertLabelLive()`'s
+ * `FOR SHARE` reverted, and prove nothing about it. `Reprint()` never touches the entity
+ * table: it locks only the label (`AssertLabelLive()`) and then the source `print_jobs` row
+ * (`FOR UPDATE`). So `Reprint()`'s race protection depends entirely on `AssertLabelLive()`'s
+ * own `FOR SHARE` lock, with no other lock to fall back on - the one operation that actually
+ * isolates what this fix does.
  *
  * The two-connection proof, following the same advisory-lock-gate pattern
  * LabelRetirementCancelsClaimedJobRaceTest already established:
