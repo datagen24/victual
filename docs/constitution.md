@@ -57,8 +57,11 @@ not permanently deferred either.
 
 [ADR-0008](adr/0008-postgresql-only-runtime-engine.md) was accepted 2026-08-31. Its
 retirement work landed 2026-09-05 with
-[plan 24](plans/landed/24-sqlite-runtime-retirement.md): `DB_DRIVER` accepts `pgsql`
-alone, and the SQLite migration line is frozen at 0265.
+[plan 24](plans/landed/24-sqlite-runtime-retirement.md): ordinary runtime configuration
+restricts `DB_DRIVER` to `pgsql` alone, and the SQLite migration line is frozen at 0265.
+`DatabaseDialect::Create()` and `ConfigurationValidator::checkDatabaseDriver()` still
+permit `DB_DRIVER=sqlite` when `DatabaseDialect::SQLITE_TOOLING_ENV` is set - the
+differential suite's own escape hatch, not a second runtime configuration.
 
 Two pieces of dual-engine apparatus survive that landing on purpose, not as an oversight.
 The differential harness in `.devtools/pgsql/` still builds a SQLite side until

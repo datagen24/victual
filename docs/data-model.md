@@ -113,10 +113,11 @@ the very booking its own guard exists to catch.
 - **Mechanism:** `pg_advisory_xact_lock(classid, objid)`
   (`services/Database/PostgresDialect.php:340`), keyed on a fixed class id,
   `STOCK_BOOKING_ADVISORY_LOCK_CLASS` (`PostgresDialect.php:45-52`, the ASCII bytes of
-  `"vicS"`, `0x76696353`) and the product id as the object id. The two-integer form's
-  64-bit lock identity only collides with `WithMigrationLock()`'s or
-  `WithPublicationLock()`'s single-bigint locks when the class id is zero, which this one
-  never is.
+  `"vicS"`, `0x76696353`) and the product id as the object id. PostgreSQL's single-bigint
+  form (`WithMigrationLock()`, `WithPublicationLock()`) and its two-integer form use
+  separate key spaces that never overlap, regardless of the class id
+  ([PostgreSQL: Advisory Lock Functions](https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS)),
+  so this lock cannot collide with either of those two locks.
 - **Scope: transaction, not session.** It releases automatically at the commit or
   rollback of whichever transaction is open when it is taken, wherever in the call graph
   that was, not when the innermost call returns. This matters because
