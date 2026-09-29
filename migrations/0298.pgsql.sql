@@ -27,12 +27,13 @@
 --   - amount_measured (the opened-container measurement, which multiplies by this same
 --     qucr.factor term as a second factor alongside its own qucr_measure conversion)
 --
--- No other view in db/pgsql/baseline/ or a later migration shares this pattern: the
--- recipe cost/calorie views in db/pgsql/baseline/05_views_l3.sql also fall back to
--- IFNULL/COALESCE(qucr.factor, 1.0), but that qucr join resolves a recipe position's
--- *recipe-level* product substitution (`rp.product_id != p_effective.id`), a different
--- substitution mechanism from products_resolved's parent/sub-product hierarchy this issue
--- and #553 are both about, and out of scope here. stock_missing_products
+-- The recipe cost/calorie views in db/pgsql/baseline/05_views_l3.sql also fall back to
+-- IFNULL/COALESCE(qucr.factor, 1.0): their qucr join resolves `p_effective`, the recipe
+-- position's substituted product, via `products_current_substitutions` (joined on
+-- `rp.product_id = pcs.parent_product_id`), which is itself built directly on
+-- products_resolved (db/pgsql/baseline/05_views_l2.sql) - the same parent/sub-product
+-- hierarchy this issue and #553 are both about, not a different mechanism. Same defect
+-- class; tracked separately in #629, out of scope for this migration. stock_missing_products
 -- (db/pgsql/baseline/05_views_l2.sql) reads amount_aggregated/amount_opened_aggregated
 -- from stock_current rather than joining qucr itself, so it inherits this fix for free.
 --
@@ -43,11 +44,15 @@
 --
 --   1. The row IS the parent's own contribution (products_resolved's self-row, present for
 --      every product with no parent of its own: `parent_product_id = sub_product_id`).
---      Here p_sub and p_parent are the same product and its own stock unit trivially
---      converts to itself at factor 1 - cache__quantity_unit_conversions_resolved has no
---      identity row for this (it is never populated with from_qu_id = to_qu_id), so the
---      fallback here must stay 1.0, not become 0 and silently drop the parent's own stock
---      out of its own aggregate.
+--      Here p_sub and p_parent are the same product, and
+--      cache__quantity_unit_conversions_resolved already carries a stock->stock identity
+--      row at factor 1.0 for every product ("Priority 2" in
+--      quantity_unit_conversions_resolved's own recursive CTE,
+--      db/pgsql/baseline/03_views_group2.sql), so qucr already resolves this case to 1.0 on
+--      its own. The CASE branch's 1.0 here is a safety net rather than the only source of
+--      that value - it keeps the parent's own stock from silently dropping out of its own
+--      aggregate if that identity row were ever missing, rather than relying solely on the
+--      cache always being populated.
 --   2. The row is a genuine sub product (`parent_product_id != sub_product_id`). Here a
 --      missing or non-positive qucr.factor means "unconvertible" per D4, and the fallback
 --      is 0 - the row's stock is excluded from the aggregate, contributing nothing, rather

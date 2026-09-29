@@ -11,8 +11,9 @@
 -- convertible, one with no resolved conversion at all, and (in the first block) one with a
 -- resolved but negative factor - and asserts the aggregate the fixed view now returns. A
 -- negative control proves the ordinary single-conversion case, and the parent's own stock
--- (products_resolved's self-row, which has no cache entry to resolve either and must keep
--- falling back to factor 1), are both unaffected.
+-- (products_resolved's self-row, which already resolves to factor 1 through its own
+-- stock->stock identity row in cache__quantity_unit_conversions_resolved - "Priority 2",
+-- db/pgsql/baseline/03_views_group2.sql), are both unaffected.
 
 SELECT plan(5);
 
@@ -21,8 +22,9 @@ SELECT plan(5);
 -- whose only resolved conversion has a negative factor, while still counting the parent's
 -- own stock (self-row, factor 1) and a genuinely convertible sub product (factor 2) in
 -- full. Reproduces this issue's own report: before the fix, the unconvertible child (5)
--- and the negative-factor child (4) were both counted 1:1, giving 1 + 4 + 5 + 4 = 14
--- instead of the correct 1 + 4 = 5.
+-- was counted 1:1 and the negative-factor child had its resolved factor (-3) multiplied
+-- straight in - COALESCE only falls back on NULL, and a resolved negative factor is not
+-- NULL - giving 1 + 4 + 5 + (4 * -3) = -2 instead of the correct 1 + 4 = 5.
 -- ---------------------------------------------------------------------------------------
 
 INSERT INTO quantity_units (name) VALUES

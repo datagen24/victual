@@ -24,11 +24,14 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *
  * Fixed by migrations/0298.pgsql.sql, which recreates stock_current so the fallback is 1.0
  * only for a product's own row (products_resolved's self-row: parent_product_id =
- * sub_product_id, which never has a cache entry to resolve either, since a product's own
- * stock unit converts to itself at an implicit, uncached factor of 1) and 0.0 for a
- * genuine sub product with no resolved, positive conversion - the same distinction
- * SubstitutionAwareProductIdWhereClause() draws between its unconditional `product_id =
- * $productId` branch and its conversion-gated `product_id IN (...)` branch.
+ * sub_product_id) and 0.0 for a genuine sub product with no resolved, positive conversion -
+ * the same distinction SubstitutionAwareProductIdWhereClause() draws between its
+ * unconditional `product_id = $productId` branch and its conversion-gated `product_id IN
+ * (...)` branch. cache__quantity_unit_conversions_resolved already carries a stock->stock
+ * identity row at factor 1.0 for every product ("Priority 2",
+ * db/pgsql/baseline/03_views_group2.sql), so the self-row case already resolves to 1.0
+ * through the ordinary qucr join; the CASE's own 1.0 is a safety net against that identity
+ * row being missing, not the only source of the value.
  *
  * This is the API-level counterpart to .devtools/pgtap/025-unconvertible-subproduct-aggregation.sql's
  * direct view assertions, driving the real controller (StockCoverageTest's own pattern) so
