@@ -2743,8 +2743,10 @@ class StockService extends BaseService
 	 * With the product freezing feature enabled, moving into a freezer re-dates the entry using
 	 * "default due days after freezing" (-1 = never expires) and moving out of a freezer using
 	 * "default due days after thawing". With FEATURE_FLAG_LABELS and the product's auto_reprint_stock_label
-	 * set, a date change sends a revised print of the entry's label, but only if it already carries a live
-	 * one - see ReviseStockEntryLabelIfLive().
+	 * set, a whole-entry transfer that changes the due date sends a revised print of the entry's label, but
+	 * only if it already carries a live one - see ReviseStockEntryLabelIfLive(). A split transfer revises
+	 * nothing: the source row, the only one that can carry a live label, keeps its original due date, and
+	 * the new destination row has no live label yet.
 	 *
 	 * @param int $productId
 	 * @param float $amount Amount in the product's stock quantity unit
