@@ -4,24 +4,17 @@
 -- any of products' six upstream reference columns - location_id, qu_id_purchase,
 -- qu_id_stock, qu_id_consume, qu_id_price, product_group_id.
 --
--- NO REPAIR STEP, BY MAINTAINER DECISION. An earlier version of this migration added a
--- dangling-reference repair (set to NULL, reported with RAISE NOTICE) ahead of the three
--- NULLABLE columns' constraints, on the premise that a migration might run over a database
--- that already has rows with deleted references. The maintainer corrected that premise: this
--- fork's migration system is one-time and runs once, in order, on every installation,
--- starting from a schema that has never had a dangling reference in it, because nothing
--- before this migration could create one - no foreign key existed here to violate, and no
--- application code path deletes a location, quantity unit or product group out from under a
--- product without already refusing (GenericEntityApiController::DeleteObject(), issue
--- #515/PR #551's generic 23503 handling covers the other five reference classes this tree
--- already enforces). A migration never runs against a populated installation's *existing*
--- rows the way an in-place repair implies; the only route by which a dangling reference could
--- reach these columns at all is `bin/victual-db-import` copying one in from an external
--- source into an otherwise-empty, freshly migrated target. That is an import-time validation
--- question, answered separately by
--- services/Database/DatabaseImporter.php's AssertProductReferences() (issue #552, following
--- ADR-0029's own import precedent), not a schema-migration repair question. So this migration
--- adds plain foreign keys and nothing else, on all six columns alike.
+-- NO AUTOMATIC REPAIR: ABORT WITH A REPORT, BY MAINTAINER DECISION. Two paths reach these
+-- columns, and they are handled separately:
+--   * Upgrading an existing Victual installation runs this migration over live data. Before
+--     this migration nothing refused deleting a location, quantity unit or product group that
+--     a product still named, so a product can already hold a dangling reference. The preflight
+--     below lists every affected product, column and missing id, and aborts the upgrade before
+--     any foreign key is added, exactly as 0288 does for stock.location_id. Nothing is changed
+--     or invented; the operator repairs the data and reruns the migration.
+--   * A legacy Grocy import copies into a blank database; services/Database/DatabaseImporter.php's
+--     AssertProductReferences() reports and refuses there, before truncation (ADR-0029's
+--     import precedent).
 --
 -- ON DELETE RESTRICT ON UPDATE RESTRICT NOT DEFERRABLE on every one of the six, exactly as
 -- 0288's stock_location_id_fkey. No cascade, no automatic repair on a future delete. A future
@@ -32,6 +25,48 @@
 -- Bounded blocking, as 0288 does: the index builds and FK additions take write-blocking locks.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
+LOCK TABLE products, locations, quantity_units, product_groups IN SHARE ROW EXCLUSIVE MODE;
+
+-- Upstream Grocy stores 0 in qu_id_consume and qu_id_price to mean "unset" (its migrations
+-- 0210/0219 test IFNULL(x, 0) = 0), and databases imported before the importer translated it
+-- (PR #624) may still carry that 0. It is upstream's own meaning, not a dangling reference, so
+-- it becomes NULL here exactly as the importer now does. No other value is changed.
+UPDATE products SET qu_id_consume = NULL WHERE qu_id_consume = 0;
+UPDATE products SET qu_id_price = NULL WHERE qu_id_price = 0;
+
+DO $$
+DECLARE
+    ref record;
+    dangling_count bigint;
+    sample text;
+    report text := '';
+    total bigint := 0;
+BEGIN
+    FOR ref IN SELECT * FROM (VALUES
+        ('location_id', 'locations'),
+        ('qu_id_purchase', 'quantity_units'),
+        ('qu_id_stock', 'quantity_units'),
+        ('qu_id_consume', 'quantity_units'),
+        ('qu_id_price', 'quantity_units'),
+        ('product_group_id', 'product_groups')
+    ) AS r(col, tbl)
+    LOOP
+        EXECUTE format('SELECT count(*) FROM products p LEFT JOIN %I t ON t.id = p.%I WHERE p.%I IS NOT NULL AND t.id IS NULL', ref.tbl, ref.col, ref.col)
+        INTO dangling_count;
+        IF dangling_count > 0 THEN
+            EXECUTE format('SELECT string_agg(format(''(%%s, %%s)'', id, ref_id), '', '' ORDER BY id) FROM (SELECT p.id, p.%I AS ref_id FROM products p LEFT JOIN %I t ON t.id = p.%I WHERE p.%I IS NOT NULL AND t.id IS NULL ORDER BY p.id LIMIT 10) d', ref.col, ref.tbl, ref.col, ref.col)
+            INTO sample;
+            report := report || format(E'\n - products.%s: %s rows reference missing %s. Sample (product id, %s): %s. List all: SELECT p.id, p.%s FROM products p LEFT JOIN %s t ON t.id = p.%s WHERE p.%s IS NOT NULL AND t.id IS NULL ORDER BY p.id;', ref.col, dangling_count, ref.tbl, ref.col, sample, ref.col, ref.tbl, ref.col, ref.col);
+            total := total + dangling_count;
+        END IF;
+    END LOOP;
+
+    IF total > 0 THEN
+        RAISE EXCEPTION 'Migration refused: products reference rows that no longer exist.%', report
+            USING HINT = 'Choose an explicit repair for each listed product and rerun migration. No product has been changed.';
+    END IF;
+END $$;
+
 CREATE INDEX products_location_id_idx ON products (location_id);
 CREATE INDEX products_qu_id_purchase_idx ON products (qu_id_purchase);
 CREATE INDEX products_qu_id_stock_idx ON products (qu_id_stock);
