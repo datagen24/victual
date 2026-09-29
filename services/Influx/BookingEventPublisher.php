@@ -342,12 +342,27 @@ class BookingEventPublisher
 	}
 
 	/**
-	 * Reads the undelivered events, builds one batch, sends it, and acknowledges only on
+	 * Claims the undelivered events, builds one batch, sends it, and acknowledges only on
 	 * success.
 	 *
-	 * The order matters and is the whole point: nothing is marked delivered before the
-	 * consumer has taken it, so every failure mode - a timeout, a rejected write, the process
-	 * dying mid-drain - leaves the rows exactly where they were.
+	 * **Everything from the claim to the acknowledgement runs inside one transaction**
+	 * (issue #510, M10). `OutboxService::ClaimUndelivered()` takes its rows with
+	 * `FOR UPDATE SKIP LOCKED`, and that claim only means anything for as long as the
+	 * transaction holding it stays open: a second drain running at the same moment - another
+	 * request's request-end trigger, or `bin/victual-publish-state --drain` - skips straight
+	 * past whatever this one has locked rather than reading it too, and only sees those rows
+	 * again once this transaction commits or rolls back. Wrapping the InfluxDB write itself
+	 * inside that transaction is what makes the claim answer the right question: a drain
+	 * that crashed, timed out, or got a rejection *after* claiming rows but before this
+	 * commits releases the lock without having marked anything delivered, so the next drain
+	 * claims and retries them exactly as before - the same at-least-once guarantee the class
+	 * docblock describes, now safe against two drains running at once as well as against one
+	 * drain failing outright.
+	 *
+	 * The order within the transaction matters and is unchanged: nothing is marked delivered
+	 * before the consumer has taken it, so every failure mode - a timeout, a rejected write,
+	 * the process dying mid-drain - leaves the rows exactly where they were, still claimed by
+	 * nobody once this transaction is gone.
 	 *
 	 * @return bool True when a batch was delivered
 	 */
@@ -362,92 +377,95 @@ class BookingEventPublisher
 
 		try
 		{
-			$events = $outbox->GetUndelivered(OutboxService::EVENT_STOCK_TRANSACTION_BOOKED);
+			return DatabaseService::GetInstance()->InTransaction(function () use ($outbox)
+			{
+				$events = $outbox->ClaimUndelivered(OutboxService::EVENT_STOCK_TRANSACTION_BOOKED);
+
+				if (count($events) === 0)
+				{
+					return false;
+				}
+
+				// Unreadable rows are separated before anything is built. Skipping them
+				// inside the batch and then acknowledging the batch whole - the earlier
+				// behaviour - discarded committed events with no trace and no attempts
+				// recorded. They cannot be retried forever either, or they block every valid
+				// row behind them, so they get a state of their own.
+				$deliverable = [];
+				$undeliverable = [];
+
+				foreach ($events as $event)
+				{
+					$reason = self::DescribeUnreadable($event['payload']);
+
+					if ($reason === null)
+					{
+						$deliverable[] = $event;
+					}
+					else
+					{
+						$undeliverable[$event['id']] = $reason;
+					}
+				}
+
+				foreach ($undeliverable as $id => $reason)
+				{
+					error_log('Victual: outbox row ' . $id . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
+					$outbox->DeadLetter([$id], $reason);
+				}
+
+				if (count($deliverable) === 0)
+				{
+					// Nothing readable in this batch. Reported as no delivery, but the
+					// dead-lettered rows are out of the way so the next drain sees past them.
+					return false;
+				}
+
+				$ids = array_column($deliverable, 'id');
+
+				try
+				{
+					$lines = self::BuildLines(array_column($deliverable, 'payload'));
+				}
+				catch (\Throwable $ex)
+				{
+					// One line for the whole drain rather than one per event
+					error_log('Victual: could not build the InfluxDB event batch, nothing was delivered: ' . $ex->getMessage());
+					$outbox->RecordFailure($ids, $ex->getMessage());
+
+					return false;
+				}
+
+				// A readable event can still produce no lines - one whose bookings were all
+				// undone and whose products left stock entirely. It is delivered rather than
+				// retried forever: there is nothing to send and nothing wrong with it.
+				if (count($lines) === 0)
+				{
+					$outbox->MarkDelivered($ids);
+
+					return true;
+				}
+
+				$writer = new InfluxEventWriter();
+
+				if (!$writer->Write($lines))
+				{
+					$outbox->RecordFailure($ids, $writer->GetLastError() ?? 'the write was rejected');
+
+					return false;
+				}
+
+				$outbox->MarkDelivered($ids);
+
+				return true;
+			});
 		}
 		catch (\Throwable $ex)
 		{
-			error_log('Victual: could not read the outbox to deliver InfluxDB events: ' . $ex->getMessage());
+			error_log('Victual: could not claim the outbox to deliver InfluxDB events: ' . $ex->getMessage());
 
 			return false;
 		}
-
-		if (count($events) === 0)
-		{
-			return false;
-		}
-
-		// Unreadable rows are separated before anything is built. Skipping them inside the
-		// batch and then acknowledging the batch whole - the earlier behaviour - discarded
-		// committed events with no trace and no attempts recorded. They cannot be retried
-		// forever either, or they block every valid row behind them, so they get a state of
-		// their own.
-		$deliverable = [];
-		$undeliverable = [];
-
-		foreach ($events as $event)
-		{
-			$reason = self::DescribeUnreadable($event['payload']);
-
-			if ($reason === null)
-			{
-				$deliverable[] = $event;
-			}
-			else
-			{
-				$undeliverable[$event['id']] = $reason;
-			}
-		}
-
-		foreach ($undeliverable as $id => $reason)
-		{
-			error_log('Victual: outbox row ' . $id . ' cannot be delivered to InfluxDB and has been set aside: ' . $reason);
-			$outbox->DeadLetter([$id], $reason);
-		}
-
-		if (count($deliverable) === 0)
-		{
-			// Nothing readable in this batch. Reported as no delivery, but the dead-lettered
-			// rows are out of the way so the next drain sees past them.
-			return false;
-		}
-
-		$ids = array_column($deliverable, 'id');
-
-		try
-		{
-			$lines = self::BuildLines(array_column($deliverable, 'payload'));
-		}
-		catch (\Throwable $ex)
-		{
-			// One line for the whole drain rather than one per event
-			error_log('Victual: could not build the InfluxDB event batch, nothing was delivered: ' . $ex->getMessage());
-			$outbox->RecordFailure($ids, $ex->getMessage());
-
-			return false;
-		}
-
-		// A readable event can still produce no lines - one whose bookings were all undone
-		// and whose products left stock entirely. It is delivered rather than retried
-		// forever: there is nothing to send and nothing wrong with it.
-		if (count($lines) === 0)
-		{
-			$outbox->MarkDelivered($ids);
-
-			return true;
-		}
-
-		$writer = new InfluxEventWriter();
-
-		if (!$writer->Write($lines))
-		{
-			$outbox->RecordFailure($ids, $writer->GetLastError() ?? 'the write was rejected');
-
-			return false;
-		}
-
-		$outbox->MarkDelivered($ids);
-
-		return true;
 	}
 
 	/**

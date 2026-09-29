@@ -3605,6 +3605,14 @@ class StockService extends BaseService
 				// one) - from what the correlated FROM booking recorded; amount is untouched,
 				// since a whole-row transfer never changes it. TRANSFER_FROM's own undo below
 				// recognizes the same case and leaves `stock` alone.
+				//
+				// Audited for the same gap CodeRabbit found elsewhere (finding 4128248701,
+				// PR #618): neither this branch nor the split/legacy branch below it ever
+				// restores opened_amount/opened_qu_id from a log row - a transfer moves or
+				// splits `stock.amount` in place and leaves whatever measurement the row
+				// already carries untouched. No guard needed here; see TRANSFER_FROM's own
+				// rebuild path below for the one TRANSFER* shape that does restore a
+				// measurement and is guarded accordingly.
 				$correlatedFrom = $logRow->correlation_id !== null
 					? $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_TRANSFER_FROM)->fetch()
 					: null;
@@ -3803,7 +3811,7 @@ class StockService extends BaseService
 						// onto this booking for exactly this purpose - the same fields
 						// ConsumeProduct()'s own bookings restore a fully-taken entry with,
 						// in the CONSUME branch above.
-						$stockRow = $this->DB->stock()->createRow([
+						$rebuiltStockRow = [
 							'product_id' => $logRow->product_id,
 							'amount' => $logRow->amount * -1,
 							'best_before_date' => $logRow->best_before_date,
@@ -3819,7 +3827,25 @@ class StockService extends BaseService
 							'opened_qu_id' => $logRow->opened_qu_id,
 							'opened_tare' => $logRow->opened_tare,
 							'opened_measured_at' => $logRow->opened_measured_at
-						]);
+						];
+
+						// Same gap as the CONSUME branch above, found by CodeRabbit review
+						// of PR #618 (finding 4128248701): a whole-row measured transfer
+						// mirrors opened_amount/opened_qu_id onto this exact TRANSFER_FROM
+						// booking for the same reason ConsumeProduct() mirrors it onto a
+						// CONSUME booking (comment above), and this method's own #546
+						// narrowing now permits a ledger-only rescale of that booking's own
+						// amount (trg_cascade_change_qu_id_stock's `UPDATE stock_log SET
+						// amount = amount * v_factor ...` touches every stock_log row of the
+						// product, not only CONSUME ones, and MergeProducts() only refuses on
+						// a live `stock` row). Refuse truthfully here instead of letting the
+						// rebuild violate stock_measurement_coherence_check outright.
+						if ($rebuiltStockRow['opened_amount'] !== null && self::CompareAmounts($rebuiltStockRow['amount'], 1.0) !== 0)
+						{
+							throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+						}
+
+						$stockRow = $this->DB->stock()->createRow($rebuiltStockRow);
 						$stockRow->save();
 					}
 					else
@@ -3853,6 +3879,13 @@ class StockService extends BaseService
 				// leaving a measurement in place while clearing `open` would violate the
 				// coherence CHECK outright and abort this very undo -
 				// see .spike-adr22/RESULTS.md#prerequisite-6-undo.
+				//
+				// Audited for the same gap CodeRabbit found in the CONSUME/STOCK_EDIT_OLD/
+				// TRANSFER_FROM branches (finding 4128248701, PR #618): this branch never
+				// restores $logRow's own opened_amount/opened_qu_id/opened_tare/
+				// opened_measured_at onto `stock` - it always writes null unconditionally,
+				// below - so a ledger-only rescale of this booking's amount cannot make this
+				// specific write violate stock_measurement_coherence_check. No guard needed.
 				//
 				// Matched on stock_row_id when the booking has one (set by OpenProduct() for
 				// every booking from here on - a stale one is no longer possible for the
@@ -3978,6 +4011,25 @@ class StockService extends BaseService
 					$open = false;
 				}
 
+				// CodeRabbit review of PR #618 (finding 4128248701): EditStockEntry()
+				// mirrors a measured entry's pre-edit opened_amount/opened_qu_id onto this
+				// exact OLD booking (see its own comment and EditStockEntry()'s docblock)
+				// while it always logs amount 1 - the entry's own pre-edit amount is
+				// coherent by construction, since MeasureStockEntry() only ever measures a
+				// single-unit row. But this booking sits live (undone = 0) for as long as
+				// the edit itself is not undone, exactly like a CONSUME booking sits live
+				// until its own undo - and this method's own #546 narrowing now permits a
+				// ledger-only rescale of a live booking's amount (trg_cascade_change_qu_id_stock's
+				// `UPDATE stock_log SET amount = amount * v_factor ...` touches every
+				// stock_log row of the product, not only CONSUME ones, and MergeProducts()
+				// only refuses on a live `stock` row). Refuse truthfully here instead of
+				// letting the restore below violate stock_measurement_coherence_check
+				// outright, exactly as the CONSUME branch above already does.
+				if ($logRow->opened_amount !== null && self::CompareAmounts($logRow->amount, 1.0) !== 0)
+				{
+					throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+				}
+
 				$stockRow->update([
 					'amount' => $logRow->amount,
 					'best_before_date' => $logRow->best_before_date,
@@ -4027,6 +4079,12 @@ class StockService extends BaseService
 				// changes amount, dates, price, location or note, so there is nothing else to
 				// restore, and touching them here could clobber changes made by some other
 				// booking on this entry since.
+				//
+				// Audited for the same gap CodeRabbit found elsewhere (finding 4128248701,
+				// PR #618): this write never touches $stockRow->amount, and this trigger's
+				// own guard already refuses a ledger-wide rescale while $stockRow itself
+				// (not this log row) carries a live measurement - so `stock.amount` here is
+				// always already 1 whenever opened_amount is restored. No guard needed.
 				$stockRow->update([
 					'opened_amount' => $logRow->opened_amount,
 					'opened_qu_id' => $logRow->opened_qu_id,
@@ -4122,18 +4180,26 @@ class StockService extends BaseService
 	 * silently misinterpret the removed product's amounts and prices as already being in the
 	 * kept unit); the resolved conversion factor is not greater than zero (a zero or negative
 	 * factor would zero out or negate a rescaled amount, and divide-by-zero or negate a
-	 * rescaled price); the removed product has a measured open container - live in `stock`, or
-	 * only a live (`undone = 0`) consume booking left in `stock_log` after a full consumption
-	 * deleted the `stock` row itself - and the factor is not 1 (rescaling it would violate
-	 * stock's measurement coherence CHECK, migrations/0275.pgsql.sql, which requires amount = 1
-	 * on any measured row - part of issue #546, whose sibling failure through
-	 * trg_cascade_change_qu_id_stock's own rescale is not this method's to fix); or repointing
-	 * the removed product's own child products to the kept product would leave the kept product
-	 * with both a parent of its own and children of its own. enfore_product_nesting_level
-	 * (migrations/0277.pgsql.sql) does reject that last shape too - it fires BEFORE INSERT OR
-	 * UPDATE and refuses a row's own parent already having a parent - but only with a generic
-	 * message and only once the repoint below is already mid-transaction; refusing it here
-	 * first gives a clear, merge-specific message before anything is written.
+	 * rescaled price); the removed product has a measured open container live in `stock` and
+	 * the factor is not 1 (rescaling it would violate stock's measurement coherence CHECK,
+	 * migrations/0275.pgsql.sql, which requires amount = 1 on any measured row - part of issue
+	 * #546, whose sibling failure through trg_cascade_change_qu_id_stock's own rescale is not
+	 * this method's to fix); or repointing the removed product's own child products to the
+	 * kept product would leave the kept product with both a parent of its own and children of
+	 * its own. enfore_product_nesting_level (migrations/0277.pgsql.sql) does reject that last
+	 * shape too - it fires BEFORE INSERT OR UPDATE and refuses a row's own parent already
+	 * having a parent - but only with a generic message and only once the repoint below is
+	 * already mid-transaction; refusing it here first gives a clear, merge-specific message
+	 * before anything is written.
+	 *
+	 * The measured-container check above does NOT also inspect `stock_log` for a live
+	 * (`undone` = 0) measured consume booking with no live `stock` row - the shape
+	 * ConsumeProduct() leaves behind when a whole measured container is taken. An earlier
+	 * round of this fix did, and that over-refused: such a booking is permanent history that
+	 * nothing ever clears, so it locked the merge forever with nothing left in stock to
+	 * consume, weigh, or otherwise resolve. That booking's own undo is already refused
+	 * truthfully by UndoBooking() itself (its CONSUME branch) if and when it is ever undone,
+	 * which is where that protection belongs.
 	 *
 	 * @param int $productIdToKeep
 	 * @param int $productIdToRemove
@@ -4204,8 +4270,7 @@ class StockService extends BaseService
 			}
 
 			if ($factor != 1.0
-				&& ($this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null
-					|| $this->DB->stock_log()->where('product_id = :1 AND undone = 0 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null))
+				&& $this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $productIdToRemove)->fetch() != null)
 			{
 				// stock_measurement_coherence_check (migrations/0275.pgsql.sql) requires
 				// amount = 1 on any row carrying a measurement. Rescaling amount by anything
@@ -4213,17 +4278,18 @@ class StockService extends BaseService
 				// producing a meaningfully converted measurement, which nothing here attempts.
 				// Refuse cleanly before any row is touched instead.
 				//
-				// Checking `stock` alone misses a fully consumed measured container: when
-				// ConsumeProduct() takes a whole measured entry, it deletes the `stock` row
-				// but mirrors opened_amount/opened_qu_id onto the consume stock_log row
-				// precisely so UndoBooking()'s consume branch can rebuild the deleted row
-				// later (migrations/0275.pgsql.sql, and the mirroring in ConsumeProduct()
-				// itself). Left unrescaled-and-unrefused, that consume booking would survive
-				// this merge, and undoing it afterwards would try to recreate a `stock` row
-				// with the rescaled amount instead of 1, hitting the same CHECK from the undo
-				// path rather than from this one (issue #546 - the sibling failure through
-				// trg_cascade_change_qu_id_stock's own rescale is not this method's to fix).
-				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container (live, or a live undoable consume booking) and the unit conversion factor is not 1');
+				// Deliberately `stock` only, not also `stock_log` for a live, undone = 0
+				// measured consume booking with no live `stock` row (the shape
+				// ConsumeProduct() leaves behind when a whole measured container is fully
+				// taken, migrations/0275.pgsql.sql). An earlier round of this fix checked
+				// both, and that over-refused: such a booking is permanent history nothing
+				// ever clears - the merge would have been locked forever with nothing left
+				// in stock to consume, weigh, or otherwise resolve. That booking's own undo
+				// is already refused truthfully by UndoBooking() itself (its CONSUME branch)
+				// if and when it is ever undone (issue #546) - that is where this protection
+				// belongs, not here on every future merge regardless of whether undo is ever
+				// attempted.
+				throw new \Exception('Cannot merge: $productIdToRemove has a measured open container and the unit conversion factor is not 1');
 			}
 
 			if ($productToKeep->parent_product_id != null

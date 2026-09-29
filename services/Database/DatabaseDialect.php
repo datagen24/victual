@@ -310,6 +310,28 @@ abstract class DatabaseDialect
 	abstract public function LockProductStock(\PDO $pdo, int $productId): void;
 
 	/**
+	 * The row-claim lock clause a caller appends to a `SELECT ... ORDER BY ... LIMIT n`
+	 * query, so that a second, concurrent claim on the same rows skips past whatever this
+	 * one has already claimed rather than reading it too (issue #510, M10 -
+	 * OutboxService::ClaimUndelivered(), which appends this to its own query rather than a
+	 * literal `FOR UPDATE SKIP LOCKED`).
+	 *
+	 * PostgreSQL: ` FOR UPDATE SKIP LOCKED` - the same mechanism
+	 * `PrintAttemptService::Claim()` already uses for print jobs (PrintAttemptService.php:32),
+	 * applied here directly to the table being claimed from rather than through a join.
+	 *
+	 * SQLite: empty. SQLite has no `FOR UPDATE` syntax at all - appending it there is not
+	 * merely a no-op, it is a syntax error PDO reports as
+	 * `SQLSTATE[HY000]: General error: 1 near "FOR": syntax error` (see
+	 * IsMissingTableError()'s own docblock on how little SQLite's driver error messages
+	 * otherwise distinguish). SqliteDialect's version returns an empty clause for the same
+	 * reason LockProductStock()'s is a no-op there: under ADR-0008 SQLite is not a
+	 * concurrent runtime engine, and its own single-writer file lock already serialises
+	 * every write, so nothing here needs a real claim to stay correct.
+	 */
+	abstract public function GetRowClaimLockClause(): string;
+
+	/**
 	 * Whether the given driver error means "that table does not exist", as opposed to any
 	 * other reason a query can fail.
 	 *

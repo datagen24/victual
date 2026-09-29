@@ -168,6 +168,12 @@ class SqliteDialect extends DatabaseDialect
 	{
 	}
 
+	/** @see DatabaseDialect::GetRowClaimLockClause() */
+	public function GetRowClaimLockClause(): string
+	{
+		return '';
+	}
+
 	/**
 	 * Whether the error is "no such table", which on SQLite can only be told from the
 	 * message.

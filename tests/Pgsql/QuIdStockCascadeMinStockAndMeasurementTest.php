@@ -1,0 +1,492 @@
+<?php
+
+namespace Victual\Tests\Pgsql;
+
+use PDO;
+use ReflectionProperty;
+use Slim\Psr7\Factory\ServerRequestFactory;
+use Slim\Psr7\Response;
+use Victual\Controllers\Api\GenericEntityApiController;
+use Victual\Services\BaseService;
+use Victual\Services\StockService;
+use Victual\Tests\Support\PgsqlSchemaTestCase;
+
+/**
+ * Issues #543 and #546 (#487 remediation): trg_cascade_change_qu_id_stock
+ * (db/pgsql/baseline/06_triggers_a.sql, redefined by migrations/0294.pgsql.sql) fires
+ * BEFORE UPDATE on `products` whenever a product's qu_id_stock changes and rescales every
+ * amount stored in that unit by the resolved conversion factor.
+ *
+ * #543: product_location_min_stock.min_stock_amount (migrations/0276.pgsql.sql) and
+ * products.min_stock_amount (db/pgsql/baseline/01_tables.sql) are both stored in the
+ * product's stock unit exactly like chores.product_amount, meal_plan.product_amount,
+ * recipes_pos.amount and shopping_list.amount, but the trigger never rescaled either - a
+ * minimum silently kept its old numeral in the new unit.
+ *
+ * #546: MergeProducts() (services/StockService.php, commit 791389623f) refuses a merge
+ * that would rescale a measured open container live in `stock` by a factor other than 1,
+ * because that would violate stock_measurement_coherence_check (migrations/0275.pgsql.sql).
+ * This trigger applies the identical rescale on a single product's own qu_id_stock change
+ * and had no equivalent guard at all.
+ *
+ * ROUND 2 (Opus validator finding on PR #618): the guard covers `stock` only, not
+ * `stock_log`. A live (undone = 0), measured consume booking left over from a fully
+ * consumed container is permanent history nothing else ever clears, so refusing on it (as
+ * an earlier round of this migration did) locks the product's stock unit forever with
+ * nothing left to consume, weigh, or otherwise resolve. That booking's own undo is already
+ * refused truthfully by UndoBooking()'s own CONSUME-branch guard (PR #598) if and when it
+ * is ever undone - which is where that protection belongs. A second, application-layer
+ * guard (controllers/Api/GenericEntityApiController.php's RefuseMeasuredContainerQuIdStockChange())
+ * now also mirrors the trigger's own `stock`-only check, so the live-container refusal
+ * reaches the API as a clear 400 rather than the generic message
+ * BaseApiController::WithoutDriverText() substitutes for a raw SQLSTATE.
+ */
+class QuIdStockCascadeMinStockAndMeasurementTest extends PgsqlSchemaTestCase
+{
+	private static PDO $db;
+	private static array $ids = [];
+	private static \DI\Container $container;
+	private static GenericEntityApiController $products;
+
+	public static function setUpBeforeClass(): void
+	{
+		parent::setUpBeforeClass();
+
+		self::$db = self::Pdo();
+
+		// Issue #533: BaseService::GetInstance() caches one instance per class for the
+		// whole PHPUnit process; other classes earlier in this same "stockcoverage" phase
+		// already constructed StockService against their own (by now dropped) schemas.
+		(new ReflectionProperty(BaseService::class, 'Instances'))->setValue(null, []);
+
+		self::$container = new \DI\Container();
+		self::$container->set('view', new \Victual\Helpers\SlimBladeView(VICTUAL_ROOT_PATH . '/views', VICTUAL_DATAPATH));
+		self::$container->set('UrlManager', new \Victual\Helpers\UrlManager(''));
+		self::$products = new GenericEntityApiController(self::$container);
+
+		self::$db->exec("INSERT INTO users(id, username, password) VALUES (9000, 'qucascade-caller', 'fixture')");
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9000, id FROM permission_hierarchy WHERE name = 'MASTER_DATA_EDIT'");
+
+		self::$ids['pantry'] = self::insertRow('locations', ['name' => 'QuCascade Pantry']);
+		self::$ids['gram'] = self::insertRow('quantity_units', ['name' => 'QuCascade Gram', 'name_plural' => 'QuCascade Grams']);
+		self::$ids['kilogram'] = self::insertRow('quantity_units', ['name' => 'QuCascade Kilogram', 'name_plural' => 'QuCascade Kilograms']);
+	}
+
+	// ------------------------------------------------------------------------------
+	// Helpers
+	// ------------------------------------------------------------------------------
+
+	private static function insertRow(string $table, array $columns): int
+	{
+		$names = implode(', ', array_keys($columns));
+		$placeholders = implode(', ', array_fill(0, count($columns), '?'));
+		$statement = self::$db->prepare("INSERT INTO $table ($names) VALUES ($placeholders) RETURNING id");
+		$statement->execute(array_values($columns));
+
+		return (int)$statement->fetchColumn();
+	}
+
+	private static function insertProduct(string $name, array $columns = []): int
+	{
+		$columns = array_merge([
+			'name' => $name,
+			'location_id' => self::$ids['pantry'],
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		], $columns);
+
+		return self::insertRow('products', $columns);
+	}
+
+	private static function changeStockUnit(int $productId, int $newQuId): void
+	{
+		$statement = self::$db->prepare('UPDATE products SET qu_id_stock = ? WHERE id = ?');
+		$statement->execute([$newQuId, $productId]);
+	}
+
+	private static function minStockAmount(int $productId, int $locationId): ?float
+	{
+		$statement = self::$db->prepare('SELECT min_stock_amount FROM product_location_min_stock WHERE product_id = ? AND location_id = ?');
+		$statement->execute([$productId, $locationId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false ? null : (float)$value;
+	}
+
+	private static function productMinStockAmount(int $productId): float
+	{
+		$statement = self::$db->prepare('SELECT min_stock_amount FROM products WHERE id = ?');
+		$statement->execute([$productId]);
+
+		return (float)$statement->fetchColumn();
+	}
+
+	private static function shortfallAmountMissing(int $productId, int $locationId): ?float
+	{
+		$statement = self::$db->prepare('SELECT amount_missing FROM product_location_missing WHERE product_id = ? AND location_id = ?');
+		$statement->execute([$productId, $locationId]);
+		$value = $statement->fetchColumn();
+
+		return $value === false ? null : (float)$value;
+	}
+
+	/** @return array<int, array<string, mixed>> */
+	private static function stockRows(int $productId): array
+	{
+		$statement = self::$db->prepare('SELECT amount, open, opened_amount, opened_qu_id FROM stock WHERE product_id = ? ORDER BY id');
+		$statement->execute([$productId]);
+
+		return $statement->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	/** @return array<int, array<string, mixed>> */
+	private static function consumeLedgerRows(int $productId): array
+	{
+		$statement = self::$db->prepare("SELECT id, amount, undone, opened_amount FROM stock_log WHERE product_id = ? AND transaction_type = 'consume' ORDER BY id");
+		$statement->execute([$productId]);
+
+		return $statement->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	/** @return array<int, array<string, mixed>> */
+	private static function allLedgerRows(int $productId): array
+	{
+		$statement = self::$db->prepare('SELECT id, transaction_type, amount, undone, opened_amount, opened_qu_id FROM stock_log WHERE product_id = ? ORDER BY id');
+		$statement->execute([$productId]);
+
+		return $statement->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	private static function stockEditOldLogRow(int $productId): ?array
+	{
+		$statement = self::$db->prepare("SELECT id, amount, undone, opened_amount FROM stock_log WHERE product_id = ? AND transaction_type = 'stock-edit-old' AND undone = 0");
+		$statement->execute([$productId]);
+		$row = $statement->fetch(PDO::FETCH_ASSOC);
+
+		return $row === false ? null : $row;
+	}
+
+	/**
+	 * Attempts the qu_id_stock change directly through `products` (a raw UPDATE, the same
+	 * event the trigger's WHEN clause fires on), asserting it throws, and returns the
+	 * exception's message. Deliberately not "catch (\Exception)" for the same reason
+	 * MergeProductsTest::expectMergeRefused() gives: PHPUnit's own assertion-failure
+	 * exception is itself an \Exception, and swallowing it here would hide a real failure of
+	 * this helper rather than reporting it.
+	 */
+	private function expectStockUnitChangeRefused(int $productId, int $newQuId, string $message): string
+	{
+		$caught = null;
+
+		try
+		{
+			self::changeStockUnit($productId, $newQuId);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+
+		self::assertNotNull($caught, $message);
+
+		return $caught->getMessage();
+	}
+
+	private static function request(string $method = 'GET', $body = null)
+	{
+		$request = (new ServerRequestFactory())->createServerRequest($method, 'http://localhost/api');
+
+		if ($body !== null)
+		{
+			$request = $request->withParsedBody($body)->withHeader('Content-Type', 'application/json');
+		}
+
+		return $request;
+	}
+
+	// ------------------------------------------------------------------------------
+	// Issue #543: product_location_min_stock and products.min_stock_amount rescale
+	// ------------------------------------------------------------------------------
+
+	public function testChangingStockUnitRescalesTheLocationMinimumByTheConversionFactor(): void
+	{
+		$productId = self::insertProduct('QuCascade Min Stock Product', ['min_stock_amount' => 200]);
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+		$location = self::insertRow('locations', ['name' => 'QuCascade Min Stock Location']);
+		self::insertRow('product_location_min_stock', ['product_id' => $productId, 'location_id' => $location, 'min_stock_amount' => 500]);
+
+		// Given: 300 g of actual stock at this location, so the shortfall view reports a
+		// real (non-zero) amount_missing before the unit change - proving the assertion
+		// below is not vacuously true of an empty shortfall.
+		StockService::GetInstance()->AddProduct($productId, 300, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, $location);
+		self::assertEqualsWithDelta(200.0, self::shortfallAmountMissing($productId, $location), 1e-9, 'Given: the shortfall view reports 500 - 300 = 200 g missing before the unit change');
+
+		// When: the product's stock unit changes from gram to kilogram (factor 0.001).
+		self::changeStockUnit($productId, self::$ids['kilogram']);
+
+		// Then: the location minimum is rescaled by the same factor as every other
+		// per-product amount this trigger already converts (issue #543's defect: before
+		// the fix, min_stock_amount stayed 500 - now 500 "kg" instead of 0.5 kg).
+		self::assertEqualsWithDelta(0.5, self::minStockAmount($productId, $location), 1e-9, 'Then: min_stock_amount is converted by the g->kg factor (500 * 0.001)');
+
+		// ...and the shortfall view, which reads min_stock_amount alongside the (also
+		// rescaled) stock amount, reports a correctly converted shortfall: 0.5 kg minimum
+		// less 0.3 kg actual stock = 0.2 kg missing, not 200 (the un-rescaled minimum
+		// compared against 0.3 kg of genuinely converted stock, which is what issue #543
+		// describes going wrong).
+		self::assertEqualsWithDelta(0.2, self::shortfallAmountMissing($productId, $location), 1e-9, 'Then: the shortfall view reports the correctly converted amount missing (0.5 - 0.3 = 0.2 kg)');
+
+		// ...and the product's own min_stock_amount (a different column, same class of
+		// miss) is rescaled by the same factor.
+		self::assertEqualsWithDelta(0.2, self::productMinStockAmount($productId), 1e-9, 'Then: products.min_stock_amount is converted the same way (200 * 0.001)');
+	}
+
+	// ------------------------------------------------------------------------------
+	// Issue #546: refusing a rescale of a live measured open container in `stock`
+	// ------------------------------------------------------------------------------
+
+	public function testChangingStockUnitRefusesWhenALiveMeasuredOpenContainerWouldBeRescaled(): void
+	{
+		$productId = self::insertProduct('QuCascade Live Measured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($productId, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		$stock->OpenProduct($productId, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		$given = self::stockRows($productId);
+		self::assertCount(1, $given, 'Given: fixture sanity check');
+		self::assertEqualsWithDelta(1.0, (float)$given[0]['amount'], 1e-9, 'Given: a coherent single container (amount = 1)');
+		self::assertEqualsWithDelta(0.5, (float)$given[0]['opened_amount'], 1e-9, 'Given: the container has been measured, 0.5 g remaining');
+
+		// When: the stock unit changes by a non-1 factor while the measured container is
+		// still live in `stock`.
+		$message = $this->expectStockUnitChangeRefused($productId, self::$ids['kilogram'], 'Expected the qu_id_stock change to be refused: rescaling a live measured container\'s amount away from 1 violates stock_measurement_coherence_check');
+
+		// Then: the refusal names the actual reason, and the container is untouched -
+		// before the fix, the trigger's own "UPDATE stock SET amount = amount * v_factor"
+		// would have hit the raw CHECK violation instead (a SQLSTATE 23514, not a
+		// meaningful application message).
+		self::assertStringContainsString('measured open container', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
+		self::assertSame($given, self::stockRows($productId), 'Then: the measured entry is left exactly as it was');
+	}
+
+	/**
+	 * The HTTP-level counterpart: a trigger's own RAISE EXCEPTION reaches the wire as raw
+	 * SQLSTATE text, which BaseApiController::WithoutDriverText() replaces with a generic
+	 * "database rejected this request" message. controllers/Api/GenericEntityApiController.php's
+	 * RefuseMeasuredContainerQuIdStockChange() mirrors the trigger's own guard so the API
+	 * itself answers a clear, actionable 400 instead.
+	 */
+	public function testChangingStockUnitOverHttpRefusesWithAClearFourHundredWhenALiveMeasuredOpenContainerWouldBeRescaled(): void
+	{
+		$productId = self::insertProduct('QuCascade HTTP Live Measured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($productId, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		$stock->OpenProduct($productId, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		$response = self::$products->EditObject(
+			self::request('PUT', ['qu_id_stock' => self::$ids['kilogram']]),
+			new Response(),
+			['entity' => 'products', 'objectId' => $productId]
+		);
+
+		self::assertSame(400, $response->getStatusCode(), 'Then: the API answers 400, not a 500 or a raw database error');
+		$body = json_decode((string)$response->getBody(), true);
+		$message = (string)($body['error_message'] ?? '');
+		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw database exception message');
+		self::assertStringNotContainsStringIgnoringCase('database rejected this request', $message, 'Then: this is not BaseApiController::WithoutDriverText()\'s generic fallback message');
+		self::assertStringContainsString('measured open container', $message, 'Then: the refusal names the actual reason');
+		self::assertSame(self::$ids['gram'], (int)self::$db->query('SELECT qu_id_stock FROM products WHERE id = ' . $productId)->fetchColumn(), 'Then: qu_id_stock is left exactly as it was');
+	}
+
+	/**
+	 * Round 2 (Opus validator finding on PR #618): a live, undone = 0 measured consume
+	 * booking with no live `stock` row - the shape ConsumeProduct() leaves behind when a
+	 * whole measured container is fully consumed - no longer blocks the unit change. The
+	 * earlier guard, which also checked `stock_log`, locked the product's stock unit
+	 * forever once such a booking existed, since nothing else ever clears it.
+	 */
+	public function testChangingStockUnitSucceedsAfterAMeasuredContainerWasConsumedWhole(): void
+	{
+		$productId = self::insertProduct('QuCascade Consumed Measured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($productId, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		$stock->OpenProduct($productId, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+		$stock->ConsumeProduct($productId, 1, false, StockService::TRANSACTION_TYPE_CONSUME);
+
+		self::assertSame([], self::stockRows($productId), 'Given: the fully consumed container leaves no live stock row');
+
+		// A few ordinary purchase/consume cycles afterwards - the validator's own probe -
+		// confirming this is not merely "the very next write succeeds" but that the product
+		// is genuinely unlocked.
+		for ($i = 0; $i < 3; $i++)
+		{
+			$stock->AddProduct($productId, 10, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+			$stock->ConsumeProduct($productId, 10, false, StockService::TRANSACTION_TYPE_CONSUME);
+		}
+		self::assertSame([], self::stockRows($productId), 'Given: still no live stock row after several ordinary cycles');
+
+		$consumeRows = self::consumeLedgerRows($productId);
+		$liveMeasuredConsume = array_values(array_filter($consumeRows, fn($row) => (int)$row['undone'] === 0 && $row['opened_amount'] !== null));
+		self::assertCount(1, $liveMeasuredConsume, 'Given: exactly one live, undone, measured consume booking remains in the ledger');
+
+		// When: the stock unit changes by a non-1 factor with no live `stock` row for this
+		// product at all.
+		self::changeStockUnit($productId, self::$ids['kilogram']);
+
+		// Then: the change succeeds, and the measured booking's amount is rescaled like
+		// every other stock_log row this trigger touches.
+		$rescaled = self::consumeLedgerRows($productId);
+		$rescaledMeasured = array_values(array_filter($rescaled, fn($row) => (int)$row['id'] === (int)$liveMeasuredConsume[0]['id']))[0];
+		self::assertEqualsWithDelta(-0.001, (float)$rescaledMeasured['amount'], 1e-9, 'Then: the booking\'s amount is rescaled by the factor (0.001), same as every other moved stock_log row');
+
+		// And: undoing that now-rescaled booking is refused truthfully by UndoBooking()'s
+		// own guard (PR #598), not by this trigger - which is exactly why this trigger no
+		// longer needs to refuse the unit change itself over this booking.
+		$caught = null;
+		try
+		{
+			$stock->UndoBooking((int)$rescaledMeasured['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused through #598\'s own truthful guard'
+		);
+	}
+
+	/**
+	 * CodeRabbit review of PR #618, finding 4128248701: a STOCK_EDIT_OLD booking mirrors a
+	 * measured entry's pre-edit amount (always 1) and opened_amount onto itself
+	 * (EditStockEntry()'s own comment), then sits live (undone = 0) for as long as the edit
+	 * is not undone - exactly like a CONSUME booking sits live until its own undo. This
+	 * migration's own narrowing (round 2) permits a ledger-only rescale of a live booking's
+	 * amount, which trg_cascade_change_qu_id_stock's `UPDATE stock_log SET amount = amount *
+	 * v_factor ...` applies to every stock_log row of the product, not only CONSUME ones. A
+	 * rescaled STOCK_EDIT_OLD booking (amount != 1, opened_amount still set) must refuse its
+	 * own undo truthfully - the same protection the CONSUME branch already has - rather than
+	 * let the restore violate stock_measurement_coherence_check.
+	 */
+	public function testChangingStockUnitLeavesAStockEditOldBookingRefusingItsOwnUndoAfterRescale(): void
+	{
+		$productId = self::insertProduct('QuCascade Edited Measured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($productId, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $productId)->fetchColumn();
+		$stock->OpenProduct($productId, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		// Editing the amount away from 1 drops the live measurement from `stock` (it would
+		// no longer be coherent), but mirrors the pre-edit amount (1) and measurement onto
+		// the STOCK_EDIT_OLD booking exactly as EditStockEntry()'s own comment describes.
+		$keep = StockService::KeepStoredValue();
+		$stock->EditStockEntry($stockRowId, 2, $keep, $keep, $keep, $keep, $keep, $keep);
+
+		$editedRow = self::stockRows($productId);
+		self::assertCount(1, $editedRow, 'Given: fixture sanity check');
+		self::assertEqualsWithDelta(2.0, (float)$editedRow[0]['amount'], 1e-9, 'Given: the entry now holds the edited amount');
+		self::assertNull($editedRow[0]['opened_amount'], 'Given: the live measurement was dropped by the edit (amount 2 is not coherent with a measurement)');
+
+		$oldBooking = self::stockEditOldLogRow($productId);
+		self::assertNotNull($oldBooking, 'Given: a live STOCK_EDIT_OLD booking exists');
+		self::assertEqualsWithDelta(1.0, (float)$oldBooking['amount'], 1e-9, 'Given: it mirrors the pre-edit amount (1)');
+		self::assertEqualsWithDelta(0.5, (float)$oldBooking['opened_amount'], 1e-9, 'Given: it mirrors the pre-edit measurement (0.5)');
+
+		// When: the stock unit changes by a non-1 factor. No live `stock` row is measured
+		// for this product any more, so this succeeds under the narrowed guard.
+		self::changeStockUnit($productId, self::$ids['kilogram']);
+
+		$rescaledOldBooking = self::stockEditOldLogRow($productId);
+		self::assertNotNull($rescaledOldBooking, 'Then: the booking is still live');
+		self::assertEqualsWithDelta(0.001, (float)$rescaledOldBooking['amount'], 1e-9, 'Then: its amount is rescaled by the factor (1 * 0.001), same as every other stock_log row');
+		self::assertEqualsWithDelta(0.5, (float)$rescaledOldBooking['opened_amount'], 1e-9, 'Then: opened_amount itself is not touched by the rescale');
+
+		$given = self::allLedgerRows($productId);
+
+		// And: undoing this now-rescaled booking is refused truthfully, not left to crash
+		// on stock_measurement_coherence_check.
+		$caught = null;
+		try
+		{
+			$stock->UndoBooking((int)$rescaledOldBooking['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused with the same message style as the CONSUME branch\'s own guard'
+		);
+		self::assertSame($given, self::allLedgerRows($productId), 'Then: the refusal leaves every stock_log row for this product exactly as it found them');
+	}
+
+	public function testChangingStockUnitStillRescalesAnUnmeasuredProductsStockAndLedger(): void
+	{
+		$productId = self::insertProduct('QuCascade Unmeasured Product');
+		self::insertRow('quantity_unit_conversions', [
+			'from_qu_id' => self::$ids['gram'],
+			'to_qu_id' => self::$ids['kilogram'],
+			'factor' => 0.001,
+			'product_id' => $productId,
+		]);
+
+		StockService::GetInstance()->AddProduct($productId, 500, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+
+		// When: the stock unit changes with no measured container anywhere in this
+		// product's stock or ledger - the ordinary case issue #546's guard must not
+		// regress into refusing.
+		self::changeStockUnit($productId, self::$ids['kilogram']);
+
+		$rows = self::stockRows($productId);
+		self::assertCount(1, $rows, 'Then: the rescale still runs to completion');
+		self::assertEqualsWithDelta(0.5, (float)$rows[0]['amount'], 1e-9, 'Then: amount is converted by the g->kg factor (500 * 0.001) exactly as before this migration');
+	}
+}

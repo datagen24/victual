@@ -387,6 +387,7 @@ class GenericEntityApiController extends BaseApiController
 				if ($args['entity'] === 'products')
 				{
 					$this->RefuseTareEnable($requestBody, boolval($row->enable_tare_weight_handling));
+					$this->RefuseMeasuredContainerQuIdStockChange($requestBody, $row);
 				}
 
 				// Same reasoning as AddObject(): the update and its post-save side effects
@@ -800,6 +801,57 @@ class GenericEntityApiController extends BaseApiController
 		if (boolval($requestBody['enable_tare_weight_handling']) && !$currentlyEnabled)
 		{
 			throw new EInvalidApiQuery('enable_tare_weight_handling can no longer be enabled - weigh an opened purchased container on the stock entry instead (docs/plans/landed/28-open-container-measurement.md), or a refillable vessel on its location (docs/plans/landed/29-working-container-replenishment.md)');
+		}
+	}
+
+	/**
+	 * Issue #546 (#487 remediation). trg_cascade_change_qu_id_stock
+	 * (db/pgsql/baseline/06_triggers_a.sql, migrations/0294.pgsql.sql) already refuses, at
+	 * the database itself, a qu_id_stock change that would rescale a live measured open
+	 * container's amount away from 1 (stock_measurement_coherence_check,
+	 * migrations/0275.pgsql.sql) - but a trigger's RAISE EXCEPTION reaches the wire as raw
+	 * SQLSTATE text, which BaseApiController::WithoutDriverText() (issue #498/#487 H9)
+	 * replaces with its generic "database rejected this request" message before it reaches
+	 * the caller. This mirrors that trigger's own guard - the same factor, resolved the
+	 * same way, checking the same `stock` rows - purely so this write path answers a clear,
+	 * actionable 400 instead of relying on the generic sanitiser. The trigger itself stays
+	 * the authoritative backstop for every other write path (imports, direct SQL, future
+	 * callers), and deliberately does not also check `stock_log` for a live, undoable
+	 * measured consume booking with no live `stock` row - see migrations/0294.pgsql.sql's
+	 * header comment for why that would lock the product's stock unit forever.
+	 *
+	 * @param array $requestBody The parsed, purified, server-owned-column-stripped request body
+	 * @param object $row The product row as it currently stands (before this edit)
+	 * @throws EInvalidApiQuery When the change would rescale a live measured open container
+	 */
+	private function RefuseMeasuredContainerQuIdStockChange(array $requestBody, $row): void
+	{
+		if (!array_key_exists('qu_id_stock', $requestBody))
+		{
+			return;
+		}
+
+		$newQuId = (int)$requestBody['qu_id_stock'];
+		$oldQuId = (int)$row->qu_id_stock;
+
+		if ($newQuId === $oldQuId)
+		{
+			return;
+		}
+
+		$conversion = $this->DB->cache__quantity_unit_conversions_resolved()
+			->where('product_id = :1 AND from_qu_id = :2 AND to_qu_id = :3', $row->id, $oldQuId, $newQuId)
+			->fetch();
+		$factor = $conversion !== null ? (float)$conversion->factor : 1.0;
+
+		if ($factor == 1.0)
+		{
+			return;
+		}
+
+		if ($this->DB->stock()->where('product_id = :1 AND opened_amount IS NOT NULL', $row->id)->fetch() !== null)
+		{
+			throw new EInvalidApiQuery('qu_id_stock cannot be changed: this product has a measured open container - consume or weigh it first');
 		}
 	}
 

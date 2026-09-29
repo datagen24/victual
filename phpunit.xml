@@ -108,6 +108,7 @@
 			<file>tests/Pgsql/MeasuredContainerPartialOperationsTest.php</file>
 			<file>tests/Pgsql/SubProductUnitConvertibilityTest.php</file>
 			<file>tests/Pgsql/ProductParentStockUnitDefaultTest.php</file>
+			<file>tests/Pgsql/QuIdStockCascadeMinStockAndMeasurementTest.php</file>
 		</testsuite>
 		<testsuite name="stockconcurrency">
 			<file>tests/Pgsql/StockConcurrencyTest.php</file>
@@ -138,6 +139,7 @@
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
 			<file>tests/Pgsql/RollbackChangeSignalsTest.php</file>
+			<file>tests/Pgsql/OutboxClaimConcurrencyTest.php</file>
 		</testsuite>
 		<testsuite name="genericquery">
 			<file>tests/Pgsql/GenericQueryTest.php</file>
