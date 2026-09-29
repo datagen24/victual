@@ -68,7 +68,7 @@
 -- against a different snapshot, which is exactly the two-writes-do-not-agree failure mode
 -- LabelOperationsService::Cancel() avoids by taking its row lock once, up front, before either
 -- of its own two UPDATEs.
-CREATE FUNCTION cancel_queued_label_jobs(p_label_uid TEXT) RETURNS void LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION cancel_queued_label_jobs(p_label_uid TEXT) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
 	v_outbox_id INTEGER;
 BEGIN

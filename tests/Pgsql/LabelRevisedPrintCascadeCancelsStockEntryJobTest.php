@@ -175,7 +175,7 @@ class LabelRevisedPrintCascadeCancelsStockEntryJobTest extends PgsqlSchemaTestCa
 			self::assertTrue(self::waitBlocked('label-revisedprint-helper'), 'Timed out waiting for the revised-print subprocess to block on the gate-held stock row');
 
 			$deleteProcess = self::start([__DIR__ . '/label-retirement-delete-subprocess-helper.php', 'products', (string)$productId]);
-			self::waitBlocked('label-retirement-delete-helper');
+			self::assertTrue(self::waitBlocked('label-retirement-delete-helper'), 'Timed out waiting for the delete subprocess to block on the gate-held stock row');
 		}
 		finally
 		{

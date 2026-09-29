@@ -202,7 +202,7 @@ class LabelRevisedPrintNeverDeadlocksWithRetirementTest extends PgsqlSchemaTestC
 			self::assertTrue(self::waitBlocked('label-revisedprint-helper'), 'Timed out waiting for the revised-print subprocess to block on the gate-held location row');
 
 			$deleteProcess = self::start([__DIR__ . '/label-retirement-delete-subprocess-helper.php', 'locations', (string)$locationId]);
-			self::waitBlocked('label-retirement-delete-helper');
+			self::assertTrue(self::waitBlocked('label-retirement-delete-helper'), 'Timed out waiting for the delete subprocess to block on the gate-held location row');
 		}
 		finally
 		{

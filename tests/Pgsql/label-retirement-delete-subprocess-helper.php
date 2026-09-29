@@ -27,8 +27,10 @@
 //
 // Reads the same PG*/RBAC_TEST_SCHEMA/VICTUAL_DATAPATH/VICTUAL_ROOT environment variables as
 // request-subprocess-helper.php, attaching to the schema the calling test migrated.
-// Output: {"status": 200} on success, or {"status": 400, "error_message": "..."} on a thrown
-// exception.
+// Output: {"status": 200} on success, or {"status": 400, "error_message": "...",
+// "sqlstate": "..."} on a thrown exception - "sqlstate" is set only for a \PDOException, so
+// a calling test can tell a genuine SQLSTATE 40P01 deadlock apart from an ordinary
+// application-level refusal.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
 define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH'));
@@ -75,5 +77,12 @@ try
 }
 catch (\Throwable $ex)
 {
-	echo json_encode(['status' => 400, 'error_message' => $ex->getMessage()]);
+	$result = ['status' => 400, 'error_message' => $ex->getMessage()];
+
+	if ($ex instanceof \PDOException)
+	{
+		$result['sqlstate'] = $ex->errorInfo[0] ?? $ex->getCode();
+	}
+
+	echo json_encode($result);
 }
