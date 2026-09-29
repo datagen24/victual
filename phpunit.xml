@@ -163,6 +163,7 @@
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
+			<file>tests/Pgsql/StockAmountMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>
 		<testsuite name="chores">
