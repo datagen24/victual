@@ -79,8 +79,26 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issue [#552](https://github.com/datagen24/victual/issues/552) (D4, #487 remediation), modelled on [ADR-0029](../docs/adr/0029-stock-locations-reference-existing-locations.md) — plain foreign keys on all six of `products`' upstream reference columns, no repair step; also issue [#558](https://github.com/datagen24/victual/issues/558) — `trg_cascade_product_removal` retires a deleted product's stock-entry labels with its own name before deleting the stock rows (PR #624, not yet merged) | pending in PR #624 |
+| 0296 | issue [#516](https://github.com/datagen24/victual/issues/516) (M16, #487 remediation, maintainer decision D2) — `cancel_queued_label_jobs()`, called from every label retirement trigger to cancel a label's queued, unclaimed print jobs when it retires. Depends on 0295 (PR #624) landing first (PR #626, not yet merged) | pending in PR #626 |
+| 0297 | issue [#492](https://github.com/datagen24/victual/issues/492) (H3, #487 remediation), [ADR-0032](../docs/adr/0032-stock-amounts-compare-within-one-tolerance.md) — `stock_amount_non_negative_check`, a database-level `amount >= 0` backstop for `stock` (PR #627, not yet merged; that PR's own branch still says 0295 as of this writing and will renumber to 0297 behind PRs #624 and #626 before it merges) | pending in PR #627 |
+| 0298 | issue [#622](https://github.com/datagen24/victual/issues/622) (#487 remediation), maintainer decision D4 (issue #553) — `stock_current` redefined so an unconvertible sub product, or one whose only resolved conversion has a non-positive factor, contributes nothing to `amount_aggregated`, `amount_opened_aggregated` or `amount_measured`, matching the exclusion rule PR #621 already applies on the write side | in this tree |
+| 0299 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0300 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered on 2026-09-29: issue [#622](https://github.com/datagen24/victual/issues/622) (#487
+remediation)'s `stock_current` aggregation fix takes **0298**.
+
+Three still-unmerged branches already order themselves ahead of it: PR #624 (issue
+#552/#558) at 0295, PR #626 (issue #516) at 0296 depending on #624, and PR #627 (issue #492)
+at 0297. That branch's own file and notes still say 0295, since it was written before #624
+and #626. It renumbers to 0297 under the same lowest-free-slot rule before it merges.
+
+Per the lowest-free-slot rule, the file this branch is actually writing takes the lowest
+slot still free below all three, and plan 22's two unwritten claims move up in turn, from
+0295–0296 to **0299–0300**, keeping their own order.
+[Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note moves with this table.
+The next unclaimed number is now **0301**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s
