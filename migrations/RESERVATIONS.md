@@ -79,8 +79,19 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issue [#552](https://github.com/datagen24/victual/issues/552) (D4) and issue [#558](https://github.com/datagen24/victual/issues/558) (#487 remediation, PR #624, not yet merged) — foreign keys on `products.product_group_id`/`qu_id_consume`/`qu_id_price`, and `trg_cascade_product_removal` redefined to retire a deleted product's stock-entry labels with its own name | pending in PR #624 |
+| 0296 | issue [#516](https://github.com/datagen24/victual/issues/516) (M16, #487 remediation, maintainer decision D2) — `cancel_queued_label_jobs()`, called from every label retirement trigger (the five single-row ones and `trg_cascade_product_removal`) to cancel a label's queued, unclaimed print jobs when it retires. **Depends on 0295 (PR #624) landing first** — this migration redefines `trg_cascade_product_removal` a second time, on top of #624's own redefinition. | pending, this PR |
+| 0297 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0298 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered again on 2026-09-29: issue [#516](https://github.com/datagen24/victual/issues/516)
+(M16, #487 remediation)'s print-job cancellation fix is being written on this branch as
+`0296.pgsql.sql`. It takes the lowest free slot below PR #624's still-unmerged
+`0295.pgsql.sql` (that PR's own note already moved plan 22's claims from 0295–0296 to
+0296–0297; this one takes 0296 out from under plan 22 in turn). Per the lowest-free-slot
+rule, plan 22's two unwritten claims move up once more, from 0296–0297 to **0297–0298**,
+keeping their own order. [Plan 22](../docs/plans/22-medication-tracking.md)'s numbering note
+moves with this table. The next unclaimed number is now **0299**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s

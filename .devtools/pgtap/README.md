@@ -71,7 +71,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 
 | Name | Kind | Migration | Test file |
 |---|---|---|---|
-| `retire_location_labels` | function + trigger | 0269 | `010-locations-trigger-family.sql` |
+| `retire_location_labels` | function + trigger | 0269, redefined 0296 | `010-locations-trigger-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `hierarchy_depth_limit` | function | 0273 | `010-locations-trigger-family.sql` |
 | `trg_locations_check_parent` (trigger `check_location_parent`) | function + trigger | 0273 | `010-locations-trigger-family.sql` |
 | `trg_locations_guard_children` (trigger `guard_location_children`) | function + trigger | 0273 | `010-locations-trigger-family.sql` |
@@ -82,12 +82,13 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_enfore_product_nesting_level` (trigger `enfore_product_nesting_level`) | function + trigger | 0277 | `013-product-nesting-guard.sql` |
 | `trg_product_groups_check_parent` (trigger `check_product_group_parent`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
 | `trg_product_groups_guard_children` (trigger `guard_product_group_children`) | function + trigger | 0278 | `014-product-groups-trigger-family.sql` |
-| `trg_cascade_product_removal` | function | 0279 | `015-product-removal-cascade.sql` |
-| `retire_product_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_stock_entry_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_recipe_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_chore_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
-| `retire_battery_labels` | function + trigger | 0283 | `016-label-retirement-family.sql` |
+| `trg_cascade_product_removal` | function | 0279, redefined 0295 (PR #624, unmerged), redefined again 0296 | `015-product-removal-cascade.sql`, `022-product-removal-label-retirement.sql` (PR #624), `023-label-retirement-cancels-jobs.sql` |
+| `retire_product_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_stock_entry_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_recipe_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_chore_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `retire_battery_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
+| `cancel_queued_label_jobs` | function | 0296 | `023-label-retirement-cancels-jobs.sql` |
 | `stock_current` (opened aggregate, mixed conversion factors) | view | 0289 | `018-audit-view-corrections.sql` |
 | `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |
@@ -151,6 +152,34 @@ correctly converted shortfall, and the live-`stock` refusal (with the row left u
 They also cover a qu_id_stock change succeeding despite a live ledger-only measured booking,
 and a negative control confirming an ordinary, unmeasured product still rescales exactly as
 it did before this migration.
+
+The [label retirement job cancellation tests](023-label-retirement-cancels-jobs.sql) cover
+migration 0296 (issue #516, M16, #487 remediation, maintainer decision D2). Every label
+retirement trigger now calls `cancel_queued_label_jobs()` after it retires a label. A queued,
+unclaimed `print_jobs` row for that label is cancelled (`cancelled_at`/`cancelled_reason`
+set) and its `outbox` row is dead-lettered. The print-job monitor then shows an accurate
+final state, instead of a job stuck behind a label that can never be printed again. A job
+already claimed (`current_attempt_id` set) is left exactly as it was — D2's "leave running
+jobs untouched". So is a job already in a terminal state (`outcome` set), or already
+cancelled.
+
+Nine assertions cover:
+
+- a queued job cancelled by a direct product delete (`retire_product_labels`);
+- a queued job left alone by a claimed sibling on the same label being cancelled, proving
+  the cancellation is scoped to the one label, not every queued job;
+- a claimed job (`current_attempt_id` set) surviving its label's retirement untouched, with
+  its outbox row undelivered and undead-lettered;
+- a job with an outcome already set surviving retirement with that outcome unchanged;
+- a queued job cancelled by a direct `DELETE FROM stock` (`retire_stock_entry_labels`); and
+- a queued job cancelled by a product delete that cascades to its stock entry's label via
+  `trg_cascade_product_removal`, run twice over one product holding two labelled stock
+  entries to show every one of them is cancelled, not only the first the join touches.
+
+`tests/Pgsql/LabelRetirementCancelsClaimedJobRaceTest.php` covers the concurrent case a
+single-connection pgTAP script cannot drive: a job claimed by one connection while a second
+connection concurrently retires its label. That job must not be cancelled by the retirement.
+The test proves it with two real PostgreSQL connections and a row lock, not with timing.
 
 ## Running the checker directly
 
