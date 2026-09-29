@@ -112,6 +112,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
 | `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
 | `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
+| `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
 
 ## Completeness
 
@@ -276,6 +277,21 @@ Five assertions cover the fix:
 - A negative control: an ordinary single-conversion sub product still aggregates exactly
   as before.
 - A negative control: a standalone product with no sub products of its own is unaffected.
+
+The [recipe substitution unit tests](026-recipe-substitution-units.sql) cover migration
+0300 (issue #629, #487 remediation). `products_current_substitutions` now only ever
+chooses a sub product as `product_id_effective` when a resolved, positive quantity-unit
+conversion exists from the parent's own stock unit to its own. This is the same
+admissibility rule `StockService::SubstitutionAwareProductIdWhereClause()` applies on the
+consume side (maintainer decision D4, issue #553).
+
+Eleven assertions cover both of D4's exclusion cases - no resolved conversion at all, and
+one whose only resolved conversion has a negative factor. They check that
+`recipes_pos_resolved`'s `costs`, `calories`, `stock_amount`, `need_fulfilled` and
+`missing_amount` all agree once the unconvertible candidate is excluded, rather than
+counted 1:1. This ports the pattern PR #628 (migrations/0298.pgsql.sql, issue #622)
+already applied to `stock_current`'s own rollup, to the recipe side of the same
+parent/sub-product hierarchy.
 
 ## Running the checker directly
 

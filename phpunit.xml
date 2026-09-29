@@ -160,6 +160,7 @@
 		<testsuite name="recipeoperations">
 			<file>tests/Pgsql/RecipeOperationsTest.php</file>
 			<file>tests/Pgsql/ComposedOperationAtomicityTest.php</file>
+			<file>tests/Pgsql/RecipeSubstitutionUnitConversionTest.php</file>
 		</testsuite>
 		<testsuite name="stocklocations">
 			<!--

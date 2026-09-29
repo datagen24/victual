@@ -326,17 +326,17 @@ Collected because most of them are only visible from inside the existing code.
   - 0299–0300 until PRs #624, #626, #627 and #628 had all merged to `master`. At that point
     issue #521's view-permission migration (#487 remediation, `BATTERIES_VIEW`,
     `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) kept the **0299** it had already written to disk,
-    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #622's recipe
+    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #629's recipe
     cost/calorie follow-up) claimed **0300** on its own branch ahead of this plan. Per the
     lowest-free-slot rule this plan's two claims move up once more, from 0299–0300 to
-    **0301–0302**
+    **0301–0302**.
   - 0296–0297 until issue #521's view-permission gating (#487 remediation, `BATTERIES_VIEW`,
     `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) took **0299** on that branch — the lowest free slot
     below the three still-open PRs #626/#627/#628, which held 0296 through 0298 unwritten on
     this table at the time. PR #624, which this plan's own claim had been yielding to at
     0295, had merged instead as issue #552/#558's product foreign-key migration, not #521's.
     Per the lowest-free-slot rule this plan's two claims moved up once more, from 0296–0297
-    to 0300–0301 - since corrected, above, to 0301–0302
+    to 0300–0301 - since corrected, above, to 0301–0302.
   - 0298–0299 until 2026-09-29, later still, when issue #622's `stock_current` aggregation
     fix (#487 remediation) took **0298**, the lowest free slot below PRs #624, #626 and
     #627 - all three merged to `master` by then - moving this plan's claims up to
@@ -469,6 +469,10 @@ Collected because most of them are only visible from inside the existing code.
 
   - and now **0301–0302**, since this branch's own view-permission migration had already
     written its file at 0299 and open PR #634 had separately claimed 0300 ahead of this plan
+
+  This branch (PR #634) has now itself merged `master`'s four landed PRs plus PR #633's own
+  view-permission migration: nothing moved for this plan's own claims in that merge — both
+  sides already agreed on **0301–0302**.
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old
