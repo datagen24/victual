@@ -260,10 +260,18 @@ var sumValue = 0;
  * entirely - never counted 1:1 - when no such conversion is resolved, the same rule the
  * consume/open service applies. current_productDetails must already be populated (it is, by
  * the time either caller of this function can run).
+ *
+ * Either lookup (the sub product's own record, or its resolved conversion) can fail as an API
+ * call like any other; a failure is treated the same as "no resolvable conversion" for that one
+ * sub product - excluded from the sum, never counted 1:1 - rather than left pending: both
+ * callers' callers (OnLocationChange()'s RefreshForm()/ScanModeSubmit(), the "any entry"
+ * handler's max attribute) must still run once every lookup has settled one way or another, or
+ * the form would hang mid-refresh. Victual.Api.DefaultErrorHandler() surfaces the failure to the
+ * user the same way every other API call in this file already does.
  * @param {Array} stockEntries Rows from stock/products/{id}/entries?include_sub_products=true
  * @param {Function} locationMatches Predicate(stockEntry) selecting which entries to sum
  * @param {Function} callback Called with the resulting sum (a number), once every sub product
- *                   entry's conversion has been resolved
+ *                   entry's conversion has resolved or failed
  */
 function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, callback)
 {
@@ -312,6 +320,17 @@ function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, callbac
 
 	var factorsByProductId = {};
 	var remaining = subProductIds.length;
+
+	function SettleOne(subProductId, factor)
+	{
+		factorsByProductId[subProductId] = factor;
+		remaining--;
+		if (remaining === 0)
+		{
+			Finish(factorsByProductId);
+		}
+	}
+
 	subProductIds.forEach(function(subProductId)
 	{
 		Victual.Api.Get('objects/products/' + subProductId,
@@ -320,14 +339,19 @@ function SumSubstitutionAwareStockEntries(stockEntries, locationMatches, callbac
 				Victual.Api.Get('objects/quantity_unit_conversions_resolved?query[]=product_id=' + subProductId + '&query[]=from_qu_id=' + parentQuIdStock + '&query[]=to_qu_id=' + subProduct.qu_id_stock,
 					function(conversions)
 					{
-						factorsByProductId[subProductId] = (conversions && conversions.length > 0) ? Number.parseFloat(conversions[0].factor) : null;
-						remaining--;
-						if (remaining === 0)
-						{
-							Finish(factorsByProductId);
-						}
+						SettleOne(subProductId, (conversions && conversions.length > 0) ? Number.parseFloat(conversions[0].factor) : null);
+					},
+					function(xhr)
+					{
+						Victual.Api.DefaultErrorHandler(xhr);
+						SettleOne(subProductId, null);
 					}
 				);
+			},
+			function(xhr)
+			{
+				Victual.Api.DefaultErrorHandler(xhr);
+				SettleOne(subProductId, null);
 			}
 		);
 	});

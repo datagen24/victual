@@ -615,9 +615,15 @@ class StockService extends BaseService
 	 * take from these same candidates. This mirrors that loop's own per-entry conversion: an
 	 * entry belonging to a product other than $productId is converted through the same
 	 * cache__quantity_unit_conversions_resolved row the loop looks up, from $productId's own
-	 * stock unit to that entry's product's stock unit, and divided back out of it; with no
-	 * resolvable conversion the amount is added unconverted, exactly as the loop would then
-	 * compare it unconverted.
+	 * stock unit to that entry's product's stock unit, and divided back out of it.
+	 *
+	 * $stockEntries is drawn from GetProductStockEntries() (directly, or via
+	 * GetProductStockEntriesForLocation()), which - with substitution allowed - already excludes
+	 * a sub product with no such resolvable conversion from the candidate set entirely
+	 * (maintainer decision D4, issue #553): it is never handed to this method or to the loop, so
+	 * neither ever falls back to counting it unconverted (1:1). The `$conversion != null` check
+	 * below is therefore never false for a real candidate; it stays as a defensive fallback
+	 * (matching the loop's own) rather than a live branch.
 	 *
 	 * @param iterable $stockEntries Candidate stock entries already narrowed to the exact scope being validated
 	 * @param int $productId The product the result is expressed in terms of
@@ -2009,34 +2015,9 @@ class StockService extends BaseService
 	 */
 	public function GetProductStockEntries(int $productId, $excludeOpened = false, $allowSubproductSubstitution = false)
 	{
-		$sqlWhereProductId = 'product_id = ' . $productId;
-		if ($allowSubproductSubstitution)
-		{
-			// A nonexistent $productId (this method has no existence check of its own -
-			// callers like ConsumeProduct()/OpenProduct() check first, but the raw API route
-			// does not) previously just produced an always-empty result via the plain IN
-			// (...) below; kept that behaviour here instead of a null-property fatal.
-			$parentProduct = $this->DB->products($productId);
-			if ($parentProduct === null)
-			{
-				$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
-			}
-			else
-			{
-				$parentQuIdStock = (int)$parentProduct->qu_id_stock;
-				$sqlWhereProductId = '('
-					. 'product_id IN ('
-					. 'SELECT pr.sub_product_id FROM products_resolved pr '
-					. 'JOIN products p_sub ON p_sub.id = pr.sub_product_id '
-					. 'JOIN cache__quantity_unit_conversions_resolved qucr '
-					. 'ON qucr.product_id = pr.sub_product_id '
-					. 'AND qucr.from_qu_id = ' . $parentQuIdStock . ' '
-					. 'AND qucr.to_qu_id = p_sub.qu_id_stock '
-					. 'WHERE pr.parent_product_id = ' . $productId
-					. ') OR product_id = ' . $productId
-					. ')';
-			}
-		}
+		$sqlWhereProductId = $allowSubproductSubstitution
+			? $this->SubstitutionAwareProductIdWhereClause($productId)
+			: 'product_id = ' . $productId;
 
 		$sqlWhereAndOpen = 'AND open IN (0, 1)';
 		if ($excludeOpened)
@@ -2045,6 +2026,43 @@ class StockService extends BaseService
 		}
 
 		return $this->DB->stock_next_use()->where($sqlWhereProductId . ' ' . $sqlWhereAndOpen);
+	}
+
+	/**
+	 * The `product_id = ...` (or, with substitution, `product_id IN (...) OR product_id = ...`)
+	 * WHERE fragment shared by GetProductStockEntries() and GetProductStockLocations(): with
+	 * substitution, a sub product is admitted only when its own stock unit resolves from
+	 * $productId's own stock unit through cache__quantity_unit_conversions_resolved (maintainer
+	 * decision D4, issue #553) - excluded entirely, never counted 1:1, when no such conversion
+	 * exists. See GetProductStockEntries()'s own docblock for why this must not be a plain
+	 * `products_resolved` membership test.
+	 *
+	 * @param int $productId
+	 * @return string A SQL boolean expression on `product_id`, safe to AND with further conditions
+	 */
+	private function SubstitutionAwareProductIdWhereClause(int $productId): string
+	{
+		// A nonexistent $productId (neither caller has an existence check of its own - the raw
+		// API routes behind both don't either) previously just produced an always-empty result
+		// via the plain IN (...) below; kept that behaviour here instead of a null-property fatal.
+		$parentProduct = $this->DB->products($productId);
+		if ($parentProduct === null)
+		{
+			return '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
+		}
+
+		$parentQuIdStock = (int)$parentProduct->qu_id_stock;
+		return '('
+			. 'product_id IN ('
+			. 'SELECT pr.sub_product_id FROM products_resolved pr '
+			. 'JOIN products p_sub ON p_sub.id = pr.sub_product_id '
+			. 'JOIN cache__quantity_unit_conversions_resolved qucr '
+			. 'ON qucr.product_id = pr.sub_product_id '
+			. 'AND qucr.from_qu_id = ' . $parentQuIdStock . ' '
+			. 'AND qucr.to_qu_id = p_sub.qu_id_stock '
+			. 'WHERE pr.parent_product_id = ' . $productId
+			. ') OR product_id = ' . $productId
+			. ')';
 	}
 
 	/**
@@ -2085,16 +2103,18 @@ class StockService extends BaseService
 	 * (rows of the stock_current_locations view).
 	 *
 	 * @param int $productId
-	 * @param bool $allowSubproductSubstitution When true, locations of resolved sub products are included
+	 * @param bool $allowSubproductSubstitution When true, locations of resolved sub products are included -
+	 *             but, like GetProductStockEntries(), only for a sub product whose stock unit
+	 *             resolves to $productId's own (maintainer decision D4, issue #553). A location
+	 *             holding only an unconvertible sub product's stock is not offered here - it
+	 *             would otherwise show a location whose real (converted) maximum is 0.
 	 * @return \LessQL\Result Iterable row objects
 	 */
 	public function GetProductStockLocations(int $productId, $allowSubproductSubstitution = false)
 	{
-		$sqlWhereProductId = 'product_id = ' . $productId;
-		if ($allowSubproductSubstitution)
-		{
-			$sqlWhereProductId = '(product_id IN (SELECT sub_product_id FROM products_resolved WHERE parent_product_id = ' . $productId . ') OR product_id = ' . $productId . ')';
-		}
+		$sqlWhereProductId = $allowSubproductSubstitution
+			? $this->SubstitutionAwareProductIdWhereClause($productId)
+			: 'product_id = ' . $productId;
 
 		return $this->DB->stock_current_locations()->where($sqlWhereProductId);
 	}

@@ -212,4 +212,28 @@ class SubProductUnitConvertibilityTest extends PgsqlSchemaTestCase
 
 		self::assertSame($unconvertibleBefore, self::stockSnapshot($unconvertibleChildId));
 	}
+
+	// ---- GetProductStockLocations: the same exclusion rule applies --------------------
+
+	public function testStockLocationsExcludesALocationHoldingOnlyAnUnconvertibleSubProduct(): void
+	{
+		// Given: location A holds the parent's own stock; location B holds only the
+		// unconvertible can child's stock and nothing else substitutable there.
+		$locationA = self::location('Stock Locations Convertibility A');
+		$locationB = self::location('Stock Locations Convertibility B');
+		$canUnit = self::quantityUnit('Stock Locations Convertibility Can');
+		$parentId = self::product('Stock Locations Convertibility Parent', $locationA, 2);
+		$childId = self::product('Stock Locations Convertibility Child', $locationA, $canUnit, $parentId);
+		self::stockRow($parentId, 1, $locationA);
+		self::stockRow($childId, 5, $locationB);
+
+		// When: listing this product's stock locations with substitution allowed.
+		$locationIds = array_map(fn($row) => (int)$row->location_id, iterator_to_array(self::$stock->GetProductStockLocations($parentId, true)));
+
+		// Then: location A (the parent's own stock) is offered; location B, which holds only
+		// the unconvertible child's stock, is not - it would otherwise show a location whose
+		// real (converted) maximum is 0.
+		self::assertContains($locationA, $locationIds);
+		self::assertNotContains($locationB, $locationIds);
+	}
 }
