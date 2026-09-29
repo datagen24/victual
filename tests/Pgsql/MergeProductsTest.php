@@ -587,7 +587,17 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 	// CodeRabbit review of PR #540: a fully consumed measured container's live ledger row
 	// ------------------------------------------------------------------------------
 
-	public function testMergeRefusesWhenARemovedProductsFullyConsumedMeasuredContainerHasALiveLedgerRow(): void
+	/**
+	 * Round 2 of issue #546 (Opus validator finding on PR #618): a live (undone = 0),
+	 * measured consume booking left over from a fully consumed container is permanent
+	 * history that nothing else ever clears - some rows (e.g. a stock-splitting INSERT's
+	 * own "subsequent dependent bookings") can never be undone at all. An earlier round of
+	 * this guard refused the merge outright whenever such a row existed, which locked the
+	 * merge (and, in the trigger's own equivalent guard, the product's stock unit) forever
+	 * with nothing left in `stock` to consume, weigh, or otherwise resolve. The merge must
+	 * succeed here: the ledger-only case is not this guard's to refuse.
+	 */
+	public function testMergeSucceedsWhenARemovedProductsFullyConsumedMeasuredContainerHasOnlyALiveLedgerRow(): void
 	{
 		$keep = self::insertProduct('Merge Consumed Measured Keep', [
 			'qu_id_purchase' => self::$ids['kilogram'],
@@ -622,16 +632,127 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 		$liveMeasuredConsume = array_values(array_filter($liveMeasured, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_CONSUME));
 		self::assertCount(1, $liveMeasuredConsume, 'Given: the consume booking itself is one of them, mirroring the measurement it consumed (MeasureStockEntry() logs its own separate row too)');
 
-		// When: merging would rescale that booking's amount by a non-1 factor (2).
-		$message = $this->expectMergeRefused($keep, $remove, 'Expected the merge to be refused: a live undoable ledger row still carries a measurement');
+		// When: merging rescales that booking's amount by a non-1 factor (2).
+		StockService::GetInstance()->MergeProducts($keep, $remove);
 
-		// Then: the refusal is this method's own clean message, and nothing changed - checking
-		// only `stock` (as this guard used to) would have missed this row entirely, since
-		// `stock` has nothing left for the removed product at all.
-		self::assertStringContainsString('measured open container', $message, 'Then: the refusal explains why, rather than surfacing a raw database error');
-		self::assertStringNotContainsStringIgnoringCase('sqlstate', $message, 'Then: this is not a raw database exception message');
-		self::assertTrue(self::productExists($remove), 'Then: the removed product still exists');
-		self::assertSame($given, self::ledgerRows($remove), 'Then: the ledger is untouched');
+		// Then: the merge succeeds - a live ledger-only measured row no longer blocks it -
+		// and the booking is repointed to the kept product with its amount rescaled, exactly
+		// like every other stock_log row this merge moves.
+		self::assertFalse(self::productExists($remove), 'Then: the merge completes instead of being refused over a ledger-only measured row');
+		$movedConsume = self::$db->query(
+			"SELECT id, amount, opened_amount FROM stock_log WHERE product_id = $keep AND transaction_type = 'consume' AND undone = 0"
+		)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($movedConsume, 'Then: the consume booking is repointed to the kept product');
+		self::assertEqualsWithDelta(-2.0, (float)$movedConsume['amount'], 1e-9, 'Then: its amount is rescaled by the factor (2), same as every other moved stock_log row');
+		self::assertEqualsWithDelta(0.5, (float)$movedConsume['opened_amount'], 1e-9, 'Then: opened_amount itself is not rescaled (it is a measurement in the original stock unit, not an amount)');
+
+		// And: undoing that now-rescaled booking is refused truthfully by UndoBooking()'s
+		// own guard (PR #598) - the protection this guard leans on instead of refusing the
+		// merge itself.
+		$caught = null;
+		try
+		{
+			StockService::GetInstance()->UndoBooking((int)$movedConsume['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused through #598\'s own truthful guard, not a raw database error'
+		);
+	}
+
+	/**
+	 * CodeRabbit review of PR #618, finding 4128248701: a STOCK_EDIT_OLD booking mirrors a
+	 * measured entry's pre-edit amount (always 1) and opened_amount onto itself, then sits
+	 * live (undone = 0) for as long as the edit is not undone - exactly like the fully-
+	 * consumed measured booking the test above covers. This guard's own narrowing (round 2)
+	 * permits a ledger-only rescale, which this merge applies to every stock_log row of the
+	 * removed product, not only CONSUME ones. A rescaled STOCK_EDIT_OLD booking must refuse
+	 * its own undo truthfully rather than let the restore violate
+	 * stock_measurement_coherence_check.
+	 */
+	public function testMergeSucceedsWhenAnEditedMeasuredEntryLeavesAStockEditOldBookingRefusingItsOwnUndoAfterRescale(): void
+	{
+		$keep = self::insertProduct('Merge Edited Measured Keep', [
+			'qu_id_purchase' => self::$ids['kilogram'],
+			'qu_id_stock' => self::$ids['kilogram'],
+			'qu_id_consume' => self::$ids['kilogram'],
+			'qu_id_price' => self::$ids['kilogram'],
+		]);
+		$remove = self::insertProduct('Merge Edited Measured Remove', [
+			'qu_id_purchase' => self::$ids['gram'],
+			'qu_id_stock' => self::$ids['gram'],
+			'qu_id_consume' => self::$ids['gram'],
+			'qu_id_price' => self::$ids['gram'],
+		]);
+		self::insertRow('quantity_unit_conversions', ['from_qu_id' => self::$ids['gram'], 'to_qu_id' => self::$ids['kilogram'], 'factor' => 2, 'product_id' => $remove]);
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($remove, 1, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$stockRowId = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . $remove)->fetchColumn();
+		$stock->OpenProduct($remove, 1);
+		$stock->MeasureStockEntry($stockRowId, ['amount' => 0.5, 'qu_id' => self::$ids['gram']]);
+
+		// Given: editing the amount away from 1 drops the live measurement from `stock`
+		// (no longer coherent), but mirrors the pre-edit amount (1) and measurement onto the
+		// STOCK_EDIT_OLD booking (EditStockEntry()'s own comment).
+		$keepValue = StockService::KeepStoredValue();
+		$stock->EditStockEntry($stockRowId, 2, $keepValue, $keepValue, $keepValue, $keepValue, $keepValue, $keepValue);
+
+		$editedRows = self::stockRows($remove);
+		self::assertCount(1, $editedRows, 'Given: fixture sanity check');
+		self::assertEqualsWithDelta(2.0, (float)$editedRows[0]['amount'], 1e-9, 'Given: the entry now holds the edited amount');
+		self::assertNull($editedRows[0]['opened_amount'], 'Given: the live measurement was dropped by the edit');
+
+		$oldBooking = self::$db->query(
+			"SELECT id, amount, opened_amount FROM stock_log WHERE product_id = $remove AND transaction_type = 'stock-edit-old' AND undone = 0"
+		)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($oldBooking, 'Given: a live STOCK_EDIT_OLD booking exists');
+		self::assertEqualsWithDelta(1.0, (float)$oldBooking['amount'], 1e-9, 'Given: it mirrors the pre-edit amount (1)');
+		self::assertEqualsWithDelta(0.5, (float)$oldBooking['opened_amount'], 1e-9, 'Given: it mirrors the pre-edit measurement (0.5)');
+
+		// When: merging rescales that booking's amount by a non-1 factor (2). No live
+		// `stock` row is measured for the removed product any more, so this succeeds under
+		// the narrowed guard.
+		StockService::GetInstance()->MergeProducts($keep, $remove);
+
+		self::assertFalse(self::productExists($remove), 'Then: the merge completes');
+		$rescaledOldBooking = self::$db->query(
+			"SELECT id, amount, opened_amount FROM stock_log WHERE product_id = $keep AND transaction_type = 'stock-edit-old' AND undone = 0"
+		)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($rescaledOldBooking, 'Then: the booking is repointed to the kept product, still live');
+		self::assertEqualsWithDelta(2.0, (float)$rescaledOldBooking['amount'], 1e-9, 'Then: its amount is rescaled by the factor (1 * 2), same as every other moved stock_log row');
+		self::assertEqualsWithDelta(0.5, (float)$rescaledOldBooking['opened_amount'], 1e-9, 'Then: opened_amount itself is not rescaled');
+
+		$given = self::$db->query("SELECT id, transaction_type, amount, undone, opened_amount FROM stock_log WHERE product_id = $keep ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+
+		// And: undoing this now-rescaled booking is refused truthfully, not left to crash
+		// on stock_measurement_coherence_check.
+		$caught = null;
+		try
+		{
+			StockService::GetInstance()->UndoBooking((int)$rescaledOldBooking['id']);
+		}
+		catch (\Throwable $exception)
+		{
+			$caught = $exception;
+		}
+		self::assertNotNull($caught, 'Then: undoing the rescaled booking is refused, not left to crash on a raw constraint violation');
+		self::assertSame(
+			'Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored',
+			$caught->getMessage(),
+			'Then: refused with the same message style as the CONSUME branch\'s own guard'
+		);
+		self::assertSame(
+			$given,
+			self::$db->query("SELECT id, transaction_type, amount, undone, opened_amount FROM stock_log WHERE product_id = $keep ORDER BY id")->fetchAll(PDO::FETCH_ASSOC),
+			'Then: the refusal leaves every stock_log row for the kept product exactly as it found them'
+		);
 	}
 
 	// ------------------------------------------------------------------------------
