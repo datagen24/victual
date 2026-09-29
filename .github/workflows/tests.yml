@@ -871,6 +871,17 @@ jobs:
           path: .devtools/frontend/s29-payload-ci.json
           if-no-files-found: warn
 
+      # Issue #637: undo-toasts.js saves a screenshot of any scenario that fails, showing
+      # what the form held when its save was clicked. The same failure's invalid fields and
+      # last API exchanges are in the step's log.
+      - name: Upload the Undo toast failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: undo-toasts-failures
+          path: .devtools/frontend/undo-toasts-failures/
+          if-no-files-found: ignore
+
       - name: The server log, if anything went wrong
         if: failure()
         run: tail -50 /tmp/php-server.log || true
