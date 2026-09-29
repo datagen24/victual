@@ -232,7 +232,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_BATTERIES)
+				@if(VICTUAL_FEATURE_FLAG_BATTERIES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_BATTERIES_VIEW))
 				<li class="nav-item nav-item-sidebar @if($viewName == 'batteriesoverview') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -244,8 +244,8 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_EQUIPMENT)
-				<li class="nav-item nav-item-sidebar permission-EQUIPMENT_VIEW @if($viewName == 'equipment') active-page @endif"
+				@if(VICTUAL_FEATURE_FLAG_EQUIPMENT && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_EQUIPMENT_VIEW))
+				<li class="nav-item nav-item-sidebar @if($viewName == 'equipment') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
 					title="{{ $__t('Equipment') }}">
@@ -256,9 +256,9 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_CALENDAR)
+				@if(VICTUAL_FEATURE_FLAG_CALENDAR && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_CALENDAR_VIEW))
 				<div class="nav-item-divider"></div>
-				<li class="nav-item nav-item-sidebar permission-CALENDAR_VIEW @if($viewName == 'calendar') active-page @endif"
+				<li class="nav-item nav-item-sidebar @if($viewName == 'calendar') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
 					title="{{ $__t('Calendar') }}">
@@ -327,7 +327,7 @@
 					</a>
 				</li>
 				@endif
-				@if(VICTUAL_FEATURE_FLAG_BATTERIES)
+				@if(VICTUAL_FEATURE_FLAG_BATTERIES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_BATTERIES_VIEW))
 				<li class="nav-item nav-item-sidebar permission-BATTERIES_TRACK_CHARGE_CYCLE @if($viewName == 'batterytracking') active-page @endif"
 					data-toggle="tooltip"
 					data-placement="right"
@@ -340,6 +340,7 @@
 				</li>
 				@endif
 
+				@if(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
 				@php $firstUserentity = true; @endphp
 				@foreach($userentitiesForSidebar as $userentity)
 				@if($firstUserentity)
@@ -357,6 +358,7 @@
 					</a>
 				</li>
 				@endforeach
+				@endif
 
 				@php
 				$masterDataViews = [
@@ -422,7 +424,7 @@
 							</a>
 						</li>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_BATTERIES)
+						@if(VICTUAL_FEATURE_FLAG_BATTERIES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_BATTERIES_VIEW))
 						<li class="@if($viewName == 'batteries') active-page @endif">
 							<a class="nav-link discrete-link"
 								href="{{ $U('/batteries') }}">
@@ -444,6 +446,7 @@
 						</li>
 						<li><a class="nav-link discrete-link" href="{{ $U('/labelprintjobs') }}"><span class="nav-link-text">{{ $__t('Label print jobs') }}</span></a></li>
 						@endif
+						@if(\Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT, \Victual\Controllers\Users\User::PERMISSION_ADMIN))
 						<li class="@if($viewName == 'userfields') active-page @endif">
 							<a class="nav-link discrete-link"
 								href="{{ $U('/userfields') }}">
@@ -456,6 +459,7 @@
 								<span class="nav-link-text">{{ $__t('Userentities') }}</span>
 							</a>
 						</li>
+						@endif
 					</ul>
 				</li>
 			</ul>
@@ -662,7 +666,7 @@
 						<a class="dropdown-item discrete-link permission-TASKS"
 							href="{{ $U('/taskssettings') }}"><i class="fa-solid fa-fw fa-tasks"></i>&nbsp;{{ $__t('Tasks settings') }}</a>
 						@endif
-						@if(VICTUAL_FEATURE_FLAG_BATTERIES)
+						@if(VICTUAL_FEATURE_FLAG_BATTERIES && \Victual\Controllers\Users\User::HasPermissions(\Victual\Controllers\Users\User::PERMISSION_BATTERIES_VIEW))
 						<a class="dropdown-item discrete-link permission-BATTERIES"
 							href="{{ $U('/batteriessettings') }}"><i class="fa-solid fa-fw fa-battery-half"></i>&nbsp;{{ $__t('Batteries settings') }}</a>
 						@endif

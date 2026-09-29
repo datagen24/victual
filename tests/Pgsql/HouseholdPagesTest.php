@@ -1034,6 +1034,49 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::render(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 'GET /userfields with MASTER_DATA_EDIT and ADMIN');
 	}
 
+	/**
+	 * CodeRabbit review of PR #633: the sidebar (views/layout/default.blade.php) still
+	 * rendered the battery, master-data-list and custom-entity links unconditionally, even
+	 * though ADR-0035 now gates their target pages - a caller without the permission would
+	 * see a link that leads to a 403. Every layout render embeds the sidebar (RenderPage()
+	 * sets userentitiesForSidebar and Render() sets the permissions template variable), so
+	 * SystemController::About() - a page gated on nothing itself - is used here as a neutral
+	 * host to inspect the sidebar under each grant.
+	 */
+	public function testSidebarNavLinksAreGatedOnTheSamePermissionAsTheirPage(): void
+	{
+		self::grant([]);
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about with no grants');
+		self::assertStringNotContainsString('href="/batteriesoverview"', $html, 'no BATTERIES_VIEW: batteries overview link is hidden');
+		self::assertStringNotContainsString('href="/batteries"', $html, 'no BATTERIES_VIEW: batteries master-data-list link is hidden');
+		self::assertStringNotContainsString('href="/equipment"', $html, 'no EQUIPMENT_VIEW: equipment link is hidden');
+		self::assertStringNotContainsString('href="/calendar"', $html, 'no CALENDAR_VIEW: calendar link is hidden');
+		self::assertStringNotContainsString('href="/userobjects/householdbook"', $html, 'no MASTER_DATA_EDIT: the sidebar userobjects link is hidden');
+		self::assertStringNotContainsString('href="/userfields"', $html, 'no MASTER_DATA_EDIT+ADMIN: userfields link is hidden');
+		self::assertStringNotContainsString('href="/userentities"', $html, 'no MASTER_DATA_EDIT+ADMIN: userentities link is hidden');
+
+		self::grant(['BATTERIES_VIEW', 'EQUIPMENT_VIEW', 'CALENDAR_VIEW']);
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about with BATTERIES_VIEW, EQUIPMENT_VIEW, CALENDAR_VIEW');
+		self::assertStringContainsString('href="/batteriesoverview"', $html, 'BATTERIES_VIEW: batteries overview link shows');
+		self::assertStringContainsString('href="/batteries"', $html, 'BATTERIES_VIEW: batteries master-data-list link shows');
+		self::assertStringContainsString('href="/equipment"', $html, 'EQUIPMENT_VIEW: equipment link shows');
+		self::assertStringContainsString('href="/calendar"', $html, 'CALENDAR_VIEW: calendar link shows');
+		self::assertStringNotContainsString('href="/userobjects/householdbook"', $html, 'still no MASTER_DATA_EDIT: userobjects link stays hidden');
+		self::assertStringNotContainsString('href="/userfields"', $html, 'still no MASTER_DATA_EDIT+ADMIN: userfields link stays hidden');
+		self::assertStringNotContainsString('href="/userentities"', $html, 'still no MASTER_DATA_EDIT+ADMIN: userentities link stays hidden');
+
+		self::grant(['MASTER_DATA_EDIT']);
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about with MASTER_DATA_EDIT alone');
+		self::assertStringContainsString('href="/userobjects/householdbook"', $html, 'MASTER_DATA_EDIT alone: sidebar userobjects link shows');
+		self::assertStringNotContainsString('href="/userfields"', $html, 'MASTER_DATA_EDIT alone is not enough for userfields');
+		self::assertStringNotContainsString('href="/userentities"', $html, 'MASTER_DATA_EDIT alone is not enough for userentities');
+
+		self::grant(['MASTER_DATA_EDIT', 'ADMIN']);
+		$html = self::render(fn () => self::$system->About(self::request(), self::response(), []), 'GET /about with MASTER_DATA_EDIT and ADMIN');
+		self::assertStringContainsString('href="/userfields"', $html, 'MASTER_DATA_EDIT and ADMIN: userfields link shows');
+		self::assertStringContainsString('href="/userentities"', $html, 'MASTER_DATA_EDIT and ADMIN: userentities link shows');
+	}
+
 	// ------------------------------------------------------------------------ users
 
 	public function testUsersListShowsEveryUserAndIsGatedOnUsersRead(): void
