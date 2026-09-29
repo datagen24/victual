@@ -319,10 +319,14 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0295** (medication master data and subjects)
-  and **0296** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0301** (medication master data and subjects)
+  and **0302** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0295–0296 until 2026-09-29, when issue #629's fix to `products_current_substitutions`
+    (#487 remediation) was written to disk as `0300.pgsql.sql`. It is stacked above four
+    still-open PRs claiming 0295–0298 and a pending security PR claiming 0299, and this
+    plan's still-unwritten claims moved up to 0301–0302 under the lowest-free-slot rule
   - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
     `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
     `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales
@@ -399,7 +403,9 @@ Collected because most of them are only visible from inside the existing code.
   - 0291–0292 for PR #580's ADR-0033 decision-3 migration
   - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
   - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
-  - and now 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
+  - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
+  - and now 0301–0302 for issue #629's `products_current_substitutions` fix, stacked above
+    four still-open PRs claiming 0295–0298 and a pending security PR claiming 0299
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

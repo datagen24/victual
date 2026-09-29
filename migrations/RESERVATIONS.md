@@ -79,8 +79,22 @@ have recorded it.
 | 0292 | issue [#588](https://github.com/datagen24/victual/issues/588) (#487 remediation) — `trg_stock_log_DEL` fixed to clear price caches by `OLD.product_id`, not `OLD.id` | in this tree |
 | 0293 | issue [#508](https://github.com/datagen24/victual/issues/508) (M8, #487 remediation), [ADR-0034](../docs/adr/0034-product-group-minimum-counts-descendant-groups.md) — `product_groups_missing` redefined to roll up through `product_groups_resolved` | in this tree |
 | 0294 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation, issues [#543](https://github.com/datagen24/victual/issues/543) and [#546](https://github.com/datagen24/victual/issues/546) — `trg_cascade_change_qu_id_stock` redefined to rescale `product_location_min_stock.min_stock_amount` and to refuse a stock-unit change that would rescale a measured open container or its live consume booking | in this tree |
-| 0295 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0296 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0295 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation ([PR #624](https://github.com/datagen24/victual/pull/624)) — products foreign keys and stock-entry label retirement repair | open PR |
+| 0296 | issue [#487](https://github.com/datagen24/victual/issues/487) remediation ([PR #626](https://github.com/datagen24/victual/pull/626)) — queued print jobs cancelled when a label retires | open PR |
+| 0297 | issue [#492](https://github.com/datagen24/victual/issues/492), #487 remediation ([PR #627](https://github.com/datagen24/victual/pull/627)) — database-level non-negative check on `stock.amount` | open PR |
+| 0298 | issue [#622](https://github.com/datagen24/victual/issues/622), #487 remediation ([PR #628](https://github.com/datagen24/victual/pull/628)) — `stock_current`'s parent-rollup columns (`amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) exclude an unconvertible sub product instead of counting it 1:1 | open PR |
+| 0299 | view-permission leaves (pending PR) | pending PR |
+| 0300 | issue [#629](https://github.com/datagen24/victual/issues/629), #487 remediation — `products_current_substitutions` never chooses an unconvertible sub product as `product_id_effective`, so recipe cost/calorie views stop counting it 1:1 | in this tree |
+| 0301 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0302 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered again on 2026-09-29: issue [#629](https://github.com/datagen24/victual/issues/629)
+(#487 remediation) is being written on this branch as `0300.pgsql.sql`. It is stacked above
+the four still-open PRs claiming 0295–0298 (#624, #626, #627, #628) and a pending security PR
+claiming 0299 (view-permission leaves), per the "Stacked migrations" note in
+`.devtools/pgsql/check-migrations.php`'s own reserved-hole check. Plan 22's two unwritten
+claims move up in turn, from 0295–0296 to **0301–0302**, keeping their own order. The next
+unclaimed number is now **0303**.
 
 Renumbered again on 2026-09-28, yet again: issues [#543](https://github.com/datagen24/victual/issues/543)
 and [#546](https://github.com/datagen24/victual/issues/546) (#487 remediation)'s

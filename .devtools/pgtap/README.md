@@ -97,6 +97,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
 | `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
+| `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
 
 ## Completeness
 
@@ -128,6 +129,21 @@ File `020` is the same shape, for migration 0293's `product_groups_missing`
 view previously produced a wrong shortfall for a real, reachable input (any nested
 product-group tree) - reporting an ancestor group as short by its whole minimum while a
 descendant group held enough stock to satisfy it.
+
+The [recipe substitution unit tests](026-recipe-substitution-units.sql) cover migration
+0300 (issue #629, #487 remediation). `products_current_substitutions` now only ever
+chooses a sub product as `product_id_effective` when a resolved, positive quantity-unit
+conversion exists from the parent's own stock unit to its own. This is the same
+admissibility rule `StockService::SubstitutionAwareProductIdWhereClause()` applies on the
+consume side (maintainer decision D4, issue #553).
+
+Eleven assertions cover both of D4's exclusion cases - no resolved conversion at all, and
+one whose only resolved conversion has a negative factor. They check that
+`recipes_pos_resolved`'s `costs`, `calories`, `stock_amount`, `need_fulfilled` and
+`missing_amount` all agree once the unconvertible candidate is excluded, rather than
+counted 1:1. This ports the pattern PR #628 (migrations/0298.pgsql.sql, issue #622)
+already applied to `stock_current`'s own rollup, to the recipe side of the same
+parent/sub-product hierarchy.
 
 The [cascade qu_id_stock tests](021-cascade-qu-id-stock.sql) cover migration 0294 (issues
 #543 and #546, #487 remediation). `trg_cascade_change_qu_id_stock` now also rescales
