@@ -40,8 +40,11 @@ class CalendarIdentityTest extends PgsqlSchemaTestCase
 		// Create a test user
 		self::$db->exec("INSERT INTO users (id, username, password) VALUES (9600, 'calendar-test', 'fixture')");
 
-		// Grant calendar permissions
-		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'BATTERIES', 'MEALPLAN_VIEW')");
+		// Grant calendar permissions. CALENDAR_VIEW (issue #521, #487 remediation, migration
+		// 0299) is required by CalendarApiController::Ical() itself now - this test drives
+		// that route through a real session, not the special-purpose sharing-link secret,
+		// so it needs the leaf like every other domain permission below it.
+		self::$db->exec("INSERT INTO user_permissions (user_id, permission_id) SELECT 9600, id FROM permission_hierarchy WHERE name IN ('STOCK_VIEW', 'TASKS_VIEW', 'CHORES_VIEW', 'BATTERIES', 'MEALPLAN_VIEW', 'CALENDAR_VIEW')");
 
 		// Create a session for the test user
 		self::$sessionKey = 'calendar-test-session-' . uniqid();

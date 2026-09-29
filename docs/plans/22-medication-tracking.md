@@ -319,10 +319,24 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0299** (medication master data and subjects)
-  and **0300** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0301** (medication master data and subjects)
+  and **0302** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
 
+  - 0299–0300 until PRs #624, #626, #627 and #628 had all merged to `master`. At that point
+    issue #521's view-permission migration (#487 remediation, `BATTERIES_VIEW`,
+    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) kept the **0299** it had already written to disk,
+    the lowest free slot below all four now-landed numbers. Open PR #634 (issue #622's recipe
+    cost/calorie follow-up) claimed **0300** on its own branch ahead of this plan. Per the
+    lowest-free-slot rule this plan's two claims move up once more, from 0299–0300 to
+    **0301–0302**
+  - 0296–0297 until issue #521's view-permission gating (#487 remediation, `BATTERIES_VIEW`,
+    `CALENDAR_VIEW` and `EQUIPMENT_VIEW`) took **0299** on that branch — the lowest free slot
+    below the three still-open PRs #626/#627/#628, which held 0296 through 0298 unwritten on
+    this table at the time. PR #624, which this plan's own claim had been yielding to at
+    0295, had merged instead as issue #552/#558's product foreign-key migration, not #521's.
+    Per the lowest-free-slot rule this plan's two claims moved up once more, from 0296–0297
+    to 0300–0301 - since corrected, above, to 0301–0302
   - 0298–0299 until 2026-09-29, later still, when issue #622's `stock_current` aggregation
     fix (#487 remediation) took **0298**, the lowest free slot below PRs #624, #626 and
     #627 - all three merged to `master` by then - moving this plan's claims up to
@@ -399,7 +413,7 @@ Collected because most of them are only visible from inside the existing code.
 
   0274 belongs to [23](landed/23-storage-classes.md), which lands first.
 
-  **These numbers have moved twenty-four times.** In order:
+  **These numbers have moved twenty-eight times.** In order:
 
   - claimed as 0261–0262 until `master` landed 0261
   - 0262–0264 until wave 2 landed 0262 through 0265
@@ -424,12 +438,37 @@ Collected because most of them are only visible from inside the existing code.
   - 0293–0294 for issue #588's `trg_stock_log_DEL` fix
   - 0294–0295 for issue #508's `product_groups_missing` roll-up migration
   - 0295–0296 for issues #543 and #546's `trg_cascade_change_qu_id_stock` fix
-  - 0296–0297 for issue #492's `stock_amount_non_negative_check` fix, before PRs #624 and
-    #626 also claimed 0295–0296
-  - 0298–0299, once PR #624 (0295) and PR #626 (0296) took the two slots ahead of issue
-    #492's fix at 0297
-  - and now 0299–0300, once issue #622's `stock_current` aggregation fix took 0298, the
-    lowest free slot below all three of those branches - by then all merged to `master`
+
+  Two branches then carried this plan's claims forward in parallel, before either had merged
+  the other's history. They are labelled below rather than interleaved by date: forcing them
+  into one strict timeline would make each branch's own then-current status read as false
+  once the other branch's later events are known.
+
+  **`master`'s own sequence, as branches merged into it one at a time:**
+
+  - 0296–0297 for issue #552's products foreign-key migration, written to disk (still
+    unmerged at the time) as `0295.pgsql.sql` - later merged as PR #624
+  - 0297–0298 for issue #516's print-job cancellation fix, written to disk (still unmerged)
+    as `0296.pgsql.sql` - later merged as PR #626
+  - 0298–0299 for issue #492's `stock_amount_non_negative_check` fix, written to disk (still
+    unmerged) as `0297.pgsql.sql` once #624 and #626 had both taken their slots - later
+    merged as PR #627
+  - 0299–0300, once issue #622's `stock_current` aggregation fix took 0298, the lowest free
+    slot below all three of those branches - by then all merged to `master` - later merged
+    as PR #628
+
+  **This branch's own sequence, before it had merged any of the above into itself:**
+
+  - 0296–0297 for issue #521's view-permission gating, guessing (wrongly) that PR #624 would
+    claim 0296–0298 for further #521 work rather than for issue #552/#558
+  - 0300–0301 for the same view-permission gating, once #624 had in fact landed as issue
+    #552/#558's fix at 0295 and this plan's claims moved up again, ahead of the three still-open
+    PRs #626/#627/#628's still-unwritten 0296–0298
+
+  **Reconciled once this branch merged `master`'s four now-landed PRs:**
+
+  - and now **0301–0302**, since this branch's own view-permission migration had already
+    written its file at 0299 and open PR #634 had separately claimed 0300 ahead of this plan
 
   So re-read that table at every resync rather than trusting a number this plan claimed a week
   ago. Every correction cost one table edit because nothing had been written under the old

@@ -6,6 +6,7 @@ use Victual\Helpers\Grocycode;
 use Victual\Services\BatteriesService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
+use Victual\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -25,6 +26,8 @@ class BatteriesController extends BaseController
 	 */
 	public function BatteriesList(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		if (isset($request->getQueryParams()['include_disabled']))
 		{
 			$batteries = $this->DB->batteries()->orderBy('name', 'COLLATE NOCASE');
@@ -46,6 +49,8 @@ class BatteriesController extends BaseController
 	 */
 	public function BatteriesSettings(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		return $this->RenderPage($response, 'batteriessettings');
 	}
 
@@ -56,6 +61,8 @@ class BatteriesController extends BaseController
 	 */
 	public function BatteryEditForm(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		if ($args['batteryId'] == 'new')
 		{
 			return $this->RenderPage($response, 'batteryform', [
@@ -86,6 +93,8 @@ class BatteriesController extends BaseController
 	 */
 	public function Journal(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		// Default 2 years
 		$months = 24;
 		if (isset($request->getQueryParams()['months']) && filter_var($request->getQueryParams()['months'], FILTER_VALIDATE_INT) !== false)
@@ -118,6 +127,8 @@ class BatteriesController extends BaseController
 	 */
 	public function Overview(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		$usersService = UsersService::GetInstance();
 		$nextXDays = $usersService->GetUserSettings(VICTUAL_USER_ID)['batteries_due_soon_days'];
 
@@ -159,6 +170,8 @@ class BatteriesController extends BaseController
 	 */
 	public function TrackChargeCycle(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		return $this->RenderPage($response, 'batterytracking', [
 			'batteries' => $this->DB->batteries()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('battery_charge_cycles')
@@ -170,6 +183,8 @@ class BatteriesController extends BaseController
 	 */
 	public function BatteryGrocycodeImage(Request $request, Response $response, array $args)
 	{
+		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
+
 		$gc = new Grocycode(Grocycode::BATTERY, $args['batteryId']);
 		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}
