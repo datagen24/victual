@@ -56,6 +56,11 @@ class RbacTest extends PgsqlSchemaTestCase
 		'StockController', 'StockReportsController', 'RecipesController', 'ChoresController',
 		'TasksController', 'StockApiController', 'RecipesApiController', 'ChoresApiController',
 		'TasksApiController', 'PrintApiController',
+		// ADR-0035 (2026-09-29): BATTERIES_VIEW/CALENDAR_VIEW/EQUIPMENT_VIEW now gate every
+		// GET method of these five, uniformly refusing without the grant, the same as every
+		// other entry above - closing the FINDINGs this class used to except them for.
+		'BatteriesController', 'BatteriesApiController', 'CalendarController', 'CalendarApiController',
+		'EquipmentController',
 	];
 
 	/**
@@ -96,49 +101,16 @@ class RbacTest extends PgsqlSchemaTestCase
 		'GenericEntityApiController' => 'Covered by testExposedEntityReadPoliciesRequireGrant(), derived from victual.openapi.json\'s ExposedEntity enum',
 		'FilesApiController' => 'Covered by testFileGroupReadPolicies(), derived from victual.openapi.json\'s FileGroups enum',
 
-		// FINDING (reported to the master, not fixed here - out of issue #521's scope):
-		// BatteriesController's seven GET page routes (Overview, TrackChargeCycle, Journal,
-		// BatteriesList, BatteryEditForm, BatteriesSettings, BatteryGrocycodeImage) call
-		// User::CheckPermission() nowhere in the file, unlike every sibling domain
-		// (StockController, RecipesController, ChoresController, TasksController all gate
-		// every GET method on a *_VIEW permission). PERMISSION_BATTERIES exists
-		// (controllers/Users/User.php) and gates the write endpoints
-		// (BATTERIES_TRACK_CHARGE_CYCLE/BATTERIES_UNDO_CHARGE_CYCLE) and the generic-entity
-		// route for the "batteries" entity, but nothing gates these page reads: any
-		// authenticated session, holding no permissions at all, can view every battery.
-		'BatteriesController' => 'FINDING: no permission check on any of its seven GET page routes',
-		// FINDING, the same gap on the API side: BatteriesApiController::Current() and
-		// ::BatteryDetails() (GET /api/batteries, GET /api/batteries/{batteryId}) call
-		// User::CheckPermission() nowhere - only the write methods (TrackChargeCycle,
-		// UndoChargeCycle) do. Every sibling API controller in PROTECTED_CONTROLLERS
-		// (Stock/Recipes/Chores/Tasks) checks a *_VIEW permission on every GET method; there
-		// is no BATTERIES_VIEW leaf for this one to check.
-		'BatteriesApiController' => 'FINDING: Current/BatteryDetails (GET) have no permission check; only the charge-cycle write methods do',
-		// FINDING: CalendarController::Overview (GET /calendar) calls User::CheckPermission()
-		// nowhere in the file. PERMISSION_CALENDAR exists (controllers/Users/User.php) but is
-		// used only by SystemController::EntryPagePermission() to decide whether the SPA nav
-		// shows the calendar link - never enforced server-side on the route itself.
-		'CalendarController' => 'FINDING: no permission check; PERMISSION_CALENDAR is used only for client-side nav visibility, never enforced on this route',
-		// FINDING, the same gap on the API side: CalendarApiController::Ical() and
-		// ::IcalSharingLink() (GET /api/calendar/ical, GET /api/calendar/ical/sharing-link)
-		// have no permission check either, and Ical() exports every stock due date, chore,
-		// task and meal-plan entry in the household (CalendarService::GetEvents()) to any
-		// authenticated caller regardless of granted permissions.
-		'CalendarApiController' => 'FINDING: no permission check; Ical exports every household due-date/chore/task/meal-plan event to any authenticated caller',
-		// FINDING: GenericEntityController's userentities/userfields/userobjects pages
-		// (UserentitiesList, UserentityEditForm, UserfieldsList, UserfieldEditForm,
-		// UserobjectsList, UserobjectEditForm) call User::CheckPermission() nowhere, unlike
-		// their API equivalents - GenericEntityApiController gates a write to a non-builtin
-		// entity's rows behind MASTER_DATA_EDIT (or ADMIN for an entity IsEntityWithEditRequiresAdmin
-		// names). These pages let any authenticated session view and edit custom entity/field
-		// definitions with no permission at all.
-		'GenericEntityController' => 'FINDING: no permission check anywhere in the file, unlike GenericEntityApiController\'s MASTER_DATA_EDIT/ADMIN-gated writes to the same data',
-		// FINDING: EquipmentController::Overview/EditForm (GET /equipment, GET
-		// /equipment/{equipmentId}) call User::CheckPermission() nowhere. PERMISSION_EQUIPMENT
-		// exists and gates writes through the generic-entity API
-		// (GenericEntityApiController::AddObject/EditObject/DeleteObject for the "equipment"
-		// entity) but nothing gates these page reads.
-		'EquipmentController' => 'FINDING: no permission check; PERMISSION_EQUIPMENT gates the generic-entity API writes to this data but not these page reads',
+		// ADR-0035 (2026-09-29): gated on MASTER_DATA_EDIT, plus ADMIN for userentities/
+		// userfields (GenericEntityController::CheckViewPermission(), mirroring
+		// GenericEntityApiController::AddObject/EditObject/DeleteObject's own write gate for
+		// the same entities exactly), rather than a *_VIEW leaf - EntityReadPolicy already
+		// maps userentities/userfields/userobjects to no read policy at all (null), so there
+		// was no read/write asymmetry to narrow with a new leaf. Every method still refuses
+		// uniformly without a grant, but on a permission this sweep does not itself
+		// characterise as a *_VIEW leaf, so it stays here rather than in
+		// PROTECTED_CONTROLLERS.
+		'GenericEntityController' => 'ADR-0035: MASTER_DATA_EDIT (plus ADMIN for userentities/userfields) - the matching write path\'s own permission(s), not a new *_VIEW leaf',
 	];
 
 	private static PDO $db;

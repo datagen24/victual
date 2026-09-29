@@ -35,13 +35,23 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * that must not reach it does not" - the rendered id of the table row, never its wording.
  *
  * Which pages check a permission and which do not is not an accident this test should
- * paper over: docs/plans/19-rbac.md's Executed section says in so many words that
- * "Batteries, equipment and custom entities retain their previous read policy; this wave
- * does not add view leaves for them", and that calendar aggregation filters by the
- * caller's view leaves rather than gating the page. So the batteries, equipment,
- * userentity and calendar pages are asserted reachable by a caller holding nothing - that
- * is the recorded decision - and the calendar's event list is asserted to shrink with the
- * caller's leaves instead.
+ * paper over. Until 2026-09-29, docs/plans/19-rbac.md's Executed section said in so many
+ * words that "Batteries, equipment and custom entities retain their previous read policy;
+ * this wave does not add view leaves for them" - a deliberate choice
+ * docs/adr/0018-role-grants-and-domain-reads.md recorded, not an oversight, and this class
+ * used to pin it with tests asserting those pages (plus the calendar page, never
+ * addressed by that record at all) reachable by a caller holding no permissions.
+ *
+ * PR #630's derived route sweep (issue #521, part of #487) found that "retains its
+ * previous read policy" meant no permission check whatsoever, and
+ * docs/adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md
+ * (2026-09-29) supersedes that clause: batteries, equipment and the calendar page now
+ * require BATTERIES_VIEW/EQUIPMENT_VIEW/CALENDAR_VIEW, and the custom-entity pages require
+ * the same MASTER_DATA_EDIT/ADMIN their matching write path already required. So the
+ * battery, equipment and userentity pages are now asserted refused for a caller holding no
+ * permissions and reachable once granted the leaf/permission their controller checks, and
+ * the calendar's event list is asserted to keep shrinking with the caller's other view
+ * leaves once CALENDAR_VIEW itself is held.
  *
  * Every fixture date is pinned. The three that cannot be (a chore due *today*, a battery
  * due *today*, a task due *today*) are built from date('Y-m-d') at fixture time, which is
@@ -671,25 +681,36 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * docs/plans/19-rbac.md's Executed section: "Batteries, equipment and custom entities
-	 * retain their previous read policy; this wave does not add view leaves for them." So
-	 * a caller holding no leaf at all still reaches these pages, and that is the recorded
-	 * decision rather than an oversight. This pins it, so that changing it has to be a
-	 * decision too.
+	 * docs/adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md
+	 * (2026-09-29) supersedes the policy this test used to pin ("Batteries, equipment and
+	 * custom entities retain their previous read policy; this wave does not add view leaves
+	 * for them", docs/plans/19-rbac.md's Executed section) - PR #630's derived route sweep
+	 * (issue #521) found that policy meant no permission check at all. Every one of these
+	 * pages now requires BATTERIES_VIEW: a caller holding nothing is refused and writes
+	 * nothing, and the same caller granted only BATTERIES_VIEW reaches every one of them.
 	 */
-	public function testBatteryPagesFollowTheRecordedReadPolicyOfNoViewLeaf(): void
+	public function testBatteryPagesRequireBatteriesView(): void
 	{
 		self::grant([]);
 		$before = self::stateSnapshot();
 
-		self::render(fn () => self::$batteries->Overview(self::request(), self::response(), []), 'GET /batteriesoverview with no grants');
-		self::render(fn () => self::$batteries->BatteriesList(self::request(), self::response(), []), 'GET /batteries with no grants');
-		self::render(fn () => self::$batteries->Journal(self::request(), self::response(), []), 'GET /batteriesjournal with no grants');
-		self::render(fn () => self::$batteries->TrackChargeCycle(self::request(), self::response(), []), 'GET /batterytracking with no grants');
-		self::render(fn () => self::$batteries->BatteriesSettings(self::request(), self::response(), []), 'GET /batteriessettings with no grants');
-		self::render(fn () => self::$batteries->BatteryEditForm(self::request(), self::response(), ['batteryId' => 'new']), 'GET /battery/new with no grants');
+		$this->expectStatus(fn () => self::$batteries->Overview(self::request(), self::response(), []), 403, 'GET /batteriesoverview without BATTERIES_VIEW');
+		$this->expectStatus(fn () => self::$batteries->BatteriesList(self::request(), self::response(), []), 403, 'GET /batteries without BATTERIES_VIEW');
+		$this->expectStatus(fn () => self::$batteries->Journal(self::request(), self::response(), []), 403, 'GET /batteriesjournal without BATTERIES_VIEW');
+		$this->expectStatus(fn () => self::$batteries->TrackChargeCycle(self::request(), self::response(), []), 403, 'GET /batterytracking without BATTERIES_VIEW');
+		$this->expectStatus(fn () => self::$batteries->BatteriesSettings(self::request(), self::response(), []), 403, 'GET /batteriessettings without BATTERIES_VIEW');
+		$this->expectStatus(fn () => self::$batteries->BatteryEditForm(self::request(), self::response(), ['batteryId' => 'new']), 403, 'GET /battery/new without BATTERIES_VIEW');
 
-		self::assertSame($before, self::stateSnapshot(), 'and none of them writes anything');
+		self::assertSame($before, self::stateSnapshot(), 'and none of the refusals writes anything');
+
+		self::grant(['BATTERIES_VIEW']);
+
+		self::render(fn () => self::$batteries->Overview(self::request(), self::response(), []), 'GET /batteriesoverview with BATTERIES_VIEW');
+		self::render(fn () => self::$batteries->BatteriesList(self::request(), self::response(), []), 'GET /batteries with BATTERIES_VIEW');
+		self::render(fn () => self::$batteries->Journal(self::request(), self::response(), []), 'GET /batteriesjournal with BATTERIES_VIEW');
+		self::render(fn () => self::$batteries->TrackChargeCycle(self::request(), self::response(), []), 'GET /batterytracking with BATTERIES_VIEW');
+		self::render(fn () => self::$batteries->BatteriesSettings(self::request(), self::response(), []), 'GET /batteriessettings with BATTERIES_VIEW');
+		self::render(fn () => self::$batteries->BatteryEditForm(self::request(), self::response(), ['batteryId' => 'new']), 'GET /battery/new with BATTERIES_VIEW');
 	}
 
 	public function testBatteriesListShowsActiveBatteriesAndOnlyIncludesRetiredOnesWhenAsked(): void
@@ -841,23 +862,31 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame([], $diagnostics, 'the equipment create form renders with no PHP diagnostics');
 	}
 
-	/** The same recorded read policy as the battery pages - see that test's comment. */
-	public function testEquipmentPagesFollowTheRecordedReadPolicyOfNoViewLeaf(): void
+	/** ADR-0035, same as the battery pages - see testBatteryPagesRequireBatteriesView's comment. */
+	public function testEquipmentPagesRequireEquipmentView(): void
 	{
 		self::grant([]);
 		$before = self::stateSnapshot();
 
-		self::render(fn () => self::$equipment->Overview(self::request(), self::response(), []), 'GET /equipment with no grants');
-		self::renderCapturingWarnings(fn () => self::$equipment->EditForm(self::request(), self::response(), ['equipmentId' => 'new']), 'GET /equipment/new with no grants');
+		$this->expectStatus(fn () => self::$equipment->Overview(self::request(), self::response(), []), 403, 'GET /equipment without EQUIPMENT_VIEW');
+		$this->expectStatus(fn () => self::$equipment->EditForm(self::request(), self::response(), ['equipmentId' => 'new']), 403, 'GET /equipment/new without EQUIPMENT_VIEW');
 
 		self::assertSame($before, self::stateSnapshot());
+
+		self::grant(['EQUIPMENT_VIEW']);
+
+		self::render(fn () => self::$equipment->Overview(self::request(), self::response(), []), 'GET /equipment with EQUIPMENT_VIEW');
+		self::renderCapturingWarnings(fn () => self::$equipment->EditForm(self::request(), self::response(), ['equipmentId' => 'new']), 'GET /equipment/new with EQUIPMENT_VIEW');
 	}
 
 	// --------------------------------------------------------------------- calendar
 
 	/**
 	 * docs/plans/19-rbac.md: "Calendar aggregation filters those domains by the caller's
-	 * view leaves." The page is not gated; its contents are.
+	 * view leaves." That is CalendarService::GetEvents()'s own content filtering, separate
+	 * from the page's own permission check - CALENDAR_VIEW gates whether the page is
+	 * reached at all (ADR-0035), tested in testCalendarPageRequiresCalendarView(); this
+	 * test is about what a caller who does reach it is shown.
 	 */
 	public function testCalendarEventListShrinksWithTheCallersViewLeaves(): void
 	{
@@ -866,13 +895,35 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertTrue(self::titlesContain($asAdmin, 'Chore overdue'), 'a due chore is a calendar event');
 		self::assertTrue(self::titlesContain($asAdmin, 'Task overdue'), 'a due task is a calendar event');
 
-		// GUEST holds STOCK_VIEW, RECIPES_VIEW and MEALPLAN_VIEW - neither CHORES_VIEW nor
-		// TASKS_VIEW - so the chore and task events must be gone while the page still renders.
-		self::grantRole('GUEST');
+		// GUEST's own permissions (STOCK_VIEW, RECIPES_VIEW, MEALPLAN_VIEW - neither
+		// CHORES_VIEW nor TASKS_VIEW) plus CALENDAR_VIEW, which GUEST itself does not hold
+		// (db/pgsql/roles-seed.sql) and which the page itself now requires (ADR-0035) to be
+		// reached at all. Granted directly rather than via grantRole('GUEST') so the chore
+		// and task filtering this test is about is still observable through a page that
+		// renders.
+		self::grant(['CALENDAR_VIEW', 'STOCK_VIEW', 'RECIPES_VIEW', 'MEALPLAN_VIEW']);
 		$asGuest = self::calendarEventTitles();
 		self::assertFalse(self::titlesContain($asGuest, 'Chore overdue'), 'a caller without CHORES_VIEW is not shown the chores');
 		self::assertFalse(self::titlesContain($asGuest, 'Task overdue'), 'a caller without TASKS_VIEW is not shown the tasks');
-		self::assertTrue(self::titlesContain($asGuest, 'Battery overdue'), 'batteries carry no view leaf, so they stay - the recorded policy in plan 19');
+		self::assertTrue(self::titlesContain($asGuest, 'Battery overdue'), 'ADR-0035 gates the battery pages and API, not CalendarService::GetEvents() - calendar aggregation was never extended to filter battery events by permission, so they stay regardless of BATTERIES_VIEW');
+	}
+
+	/**
+	 * ADR-0035 (2026-09-29, superseding part of ADR-0018/plan 19's Executed section):
+	 * the calendar page itself now requires CALENDAR_VIEW, not only the STOCK_VIEW-style
+	 * leaves its aggregated content is separately filtered by (the test above).
+	 */
+	public function testCalendarPageRequiresCalendarView(): void
+	{
+		self::grant([]);
+		$before = self::stateSnapshot();
+
+		$this->expectStatus(fn () => self::$calendar->Overview(self::request(), self::response(), []), 403, 'GET /calendar without CALENDAR_VIEW');
+
+		self::assertSame($before, self::stateSnapshot());
+
+		self::grant(['CALENDAR_VIEW']);
+		self::render(fn () => self::$calendar->Overview(self::request(), self::response(), []), 'GET /calendar with CALENDAR_VIEW');
 	}
 
 	/** @return string[] The event titles the calendar page hands fullcalendar. */
@@ -952,17 +1003,35 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('Book page', $create);
 	}
 
-	/** The same recorded read policy as the battery pages - see that test's comment. */
-	public function testUserentityPagesFollowTheRecordedReadPolicyOfNoViewLeaf(): void
+	/**
+	 * ADR-0035: these pages require the same permission(s) their matching
+	 * GenericEntityApiController write path already requires for the same entity -
+	 * MASTER_DATA_EDIT, plus ADMIN for userentities/userfields
+	 * (victual.openapi.json's ExposedEntityEditRequiresAdmin) - rather than a new
+	 * *_VIEW leaf, since EntityReadPolicy maps all three entities to no read policy at
+	 * all. See testBatteryPagesRequireBatteriesView's comment for the superseded policy
+	 * this replaces.
+	 */
+	public function testUserentityPagesRequireTheMatchingWritePermission(): void
 	{
 		self::grant([]);
 		$before = self::stateSnapshot();
 
-		self::render(fn () => self::$generic->UserentitiesList(self::request(), self::response(), []), 'GET /userentities with no grants');
-		self::render(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 'GET /userfields with no grants');
-		self::render(fn () => self::$generic->UserobjectsList(self::request(), self::response(), ['userentityName' => 'householdbook']), 'GET /userobjects with no grants');
+		$this->expectStatus(fn () => self::$generic->UserentitiesList(self::request(), self::response(), []), 403, 'GET /userentities without MASTER_DATA_EDIT/ADMIN');
+		$this->expectStatus(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 403, 'GET /userfields without MASTER_DATA_EDIT/ADMIN');
+		$this->expectStatus(fn () => self::$generic->UserobjectsList(self::request(), self::response(), ['userentityName' => 'householdbook']), 403, 'GET /userobjects without MASTER_DATA_EDIT');
 
 		self::assertSame($before, self::stateSnapshot());
+
+		// MASTER_DATA_EDIT alone is not enough for userentities/userfields: ADMIN is also required.
+		self::grant(['MASTER_DATA_EDIT']);
+		$this->expectStatus(fn () => self::$generic->UserentitiesList(self::request(), self::response(), []), 403, 'GET /userentities refuses MASTER_DATA_EDIT alone');
+		$this->expectStatus(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 403, 'GET /userfields refuses MASTER_DATA_EDIT alone');
+		self::render(fn () => self::$generic->UserobjectsList(self::request(), self::response(), ['userentityName' => 'householdbook']), 'GET /userobjects with MASTER_DATA_EDIT alone');
+
+		self::grant(['MASTER_DATA_EDIT', 'ADMIN']);
+		self::render(fn () => self::$generic->UserentitiesList(self::request(), self::response(), []), 'GET /userentities with MASTER_DATA_EDIT and ADMIN');
+		self::render(fn () => self::$generic->UserfieldsList(self::request(), self::response(), []), 'GET /userfields with MASTER_DATA_EDIT and ADMIN');
 	}
 
 	// ------------------------------------------------------------------------ users
@@ -1448,9 +1517,9 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 			'recipes' => ['recipes', '/recipes', 'RECIPES_VIEW'],
 			'chores' => ['chores', '/choresoverview', 'CHORES_VIEW'],
 			'tasks' => ['tasks', '/tasks', 'TASKS_VIEW'],
-			'batteries' => ['batteries', '/batteriesoverview', 'BATTERIES'],
-			'equipment' => ['equipment', '/equipment', 'EQUIPMENT'],
-			'calendar' => ['calendar', '/calendar', 'CALENDAR'],
+			'batteries' => ['batteries', '/batteriesoverview', 'BATTERIES_VIEW'],
+			'equipment' => ['equipment', '/equipment', 'EQUIPMENT_VIEW'],
+			'calendar' => ['calendar', '/calendar', 'CALENDAR_VIEW'],
 			'mealplan' => ['mealplan', '/mealplan', 'MEALPLAN_VIEW'],
 		];
 	}
