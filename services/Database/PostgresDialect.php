@@ -340,6 +340,12 @@ class PostgresDialect extends DatabaseDialect
 		$pdo->prepare('SELECT pg_advisory_xact_lock(?, ?)')->execute([self::STOCK_BOOKING_ADVISORY_LOCK_CLASS, $productId]);
 	}
 
+	/** @see DatabaseDialect::GetRowClaimLockClause() */
+	public function GetRowClaimLockClause(): string
+	{
+		return ' FOR UPDATE SKIP LOCKED';
+	}
+
 	/**
 	 * Whether the error is PostgreSQL's undefined_table.
 	 *

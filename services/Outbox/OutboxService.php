@@ -165,17 +165,22 @@ class OutboxService extends BaseService
 	 */
 	public function ClaimUndelivered(string $eventType, int $limit = self::DRAIN_BATCH_SIZE): array
 	{
-		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$db = DatabaseService::GetInstance();
+		$pdo = $db->GetDbConnectionRaw();
 
 		if (!$pdo->inTransaction())
 		{
 			throw new \LogicException('ClaimUndelivered requires an open transaction, so the claim it takes lasts as long as the caller needs it to');
 		}
 
+		// The lock clause is per-dialect (DatabaseDialect::GetRowClaimLockClause()):
+		// PostgreSQL's `FOR UPDATE SKIP LOCKED` is not portable SQL - SQLite has no such
+		// syntax at all, and this drain runs on both engines (run-tests.sh's mqtt phase
+		// exercises the outbox on SQLite as well as PostgreSQL; see that comment for why).
 		$query = $pdo->prepare(
 			'SELECT id, payload FROM outbox'
 				. ' WHERE event_type = ? AND delivered_at IS NULL AND dead_lettered_at IS NULL'
-				. ' ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED'
+				. ' ORDER BY id LIMIT ?' . $db->GetDialect()->GetRowClaimLockClause()
 		);
 		$query->execute([$eventType, $limit]);
 
