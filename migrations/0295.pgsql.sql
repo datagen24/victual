@@ -1,0 +1,25 @@
+-- Issue #492 (H3, #487 remediation): "Stock edits accept negative quantities and fractional
+-- consumption leaves residue". ADR-0032 decision 4 and acceptance gate 6 require
+-- EditStockEntry() to refuse a negative amount, and commit 2039d5947 ("fix: apply ADR-0032
+-- stock amount policy") already applied that refusal - and the matching refusal in
+-- AddProduct(), ConsumeProduct(), InventoryProduct(), OpenProduct() and TransferProduct() -
+-- in PHP. Nothing in the schema itself backed that up: `stock.amount` (db/pgsql/baseline/01_tables.sql)
+-- carries no CHECK, so any writer that does not go through StockService - a future
+-- application bug, a direct import path, a hand-written migration or maintenance script -
+-- can still persist a negative row.
+--
+-- This adds the database-level backstop the issue asks for: `amount >= 0`. Zero stays
+-- writable on purpose. Issue #487's "Corrections to the audit" item 3 records that
+-- WeighLocation() legitimately zeroes a vessel's stock row when its gross reading equals
+-- its tare weight (services/StockService.php's WeighLocation() call into EditStockEntry()
+-- with $newAmount = 0), and ADR-0032 open question 1 leaves "no row may hold 0" undecided
+-- and out of scope for this record. `stock_measurement_coherence_check` (migration 0275)
+-- already requires exactly `amount = 1` for an opened, measured row - a strictly narrower
+-- constraint than `amount >= 0`, so the two never conflict.
+--
+-- `stock_log.amount` is deliberately left unconstrained: TRANSACTION_TYPE_TRANSFER_FROM and
+-- TRANSACTION_TYPE_CONSUME bookings store a negative amount by design (the ledger records
+-- the signed delta a booking applies, not a resulting balance) - see the constant
+-- documentation in services/StockService.php. Only `stock` (the resulting balance per row)
+-- gets the non-negative constraint.
+ALTER TABLE stock ADD CONSTRAINT stock_amount_non_negative_check CHECK (amount >= 0);
