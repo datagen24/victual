@@ -32,18 +32,19 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * - locations.tare_qu_id REFERENCES quantity_units(id) (migrations/0276.pgsql.sql)
  *
  * What is deliberately not covered here: the audit's own list also named "quantity unit /
- * product group referenced by products" (products.qu_id_purchase/qu_id_stock/qu_id_consume/
- * qu_id_price, products.product_group_id). At the time this was written, none of those
- * columns carried a FOREIGN KEY anywhere in the schema, so deleting a quantity unit or
- * product group a product depended on succeeded and left a dangling reference rather than
- * raising a \PDOException at all.
+ * product group referenced by products" (products.location_id/qu_id_purchase/qu_id_stock/
+ * qu_id_consume/qu_id_price, products.product_group_id). At the time this was written, none
+ * of those columns carried a FOREIGN KEY anywhere in the schema, so deleting a location,
+ * quantity unit or product group a product depended on succeeded and left a dangling
+ * reference rather than raising a \PDOException at all.
  *
- * Issue #552 (D4, #487 remediation) resolved that for three of the six -
- * product_group_id, qu_id_consume, qu_id_price - via migrations/0295.pgsql.sql; those cases
- * are covered by tests/Pgsql/ProductReferenceIntegrityTest.php, in this same shape. The other
- * three - location_id, qu_id_purchase, qu_id_stock - are NOT NULL and still carry no FOREIGN
- * KEY: see that migration's own header comment for why a dangling NOT NULL reference has no
- * established repair rule, and the PR body for the options left to the maintainer.
+ * Issue #552 (D4, #487 remediation) resolved that for all six via migrations/0295.pgsql.sql -
+ * a plain foreign key on every one of them, no repair step (see that migration's own header
+ * comment for why: the migration system is one-time and runs on a fresh install, so the only
+ * route by which a dangling reference reaches these columns is
+ * `bin/victual-db-import`, validated separately by
+ * `DatabaseImporter::AssertProductReferences()`). Those six cases are covered by
+ * tests/Pgsql/ProductReferenceIntegrityTest.php, in this same shape.
  */
 class ReferenceRefusalTest extends PgsqlSchemaTestCase
 {

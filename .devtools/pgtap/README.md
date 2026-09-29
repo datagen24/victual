@@ -30,10 +30,12 @@ migration 0295 (issue #558). Deleting a product whose stock entries carry a live
 retires those labels with the product's own name, not null. `trg_cascade_product_removal`
 retires them before deleting the stock rows, rather than after the product row (and
 `retire_stock_entry_labels`' own product lookup) is gone. The same migration's foreign keys
-on `products.product_group_id`, `qu_id_consume` and `qu_id_price` (issue #552, D4) are covered
+on all six of `products`' upstream reference columns (`location_id`, `qu_id_purchase`,
+`qu_id_stock`, `qu_id_consume`, `qu_id_price`, `product_group_id`; issue #552, D4) are covered
 by `tests/Pgsql/ProductReferenceIntegrityTest.php` at the httpboot phase, the same shape
 `tests/Pgsql/ReferenceRefusalTest.php` already uses for the other enforced foreign keys in
-this tree.
+this tree, and by `DatabaseImporter::AssertProductReferences()`'s own import-time refusal,
+covered by `tests/Pgsql/StockLocationImportTest.php`.
 
 The [product group roll-up tests](020-product-group-rollup.sql) cover migration 0293
 (issue #508, M8, ADR-0034): `product_groups_missing`'s member join now reaches every group
