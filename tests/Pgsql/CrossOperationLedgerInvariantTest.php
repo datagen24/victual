@@ -38,17 +38,20 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  *   it logs to `stock_log` (PURCHASE, SELF_PRODUCTION positive INVENTORY_CORRECTION,
  *   CONSUME, negative INVENTORY_CORRECTION), or moves an amount between two `stock`
  *   rows under a correlated TRANSFER_FROM/TRANSFER_TO pair that nets to zero at the
- *   product level, or leaves `stock.amount` untouched entirely (PRODUCT_OPENED, whose
- *   booking amount records what was opened without moving stock; a plain due-date/price
- *   EDIT that does not change amount).
+ *   product level, or leaves `stock.amount` untouched entirely (PRODUCT_OPENED and the
+ *   STOCK_MEASURED_OLD/NEW pair, whose amounts record state rather than movement).
+ *   STOCK_EDIT_OLD/NEW are snapshots of the entry before and after an edit, not deltas,
+ *   so the pair nets to new - old.
+ * - A partial open or consume splits a row, and the split-off part takes a new
+ *   `stock_id` with no booking of its own, so amounts move between stock_ids without a
+ *   ledger entry. The balance therefore holds per product, not per stock_id.
  * - UndoBooking() (services/StockService.php:3290) reverses exactly the effect its
  *   forward booking had and then marks that stock_log row `undone = 1`; it refuses
  *   (leaving every row byte-for-byte unchanged) rather than guess when the reversal
  *   would be ambiguous (StockUndoIntegrityTest.php already covers those refusal
  *   scenarios individually).
- * - Consequently, for every `stock_id` that has ever appeared in `stock_log`, at every
- *   point in time: SUM(stock.amount WHERE stock_id = ?) equals
- *   SUM(stock_log.amount WHERE stock_id = ? AND undone = 0), compared within
+ * - Consequently, for each product, at every point in time: SUM(stock.amount) equals
+ *   the live (undone = 0) stock_log sum under the rules above, compared within
  *   StockService::CompareAmounts()'s ADR-0032 tolerance. That is the invariant this
  *   file checks after every step, generalised from the one instance
  *   StockCoverageTest.php's testUndoingTheLaterOfTwoCompactedPurchasesLeavesTheEarlierOnesUnits()
@@ -58,6 +61,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 {
 	/** Deterministic seed for the whole sequence - printed on every failure. */
 	private const SEED = 20260929;
+	private const MIN_ACCEPTED_OP_TYPES = 8;
 
 	/** Number of scripted operations the seeded sequence runs. Kept small so the phase stays well under a minute. */
 	private const SCRIPT = [
@@ -160,31 +164,40 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 		return $statement->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	private static function liveStockIds(): array
-	{
-		return self::$db->query('SELECT DISTINCT stock_id FROM stock_log UNION SELECT DISTINCT stock_id FROM stock')->fetchAll(PDO::FETCH_COLUMN);
-	}
-
 	/**
-	 * The ledger-balance invariant documented in the class docblock, checked for every
-	 * `stock_id` that exists anywhere in the fixture, not only the ones the current step
-	 * touched - a defect that corrupts an *unrelated* row would otherwise slip past.
+	 * The ledger-balance invariant documented in the class docblock, checked for both fixture
+	 * products after every step, not only the one the current step touched - a defect that
+	 * corrupts an *unrelated* product would otherwise slip past.
 	 */
 	private function assertLedgerBalance(string $context): void
 	{
-		$liveSum = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock_log WHERE stock_id = ? AND undone = 0');
-		$stockSum = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE stock_id = ?');
+		// Balanced per product, not per stock_id: a partial open or consume splits a row, and
+		// the split-off part keeps no booking of its own under its new stock_id, so amounts move
+		// between stock_ids without a ledger entry. The product total is what the ledger pins.
+		//
+		// Not every booking is a delta. STOCK_EDIT_OLD and STOCK_EDIT_NEW are snapshots of the
+		// entry before and after an edit (StockService::EditStockEntry()), so the pair nets to
+		// new - old. PRODUCT_OPENED and the STOCK_MEASURED_OLD/NEW pair record state changes
+		// that never alter stock.amount, so they carry no amount into the balance.
+		$liveSum = self::$db->prepare("SELECT COALESCE(SUM(CASE transaction_type
+				WHEN 'stock-edit-old' THEN -amount
+				WHEN 'product-opened' THEN 0
+				WHEN 'stock-measured-old' THEN 0
+				WHEN 'stock-measured-new' THEN 0
+				ELSE amount END), 0)
+			FROM stock_log WHERE product_id = ? AND undone = 0");
+		$stockSum = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock WHERE product_id = ?');
 
-		foreach (self::liveStockIds() as $stockId)
+		foreach ([self::$plainProduct, self::$measuredProduct] as $productId)
 		{
-			$liveSum->execute([$stockId]);
+			$liveSum->execute([$productId]);
 			$expected = (float)$liveSum->fetchColumn();
-			$stockSum->execute([$stockId]);
+			$stockSum->execute([$productId]);
 			$actual = (float)$stockSum->fetchColumn();
 
 			self::assertTrue(
 				self::amountsEqual($expected, $actual),
-				"$context: stock_id $stockId - live stock_log amount sum ($expected) must equal the surviving stock row amount sum ($actual)"
+				"$context: product $productId - live stock_log amount sum ($expected) must equal the stock amount sum ($actual)"
 			);
 		}
 	}
@@ -331,6 +344,30 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 
 		$this->assertAllInvariants('seed=' . self::SEED . ' step=0 (fixtures created, before any operation)');
 
+		// Stock the fixtures through real purchases first. Without this the shuffled script
+		// can drain the only early purchase (an undo right after it) and then spend most
+		// steps on refusals, which keep every invariant trivially true.
+		$primes = [
+			[self::$plainProduct, 5.0, self::$locationA],
+			[self::$plainProduct, 5.0, self::$locationB],
+			[self::$measuredProduct, 1.0, self::$locationA],
+			[self::$measuredProduct, 1.0, self::$locationA],
+			[self::$measuredProduct, 1.0, self::$locationB],
+		];
+		foreach ($primes as $i => [$product, $amount, $location])
+		{
+			$primed = $this->attempt(fn() => self::$stock->AddProduct(self::request('POST', [
+				'amount' => $amount,
+				'best_before_date' => '2031-0' . ($i + 1) . '-15',
+				'purchased_date' => '2026-01-01',
+				'price' => 1.5,
+				'location_id' => $location,
+			]), new Response(), ['productId' => $product]));
+			self::assertLessThan(400, $primed['status'], "seed=" . self::SEED . " prime=$i: priming purchase must be accepted");
+			$this->assertAllInvariants('seed=' . self::SEED . " prime=$i");
+		}
+
+		$accepted = [];
 		foreach ($script as $index => $op)
 		{
 			$step = $index + 1;
@@ -338,6 +375,10 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 
 			$before = self::ledger();
 			$result = $this->runScriptedOperation($op, $context);
+			if (empty($result['skipped']) && $result['status'] < 400)
+			{
+				$accepted[$op] = ($accepted[$op] ?? 0) + 1;
+			}
 
 			if ($result['status'] >= 400)
 			{
@@ -350,6 +391,14 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 
 			$this->assertAllInvariants($context);
 		}
+
+		// Without this the sequence could pass vacuously: if every booking were refused
+		// (a new validation or permission check on AddProduct, say), no step would change
+		// the ledger and every invariant would hold trivially. Skipped steps (no candidate
+		// row) are not counted as accepted.
+		$acceptedSummary = 'seed=' . self::SEED . ' accepted=' . json_encode($accepted);
+		self::assertGreaterThan(0, $accepted['purchase'] ?? 0, "$acceptedSummary: at least one purchase must be accepted");
+		self::assertGreaterThanOrEqual(self::MIN_ACCEPTED_OP_TYPES, count($accepted), "$acceptedSummary: the sequence must exercise at least " . self::MIN_ACCEPTED_OP_TYPES . ' distinct accepted operation types');
 	}
 
 	/**
@@ -393,7 +442,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				$rows = self::stockRows($product);
 				if (empty($rows))
 				{
-					return ['status' => 200, 'body' => []];
+					return ['status' => 200, 'body' => [], 'skipped' => true];
 				}
 				$row = $rows[mt_rand(0, count($rows) - 1)];
 				$amount = max(0.1, round(((float)$row['amount']) * 0.4, 2));
@@ -409,7 +458,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				$rows = self::stockRows($product);
 				if (empty($rows))
 				{
-					return ['status' => 200, 'body' => []];
+					return ['status' => 200, 'body' => [], 'skipped' => true];
 				}
 				$row = $rows[mt_rand(0, count($rows) - 1)];
 				$amount = max(0.1, round(((float)$row['amount']) * 0.9, 2));
@@ -426,7 +475,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				$candidates = array_values(array_filter($rows, fn($row) => (int)$row['open'] === 0 && StockService::CompareAmounts((float)$row['amount'], 1.0) >= 0));
 				if (empty($candidates))
 				{
-					return ['status' => 200, 'body' => []];
+					return ['status' => 200, 'body' => [], 'skipped' => true];
 				}
 				$row = $candidates[mt_rand(0, count($candidates) - 1)];
 				return $this->attempt(fn() => self::$stock->OpenProduct(self::request('POST', [
@@ -459,7 +508,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				$rows = self::stockRows($product);
 				if (empty($rows))
 				{
-					return ['status' => 200, 'body' => []];
+					return ['status' => 200, 'body' => [], 'skipped' => true];
 				}
 				$row = $rows[mt_rand(0, count($rows) - 1)];
 				return $this->attempt(fn() => self::$stock->EditStockEntry(self::request('PUT', [
@@ -476,7 +525,7 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				$live = self::$db->query('SELECT id FROM stock_log WHERE undone = 0 ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
 				if (empty($live))
 				{
-					return ['status' => 200, 'body' => []];
+					return ['status' => 200, 'body' => [], 'skipped' => true];
 				}
 				$bookingId = $live[mt_rand(0, count($live) - 1)];
 				return $this->attempt(fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $bookingId]));
