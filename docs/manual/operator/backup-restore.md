@@ -71,6 +71,21 @@ and includes a query listing every invalid reference. Back up the source, choose
 explicit repair for each reference, and retry. `--force` does not bypass this check.
 Null stock locations and deleted locations in booking history remain valid input.
 
+## SQLite source stock amount errors
+
+`bin/victual-db-import` also checks for a negative `stock.amount` in the SQLite source
+before replacing target data. The target schema refuses one outright
+(`stock_amount_non_negative_check`; see [issue #492](https://github.com/datagen24/victual/issues/492)),
+and this check reports the source rows involved instead of letting the copy fail on a bare
+database error partway through.
+
+The error names the affected row count and includes a query listing every negative row
+(id, product, stock entry, and amount). Back up the source, decide what each affected row
+should actually hold, apply that repair to the source, and retry. `--force` does not
+bypass this check, and the check never clamps a negative value to zero on your behalf -
+only an explicit repair changes what is imported. A stock amount of exactly zero is valid
+input and is not refused.
+
 Preflight and copying read one source snapshot. A copy failure rolls back target
 truncation and copied rows. The CLI migrates the target schema before importing; an
 import refusal does not roll back that earlier schema migration.

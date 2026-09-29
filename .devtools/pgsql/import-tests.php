@@ -454,6 +454,51 @@ Check('retired labels permit import and survive it', $code === 0 && $identity->R
 	'unchanged retirement snapshot', 'exit ' . $code);
 $target = null;
 
+// --- A source stock row holds a negative amount ---------------------------------------
+//
+// Issue #492 (H3): migration 0297's stock_amount_non_negative_check refuses a negative
+// stock.amount at the schema level, so a legacy source carrying one - an upstream bug, or
+// exactly the defect #492 itself fixed on the application side, either of which can leave
+// one in an existing file this importer still has to accept - would otherwise fail the row
+// copy with a bare PostgreSQL SQLSTATE 23514 partway through, inside the transaction the
+// truncate already opened. DatabaseImporter::AssertStockAmounts() catches this before
+// truncation, the same pattern AssertStockLocations() above already established for a
+// dangling location (ADR-0029), so the refusal names the row and the target survives
+// untouched. Doctoring a copy of $fixture (still the min-version one from section B) rather
+// than the committed file, per this file's own convention above.
+echo PHP_EOL . 'F. A source stock row holds a negative amount' . PHP_EOL;
+
+$negativeAmountSource = $scratch . '/negative-amount.db';
+copy($fixture, $negativeAmountSource);
+$doctor = new \PDO('sqlite:' . $negativeAmountSource);
+$doctor->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+$doctor->exec('UPDATE stock SET amount = -1 WHERE id = (SELECT MIN(id) FROM stock)');
+$doctor = null;
+
+$target = Target($dbName);
+$beforeCount = (int)Scalar($target, 'SELECT COUNT(*) FROM stock');
+$beforeSum = (float)Scalar($target, 'SELECT COALESCE(SUM(amount), 0) FROM stock');
+$target = null;
+
+[$code, $output] = RunImport($dataPath, $negativeAmountSource, ['--force']);
+Check('a source with a negative stock amount is refused', $code !== 0, 'a non-zero exit', 'exit ' . $code);
+Check('the refusal names the negative row', str_contains($output, '1 source stock row(s) hold a negative amount'),
+	'refusal naming one negative row', trim($output));
+Check('the refusal explains the tolerance decision', str_contains($output, 'ADR-0032 gives no import-time tolerance rule'),
+	'refusal citing ADR-0032', trim($output));
+Check('the refusal cites the listing query', str_contains($output, 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < 0'),
+	'refusal including a listing query', trim($output));
+Check('--force does not bypass the refusal', $code !== 0, 'still refused with --force', 'exit ' . $code);
+
+$target = Target($dbName);
+$afterCount = (int)Scalar($target, 'SELECT COUNT(*) FROM stock');
+$afterSum = (float)Scalar($target, 'SELECT COALESCE(SUM(amount), 0) FROM stock');
+Check('the target stock table is unchanged', $afterCount === $beforeCount && $afterSum === $beforeSum,
+	$beforeCount . ' rows summing to ' . $beforeSum, $afterCount . ' rows summing to ' . $afterSum);
+$target = null;
+
+unlink($negativeAmountSource);
+
 // The scratch directory, not the committed fixtures. Recursive because the data directory
 // gains a view cache: the command under test loads the configuration, and HTMLPurifier's
 // definition cache is written under VIEWCACHE_PATH, which defaults inside it.

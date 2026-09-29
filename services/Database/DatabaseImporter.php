@@ -357,6 +357,61 @@ class DatabaseImporter
 	}
 
 	/**
+	 * Migration 0297's stock_amount_non_negative_check (issue #492, ADR-0032) refuses a
+	 * negative `stock.amount` at the schema level. Without this check, a source whose
+	 * amount went negative - an upstream bug, or exactly the defect #492 itself fixed on the
+	 * application side, both of which can leave one in an existing SQLite file this importer
+	 * still has to accept - fails the COPY with a raw PostgreSQL SQLSTATE 23514 partway
+	 * through CopyTable(), inside the same transaction TRUNCATE already opened. The rollback
+	 * is clean (see Import()'s and ImportSnapshot()'s own transaction), so no target data is
+	 * lost, but the message a caller sees is a bare constraint-violation error naming neither
+	 * the row nor why it matters. This is the maintainer's standing rule for dirty legacy
+	 * data (ADR-0029's pattern, followed here the same way AssertStockLocations() above
+	 * follows it for a dangling location): a dangling-source report and a refusal before
+	 * truncation, not a migration that repairs rows nothing here has ever seen, and not a
+	 * silent clamp that would invent a value the source never recorded.
+	 *
+	 * Gated on `stock` actually being among the tables this import copies ($tables, the same
+	 * list ImportSnapshot() builds via GetCommonTables() before calling this): a source or
+	 * target schema that has no `stock` table at all - the synthetic single-migration-number
+	 * fixtures SQLITE_REQUIRED_MIGRATION_NUMBERS_ABOVE_BASELINE's docblock names, the same
+	 * ones several other optional-table checks in this class guard on - has nothing for this
+	 * check to refuse.
+	 *
+	 * **Tolerance.** ADR-0032 does not give a rule for import-time handling of an amount
+	 * within `CompareAmounts()`'s tolerance of zero (e.g. a `-2.7e-17` residue float
+	 * arithmetic can leave, the exact shape issue #492 fixed going forward) - its scope is
+	 * runtime comparisons, not what an importer does with a legacy value. Lacking a decision
+	 * to apply, this refuses strictly `amount < 0`, the same boundary
+	 * `stock_amount_non_negative_check` itself enforces (`amount >= 0`), rather than adopting
+	 * the runtime tolerance and silently importing a tiny negative residue as zero: that would
+	 * be inventing a value - zero - the source file does not actually contain. An operator
+	 * who judges a specific row a genuine float artifact can still repair that one row before
+	 * retrying; this check does not decide that for them.
+	 */
+	private function AssertStockAmounts(array $tables): void
+	{
+		if (!in_array('stock', $tables, true))
+		{
+			return;
+		}
+
+		$query = 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < 0';
+		$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') negative')->fetchColumn();
+		if ($count > 0)
+		{
+			$sample = $this->Source->query($query . ' ORDER BY id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
+			throw new \RuntimeException('Import refused: ' . $count . ' source stock row(s) hold a negative amount, which the '
+				. 'target refuses outright (migration 0297, stock_amount_non_negative_check; issue #492). '
+				. 'Sample (id, product_id, stock_id, amount): ' . json_encode($sample) . '. '
+				. 'ADR-0032 gives no import-time tolerance rule, so this refuses any amount strictly below zero, including a '
+				. 'residue as small as -2.7e-17 that float arithmetic can leave - clamping it to zero would invent a value the '
+				. 'source never recorded. Choose an explicit source repair and retry; --force does not bypass this check. '
+				. 'List all rows: ' . $query . ' ORDER BY id;');
+		}
+	}
+
+	/**
 	 * Applies migrations/0277.pgsql.sql's own repair rule to whatever products the copy just
 	 * brought in - reusing its rule rather than inventing a second one, per issue #496 (H7a):
 	 * a product may not both have a parent and be one, so whichever product is the "middle"
@@ -455,6 +510,7 @@ class DatabaseImporter
 
 		$this->AssertSchemaVersionsMatch($applyRowMigrations);
 		$this->AssertStockLocations();
+		$this->AssertStockAmounts($tables);
 
 		$report = [];
 
