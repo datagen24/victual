@@ -482,11 +482,11 @@ $target = null;
 
 [$code, $output] = RunImport($dataPath, $negativeAmountSource, ['--force']);
 Check('a source with a negative stock amount is refused', $code !== 0, 'a non-zero exit', 'exit ' . $code);
-Check('the refusal names the negative row', str_contains($output, '1 source stock row(s) hold a negative amount'),
+Check('the refusal names the negative row', str_contains($output, '1 source stock row(s) hold an amount more negative than'),
 	'refusal naming one negative row', trim($output));
-Check('the refusal explains the tolerance decision', str_contains($output, 'ADR-0032 gives no import-time tolerance rule'),
-	'refusal citing ADR-0032', trim($output));
-Check('the refusal cites the listing query', str_contains($output, 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < 0'),
+Check('the refusal explains the tolerance decision', str_contains($output, 'is imported as exactly 0, the same tolerance'),
+	'refusal explaining the tolerance boundary', trim($output));
+Check('the refusal cites the listing query', str_contains($output, 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < -'),
 	'refusal including a listing query', trim($output));
 Check('--force does not bypass the refusal', $code !== 0, 'still refused with --force', 'exit ' . $code);
 
@@ -498,6 +498,43 @@ Check('the target stock table is unchanged', $afterCount === $beforeCount && $af
 $target = null;
 
 unlink($negativeAmountSource);
+
+// --- A source stock row holds a negative residue within tolerance ---------------------
+//
+// Maintainer decision (#492 follow-up): a source amount within StockService::AMOUNT_TOLERANCE
+// (1e-9) of zero on the negative side - exactly the shape a compaction or an undo can leave
+// behind, per ADR-0032 - is not the case section F above refuses. It is close enough to zero
+// that CompareAmounts() already treats it as zero everywhere at runtime, so the copy itself
+// translates it to exactly 0 (DatabaseImporter::SourceColumnExpression()) rather than
+// refusing an import over a value nobody would call negative. -3e-17 is comfortably inside
+// the 1e-9 floor and is the residue shape #492's own issue evidence named.
+echo PHP_EOL . 'G. A source stock row holds a within-tolerance negative residue' . PHP_EOL;
+
+$residueSource = $scratch . '/residue-amount.db';
+copy($fixture, $residueSource);
+$doctor = new \PDO('sqlite:' . $residueSource);
+$doctor->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+$residueStockId = (string)Scalar($doctor, 'SELECT stock_id FROM stock WHERE id = (SELECT MIN(id) FROM stock)');
+$doctor->exec('UPDATE stock SET amount = -3e-17 WHERE id = (SELECT MIN(id) FROM stock)');
+$doctor = null;
+
+[$code, $output] = RunImport($dataPath, $residueSource, ['--force']);
+Check('a within-tolerance residue does not refuse the import', $code === 0, 'exit 0',
+	'exit ' . $code . ($code === 0 ? '' : ': ' . trim($output)));
+
+if ($code === 0)
+{
+	$target = Target($dbName);
+	$quotedStockId = $target->quote($residueStockId);
+	$residueRowExists = (int)Scalar($target, 'SELECT COUNT(*) FROM stock WHERE stock_id = ' . $quotedStockId) === 1;
+	Check('the residue row exists in the target', $residueRowExists, '1 row', $residueRowExists ? '1 row' : '0 rows');
+	$residueAmount = Scalar($target, 'SELECT amount FROM stock WHERE stock_id = ' . $quotedStockId);
+	Check('the residue imported as exactly 0', $residueAmount !== false && (float)$residueAmount === 0.0,
+		'0', (string)$residueAmount);
+	$target = null;
+}
+
+unlink($residueSource);
 
 // The scratch directory, not the committed fixtures. Recursive because the data directory
 // gains a view cache: the command under test loads the configuration, and HTMLPurifier's

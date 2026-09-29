@@ -4,6 +4,7 @@ namespace Victual\Services\Database;
 
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\Labels\LabelIdentityService;
+use Victual\Services\StockService;
 
 /**
  * Copies the contents of an existing SQLite database into another engine, so that an
@@ -378,16 +379,16 @@ class DatabaseImporter
 	 * ones several other optional-table checks in this class guard on - has nothing for this
 	 * check to refuse.
 	 *
-	 * **Tolerance.** ADR-0032 does not give a rule for import-time handling of an amount
-	 * within `CompareAmounts()`'s tolerance of zero (e.g. a `-2.7e-17` residue float
-	 * arithmetic can leave, the exact shape issue #492 fixed going forward) - its scope is
-	 * runtime comparisons, not what an importer does with a legacy value. Lacking a decision
-	 * to apply, this refuses strictly `amount < 0`, the same boundary
-	 * `stock_amount_non_negative_check` itself enforces (`amount >= 0`), rather than adopting
-	 * the runtime tolerance and silently importing a tiny negative residue as zero: that would
-	 * be inventing a value - zero - the source file does not actually contain. An operator
-	 * who judges a specific row a genuine float artifact can still repair that one row before
-	 * retrying; this check does not decide that for them.
+	 * **Tolerance (maintainer decision, #492 follow-up).** A source amount within
+	 * `StockService::AMOUNT_TOLERANCE` of zero on the negative side - a `-2.7e-17` residue
+	 * float arithmetic can leave, the exact shape issue #492 fixed going forward - is treated
+	 * the same way `CompareAmounts()` already treats it everywhere else: as zero. That
+	 * translation happens in the copy itself (see SourceColumnExpression()), not here; this
+	 * check only refuses what the translation does not cover - `amount < -tolerance`, a
+	 * genuine negative no reasonable amount of float noise explains. `--force` does not
+	 * bypass this, and nothing here repairs a row this class did not itself corrupt; an
+	 * operator with a genuinely negative row chooses and applies that source repair before
+	 * retrying.
 	 */
 	private function AssertStockAmounts(array $tables): void
 	{
@@ -396,19 +397,49 @@ class DatabaseImporter
 			return;
 		}
 
-		$query = 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < 0';
+		$tolerance = sprintf('%.17g', StockService::AMOUNT_TOLERANCE);
+		$query = 'SELECT id, product_id, stock_id, amount FROM stock WHERE amount < -' . $tolerance;
 		$count = (int)$this->Source->query('SELECT COUNT(*) FROM (' . $query . ') negative')->fetchColumn();
 		if ($count > 0)
 		{
 			$sample = $this->Source->query($query . ' ORDER BY id LIMIT 10')->fetchAll(\PDO::FETCH_ASSOC);
-			throw new \RuntimeException('Import refused: ' . $count . ' source stock row(s) hold a negative amount, which the '
-				. 'target refuses outright (migration 0297, stock_amount_non_negative_check; issue #492). '
+			throw new \RuntimeException('Import refused: ' . $count . ' source stock row(s) hold an amount more negative than '
+				. 'StockService::AMOUNT_TOLERANCE (' . $tolerance . ') below zero, which the target refuses outright '
+				. '(migration 0297, stock_amount_non_negative_check; issue #492). '
 				. 'Sample (id, product_id, stock_id, amount): ' . json_encode($sample) . '. '
-				. 'ADR-0032 gives no import-time tolerance rule, so this refuses any amount strictly below zero, including a '
-				. 'residue as small as -2.7e-17 that float arithmetic can leave - clamping it to zero would invent a value the '
-				. 'source never recorded. Choose an explicit source repair and retry; --force does not bypass this check. '
+				. 'A residue within tolerance of zero (e.g. -2.7e-17) is imported as exactly 0, the same tolerance '
+				. 'CompareAmounts() treats as zero everywhere else; these rows are more negative than that and are refused '
+				. 'rather than clamped, so no value the source did not actually hold is invented. '
+				. 'Choose an explicit source repair and retry; --force does not bypass this check. '
 				. 'List all rows: ' . $query . ' ORDER BY id;');
 		}
+	}
+
+	/**
+	 * The SELECT expression CopyTable() and CollectValueMismatches() each read a source
+	 * column through, keyed by table and column name so a translation lives in exactly one
+	 * place both call sites share - the actual copy and its own verbatim-copy proof - and
+	 * never resolve a column differently between them, which would give the copy one value
+	 * and the comparison another it would then flag as a mismatch of the copy's own making.
+	 *
+	 * A plain quoted column reference for every column except one this class currently
+	 * translates: `stock.amount`, per AssertStockAmounts()'s own docblock (maintainer
+	 * decision, #492 follow-up) - a negative residue within `StockService::AMOUNT_TOLERANCE`
+	 * of zero imports as exactly `0`, the same tolerance `CompareAmounts()` already treats as
+	 * zero everywhere else. Aliased back to the column's own name (`AS "amount"`) because
+	 * InsertBatch() and CollectValueMismatches() both read the fetched row by that name, not
+	 * by column position, and a CASE expression's own default alias is not it.
+	 */
+	private function SourceColumnExpression(string $table, string $column): string
+	{
+		if ($table === 'stock' && $column === 'amount')
+		{
+			$tolerance = sprintf('%.17g', StockService::AMOUNT_TOLERANCE);
+
+			return 'CASE WHEN "amount" < 0 AND "amount" >= -' . $tolerance . ' THEN 0 ELSE "amount" END AS "amount"';
+		}
+
+		return '"' . $column . '"';
 	}
 
 	/**
@@ -721,7 +752,7 @@ class DatabaseImporter
 		$quotedColumns = implode(', ', array_map(fn($c) => $this->TargetDialect->QuoteIdentifier($c), $columns));
 		$rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
 
-		$select = $this->Source->query('SELECT ' . implode(', ', array_map(fn($c) => '"' . $c . '"', $columns)) . ' FROM "' . $table . '"');
+		$select = $this->Source->query('SELECT ' . implode(', ', array_map(fn($c) => $this->SourceColumnExpression($table, $c), $columns)) . ' FROM "' . $table . '"');
 
 		$copied = 0;
 		$batch = [];
@@ -1465,7 +1496,7 @@ class DatabaseImporter
 			}
 
 			$list = implode(', ', array_map(fn($c) => $this->TargetDialect->QuoteIdentifier($c), $columns));
-			$sourceList = implode(', ', array_map(fn($c) => '"' . $c . '"', $columns));
+			$sourceList = implode(', ', array_map(fn($c) => $this->SourceColumnExpression($table, $c), $columns));
 
 			$sourceRows = array_map(
 				[ValueComparison::class, 'NormaliseRow'],
