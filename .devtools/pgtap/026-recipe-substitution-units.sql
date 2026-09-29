@@ -206,11 +206,15 @@ VALUES (
 	4, '2030-01-01', '2026-01-01', 'm629-negative-factor-sub', (SELECT id FROM locations WHERE name = 'M629 location'), 50
 );
 
+-- products_current_substitutions itself reads NULL here (the LIMIT 1 subquery finds no
+-- convertible candidate at all) - it is recipes_pos_resolved's own
+-- COALESCE(pcs.product_id_effective, rp.product_id) that supplies the parent fallback,
+-- asserted below via costs/calories/stock_amount reading as the parent's own.
 SELECT is(
 	(SELECT product_id_effective FROM products_current_substitutions
 		WHERE parent_product_id = (SELECT id FROM products WHERE name = 'M629 Negative-Factor Parent')),
-	(SELECT id FROM products WHERE name = 'M629 Negative-Factor Parent'),
-	'products_current_substitutions falls back to the parent product itself when its only sub product''s only resolved conversion has a non-positive factor and no other sub product exists (issue #629, D4)'
+	NULL::integer,
+	'products_current_substitutions finds no convertible candidate (NULL) when its only sub product''s only resolved conversion has a non-positive factor and no other sub product exists (issue #629, D4)'
 );
 
 INSERT INTO recipes (name, base_servings) VALUES ('M629 Negative-Factor Recipe', 1);
