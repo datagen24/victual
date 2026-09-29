@@ -135,6 +135,7 @@
 			<file>tests/Pgsql/ViewCorrectionsHttpTest.php</file>
 			<file>tests/Pgsql/ReferenceRefusalTest.php</file>
 			<file>tests/Pgsql/ApiInputShapesTest.php</file>
+			<file>tests/Pgsql/ProductReferenceIntegrityTest.php</file>
 		</testsuite>
 		<testsuite name="mqttcoverage">
 			<file>tests/Pgsql/MqttCoverageTest.php</file>
@@ -163,6 +164,7 @@
 			<file>tests/Pgsql/StockLocationIntegrityTest.php</file>
 			<file>tests/Pgsql/StockLocationImportTest.php</file>
 			<file>tests/Pgsql/StockLocationMigrationTest.php</file>
+			<file>tests/Pgsql/ProductReferenceMigrationTest.php</file>
 			<file>tests/Pgsql/StockAmountMigrationTest.php</file>
 			<file>tests/Pgsql/StockScopedAvailabilityTest.php</file>
 		</testsuite>

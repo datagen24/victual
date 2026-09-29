@@ -331,7 +331,13 @@ Collected because most of them are only visible from inside the existing code.
     for `stock`, behind the application refusal commit 2039d5947 already added — is written to
     disk as `0297.pgsql.sql`, the next lowest free slot once 0295–0296 are spoken for, above
     this plan's still-unwritten claims. This plan's two claims moved up to **0298–0299** under
-    the lowest-free-slot rule
+    the lowest-free-slot rule. PR #624 has since merged to `master` (18d0389d); PR #626 has
+    not yet
+  - 0295–0296 until 2026-09-28 once more, when issue #552's products foreign-key migration
+    (#487 remediation), also carrying issue #558's label-retirement fix, was written to disk
+    as `0295.pgsql.sql` above this plan's still-unwritten claims. It moved up to 0296–0297
+    under the lowest-free-slot rule, before PR #626 and issue #492's fix also claimed that
+    range and it moved again as above
   - 0294–0295 until 2026-09-28 yet again, when issues #543 and #546's
     `trg_cascade_change_qu_id_stock` fix (#487 remediation) was written to disk as
     `0294.pgsql.sql` above this plan's still-unwritten claims. It rescales

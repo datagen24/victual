@@ -32,15 +32,19 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * - locations.tare_qu_id REFERENCES quantity_units(id) (migrations/0276.pgsql.sql)
  *
  * What is deliberately not covered here: the audit's own list also named "quantity unit /
- * product group referenced by products" (products.qu_id_purchase/qu_id_stock/qu_id_consume/
- * qu_id_price, products.product_group_id). None of those columns carries a FOREIGN KEY
- * anywhere in the schema - confirmed by the same reading - so deleting a quantity unit or
- * product group a product depends on does not raise a \PDOException at all today; it
- * succeeds and leaves a dangling reference. That is a different, deeper defect (missing
- * referential integrity, not a mishandled violation) than this issue's "500 instead of 400",
- * and fixing it needs a maintainer decision - a new FOREIGN KEY migration, or new
- * application-level pre-delete checks - rather than a code-only change to this refusal path.
- * Reported to the master rather than decided here.
+ * product group referenced by products" (products.location_id/qu_id_purchase/qu_id_stock/
+ * qu_id_consume/qu_id_price, products.product_group_id). At the time this was written, none
+ * of those columns carried a FOREIGN KEY anywhere in the schema, so deleting a location,
+ * quantity unit or product group a product depended on succeeded and left a dangling
+ * reference rather than raising a \PDOException at all.
+ *
+ * Issue #552 (D4, #487 remediation) resolved that for all six via migrations/0295.pgsql.sql -
+ * a plain foreign key on every one of them, no repair step (see that migration's own header
+ * comment for why: the migration system is one-time and runs on a fresh install, so the only
+ * route by which a dangling reference reaches these columns is
+ * `bin/victual-db-import`, validated separately by
+ * `DatabaseImporter::AssertProductReferences()`). Those six cases are covered by
+ * tests/Pgsql/ProductReferenceIntegrityTest.php, in this same shape.
  */
 class ReferenceRefusalTest extends PgsqlSchemaTestCase
 {
