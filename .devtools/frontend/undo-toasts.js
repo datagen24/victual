@@ -24,6 +24,17 @@
 // which is undefined - PUT /stock/entry/{entryId} returns an array of stock_log rows, not a
 // single object with an `id` - so the link posted to stock/bookings/undefined/undo and the
 // undo silently failed. Covered here by the 'stockentry-edit' scenario below.
+//
+// Issue #637: the consume, purchase and transfer scenarios used to wait a fixed 2500ms after
+// picking a product for the page's product-changed chain (two to four chained API GETs that
+// fill the quantity unit and location selects) and a further 500ms after filling the form,
+// then click save. On a slow CI runner the chain outlasted the delay, the click landed on a
+// form whose required location or unit select was still empty, the page's save handler
+// returned without posting, and bookingResponse() timed out waiting for a POST that was
+// never sent. Delaying every API GET by 1500ms reproduces exactly that failure locally. The
+// scenarios now wait for the conditions the save actually needs - the page's API traffic
+// going quiet, then the form reporting valid - and a failing scenario prints which fields
+// were invalid, what the page last requested, and saves a screenshot.
 
 const { chromium } = require('playwright');
 
@@ -35,6 +46,9 @@ function arg(name, fallback)
 
 const BASE = (arg('url', 'http://127.0.0.1:8200')).replace(/\/$/, '');
 
+// Where a failing scenario's screenshot goes; the tests workflow uploads this directory.
+const FAILURE_DIR = require('path').join(__dirname, 'undo-toasts-failures');
+
 const results = [];
 function record(page, how, booked, undone, note)
 {
@@ -45,7 +59,80 @@ async function newPage(browser, label)
 {
 	const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 	page.on('pageerror', e => console.log('   pageerror on ' + label + ': ' + e.message));
+
+	// Issue #637: what apiQuiet() waits on, and what a failure report prints.
+	page.apiInFlight = new Set();
+	page.apiStarted = 0;
+	page.apiLastActivity = Date.now();
+	page.apiLog = [];
+	page.consoleLog = [];
+	const isApi = r => r.url().startsWith(BASE + '/api/');
+	const settle = (r, outcome) =>
+	{
+		if (!page.apiInFlight.delete(r)) return;
+		page.apiLastActivity = Date.now();
+		page.apiLog.push(r.method() + ' ' + r.url().slice(BASE.length) + ' -> ' + outcome);
+		if (page.apiLog.length > 30) page.apiLog.shift();
+	};
+	page.on('request', r =>
+	{
+		if (!isApi(r)) return;
+		page.apiInFlight.add(r);
+		page.apiStarted++;
+		page.apiLastActivity = Date.now();
+	});
+	page.on('requestfinished', async r =>
+	{
+		const response = await r.response().catch(() => null);
+		settle(r, response ? String(response.status()) : 'no response');
+	});
+	page.on('requestfailed', r => settle(r, 'failed: ' + (r.failure() || {}).errorText));
+	page.on('console', m =>
+	{
+		page.consoleLog.push(m.type() + ': ' + m.text().slice(0, 200));
+		if (page.consoleLog.length > 20) page.consoleLog.shift();
+	});
 	return page;
+}
+
+/**
+ * Waits until the page has had no API request in flight for `quietMs`. The pages' change
+ * chains issue each GET from the previous one's callback, so a short gap between two of
+ * them is not the end of the chain; a quiet window is. With `startedBefore` (a prior
+ * page.apiStarted), it first waits for a request to have started since then: Playwright can
+ * deliver the 'request' event of a chain an evaluate() just triggered after that evaluate()
+ * has already resolved, and a page that has been idle for `quietMs` would otherwise count
+ * as settled before the chain began.
+ */
+async function apiQuiet(page, quietMs = 500, timeout = 20000, startedBefore = null)
+{
+	const deadline = Date.now() + timeout;
+	while ((startedBefore !== null && page.apiStarted <= startedBefore)
+		|| page.apiInFlight.size > 0 || Date.now() - page.apiLastActivity < quietMs)
+	{
+		if (Date.now() > deadline)
+		{
+			throw new Error(startedBefore !== null && page.apiStarted <= startedBefore
+				? 'the change never issued an API request'
+				: 'API traffic never went quiet: ' + page.apiInFlight.size + ' request(s) still in flight');
+		}
+		await page.waitForTimeout(100);
+	}
+}
+
+/**
+ * Waits for the form the save button submits to pass the same checkValidity() its click
+ * handler checks first - an invalid form makes the handler return without posting, which
+ * bookingResponse() can only report as a timeout.
+ */
+async function formValid(page, formId)
+{
+	await apiQuiet(page);
+	await page.waitForFunction(id =>
+	{
+		const form = document.getElementById(id);
+		return !!form && form.checkValidity();
+	}, formId, { timeout: 15000 });
 }
 
 /**
@@ -106,16 +193,18 @@ async function bookingResponse(page, urlPattern, method, act)
  * Selects a product through the picker's own component API and lets its change chain
  * settle. SetId() triggers 'change' on the visible text input; the pages bind their
  * "product changed" chain - which is what fills the quantity unit and location selects -
- * to the hidden select behind it, so that one is triggered too.
+ * to the hidden select behind it, so that one is triggered too. Settled means the chain's
+ * API GETs have finished (issue #637), not that a fixed delay has passed.
  */
 async function pickProduct(page, productId)
 {
+	const startedBefore = page.apiStarted;
 	await page.evaluate(id =>
 	{
 		Victual.Components.ProductPicker.SetId(id);
 		Victual.Components.ProductPicker.GetPicker().trigger('change');
 	}, productId);
-	await page.waitForTimeout(2500);
+	await apiQuiet(page, 500, 20000, startedBefore);
 }
 
 /**
@@ -175,6 +264,36 @@ async function ensureTwoStockEntries(browser, productId)
 	await p.close();
 }
 
+/**
+ * Prints what the next occurrence of a failure needs to be diagnosed (issue #637): which
+ * fields of each form on the page were invalid, the page's last API exchanges and console
+ * lines, and a screenshot showing whether the save was clicked and what the form held.
+ */
+async function reportFailure(page, label)
+{
+	try
+	{
+		const forms = await page.evaluate(() => Array.from(document.forms).map(f => ({
+			id: f.id,
+			valid: f.checkValidity(),
+			invalid: Array.from(f.elements).filter(el => el.willValidate && !el.checkValidity())
+				.map(el => (el.id || el.name) + '=' + JSON.stringify(el.value) + ' (' + el.validationMessage + ')')
+		})));
+		console.log('   [debug #637] ' + label + ' forms: ' + JSON.stringify(forms));
+		console.log('   [debug #637] ' + label + ' API requests in flight: ' + JSON.stringify(Array.from(page.apiInFlight).map(r => r.method() + ' ' + r.url().slice(BASE.length))));
+		console.log('   [debug #637] ' + label + ' last API exchanges:\n      ' + page.apiLog.join('\n      '));
+		console.log('   [debug #637] ' + label + ' console:\n      ' + page.consoleLog.join('\n      '));
+		require('fs').mkdirSync(FAILURE_DIR, { recursive: true });
+		const shot = require('path').join(FAILURE_DIR, label + '.png');
+		await page.screenshot({ path: shot, fullPage: true });
+		console.log('   [debug #637] ' + label + ' screenshot: ' + shot);
+	}
+	catch (e)
+	{
+		console.log('   [debug #637] ' + label + ' failure report itself failed: ' + e.message.split('\n')[0]);
+	}
+}
+
 async function probe(browser, label, how, run)
 {
 	const page = await newPage(browser, label);
@@ -186,6 +305,7 @@ async function probe(browser, label, how, run)
 	catch (e)
 	{
 		record(label, how, 0, 0, 'ERROR ' + e.message.split('\n')[0]);
+		await reportFailure(page, label);
 	}
 	await page.close();
 }
@@ -218,7 +338,7 @@ async function probe(browser, label, how, run)
 		await page.goto(BASE + '/consume', { waitUntil: 'networkidle' });
 		await pickProduct(page, productId);
 		await page.fill('#display_amount', '1');
-		await page.waitForTimeout(500);
+		await formValid(page, 'consume-form');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/consume(\?|$)/, 'POST', () =>
 			page.click('#save-consume-button'));
 		await waitForUndoToast(page);
@@ -233,7 +353,7 @@ async function probe(browser, label, how, run)
 		await pickProduct(page, productId);
 		await page.fill('#display_amount', '2');
 		await setDueDate(page, '2027-12-31');
-		await page.waitForTimeout(500);
+		await formValid(page, 'purchase-form');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/add(\?|$)/, 'POST', () =>
 			page.click('#save-purchase-button'));
 		await waitForUndoToast(page);
@@ -251,7 +371,7 @@ async function probe(browser, label, how, run)
 		await page.dispatchEvent('#display_amount', 'keyup');
 		await page.dispatchEvent('#display_amount', 'change');
 		await setDueDate(page, '2027-12-31');
-		await page.waitForTimeout(500);
+		await formValid(page, 'inventory-form');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/inventory(\?|$)/, 'POST', () =>
 			page.click('#save-inventory-button'));
 		await waitForUndoToast(page);
@@ -269,7 +389,7 @@ async function probe(browser, label, how, run)
 			(els, f) => els.map(e => e.value).filter(v => v && v !== f)[0], from);
 		await page.selectOption('#location_id_to', to);
 		await page.fill('#display_amount', '1');
-		await page.waitForTimeout(500);
+		await formValid(page, 'transfer-form');
 		const booking = await bookingResponse(page, /\/api\/stock\/products\/\d+\/transfer(\?|$)/, 'POST', () =>
 			page.click('#save-transfer-button'));
 		await waitForUndoToast(page);
