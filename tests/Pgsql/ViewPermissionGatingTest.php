@@ -28,21 +28,10 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * that already had a write policy, the write policy's own permission(s) - see
  * GenericEntityController::CheckViewPermission()'s docblock).
  *
- * IMPORTANT - conflicts with an Accepted ADR: docs/adr/0018-role-grants-and-domain-reads.md
- * (Accepted 2026-09-14) and docs/plans/19-rbac.md's Executed section record, in so many
- * words, that "Batteries, equipment and custom entities retain their previous read
- * policy; this wave does not add view leaves for them" - a deliberate decision, not an
- * oversight, and tests/Pgsql/HouseholdPagesTest.php pins it with three tests named
- * "...FollowsTheRecordedReadPolicyOfNoViewLeaf" plus an assertion inside
- * testCalendarEventListShrinksWithTheCallersViewLeaves() ("batteries carry no view leaf,
- * so they stay - the recorded policy in plan 19"). This migration and these gates
- * directly reverse that recorded decision for BatteriesController, EquipmentController,
- * GenericEntityController and CalendarController, on this task's maintainer instruction
- * (issue #521). Per FIXER_RULES ("if an existing test appears to encode the defective
- * behaviour, do not edit it: report it"), tests/Pgsql/HouseholdPagesTest.php is left
- * unedited here - its four pinned assertions will fail once this branch is merged, and
- * that conflict is reported to the master/validator rather than resolved unilaterally by
- * either weakening this test or silently amending an Accepted ADR. See this PR's body.
+ * This reverses ADR-0018's "no view leaf" clause for batteries, equipment and custom
+ * entities; ADR-0035 (docs/adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md)
+ * records that decision and supersedes the clause, and tests/Pgsql/HouseholdPagesTest.php
+ * now pins the new policy.
  */
 class ViewPermissionGatingTest extends PgsqlSchemaTestCase
 {
