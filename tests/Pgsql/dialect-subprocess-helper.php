@@ -46,6 +46,10 @@ require_once VICTUAL_ROOT_PATH . '/config-dist.php';
 
 use Victual\Services\Database\DatabaseDialect;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 function attempt(callable $work): array
 {
 	try

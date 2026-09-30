@@ -88,7 +88,7 @@ class BaselineSeedingAtomicityTest extends PgsqlSchemaTestCase
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ApplyBaselineSchemaWhenNeeded');
-			$method->setAccessible(true);
+			// A ReflectionMethod needs no setAccessible(): the call has had no effect since PHP 8.1, and 8.5 deprecates making it.
 			$dialect = DatabaseService::GetInstance()->GetDialect();
 
 			// Fires the moment the real seeder's own SeedQuantityUnits() reaches its first
@@ -162,7 +162,6 @@ class BaselineSeedingAtomicityTest extends PgsqlSchemaTestCase
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecuteSqlMigrationWhenNeeded');
-			$method->setAccessible(true);
 
 			// Fires on the runner's own bookkeeping INSERT, once the migration's real SQL -
 			// a CREATE TABLE, standing in for any plain .sql migration's DDL - has already

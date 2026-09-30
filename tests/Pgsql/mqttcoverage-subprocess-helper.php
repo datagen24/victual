@@ -566,7 +566,7 @@ function RunScenario(array $steps, string $resultFile): void
 					$instance->MarkDataChanged();
 
 					$method = new ReflectionMethod(DatabaseService::class, 'RunRequestEndPublishes');
-					$method->setAccessible(true);
+					// A ReflectionMethod needs no setAccessible(): the call has had no effect since PHP 8.1, and 8.5 deprecates making it.
 					$method->invoke($instance);
 
 					// Both, not just the drain: a gate added before the MQTT call would otherwise let

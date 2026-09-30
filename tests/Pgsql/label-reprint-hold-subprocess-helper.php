@@ -45,6 +45,10 @@ define('VICTUAL_USER_ID', 9000);
 use Victual\Services\DatabaseService;
 use Victual\Services\Labels\LabelOperationsService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $sourceJobId = (int)($argv[1] ?? 0);
 $printerId = (int)($argv[2] ?? 0);
 $gateClass = (int)($argv[3] ?? 0);

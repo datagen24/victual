@@ -43,6 +43,10 @@ define('VICTUAL_USER_ID', 9000);
 
 use Victual\Services\DatabaseService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 const ALLOWED_TABLES = ['products', 'locations', 'recipes', 'chores', 'batteries', 'stock'];
 
 $table = (string)($argv[1] ?? '');

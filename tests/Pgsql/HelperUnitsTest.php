@@ -38,6 +38,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 	/** Scratch directory for the cases that need real files (EmptyFolder, Setting overrides). */
 	private static string $scratch;
 
+	/** canStartWithout()'s answers, keyed by extension name: one probe per name per run. */
+	private static array $startableWithout = [];
+
 	public static function setUpBeforeClass(): void
 	{
 		parent::setUpBeforeClass();
@@ -117,6 +120,8 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			$arguments = array_merge($arguments, ['-d', 'extension=pcov', '-d', 'extension=tokenizer']);
 		}
 
+		$arguments = self::withoutUnloadableExtensionRequests($arguments);
+
 		$command = array_merge(
 			[PHP_BINARY],
 			$arguments,
@@ -126,7 +131,21 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			[
 				'-d', 'auto_prepend_file=' . VICTUAL_ROOT_PATH . '/.devtools/coverage/prepend.php',
 				'-d', 'pcov.directory=' . VICTUAL_ROOT_PATH,
-				'-d', 'pcov.enabled=1',
+				'-d', 'pcov.enabled=1'
+			],
+			// Stdout is the JSON answer and nothing else, the same protocol
+			// bootstrap-subprocess-helper.php:40-43 states: a diagnostic goes to stderr, where
+			// the decode below reports it, rather than arriving in front of the answer and
+			// reducing json_decode() to null. It has to be set here rather than with ini_set()
+			// in the helper, because a startup warning is printed before the helper's first
+			// statement runs.
+			//
+			// The logger task is the exception: logLines() asserts on the exact set of lines
+			// its subject wrote to stderr, so that task's stderr is not a channel anything
+			// else may write to. Nothing it runs emits a diagnostic; if something starts to,
+			// the assertion says so instead of a decode failing somewhere else.
+			$spec['task'] === 'logger' ? [] : ['-d', 'display_errors=stderr'],
+			[
 				__DIR__ . '/helperunits-subprocess-helper.php',
 				base64_encode(json_encode($spec))
 			]
@@ -165,6 +184,103 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		$decoded['stderr'] = $errors;
 
 		return $decoded;
+	}
+
+	/**
+	 * Drops an "-d extension=NAME" request this build cannot honour, and leaves every other
+	 * argument alone.
+	 *
+	 * A request for a name with no shared object (see isLoadableModule()) is a startup warning
+	 * for something that is either compiled in, and needs no request, or absent, and cannot be
+	 * conjured by one - and under -n there is no php.ini to send that warning anywhere but
+	 * stdout, in front of the JSON answer. Asking only for what exists is right on both builds.
+	 *
+	 * @param string[] $arguments
+	 * @return string[]
+	 */
+	private static function withoutUnloadableExtensionRequests(array $arguments): array
+	{
+		$kept = [];
+
+		for ($index = 0; $index < count($arguments); $index++)
+		{
+			$name = ($arguments[$index] === '-d' && isset($arguments[$index + 1]))
+				? (preg_match('/^extension=(\w+)$/', $arguments[$index + 1], $match) ? $match[1] : null)
+				: null;
+
+			if ($name !== null && !self::isLoadableModule($name))
+			{
+				$index++;
+
+				continue;
+			}
+
+			$kept[] = $arguments[$index];
+		}
+
+		return $kept;
+	}
+
+	/**
+	 * Whether "-d extension=$extension" can do anything on this build: a shared object has to
+	 * exist for the request to be honoured.
+	 *
+	 * This is the one fact the two helpers around it turn on, and the two builds this suite runs
+	 * on disagree about it. The official php:*-cli image the Dockerfile's dev target is built
+	 * from compiles PDO, pdo_sqlite, sqlite3 and tokenizer into the interpreter, ships no
+	 * php.ini, and has no pgsql extension at all; Debian's packaging - what
+	 * shivammathur/setup-php installs for the CI suite job - ships every one of them as a
+	 * loadable module. Nothing in any subject below changes between them; what changes is what
+	 * an argument to the interpreter can still do.
+	 */
+	private static function isLoadableModule(string $extension): bool
+	{
+		return is_file(((string)ini_get('extension_dir')) . '/' . $extension . '.so');
+	}
+
+	/**
+	 * Whether a subprocess of this interpreter can be started *without* $extension, which is
+	 * the precondition of every case below that is about a deployment missing a driver.
+	 *
+	 * -n drops the ini scan directory, and with it every module loaded from there - and only
+	 * those. An extension compiled into the interpreter is present in every process it starts
+	 * and no argument takes it away again, so those cases can run on the CI runner and cannot
+	 * run in this repository's own image. They say which it is rather than asserting something
+	 * the interpreter they got is unable to express.
+	 *
+	 * Measured rather than inferred, because the obvious inferences are both wrong here: a
+	 * shared object in extension_dir proves nothing (the dev image compiles pdo_sqlite in and
+	 * *also* leaves behind the pdo_sqlite.so docker-php-ext-install built for it), and
+	 * extension_loaded() in this process cannot tell a compiled-in extension from one an ini
+	 * enabled. The one thing that answers the question is an interpreter started the way the
+	 * case will start it.
+	 */
+	private static function canStartWithout(string $extension): bool
+	{
+		if (!preg_match('/^\w+$/', $extension))
+		{
+			self::fail("not an extension name: $extension");
+		}
+
+		if (!array_key_exists($extension, self::$startableWithout))
+		{
+			$process = proc_open(
+				[PHP_BINARY, '-n', '-r', "echo extension_loaded('$extension') ? 'loaded' : 'absent';"],
+				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+				$pipes
+			);
+			$answer = trim((string)stream_get_contents($pipes[1]));
+			$errors = (string)stream_get_contents($pipes[2]);
+			fclose($pipes[1]);
+			fclose($pipes[2]);
+			proc_close($process);
+
+			self::assertContains($answer, ['loaded', 'absent'], "the probe for $extension answered \"$answer\". stderr: $errors");
+
+			self::$startableWithout[$extension] = $answer === 'absent';
+		}
+
+		return self::$startableWithout[$extension];
 	}
 
 	/**
@@ -906,6 +1022,14 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		$present = self::runHelper(['task' => 'database-requirements', 'driver' => 'sqlite']);
 		self::assertTrue($present['ok'], 'pdo_sqlite and a recent enough library are present: ' . ($present['message'] ?? ''));
 
+		if (!self::canStartWithout('pdo_sqlite'))
+		{
+			self::markTestSkipped(
+				'this PHP build has pdo_sqlite compiled in, so no subprocess of it can be the '
+					. 'interpreter the second half of this case is about'
+			);
+		}
+
 		$missing = self::runHelper(['task' => 'database-requirements', 'driver' => 'sqlite'], [], ['-n']);
 		self::assertFalse($missing['ok']);
 		self::assertSame(
@@ -1510,10 +1634,23 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 				'DB_USER' => (string)getenv('PGUSER'),
 				'DB_PASSWORD' => (string)getenv('PGPASSWORD')
 			],
-			['-n', '-d', 'extension=pdo', '-d', 'extension=pdo_pgsql', '-d', 'extension=pgsql']
+			// pdo_pgsql is the driver the boot needs, and pdo is what carries it. ext/pgsql -
+			// libpq's own function set, not PDO's - was asked for here too and is not used
+			// anywhere in this application; the dev image does not ship it, so the request
+			// only ever produced a startup warning.
+			['-n', '-d', 'extension=pdo', '-d', 'extension=pdo_pgsql']
 		);
 
 		self::assertTrue($verdict['ok'], 'the pdo_sqlite-less boot failed: ' . ($verdict['message'] ?? ''));
+
+		if (!self::canStartWithout('pdo_sqlite'))
+		{
+			self::markTestSkipped(
+				'this PHP build has pdo_sqlite compiled in, so no subprocess of it can be the '
+					. 'driverless deployment this case is about'
+			);
+		}
+
 		self::assertSame(['pgsql'], $verdict['result']['drivers'], 'the driver really is absent in that process');
 
 		self::assertSame('', $verdict['result']['sqlite_version'], 'the vestigial field is empty rather than fatal');

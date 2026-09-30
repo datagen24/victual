@@ -49,6 +49,10 @@ use Victual\Services\DatabaseMigrationService;
 use Victual\Services\DatabaseService;
 use Victual\Services\DemoDataGeneratorService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 // A schema of this process's own, migrated the way PgsqlSchemaTestCase migrates one. The
 // parent's schema is not reused: the generator refuses to run twice, and the parent has
 // already run it there.

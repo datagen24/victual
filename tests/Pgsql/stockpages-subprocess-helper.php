@@ -49,6 +49,10 @@ use Victual\Services\DatabaseService;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 // views/layout/default.blade.php reads $_SERVER['REQUEST_URI'] for the manifest link,
 // which a CLI process does not have - the same shim tests/bootstrap.php applies.
 $_SERVER['REQUEST_URI'] = '/';

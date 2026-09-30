@@ -55,6 +55,47 @@ host, and every phase dies on a missing autoloader. Tear down afterwards
 (`docker rm -f victual-pg`, `docker network rm victual-suite`) — the databases are on a tmpfs
 and every run rebuilds them.
 
+**The image's PHP is packaged differently from CI's, and the suite must not assume either.**
+The official `php:*-cli` image the dev target is built from compiles PDO, pdo_sqlite, sqlite3
+and tokenizer *into* the interpreter, ships no `php.ini` at all, and has no ext/pgsql; Debian's
+packaging — what `shivammathur/setup-php` installs for the `suite` job — ships every one of them
+as a loadable module. Three consequences, all measured 2026-09-30 against `victual:dev`
+(8.5.10) and an 8.4.25 image of the same Dockerfile:
+
+- `php -n -d extension=pdo` (or `tokenizer`, or `pgsql`) is a startup warning here and does the
+  intended thing on the runner — and with no `php.ini` that warning is printed on **stdout**,
+  in front of a subprocess helper's JSON, where it reduces `json_decode()` to `null`. Hence
+  `HelperUnitsTest::withoutUnloadableExtensionRequests()`, which asks only for the names a
+  `.so` exists for, and the `ini_set('display_errors', 'stderr')` line every
+  `tests/Pgsql/*-subprocess-helper.php` now carries.
+- `php -n` still has pdo_sqlite, so no subprocess of this interpreter can be the driverless
+  deployment plan 20's cases are about. `HelperUnitsTest::canStartWithout()` probes for that
+  rather than inferring it: `pdo_sqlite.so` *does* exist in `extension_dir`
+  (`docker-php-ext-install` built it) and pdo_sqlite is *also* compiled in, so the file's
+  presence proves nothing and `extension_loaded()` in the parent cannot tell the two apart.
+  Two cases in that file skip, with a named reason, on a build like this one.
+- Only one of the six failures this produced was a PHP version difference (`imagedestroy()`'s
+  8.5 deprecation, from the vendored `interficieis/php-barcode`, reached by the Grocycode render
+  that #249 has since deleted). The other five are packaging and reproduce identically on 8.4,
+  so neither an 8.5 CI leg nor pinning the image to 8.4 would have found them — which is the
+  durable point, since the version half of the story removed itself within a day.
+
+The `images` CI job runs `run-tests.sh all` in the image for this reason (2026-09-30). Before
+that, nothing in CI exercised the image the suite is documented to run in — `run-tests.sh all`
+had been red there for an unknown length of time while the `suite` job was green.
+
+**To see what the `D` markers actually are**, add `displayDetailsOnTestsThatTriggerDeprecations="true"`
+to `phpunit.xml` for the run and take it out again. `failOnDeprecation="false"` means a
+deprecation is counted and not named, and on 2026-09-30 that hid ten surviving
+`ReflectionMethod::setAccessible()` calls in `tests/` — the same no-op-since-8.1 call whose
+deprecation on stdout plan 18 had already had to remove from `.devtools/mqtt/client-id-check.php`
+on 2026-09-03. What was left after that was vendored: nine `imagedestroy()` from php-barcode and
+four implicit-nullable notices from `mike42/escpos-php`, the latter an 8.4-era deprecation that
+CI reports too. The php-barcode nine went away on their own when #249 removed the grcy:
+Grocycode routes on 2026-09-30 — after that merge nothing under `services/`, `controllers/` or
+`helpers/` references the package at all, so `interficieis/php-barcode` may now be an unused
+dependency; `docs/plans/06-location-barcodes.md` is the only other mention.
+
 ## The frontend security probes (`frontend-security` CI job)
 
 These run from the host, not a container. Install once:

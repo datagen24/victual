@@ -58,6 +58,10 @@ namespace GuzzleHttp
 
 namespace
 {
+	// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+	// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+	ini_set('display_errors', 'stderr');
+
 	use DI\Container;
 	use Slim\Factory\AppFactory;
 	use Slim\Psr7\Factory\ServerRequestFactory;
