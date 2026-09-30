@@ -77,7 +77,6 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/quantityunitconversion/{quConversionId}', [StockController::class, 'QuantityUnitConversionEditForm']);
 	$group->get('/productgroups', [StockController::class, 'ProductGroupsList']);
 	$group->get('/productgroup/{productGroupId}', [StockController::class, 'ProductGroupEditForm']);
-	$group->get('/product/{productId}/grocycode', [StockController::class, 'ProductGrocycodeImage']);
 
 	// Stock handling routes
 	$group->get('/stockoverview', [StockController::class, 'Overview']);
@@ -101,8 +100,6 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/stockjournal/summary', [StockController::class, 'JournalSummary']);
 	$group->get('/productbarcodes/{productBarcodeId}', [StockController::class, 'ProductBarcodesEditForm']);
 	$group->get('/productsubstitutions/new', [StockController::class, 'ProductSubstitutionEditForm']);
-	$group->get('/stockentry/{entryId}/grocycode', [StockController::class, 'StockEntryGrocycodeImage']);
-	$group->get('/stockentry/{entryId}/label', [StockController::class, 'StockEntryGrocycodeLabel']);
 	$group->get('/quantityunitconversionsresolved', [StockController::class, 'QuantityUnitConversionsResolved']);
 	$group->get('/stockreports/spendings', [StockReportsController::class, 'Spendings']);
 
@@ -121,7 +118,6 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/recipe/{recipeId}', [RecipesController::class, 'RecipeEditForm']);
 	$group->get('/recipe/{recipeId}/pos/{recipePosId}', [RecipesController::class, 'RecipePosEditForm']);
 	$group->get('/recipessettings', [RecipesController::class, 'RecipesSettings']);
-	$group->get('/recipe/{recipeId}/grocycode', [RecipesController::class, 'RecipeGrocycodeImage']);
 
 	// Meal plan routes
 	$group->get('/mealplan', [RecipesController::class, 'MealPlan']);
@@ -135,7 +131,6 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/chores', [ChoresController::class, 'ChoresList']);
 	$group->get('/chore/{choreId}', [ChoresController::class, 'ChoreEditForm']);
 	$group->get('/choressettings', [ChoresController::class, 'ChoresSettings']);
-	$group->get('/chore/{choreId}/grocycode', [ChoresController::class, 'ChoreGrocycodeImage']);
 
 	// Battery routes
 	$group->get('/batteriesoverview', [BatteriesController::class, 'Overview']);
@@ -144,7 +139,6 @@ $app->group('', function (RouteCollectorProxy $group)
 	$group->get('/batteries', [BatteriesController::class, 'BatteriesList']);
 	$group->get('/battery/{batteryId}', [BatteriesController::class, 'BatteryEditForm']);
 	$group->get('/batteriessettings', [BatteriesController::class, 'BatteriesSettings']);
-	$group->get('/battery/{batteryId}/grocycode', [BatteriesController::class, 'BatteryGrocycodeImage']);
 
 	// Task routes
 	$group->get('/tasks', [TasksController::class, 'Overview']);

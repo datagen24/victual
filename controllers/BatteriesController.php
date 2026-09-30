@@ -2,7 +2,6 @@
 
 namespace Victual\Controllers;
 
-use Victual\Helpers\Grocycode;
 use Victual\Services\BatteriesService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -17,8 +16,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class BatteriesController extends BaseController
 {
-	use GrocycodeTrait;
-
 	/**
 	 * Serves the battery master data list view (route GET /batteries).
 	 *
@@ -176,16 +173,5 @@ class BatteriesController extends BaseController
 			'batteries' => $this->DB->batteries()->where('active = 1')->orderBy('name', 'COLLATE NOCASE'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('battery_charge_cycles')
 		]);
-	}
-
-	/**
-	 * Serves the Grocycode barcode PNG for a battery (route GET /battery/{batteryId}/grocycode).
-	 */
-	public function BatteryGrocycodeImage(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_BATTERIES_VIEW);
-
-		$gc = new Grocycode(Grocycode::BATTERY, $args['batteryId']);
-		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}
 }

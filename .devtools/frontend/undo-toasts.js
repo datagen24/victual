@@ -222,15 +222,30 @@ async function setDueDate(page, value)
 	await page.waitForTimeout(600);
 }
 
-/** The id of a product that has stock, so consume/transfer have something to book. */
+/**
+ * The id of a product that has stock, so consume/transfer have something to book.
+ *
+ * Issue #637, second cause: GET /api/stock has no ORDER BY, so on PostgreSQL "the first row
+ * with amount >= 10" was a different product from run to run. When it was a tare-weight
+ * product (the demo data's Flour), the consume and transfer forms set min to the tare
+ * weight, refused the amounts typed below, and never posted - the waitForResponse timeout
+ * #638 attributed to a fixed delay. Tare-weight products are skipped and the rest ordered
+ * by id, so every run books the same product.
+ */
 async function productWithStock(browser)
 {
 	const p = await browser.newPage();
 	await p.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
 	const id = await p.evaluate(async base =>
 	{
-		const stock = await (await fetch(base + '/api/stock')).json();
+		const stock = (await (await fetch(base + '/api/stock')).json())
+			.filter(s => !s.product || Number(s.product.enable_tare_weight_handling) !== 1)
+			.sort((a, b) => Number(a.product_id) - Number(b.product_id));
 		const row = stock.find(s => Number(s.amount) >= 10) || stock[0];
+		if (!row)
+		{
+			throw new Error('no product without tare-weight handling has stock');
+		}
 		return row.product_id;
 	}, BASE);
 	await p.close();

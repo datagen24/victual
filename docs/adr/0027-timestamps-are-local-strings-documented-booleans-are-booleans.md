@@ -237,11 +237,12 @@ tenth of the scale, and is where this would be decided.
   is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
   `ShoppingListItem`. Each is a candidate for exactly one member, and nothing else in the
   union's shape rules it out. Whether candidacy becomes a wrong decode is the reader's to
-  decide, and the two readers differ. A strict JSON Schema validator rejects these rows on
-  the member's nullability rather than selecting it (the next bullet). By contrast,
-  `swift-openapi-generator` — the client this record was written for — accepts an explicit
-  `null` for an optional property through `decodeIfPresent`, so for that client candidacy is
-  the whole of the decision and the row is decoded under a schema that is not its own.
+  decide, and since the members' nullability was modelled (the next bullet) both readers
+  answer the same way. A strict JSON Schema validator now accepts these rows against the
+  member that is not theirs. `swift-openapi-generator` — the client this record was written
+  for — accepted them already, taking an explicit `null` for an optional property through
+  `decodeIfPresent`. Candidacy is therefore the whole of the decision for both, and the row
+  is decoded under a schema that is not its own.
   Required properties make the ten members mutually exclusive, which is what issue #232
   asked for; they do not separate those ten from every other relation this route can list,
   and nothing short of option E or D would. `tests/Pgsql/WireContractTest.php` measures
@@ -249,17 +250,30 @@ tenth of the scale, and is where this would be decided.
   fixture gives an entity a row, and off the relation's columns where it does not, with the
   two checked against each other. It pins the result, so a fourth cannot appear unnoticed.
 - **Candidacy is what is measured, and it is not the same as a successful decode.** The
-  same test validates each real row against every member with a JSON Schema validator, and
-  exactly one pairing survives: `locations_resolved` against `LocationResolved`. Every other
-  candidate fails, and the failure is the same in all ten cases — a column that is NULL in
-  the row against a member that declares it a non-nullable scalar (`description` on
-  `Product`, `Chore`, `Location` and `QuantityUnit`; `note` on `ShoppingListItem`; `config`
-  on `Userfield`; `shopping_location_id` on `StockEntry` and `ProductBarcode`). Six of those
-  ten are the union's *own* intended pairings, so this is a gap in the members' nullability
-  and not a defence against the three unintended ones — it fails the intended pairings first.
-  Modelling the members' nullability is separate work and has no issue yet. Every row of
-  every entity is validated, not one per entity: validity turns on values, so a row whose
-  nullable columns happen to be set could validate where another does not.
+  same test validates real rows against members with a JSON Schema validator. **When this
+  record was written it validated every row against all ten members, and exactly one
+  pairing survived**: `locations_resolved` against `LocationResolved`. Every other candidate
+  failed the same way — a column that is NULL in the row against a member that declared it a
+  non-nullable scalar (`description` on `Product`, `Chore`, `Location` and `QuantityUnit`;
+  `note` on `ShoppingListItem`; `config` on `Userfield`; `shopping_location_id` on
+  `StockEntry` and `ProductBarcode`). Six
+  of those ten were the union's *own* intended pairings, so it was a gap in the members'
+  nullability and never a defence against the three unintended ones — it failed the intended
+  pairings first.
+
+    **That gap is closed.** `fix: align API response nullability with PostgreSQL`
+    (`c6d27881`, 2026-09-28) types every one of those properties as its column allows —
+    `["string", "null"]` and `["integer", "null"]`. The test no longer records which
+    pairings validate. It now validates each row against the members that row is a
+    *candidate* for, rather than against all ten, and asserts that **every** such pairing
+    passes on every row, with no errors.
+
+    So the three unintended candidacies above are now decodes rather than near misses,
+    which is the reading the bullet before this one states. Closing them still needs option
+    E or option D. Every row of every entity is validated, not one per entity: validity
+    turns on values, so a row whose nullable columns happen to be set could validate where
+    another does not.
+
 - **`victual-kit` sheds three workarounds** — the middleware that strips the charset
   parameter, the date transcoder that accepts both renderings, and the boolean remapping in
   its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
@@ -334,9 +348,10 @@ This record changes a wire contract, so accepting it requires:
    surface's `TIMESTAMPTZ` renderings named as sitting outside it.
 2. The decider confirms decision 4, the one change here that no issue asked for.
 3. The decider accepts that `stock_log`, `product_barcodes_view` and `uihelper_shopping_list`
-   are still candidates for a member that is not theirs, and that closing that needs option E
-   or option D rather than more `required` properties; and that the members' nullability gap
-   the consequences record is left for separate work.
+   are still candidates for a member that is not theirs. Since `c6d27881` modelled the
+   members' nullability, each is now a successful decode under a schema that is not its own,
+   rather than a candidate a strict validator would reject. Closing that needs option E or
+   option D rather than more `required` properties.
 4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.

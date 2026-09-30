@@ -13,7 +13,8 @@ completion, and master data behind the schedule.
 - **`/choresjournal`** — every past execution, undoable individually.
 - **`/chores`** / **`/chore/{id}`** — the chore list and edit form: schedule type and
   period, assignment rotation, and the due-soon threshold override.
-- **`/chore/{id}/grocycode`** renders that chore's Grocycode for a printed label.
+- A chore's label is printed on a registered label printer, from the overview's row menu or
+  the edit form; see [Labels](stock.md#labels).
 
 ## Settings
 

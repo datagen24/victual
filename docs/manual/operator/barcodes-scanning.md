@@ -29,11 +29,11 @@ example for writing your own.
 ## Grocycode
 
 Grocycode is grocy's own barcode format for referring to a specific product, stock entry,
-chore, battery or recipe from a printed label — scanning one on the consume or transfer page
-selects that exact entry rather than merely that product. `GROCYCODE_TYPE`
-([Configuration](../configuration.md#grocycode)) chooses between a 1D (Code128) and 2D
-(DataMatrix) symbol. See [grocycode](../../grocycode.md) for the payload format
-itself, and its warning about what stays read-only in this fork.
+chore, battery or recipe from a printed label. Victual reads Grocycodes but does not print
+them. Scanning a label printed by grocy on the consume or transfer page still selects that
+exact entry rather than merely that product. To print a new label, use a label printer
+([Labels](../using-victual/stock.md#labels)); those labels carry Victual's own `vctl:`
+identity. See [grocycode](../../grocycode.md) for the payload format.
 
 ## Resolving a label
 

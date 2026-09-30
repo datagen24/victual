@@ -4,7 +4,9 @@ Grocycode
 Grocycode is, in essence, a simple way to reference arbitrary Victual entities. Each
 Grocycode includes a magic, an entity identifier, an id, and an ordered set of extra data.
 Victual accepts a Grocycode anywhere it expects to read a barcode, but a Grocycode can also
-reference Victual-internal properties, such as specific stock entries or batteries.
+reference Victual-internal properties, such as specific stock entries or batteries. Victual
+reads Grocycodes printed by upstream grocy; it prints none of its own (see *Visual
+Encoding* below).
 
 Serialization
 ----
@@ -19,10 +21,9 @@ There are three mandatory parts in a Grocycode:
    *Grocycode* itself, which names that format rather than the project.
 2. An entity identifier matching the regular expression `[a-z]+` — lowercase English
    letters only, no diacritics, minimum length 1 character.
-3. An object identifier. Every emitted code uses `[0-9]+` — a row id — and every code this
-   fork ever emits will, because [ADR-0011](adr/0011-label-namespace.md) (accepted
-   2026-09-04) makes Grocycode an input symbology: no new type, no new id shape, and no
-   emission at all once that record's print outbox lands.
+3. An object identifier. Every code upstream grocy prints uses `[0-9]+` — a row id. This
+   fork prints none: [ADR-0011](adr/0011-label-namespace.md) (accepted 2026-09-04) makes
+   Grocycode an input symbology, with no new type, no new id shape, and no emission.
    [Plan 06](plans/06-location-barcodes.md)'s Q1 response once put a UUID here for
    locations (`grcy:l:{uuid}`) because a label outlives the row id printed on it; that
    reasoning was right, and is exactly what ADR-0011 generalized — into a separate
@@ -35,7 +36,8 @@ The format may optionally append any number of further fields; the only restrict
 that they contain no colons [0].
 
 These parts are then linearly appended, separated by a single colon `:` — as every example
-in this document shows, and as `Grocycode::__toString` emits. This document said "double
+in this document shows, and as `Grocycode::__toString` serializes (the helper keeps it for
+tests; no route renders it). This document said "double
 colon" in four places for a format that has never used one; the phrase is corrected here
 and in the scanner note below.
 
@@ -85,20 +87,16 @@ Currently, Recipe grocycodes do not define any extra fields.
 Visual Encoding
 ----
 
-Victual uses DataMatrix 2D (or alternatively Code128 1D) Barcodes to encode grocycodes into a visual representation. In principle, there is no problem with using
-other encoding formats like QR codes; however DataMatrix uses less space for the same information and redundancy and is a bit
-easier read by 2D barcode scanners, especially on non-flat surfaces.
+Upstream grocy prints Grocycodes as DataMatrix 2D (or alternatively Code128 1D) barcodes;
+a scanner reads either back as the serialization above, which is all Victual parses.
 
-That paragraph is upstream's reasoning and it stays, but it is an argument about the
-default rather than a restriction: the encoding is a per-label choice, and the
-serialization above is what must not vary.
-
-QR was going to join it here — plan 06 argued that a location label is read by a phone
-camera as often as by a dedicated scanner, and that QR is what phones decode reliably.
-[ADR-0011](adr/0011-label-namespace.md) took that argument with the rest of the label
-question: **QR is the symbology of the `vctl:` namespace, not a third `GROCYCODE_TYPE`.**
-DataMatrix and Code128 stay exactly as they are, for as long as this fork still renders
-Grocycodes at all — which stops once ADR-0011's print outbox lands.
+Victual rendered them too until 0.3.0. Five printable-barcode routes
+(`/product/{id}/grocycode`, `/stockentry/{id}/grocycode`, `/recipe/{id}/grocycode`,
+`/chore/{id}/grocycode`, `/battery/{id}/grocycode`), the `/stockentry/{id}/label` page and
+the `GROCYCODE_TYPE` setting that picked the symbology outlived plan 32's move of every
+printed label onto the `vctl:` subsystem. Issue #249 removed them. A label printed now
+comes from a label printer and carries a `vctl:` uid, whose symbology is QR
+([ADR-0011](adr/0011-label-namespace.md)).
 
 You can pick up cheap-ish used scanners from eBay (about 45€ in Germany). Make sure to set them to the correct keyboard emulation,
 so that the colons get entered correctly.
@@ -131,7 +129,7 @@ record decided against all three by moving new labels out of this format entirel
 
 - A fifth entity type.
 - A UUID in the object id.
-- QR as a third `GROCYCODE_TYPE`.
+- QR as a third `GROCYCODE_TYPE` (a setting since removed with the routes that read it).
 
 They are corrected above. Note what did *not* change: the serialization, the magic, the
 four entity types, and the parser's obligations, because ADR-0011 keeps this format

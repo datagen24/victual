@@ -1,6 +1,6 @@
 ﻿// Powers the stock journal view (stockjournal.blade.php): lists all stock transactions
 // with product/type/location/user/date-range filters, and lets the user undo a booking
-// or print a product's Grocycode label. Product and date-range filters reload the page
+// or print a product label. Product and date-range filters reload the page
 // (via URI params, since they affect the server-side query); the rest filter client-side.
 //
 // A partial clone rather than a pure one (plan 12, Q5): it takes the shared table piece

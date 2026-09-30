@@ -201,13 +201,8 @@
 									href="{{ $U('/chore/') }}{{ $curentChoreEntry->chore_id }}">
 									<span class="dropdown-item-text">{{ $__t('Edit chore') }}</span>
 								</a>
-								<div class="dropdown-divider"></div>
-								<a class="dropdown-item"
-									type="button"
-									href="{{ $U('/chore/' . $curentChoreEntry->chore_id . '/grocycode?download=true') }}">
-									{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Chore'))) !!}
-								</a>
 								@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+								<div class="dropdown-divider"></div>
 								<a class="dropdown-item chore-label-print"
 									data-target-id="{{ $curentChoreEntry->chore_id }}"
 									data-target-name="{{ FindObjectInArrayByPropertyValue($chores, 'id', $curentChoreEntry->chore_id)->name }}"

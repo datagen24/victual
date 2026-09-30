@@ -1,7 +1,7 @@
 // View script for the battery create/edit form (views/batteryform.blade.php):
 // saves via POST /api/objects/batteries (create) or PUT /api/objects/batteries/{id}
 // (edit, using Victual.EditObjectId) including userfields - all of it the shared form
-// factory (public/js/victual_entity.js) - plus grocycode label printing, which is this
+// factory (public/js/victual_entity.js) - plus label printing, which is this
 // page's own.
 
 Victual.EntityForm({

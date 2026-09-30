@@ -1,8 +1,8 @@
 // Loads every view route in a browser and reports its HTTP status and any console
 // problem. Plan 12's "load all view routes before and after: zero new console errors,
 // zero non-200s" - the coarse net under the baseline harness, which walks the list and
-// form pages in detail but does not touch the settings, journal, tracking, grocycode or
-// report pages at all.
+// form pages in detail but does not touch the settings, journal, tracking or report
+// pages at all.
 //
 //   node routes-smoke.js --url http://127.0.0.1:8500 --out /tmp/routes-before.json
 //

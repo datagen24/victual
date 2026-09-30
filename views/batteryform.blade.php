@@ -95,31 +95,6 @@
 </div>
 
 @if($mode == 'edit')
-<div class="row mt-2 border-top">
-	<div class="col clearfix mt-2">
-		<div class="title-related-links">
-			<h4>
-				<span class="ls-n1">{{ $__t('Grocycode') }}</span>
-				<i class="fa-solid fa-question-circle text-muted"
-					data-toggle="tooltip"
-					data-trigger="hover click"
-					title="{{ $__t('Grocycode is a unique referer to this %s in your Victual instance - print it onto a label and scan it like any other barcode', $__t('Battery')) }}"></i>
-			</h4>
-			<p>
-				@if($mode == 'edit')
-				<img src="{{ $U('/battery/' . $battery->id . '/grocycode?size=60') }}"
-					class="float-lg-left"
-					loading="lazy">
-				@endif
-			</p>
-			<p>
-				<a class="btn btn-outline-primary btn-sm"
-					href="{{ $U('/battery/' . $battery->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-			</p>
-		</div>
-	</div>
-</div>
-
 <div class="row">
 	<div class="col">
 		@include('components.label_print_widget', [

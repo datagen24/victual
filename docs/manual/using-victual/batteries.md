@@ -9,7 +9,8 @@ charged, in the same overview/tracking/journal/master-data shape as
 - **`/batteriesjournal`** — every past charge cycle, undoable individually.
 - **`/batteries`** / **`/battery/{id}`** — the battery list and edit form, including the
   charge interval and its own due-soon threshold override.
-- **`/battery/{id}/grocycode`** renders that battery's Grocycode for a printed label.
+- A battery's label is printed on a registered label printer, from the overview's row menu or
+  the edit form; see [Labels](stock.md#labels).
 
 ## Settings
 
