@@ -131,12 +131,6 @@ expiry and rotation story and are unaffected.
 |---|---|---|
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated browser origins allowed to call the API cross-origin, e.g. `https://home.example.com, https://tablet.example.com`. Empty (the default) sends no CORS headers at all. Each entry must be a bare origin — scheme, host, optional port, no path and no trailing slash; `https://home.example.com/` never matches anything and silently behaves as if unset. |
 
-## Grocycode {: #grocycode }
-
-| Setting | Default | Notes |
-|---|---|---|
-| `GROCYCODE_TYPE` | `2D` | `1D` for Code128, `2D` for DataMatrix. See [Barcodes and scanning](operator/barcodes-scanning.md). |
-
 ## Thermal printer {: #thermal-printer }
 
 Receipt printers speaking the ESC/POS protocol (see

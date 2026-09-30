@@ -2,7 +2,6 @@
 
 namespace Victual\Controllers;
 
-use Victual\Helpers\Grocycode;
 use Victual\Services\FieldPolicy;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
@@ -18,8 +17,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class RecipesController extends BaseController
 {
-	use GrocycodeTrait;
-
 	/**
 	 * Serves the meal plan calendar view (route GET /mealplan); builds fullcalendar
 	 * event objects from the meal plan entries around the requested week.
@@ -430,15 +427,5 @@ class RecipesController extends BaseController
 		return $this->RenderPage($response, 'mealplansections', [
 			'mealplanSections' => $this->DB->meal_plan_sections()->where('id > 0')->orderBy('sort_number')
 		]);
-	}
-
-	/**
-	 * Serves the Grocycode barcode PNG for a recipe (route GET /recipe/{recipeId}/grocycode).
-	 */
-	public function RecipeGrocycodeImage(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_RECIPES_VIEW);
-		$gc = new Grocycode(Grocycode::RECIPE, $args['recipeId']);
-		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}
 }

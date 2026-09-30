@@ -1905,7 +1905,7 @@ run_stockpages_tests() {
 # --- householdpages -----------------------------------------------------------------------
 #
 # The rest of the Blade page controllers - chores, tasks, batteries, equipment, calendar,
-# the generic entity pages, the system and user pages, and the Grocycode trait they share.
+# the generic entity pages, and the system and user pages.
 #
 # Same shape as run_wirecontract_tests(): an empty database PgsqlSchemaTestCase migrates
 # itself, per class, into its own schema.

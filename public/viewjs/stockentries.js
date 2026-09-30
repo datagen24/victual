@@ -1,6 +1,6 @@
 ﻿// Powers the stock entries view (stockentries.blade.php): lists individual stock rows
 // (optionally filtered to one product via Victual.Components.ProductPicker), and lets the
-// user consume/open/undo a booking or print a Grocycode label directly from a row.
+// user consume/open/undo a booking or print a stock entry label directly from a row.
 var stockEntriesTable = $('#stockentries-table').DataTable({
 	'order': [[2, 'asc']],
 	'columnDefs': [

@@ -3,7 +3,6 @@
 namespace Victual\Controllers;
 
 use DI\Container;
-use Victual\Helpers\Grocycode;
 use Victual\Services\LocalizationService;
 use Victual\Services\RecipesService;
 use Victual\Services\StockService;
@@ -22,8 +21,6 @@ use Slim\Exception\HttpNotFoundException;
  */
 class StockController extends BaseController
 {
-	use GrocycodeTrait;
-
 	/**
 	 * Additionally exposes the configured external barcode lookup plugin name
 	 * to all views rendered by this controller (empty string when unavailable).
@@ -451,16 +448,6 @@ class StockController extends BaseController
 	}
 
 	/**
-	 * Serves the Grocycode barcode PNG for a product (route GET /product/{productId}/grocycode).
-	 */
-	public function ProductGrocycodeImage(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		$gc = new Grocycode(Grocycode::PRODUCT, $args['productId']);
-		return $this->ServeGrocycodeImage($request, $response, $gc);
-	}
-
-	/**
 	 * Serves the product group create/edit form (route GET /productgroup/{productGroupId}).
 	 *
 	 * @param array $args Route arguments; productGroupId is either a product group id or the literal 'new' for create mode
@@ -864,32 +851,6 @@ class StockController extends BaseController
 			'labelPrinters' => VICTUAL_FEATURE_FLAG_LABELS
 				? iterator_to_array($this->DB->label_printers()->where('active = 1')->orderBy('is_default', 'DESC')->orderBy('name'))
 				: []
-		]);
-	}
-
-	/**
-	 * Serves the Grocycode barcode PNG for a single stock entry
-	 * (route GET /stockentry/{entryId}/grocycode).
-	 */
-	public function StockEntryGrocycodeImage(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
-		$gc = new Grocycode(Grocycode::PRODUCT, $stockEntry->product_id, [$stockEntry->stock_id]);
-		return $this->ServeGrocycodeImage($request, $response, $gc);
-	}
-
-	/**
-	 * Serves the printable Grocycode label page for a single stock entry
-	 * (route GET /stockentry/{entryId}/label).
-	 */
-	public function StockEntryGrocycodeLabel(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_STOCK_VIEW);
-		$stockEntry = $this->DB->stock()->where('id', $args['entryId'])->fetch();
-		return $this->RenderPage($response, 'stockentrylabel', [
-			'stockEntry' => $stockEntry,
-			'product' => $this->DB->products($stockEntry->product_id),
 		]);
 	}
 

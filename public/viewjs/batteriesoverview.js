@@ -1,6 +1,6 @@
 ﻿// View script for the batteries overview page (views/batteriesoverview.blade.php):
 // due/overdue status table, quick charge tracking via POST /api/batteries/{id}/charge,
-// grocycode label printing and live statistics refresh via GET /api/batteries
+// label printing and live statistics refresh via GET /api/batteries
 
 // DataTables setup for the batteries overview
 var batteriesOverviewTable = $('#batteries-overview-table').DataTable({

@@ -2,7 +2,6 @@
 
 namespace Victual\Controllers;
 
-use Victual\Helpers\Grocycode;
 use Victual\Services\ChoresService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -17,8 +16,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 class ChoresController extends BaseController
 {
-	use GrocycodeTrait;
-
 	/**
 	 * Serves the chore create/edit form (route GET /chore/{choreId}).
 	 *
@@ -184,15 +181,5 @@ class ChoresController extends BaseController
 			'users' => $this->DB->users()->orderBy('username'),
 			'userfields' => UserfieldsService::GetInstance()->GetFields('chores_log'),
 		]);
-	}
-
-	/**
-	 * Serves the Grocycode barcode PNG for a chore (route GET /chore/{choreId}/grocycode).
-	 */
-	public function ChoreGrocycodeImage(Request $request, Response $response, array $args)
-	{
-		User::CheckPermission($request, User::PERMISSION_CHORES_VIEW);
-		$gc = new Grocycode(Grocycode::CHORE, $args['choreId']);
-		return $this->ServeGrocycodeImage($request, $response, $gc);
 	}
 }

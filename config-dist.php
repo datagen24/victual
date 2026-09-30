@@ -239,10 +239,6 @@ Setting('DEFAULT_ROLES', []);
 // for an origin that is not listed here
 Setting('CORS_ALLOWED_ORIGINS', '');
 
-// "1D" (=> Code128) or "2D" (=> DataMatrix)
-Setting('GROCYCODE_TYPE', '2D');
-
-
 // Thermal printer options
 // Thermal printers are receipt printers, not regular printers,
 // the printer must support the ESC/POS protocol, see https://github.com/mike42/escpos-php

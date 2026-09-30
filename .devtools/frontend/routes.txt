@@ -20,7 +20,6 @@
 /quantityunitconversion/{quConversionId}
 /productgroups
 /productgroup/{productGroupId}
-/product/{productId}/grocycode
 /stockoverview
 /stockentries
 /purchase
@@ -36,8 +35,6 @@
 /quantityunitpluraltesting
 /stockjournal/summary
 /productbarcodes/{productBarcodeId}
-/stockentry/{entryId}/grocycode
-/stockentry/{entryId}/label
 /quantityunitconversionsresolved
 /stockreports/spendings
 /shoppinglocations
@@ -50,7 +47,6 @@
 /recipe/{recipeId}
 /recipe/{recipeId}/pos/{recipePosId}
 /recipessettings
-/recipe/{recipeId}/grocycode
 /mealplan
 /mealplansections
 /mealplansection/{sectionId}
@@ -60,14 +56,12 @@
 /chores
 /chore/{choreId}
 /choressettings
-/chore/{choreId}/grocycode
 /batteriesoverview
 /batterytracking
 /batteriesjournal
 /batteries
 /battery/{batteryId}
 /batteriessettings
-/battery/{batteryId}/grocycode
 /tasks
 /task/{taskId}
 /taskcategories
