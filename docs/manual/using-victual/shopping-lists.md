@@ -29,8 +29,8 @@ these actions.
 
 With more than one list, an item goes to the list you pick when you add it, or to list 1 if
 you pick none. The automatic below-minimum add uses the list its setting names. A recipe's
-"add not fulfilled products" action always uses list 1. If any list already holds that
-product, the action raises that item's amount instead of adding a new one.
+"add not fulfilled products" action puts new items on list 1. If any list already holds that
+product, the action raises that item's amount where it is instead of adding a new one.
 
 Products and recipes carry a `default_shopping_list_id` field in the API. Victual stores it
 and does nothing else with it: it does not route anything to that list yet.
