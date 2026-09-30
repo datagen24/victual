@@ -310,31 +310,6 @@
 	</div>
 
 	<div class="col-lg-6 col-12 @if($mode == 'create') d-none @endif">
-		<div class="row">
-			<div class="col clearfix">
-				<div class="title-related-links pb-4">
-					<h4>
-						<span class="ls-n1">{{ $__t('Grocycode') }}</span>
-						<i class="fa-solid fa-question-circle text-muted"
-							data-toggle="tooltip"
-							data-trigger="hover click"
-							title="{{ $__t('Grocycode is a unique referer to this %s in your Victual instance - print it onto a label and scan it like any other barcode', $__t('Chore')) }}"></i>
-					</h4>
-					@if($mode == 'edit')
-					<p>
-						<img src="{{ $U('/chore/' . $chore->id . '/grocycode?size=60') }}"
-							class="float-lg-left"
-							loading="lazy">
-					</p>
-					<p>
-						<a class="btn btn-outline-primary btn-sm"
-							href="{{ $U('/chore/' . $chore->id . '/grocycode?download=true') }}">{{ $__t('Download') }}</a>
-					</p>
-					@endif
-				</div>
-			</div>
-		</div>
-
 		@if($mode == 'edit')
 		<div class="row">
 			<div class="col">

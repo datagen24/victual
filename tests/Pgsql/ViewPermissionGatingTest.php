@@ -113,7 +113,6 @@ class ViewPermissionGatingTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn () => self::$batteries->Journal(self::request(), new Response(), []), 403, 'Journal refuses no grants');
 		$this->expectStatus(fn () => self::$batteries->Overview(self::request(), new Response(), []), 403, 'Overview refuses no grants');
 		$this->expectStatus(fn () => self::$batteries->TrackChargeCycle(self::request(), new Response(), []), 403, 'TrackChargeCycle refuses no grants');
-		$this->expectStatus(fn () => self::$batteries->BatteryGrocycodeImage(self::request(), new Response(), ['batteryId' => 501]), 403, 'BatteryGrocycodeImage refuses no grants');
 
 		self::grant(['BATTERIES_VIEW']);
 
@@ -123,7 +122,6 @@ class ViewPermissionGatingTest extends PgsqlSchemaTestCase
 		$this->expectStatus(fn () => self::$batteries->Journal(self::request(), new Response(), []), 200, 'Journal allowed with BATTERIES_VIEW');
 		$this->expectStatus(fn () => self::$batteries->Overview(self::request(), new Response(), []), 200, 'Overview allowed with BATTERIES_VIEW');
 		$this->expectStatus(fn () => self::$batteries->TrackChargeCycle(self::request(), new Response(), []), 200, 'TrackChargeCycle allowed with BATTERIES_VIEW');
-		$this->expectStatus(fn () => self::$batteries->BatteryGrocycodeImage(self::request(), new Response(), ['batteryId' => 501]), 200, 'BatteryGrocycodeImage allowed with BATTERIES_VIEW');
 	}
 
 	public function testBatteriesApiRefusesWithoutGrantAndSucceedsWithBatteriesView(): void

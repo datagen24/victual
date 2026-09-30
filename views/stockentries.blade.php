@@ -242,13 +242,8 @@
 									data-href="{{ $U('/product/') }}{{ $stockEntry->product_id }}">
 									{{ $__t('Edit product') }}
 								</a>
-								<div class="dropdown-divider"></div>
-								<a class="dropdown-item"
-									type="button"
-									href="{{ $U('/stockentry/' . $stockEntry->id . '/grocycode?download=true') }}">
-									{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Stock entry'))) !!}
-								</a>
 								@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+								<div class="dropdown-divider"></div>
 								<a class="dropdown-item stockentry-label-print"
 									data-target-id="{{ $stockEntry->id }}"
 									data-target-name="{{ FindObjectInArrayByPropertyValue($products, 'id', $stockEntry->product_id)->name }}"
@@ -257,12 +252,6 @@
 									{{ $__t('Print a label for this stock entry') }}
 								</a>
 								@endif
-								<a class="dropdown-item stockentry-label-link"
-									type="button"
-									target="_blank"
-									href="{{ $U('/stockentry/' . $stockEntry->id . '/label') }}">
-									{{ $__t('Open stock entry label in new window') }}
-								</a>
 							</div>
 						</div>
 					</td>

@@ -519,16 +519,14 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Chore due today', $edit, 'and carries no other chore');
 		self::assertSame([], $editDiagnostics, 'the edit form for a chore with no assignment renders with no PHP diagnostics');
 
-		// views/choreform.blade.php read $chore->id for the grocycode "Download" link,
-		// outside the @if($mode == 'edit') guard that wraps the barcode image immediately
-		// above it, so GET /chore/new raised two warnings and rendered a download link to
-		// /chore//grocycode. The guard now covers both, as it already does on the battery
-		// form, so the whole Grocycode block - image and download link - is absent in
-		// create mode instead of rendering broken.
+		// Issue #249: the chore form used to carry a Grocycode block (a barcode image and a
+		// download link to /chore/{id}/grocycode). ADR-0011 says the fork parses grcy: and
+		// emits it never, so the block and the route are gone; neither mode links to one.
 		[$create, $createDiagnostics] = self::renderCapturingWarnings(fn () => self::$chores->ChoreEditForm(self::request(), self::response(), ['choreId' => 'new']), 'GET /chore/new', E_ALL);
 		self::assertStringNotContainsString('Chore overdue', $create, 'the create form starts empty');
 		self::assertSame([], $createDiagnostics, 'the chore create form renders with no PHP diagnostics');
-		self::assertStringNotContainsString('/chore//grocycode', $create, 'and renders no Grocycode block at all in create mode');
+		self::assertStringNotContainsString('/grocycode', $create, 'the create form links to no Grocycode');
+		self::assertStringNotContainsString('/grocycode', $edit, 'and neither does the edit form');
 	}
 
 	public function testChoreEditFormRefusesACallerWithoutChoresView(): void
@@ -601,64 +599,22 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------------------------ grocycode
 
 	/**
-	 * docs/grocycode.md: Grocycode is a serialization that references an entity by type
-	 * and id, rendered as a barcode picture. The picture is the only observable, so what
-	 * is asserted is what a picture can prove: it is a PNG, it is the same picture for the
-	 * same reference, and a different reference is a different picture - which is what
-	 * "the type letter and the id are encoded in it" means when the bytes cannot be
-	 * decoded here.
+	 * Issue #249: ADR-0011 says this fork parses grcy: Grocycodes indefinitely and emits
+	 * them never. Five printable-barcode routes and the stock entry label page that embedded
+	 * one still minted grcy: codes after plan 32 moved every printed label onto the vctl:
+	 * subsystem. They are removed; the router has no match for any of them.
 	 */
-	public function testChoreGrocycodeImageServesAPngThatDependsOnTheReference(): void
+	public function testNoPageRouteEmitsAGrocycode(): void
 	{
-		$response = self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']]);
-		self::assertSame(200, $response->getStatusCode());
-		self::assertSame('image/png', $response->getHeaderLine('Content-Type'), 'an inline grocycode is served as an image');
-		$png = (string)$response->getBody();
-		self::assertStringStartsWith("\x89PNG", $png, 'the body is a PNG');
-		self::assertSame((string)strlen($png), $response->getHeaderLine('Content-Length'), 'the declared length is the real one');
-		self::assertSame('no-cache', $response->getHeaderLine('Cache-Control'));
+		$id = (string)self::$ids['Chore overdue'];
+		foreach (['/product/', '/stockentry/', '/recipe/', '/chore/', '/battery/'] as $prefix)
+		{
+			$answer = self::sendThroughTheStack('GET', $prefix . $id . '/grocycode', [], 'household-entry-admin');
+			self::assertSame(404, $answer['status'], "GET {$prefix}{id}/grocycode is not a route");
+		}
 
-		$again = (string)self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']])->getBody();
-		self::assertSame($png, $again, 'the same reference always renders the same code');
-
-		$otherChore = (string)self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore due today']])->getBody();
-		self::assertNotSame($png, $otherChore, 'a different chore id is a different code');
-
-		// Same id, different entity type: "grcy:b:<id>" is not "grcy:c:<id>", which is the
-		// whole point of the type identifier in docs/grocycode.md.
-		$sameIdOtherType = (string)self::$batteries->BatteryGrocycodeImage(self::request(), self::response(), ['batteryId' => self::$ids['Chore overdue']])->getBody();
-		self::assertNotSame($png, $sameIdOtherType, 'the entity type is part of the encoded reference');
-	}
-
-	public function testGrocycodeImageHonoursTheSizeAndDownloadParameters(): void
-	{
-		$default = (string)self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']])->getBody();
-		$sized = (string)self::$chores->ChoreGrocycodeImage(self::request('GET', ['size' => '200']), self::response(), ['choreId' => self::$ids['Chore overdue']])->getBody();
-		self::assertNotSame(strlen($default), strlen($sized), 'size changes the rendered picture');
-
-		$download = self::$chores->ChoreGrocycodeImage(self::request('GET', ['download' => '1']), self::response(), ['choreId' => self::$ids['Chore overdue']]);
-		self::assertSame('application/octet-stream', $download->getHeaderLine('Content-Type'), 'a download is not served inline');
-		self::assertSame('attachment; filename=Grocycode.png', $download->getHeaderLine('Content-Disposition'));
-		self::assertStringStartsWith("\x89PNG", (string)$download->getBody(), 'and it is still the same PNG');
-	}
-
-	/**
-	 * Grocycode is an input symbology (ADR-0011): a code is minted from a reference, and
-	 * nothing resolves it on the way out. So a code for a row that does not exist is still
-	 * a well formed code - the "does this exist" question belongs to whatever reads it
-	 * back, not to the picture.
-	 */
-	public function testGrocycodeImageIsMintedWithoutResolvingTheReference(): void
-	{
-		$response = self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => '999999']);
-		self::assertSame(200, $response->getStatusCode(), 'minting a code does not look the row up');
-		self::assertStringStartsWith("\x89PNG", (string)$response->getBody());
-	}
-
-	public function testChoreGrocycodeImageRefusesACallerWithoutChoresView(): void
-	{
-		self::grant([]);
-		$this->expectStatus(fn () => self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']]), 403, 'GET /chore/{id}/grocycode without CHORES_VIEW');
+		$answer = self::sendThroughTheStack('GET', '/stockentry/' . $id . '/label', [], 'household-entry-admin');
+		self::assertSame(404, $answer['status'], 'GET /stockentry/{id}/label is not a route');
 	}
 
 	// -------------------------------------------------------------------- batteries
@@ -760,14 +716,9 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString('Battery retired', $html, 'a retired battery cannot be charged, so it is not offered');
 	}
 
-	public function testBatteriesSettingsAndGrocycodeImageRender(): void
+	public function testBatteriesSettingsRender(): void
 	{
 		self::render(fn () => self::$batteries->BatteriesSettings(self::request(), self::response(), []), 'GET /batteriessettings');
-
-		$response = self::$batteries->BatteryGrocycodeImage(self::request(), self::response(), ['batteryId' => self::$ids['Battery overdue']]);
-		self::assertSame(200, $response->getStatusCode());
-		self::assertSame('image/png', $response->getHeaderLine('Content-Type'));
-		self::assertStringStartsWith("\x89PNG", (string)$response->getBody());
 	}
 
 	// ------------------------------------------------------------------------ tasks
@@ -1628,67 +1579,6 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString($marker, $on['body'], "$path offers the configured printer once FEATURE_FLAG_LABELS is on");
 		self::assertStringContainsString('Household label printer', $on['body'], 'and names the printer it would print to');
 	}
-
-	/**
-	 * docs/grocycode.md: DataMatrix is the default and Code128 is the documented
-	 * alternative, chosen by GROCYCODE_TYPE. Both must produce a servable PNG for the same
-	 * reference, and they must not produce the same one - a household that switches
-	 * symbology has switched something.
-	 */
-	public function testGrocycodeSymbologyFollowsTheConfiguredType(): void
-	{
-		$default = (string)self::$chores->ChoreGrocycodeImage(self::request(), self::response(), ['choreId' => self::$ids['Chore overdue']])->getBody();
-
-		$twoD = self::renderGrocycodeInProcessWith('2D', self::$ids['Chore overdue']);
-		self::assertSame(hash('sha256', $default), $twoD['sha256'], 'GROCYCODE_TYPE is 2D by default, so the configured render matches the one this process made');
-
-		$oneD = self::renderGrocycodeInProcessWith('1D', self::$ids['Chore overdue']);
-		self::assertSame(200, $oneD['status'], 'Code128 is a supported symbology, not an error');
-		self::assertSame('image/png', $oneD['content_type'], 'and it is served as a PNG like the other');
-		self::assertSame(base64_encode("\x89PNG\r\n\x1a\n"), $oneD['magic'], 'a real PNG, by its signature');
-		self::assertNotSame($twoD['sha256'], $oneD['sha256'], 'Code128 and DataMatrix are different pictures of the same reference');
-	}
-
-	/**
-	 * One Grocycode render under a chosen GROCYCODE_TYPE. Its own process because that
-	 * setting is a constant; see tests/Pgsql/householdpages-subprocess-helper.php.
-	 *
-	 * @return array{status: int, content_type: string, length: int, sha256: string, magic: string}
-	 */
-	private static function renderGrocycodeInProcessWith(string $type, int $choreId): array
-	{
-		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
-		$env = array_merge($inherited, [
-			'RBAC_TEST_SCHEMA' => self::Schema(),
-			'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
-			'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
-			'PGHOST' => getenv('PGHOST'),
-			'PGPORT' => getenv('PGPORT'),
-			'PGUSER' => getenv('PGUSER'),
-			'PGPASSWORD' => getenv('PGPASSWORD'),
-			'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
-			'VICTUAL_GROCYCODE_TYPE' => $type,
-		]);
-
-		$process = proc_open(
-			[PHP_BINARY, __DIR__ . '/householdpages-subprocess-helper.php', (string)$choreId],
-			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-			$pipes,
-			null,
-			$env
-		);
-		$output = stream_get_contents($pipes[1]);
-		$errors = stream_get_contents($pipes[2]);
-		fclose($pipes[1]);
-		fclose($pipes[2]);
-		proc_close($process);
-
-		$result = json_decode((string)$output, true);
-		self::assertIsArray($result, "the grocycode helper printed no JSON for $type. stdout: $output\nstderr: $errors");
-
-		return $result;
-	}
-
 
 	/**
 	 * In demo, dev or prerelease mode the root route seeds the demo household on the way

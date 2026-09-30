@@ -126,7 +126,6 @@
 					<th class="allow-grouping">{{ $__t('Quantity unit stock') }}</th>
 					<th class="">{{ $__t('Product group') }}</th>
 					<th class="@if(!VICTUAL_FEATURE_FLAG_STOCK_PRICE_TRACKING) d-none @endif allow-grouping">{{ $__t('Default store') }}</th>
-					<th class="">{{ $__t('Grocycode') }}</th>
 					<th>{{ $__t('Product picture') }}</th>
 
 					@include('components.userfields_thead', array(
@@ -210,10 +209,6 @@
 						@if($store != null)
 						{{ $store->name }}
 						@endif
-					</td>
-					<td>
-						<img src="{{ $U('/product/' . $product->id . '/grocycode?size=25') }}"
-							loading="lazy">
 					</td>
 					<td>
 						@if(!empty($product->picture_file_name))

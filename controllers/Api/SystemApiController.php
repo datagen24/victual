@@ -41,8 +41,7 @@ class SystemApiController extends BaseApiController
 		'ENTRY_PAGE',
 		'BASE_PATH',
 		'BASE_URL',
-		'DISABLE_URL_REWRITING',
-		'GROCYCODE_TYPE'
+		'DISABLE_URL_REWRITING'
 	];
 
 	/**

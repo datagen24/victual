@@ -194,13 +194,8 @@
 											data-recipe-id="{{ $recipe->id }}">
 											<span class="dropdown-item-text">{{ $__t('Copy recipe') }}</span>
 										</a>
-										<div class="dropdown-divider"></div>
-										<a class="dropdown-item"
-											type="button"
-											href="{{ $U('/recipe/' . $recipe->id . '/grocycode?download=true') }}">
-											<span class="dropdown-item-text">{!! str_replace('Grocycode', '<span class="ls-n1">Grocycode</span>', $__t('Download %s Grocycode', $__t('Recipe'))) !!}</span>
-										</a>
 										@if(VICTUAL_FEATURE_FLAG_LABELS && count($labelPrinters) > 0 && Victual\Controllers\Users\User::HasPermissions(Victual\Controllers\Users\User::PERMISSION_MASTER_DATA_EDIT))
+										<div class="dropdown-divider"></div>
 										<a class="dropdown-item recipe-label-print"
 											data-target-id="{{ $recipe->id }}"
 											data-target-name="{{ $recipe->name }}"

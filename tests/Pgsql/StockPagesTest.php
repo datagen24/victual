@@ -1014,35 +1014,6 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		self::assertStringNotContainsString(self::NAME_LOCATION_PARENT, $html, 'it is stateless: it reads no location rows to render');
 	}
 
-	#[Depends('testFixturesAreCreated')]
-	public function testStockEntryLabelPageNamesTheProductTheEntryHolds(): void
-	{
-		self::assumeRole('ADMIN');
-		$html = self::stockPage('StockEntryGrocycodeLabel', ['entryId' => (string)self::$stockEntryId]);
-
-		self::assertStringContainsString(self::NAME_PRODUCT_STOCKED, $html, 'the printable label names the product');
-	}
-
-	#[Depends('testFixturesAreCreated')]
-	public function testGrocycodeImagesAreServedAsPng(): void
-	{
-		self::assumeRole('ADMIN');
-
-		$product = self::$stock->ProductGrocycodeImage(self::request(), new Response(), ['productId' => (string)self::PRODUCT_STOCKED]);
-		self::assertSame('image/png', $product->getHeaderLine('Content-Type'), 'a product Grocycode is a PNG');
-		self::assertNotSame('', (string)$product->getBody(), 'and it has a body');
-
-		$entry = self::$stock->StockEntryGrocycodeImage(self::request(), new Response(), ['entryId' => (string)self::$stockEntryId]);
-		self::assertSame('image/png', $entry->getHeaderLine('Content-Type'), 'a stock entry Grocycode is a PNG');
-
-		$recipe = self::$recipes->RecipeGrocycodeImage(self::request(), new Response(), ['recipeId' => (string)self::RECIPE_FULFILLED]);
-		self::assertSame('image/png', $recipe->getHeaderLine('Content-Type'), 'a recipe Grocycode is a PNG');
-
-		// download=1 serves the same image as an attachment instead of inline.
-		$download = self::$stock->ProductGrocycodeImage(self::request(['download' => '1']), new Response(), ['productId' => (string)self::PRODUCT_STOCKED]);
-		self::assertSame('application/octet-stream', $download->getHeaderLine('Content-Type'), 'the download variant is an attachment');
-	}
-
 	// --- Phase 4: recipe and meal plan pages ------------------------------------------
 
 	#[Depends('testFixturesAreCreated')]
@@ -1337,7 +1308,7 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		[$productForm, $productDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'ProductEditForm', ['productId' => 'new'], [], E_ALL);
 		self::assertStringContainsString('</html>', $productForm, 'the page is still served');
 		self::assertSame([], $productDiagnostics, 'GET /product/new renders with no PHP diagnostics');
-		self::assertStringNotContainsString('/product//grocycode', $productForm, 'the now edit-only Grocycode block does not render with a null product id');
+		self::assertStringNotContainsString('/grocycode', $productForm, 'the product form links to no Grocycode (issue #249 removed the block and its route)');
 		self::assertStringContainsString('data-additional-searchdata="' . strtolower(self::NAME_BARCODE) . ',"', $productForm, 'the parent-product picker carries the comma-separated barcodes, not the raw product_barcodes rows');
 
 		[$unitForm, $unitDiagnostics] = self::renderCapturingDiagnostics(self::$stock, 'QuantityUnitEditForm', ['quantityunitId' => 'new'], [], E_ALL);
@@ -1483,7 +1454,6 @@ class StockPagesTest extends PgsqlSchemaTestCase
 			'Overview' => [],
 			'ProductBarcodesEditForm' => ['productBarcodeId' => 'new'],
 			'ProductEditForm' => ['productId' => 'new'],
-			'ProductGrocycodeImage' => ['productId' => '1'],
 			'ProductGroupEditForm' => ['productGroupId' => 'new'],
 			'ProductGroupsList' => [],
 			'ProductSubstitutionEditForm' => [],
@@ -1497,8 +1467,6 @@ class StockPagesTest extends PgsqlSchemaTestCase
 			'ShoppingLocationEditForm' => ['shoppingLocationId' => 'new'],
 			'ShoppingLocationsList' => [],
 			'StockEntryEditForm' => ['entryId' => '1'],
-			'StockEntryGrocycodeImage' => ['entryId' => '1'],
-			'StockEntryGrocycodeLabel' => ['entryId' => '1'],
 			'StockSettings' => [],
 			'Stockentries' => [],
 			'Transfer' => [],
@@ -1548,7 +1516,6 @@ class StockPagesTest extends PgsqlSchemaTestCase
 		$recipePages = [
 			'Overview' => [],
 			'RecipeEditForm' => ['recipeId' => 'new'],
-			'RecipeGrocycodeImage' => ['recipeId' => '1'],
 			'RecipePosEditForm' => ['recipeId' => '1', 'recipePosId' => 'new'],
 			'RecipesSettings' => [],
 		];

@@ -8,10 +8,9 @@
 
 var productsTable = Victual.EntityList.Table('#products-table', {
 	columnDefs: [
-		// Hidden columns 7-9 hold extra searchable/sortable data from the template
+		// Hidden columns 7-8 (default store, product picture) hold extra searchable/sortable data from the template
 		{ 'visible': false, 'targets': 7 },
 		{ 'visible': false, 'targets': 8 },
-		{ 'visible': false, 'targets': 9 },
 		{ 'type': 'html-num-fmt', 'targets': 3 }
 	]
 });
