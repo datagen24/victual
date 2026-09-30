@@ -43,6 +43,10 @@ define('VICTUAL_USER_PICTURE_FILE_NAME', null);
 use Victual\Services\DatabaseService;
 use Victual\Services\StockService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $pdo = new PDO(
 	'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
 	getenv('PGUSER'),

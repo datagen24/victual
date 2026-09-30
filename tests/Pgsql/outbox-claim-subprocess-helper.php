@@ -44,6 +44,10 @@ use Victual\Services\DatabaseService;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Outbox\OutboxService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $mode = $argv[1] ?? '';
 
 $pdo = new PDO(

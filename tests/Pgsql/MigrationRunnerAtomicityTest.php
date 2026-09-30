@@ -98,7 +98,7 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
-			$method->setAccessible(true);
+			// A ReflectionMethod needs no setAccessible(): the call has had no effect since PHP 8.1, and 8.5 deprecates making it.
 			$phpFile = VICTUAL_ROOT_PATH . '/migrations/0274.pgsql.php';
 
 			$errorCodes = [];
@@ -167,7 +167,6 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
-			$method->setAccessible(true);
 			$phpFile = VICTUAL_ROOT_PATH . '/migrations/0274.pgsql.php';
 
 			$counter = 0;
@@ -238,7 +237,6 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 
 			$dialect = DatabaseService::GetInstance()->GetDialect();
 			$method = new ReflectionMethod(DatabaseMigrationService::class, 'EnsureMigrationsTable');
-			$method->setAccessible(true);
 
 			self::$Pdo->exec('SET ROLE ' . $role);
 
@@ -293,7 +291,6 @@ class MigrationRunnerAtomicityTest extends PgsqlSchemaTestCase
 
 			$dialect = DatabaseService::GetInstance()->GetDialect();
 			$method = new ReflectionMethod(DatabaseMigrationService::class, 'EnsureMigrationsTable');
-			$method->setAccessible(true);
 
 			self::$Pdo->exec('SET ROLE ' . $role);
 
@@ -431,7 +428,6 @@ PHP);
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
-			$method->setAccessible(true);
 
 			$counter = 0;
 			$thrown = null;
@@ -592,7 +588,6 @@ PHP);
 
 			$service = DatabaseMigrationService::GetInstance();
 			$method = new ReflectionMethod($service, 'ExecutePhpMigrationWhenNeeded');
-			$method->setAccessible(true);
 			$dialect = DatabaseService::GetInstance()->GetDialect();
 
 			$thrown = null;

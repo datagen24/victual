@@ -54,6 +54,10 @@ use Victual\Middleware\LocaleMiddleware;
 use Victual\Middleware\SchemaVersionMiddleware;
 use Victual\Services\DatabaseService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $pdo = new PDO(
 	'pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'),
 	getenv('PGUSER'),
@@ -119,7 +123,7 @@ $response = $app->handle($request);
 DatabaseService::GetInstance()->GetDialect()->FlushDbChangedTime($pdo);
 
 $runRequestEndPublishes = new ReflectionMethod(DatabaseService::class, 'RunRequestEndPublishes');
-$runRequestEndPublishes->setAccessible(true);
+// A ReflectionMethod needs no setAccessible(): the call has had no effect since PHP 8.1, and 8.5 deprecates making it.
 $runRequestEndPublishes->invoke(DatabaseService::GetInstance());
 
 echo json_encode([

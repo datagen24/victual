@@ -44,6 +44,10 @@ define('VICTUAL_USER_ID', 9000);
 use Victual\Services\DatabaseService;
 use Victual\Services\StockService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 /**
  * A DatabaseService whose raw-SQL calls pause CompactStockEntries() at one of its two
  * synchronisation points, so a two-connection test can observe it genuinely blocked mid-run

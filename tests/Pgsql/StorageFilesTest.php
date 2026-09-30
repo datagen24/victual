@@ -1130,7 +1130,9 @@ class StorageFilesTest extends PgsqlSchemaTestCase
 		ob_start();
 		imagepng($image);
 		$bytes = (string)ob_get_clean();
-		imagedestroy($image);
+
+		// No imagedestroy(): it has had no effect since PHP 8.0, where a GdImage became an
+		// object the collector frees, and PHP 8.5 deprecates saying it.
 
 		return $bytes;
 	}

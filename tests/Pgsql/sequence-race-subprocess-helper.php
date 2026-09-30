@@ -25,6 +25,10 @@
 // environment variables every other subprocess helper in this directory does. Output: a
 // JSON array of every value nextval() returned, in the order this process received them.
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $sequenceName = $argv[1] ?? '';
 $durationSeconds = (float)($argv[2] ?? 3.0);
 

@@ -25,6 +25,10 @@ define('VICTUAL_IS_EMBEDDED_INSTALL', false);
 
 use Victual\Services\Labels\IdempotencyService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 [, $userId, $operation, $key, $requestJson] = $argv;
 $request = json_decode($requestJson, true, 512, JSON_THROW_ON_ERROR);
 

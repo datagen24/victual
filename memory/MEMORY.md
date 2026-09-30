@@ -59,6 +59,12 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-09-30 — `run-tests.sh all` was red in the dev image, green in CI** (branch
+  `claude/hopeful-mccarthy-3b6bb2`): six cases, one shape — a PHP diagnostic on a subprocess
+  helper's **stdout**, in front of the JSON, so `json_decode()` gave `null`. One was PHP 8.5
+  (`imagedestroy()`, vendored php-barcode); five were the official `php:*-cli` image compiling
+  PDO/pdo_sqlite/sqlite3/tokenizer *in*, which neither an 8.5 CI leg nor an 8.4 pin would catch.
+  The `images` job now runs the suite in the image. See [[reference_local_environment]].
 - **2026-09-21 — Three write routes stop discarding a caller's timestamp** (branch
   `claude/elegant-burnell-24f169`, [PR 235](https://github.com/datagen24/victual/pull/235),
   merged): `tracked_time` on chore execution and battery charge, `done_time` on task
@@ -98,14 +104,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   migrated schemas don't log generated ones. **walk.py now needs `--password`** (nix.yml reads
   the generated one from the migrate container); the parity stack uses
   `PARITY_VICTUAL_ADMIN_PASSWORD`. The kind half is PR 214.
-- **2026-09-19 — Issue #208 Victual-side MCP auth** (branch `claude/issue-208-mcp-auth`):
-  `API_KEY_TYPE_MCP`, `api_keys.read_only` (**0287** — plan 22's unwritten claims moved to
-  0288–0289), the read-only 403 in `BaseAuthMiddleware` (plus a named list of upstream GET
-  routes that write), a `VICTUAL-API-KEY-TYPE` header that narrows the lookup, and
-  `GET /api/user/capabilities`. Also fixed `ApiKeyIsReadable()`, which would have shown an MCP
-  key's hash. New phase `mcpauth`; `tests/Pgsql/request-subprocess-helper.php` sends any
-  request through the full stack. Full suite green. Sidecar side (send the header) is on
-  #86's branch. See [[project_issue86_mcp_sidecar]].
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues

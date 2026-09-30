@@ -26,6 +26,10 @@ define('VICTUAL_USER_ID', 9000);
 use Victual\Services\DatabaseService;
 use Victual\Services\Labels\PrintAttemptService;
 
+// Stdout is the JSON answer and nothing else: a diagnostic goes to stderr, where the test
+// reports it, rather than arriving in front of the answer and reducing json_decode() to null.
+ini_set('display_errors', 'stderr');
+
 $workerId = (int)($argv[1] ?? 0);
 
 $pdo = new PDO(

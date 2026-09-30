@@ -921,6 +921,30 @@ jobs:
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.run-tests == 'true')
     runs-on: ubuntu-latest
+
+    # The suite runs here as well as in the `suite` job above, and deliberately: that job
+    # runs on the runner, where shivammathur/setup-php installs Debian's PHP packaging, and
+    # this one runs it in the image a contributor actually has. The two builds are not
+    # interchangeable - Debian ships PDO, pdo_sqlite, sqlite3 and tokenizer as loadable
+    # modules and the official php:*-cli image compiles them in and ships no pgsql extension
+    # at all - so a suite that assumes one of them is green on the runner and red in the
+    # image. On 2026-09-29 it was: six cases across two phases failed in the image while CI
+    # was green, and only one of the six was a PHP version difference.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: victual
+          POSTGRES_PASSWORD: victual
+          POSTGRES_DB: victual
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U victual"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v7
 
@@ -954,3 +978,32 @@ jobs:
           docker run --rm victual:dev php -r 'exit(extension_loaded("pdo_pgsql") && extension_loaded("pdo_sqlite") ? 0 : 1);'
           docker run --rm victual:dev sh -c 'command -v psql >/dev/null && command -v createdb >/dev/null'
           echo "php, both PDO drivers, and the PostgreSQL client are present"
+
+      # ADR-0025 tier 2's phase needs the extension in the server, the same way the `suite`
+      # job installs it: the stock postgres:16 image does not ship pgtap. pg_prove itself is
+      # already in the dev image.
+      - name: Install the pgtap extension into the postgres service
+        run: |
+          container=$(docker ps -q --filter ancestor=postgres:16)
+          docker exec "$container" bash -c 'apt-get update && apt-get install -y --no-install-recommends postgresql-16-pgtap'
+
+      # The invocation the repository documents for running the suite by hand, run verbatim:
+      # the working tree mounted over /app, with an anonymous volume keeping the image's own
+      # composer output visible underneath it. --network host is how a `docker run` on the
+      # runner reaches the service container's published port.
+      #
+      # No coverage here. The ratchet belongs to the `suite` job, which measures the label
+      # phases into the same directory; this job asks one question only - does the entry
+      # point a contributor runs pass in the image they run it in.
+      - name: The suite passes in the image it is meant to run in
+        run: |
+          docker run --rm \
+            --network host \
+            -v "$PWD":/app -v /app/packages -w /app \
+            -e VICTUAL_ROOT=/app \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER=victual \
+            -e PGPASSWORD=victual \
+            -e SUITE_SCRATCH=/tmp/victual-suite \
+            victual:dev .devtools/pgsql/run-tests.sh all
