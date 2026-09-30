@@ -260,16 +260,18 @@ tenth of the scale, and is where this would be decided.
   nullability and never a defence against the three unintended ones — it failed the intended
   pairings first.
 
-  **That gap is closed.** `fix: align API response nullability with PostgreSQL` (`c6d27881`,
-  2026-09-28) types every one of those properties as its column allows — `["string", "null"]`
-  and `["integer", "null"]`. The test no longer records which pairings validate: it asserts
-  that **every** candidate pairing validates against every row it has, with no errors.
+    **That gap is closed.** `fix: align API response nullability with PostgreSQL`
+    (`c6d27881`, 2026-09-28) types every one of those properties as its column allows —
+    `["string", "null"]` and `["integer", "null"]`. The test no longer records which
+    pairings validate: it asserts that **every** candidate pairing validates against every
+    row it has, with no errors.
 
-  So the three unintended candidacies above are now decodes rather than near misses, which
-  is the reading the bullet before this one states. Closing them still needs option E or
-  option D. Every row of every entity is validated, not one per entity: validity turns on
-  values, so a row whose nullable columns happen to be set could validate where another
-  does not.
+    So the three unintended candidacies above are now decodes rather than near misses,
+    which is the reading the bullet before this one states. Closing them still needs option
+    E or option D. Every row of every entity is validated, not one per entity: validity
+    turns on values, so a row whose nullable columns happen to be set could validate where
+    another does not.
+
 - **`victual-kit` sheds three workarounds** — the middleware that strips the charset
   parameter, the date transcoder that accepts both renderings, and the boolean remapping in
   its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
