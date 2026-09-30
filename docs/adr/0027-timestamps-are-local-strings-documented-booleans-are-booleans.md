@@ -250,12 +250,13 @@ tenth of the scale, and is where this would be decided.
   fixture gives an entity a row, and off the relation's columns where it does not, with the
   two checked against each other. It pins the result, so a fourth cannot appear unnoticed.
 - **Candidacy is what is measured, and it is not the same as a successful decode.** The
-  same test validates each real row against every member with a JSON Schema validator.
-  **When this record was written exactly one pairing survived** — `locations_resolved`
-  against `LocationResolved` — and every other candidate failed the same way: a column that
-  is NULL in the row against a member that declared it a non-nullable scalar (`description`
-  on `Product`, `Chore`, `Location` and `QuantityUnit`; `note` on `ShoppingListItem`;
-  `config` on `Userfield`; `shopping_location_id` on `StockEntry` and `ProductBarcode`). Six
+  same test validates real rows against members with a JSON Schema validator. **When this
+  record was written it validated every row against all ten members, and exactly one
+  pairing survived**: `locations_resolved` against `LocationResolved`. Every other candidate
+  failed the same way — a column that is NULL in the row against a member that declared it a
+  non-nullable scalar (`description` on `Product`, `Chore`, `Location` and `QuantityUnit`;
+  `note` on `ShoppingListItem`; `config` on `Userfield`; `shopping_location_id` on
+  `StockEntry` and `ProductBarcode`). Six
   of those ten were the union's *own* intended pairings, so it was a gap in the members'
   nullability and never a defence against the three unintended ones — it failed the intended
   pairings first.
@@ -263,8 +264,9 @@ tenth of the scale, and is where this would be decided.
     **That gap is closed.** `fix: align API response nullability with PostgreSQL`
     (`c6d27881`, 2026-09-28) types every one of those properties as its column allows —
     `["string", "null"]` and `["integer", "null"]`. The test no longer records which
-    pairings validate: it asserts that **every** candidate pairing validates against every
-    row it has, with no errors.
+    pairings validate. It now validates each row against the members that row is a
+    *candidate* for, rather than against all ten, and asserts that **every** such pairing
+    passes on every row, with no errors.
 
     So the three unintended candidacies above are now decodes rather than near misses,
     which is the reading the bullet before this one states. Closing them still needs option
