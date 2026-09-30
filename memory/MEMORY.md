@@ -62,7 +62,8 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 - **2026-09-30 — `run-tests.sh all` was red in the dev image, green in CI** (branch
   `claude/hopeful-mccarthy-3b6bb2`): six cases, one shape — a PHP diagnostic on a subprocess
   helper's **stdout**, in front of the JSON, so `json_decode()` gave `null`. One was PHP 8.5
-  (`imagedestroy()`, vendored php-barcode); five were the official `php:*-cli` image compiling
+  (`imagedestroy()`, vendored php-barcode, and #249 deleted that test hours later); five were the
+  official `php:*-cli` image compiling
   PDO/pdo_sqlite/sqlite3/tokenizer *in*, which neither an 8.5 CI leg nor an 8.4 pin would catch.
   The `images` job now runs the suite in the image. See [[reference_local_environment]].
 - **2026-09-21 — Three write routes stop discarding a caller's timestamp** (branch

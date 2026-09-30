@@ -75,9 +75,10 @@ as a loadable module. Three consequences, all measured 2026-09-30 against `victu
   presence proves nothing and `extension_loaded()` in the parent cannot tell the two apart.
   Two cases in that file skip, with a named reason, on a build like this one.
 - Only one of the six failures this produced was a PHP version difference (`imagedestroy()`'s
-  8.5 deprecation, from the vendored `interficieis/php-barcode`). The other five are packaging
-  and reproduce identically on 8.4, so neither an 8.5 CI leg nor pinning the image to 8.4 would
-  have found them.
+  8.5 deprecation, from the vendored `interficieis/php-barcode`, reached by the Grocycode render
+  that #249 has since deleted). The other five are packaging and reproduce identically on 8.4,
+  so neither an 8.5 CI leg nor pinning the image to 8.4 would have found them — which is the
+  durable point, since the version half of the story removed itself within a day.
 
 The `images` CI job runs `run-tests.sh all` in the image for this reason (2026-09-30). Before
 that, nothing in CI exercised the image the suite is documented to run in — `run-tests.sh all`
@@ -88,9 +89,12 @@ to `phpunit.xml` for the run and take it out again. `failOnDeprecation="false"` 
 deprecation is counted and not named, and on 2026-09-30 that hid ten surviving
 `ReflectionMethod::setAccessible()` calls in `tests/` — the same no-op-since-8.1 call whose
 deprecation on stdout plan 18 had already had to remove from `.devtools/mqtt/client-id-check.php`
-on 2026-09-03. What is left after that is vendored: nine `imagedestroy()` from php-barcode and
+on 2026-09-03. What was left after that was vendored: nine `imagedestroy()` from php-barcode and
 four implicit-nullable notices from `mike42/escpos-php`, the latter an 8.4-era deprecation that
-CI reports too.
+CI reports too. The php-barcode nine went away on their own when #249 removed the grcy:
+Grocycode routes on 2026-09-30 — after that merge nothing under `services/`, `controllers/` or
+`helpers/` references the package at all, so `interficieis/php-barcode` may now be an unused
+dependency; `docs/plans/06-location-barcodes.md` is the only other mention.
 
 ## The frontend security probes (`frontend-security` CI job)
 
