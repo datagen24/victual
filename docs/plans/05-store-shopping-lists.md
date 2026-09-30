@@ -5,9 +5,12 @@ default list.
 **Upstream:** [grocy/grocy#2702](https://github.com/grocy/grocy/issues/2702)
 **Depends on:** [12](landed/12-frontend-shared-core.md) for the UI pieces (store selector,
 list-filter toggle) — the A + C schema and API work can proceed ahead of it.
-**Status:** parts A and C landed 2026-09-18 as `migrations/0286.pgsql.sql`
+**Status:** part A and part C's *columns* landed 2026-09-18 as `migrations/0286.pgsql.sql`
 ([issue 85](https://github.com/datagen24/victual/issues/85)); see
-[Executed](#executed). Part B waits on use, exactly as answered below.
+[Executed](#executed). **Part C's routing did not land:** nothing reads
+`default_shopping_list_id`, and the forms have no picker for it
+([issue 625](https://github.com/datagen24/victual/issues/625)). Routing is left for a
+scoped follow-up, not 0.3.0. Part B waits on use, exactly as answered below.
 
 ## Today
 
@@ -54,6 +57,8 @@ layout, and grocy users already maintain groups.
 `ALTER TABLE products ADD default_shopping_list_id INTEGER` and the same on `recipes`, so
 adding a product or a recipe's missing ingredients lands on the right list without
 choosing every time. Falls back to the current behaviour when null.
+
+Only the columns exist. See [Executed](#executed) for what an item's list is today.
 
 ### Schema
 
@@ -175,6 +180,23 @@ screen. Recommend shipping A + C first and treating B as its own change once you
 A for a bit and know whether ordering is worth it.
 
 ## Executed
+
+**Correction, 2026-09-29 ([issue 625](https://github.com/datagen24/victual/issues/625)).**
+This section and the plan index said part C landed. Only its storage did. No production
+code reads `products.default_shopping_list_id` or `recipes.default_shopping_list_id`, and
+neither form offers a default-list picker. The columns round-trip through
+`/api/objects/{entity}` and do nothing else. Every write path uses the list it is given:
+
+| Path | List |
+|---|---|
+| Add a product (`POST /api/stock/shoppinglist/add-product`, the product picker) | the caller's `list_id`, else 1 |
+| Add below-minimum, overdue or expired products (bulk actions) | the caller's `list_id`, else 1 |
+| Automatic add when stock drops below the minimum | the per-user setting `shopping_list_auto_add_below_min_stock_amount_list_id` |
+| A recipe's "add not fulfilled products" | list 1, through the column default; if any list already holds the product, that entry's amount is raised instead |
+
+Routing is a decision still to make: which of these paths consult the default, and how it
+ranks against a list the caller names. That is a scoped follow-up, not 0.3.0 work. What
+follows is the record of what did land.
 
 Landed as `migrations/0286.pgsql.sql`: the three nullable columns exactly as designed above,
 no defaults, no foreign keys, no SQLite counterpart (PostgreSQL-only above the freeze, per

@@ -25,6 +25,16 @@ because it is still short. The per-user setting `shopping_list_auto_add_below_mi
 a product automatically the moment stock drops below the minimum, without waiting for one of
 these actions.
 
+## Which list an item lands on
+
+With more than one list, an item goes to the list you pick when you add it, or to list 1 if
+you pick none. The automatic below-minimum add uses the list its setting names. A recipe's
+"add not fulfilled products" action puts new items on list 1. If any list already holds that
+product, the action raises that item's amount where it is instead of adding a new one.
+
+Products and recipes carry a `default_shopping_list_id` field in the API. Victual stores it
+and does nothing else with it: it does not route anything to that list yet.
+
 ## Printing
 
 Two independent print paths, each with its own default options as per-user settings
