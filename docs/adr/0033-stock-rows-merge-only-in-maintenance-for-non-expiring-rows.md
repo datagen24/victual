@@ -78,8 +78,8 @@ mapping table ADR-0011/[ADR-0021](0021-label-templates-are-application-data.md)
 introduced, so a live label is not protected from being merged away.
 `GetProductIdFromBarcode('vctl:…')` then refuses the retired identifier.
 
-A full consume followed by undo separately recreates the stock row under a new `id`, while
-the label, keyed to the old id, stays retired.
+A full consume followed by undo recreates the stock row under its original `id` when that id is
+free and under a fresh `id` otherwise (PR #531), while the label, keyed to the old id, stays retired.
 
 The maintainer suggested that merging likely keeps an upstream SQLite-descended database
 tidy. That explanation is tentative; it does not establish a measured operational need
@@ -220,6 +220,8 @@ answers can be read against what was asked.
    `target_id`, so restoring the row alone leaves the label retired. Whether undo should
    revive that label remains undecided; this proposal does not add revival.
    **Resolved: yes, limited to the label that the undone consume retired. See decision 6.**
+   [ADR-0037](0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)
+   (Proposed) is the detailed design for that decision.
 2. **Positive weighing correction metadata.** Decision 5 adds a row when the measured
    total increases. Which date and other purchase metadata does the operator supply, and
    which existing inventory defaults may apply? This must be specified before implementation

@@ -363,6 +363,8 @@ keeps its opaque `vctl:` uid. A labelled row is not a merge candidate. A merged 
 labelled afterwards. Restoring a row under its old id, or extracting a row, does not revive a
 label, because retirement set `target_id` to NULL. Label revival after undo stays the open
 question 1 of ADR-0033, unanswered here.
+[ADR-0037](0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)
+(Proposed) proposes an answer and does not depend on this record.
 
 ### 11. Compatibility
 
