@@ -42,7 +42,7 @@ carries the old slug so that existing links keep working.
 | Storage | **Migrate the legacy `TIMESTAMP` columns to `TIMESTAMPTZ`.** Converting only on output was rejected. |
 | Scope | **One rule for the whole API**: the label surface's `TIMESTAMPTZ` values, `TimeResponse.time_utc` and the echoed write fields all join it. SQL `DATE` columns stay `YYYY-MM-DD`. |
 | Browser display zone | **The viewer's device zone**, not the server's configured zone. |
-| Clients being locked down before this lands | **Decode both renderings** until decision 2 is implemented, then drop the old one. |
+| Sequencing against the clients | **The server lands first. The endpoint clients are regenerated afterwards** from the updated document. No client is locked against today's rendering, so no client needs an interim mode that accepts both renderings. |
 | Decision 4: generic write bodies become `GenericEntityWrite` | **Confirmed.** |
 | Prerequisite 3: three entities decode under a member that is not theirs | **Accepted only while it is tracked for a fix**, as [issue 648](https://github.com/datagen24/victual/issues/648). The decider wants it fixed, not left as a permanent limit. |
 
@@ -170,8 +170,9 @@ storage. The decider's answers above record this.
      wall-clock strings, and the document still describes them as it does today, with the
      `pattern` [PR #234](https://github.com/datagen24/victual/pull/234) added and no
      `format`. The document changes in the same commit as the wire, under
-     [ADR-0005](0005-wire-contract-is-the-invariant.md). Until then, first-party clients
-     accept both renderings and send RFC 3339, which ADR-0028 already accepts.
+     [ADR-0005](0005-wire-contract-is-the-invariant.md). The first-party endpoint clients
+     are regenerated from that document **after** the server change lands, not before, so
+     none has to accept both renderings in the meantime.
 
    **The three write fields' history, kept for the record.** When this record was first
    written, `helpers/extensions.php`'s `IsIsoDateTime()` accepted exactly `Y-m-d H:i:s`.
@@ -221,8 +222,8 @@ storage. The decider's answers above record this.
    - **Coordinated changes** to plan 18's MQTT payloads, the iCal feed, and the browser
      code that reads and writes these values. That code converts to the device's zone for
      display and sends writes with an offset.
-   - **Every Victual-owned client.** They already accept both renderings under decision 2's
-     interim rule.
+   - **Every Victual-owned client**, regenerated from the updated document once the server
+     change has landed.
    - **ADR-0028's storage step** changes from storing a wall-clock time to storing an
      instant. That record carries the change.
    - **The parity suite** gains an accepted difference: upstream sends local wall-clock
@@ -352,8 +353,8 @@ tenth of the scale, and is where this would be decided.
 - **`victual-kit` sheds two workarounds now and a third later.** The two that go now are
   the middleware that strips the charset parameter and the boolean remapping in its
   specification normalizer. The date transcoder that accepts both renderings **stays until
-  decision 2 is implemented**, under that decision's interim rule. It then shrinks to plain
-  RFC 3339, with the `format: date-time` the document will carry. `victual-kit` still
+  decision 2 is implemented**. It goes when the client is regenerated from the
+  `format: date-time` document, which happens after the server change lands. `victual-kit` still
   reads `GET /objects/{entity}` outside its generated client for any entity without a
   schema, until issue 648 is fixed.
 - **A generated client loses its typed write body** for the two generic entity write
@@ -458,7 +459,8 @@ This record changes a wire contract, so accepting it requires:
    - the contract snapshot regenerated, with every timestamp in the decision 2 format and
      every `DATE` unchanged
    - the browser showing the device's zone and sending writes with an offset
-   - the MQTT payloads, the iCal feed and `victual-kit` updated
+   - the MQTT payloads and the iCal feed updated, then the endpoint clients regenerated
+     from the updated document
    - the parity suite's accepted difference for timestamps, checked to compare instants
      and not just accept anything
    - the open questions above answered
