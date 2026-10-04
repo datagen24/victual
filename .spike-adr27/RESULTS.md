@@ -137,17 +137,19 @@ chore shows the server's day (2026-10-04) while the device's own day is 2026-10-
 `s29-payload.js`: 27/28, the same single failure (`manageapikeys-qr`) as on a clean
 `origin/master` instance.
 
-One defect was found and left out of this change: the reschedule modal sends `""` for an
-unassigned user, which the database refuses. It fails identically with the old date format.
+One pre-existing defect was found: the reschedule modal sent `""` for an unassigned user,
+which the database refuses, with either date format. PR #651 fixed it on master, and this
+branch merged that fix, keeping both changes to the save.
 
 ## Test runs
 
 | Run | Revision | Result |
 |---|---|---|
-| `run-tests.sh all`, PG15, PHP 8.4.25 | `eab2bd7e` | SUITE PASSED |
-| `run-tests.sh all` with `SUITE_COVERAGE=1`, PG16, PHP 8.4.25, plus CI's measured label scripts | `4981ab77` | SUITE PASSED; ratchet passed (below) |
+| `run-tests.sh all`, PG15, PHP 8.4.25 | `5fcb7e8d` | SUITE PASSED |
+| `run-tests.sh all` with `SUITE_COVERAGE=1`, PG16, PHP 8.4.25, plus CI's measured label scripts | `5fcb7e8d` | SUITE PASSED; coverage below |
 | `views`, `triggers`, `migrate`, `import` under `date.timezone` and `TZ` America/New_York, PG15 | harness fix after `4981ab77` | all passed (see the note below) |
-| `wirecontract` (incl. `TimestampInstantTest`), PG15, PHP 8.5.10 | working copy after `eab2bd7e` | 105 tests passed |
+| `wirecontract` (incl. `TimestampInstantTest`), PG15, PHP 8.4.25 | `5fcb7e8d` | 116 tests passed |
+| `wirecontract`, PG15, PHP 8.5.10 | working copy after `eab2bd7e` | 105 tests passed |
 | pgTAP, PG15 and PG16 | | 19 files, PASS |
 | Parity harness self-test | | 7/7 |
 
@@ -162,21 +164,21 @@ server. That one literal is mapped explicitly; nothing else is exempted.
 
 ## Coverage
 
-CI-equivalent run on PG16 (`run-tests.sh` under `SUITE_COVERAGE=1`, then the label and
-middleware scripts the `suite` job measures, then `report.php` with the job's `--expect`
-list and `--min=96.31198844487241217394`): **11,665 of 12,102 executable lines, 96.39%**,
-`report.php` exit 0. No file is below 75%. The dev image ships no `php.ini`, so the run
-mounted `memory_limit = -1`; with PHP's 128 MB default the coverage merge exhausts memory.
-`canonical-json-tests.php` needs Node, which the dev image lacks; its PHP half ran and was
-measured, and its oracle half did not run.
+CI-equivalent run on PG16 at `5fcb7e8d`. It runs `run-tests.sh` under `SUITE_COVERAGE=1`,
+then the label and middleware scripts the `suite` job measures, then `report.php` with the
+job's `--expect` list and `--min=96.31198844487241217394`. Result: **11,684 of 12,095
+executable lines, 96.60%**, with `report.php` exit 0. The same job run on `origin/master`
+(`3fbfc88c`) measured 11,260 of 11,667, 96.51%, so the aggregate rose.
 
-Touched application files: `Instant.php` 94.12%, `InstantStatement.php` 96.43%,
-`TimestampMigration.php` 95.88%, `PostgresDialect.php` 96.04%, `DatabaseImporter.php`
-87.50%, `ValueComparison.php` 85.00%, `BaseApiController.php` 96.83%,
-`GenericEntityApiController.php` 87.45%, `CalendarApiController.php` 89.39%,
-`StateSnapshotAssembler.php` 98.70%, `InfluxEventWriter.php` 90.77%,
-`BookingEventPublisher.php` 89.20%, `LabelWorkerCredentialService.php` 98.70%, and the rest
-between 88.46% and 100%.
+No file is below 75%. Every touched application file is at or above its master figure, with
+one exception: `helpers/extensions.php` went from 98.76% to 98.68%. This branch deleted
+covered lines there (`ApiDateTimeWallClock()`). The file's two uncovered lines run when
+Composer loads the file, before coverage starts, so no test can reach them. New files:
+`Instant.php` 100%, `InstantStatement.php` 98.81%, `TimestampMigration.php` 98.96%.
+
+The dev image ships no `php.ini`, so the run mounted `memory_limit = -1`; with PHP's 128 MB
+default the coverage merge exhausts memory. `canonical-json-tests.php` needs Node, which the
+dev image lacks; its PHP half ran and was measured, and its oracle half did not.
 
 The coverage run's label scripts also found one defect, fixed in `4981ab77`: worker
 credential rotation read `api_keys.expires` with `Instant::Parse()`, which refuses a wall
