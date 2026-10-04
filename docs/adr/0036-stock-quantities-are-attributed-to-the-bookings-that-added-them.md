@@ -22,7 +22,7 @@ accept ADR-0033. A Proposed record constrains nothing.
 |---|---|---|
 | Maintainer decision | Merging leaves the booking paths and becomes a maintenance command that merges only never-expiring, unlabelled rows. | [Issue 488](https://github.com/datagen24/victual/issues/488) comments, 2026-09-26 and 2026-09-27 |
 | Maintainer request | A design, as an ADR, for stable lot, row and booking identity across maintenance merges, with a migration verdict. | [Issue 609](https://github.com/datagen24/victual/issues/609) |
-| Record status | ADR-0033 is **Proposed**. Its text still calls PR 531 open and says nothing is built. | [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) |
+| Record status | ADR-0033 is **Proposed**. This change corrects its stale statements that PR 531 was open and that nothing was built. | [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) |
 | Implemented | [PR 531](https://github.com/datagen24/victual/pull/531) merged 2026-09-27 (`d48e5b30`): atomic undo refusal. [PR 580](https://github.com/datagen24/victual/pull/580) merged 2026-09-28 (`0e3e61c1`): inline compaction removed, `bin/victual-compact-stock`, `migrations/0290.pgsql.sql`, `WeighLocation()` totals. | `git log`, GitHub |
 | Not implemented | A deployed schedule for the maintenance command: `deploy/`, `nix/` and `.devtools/ci/` contain no reference to it (ADR-0033 prerequisite 3). | `grep`, 2026-10-03 |
 | Verified here | The behavior in the next section, by running the real `StockService` in a disposable schema. Test suites were listed, not run. | [`.spike-adr36/evidence/baseline.json`](../../.spike-adr36/evidence/baseline.json) |
@@ -147,8 +147,10 @@ names are an implementation detail.
   wrote it at booking time. `derived` means the backfill proved it by ledger arithmetic.
   `unknown` means the quantity is in the unattributed pool, or the lot's units were merged
   before tracking and cannot be located.
-- **Pool.** A contribution with `lot_id` NULL is quantity in a row whose lot is unknown.
-  `UNIQUE NULLS NOT DISTINCT` limits a row to one pool contribution. It needs PostgreSQL 15,
+- **Pool.** A contribution with `lot_id` NULL is quantity in a row whose lot is unknown. The
+  pool is per product: every lookup by pool, such as the dependency check and the search for a
+  booking's units, filters by the booking's product. `UNIQUE NULLS NOT DISTINCT` limits a row
+  to one pool contribution. It needs PostgreSQL 15,
   the minimum the application enforces (`PostgresDialect::MINIMUM_MAJOR_VERSION`); the
   feature is in the [PostgreSQL 15 release notes](https://www.postgresql.org/docs/15/release-15.html).
 - **Self-allocation.** An addition booking has an allocation to its own lot. Its amount is the
@@ -276,8 +278,8 @@ nothing.
 1. **Tracked.** Y has allocations. A booking with none is *untracked* and takes the legacy
    rules in the existing code unchanged, including PR 531's refusals.
 2. **Known.** None of Y's allocations has basis `unknown`.
-3. **No dependent booking.** No live booking with a greater id, outside Y's own correlated
-   set, has an allocation on any lot Y allocated, the pool included. This is today's
+3. **No dependent booking.** No live booking of the same product with a greater id, outside
+   Y's own correlated set, has an allocation on any lot Y allocated, the pool included. This is today's
    "newest first per tag" rule applied per lot, so a later purchase of another lot no longer
    blocks an earlier one, and a consume that took units from a lot still blocks that lot's
    purchase.

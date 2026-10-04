@@ -2,7 +2,7 @@
     "environment": {
         "php": "8.5.10",
         "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
-        "schema": "phpunit_69119a0830fc420c"
+        "schema": "phpunit_fb075ef831a56821"
     },
     "backfill": {
         "classes": [
@@ -27,7 +27,7 @@
                 "stock_rows": 0
             }
         ],
-        "milliseconds": 4,
+        "milliseconds": 4.1,
         "rows_after_first_and_second_run": {
             "first": [
                 11,
@@ -46,10 +46,10 @@
                 "name": "L1 single purchase",
                 "view": {
                     "stock": [
-                        "row 1 [6ac1ab81c2813, loc 3, price 1] = 5 (#1:5)"
+                        "row 1 [6ac266ad5659e, loc 3, price 1] = 5 (#1:5)"
                     ],
                     "ledger": [
-                        "#1 purchase 5 [6ac1ab81c2813] allocs #1(derived):5"
+                        "#1 purchase 5 [6ac266ad5659e] allocs #1(derived):5"
                     ]
                 },
                 "invariant_violations": []
@@ -58,11 +58,11 @@
                 "name": "L2 merged 3+2, nothing else",
                 "view": {
                     "stock": [
-                        "row 3 [6ac1ab81c6701, loc 3, price 1] = 5 (#2:3+#3:2)"
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 5 (#2:3+#3:2)"
                     ],
                     "ledger": [
-                        "#2 purchase 3 [6ac1ab81c6701] allocs #2(derived):3",
-                        "#3 purchase 2 [6ac1ab81c6701] allocs #3(derived):2"
+                        "#2 purchase 3 [6ac266ad5a9ed] allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
                     ]
                 },
                 "invariant_violations": []
@@ -71,12 +71,12 @@
                 "name": "L3 merged 3+2, then consume 1",
                 "view": {
                     "stock": [
-                        "row 5 [6ac1ab81cee06, loc 3, price 1] = 4 (pool:4)"
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 4 (pool:4)"
                     ],
                     "ledger": [
-                        "#4 purchase 3 [6ac1ab81cee06] allocs #4(unknown):3",
-                        "#5 purchase 2 [6ac1ab81cee06] allocs #5(unknown):2",
-                        "#6 consume -1 [6ac1ab81cee06, row 5] allocs -"
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -"
                     ]
                 },
                 "invariant_violations": []
@@ -85,12 +85,12 @@
                 "name": "L4 purchase 5, open 2 (split with recorded origin)",
                 "view": {
                     "stock": [
-                        "row 6 [6ac1ab81d9c4b, loc 3, price 1, open] = 2 (#7:2)",
-                        "row 7 [6ac1ab81dbcc9, loc 3, price 1] = 3 (#7:3)"
+                        "row 6 [6ac266ad6c39b, loc 3, price 1, open] = 2 (#7:2)",
+                        "row 7 [6ac266ad78a16, loc 3, price 1] = 3 (#7:3)"
                     ],
                     "ledger": [
-                        "#7 purchase 5 [6ac1ab81d9c4b] allocs #7(derived):5",
-                        "#8 product-opened 2 [6ac1ab81d9c4b, row 6] allocs #7(derived):2"
+                        "#7 purchase 5 [6ac266ad6c39b] allocs #7(derived):5",
+                        "#8 product-opened 2 [6ac266ad6c39b, row 6] allocs #7(derived):2"
                     ]
                 },
                 "invariant_violations": []
@@ -99,12 +99,12 @@
                 "name": "L5 as L4 but the origin row is absent (a pre-0267 split)",
                 "view": {
                     "stock": [
-                        "row 8 [6ac1ab81dee08, loc 3, price 1, open] = 2 (pool:2)",
-                        "row 9 [6ac1ab81e100c, loc 3, price 1] = 3 (pool:3)"
+                        "row 8 [6ac266ad87252, loc 3, price 1, open] = 2 (pool:2)",
+                        "row 9 [6ac266ad8955f, loc 3, price 1] = 3 (pool:3)"
                     ],
                     "ledger": [
-                        "#9 purchase 5 [6ac1ab81dee08] allocs #9(unknown):5",
-                        "#10 product-opened 2 [6ac1ab81dee08, row 8] allocs -"
+                        "#9 purchase 5 [6ac266ad87252] allocs #9(unknown):5",
+                        "#10 product-opened 2 [6ac266ad87252, row 8] allocs -"
                     ]
                 },
                 "invariant_violations": []
@@ -113,13 +113,13 @@
                 "name": "L6 purchase 5, transfer 2 (split, shared stock_id)",
                 "view": {
                     "stock": [
-                        "row 10 [6ac1ab81e45af, loc 3, price 1] = 3 (#11:3)",
-                        "row 11 [6ac1ab81e45af, loc 4, price 1] = 2 (#11:2)"
+                        "row 10 [6ac266ad8c999, loc 3, price 1] = 3 (#11:3)",
+                        "row 11 [6ac266ad8c999, loc 4, price 1] = 2 (#11:2)"
                     ],
                     "ledger": [
-                        "#11 purchase 5 [6ac1ab81e45af] allocs #11(derived):5",
-                        "#12 transfer_from -2 [6ac1ab81e45af, row 10] allocs #11(derived):-2",
-                        "#13 transfer_to 2 [6ac1ab81e45af, row 11] allocs #11(derived):2"
+                        "#11 purchase 5 [6ac266ad8c999] allocs #11(derived):5",
+                        "#12 transfer_from -2 [6ac266ad8c999, row 10] allocs #11(derived):-2",
+                        "#13 transfer_to 2 [6ac266ad8c999, row 11] allocs #11(derived):2"
                     ]
                 },
                 "invariant_violations": []
@@ -128,13 +128,13 @@
                 "name": "L7 merged 3+2, then an amount edit",
                 "view": {
                     "stock": [
-                        "row 13 [6ac1ab81e93cb, loc 3, price 1] = 4.5 (pool:4.5)"
+                        "row 13 [6ac266ad91734, loc 3, price 1] = 4.5 (pool:4.5)"
                     ],
                     "ledger": [
-                        "#14 purchase 3 [6ac1ab81e93cb] allocs #14(unknown):3",
-                        "#15 purchase 2 [6ac1ab81e93cb] allocs #15(unknown):2",
-                        "#16 stock-edit-old 5 [6ac1ab81e93cb, row 13] allocs -",
-                        "#17 stock-edit-new 4.5 [6ac1ab81e93cb, row 13] allocs -"
+                        "#14 purchase 3 [6ac266ad91734] allocs #14(unknown):3",
+                        "#15 purchase 2 [6ac266ad91734] allocs #15(unknown):2",
+                        "#16 stock-edit-old 5 [6ac266ad91734, row 13] allocs -",
+                        "#17 stock-edit-new 4.5 [6ac266ad91734, row 13] allocs -"
                     ]
                 },
                 "invariant_violations": []
@@ -144,8 +144,8 @@
                 "view": {
                     "stock": [],
                     "ledger": [
-                        "#18 purchase 3 [6ac1ab81f0336] allocs #18(derived):3",
-                        "#19 consume -3 [6ac1ab81f0336, row 14] allocs #18(derived):-3"
+                        "#18 purchase 3 [6ac266ad987a0] allocs #18(derived):3",
+                        "#19 consume -3 [6ac266ad987a0, row 14] allocs #18(derived):-3"
                     ]
                 },
                 "invariant_violations": []
@@ -155,7 +155,7 @@
                 "view": {
                     "stock": [],
                     "ledger": [
-                        "#20 purchase 3 [6ac1ab820091c] UNDONE allocs -"
+                        "#20 purchase 3 [6ac266ad9cd72] UNDONE allocs -"
                     ]
                 },
                 "invariant_violations": []
@@ -892,12 +892,12 @@
                 "state": "legacy: merged 3+2 then consume 1 (classified U: pool, basis unknown)",
                 "view": {
                     "stock": [
-                        "row 5 [6ac1ab81cee06, loc 3, price 1] = 4 (pool:4)"
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 4 (pool:4)"
                     ],
                     "ledger": [
-                        "#4 purchase 3 [6ac1ab81cee06] allocs #4(unknown):3",
-                        "#5 purchase 2 [6ac1ab81cee06] allocs #5(unknown):2",
-                        "#6 consume -1 [6ac1ab81cee06, row 5] allocs -"
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -"
                     ]
                 },
                 "invariants_violated": []
@@ -918,13 +918,13 @@
                 "state": "a new consume of 1 draws from the pool and records the draw",
                 "view": {
                     "stock": [
-                        "row 5 [6ac1ab81cee06, loc 3, price 1] = 3 (pool:3)"
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 3 (pool:3)"
                     ],
                     "ledger": [
-                        "#4 purchase 3 [6ac1ab81cee06] allocs #4(unknown):3",
-                        "#5 purchase 2 [6ac1ab81cee06] allocs #5(unknown):2",
-                        "#6 consume -1 [6ac1ab81cee06, row 5] allocs -",
-                        "#62 consume -1 [6ac1ab81cee06, row 5] allocs pool:-1"
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] allocs pool:-1"
                     ]
                 },
                 "invariants_violated": []
@@ -940,10 +940,10 @@
                         "row 53 [s43, loc 3, price 1] = 8 (pool:4+C:4)"
                     ],
                     "ledger": [
-                        "#4 purchase 3 [6ac1ab81cee06] allocs #4(unknown):3",
-                        "#5 purchase 2 [6ac1ab81cee06] allocs #5(unknown):2",
-                        "#6 consume -1 [6ac1ab81cee06, row 5] allocs -",
-                        "#62 consume -1 [6ac1ab81cee06, row 5] UNDONE allocs pool:-1",
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] UNDONE allocs pool:-1",
                         "#63 purchase 4 [s43] allocs C:4"
                     ]
                 },
@@ -960,10 +960,10 @@
                         "row 53 [s43, loc 3, price 1] = 4 (pool:4)"
                     ],
                     "ledger": [
-                        "#4 purchase 3 [6ac1ab81cee06] allocs #4(unknown):3",
-                        "#5 purchase 2 [6ac1ab81cee06] allocs #5(unknown):2",
-                        "#6 consume -1 [6ac1ab81cee06, row 5] allocs -",
-                        "#62 consume -1 [6ac1ab81cee06, row 5] UNDONE allocs pool:-1",
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] UNDONE allocs pool:-1",
                         "#63 purchase 4 [s43] UNDONE allocs C:4"
                     ]
                 },
@@ -975,11 +975,11 @@
                 "state": "legacy: merged 3+2, nothing else (class X: derived by ledger arithmetic)",
                 "view": {
                     "stock": [
-                        "row 3 [6ac1ab81c6701, loc 3, price 1] = 5 (#2:3+#3:2)"
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 5 (#2:3+#3:2)"
                     ],
                     "ledger": [
-                        "#2 purchase 3 [6ac1ab81c6701] allocs #2(derived):3",
-                        "#3 purchase 2 [6ac1ab81c6701] allocs #3(derived):2"
+                        "#2 purchase 3 [6ac266ad5a9ed] allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
                     ]
                 },
                 "invariants_violated": []
@@ -992,11 +992,11 @@
                 "state": "end: exactly the 3 left the row",
                 "view": {
                     "stock": [
-                        "row 3 [6ac1ab81c6701, loc 3, price 1] = 2 (#3:2)"
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 2 (#3:2)"
                     ],
                     "ledger": [
-                        "#2 purchase 3 [6ac1ab81c6701] UNDONE allocs #2(derived):3",
-                        "#3 purchase 2 [6ac1ab81c6701] allocs #3(derived):2"
+                        "#2 purchase 3 [6ac266ad5a9ed] UNDONE allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
                     ]
                 },
                 "invariants_violated": []
@@ -1092,10 +1092,10 @@
         "a_booking_during_maintenance": {
             "child_still_blocked_after_1.5s": true,
             "child": {
-                "elapsed_s": 1.54,
+                "elapsed_s": 1.55,
                 "output": {
                     "result": "consumed",
-                    "waited_s": 1.52
+                    "waited_s": 1.53
                 }
             },
             "invariants_violated": [],
@@ -1135,13 +1135,13 @@
             }
         },
         "d_maintenance_waits_behind_issuance": {
-            "maintenance_waited_for_row_locks_s": 1.04,
+            "maintenance_waited_for_row_locks_s": 1.01,
             "groups_merged": 0,
             "child": {
-                "elapsed_s": 2.05,
+                "elapsed_s": 2.02,
                 "output": {
                     "result": "label issued",
-                    "waited_s": 2.03
+                    "waited_s": 2
                 }
             },
             "rows_after": 2,
@@ -1155,8 +1155,8 @@
             "stock_row_lots": 40056,
             "stock_booking_lots": 100115
         },
-        "generated_seconds": 0.61,
-        "backfill_seconds": 4.3,
+        "generated_seconds": 0.66,
+        "backfill_seconds": 4.49,
         "bytes_before": {
             "stock_log": 26722304,
             "stock": 7266304
@@ -1168,15 +1168,15 @@
         "new_tables_over_stock_log_percent": 74.9,
         "queries": {
             "dependency_check_one_lot": {
-                "execution_ms": 0.018,
+                "execution_ms": 0.015,
                 "plan": "Limit \/ Nested Loop"
             },
             "where_is_lot": {
-                "execution_ms": 0.007,
+                "execution_ms": 0.006,
                 "plan": "Index Scan \/ "
             },
             "lots_of_row": {
-                "execution_ms": 0.019,
+                "execution_ms": 0.017,
                 "plan": "Index Scan \/ Result"
             },
             "allocations_of_booking": {
@@ -1184,7 +1184,7 @@
                 "plan": "Index Scan \/ "
             },
             "existing_dependency_check_by_stock_id": {
-                "execution_ms": 0.016,
+                "execution_ms": 0.015,
                 "plan": "Aggregate \/ Bitmap Heap Scan"
             }
         }

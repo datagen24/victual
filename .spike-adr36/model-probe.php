@@ -163,9 +163,11 @@ class Adr36Model extends PgsqlSchemaTestCase
             self::scenario("E1_merge_$order", function (&$s) use ($x, $y) {
                 $r = self::ref(); $a = $r->purchase($x, [], 'A'); $b = $r->purchase($y, [], 'B');
                 self::snap($r, 'two purchases', $s);
+                $ledger = fn() => self::$db->query("SELECT * FROM stock_log WHERE product_id={$r->p} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+                $ledgerBefore = $ledger();
                 $r->merge();
                 self::snap($r, 'after the maintenance merge', $s);
-                $s[] = ['stock_log_unchanged_by_merge' => (int)self::$db->query("SELECT count(*) FROM stock_log WHERE product_id={$r->p} AND stock_id <> 's0' AND undone=0")->fetchColumn() === 2];
+                $s[] = ['stock_log_unchanged_by_merge' => $ledger() === $ledgerBefore];
             });
             foreach ([2, 4] as $c) {
                 self::scenario("E2_merge_{$order}_consume_$c", function (&$s) use ($x, $y, $c) {

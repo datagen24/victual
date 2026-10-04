@@ -353,8 +353,8 @@ final class Ref
         // Dependency: a later live booking that touched one of the same lots.
         foreach ($allocs as $a) {
             $dep = $this->one('SELECT x.id FROM stock_log x JOIN stock_booking_lots bl ON bl.booking_id = x.id
-                               WHERE x.undone=0 AND x.id > ? AND NOT (x.id = ANY(?::int[])) AND bl.lot_id IS NOT DISTINCT FROM ? LIMIT 1',
-                [$id, '{' . implode(',', $set) . '}', $a['lot_id']]);
+                               WHERE x.undone=0 AND x.id > ? AND NOT (x.id = ANY(?::int[])) AND bl.lot_id IS NOT DISTINCT FROM ? AND x.product_id = ? LIMIT 1',
+                [$id, '{' . implode(',', $set) . '}', $a['lot_id'], $b['product_id']]);
             if ($dep) { throw new Refusal('Booking has subsequent dependent bookings (booking ' . $dep['id'] . ' touched the same lot), undo not possible'); }
         }
         $type = $b['transaction_type'];
@@ -410,7 +410,7 @@ final class Ref
         $plan = [];
         foreach ($allocs as $a) {
             $lot = $a['lot_id'] === null ? null : (int)$a['lot_id']; $remaining = abs((float)$a['amount']);
-            $rows = $this->all('SELECT s.*, rl.amount AS held FROM stock_row_lots rl JOIN stock s ON s.id = rl.stock_row_id WHERE rl.lot_id IS NOT DISTINCT FROM ? ORDER BY s.id', [$lot]);
+            $rows = $this->all('SELECT s.*, rl.amount AS held FROM stock_row_lots rl JOIN stock s ON s.id = rl.stock_row_id WHERE rl.lot_id IS NOT DISTINCT FROM ? AND s.product_id = ? ORDER BY s.id', [$lot, $this->p]);
             foreach ($rows as $row) {
                 if (!$state($row) || $remaining <= 0 || self::eq($remaining, 0.0)) { continue; }
                 $t = min($remaining, (float)$row['held']);

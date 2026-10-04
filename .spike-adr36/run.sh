@@ -28,8 +28,12 @@ cp -R .spike-adr36 "$work/.spike-adr36"
 "$engine" cp "$work/../adr36-tree.tar" "$name-php:/tmp/tree.tar"
 rm -f "$work/../adr36-tree.tar"
 "$engine" exec "$name-php" sh -c 'cd /app && tar xf /tmp/tree.tar && mkdir -p /tmp/adr36-data && printf "<?php\n" > /tmp/adr36-data/config.php'
-for attempt in {1..60}; do
-    if "$engine" exec "$name-pg" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+# -h forces TCP: the image entrypoint runs a socket-only server during first start, and the
+# probe connects over TCP once the real server is up.
+ready=0
+for _ in {1..60}; do
+    if "$engine" exec "$name-pg" pg_isready -h 127.0.0.1 -U postgres -d adr36_spike >/dev/null 2>&1; then ready=1; break; fi
     sleep 1
 done
+if [[ "$ready" -ne 1 ]]; then echo "PostgreSQL did not accept TCP connections within 60 s" >&2; exit 1; fi
 "$engine" exec "$name-php" sh -c "cd /app && php .spike-adr36/${probe}-probe.php"
