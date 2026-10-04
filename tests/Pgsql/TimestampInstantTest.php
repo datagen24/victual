@@ -467,15 +467,25 @@ class TimestampInstantTest extends PgsqlSchemaTestCase
 			"COMMENT ON COLUMN things_view.happened IS 'when it happened'"
 		]);
 
-		$pdo->beginTransaction();
-		(new TimestampMigration($pdo))->Apply('UTC');
-		$pdo->commit();
+		try
+		{
+			$pdo->beginTransaction();
+			(new TimestampMigration($pdo))->Apply('UTC');
+			$pdo->commit();
 
-		self::assertSame('tz650_owner_role', $pdo->query("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'owned_view'::regclass")->fetchColumn());
-		self::assertSame('when it happened', $pdo->query("SELECT col_description('things_view'::regclass, 2)")->fetchColumn());
-
-		$pdo->exec('DROP SCHEMA tz650_owner CASCADE; SET search_path TO ' . self::Schema() . ', public');
-		$pdo->exec('DROP OWNED BY tz650_owner_role; DROP ROLE tz650_owner_role');
+			self::assertSame('tz650_owner_role', $pdo->query("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'owned_view'::regclass")->fetchColumn());
+			self::assertSame('when it happened', $pdo->query("SELECT col_description('things_view'::regclass, 2)")->fetchColumn());
+		}
+		finally
+		{
+			// The role is cluster-wide, so it is removed whatever the assertions decided.
+			if ($pdo->inTransaction())
+			{
+				$pdo->rollBack();
+			}
+			$pdo->exec('DROP SCHEMA IF EXISTS tz650_owner CASCADE; SET search_path TO ' . self::Schema() . ', public');
+			$pdo->exec('DROP OWNED BY tz650_owner_role; DROP ROLE tz650_owner_role');
+		}
 	}
 
 	/**
@@ -487,5 +497,59 @@ class TimestampInstantTest extends PgsqlSchemaTestCase
 		$render = new \ReflectionMethod(ApplicationService::class, 'WithServerOffset');
 		self::assertSame('', $render->invoke(null, ''));
 		self::assertMatchesRegularExpression('/^2026-10-04T14:30:00\.000000[+-]\d{2}:\d{2}$/', $render->invoke(null, '2026-10-04 14:30:00'));
+	}
+
+	/**
+	 * The migration locks every table it converts before its preflight reads them, so a row
+	 * written after the preflight cannot reach the conversion unexamined: a concurrent writer
+	 * waits, or (here) gives up on its own lock timeout.
+	 */
+	public function testTheMigrationLocksItsTablesBeforeThePreflight(): void
+	{
+		$pdo = self::LegacySchema('tz650_lock');
+		$writer = new PDO('pgsql:host=' . getenv('PGHOST') . ';port=' . getenv('PGPORT') . ';dbname=' . getenv('PHPUNIT_DB_NAME'), getenv('PGUSER'), getenv('PGPASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+		$writer->exec("SET search_path TO tz650_lock; SET lock_timeout = '200ms'");
+
+		try
+		{
+			$pdo->beginTransaction();
+			$migration = new class($pdo, $writer) extends TimestampMigration
+			{
+				public ?string $writerSaw = null;
+
+				public function __construct(private PDO $own, private PDO $writer)
+				{
+					parent::__construct($own);
+				}
+
+				public function Preflight(string $zone): array
+				{
+					try
+					{
+						$this->writer->exec("INSERT INTO things (id, happened) VALUES (99, '2026-03-08 02:30:00')");
+						$this->writerSaw = 'inserted';
+					}
+					catch (\PDOException $ex)
+					{
+						$this->writerSaw = $ex->getCode();
+					}
+
+					return parent::Preflight($zone);
+				}
+			};
+			$migration->Apply('America/New_York');
+			$pdo->commit();
+
+			self::assertSame('55P03', $migration->writerSaw, 'a writer during the preflight waits for the migration (lock_not_available)');
+			self::assertFalse($pdo->query('SELECT count(*) FROM things WHERE id = 99')->fetchColumn() > 0);
+		}
+		finally
+		{
+			if ($pdo->inTransaction())
+			{
+				$pdo->rollBack();
+			}
+			$pdo->exec('DROP SCHEMA IF EXISTS tz650_lock CASCADE; SET search_path TO ' . self::Schema() . ', public');
+		}
 	}
 }

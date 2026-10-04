@@ -428,6 +428,15 @@ class TimestampMigration
 			return ['zone' => $zone, 'columns' => [], 'refusals' => [], 'ambiguous_total' => 0, 'values_total' => 0, 'tzdata' => []];
 		}
 
+		// Every table is locked before the preflight reads it, so the rows the preflight
+		// approves are the rows the ALTERs convert: no writer can commit a skipped wall clock
+		// in between, which the strict conversion would otherwise turn into NULL in a nullable
+		// column. ACCESS EXCLUSIVE because each ALTER below needs it anyway. Fail fast rather
+		// than queue behind a long transaction, since a migration waiting on a lock blocks
+		// every reader that queues behind it.
+		$this->pdo->exec("SET LOCAL lock_timeout = '30s'");
+		$this->pdo->exec('LOCK TABLE ' . implode(', ', array_map(fn($table) => $this->QuoteIdentifier($table), array_keys($targets))) . ' IN ACCESS EXCLUSIVE MODE');
+
 		$report = $this->Preflight($zone);
 		if (!empty($report['refusals']))
 		{
@@ -438,11 +447,6 @@ class TimestampMigration
 				. 'bin/victual-timestamp-preflight prints this report without migrating.'
 			);
 		}
-
-		// Fail fast rather than queue behind a long transaction: every table below is
-		// rewritten under ACCESS EXCLUSIVE, and a migration waiting on a lock blocks every
-		// reader that queues behind it.
-		$this->pdo->exec("SET LOCAL lock_timeout = '30s'");
 
 		$views = $this->CaptureViews();
 		foreach (array_reverse($views) as $view)
