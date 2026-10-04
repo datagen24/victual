@@ -199,9 +199,17 @@ class Walker:
         location_id = json.loads(text)["created_object_id"]
         check("PUT /objects/locations/{id}", self.request("PUT", f"/api/objects/locations/{location_id}", body={"name": f"walk-location-{tag}-b"}))
 
+        # A fresh install has no quantity unit (migration 0021 deletes the seeded one) and
+        # products.qu_id_* are foreign keys since migration 0295, so the walk makes its own
+        # rather than naming an id that happens to exist.
+        ok, text = check("POST /objects/quantity_units", self.request("POST", "/api/objects/quantity_units", body={"name": f"walk-unit-{tag}"}))
+        if not ok:
+            return
+        qu_id = json.loads(text)["created_object_id"]
+
         ok, text = check("POST /objects/products", self.request("POST", "/api/objects/products", body={
             "name": f"walk-product-{tag}", "location_id": location_id,
-            "qu_id_purchase": 1, "qu_id_stock": 1, "qu_id_consume": 1, "qu_id_price": 1,
+            "qu_id_purchase": qu_id, "qu_id_stock": qu_id, "qu_id_consume": qu_id, "qu_id_price": qu_id,
         }))
         if ok:
             product_id = json.loads(text)["created_object_id"]
