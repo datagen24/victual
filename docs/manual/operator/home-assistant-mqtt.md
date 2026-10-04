@@ -18,6 +18,14 @@ Seven summary sensors publish by default. A product also gets its own sensor onc
 in — `POST /api/objects/mqtt_product_entities` with `{"product_id": <id>}`, and `DELETE` to
 remove it, which retracts that product's topics.
 
+Timestamp states - the next chore, battery and task - are instants in the API's rendering,
+RFC 3339 in UTC with six fractional digits (`2026-10-04T18:30:00.000000Z`), which Home
+Assistant's `timestamp` device class reads and shows in its own zone. A task's due date
+is published as the end of that day in Victual's configured zone. Until migration 0301
+these states carried the server's offset instead (`2026-10-04T14:30:00-04:00`); they name
+the same instant, so a template that parses the value is unaffected, and one that slices
+the string by position should parse it instead.
+
 ## Keeping the broker in sync
 
 Run `bin/victual-publish-state` once after every deployment — a postStart hook, or a Job

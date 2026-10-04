@@ -1,0 +1,115 @@
+#!/usr/bin/env php
+<?php
+
+// Reports what migration 0301 would do to this database's timestamps, and changes nothing.
+//
+//   php bin/victual-timestamp-preflight [--json]
+//
+// Migration 0301 (ADR-0027 decision 2, issue #650) converts every legacy TIMESTAMP column to
+// TIMESTAMPTZ, reading each stored wall clock in the configured time zone - PHP's
+// date.timezone, the zone this command runs in. Run it before upgrading, with the same
+// configuration the migration will run with, and read three things in the report:
+//
+// - the zone. Every stored wall clock is read in it. A server whose zone changed after rows
+//   were written will convert the older rows at the wrong offset, and nothing in the data can
+//   detect that, so check it is the zone the data was written in.
+// - refusals. A wall clock the zone skipped, an infinity, or a year outside 1-9999 cannot be
+//   converted, and the migration refuses to run while any exist. The report counts them per
+//   column and names no row's value.
+// - repeated-hour counts. Values in the hour that repeats when daylight saving ends become the
+//   earlier of the two instants.
+//
+// The conversion function is created inside a transaction that is rolled back, so the
+// command needs the migrating role's CREATE privilege on the schema, and leaves nothing
+// behind.
+//
+// Exit codes: 0 when the migration would convert everything (or has nothing to do), 2 when
+// it would refuse, 1 on any other failure.
+
+use Victual\Services\Database\TimestampMigration;
+use Victual\Services\DatabaseService;
+
+if (PHP_SAPI !== 'cli')
+{
+	exit('This is a command line script');
+}
+
+$arguments = array_slice($argv, 1);
+$json = in_array('--json', $arguments, true);
+
+if (in_array('--help', $arguments, true) || in_array('-h', $arguments, true))
+{
+	echo "Usage: php bin/victual-timestamp-preflight [--json]\n\n";
+	echo "  Reports, without changing anything, how migration 0301 would convert this\n";
+	echo "  database's stored timestamps to instants, and whether it would refuse.\n\n";
+	echo "  --json  Print the report as JSON.\n";
+	exit(0);
+}
+
+if (!defined('VICTUAL_DATAPATH'))
+{
+	define('VICTUAL_DATAPATH', getenv('VICTUAL_DATAPATH') ?: __DIR__ . '/../data');
+}
+
+require_once __DIR__ . '/../packages/autoload.php';
+
+if (file_exists(VICTUAL_DATAPATH . '/config.php'))
+{
+	require_once VICTUAL_DATAPATH . '/config.php';
+}
+
+require_once __DIR__ . '/../config-dist.php';
+
+try
+{
+	$zone = date_default_timezone_get();
+	$report = (new TimestampMigration(DatabaseService::GetInstance()->GetDbConnectionRaw()))->PreflightStandalone($zone);
+}
+catch (\Throwable $ex)
+{
+	fwrite(STDERR, 'Preflight failed: ' . $ex->getMessage() . PHP_EOL);
+	exit(1);
+}
+
+if ($json)
+{
+	echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+	exit(empty($report['refusals']) ? 0 : 2);
+}
+
+echo 'Configured time zone: ' . $report['zone'] . PHP_EOL;
+if (empty($report['columns']))
+{
+	echo 'No TIMESTAMP column is left to convert; migration 0301 has run, or has nothing to do.' . PHP_EOL;
+	exit(0);
+}
+
+echo sprintf('%d value(s) in %d column(s); %d in a repeated hour would take the earlier instant.', $report['values_total'], count($report['columns']), $report['ambiguous_total']) . PHP_EOL;
+if (!empty($report['tzdata']))
+{
+	echo sprintf('Zone data: PHP timezonedb %s, compared with PostgreSQL at %d point(s) in %d-%d.', $report['tzdata']['php_timezonedb'], $report['tzdata']['checkpoints'], $report['tzdata']['years'][0], $report['tzdata']['years'][1]) . PHP_EOL;
+}
+
+foreach ($report['columns'] as $column)
+{
+	if ($column['values'] === 0)
+	{
+		continue;
+	}
+
+	echo sprintf('  %-48s %7d value(s)%s', $column['table'] . '.' . $column['column'], $column['values'],
+		$column['repeated_hour'] > 0 ? sprintf(', %d in a repeated hour', $column['repeated_hour']) : '') . PHP_EOL;
+}
+
+if (empty($report['refusals']))
+{
+	echo 'The migration would convert every value.' . PHP_EOL;
+	exit(0);
+}
+
+echo 'The migration would refuse:' . PHP_EOL;
+foreach ($report['refusals'] as $refusal)
+{
+	echo '  - ' . $refusal . PHP_EOL;
+}
+exit(2);

@@ -280,7 +280,8 @@ where that is decided.
   `public/viewjs/components/datetimepicker.js:317` parses the value with
   `moment(value, format, true)` and sets `setCustomValidity("error")` when it does not parse,
   so the form will not submit a rendering the server would now refuse. Both cases are covered
-  by `WireContractTest::testTheTwoRenderingsTheBrowserSendsAreAccepted`.
+  by `WireContractTest::testTheRenderingsTheBrowserSendsAreAccepted`, which since issue #650
+  also covers the offset rendering the browser now sends.
 - **`IsIsoDateTime()` is deleted.** `ParseApiDateTime()` subsumes it and it had no caller
   left. `IsIsoDate()` stays — five stock and recipe routes use it for `best_before_date` and
   `purchased_date`, which are SQL `DATE` columns and a different question.

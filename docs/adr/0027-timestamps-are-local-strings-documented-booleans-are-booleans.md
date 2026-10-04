@@ -131,14 +131,26 @@ storage. The decider's answers above record this.
 
    - **Storage.** The legacy schema's `TIMESTAMP` columns behind the fifty-four properties
      migrate to `TIMESTAMPTZ`. Each existing value is a wall-clock time in the server's
-     configured zone, and the migration converts it on that basis
-     (`col AT TIME ZONE '<configured zone>'`). When daylight saving ends, one clock hour
-     occurs twice. A value in that repeated hour is read as the **earlier** of the two
-     instants, the same rule
+     configured zone, and the migration converts it on that basis. When daylight saving
+     ends, one clock hour occurs twice. A value in that repeated hour is read as the
+     **earlier** of the two instants, the same rule
      [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) applies to a new
      write without an offset. The import of a legacy SQLite database converts upstream's
      wall-clock values the same way. The label surface (migrations 0269 to 0272) already
      stores `TIMESTAMPTZ` and does not migrate.
+
+     *Corrected 2026-10-04 (issue #650):* this bullet first named the conversion as
+     `col AT TIME ZONE '<configured zone>'`. That expression reads a repeated hour as the
+     **later** instant (`2026-11-01 01:30:00` on `America/New_York` becomes `06:30Z`) and
+     moves a skipped hour forward without a word, so it cannot implement this rule. PHP's
+     own reading takes the earlier instant on New York and the later one on
+     `Australia/Lord_Howe`.
+
+     Migration 0301 therefore converts with
+     `victual_local_to_instant()`, which tries every offset the zone uses near the wall
+     clock and keeps the earliest valid one, and refuses a skipped wall clock. The SQLite
+     import and the API's offset-free writes use the same algorithm in PHP, and a test
+     requires the two to agree around every transition from 2020 to 2027 in eight zones.
    - **Rendering.** `YYYY-MM-DDTHH:MM:SS.ffffffZ`, for example
      `2026-10-04T18:30:00.000000Z`, where the record stored `2026-10-04 14:30:00` on a
      server set to `America/New_York`. The fraction always has six digits (open question
@@ -220,6 +232,13 @@ storage. The decider's answers above record this.
      `TIMESTAMPTZ`, the renderer may be able to use the column's type instead of the
      field's name, but that is not yet verified. Without it, the field-name approach and
      its risk remain.
+
+     *Settled 2026-10-04 (issue #650):* pdo_pgsql reports a result column's type for table
+     columns, view columns, aliases, expressions, joins and unions alike, so the renderer
+     uses the type and never the name. It is the statement class of every application
+     connection (`services/Database/InstantStatement.php`). `getColumnMeta()` costs two
+     catalogue queries per column, so it is asked only about a column whose fetched values
+     have PostgreSQL's `TIMESTAMPTZ` shape. A text column holding such text is left alone.
    - **Coordinated changes** to plan 18's MQTT payloads, the iCal feed, and the browser
      code that reads and writes these values. That code converts to the device's zone for
      display and sends writes with an offset.

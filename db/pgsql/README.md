@@ -259,7 +259,16 @@ for each column *is* the API contract. Verified empirically:
 | `NUMERIC(15,2)`     | **`string`**      | **`"2.50"`**| **NEVER USE** - breaks `type: number` |
 | `DOUBLE PRECISION`  | `double`          | `2.5`       | use for all amounts/prices |
 | `TIMESTAMP`         | `string`          | `"2026-08-26 00:56:15"` | matches SQLite |
+| `TIMESTAMPTZ`       | `string`          | `"2026-08-26T00:56:15.000000Z"` | every timestamp since migration 0301 (ADR-0027 decision 2); `InstantStatement` rewrites PostgreSQL's own text |
 | `BOOLEAN`           | `bool`            | `true`      | **NEVER USE** - spec says `type: integer` |
+
+Migration 0301 (issue #650) converted every `TIMESTAMP` column above the baseline to
+`TIMESTAMPTZ`, reading each stored wall clock in the configured zone, and the application's
+connections send every `TIMESTAMPTZ` value in the wire rendering through
+`services/Database/InstantStatement.php`. The `TIMESTAMP` row above and the
+`LOCALTIMESTAMP` translations below describe the baseline as ported from SQLite, which
+the migration then converts; they are not how a new column is written. A new timestamp
+column is `TIMESTAMPTZ` with `date_trunc('second', CURRENT_TIMESTAMP)` as its default.
 
 ## Type mapping
 

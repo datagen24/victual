@@ -79,3 +79,60 @@ After migration, deleting a location with stock returns a readable refusal. Move
 consume the stock before deleting the location. Undo refuses any restoration to a deleted
 non-null historical location and rolls back the complete undo, including correlated
 bookings. It does not substitute the product's current default location.
+
+## Migration 0301: timestamps become instants
+
+Migration 0301 converts every stored timestamp from a wall clock in the server's configured
+time zone to an instant (`TIMESTAMPTZ`), and from then on the API sends every instant as
+RFC 3339 in UTC, `2026-10-04T18:30:00.000000Z`
+([ADR-0027](../../adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md)
+decision 2). Calendar dates such as best-before dates are not converted. Clients, Home
+Assistant templates and scripts that read a timestamp as text see UTC after the upgrade.
+
+The configured time zone is PHP's `date.timezone`, which the container images set to `UTC`.
+Every stored wall clock is read in the zone in force when the migration runs. A server whose
+zone was changed after rows were written converts the older rows at the new zone's offset,
+and nothing in the data can detect that. On a server that has always run in UTC the
+conversion changes no instant.
+
+### Before upgrading
+
+1. Take a backup with `pg_dump` ([Backup and restore](backup-restore.md)) and test that it
+   restores. The conversion cannot be undone in place: turning a `TIMESTAMPTZ` back into a
+   wall clock loses the instant it names.
+2. Run the preflight with the configuration the migration will use:
+
+   ```
+   php bin/victual-timestamp-preflight
+   ```
+
+   It changes nothing. It prints the zone, how many values each column holds, how many fall
+   in an hour that repeats when daylight saving ends, and anything the migration would
+   refuse. It exits `0` when the migration would convert everything and `2` when it would
+   refuse; `--json` prints the same report as JSON.
+
+The migration refuses, and changes nothing, when a stored value is a wall clock the zone
+skipped when daylight saving began, an infinity, or a year outside 1 to 9999. Correct those
+rows from your own records (a skipped wall clock cannot be guessed at), then run the
+preflight again. A value in a repeated hour becomes the earlier of its two instants, the
+same rule a new write without an offset follows.
+
+### Running it
+
+Stop the application and the label workers, run `php bin/victual-migrate`, then start the
+new version. The application refuses to serve a schema its code does not match, so an old
+application cannot run against the converted schema and a new one cannot run against the
+old schema. Run `bin/victual-publish-state` afterwards so Home Assistant's retained states
+carry the new rendering.
+
+The migration rewrites every table with a timestamp column under an exclusive lock, one
+table at a time inside one transaction, and recreates every view. A refusal or a failure
+rolls the whole migration back. Its lock timeout is thirty seconds.
+
+### Recovery
+
+Do not try to reverse the migration by altering the columns back to `TIMESTAMP`. To return
+to the previous version, stop the application, restore the backup taken before the upgrade
+into an empty database, and run the previous version against it. Bookings made after the
+upgrade are not in that backup, so prefer correcting forward when the problem is a single
+row.
