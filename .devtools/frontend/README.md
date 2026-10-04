@@ -292,6 +292,21 @@ drives each form as a person leaving an optional field blank would:
 - **task**: create a task with category, assignee and due date all blank, and assert all
   three are `null`. Resave it unchanged and assert success.
 
+## Chore reschedule with no assignee
+
+`node chore-reschedule.js <url>` is the regression test for the reschedule modal on
+`/choresoverview`. Its Save handler in `public/viewjs/choresoverview.js` sent
+`rescheduled_next_execution_assigned_to_user_id` straight from
+`Victual.Components.UserPicker.GetValue()`, which reads back `""` when no one is picked —
+always, with `VICTUAL_FEATURE_FLAG_CHORES_ASSIGNMENTS` off, as in demo mode. PostgreSQL refuses
+`""` for the nullable integer column, so the reschedule was lost behind the same opaque 400 as
+the forms above.
+
+The probe opens the modal for an active chore, leaves the assignee blank, sets a date and saves.
+It asserts the PUT carried `null`, answered 204, and stored the date with a `NULL` assignee,
+then puts the chore back. CI runs it in `frontend-security` after the nullable-integer form
+checks, against the demo instance on 8085.
+
 CI runs it in `frontend-security` after the product form nullable picker checks, against the
 demo instance on 8085.
 

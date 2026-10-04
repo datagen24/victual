@@ -317,13 +317,12 @@ $(document).on("click", ".reschedule-chore-button", function(e)
 			Victual.Components.DateTimePicker.SetValue(moment(prefillDate).format("YYYY-MM-DD HH:mm:ss"));
 		}
 
-		if (typeof choreDetails.chore.next_execution_assigned_to_user_id != "string")
+		// The id arrives as a JSON number on PostgreSQL; a guard that kept strings only
+		// blanked every real assignee, and the save then sent null in its place.
+		var assignedToUserId = choreDetails.chore.next_execution_assigned_to_user_id;
+		if (assignedToUserId !== null && assignedToUserId !== undefined && assignedToUserId !== "")
 		{
-			choreDetails.chore.next_execution_assigned_to_user_id = "";
-		}
-		if (choreDetails.chore.next_execution_assigned_to_user_id)
-		{
-			Victual.Components.UserPicker.SetId(choreDetails.chore.next_execution_assigned_to_user_id)
+			Victual.Components.UserPicker.SetId(assignedToUserId.toString());
 		}
 		else
 		{
@@ -347,7 +346,16 @@ $("#reschedule-chore-save-button").on("click", function(e)
 		return;
 	}
 
-	Victual.Api.Put('objects/chores/' + Victual.EditObjectId, { "rescheduled_date": Victual.Components.DateTimePicker.GetValue(), "rescheduled_next_execution_assigned_to_user_id": Victual.Components.UserPicker.GetValue() },
+	// The user picker's blank <option value=""> reads back as "" - always, when chore
+	// assignments are off and the picker offers no one - and the column is a nullable
+	// integer, which PostgreSQL refuses "" for (an opaque 400; the reschedule was lost).
+	// Same idiom taskform.js uses for its own assignee (issue #587).
+	var assignedToUserId = Victual.Components.UserPicker.GetValue();
+	assignedToUserId = assignedToUserId === '' || assignedToUserId === undefined || assignedToUserId === null
+		? null
+		: parseInt(assignedToUserId, 10);
+
+	Victual.Api.Put('objects/chores/' + Victual.EditObjectId, { "rescheduled_date": Victual.Components.DateTimePicker.GetValue(), "rescheduled_next_execution_assigned_to_user_id": assignedToUserId },
 		function(result)
 		{
 			Victual.Api.Post('chores/executions/calculate-next-assignments', { "chore_id": Victual.EditObjectId },

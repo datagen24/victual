@@ -834,6 +834,14 @@ jobs:
         working-directory: .devtools/frontend
         run: node nullable-integer-forms.js http://127.0.0.1:8085
 
+      # The same shape again, outside any form: the /choresoverview reschedule modal's Save
+      # handler sent the user picker's "" for rescheduled_next_execution_assigned_to_user_id
+      # whenever no one was picked - always, in demo mode, where chore assignments are off -
+      # and the reschedule was refused with the same opaque 400. This drives the modal.
+      - name: Run chore reschedule checks
+        working-directory: .devtools/frontend
+        run: node chore-reschedule.js http://127.0.0.1:8085
+
       # Plan 12 check 2 (last item), and issues #575/#579. Every stock booking toast's
       # inline "Undo" link, including the stock entry edit form's, still undoes what it
       # booked. Against the demo instance on 8085 like the checks above - nothing here needs
