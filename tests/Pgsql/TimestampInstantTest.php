@@ -7,6 +7,7 @@ use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\Database\InstantStatement;
 use Victual\Services\Database\TimestampMigration;
 use Victual\Services\Database\ValueComparison;
+use Victual\Services\ApplicationService;
 use Victual\Services\BatteriesService;
 use Victual\Services\ChoresService;
 use Victual\Services\DatabaseService;
@@ -475,5 +476,16 @@ class TimestampInstantTest extends PgsqlSchemaTestCase
 
 		$pdo->exec('DROP SCHEMA tz650_owner CASCADE; SET search_path TO ' . self::Schema() . ', public');
 		$pdo->exec('DROP OWNED BY tz650_owner_role; DROP ROLE tz650_owner_role');
+	}
+
+	/**
+	 * time_local_sqlite3 is the empty string on every serving image (no pdo_sqlite) and keeps
+	 * it; a value it does have gets time_local's offset rendering (ADR-0027 open question 1).
+	 */
+	public function testTheVestigialSqliteTimeKeepsItsEmptyString(): void
+	{
+		$render = new \ReflectionMethod(ApplicationService::class, 'WithServerOffset');
+		self::assertSame('', $render->invoke(null, ''));
+		self::assertMatchesRegularExpression('/^2026-10-04T14:30:00\.000000[+-]\d{2}:\d{2}$/', $render->invoke(null, '2026-10-04 14:30:00'));
 	}
 }
