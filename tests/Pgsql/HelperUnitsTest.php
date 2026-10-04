@@ -13,6 +13,7 @@ use Victual\Services\ApplicationService;
 use Victual\Services\CalendarService;
 use Victual\Services\DatabaseService;
 use Victual\Services\LocalizationService;
+use Victual\Services\Time\Instant;
 use Victual\Services\UserfieldsService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -1656,7 +1657,7 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame('', $verdict['result']['sqlite_version'], 'the vestigial field is empty rather than fatal');
 		self::assertSame('', $verdict['result']['time_local_sqlite3'], 'and so is the vestigial time');
 		self::assertStringStartsWith('PostgreSQL', $verdict['result']['database_engine'], 'the engine that is actually serving still answers');
-		self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $verdict['result']['time_local'], 'and so does the real local time');
+		self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2}$/', $verdict['result']['time_local'], 'and so does the real local time, with the server\'s offset');
 
 		// The negative control: in this process, which does have the driver, both fields
 		// carry a value
@@ -1671,8 +1672,10 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::assertSame(0, $now['offset'], 'no offset is the default');
 		self::assertSame(date_default_timezone_get(), $now['timezone']);
 		self::assertEqualsWithDelta(time(), $now['timestamp'], 2, 'the timestamp is now');
-		self::assertSame(date('Y-m-d H:i:s', $now['timestamp']), $now['time_local']);
-		self::assertSame(gmdate('Y-m-d H:i:s', $now['timestamp']), $now['time_utc'], 'the UTC rendering is the same instant');
+		// ADR-0027 open question 1: time_local carries the configured zone's offset, time_utc
+		// is the wire rendering; both name the same instant.
+		self::assertSame((new \DateTimeImmutable('@' . $now['timestamp']))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d\\TH:i:s.uP'), $now['time_local']);
+		self::assertSame(gmdate('Y-m-d\\TH:i:s', $now['timestamp']) . '.000000Z', $now['time_utc'], 'the UTC rendering is the same instant');
 		self::assertArrayHasKey('time_local_sqlite3', $now, 'ADR-0005: the key stays in the response');
 	}
 
@@ -1687,8 +1690,8 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		self::assertEqualsWithDelta(3600, $ahead['timestamp'] - $base['timestamp'], 2, 'a positive offset moves the clock forward');
 		self::assertEqualsWithDelta(-3600, $behind['timestamp'] - $base['timestamp'], 2, 'and a negative one back');
-		self::assertSame(date('Y-m-d H:i:s', $ahead['timestamp']), $ahead['time_local']);
-		self::assertSame(gmdate('Y-m-d H:i:s', $behind['timestamp']), $behind['time_utc']);
+		self::assertSame((new \DateTimeImmutable('@' . $ahead['timestamp']))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d\\TH:i:s.uP'), $ahead['time_local']);
+		self::assertSame(gmdate('Y-m-d\\TH:i:s', $behind['timestamp']) . '.000000Z', $behind['time_utc']);
 	}
 
 	// ========================================================== services/UserfieldsService.php
@@ -2031,6 +2034,15 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 		self::$db->exec("INSERT INTO meal_plan (id, day, type, product_id, product_amount, section_id) VALUES (9804, DATE '2030-07-12', 'product', 9800, 1, 9800)");
 	}
 
+	/**
+	 * A meal plan section's time on a day is a wall clock in the configured zone, and the
+	 * calendar sends the instant it names (ADR-0027 decision 2).
+	 */
+	private static function ServerInstant(string $wallClock): string
+	{
+		return Instant::ToWire(Instant::FromWallClock($wallClock, Instant::ServerZone(), false));
+	}
+
 	/** The one event starting at the given moment, asserted to be unique. */
 	private static function eventStarting(array $events, string $start): array
 	{
@@ -2155,9 +2167,9 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		$events = CalendarService::GetInstance()->GetEvents();
 
-		$sectioned = self::eventStarting($events, '2030-07-08 07:30:00');
+		$sectioned = self::eventStarting($events, self::ServerInstant('2030-07-08 07:30:00'));
 		self::assertSame('Meal plan recipe: CalendarBreakfast: CalendarRecipe', $sectioned['title'], 'the section name prefixes the entry');
-		self::assertSame('2030-07-08 07:30:00', $sectioned['start'], 'the section time makes it a timed event');
+		self::assertSame(self::ServerInstant('2030-07-08 07:30:00'), $sectioned['start'], 'the section time makes it a timed event');
 		self::assertSame('datetime', $sectioned['date_format']);
 		self::assertStringContainsString('recipe=9800', $sectioned['link'], 'a recipe entry links to the recipe');
 		self::assertStringContainsString('/mealplan', $sectioned['description'], 'and describes the week it belongs to');
@@ -2168,14 +2180,14 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 
 		$note = self::eventTitled($events, 'CalendarNote');
 		self::assertSame('Meal plan note: CalendarBreakfast: CalendarNote', $note['title']);
-		self::assertSame('2030-07-10 07:30:00', $note['start']);
+		self::assertSame(self::ServerInstant('2030-07-10 07:30:00'), $note['start']);
 		self::assertStringContainsString('/mealplan', $note['link']);
 
 		$product = self::eventStarting($events, '2030-07-11');
 		self::assertSame('Meal plan product: CalendarCheese', $product['title']);
 		self::assertSame('date', $product['date_format'], 'a product entry outside a named section is all day too');
 
-		$sectionedProduct = self::eventStarting($events, '2030-07-12 07:30:00');
+		$sectionedProduct = self::eventStarting($events, self::ServerInstant('2030-07-12 07:30:00'));
 		self::assertSame('Meal plan product: CalendarBreakfast: CalendarCheese', $sectionedProduct['title'], 'and carries the section name when it has one');
 		self::assertSame('datetime', $sectionedProduct['date_format'], 'and the section time makes it timed');
 		self::assertStringContainsString('/mealplan', $sectionedProduct['link']);

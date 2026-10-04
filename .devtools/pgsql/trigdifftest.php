@@ -240,7 +240,26 @@ function CompareAllTables(PDO $sqlite, PDO $pg): int
 		$list = implode(', ', array_map(fn($c) => '"' . $c . '"', $columns));
 
 		$rowsA = $sqlite->query('SELECT ' . $list . ' FROM "' . $table . '"')->fetchAll(PDO::FETCH_ASSOC);
-		$rowsB = $pg->query('SELECT ' . $list . ' FROM "' . $table . '"')->fetchAll(PDO::FETCH_ASSOC);
+		$pgStatement = $pg->query('SELECT ' . $list . ' FROM "' . $table . '"');
+		$rowsB = $pgStatement->fetchAll(PDO::FETCH_ASSOC);
+
+		// Timestamps compared as instants, as difftest.php's views phase does (ADR-0027 open
+		// question 3): PostgreSQL's TIMESTAMPTZ columns by the driver's metadata, the SQLite
+		// side's wall clocks read in the named source zone.
+		$sourceZone = new DateTimeZone(getenv('DIFFTEST_SOURCE_ZONE') ?: date_default_timezone_get());
+		foreach (ValueComparison::TimestampColumnsOf($pgStatement)['instants'] as $column)
+		{
+			foreach ($rowsA as &$row)
+			{
+				$row[$column] = ValueComparison::NormaliseInstant($row[$column], $sourceZone);
+			}
+			unset($row);
+			foreach ($rowsB as &$row)
+			{
+				$row[$column] = ValueComparison::NormaliseInstant($row[$column], $sourceZone);
+			}
+			unset($row);
+		}
 
 		if (IsInternalRecipeTable($table))
 		{

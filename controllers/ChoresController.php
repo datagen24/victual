@@ -2,6 +2,8 @@
 
 namespace Victual\Controllers;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Services\ChoresService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -142,15 +144,17 @@ class ChoresController extends BaseController
 		{
 			if (!empty($currentChore->next_estimated_execution_time))
 			{
-				if ($currentChore->next_estimated_execution_time < date('Y-m-d H:i:s'))
+				// Instants in the wire rendering compare as text (ADR-0027 decision 2); the day
+				// boundaries are the configured zone's, as they always were.
+				if ($currentChore->next_estimated_execution_time < Instant::Now())
 				{
 					$currentChore->due_type = 'overdue';
 				}
-				elseif ($currentChore->next_estimated_execution_time <= date('Y-m-d 23:59:59'))
+				elseif ($currentChore->next_estimated_execution_time <= Instant::EndOfServerDay(date('Y-m-d')))
 				{
 					$currentChore->due_type = 'duetoday';
 				}
-				elseif ($nextXDays > 0 && $currentChore->next_estimated_execution_time <= date('Y-m-d H:i:s', strtotime('+' . $nextXDays . ' days')))
+				elseif ($nextXDays > 0 && $currentChore->next_estimated_execution_time <= Instant::ToWire(new \DateTimeImmutable('+' . $nextXDays . ' days')))
 				{
 					$currentChore->due_type = 'duesoon';
 				}

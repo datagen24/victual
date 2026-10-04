@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Influx;
 
+use Victual\Services\Time\Instant;
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\RequestOptions;
@@ -239,12 +241,23 @@ class InfluxEventWriter
 	}
 
 	/**
-	 * A local "Y-m-d H:i:s" timestamp as nanoseconds since the epoch, which is the precision
-	 * the write above declares.
+	 * A timestamp as nanoseconds since the epoch, which is the precision the write above
+	 * declares, keeping the microseconds an instant carries.
+	 *
+	 * The value is an instant in the wire rendering (ADR-0027 decision 2) or, from an event
+	 * queued before migration 0301, a wall clock in the configured zone. The second is read
+	 * in that zone, as this method always read it, so an event redelivered across the
+	 * upgrade lands on the point it already wrote rather than beside it.
 	 */
-	public static function ToNanoseconds(string $localTimestamp): int
+	public static function ToNanoseconds(string $timestamp): int
 	{
-		return (new \DateTimeImmutable($localTimestamp))->getTimestamp() * 1000000000;
+		$instant = Instant::ParseStored($timestamp);
+		if ($instant === null)
+		{
+			throw new \InvalidArgumentException('Not a timestamp: ' . $timestamp);
+		}
+
+		return (int)Instant::ToEpochNanoseconds($instant);
 	}
 
 	/**

@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 /**
  * Cookie-based login sessions: creation, validation and removal of rows in the
  * sessions table. The session key doubles as the value of the victual_session cookie.
@@ -33,12 +35,12 @@ class SessionService extends BaseService
 	public function CreateSession($userId, $stayLoggedInPermanently = false)
 	{
 		$newSessionKey = $this->GenerateKey();
-		$expires = date('Y-m-d H:i:s', time() + 2592000);
+		$expires = Instant::FromNow(2592000);
 
 		// Default is that sessions expire in 30 days
 		if ($stayLoggedInPermanently === true)
 		{
-			$expires = date('Y-m-d H:i:s', time() + self::GetStayLoggedInLifetimeSeconds());
+			$expires = Instant::FromNow(self::GetStayLoggedInLifetimeSeconds());
 		}
 
 		$sessionRow = $this->DB->sessions()->createRow([
@@ -92,14 +94,14 @@ class SessionService extends BaseService
 		}
 		else
 		{
-			$sessionRow = $this->DB->sessions()->where('session_key = :1 AND expires > :2', $sessionKey, date('Y-m-d H:i:s', time()))->fetch();
+			$sessionRow = $this->DB->sessions()->where('session_key = :1 AND expires > :2', $sessionKey, Instant::Now())->fetch();
 			if ($sessionRow !== null)
 			{
 				// This should not change the database file modification time as this is used
 				// to determine if REALLY something has changed
 				$dbModTime = DatabaseService::GetInstance()->GetDbChangedTime();
 				$sessionRow->update([
-					'last_used' => date('Y-m-d H:i:s', time())
+					'last_used' => Instant::Now()
 				]);
 				DatabaseService::GetInstance()->SetDbChangedTime($dbModTime);
 
@@ -127,7 +129,7 @@ class SessionService extends BaseService
 	public function RemoveExpiredSessions()
 	{
 		$dbModTime = DatabaseService::GetInstance()->GetDbChangedTime();
-		$this->DB->sessions()->where('expires <= :1', date('Y-m-d H:i:s', time()))->delete();
+		$this->DB->sessions()->where('expires <= :1', Instant::Now())->delete();
 		DatabaseService::GetInstance()->SetDbChangedTime($dbModTime);
 	}
 

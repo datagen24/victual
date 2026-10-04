@@ -108,6 +108,13 @@ if (!empty($defaultUserSettings))
 	}
 }
 
+// The zone the SQLite side's wall clocks are in. Named explicitly rather than assumed:
+// SQLite's datetime('now', 'localtime') follows the process zone, which is PHP's here, and
+// a run under another zone must say so (DIFFTEST_SOURCE_ZONE) for its instants to mean
+// anything.
+$sourceZone = new DateTimeZone(getenv('DIFFTEST_SOURCE_ZONE') ?: date_default_timezone_get());
+echo '  comparing timestamps as instants; SQLite wall clocks read in ' . $sourceZone->getName() . "\n\n";
+
 // 3. Compare the views. The normalisation rules live in services/ so that this script
 // and DatabaseImporter's verification cannot drift apart about what "equal" means.
 
@@ -118,7 +125,34 @@ foreach ($views as $view)
 	try
 	{
 		$a = $sqlite->query("SELECT * FROM $view")->fetchAll(PDO::FETCH_ASSOC);
-		$b = $pg->query("SELECT * FROM $view")->fetchAll(PDO::FETCH_ASSOC);
+		$pgStatement = $pg->query("SELECT * FROM $view");
+		$b = $pgStatement->fetchAll(PDO::FETCH_ASSOC);
+
+		// ADR-0027 open question 3: timestamps are compared as instants. PostgreSQL's
+		// TIMESTAMPTZ columns are found from the driver's column metadata - never by name -
+		// and both sides of each are reduced to the instant they name, the SQLite side's
+		// wall clock read in the explicitly named source zone. No timestamp column is left
+		// out of the comparison. A PostgreSQL column still typed as a wall clock cannot be
+		// compared at all, so it fails the view outright.
+		$timestampColumns = ValueComparison::TimestampColumnsOf($pgStatement);
+		if (!empty($timestampColumns['wallClocks']))
+		{
+			throw new Exception('PostgreSQL returns a wall clock with no zone in ' . implode(', ', $timestampColumns['wallClocks']));
+		}
+
+		foreach ($timestampColumns['instants'] as $column)
+		{
+			foreach ($a as &$row)
+			{
+				if (array_key_exists($column, $row)) $row[$column] = ValueComparison::NormaliseInstant($row[$column], $sourceZone);
+			}
+			unset($row);
+			foreach ($b as &$row)
+			{
+				if (array_key_exists($column, $row)) $row[$column] = ValueComparison::NormaliseInstant($row[$column], $sourceZone);
+			}
+			unset($row);
+		}
 		// Compare the original six columns on the frozen SQLite model. PostgreSQL's
 		// additional role provenance is asserted by rbac-tests.php.
 		if ($view === 'uihelper_user_permissions')

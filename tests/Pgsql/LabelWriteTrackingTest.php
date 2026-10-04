@@ -27,7 +27,9 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  */
 class LabelWriteTrackingTest extends PgsqlSchemaTestCase
 {
-	private const LONG_AGO = '2000-01-01 00:00:00';
+	// The wire rendering the application's connection reads changed_time back in (ADR-0027
+	// decision 2); written as the same instant below.
+	private const LONG_AGO = '2000-01-01T00:00:00.000000Z';
 
 	private static PDO $db;
 

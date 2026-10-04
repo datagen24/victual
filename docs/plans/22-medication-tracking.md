@@ -319,9 +319,13 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0301** (medication master data and subjects)
-  and **0302** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0302** (medication master data and subjects)
+  and **0303** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
+
+  - 0301–0302 until issue #650's `TIMESTAMPTZ` migration was written on 2026-10-04 and took
+    **0301**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims move
+    up once more, to **0302–0303**.
 
   - 0299–0300 until PRs #624, #626, #627 and #628 had all merged to `master`. At that point
     issue #521's view-permission migration (#487 remediation, `BATTERIES_VIEW`,

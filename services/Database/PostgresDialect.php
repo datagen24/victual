@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Database;
 
+use Victual\Services\Time\Instant;
+
 /**
  * PostgreSQL storage engine.
  *
@@ -128,6 +130,23 @@ class PostgresDialect extends DatabaseDialect
 		// LOCALTIMESTAMP agree with it so timestamps mean the same thing on both engines
 		$pdo->exec("SET TIME ZONE " . $pdo->quote(date_default_timezone_get()));
 
+		// The session zone is the configured zone, so that "today", "overdue" and every
+		// schedule a view derives stay in the server's zone (ADR-0027). InstantStatement
+		// reads TIMESTAMPTZ values in the ISO rendering; a server or database configured
+		// with another DateStyle would otherwise hand it something it does not parse.
+		$pdo->exec("SET DateStyle = 'ISO, YMD'");
+
+		// Every TIMESTAMPTZ value leaves through InstantStatement in the wire rendering
+		// (ADR-0027 decision 2); see that class for how it tells an instant from text. Set
+		// here rather than in CreateConnection() because every connection the application
+		// uses passes through this method, including the ones the test harness builds
+		// itself. A connection that already carries a statement class of its own - a test's
+		// race-injecting one, which extends InstantStatement - keeps it.
+		if (($pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS)[0] ?? \PDOStatement::class) === \PDOStatement::class)
+		{
+			$pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [InstantStatement::class, []]);
+		}
+
 		// Everything else this dialect needs is created by the baseline schema migration.
 		// The changed time table is the exception: it has no dependencies and has to exist
 		// before the first migration runs, because migrating is itself a data change.
@@ -158,7 +177,7 @@ class PostgresDialect extends DatabaseDialect
 			{
 				$pdo->exec('CREATE TABLE IF NOT EXISTS ' . self::CHANGED_TIME_TABLE . ' ('
 					. 'id INTEGER NOT NULL PRIMARY KEY, '
-					. 'changed_time TIMESTAMP NOT NULL DEFAULT LOCALTIMESTAMP)');
+					. 'changed_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)');
 			}
 			catch (\PDOException $ex)
 			{
@@ -218,18 +237,17 @@ class PostgresDialect extends DatabaseDialect
 	}
 
 	/**
-	 * LOCALTIMESTAMP truncated to seconds, equivalent to SQLite's
-	 * datetime('now', 'localtime') given the SET TIME ZONE in OnConnected().
+	 * The current instant truncated to seconds, the precision every legacy default stored.
+	 * An instant rather than LOCALTIMESTAMP since migration 0301 (ADR-0027 decision 2).
 	 */
 	public function GetNowExpression(): string
 	{
-		// SQLite stores second precision, so truncate to match
-		return "date_trunc('second', LOCALTIMESTAMP)";
+		return "date_trunc('second', CURRENT_TIMESTAMP)";
 	}
 
 	public function GetTimestampType(): string
 	{
-		return 'TIMESTAMP';
+		return 'TIMESTAMPTZ';
 	}
 
 	/**
@@ -388,10 +406,13 @@ class PostgresDialect extends DatabaseDialect
 
 		if ($value === false || $value === null)
 		{
-			return date('Y-m-d H:i:s');
+			return Instant::Now();
 		}
 
-		return date('Y-m-d H:i:s', strtotime($value));
+		// Already the wire rendering (InstantStatement), microseconds included: a polling
+		// client compares it with the value it saw last, and SetDbChangedTime() puts back
+		// exactly what this returned.
+		return $value;
 	}
 
 	/**
@@ -405,7 +426,13 @@ class PostgresDialect extends DatabaseDialect
 		$this->DbChangedPending = false;
 
 		$statement = $pdo->prepare('UPDATE ' . self::CHANGED_TIME_TABLE . ' SET changed_time = ? WHERE id = 1');
-		$statement->execute([date('Y-m-d H:i:s', strtotime($dateTime))]);
+		$instant = Instant::ParseStored($dateTime);
+		if ($instant === null)
+		{
+			throw new \InvalidArgumentException('Not an instant: ' . $dateTime);
+		}
+
+		$statement->execute([Instant::ToWire($instant)]);
 	}
 
 	/**
@@ -429,7 +456,7 @@ class PostgresDialect extends DatabaseDialect
 		}
 
 		$this->DbChangedPending = false;
-		$pdo->exec('UPDATE ' . self::CHANGED_TIME_TABLE . ' SET changed_time = LOCALTIMESTAMP WHERE id = 1');
+		$pdo->exec('UPDATE ' . self::CHANGED_TIME_TABLE . ' SET changed_time = CURRENT_TIMESTAMP WHERE id = 1');
 	}
 
 	/**

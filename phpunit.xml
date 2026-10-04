@@ -62,6 +62,7 @@
 		</testsuite>
 		<testsuite name="wirecontract">
 			<file>tests/Pgsql/WireContractTest.php</file>
+			<file>tests/Pgsql/TimestampInstantTest.php</file>
 			<file>tests/Pgsql/StockEntryEditContractTest.php</file>
 			<file>tests/Pgsql/StockPurchaseInventoryInputTest.php</file>
 		</testsuite>

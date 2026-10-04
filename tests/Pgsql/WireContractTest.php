@@ -4,6 +4,7 @@ namespace Victual\Tests\Pgsql;
 
 use PDO;
 use Victual\Services\ApiKeyService;
+use Victual\Services\Time\Instant;
 use Victual\Services\WireBooleans;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -683,25 +684,58 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	// --------------------------------------------------------------------- issue #231
 
-	public function testOnlyRfc3339FieldsAreTypedDateTime(): void
+	/**
+	 * ADR-0027 decision 2: every instant property is `format: date-time` with the wire
+	 * pattern, and the local wall-clock pattern is gone from the document. The two
+	 * documented exceptions are `TimeResponse.time_local`, which carries the server's
+	 * offset (open question 1), and `time_local_sqlite3`, which may be empty.
+	 */
+	public function testEveryInstantIsTypedDateTimeWithTheWirePattern(): void
 	{
-		$sites = [];
-		self::collectFormat(self::spec(), 'date-time', '', $sites);
+		$spec = self::spec();
+		$wire = [];
+		$other = [];
+		$walk = function (array $node, string $path) use (&$walk, &$wire, &$other)
+		{
+			if (($node['format'] ?? null) === 'date-time')
+			{
+				if (($node['pattern'] ?? null) === Instant::WIRE_PATTERN)
+				{
+					$wire[] = $path;
+				}
+				else
+				{
+					$other[] = $path;
+				}
+			}
 
-		self::assertSame(
-			['/paths//labels/attempts/{attemptId}/evidence/post/requestBody/content/application/json/schema/properties/observed_at'],
-			$sites,
-			'the only remaining format: date-time is the one whose column is a TIMESTAMPTZ and '
-				. 'whose value is parsed with new DateTimeImmutable(), so RFC 3339 really is accepted there'
-		);
+			foreach ($node as $key => $child)
+			{
+				if (is_array($child))
+				{
+					$walk($child, $path . '/' . $key);
+				}
+			}
+		};
+		$walk($spec, '');
+
+		self::assertSame([
+			'/paths//labels/attempts/{attemptId}/evidence/post/requestBody/content/application/json/schema/properties/observed_at',
+			'/components/schemas/TimeResponse/properties/time_local'
+		], $other, 'only a request field and time_local are date-time without the wire pattern');
+		self::assertGreaterThanOrEqual(40, count($wire), 'every instant on the legacy and label surfaces');
+
+		$localPattern = [];
+		self::collectPattern($spec, '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', '', $localPattern);
+		self::assertSame([], $localPattern, 'nothing documents the old local wall-clock rendering');
 	}
 
-	public function testTheLocalRenderingIsDocumentedWhereverItIsSent(): void
+	public function testTheWireRenderingIsSentWhereverItIsDocumented(): void
 	{
-		$rendering = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
+		$rendering = '/' . Instant::WIRE_PATTERN . '/D';
 
-		// Three responses whose timestamps come from three different places: a base table
-		// column, a view's computed value and PHP's own clock.
+		// Responses whose timestamps come from three different places: a base table
+		// column, the changed-time row and PHP's own clock.
 		$unit = self::get('/api/objects/quantity_units/9500');
 		self::assertMatchesRegularExpression($rendering, $unit['row_created_timestamp']);
 
@@ -709,17 +743,35 @@ class WireContractTest extends PgsqlSchemaTestCase
 		self::assertMatchesRegularExpression($rendering, $changed['changed_time']);
 
 		$time = self::get('/api/system/time');
-		self::assertMatchesRegularExpression($rendering, $time['time_local']);
 		self::assertMatchesRegularExpression($rendering, $time['time_utc']);
 
-		// And the document says so, with the same expression, for each of them.
 		$schemas = self::spec()['components']['schemas'];
-		foreach ([['QuantityUnit', 'row_created_timestamp'], ['DbChangedTimeResponse', 'changed_time'],
-			['TimeResponse', 'time_local'], ['TimeResponse', 'time_utc']] as [$schema, $property])
+		foreach ([['QuantityUnit', 'row_created_timestamp'], ['DbChangedTimeResponse', 'changed_time'], ['TimeResponse', 'time_utc']] as [$schema, $property])
 		{
 			$documented = $schemas[$schema]['properties'][$property];
-			self::assertArrayNotHasKey('format', $documented, "$schema.$property");
-			self::assertSame('^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', $documented['pattern'], "$schema.$property");
+			self::assertSame('date-time', $documented['format'] ?? null, "$schema.$property");
+			self::assertSame(Instant::WIRE_PATTERN, $documented['pattern'], "$schema.$property");
+		}
+	}
+
+	/**
+	 * A text column holding text that looks exactly like PostgreSQL's TIMESTAMPTZ rendering
+	 * is not rewritten: InstantStatement decides by the column's type, never by the value.
+	 */
+	public function testTimestampShapedTextIsLeftAlone(): void
+	{
+		$text = '2026-10-04 14:30:00-04';
+		self::$db->prepare('UPDATE quantity_units SET description = ? WHERE id = 9500')->execute([$text]);
+
+		try
+		{
+			$unit = self::get('/api/objects/quantity_units/9500');
+			self::assertSame($text, $unit['description']);
+			self::assertMatchesRegularExpression('/' . Instant::WIRE_PATTERN . '/D', $unit['row_created_timestamp']);
+		}
+		finally
+		{
+			self::$db->prepare('UPDATE quantity_units SET description = NULL WHERE id = 9500')->execute();
 		}
 	}
 
@@ -748,60 +800,62 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$time = self::get('/api/system/time');
 
 		self::assertSame(
-			gmdate('Y-m-d H:i:s', $time['timestamp']),
+			gmdate('Y-m-d\\TH:i:s', $time['timestamp']) . '.000000Z',
 			$time['time_utc'],
-			'time_utc is not the UTC rendering of its own timestamp'
+			'time_utc is not the wire rendering of its own timestamp'
 		);
 		self::assertSame(
 			(new \DateTimeImmutable('@' . $time['timestamp']))
 				->setTimezone(new \DateTimeZone($time['timezone']))
-				->format('Y-m-d H:i:s'),
+				->format('Y-m-d\\TH:i:s.uP'),
 			$time['time_local'],
-			'time_local is not the configured zone rendering of its own timestamp'
+			'time_local is not the configured zone rendering of its own timestamp, with that zone\'s offset'
 		);
+		self::assertEquals(new \DateTimeImmutable($time['time_utc']), new \DateTimeImmutable($time['time_local']), 'the two name the same instant');
 
-		$documented = self::spec()['components']['schemas']['TimeResponse']['properties']['time_utc']['description'];
-		self::assertStringContainsString('UTC', $documented);
-		self::assertStringNotContainsString(
-			'Local date and time in the server\'s configured time zone',
-			$documented,
-			'time_utc still carries time_local\'s description, which says the wrong zone'
-		);
+		$documented = self::spec()['components']['schemas']['TimeResponse']['properties'];
+		self::assertStringContainsString('UTC', $documented['time_utc']['description']);
+		self::assertSame('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}[+-]\\d{2}:\\d{2}$', $documented['time_local']['pattern']);
+		self::assertMatchesRegularExpression('/' . $documented['time_local']['pattern'] . '/D', $time['time_local']);
 	}
 
 	/**
-	 * The second exception: the label surface stores absolute clocks as `TIMESTAMPTZ` and
-	 * renders what PostgreSQL renders, offset and all. `labels.retired_at` is the one such
-	 * value in a documented response body, so it is the one asserted here.
-	 *
-	 * Decision 2 covers the legacy surface, whose columns are `TIMESTAMP`. Stating it over
-	 * "every date and time this API renders" would have made this response a violation of
-	 * the record the day the record was accepted.
+	 * The label surface is under the same rule: `labels.retired_at` was rendered as
+	 * PostgreSQL renders a TIMESTAMPTZ (`2026-03-04 05:06:07.891011-05`) and is now the wire
+	 * rendering, its microseconds kept (ADR-0027 open question 2).
 	 */
-	public function testTheLabelSurfaceRendersItsTimestamptzValuesWithAnOffset(): void
+	public function testTheLabelSurfaceSendsTheWireRendering(): void
 	{
 		$body = self::get('/api/labels/resolve/' . self::RETIRED_LABEL_UID);
 
 		self::assertSame('retired', $body['status']);
 		self::assertSame('WireRetiredShelf', $body['snapshot']['name']);
+		self::assertMatchesRegularExpression('/' . Instant::WIRE_PATTERN . '/D', $body['retired_at'], 'retired_at: ' . $body['retired_at']);
 
-		self::assertDoesNotMatchRegularExpression(
-			'/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/',
-			$body['retired_at'],
-			'retired_at is the local rendering, so the exception decision 2 names no longer exists'
-		);
-		self::assertMatchesRegularExpression(
-			'/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?[+-]\d{2}(:\d{2})?$/',
-			$body['retired_at'],
-			'retired_at: ' . $body['retired_at']
-		);
+		// The fixture stores TIMESTAMPTZ '2026-03-04 05:06:07.891011-05'.
+		self::assertSame('2026-03-04T10:06:07.891011Z', $body['retired_at'], 'the stored instant, microseconds included');
 
-		// And the document describes it as that rather than promising the local pattern.
 		$documented = self::spec()['paths']['/labels/resolve/{code}']['get']['responses']['200']
 			['content']['application/json']['schema']['oneOf'][2]['properties']['retired_at'];
-		self::assertArrayNotHasKey('pattern', $documented);
-		self::assertArrayNotHasKey('format', $documented);
-		self::assertStringContainsString('TIMESTAMPTZ', $documented['description']);
+		self::assertSame('date-time', $documented['format']);
+		self::assertSame(Instant::WIRE_PATTERN, $documented['pattern']);
+	}
+
+	/** @param array<string,mixed> $node */
+	private static function collectPattern(array $node, string $pattern, string $path, array &$into): void
+	{
+		if (($node['pattern'] ?? null) === $pattern)
+		{
+			$into[] = $path;
+		}
+
+		foreach ($node as $key => $child)
+		{
+			if (is_array($child))
+			{
+				self::collectPattern($child, $pattern, $path . '/' . $key, $into);
+			}
+		}
 	}
 
 	/** @param array<string,mixed> $node */
@@ -824,54 +878,50 @@ class WireContractTest extends PgsqlSchemaTestCase
 	// ------------------------------------------------- ADR-0028, the three write times
 
 	/**
-	 * The renderings the three fields accept, and what each one has to be stored as.
+	 * The renderings the three fields accept, and the instant each must be stored and sent
+	 * back as (ADR-0028, as amended by ADR-0027 decision 2).
 	 *
-	 * The offset-bearing expectations are written as the *instant* rather than as a string,
-	 * because what they render to depends on the server's zone and the suite does not fix
-	 * one. inServerZone() asks PostgreSQL, which is an oracle independent of the PHP the
-	 * code under test uses - and the question "do the application and its database agree
-	 * about the zone?" is one this happens to answer too.
+	 * An offset-bearing value names its instant directly, so its expectation is written as
+	 * the wire string. An offset-free one is a wall clock in the server's zone, and its
+	 * expectation is computed by PostgreSQL - an oracle independent of the PHP under test -
+	 * for whichever zone the suite runs in. Fractions are kept to the microsecond and later
+	 * digits are dropped, not rounded.
 	 *
 	 * @return array<string, array{0: string, 1: string|null}> value => [literal, instant]
 	 */
 	private static function acceptedRenderings(): array
 	{
 		return [
-			'the storage rendering' => ['2026-03-04 05:06:07', null],
+			'the former storage rendering' => ['2026-03-04 05:06:07', null],
 			'a bare date' => ['2026-03-04', null],
 			// "RFC 3339 shaped", not RFC 3339: that grammar requires the offset the first of
 			// these omits, and permits a leap second wrongShape() refuses. ADR-0028 decision 2.
 			'the T form without an offset, which RFC 3339 does not allow' => ['2026-03-04T05:06:07', null],
-			'the T form in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07Z'],
-			'the T form with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T05:06:07+02:00'],
-			'the T form with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07Z'],
-			// Seven digits is .NET's round-trip format and nine is Go's RFC3339Nano; PHP's
-			// "u" parses at most six, so both were refused while the document said they were
-			// fine. CodeRabbit found the seven-digit case on pull request 235 and a sweep of
-			// the shape space found the rest.
-			'more fractional digits than PHP parses' => ['2026-03-04T05:06:07.1234567Z', '2026-03-04T05:06:07Z'],
-			'fractional nanoseconds' => ['2026-03-04T05:06:07.123456789+02:00', '2026-03-04T05:06:07+02:00']
+			'the T form in UTC' => ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07.000000Z'],
+			'the T form with an offset' => ['2026-03-04T05:06:07+02:00', '2026-03-04T03:06:07.000000Z'],
+			'the T form with fractional seconds' => ['2026-03-04T05:06:07.123Z', '2026-03-04T05:06:07.123000Z'],
+			// Seven digits is .NET's round-trip format and nine is Go's RFC3339Nano. Both are
+			// accepted and kept to the microsecond; the seventh digit (7) is dropped, not
+			// rounded up.
+			'more fractional digits than TIMESTAMPTZ holds' => ['2026-03-04T05:06:07.1234567Z', '2026-03-04T05:06:07.123456Z'],
+			'fractional nanoseconds' => ['2026-03-04T05:06:07.123456789+02:00', '2026-03-04T03:06:07.123456Z'],
+			'a wall clock with a fraction' => ['2026-03-04T05:06:07.5', null]
 		];
 	}
 
-	/** What each accepted rendering must be stored as. */
+	/** What each accepted rendering must be stored and sent back as. */
 	private static function expectedFor(string $literal, ?string $instant): string
 	{
 		if ($instant !== null)
 		{
-			return self::inServerZone($instant);
+			return $instant;
 		}
 
-		// No offset in the value, so it names a wall clock and the wall clock is kept. A
+		// No offset: a wall clock in the zone the application's own connection is set to. A
 		// bare date is its midnight.
-		return strlen($literal) === 10 ? $literal . ' 00:00:00' : str_replace('T', ' ', $literal);
-	}
-
-	/** $instant rendered in the time zone the application's own connection is set to. */
-	private static function inServerZone(string $instant): string
-	{
-		$statement = self::$db->prepare("SELECT to_char(?::timestamptz AT TIME ZONE current_setting('TimeZone'), 'YYYY-MM-DD HH24:MI:SS')");
-		$statement->execute([$instant]);
+		$wallClock = strlen($literal) === 10 ? $literal . ' 00:00:00' : str_replace('T', ' ', $literal);
+		$statement = self::$db->prepare("SELECT to_char((?::timestamp AT TIME ZONE current_setting('TimeZone')) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')");
+		$statement->execute([$wallClock]);
 
 		return (string)$statement->fetchColumn();
 	}
@@ -939,7 +989,8 @@ class WireContractTest extends PgsqlSchemaTestCase
 
 	public function testAnAbsentTimestampBooksTheCurrentTime(): void
 	{
-		$before = date('Y-m-d H:i:s');
+		// Wire renderings compare as text in chronological order (ADR-0027 decision 2).
+		$before = Instant::Now();
 
 		$chore = self::send('POST', '/api/chores/9501/execute', [], []);
 		self::assertSame(200, $chore['status'], $chore['body']);
@@ -1053,24 +1104,21 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * What the refusal above must not swallow. The hour either side of the gap is ordinary,
-	 * the repeated hour at the other end of the year is expressible as a wall clock and is
-	 * kept, and a value carrying an offset names an instant - every instant has a wall clock
-	 * in every zone, including one inside the gap window.
+	 * What the refusal above must not swallow, and what each value is stored as on a server
+	 * in America/New_York. The hour either side of the gap is ordinary; the repeated hour at
+	 * the other end of the year names the **earlier** instant (01:30 EDT, 05:30Z); an offset
+	 * chooses either instant explicitly; and a value carrying an offset names an instant
+	 * even when its UTC rendering sits inside the gap window.
 	 */
 	public function testOnlyTheSkippedHourIsRefusedInADstZone(): void
 	{
 		$cases = [
-			'the hour before the gap' => ['2026-03-08 01:30:00', '2026-03-08 01:30:00'],
-			'the hour after it' => ['2026-03-08 03:30:00', '2026-03-08 03:30:00'],
-			// 01:30 happens twice on this date. PHP takes the first and the wall clock
-			// survives, which is all this API stores; which instant was meant is a question
-			// a wall-clock string cannot ask (ADR-0027 decision 2), and refusing it would
-			// lose a booking that is perfectly expressible.
-			'the hour that happens twice' => ['2026-11-01 01:30:00', '2026-11-01 01:30:00'],
-			// 02:30 UTC is 21:30 the previous evening in New York - a real moment, named as
-			// one, so the gap never enters into it.
-			'an instant whose UTC rendering sits in the gap' => ['2026-03-08T02:30:00Z', '2026-03-07 21:30:00']
+			'the hour before the gap' => ['2026-03-08 01:30:00', '2026-03-08T06:30:00.000000Z'],
+			'the hour after it' => ['2026-03-08 03:30:00', '2026-03-08T07:30:00.000000Z'],
+			'the hour that happens twice, which books the earlier instant' => ['2026-11-01 01:30:00', '2026-11-01T05:30:00.000000Z'],
+			'the earlier of the two, named by its offset' => ['2026-11-01T01:30:00-04:00', '2026-11-01T05:30:00.000000Z'],
+			'the later of the two, named by its offset' => ['2026-11-01T01:30:00-05:00', '2026-11-01T06:30:00.000000Z'],
+			'an instant whose UTC rendering sits in the gap' => ['2026-03-08T02:30:00Z', '2026-03-08T02:30:00.000000Z']
 		];
 
 		foreach ($cases as $what => [$sent, $stored])
@@ -1104,19 +1152,26 @@ class WireContractTest extends PgsqlSchemaTestCase
 				// zone, value, expected ('' = refused)
 				['America/New_York', '2026-03-08 02:30:00', ''],
 				['America/New_York', '2026-03-08T02:30:00', ''],
-				['America/New_York', '2026-03-08T02:30:00Z', '2026-03-07 21:30:00'],
-				['America/New_York', '2026-03-08 01:30:00', '2026-03-08 01:30:00'],
-				['America/New_York', '2026-11-01 01:30:00', '2026-11-01 01:30:00'],
+				['America/New_York', '2026-03-08T02:30:00Z', '2026-03-08T02:30:00.000000Z'],
+				['America/New_York', '2026-03-08 01:30:00', '2026-03-08T06:30:00.000000Z'],
+				['America/New_York', '2026-10-04 14:30:00', '2026-10-04T18:30:00.000000Z'],
+				// The repeated hour: the earlier instant. PostgreSQL's own cast would give 06:30Z.
+				['America/New_York', '2026-11-01 01:30:00', '2026-11-01T05:30:00.000000Z'],
 				// Midnight does not exist on this date here, so neither does the bare date.
 				['America/Santiago', '2026-09-06', ''],
 				['America/Santiago', '2026-09-06 00:00:00', ''],
-				['America/Santiago', '2026-09-06 01:00:00', '2026-09-06 01:00:00'],
-				// Australia/Lord_Howe shifts by thirty minutes rather than an hour.
+				['America/Santiago', '2026-09-06 01:00:00', '2026-09-06T04:00:00.000000Z'],
+				// Australia/Lord_Howe shifts by thirty minutes rather than an hour: 02:15 is
+				// skipped in October, and 01:45 happens twice in April, where PHP's own reading
+				// takes the *later* instant (15:15Z) and this rule takes the earlier.
 				['Australia/Lord_Howe', '2026-10-04 02:15:00', ''],
+				['Australia/Lord_Howe', '2026-04-05 01:45:00', '2026-04-04T14:45:00.000000Z'],
+				// A fractional-hour zone with no DST, and a fraction kept to the microsecond.
+				['Asia/Kathmandu', '2026-10-04T14:30:00.123456', '2026-10-04T08:45:00.123456Z'],
 				// UTC never skips anything, which is why the suite's own zone could not have
 				// found this.
-				['UTC', '2026-03-08 02:30:00', '2026-03-08 02:30:00'],
-				['UTC', '2026-09-06', '2026-09-06 00:00:00']
+				['UTC', '2026-03-08 02:30:00', '2026-03-08T02:30:00.000000Z'],
+				['UTC', '2026-09-06', '2026-09-06T00:00:00.000000Z']
 			];
 
 			foreach ($cases as [$in, $value, $expected])
@@ -1242,31 +1297,36 @@ class WireContractTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * The browser is unaffected, and this is the half of that claim a test can hold.
-	 *
-	 * `choretracking.js` and `choresoverview.js` send a bare `YYYY-MM-DD` for a chore whose
-	 * track_date_only is set, which is why ChoresApiController accepted IsIsoDate() as well
-	 * as IsIsoDateTime() and why refusing everything but the storage rendering was not an
-	 * option. The other four senders - `batterytracking.js`, `batteriesoverview.js`,
-	 * `tasks.js` and the non-date-only branch of the two chore files - send
-	 * moment().format('YYYY-MM-DD HH:mm:ss'). Both are here.
+	 * The three renderings the browser sends. Since ADR-0027's revised decision 2 the
+	 * browser shows the viewer's own zone and therefore sends a time with the device's
+	 * offset (`moment().format()`); a track_date_only chore still sends a bare date, which
+	 * the chore route books at that date's midnight in the server's zone; and the legacy
+	 * offset-free rendering is still read in the server's zone for any caller that sends it.
 	 */
-	public function testTheTwoRenderingsTheBrowserSendsAreAccepted(): void
+	public function testTheRenderingsTheBrowserSendsAreAccepted(): void
 	{
+		$withOffset = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => '2026-03-04T05:06:07+01:00']);
+		self::assertSame(200, $withOffset['status'], $withOffset['body']);
+		self::assertSame(
+			'2026-03-04T04:06:07.000000Z',
+			json_decode($withOffset['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'what every timed sender in public/viewjs sends now: the device\'s wall clock with its offset'
+		);
+
 		$dateOnly = self::send('POST', '/api/chores/9500/execute', [], ['tracked_time' => '2026-03-04', 'skipped' => false]);
 		self::assertSame(200, $dateOnly['status'], $dateOnly['body']);
 		self::assertSame(
-			'2026-03-04 00:00:00',
+			self::expectedFor('2026-03-04', null),
 			json_decode($dateOnly['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
-			'the rendering choretracking.js sends for a track_date_only chore'
+			'the rendering choretracking.js sends for a track_date_only chore: the server-zone midnight'
 		);
 
-		$full = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => '2026-03-04 05:06:07']);
-		self::assertSame(200, $full['status'], $full['body']);
+		$legacy = self::send('POST', '/api/batteries/9500/charge', [], ['tracked_time' => '2026-03-04 05:06:07']);
+		self::assertSame(200, $legacy['status'], $legacy['body']);
 		self::assertSame(
-			'2026-03-04 05:06:07',
-			json_decode($full['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
-			'the rendering every other sender in public/viewjs uses'
+			self::expectedFor('2026-03-04 05:06:07', null),
+			json_decode($legacy['body'], true, flags: JSON_THROW_ON_ERROR)['tracked_time'],
+			'the offset-free rendering, read in the server\'s zone'
 		);
 	}
 
@@ -1281,7 +1341,7 @@ class WireContractTest extends PgsqlSchemaTestCase
 		$statement->execute([$taskId]);
 		$value = $statement->fetchColumn();
 
-		return $value === false || $value === null ? null : (string)$value;
+		return $value === false || $value === null ? null : (Instant::FromDatabase((string)$value) ?? (string)$value);
 	}
 
 	// --------------------------------------------------------------------- issue #232

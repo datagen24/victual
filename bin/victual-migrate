@@ -127,6 +127,20 @@ catch (\Exception $ex)
 	exit(1);
 }
 
+// Migration 0301 (ADR-0027 decision 2) converts every stored timestamp; say what it did and
+// in which zone, because the zone is the one assumption the data cannot check.
+$timestampReport = \Victual\Services\Database\TimestampMigration::$LastReport;
+if (!$quiet && $timestampReport !== null && $timestampReport['values_total'] > 0)
+{
+	echo sprintf(
+		'Converted %d stored timestamp(s) in %d column(s) from %s wall clocks to instants; %d fell in a repeated hour and took the earlier instant.',
+		$timestampReport['values_total'],
+		count($timestampReport['columns']),
+		$timestampReport['zone'],
+		$timestampReport['ambiguous_total']
+	) . PHP_EOL;
+}
+
 if (!$quiet)
 {
 	$applied = DatabaseService::GetInstance()->GetDbConnectionRaw()

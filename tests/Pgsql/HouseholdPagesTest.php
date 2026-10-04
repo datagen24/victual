@@ -8,6 +8,7 @@ use Slim\Http\Factory\DecoratedResponseFactory;
 use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Factory\StreamFactory;
+use Victual\Services\Time\Instant;
 use Victual\Controllers\BatteriesController;
 use Victual\Controllers\CalendarController;
 use Victual\Controllers\ChoresController;
@@ -470,7 +471,8 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		// Executed and never executed are both current; what differs is the tracked time.
 		self::assertListsRow($html, 'chore-' . self::$ids['Chore never executed'] . '-row', 'a chore nobody has done yet is still on the overview');
 		self::assertListsRow($html, 'chore-' . self::$ids['Chore executed once'] . '-row', 'a chore that has been done is on the overview too');
-		self::assertStringContainsString(self::$today . ' 12:00:00', $html, 'the overview reports the pinned last execution of the chore that has one');
+		// The page carries the instant; the browser shows it in the viewer's zone (ADR-0027).
+		self::assertStringContainsString(Instant::ToWire(Instant::FromWallClock(self::$today . ' 12:00:00', Instant::ServerZone(), false)), $html, 'the overview reports the pinned last execution of the chore that has one');
 
 		self::assertOmitsRow($html, 'chore-' . self::$ids['Chore retired'] . '-row', 'an inactive chore is not something the household still owes');
 	}
@@ -633,7 +635,7 @@ class HouseholdPagesTest extends PgsqlSchemaTestCase
 		self::assertSame('', trim(self::rowClass($html, 'battery-' . self::$ids['Battery without interval'] . '-row')), 'a battery without a charge interval is never reported due');
 
 		self::assertOmitsRow($html, 'battery-' . self::$ids['Battery retired'] . '-row', 'an inactive battery is not tracked');
-		self::assertStringContainsString(self::LONG_AGO, $html, 'the overview reports the pinned last charge of the battery that has one');
+		self::assertStringContainsString(Instant::ToWire(Instant::FromWallClock(self::LONG_AGO, Instant::ServerZone(), false)), $html, 'the overview reports the pinned last charge of the battery that has one');
 	}
 
 	/**

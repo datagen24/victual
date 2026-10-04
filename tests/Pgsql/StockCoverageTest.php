@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\Depends;
 use Slim\Exception\HttpException;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
+use Victual\Services\Time\Instant;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Services\ApiKeyService;
 use Victual\Services\DatabaseService;
@@ -783,13 +784,13 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * The happy path the refusals above are the boundary of, and the only place in the
 	 * suite where opened_measured_at carries a real value: every other fixture leaves it
 	 * null, so the rendering the OpenAPI document pins
-	 * (StockLogEntry.opened_measured_at, pattern ^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$)
+	 * (StockLogEntry.opened_measured_at, the wire pattern Instant::WIRE_PATTERN, ADR-0027 decision 2)
 	 * has never been asserted against one.
 	 */
 	#[Depends('testOpenRefusesAnIncoherentMeasurementReading')]
 	public function testOpenWithAGrossMeasurementStoresNetContentsAndWhenTheyWereMeasured(): void
 	{
-		$before = date('Y-m-d H:i:s');
+		$before = Instant::Now();
 
 		$rows = $this->expectStatus(
 			fn() => self::$stock->OpenProduct(self::request('POST', [
@@ -802,7 +803,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			'Opening one named jar with a gross reading is accepted'
 		);
 
-		$after = date('Y-m-d H:i:s');
+		$after = Instant::Now();
 
 		$opened = null;
 		foreach ($rows as $row)
@@ -817,7 +818,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(800.0, (float)$opened['opened_amount'], 'The gross reading minus the tare is what is stored as contents');
 		self::assertSame(self::$ids['gram'], (int)$opened['opened_qu_id'], 'The contents keep the unit they were read in');
 		self::assertSame(50.0, (float)$opened['opened_tare'], 'The tare that was subtracted is recorded rather than lost');
-		self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', (string)$opened['opened_measured_at'], 'opened_measured_at is rendered as the document says');
+		self::assertMatchesRegularExpression('/' . Instant::WIRE_PATTERN . '/D', (string)$opened['opened_measured_at'], 'opened_measured_at is rendered as the document says');
 		self::assertGreaterThanOrEqual($before, (string)$opened['opened_measured_at'], 'The measurement is stamped no earlier than the call');
 		self::assertLessThanOrEqual($after, (string)$opened['opened_measured_at'], 'The measurement is stamped no later than the call');
 

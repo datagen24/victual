@@ -2,7 +2,7 @@
 	"openapi": "3.1.0",
 	"info": {
 		"title": "Victual REST API",
-		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).<br><br>**Dates and times.** Except for the three renderings ADR-0027 decision 2 names - *observed_at* on the label evidence endpoint (RFC 3339), *time_utc* on the system time endpoint (the local shape, but in UTC), and the label surface's TIMESTAMPTZ columns such as *retired_at* (a UTC offset, and fractional seconds when the column holds them) - every date and time this API renders or accepts is a local wall-clock value in the server's configured time zone, written as `YYYY-MM-DD HH:MM:SS` - no `T` separator and no UTC offset, because it is what PostgreSQL renders for a TIMESTAMP column. It is therefore **not** RFC 3339, and these fields are deliberately not typed *format: date-time*: they were, and a generated client decoding them with a strict RFC 3339 reader failed on the whole response. Fields whose column is a SQL DATE carry *format: date* and are plain `YYYY-MM-DD`, which is valid RFC 3339. The three write fields in this family - *tracked_time* on chore execution and battery charge, *done_time* on task completion - accept that rendering, a bare `YYYY-MM-DD` date meaning its midnight, and the RFC 3339-shaped `T` form - where the offset is optional, unlike RFC 3339 itself, and a leap second `:60` is refused - which is converted to the server's zone and stored in the rendering above. Omit one of them to record the current time; send a value that is none of those and the request is refused with **400** naming the field. They were **silently ignored** when they did not match, and the current time was booked instead: issue #231 documented that, ADR-0028 ended it.",
+		"description": "Authentication is done via API keys (header *VICTUAL-API-KEY* or same named query parameter), which you can manage [here](PlaceHolderManageApiKeysUrl).<br>Additionally requests from within the frontend are also valid (via session cookie).<br><br>**Dates and times.** Every instant this API stores or sends is RFC 3339 in UTC with exactly six fractional digits - `2026-10-04T18:30:00.000000Z` - typed *format: date-time* (ADR-0027 decision 2, issue #650). The fixed width is part of the contract: text order is chronological order, so two values may be compared as strings. The one exception is *time_local* on the system time endpoint, the same instant with the server's offset (`2026-10-04T14:30:00.000000-04:00`). Fields whose column is a SQL DATE are calendar dates, typed *format: date* and written `YYYY-MM-DD`; they are never converted between zones. Days the server computes - due today, overdue, expiring in N days - are days in the server's configured time zone. A value sent without an offset - to the three write fields *tracked_time* and *done_time*, to a generic entity write, or as a `query[]` comparison - is a wall clock in the server's configured zone: a repeated hour names the earlier instant, and a skipped hour is refused with **400**. Send an offset to name any instant unambiguously. These values were local wall clocks in the server's zone, `YYYY-MM-DD HH:MM:SS`, until migration 0301 converted them.",
 		"version": "0.2.0-MVP",
 		"license": {
 			"name": "MIT (code originating from upstream grocy) AND BSD-3-Clause (Victual)",
@@ -192,7 +192,9 @@
 												},
 												"retired_at": {
 													"type": "string",
-													"description": "When the label was retired, as PostgreSQL renders the `labels.retired_at` `TIMESTAMPTZ` it is read straight out of: \"YYYY-MM-DD HH:MM:SS[.ffffff]\u00b1HH\" - a UTC offset, and fractional seconds when the column holds them. Neither the local rendering the rest of this document describes nor RFC 3339, so it carries no `pattern` and no `format`. One of the exceptions ADR-0027 decision 2 enumerates; a strict client should read it as an opaque string."
+													"format": "date-time",
+													"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+													"description": "When the label was retired. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 												}
 											},
 											"additionalProperties": false
@@ -253,7 +255,9 @@
 												},
 												"retired_at": {
 													"type": "string",
-													"description": "When the label was retired, as PostgreSQL renders the `labels.retired_at` `TIMESTAMPTZ` it is read straight out of: \"YYYY-MM-DD HH:MM:SS[.ffffff]\u00b1HH\" - a UTC offset, and fractional seconds when the column holds them. Neither the local rendering the rest of this document describes nor RFC 3339, so it carries no `pattern` and no `format`. One of the exceptions ADR-0027 decision 2 enumerates; a strict client should read it as an opaque string."
+													"format": "date-time",
+													"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+													"description": "When the label was retired. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 												}
 											},
 											"additionalProperties": false
@@ -5314,7 +5318,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time of when the chore was executed. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or the RFC 3339-shaped `T` form with an optional fractional part and an optional `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`, `2026-09-21T14:30:00`) - with an offset it names an instant and is stored as that instant rendered in the server's time zone, without one it is read as a wall clock already in that zone. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses rather than storing `2016-12-31T23:59:60Z` as `2017-01-01 00:00:00`. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
+										"description": "The time the chore was executed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									},
 									"done_by": {
 										"type": "integer",
@@ -5678,7 +5682,7 @@
 									"tracked_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time of when the battery was charged. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or the RFC 3339-shaped `T` form with an optional fractional part and an optional `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`, `2026-09-21T14:30:00`) - with an offset it names an instant and is stored as that instant rendered in the server's time zone, without one it is read as a wall clock already in that zone. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses rather than storing `2016-12-31T23:59:60Z` as `2017-01-01 00:00:00`. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
+										"description": "The time the battery was charged. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -5858,7 +5862,7 @@
 									"done_time": {
 										"type": "string",
 										"pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])( ([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?([Zz]|[+-]([01]\\d|2[0-3]):[0-5]\\d)?)?$",
-										"description": "The time of when the task was completed. Omit the field to record the current time. When it is sent it must be one of: `YYYY-MM-DD HH:MM:SS`, this API's own rendering (a local wall-clock value in the server's time zone); `YYYY-MM-DD`, meaning midnight of that date; or the RFC 3339-shaped `T` form with an optional fractional part and an optional `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`, `2026-09-21T14:30:00`) - with an offset it names an instant and is stored as that instant rendered in the server's time zone, without one it is read as a wall clock already in that zone. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses rather than storing `2016-12-31T23:59:60Z` as `2017-01-01 00:00:00`. **Any other value is refused with 400 naming the field.** It was silently ignored until ADR-0028, and the current time was booked in its place; that is the behaviour this description replaces."
+										"description": "The time the task was completed. Omit the field to record the current time. When it is sent it must be one of: the RFC 3339-shaped `T` form with a `Z` or `\u00b1HH:MM` offset (`2026-09-21T14:30:00Z`, `2026-09-21T14:30:00.123+02:00`), which names that instant; or a wall clock in the server's configured time zone - `YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, or `YYYY-MM-DD` meaning midnight of that date. A wall clock the zone repeats when daylight saving ends names the **earlier** of its two instants (`2026-11-01 01:30:00` on America/New_York is `2026-11-01T05:30:00Z`); send the offset to mean the later one. A wall clock the zone skips when daylight saving begins is refused. A fractional part of any length is accepted and kept to the microsecond; later digits are dropped, not rounded. It is deliberately **not** exactly RFC 3339, in both directions: that grammar requires an offset, and it permits a leap second `:60`, which this refuses. **Any other value is refused with 400 naming the field**, and so are `null` and the empty string. The value is stored as an instant and sent back in the API's instant rendering (ADR-0027 decision 2, ADR-0028)."
 									}
 								}
 							}
@@ -9254,8 +9258,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"shopping_location_id": {
 						"type": [
@@ -9413,8 +9418,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"shopping_location_id": {
 						"type": [
@@ -9527,8 +9533,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"plural_forms": {
 						"type": [
@@ -9576,8 +9583,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"parent_location_id": {
 						"type": [
@@ -9663,8 +9671,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"active": {
 						"type": "integer",
@@ -9825,8 +9834,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"userfields": {
 						"type": "object",
@@ -9946,8 +9956,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"opened_amount": {
 						"type": [
@@ -9975,8 +9986,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "When opened_amount was recorded, so a stale figure is visible as stale. Present exactly where opened_amount is"
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When opened_amount was recorded, so a stale figure is visible as stale. Present exactly where opened_amount is. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				},
 				"example": {
@@ -10374,8 +10386,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -10418,8 +10431,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "When this chore was last tracked"
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When this chore was last tracked. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"track_count": {
 						"type": "integer",
@@ -10440,8 +10454,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"next_execution_assigned_user": {
 						"anyOf": [
@@ -10494,8 +10509,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "When this battery was last charged"
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "When this battery was last charged. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"charge_cycles_count": {
 						"type": "integer",
@@ -10506,8 +10522,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				},
 				"example": {
@@ -10574,8 +10591,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -10643,8 +10661,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -10687,8 +10706,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"userfields": {
 						"type": "object",
@@ -10732,8 +10752,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"userfields": {
 						"type": "object",
@@ -10755,16 +10776,18 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"row_created_timestamp": {
 						"type": [
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -10849,16 +10872,18 @@
 					},
 					"start_date": {
 						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"rescheduled_date": {
 						"type": [
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"rescheduled_next_execution_assigned_to_user_id": {
 						"type": [
@@ -10871,8 +10896,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"userfields": {
 						"type": "object",
@@ -10894,16 +10920,18 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"row_created_timestamp": {
 						"type": [
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"stock_transaction_id": {
 						"type": [
@@ -10982,8 +11010,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"opened_amount": {
 						"type": [
@@ -11009,8 +11038,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -11116,8 +11146,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"track_date_only": {
 						"type": [
@@ -11130,8 +11161,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "The next estimated execution time of this chore, 2999-12-31 23:59:59 when the given chore has a period_type of manually"
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "The next estimated execution time of this chore, 2999-12-31T23:59:59.000000Z when the given chore has a period_type of manually. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"next_execution_assigned_to_user_id": {
 						"type": [
@@ -11168,16 +11200,18 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"next_estimated_charge_time": {
 						"type": [
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "The next estimated charge time of this battery, 2999-12-31 23:59:59 when the given battery has no charge_interval_days defined"
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "The next estimated charge time of this battery, 2999-12-31T23:59:59.000000Z when the given battery has no charge_interval_days defined. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -11254,8 +11288,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"category_id": {
 						"type": [
@@ -11274,8 +11309,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"userfields": {
 						"type": "object",
@@ -11303,8 +11339,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -11339,8 +11376,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"category_id": {
 						"type": [
@@ -11359,8 +11397,9 @@
 							"string",
 							"null"
 						],
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"assigned_to_user": {
 						"anyOf": [
@@ -11389,8 +11428,9 @@
 				"properties": {
 					"changed_time": {
 						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},
@@ -11402,18 +11442,20 @@
 					},
 					"time_local": {
 						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "Local date and time in the server's configured time zone, rendered as \"YYYY-MM-DD HH:MM:SS\". Deliberately not `format: date-time`: there is no `T` separator and no UTC offset, so the value is not RFC 3339 and a strict RFC 3339 reader cannot decode it. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}[+-]\\d{2}:\\d{2}$",
+						"description": "The same instant as `time_utc`, rendered in the server's configured time zone with that zone's offset, for example \"2026-10-04T14:30:00.000000-04:00\" on a server set to America/New_York. The one value on the wire that does not end in `Z` (ADR-0027 open question 1), so the text-comparison promise of the other instants does not cover it. Issue #650."
 					},
 					"time_local_sqlite3": {
 						"type": "string",
-						"pattern": "^$|^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "The same local rendering as `time_local`, as SQLite's own client library computes it - or the empty string, which is what every serving image reports since ADR-0008 retired SQLite as a runtime engine and pdo_sqlite stopped being installed. Deliberately not `format: date-time`; see `time_local`. Issue #231."
+						"pattern": "^$|^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}[+-]\\d{2}:\\d{2}$",
+						"description": "The same rendering as `time_local`, as SQLite's own client library computes the wall clock - or the empty string, which is what every serving image reports since ADR-0008 retired SQLite as a runtime engine and pdo_sqlite stopped being installed. Not `format: date-time`, because the empty string is not one. Issue #650."
 					},
 					"time_utc": {
 						"type": "string",
-						"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-						"description": "The same instant as `time_local`, in **UTC** rather than in the server's configured zone - `ApplicationService::GetSystemTime()` renders it through `new \\DateTimeZone('UTC')`. The zone is carried by the property name and not by the value: rendered as \"YYYY-MM-DD HH:MM:SS\", deliberately not `format: date-time`, because there is no `T` separator and no `Z`, and a strict RFC 3339 reader cannot decode it. This is one of the exceptions ADR-0027 decision 2 enumerates. Issue #231."
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "The current instant in UTC - the same instant as `time_local`, which carries the server's offset instead. An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					},
 					"timestamp": {
 						"type": "integer"
@@ -11781,7 +11823,10 @@
 						]
 					},
 					"row_created_timestamp": {
-						"type": "string"
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+						"description": "An instant, sent as RFC 3339 in UTC with exactly six fractional digits, for example \"2026-10-04T18:30:00.000000Z\" (ADR-0027 decision 2). The fixed width makes text order chronological order, so two values may be compared as strings. Issue #650."
 					}
 				}
 			},

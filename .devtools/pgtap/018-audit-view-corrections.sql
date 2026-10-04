@@ -12,6 +12,9 @@
 -- way this file's own before-fix run demonstrated (PR #542's evidence: "Bad plan. You
 -- planned 10 tests but ran 5").
 
+-- Since migration 0301 (issue #650) chores_current derives TIMESTAMPTZ; the expectations
+-- below are instants in UTC, the zone this file's session and fixtures are in.
+
 SELECT plan(11);
 
 -- ---------------------------------------------------------------------------------------
@@ -140,7 +143,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly')),
-	'2026-01-12 09:00:00'::timestamp,
+	'2026-01-12 09:00:00+00'::timestamptz,
 	'#506: the weekly schedule is driven by the live (undone = 0) execution, not a later undone one'
 );
 
@@ -153,7 +156,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit506 weekly control')),
-	'2026-01-12 09:00:00'::timestamp,
+	'2026-01-12 09:00:00+00'::timestamptz,
 	'#506 negative control: a live weekly execution alone still drives the schedule'
 );
 
@@ -174,7 +177,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 leap')),
-	'2025-02-28 12:00:00'::timestamp,
+	'2025-02-28 12:00:00+00'::timestamptz,
 	'#497: a 29 February anchor is due 28 February in the following (non-leap) year, not a thrown SQLSTATE 22008'
 );
 
@@ -188,7 +191,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 leap again')),
-	'2028-02-29 12:00:00'::timestamp,
+	'2028-02-29 12:00:00+00'::timestamptz,
 	'#497: the same 29 February anchor is due 29 February again once the target year is itself a leap year'
 );
 
@@ -206,7 +209,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 leap recovers after a clamped year')),
-	'2028-02-29 12:00:00'::timestamp,
+	'2028-02-29 12:00:00+00'::timestamptz,
 	'#497: a 29 February anchor recovers the 29th in the next leap year even when the last tracked execution was itself a clamped 28th'
 );
 
@@ -219,7 +222,7 @@ INSERT INTO chores_log (chore_id, tracked_time, done_by_user_id, undone) VALUES
 
 SELECT is(
 	(SELECT next_estimated_execution_time FROM chores_current WHERE chore_id = (SELECT id FROM chores WHERE name = 'Audit497 ordinary')),
-	'2025-03-15 08:00:00'::timestamp,
+	'2025-03-15 08:00:00+00'::timestamptz,
 	'#497 negative control: an ordinary (non-29-February) yearly anchor is unaffected'
 );
 

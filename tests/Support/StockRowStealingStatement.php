@@ -3,10 +3,11 @@
 namespace Victual\Tests\Support;
 
 use PDO;
-use PDOStatement;
+use Victual\Services\Database\InstantStatement;
 
 /**
- * Companion to tests/Support/StockRowStealingPdo.php: a \PDOStatement subclass,
+ * Companion to tests/Support/StockRowStealingPdo.php: a \PDOStatement subclass - by way of
+ * InstantStatement, so its connection renders instants as every application connection does -
  * installed through PDO::ATTR_STATEMENT_CLASS, that recognises
  * StockService::UndoBooking()'s own "does row X still exist" check
  * (`$this->DB->stock()->where('id = :1', $stockRowId)->fetch()`) by its exact SQL shape
@@ -22,7 +23,7 @@ use PDOStatement;
  * id some other way (as this steal itself does, by inserting under an explicit id with
  * no query() call at all).
  */
-class StockRowStealingStatement extends PDOStatement
+class StockRowStealingStatement extends InstantStatement
 {
 	private PDO $racingConnection;
 	private int $targetId;

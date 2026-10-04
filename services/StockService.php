@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Helpers\Grocycode;
 use Victual\Services\Influx\BookingEventPublisher;
 use Victual\Services\Storage\FileStorage;
@@ -3291,7 +3293,7 @@ class StockService extends BaseService
 	{
 		$logRow->update([
 			'undone' => 1,
-			'undone_timestamp' => date('Y-m-d H:i:s')
+			'undone_timestamp' => Instant::Now()
 		]);
 	}
 
@@ -4858,7 +4860,7 @@ class StockService extends BaseService
 			'opened_amount' => $openedAmount,
 			'opened_qu_id' => $quId,
 			'opened_tare' => $tare,
-			'opened_measured_at' => date('Y-m-d H:i:s'),
+			'opened_measured_at' => Instant::Now(),
 		];
 	}
 

@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Database;
 
+use Victual\Services\Time\Instant;
+
 /**
  * Comparing the same data as it comes back from two different engines.
  *
@@ -123,5 +125,76 @@ class ValueComparison
 		}
 
 		return true;
+	}
+
+	/**
+	 * A timestamp as the instant it names, for comparing a TIMESTAMPTZ column on PostgreSQL
+	 * with the frozen SQLite line's wall clock for the same value (ADR-0027 open question 3).
+	 *
+	 * - PostgreSQL's rendering (`2026-10-04 14:30:00-04`) and the wire rendering are
+	 *   instants already.
+	 * - A full wall clock (`2026-10-04 14:30:00`) is read in $sourceZone, the zone the
+	 *   SQLite side's wall clocks are in, which the caller names explicitly. The lenient
+	 *   reading is the one the views use for a time they derive: a repeated hour is the
+	 *   earlier instant, a skipped one moves forward.
+	 * - Anything else - a bare date, a value with no recognisable shape - is returned
+	 *   unchanged, so it can only ever equal an identical string. That is what keeps a DATE
+	 *   that was turned into an instant, or a malformed value, from comparing equal.
+	 *
+	 * Microseconds are kept on both sides, so a lost fraction is a difference.
+	 */
+	public static function NormaliseInstant($value, \DateTimeZone $sourceZone)
+	{
+		if (!is_string($value))
+		{
+			return $value;
+		}
+
+		$fromDatabase = Instant::FromDatabase($value);
+		if ($fromDatabase !== null)
+		{
+			return $fromDatabase;
+		}
+
+		$parsed = Instant::Parse($value);
+		if ($parsed !== null)
+		{
+			return Instant::ToWire($parsed);
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?$/D', $value) === 1)
+		{
+			$instant = Instant::FromWallClock($value, $sourceZone, false);
+			return $instant === null ? $value : Instant::ToWire($instant);
+		}
+
+		return $value;
+	}
+
+	/**
+	 * The result columns a PostgreSQL statement types TIMESTAMPTZ and `timestamp without
+	 * time zone`, by name, from the driver's column metadata. The second list should be empty
+	 * after migration 0301; a caller treats anything in it as a failure, because a wall clock
+	 * on the PostgreSQL side has no zone to compare by.
+	 *
+	 * @return array{instants: string[], wallClocks: string[]}
+	 */
+	public static function TimestampColumnsOf(\PDOStatement $statement): array
+	{
+		$columns = ['instants' => [], 'wallClocks' => []];
+		for ($i = 0; $i < $statement->columnCount(); $i++)
+		{
+			$meta = $statement->getColumnMeta($i);
+			if (($meta['native_type'] ?? null) === 'timestamptz')
+			{
+				$columns['instants'][] = $meta['name'];
+			}
+			elseif (($meta['native_type'] ?? null) === 'timestamp')
+			{
+				$columns['wallClocks'][] = $meta['name'];
+			}
+		}
+
+		return $columns;
 	}
 }
