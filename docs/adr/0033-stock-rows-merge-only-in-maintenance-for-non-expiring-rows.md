@@ -1,6 +1,7 @@
 # ADR-0033: Stock rows are merged only by a maintenance routine, and only when they never expire
 
-- **Status:** Proposed.
+- **Status:** Proposed. Decider's answers recorded 2026-10-04 (below). Both open questions
+  are resolved, and the decider's half of acceptance prerequisite 4 is met.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-26, from the maintainer's decision in the issue
@@ -12,6 +13,17 @@
   named in decision 4;
   [ADR-0010](0010-workload-standard.md), whose workload standard the new maintenance
   routine must meet.
+
+## Decider's answers (2026-10-04)
+
+The decider answered the record's remaining decision points in an interview on 2026-10-04.
+
+| Question | Answer |
+|---|---|
+| Decision 2: how the merge command runs | **A CronJob in `deploy/`**, with its own least-privilege database role under ADR-0010. Prerequisite 3 stands. Running the command only by hand was rejected: merging would then almost never happen, which is close to the "drop merging entirely" alternative. |
+| Decision 5: weighing corrects the location's total instead of merging rows | **Confirmed.** |
+| Open question 2: metadata for the row a higher reading adds | **As built in PR #580.** The operator must supply `best_before_date`, and the request is refused without it. Price is the product's last price, the shopping location is the last one used, and the purchase date is today. |
+| Open question 1: does undoing a full consume bring back the label it retired? | **Yes, but only the label that this consume retired.** This is a new decision 6. |
 
 ## Context
 
@@ -83,7 +95,8 @@ location-total weighing behavior below are proposed refinements requiring accept
    `WeighLocation()` no longer call `CompactStockEntries()` as part of their own
    transactions.
 2. **Merging becomes an explicit maintenance command.** A CronJob in `deploy/` is the
-   proposed scheduling mechanism under [ADR-0010](0010-workload-standard.md).
+   scheduling mechanism under [ADR-0010](0010-workload-standard.md). **The decider
+   confirmed this on 2026-10-04.**
    `deploy/k3s/label-workers.yaml` already declares two CronJobs; the maintenance job
    joins them and `.devtools/ci/check_deploy_manifest.py` checks its manifest.
 3. **Only unlabelled rows that never expire may merge.** Eligibility requires
@@ -121,12 +134,38 @@ location-total weighing behavior below are proposed refinements requiring accept
    reading adds a separate positive inventory-correction row there. Existing rows retain
    their due dates and identities; ordinary full-consumption label retirement still applies.
 
-   Do not copy an arbitrary existing lot's due date onto a positive correction. Before
-   implementation, specify how the operator supplies the new row's date and other required
-   purchase metadata, or how a documented inventory default supplies them. That contract
-   is an acceptance gate. A matching reading creates no booking. Multi-product locations
+   Do not copy an arbitrary existing lot's due date onto a positive correction. **The
+   contract (decider, 2026-10-04, as built in PR #580):** a higher reading requires the
+   request to carry `best_before_date`, and without it the request is refused with a
+   message that says why. The new row takes the product's `last_price`, its
+   `last_shopping_location_id` and today's purchase date. These are the defaults
+   `InventoryProduct()` already uses for its own positive correction. A matching reading creates no booking. Multi-product locations
    remain refused. The implementation must preserve ordinary booking and undo behavior;
    weighing does not directly overwrite several rows or revive retired labels.
+
+6. **Undoing a full consume brings back the label that consume retired, and no other.**
+   (Decider, 2026-10-04, resolving open question 1.) Take a jar labelled `vctl:7Q2K` on
+   stock row 41. Booking 900 consumes the row completely, so the row is deleted and
+   `retire_stock_entry_labels` retires the label. Undoing booking 900 restores row 41 under
+   its original id, as [PR #531](https://github.com/datagen24/victual/pull/531) does. Under
+   this decision, `vctl:7Q2K` then resolves to row 41 again.
+
+   A label is revived only when all of the following hold. The label was a `stock_entry`
+   label retired by deleting that row, *as part of the booking being undone*. The undo
+   restores the row under the same `id`. No other live label targets that row. To check the
+   first condition, the label row must record which booking retired it. Recording that is
+   part of implementing this decision; today's trigger stores only an `{id, name}` snapshot.
+
+   Nothing else revives a label: not an import, not deleting a product or location, not
+   the maintenance merge (which never merges a labelled row, under decision 3), and not an
+   undo of a different booking that happens to put stock back. A row restored under a new
+   `id` leaves the label retired.
+
+   This keeps [ADR-0021](0021-label-templates-are-application-data.md)'s identity rule.
+   A retired uid is never reattached to a reused id belonging to a different target. It is
+   reattached only to the same row, by reversing the event that detached it. Outside that
+   one reversal, a retired label stays retired, so a retired label seen in the world still
+   signals a discrepancy, as [ADR-0011](0011-label-namespace.md) intends.
 
 **Alternatives considered:**
 
@@ -162,23 +201,31 @@ location-total weighing behavior below are proposed refinements requiring accept
   (Proposed) is the design for that gap. `stock_log.stock_row_id` stays
   unchanged, so bookings on deleted rows retain their original physical row ids.
   PR #531 can refuse edit/open undo when that identity is gone; consume undo can recreate
-  a fully consumed row under its original id. Reusing an id does not itself revive a label.
+  a fully consumed row under its original id. Reusing an id does not by itself revive a
+  label. Under decision 6, only an undo of the consume that retired the label does.
 - Implementation status at 2026-10-03: [PR #580](https://github.com/datagen24/victual/pull/580)
   (merged 2026-09-28 as `0e3e61c1`) built decisions 1, 3 and 5, the maintenance command
   `bin/victual-compact-stock` and the narrowed `stock_splits` view (`migrations/0290.pgsql.sql`).
-  No CronJob is declared (decision 2, acceptance prerequisite 3). The record is still
-  Proposed, and the accepting pull request has not yet stated how each prerequisite was met.
+  No CronJob is declared (decision 2, acceptance prerequisite 3). Label revival
+  (decision 6, added 2026-10-04) is not built. The record is still Proposed, and the
+  accepting pull request has not yet stated how each prerequisite was met.
 
 ## Open questions
+
+Both questions were resolved by the decider on 2026-10-04. Their text is kept so the
+answers can be read against what was asked.
 
 1. **#491's remaining label-revival question.** PR #531 at `e60a5d22` already restores
    a fully consumed row under its original id. The retirement trigger clears the label's
    `target_id`, so restoring the row alone leaves the label retired. Whether undo should
    revive that label remains undecided; this proposal does not add revival.
+   **Resolved: yes, limited to the label that the undone consume retired. See decision 6.**
 2. **Positive weighing correction metadata.** Decision 5 adds a row when the measured
    total increases. Which date and other purchase metadata does the operator supply, and
    which existing inventory defaults may apply? This must be specified before implementation
    and demonstrated before acceptance; an arbitrary existing lot cannot supply the answer.
+   **Resolved: the operator supplies `best_before_date`. Last price, last shopping location
+   and today's purchase date fill the rest, as built. See decision 5.**
 
 ## Acceptance prerequisites
 
@@ -199,12 +246,21 @@ location-total weighing behavior below are proposed refinements requiring accept
    demonstrates ADR-0010's statelessness, idempotence, dedicated least-privilege credential
    and database role, and deployment requirements; a manifest check alone proves neither
    idempotence nor appropriate privileges.
-4. The decider confirms location-total weighing and resolves open question 2. Regression
+4. The decider confirms location-total weighing and resolves open question 2. **The
+   decider's half is met (2026-10-04)**; the regression tests below are not yet shown. Regression
    tests weigh a vessel after two identical dated refills and repeat with a labelled row.
    Cover lower, higher and unchanged readings, exact-location isolation, rollback, and
    undo. Booking deltas must equal the correction; surviving rows keep their due dates
    and identities. Test full-consumption label retirement separately from merge exclusion.
    Remove all three inline calls only with this weighing behavior available.
+
+5. Decision 6 is implemented with real-PostgreSQL tests:
+   - Undoing the full consume that retired a label revives it, and the uid resolves to the
+     restored row.
+   - Each of the following leaves the label retired: undoing a different booking,
+     restoring the row under a new id, a label retired by an import or by deleting a
+     product, and a row that already has another live label.
+   - A revived label can be retired again by a later full consume.
 
 Implementation and verification belong in separate changes. The acceptance pull request
 links their evidence and carries only the required lifecycle bookkeeping.
