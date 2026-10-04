@@ -61,6 +61,12 @@ $sqlite->createFunction('ceil', fn($value) => ceil($value));
 $pg = new PDO(getenv('DIFFTEST_PGSQL_DSN') ?: 'pgsql:host=victual-pg;port=5432;dbname=victual_full', getenv('DIFFTEST_PGSQL_USER') ?: 'victual', getenv('DIFFTEST_PGSQL_PASSWORD') ?: 'victual');
 $pg->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+// The session zone the application gives every connection (PostgresDialect::OnConnected):
+// the configured zone, here the named source zone. Without it PostgreSQL reads a literal and
+// derives "today" in the server's default zone while SQLite uses local time, and the two only
+// agree when both happen to be UTC.
+$pg->exec('SET TIME ZONE ' . $pg->quote(getenv('DIFFTEST_SOURCE_ZONE') ?: date_default_timezone_get()));
+
 // Set DIFFTEST_SKIP_COPY=1 to compare against a PostgreSQL database that was populated
 // some other way - in particular one filled by bin/victual-db-import, which verifies the
 // real migration command rather than this script's own copier.
@@ -144,6 +150,12 @@ foreach ($views as $view)
 		{
 			foreach ($a as &$row)
 			{
+				// The one deliberate difference: SQLite's "never" is the wall clock
+				// 2999-12-31 23:59:59 in the local zone, and migration 0301 fixed it at that
+				// wall clock in UTC so that it is the same instant on every server
+				// (Instant::NEVER). Only that literal is mapped; any other value still has to
+				// name the same instant on both sides.
+				if (($row[$column] ?? null) === '2999-12-31 23:59:59') $row[$column] = Victual\Services\Time\Instant::NEVER;
 				if (array_key_exists($column, $row)) $row[$column] = ValueComparison::NormaliseInstant($row[$column], $sourceZone);
 			}
 			unset($row);

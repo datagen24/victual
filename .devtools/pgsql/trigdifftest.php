@@ -59,6 +59,12 @@ foreach ($scripts as $script)
 	);
 	$pg->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+	// The session zone the application gives every connection (PostgresDialect::OnConnected):
+	// the configured zone, here the named source zone. Without it PostgreSQL reads a literal and
+	// derives "today" in the server's default zone while SQLite uses local time, and the two only
+	// agree when both happen to be UTC.
+	$pg->exec('SET TIME ZONE ' . $pg->quote(getenv('DIFFTEST_SOURCE_ZONE') ?: date_default_timezone_get()));
+
 	// Load the SQLite state into PostgreSQL with triggers off, so both sides begin
 	// from the same rows rather than from rows the target's triggers have re-derived
 	$importer = new DatabaseImporter($sqlite, $pg, $dialect, fn($m) => null);
