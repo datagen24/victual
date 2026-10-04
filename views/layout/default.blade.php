@@ -115,6 +115,10 @@
 		// (BaseController::Render()); unauthenticated pages render no stock data.
 		Victual.PricesVisible = {{ BoolToString(VICTUAL_AUTHENTICATED && $pricesVisible) }};
 
+		// The server's configured zone: the zone its days - due today, overdue - are in
+		// (ADR-0027 decision 2). Display uses the device's own zone.
+		Victual.ServerTimezone = {!! json_encode(date_default_timezone_get()) !!};
+
 		@if (VICTUAL_AUTHENTICATED)
 		Victual.UserId = {{ VICTUAL_USER_ID }};
 		Victual.UserSettings = {!! json_encode($userSettings) !!};

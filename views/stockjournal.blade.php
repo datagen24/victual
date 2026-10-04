@@ -263,7 +263,7 @@
 						<span class="name-anchor @if($stockLogEntry->undone == 1) text-strike-through @endif">{{ $stockLogEntry->product_name }}</span>
 						@if($stockLogEntry->undone == 1)
 						<br>
-						{{ $__t('Undone on') . ' ' . $stockLogEntry->undone_timestamp }}
+						{{ $__t('Undone on') }} <span>{{ $stockLogEntry->undone_timestamp }}</span>
 						<time class="timeago timeago-contextual"
 							datetime="{{ $stockLogEntry->undone_timestamp }}"></time>
 						@endif

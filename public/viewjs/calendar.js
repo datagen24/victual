@@ -23,6 +23,9 @@ var calendar = $("#calendar").fullCalendar({
 	"eventLimit": false,
 	"height": "auto",
 	"eventSources": Victual.FullcalendarEventSources,
+	// Timed events are instants (ADR-0027 decision 2) and are shown in the viewer's zone.
+	// All-day events are calendar dates and are not converted.
+	"timezone": "local",
 	"eventClick": function(info)
 	{
 		location.href = info.link;

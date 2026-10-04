@@ -70,7 +70,8 @@ $(document).on('click', '.track-charge-cycle-button', function(e)
 
 	var batteryId = $(e.currentTarget).attr('data-battery-id');
 	var batteryName = $(e.currentTarget).attr('data-battery-name');
-	var trackedTime = moment().format('YYYY-MM-DD HH:mm:ss');
+	// The device's wall clock with its offset (ADR-0027 decision 2)
+	var trackedTime = Victual.Instant.Now();
 
 	Victual.Api.Post('batteries/' + batteryId + '/charge', { 'tracked_time': trackedTime },
 		function()
@@ -79,6 +80,7 @@ $(document).on('click', '.track-charge-cycle-button', function(e)
 				function(result)
 				{
 					var batteryRow = $('#battery-' + batteryId + '-row');
+					// Instants compare as instants whatever zone the device is in
 					var nextXDaysThreshold = moment().add($("#info-due-soon-batteries").data("next-x-days"), "days");
 					var now = moment();
 					var nextExecutionTime = moment(result.next_estimated_charge_time);
@@ -108,7 +110,7 @@ $(document).on('click', '.track-charge-cycle-button', function(e)
 						// batteryName came from a data- attribute read back with .attr(), which
 						// returns the decoded string, and this toastr message is rendered as HTML -
 						// so it is escaped here, at the point of use (sweep finding S29).
-						toastr.success(__t('Tracked charge cycle of battery %1$s on %2$s', Victual.FrontendHelpers.EscapeHtml(batteryName), trackedTime));
+						toastr.success(__t('Tracked charge cycle of battery %1$s on %2$s', Victual.FrontendHelpers.EscapeHtml(batteryName), Victual.Instant.ToDevice(trackedTime)));
 					RefreshContextualTimeago("#battery-" + batteryId + "-row");
 					RefreshStatistics();
 				},
@@ -150,24 +152,22 @@ function RefreshStatistics()
 			var dueTodayCount = 0;
 			var dueSoonCount = 0;
 			var overdueCount = 0;
-			var overdueThreshold = moment();
-			var nextXDaysThreshold = moment().add(nextXDays, "days");
-			var todayThreshold = moment().endOf("day");
-
 			result.forEach(element =>
 			{
-				var date = moment(element.next_estimated_charge_time);
+				// The server's days (ADR-0027): the same categories BatteriesController gives
+				// the rows when it renders the page
+				var dueType = Victual.Instant.DueType(element.next_estimated_charge_time, nextXDays);
 
-				if (date.isBefore(overdueThreshold))
+				if (dueType == "overdue")
 				{
 					overdueCount++;
 				}
-				else if (date.isSameOrBefore(todayThreshold))
+				else if (dueType == "duetoday")
 				{
 					dueTodayCount++;
 					dueSoonCount++;
 				}
-				else if (date.isSameOrBefore(nextXDaysThreshold))
+				else if (dueType == "duesoon")
 				{
 					dueSoonCount++;
 				}

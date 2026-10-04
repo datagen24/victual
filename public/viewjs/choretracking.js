@@ -21,10 +21,14 @@ $('.save-choretracking-button').on('click', function (e)
 	var jsonForm = $('#choretracking-form').serializeJSON();
 	Victual.FrontendHelpers.BeginUiBusy("choretracking-form");
 
+	// The device's wall clock with its offset, or a bare date for a date-only chore
+	// (ADR-0027 decision 2). The picker's own validity refuses a skipped wall clock.
+	var trackedTime = Victual.Components.DateTimePicker.GetInstant();
+
 	Victual.Api.Get('chores/' + jsonForm.chore_id,
 		function (choreDetails)
 		{
-			Victual.Api.Post('chores/' + jsonForm.chore_id + '/execute', { 'tracked_time': Victual.Components.DateTimePicker.GetValue(), 'done_by': $("#user_id").val(), 'skipped': skipped },
+			Victual.Api.Post('chores/' + jsonForm.chore_id + '/execute', { 'tracked_time': trackedTime, 'done_by': $("#user_id").val(), 'skipped': skipped },
 				function (result)
 				{
 					Victual.EditObjectId = result.id;

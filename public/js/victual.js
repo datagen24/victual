@@ -381,11 +381,116 @@ __n = function (number, singularForm, pluralForm, isQu = false)
 }
 
 /**
+ * Instants on the wire (ADR-0027 decision 2, issue #650).
+ *
+ * The API sends every instant as RFC 3339 in UTC ("2026-10-04T18:30:00.000000Z"). The browser
+ * shows each viewer their own device's zone, so a value is converted for display, and a time
+ * the viewer types is sent with the device's offset - a value without one would be read in
+ * the server's zone, which is not necessarily the zone it was typed in.
+ *
+ * Days the server defines - due today, overdue, a date-only chore's day - stay the server's
+ * configured zone's days (Victual.ServerTimezone). The browser's own Intl support converts to
+ * that zone; no time zone database is shipped for it.
+ */
+Victual.Instant = {};
+
+/** An instant with an explicit zone: "Z" or a "+HH:MM" offset. */
+Victual.Instant.Pattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** @returns {boolean} Whether value is an instant in a rendering this API sends */
+Victual.Instant.IsInstant = function (value)
+{
+	return typeof value === "string" && Victual.Instant.Pattern.test(value);
+}
+
+/** @returns {string} An instant as the device's wall clock, in a moment.js format */
+Victual.Instant.ToDevice = function (value, format = "YYYY-MM-DD HH:mm:ss")
+{
+	return moment(value).format(format);
+}
+
+/**
+ * The calendar date ("YYYY-MM-DD") an instant falls on in the server's configured zone.
+ * @returns {string}
+ */
+Victual.Instant.ServerDate = function (value)
+{
+	var parts = {};
+	new Intl.DateTimeFormat("en-CA", { timeZone: Victual.ServerTimezone, year: "numeric", month: "2-digit", day: "2-digit" })
+		.formatToParts(new Date(moment(value).valueOf()))
+		.forEach(function (part) { parts[part.type] = part.value; });
+	return parts.year + "-" + parts.month + "-" + parts.day;
+}
+
+/** @returns {string} Today's date in the server's configured zone */
+Victual.Instant.ServerToday = function ()
+{
+	return Victual.Instant.ServerDate(moment().toISOString());
+}
+
+/** @returns {string} The current instant, as the device's wall clock with its offset */
+Victual.Instant.Now = function ()
+{
+	return moment().format();
+}
+
+/**
+ * A wall clock the viewer typed, in the device's zone, as an instant with the device's offset
+ * ("2026-10-04T14:30:00-04:00") - or null when it is not a time there. A wall clock the device's
+ * zone skipped when daylight saving began does not survive the round trip (moment moves it
+ * forward) and is refused rather than sent an hour later than typed; a repeated one names the
+ * earlier instant, which is what the browser's Date and the server's own rule both choose.
+ * @returns {string|null}
+ */
+Victual.Instant.FromDevice = function (value, format = "YYYY-MM-DD HH:mm:ss")
+{
+	var parsed = moment(value, format, true);
+	if (!parsed.isValid() || parsed.format(format) !== value)
+	{
+		return null;
+	}
+
+	return parsed.format();
+}
+
+/**
+ * The due category the server would give an instant: "overdue" before now, "duetoday" on the
+ * server's current day, "duesoon" within nextXDays, or "" - the same rule ChoresController and
+ * BatteriesController apply when they render the page.
+ * @returns {string}
+ */
+Victual.Instant.DueType = function (value, nextXDays)
+{
+	if (!value)
+	{
+		return "";
+	}
+
+	var instant = moment(value);
+	if (instant.isBefore(moment()))
+	{
+		return "overdue";
+	}
+	if (Victual.Instant.ServerDate(value) <= Victual.Instant.ServerToday())
+	{
+		return "duetoday";
+	}
+	if (nextXDays > 0 && instant.isSameOrBefore(moment().add(nextXDays, "days")))
+	{
+		return "duesoon";
+	}
+	return "";
+}
+
+/**
  * Renders all <time class="timeago" datetime="..."> elements below rootSelector
  * as relative time ("x days ago" via moment.fromNow()), "Today", or the special
- * labels "Never"/"Unknown" for the sentinel dates 2999-12-31 / 2888-12-31;
- * for elements with class "timeago-date-only" the preceding element's text is
- * truncated to the date part (first 10 characters, YYYY-MM-DD).
+ * labels "Never"/"Unknown" for the sentinel dates 2999-12-31 / 2888-12-31.
+ *
+ * An instant's absolute rendering - the element just before the <time>, when its text is the
+ * same instant - is converted to the device's zone. For elements with class
+ * "timeago-date-only" (a date-only chore) the day is the server's, because the server defines
+ * which day such a chore is due or was done on, and only the date is shown.
  * @param {string} [rootSelector="#page-content"] Selector to limit the processed subtree
  */
 RefreshContextualTimeago = function (rootSelector = "#page-content")
@@ -414,10 +519,28 @@ RefreshContextualTimeago = function (rootSelector = "#page-content")
 			return;
 		}
 
+		var isDateWithoutTime = element.hasClass("timeago-date-only");
+		var isInstant = Victual.Instant.IsInstant(timestamp);
 		var isNever = timestamp && timestamp.substring(0, 10) == "2999-12-31";
 		var isUnknown = timestamp && timestamp.substring(0, 10) == "2888-12-31";
-		var isToday = timestamp && timestamp.substring(0, 10) == moment().format("YYYY-MM-DD");
-		var isDateWithoutTime = element.hasClass("timeago-date-only");
+		var isToday;
+		if (isInstant && isDateWithoutTime)
+		{
+			isToday = Victual.Instant.ServerDate(timestamp) == Victual.Instant.ServerToday();
+		}
+		else if (isInstant)
+		{
+			isToday = moment(timestamp).format("YYYY-MM-DD") == moment().format("YYYY-MM-DD");
+		}
+		else
+		{
+			isToday = timestamp.substring(0, 10) == moment().format("YYYY-MM-DD");
+		}
+
+		if (isInstant && !isNever && !isUnknown && element.prev().text().trim() == timestamp)
+		{
+			element.prev().text(isDateWithoutTime ? Victual.Instant.ServerDate(timestamp) : Victual.Instant.ToDevice(timestamp));
+		}
 
 		if (isNever)
 		{
