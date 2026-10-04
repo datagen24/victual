@@ -30,7 +30,7 @@
 		"gettext-translator": "3.0.1",
 		"jquery": "^3.6.0",
 		"jquery-serializejson": "^2.9.0",
-		"moment": "^2.27.0",
+		"moment": "^2.31.0",
 		"nosleep.js": "^0.12.0",
 		"sprintf-js": "^1.1.2",
 		"summernote": "^0.9.1",
