@@ -33,7 +33,7 @@
                 "id": "integer",
                 "is_reassigned": "boolean",
                 "is_rescheduled": "boolean",
-                "last_tracked_time": "string",
+                "last_tracked_time": "string(date-time)",
                 "next_estimated_execution_time": "null",
                 "next_execution_assigned_to_user_id": "null",
                 "next_execution_assigned_user": "null",
@@ -64,8 +64,8 @@
                 "rescheduled_date": "null",
                 "rescheduled_next_execution_assigned_to_user_id": "null",
                 "rollover": "boolean",
-                "row_created_timestamp": "string",
-                "start_date": "string",
+                "row_created_timestamp": "string(date-time)",
+                "start_date": "string(date-time)",
                 "track_date_only": "boolean"
             },
             "last_done_by": {
@@ -74,10 +74,10 @@
                 "id": "integer",
                 "last_name": "null",
                 "picture_file_name": "null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "username": "string"
             },
-            "last_tracked": "string",
+            "last_tracked": "string(date-time)",
             "next_estimated_execution_time": "null",
             "next_execution_assigned_user": "null",
             "tracked_count": "integer"
@@ -99,7 +99,7 @@
                 "id": "integer",
                 "import_epoch": "integer",
                 "name": "string",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "used_in": "null"
             }
         ]
@@ -110,10 +110,10 @@
             {
                 "battery_id": "integer",
                 "id": "integer",
-                "row_created_timestamp": "string",
-                "tracked_time": "string",
+                "row_created_timestamp": "string(date-time)",
+                "tracked_time": "string(date-time)",
                 "undone": "integer",
-                "undone_timestamp": "null|string"
+                "undone_timestamp": "null|string(date-time)"
             }
         ]
     },
@@ -139,8 +139,8 @@
                 "rescheduled_date": "null",
                 "rescheduled_next_execution_assigned_to_user_id": "null",
                 "rollover": "boolean",
-                "row_created_timestamp": "string",
-                "start_date": "string",
+                "row_created_timestamp": "string(date-time)",
+                "start_date": "string(date-time)",
                 "track_date_only": "boolean"
             }
         ]
@@ -152,13 +152,13 @@
                 "chore_id": "integer",
                 "done_by_user_id": "integer",
                 "id": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "scheduled_execution_time": "null",
                 "skipped": "integer",
                 "stock_transaction_id": "null",
-                "tracked_time": "string",
+                "tracked_time": "string(date-time)",
                 "undone": "integer",
-                "undone_timestamp": "null|string"
+                "undone_timestamp": "null|string(date-time)"
             }
         ]
     },
@@ -170,7 +170,7 @@
                 "id": "integer",
                 "instruction_manual_file_name": "null",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -184,7 +184,7 @@
                 "is_freezer": "integer",
                 "name": "string",
                 "parent_location_id": "null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "storage_class_id": "null",
                 "tare_qu_id": "null",
                 "tare_weight": "null"
@@ -215,7 +215,7 @@
             {
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "sort_number": "integer",
                 "time_info": "null"
             }
@@ -243,7 +243,7 @@
                 "note": "null",
                 "product_id": "integer",
                 "qu_id": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null"
             }
         ]
@@ -272,7 +272,7 @@
                 "min_stock_amount": "integer",
                 "name": "string",
                 "parent_product_group_id": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -312,7 +312,7 @@
             {
                 "from_product_id": "integer",
                 "id": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "to_product_id": "integer"
             }
         ]
@@ -323,7 +323,7 @@
             {
                 "direction": "string",
                 "from_product_amount_in_stock": "integer",
-                "from_product_best_before_date": "string",
+                "from_product_best_before_date": "string(date)",
                 "from_product_id": "integer",
                 "id": "integer",
                 "to_product_id": "integer"
@@ -371,7 +371,7 @@
                 "quick_consume_amount": "integer",
                 "quick_open_amount": "integer",
                 "quick_refill_amount": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "should_not_be_frozen": "integer",
                 "tare_weight": "integer",
@@ -393,11 +393,11 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "id": "integer",
                 "location_id": "integer",
                 "product_id": "integer",
-                "purchased_date": "string",
+                "purchased_date": "string(date)",
                 "shopping_location_id": "null"
             }
         ]
@@ -435,7 +435,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -453,7 +453,7 @@
                 "not_check_shoppinglist": "integer",
                 "picture_file_name": "null",
                 "product_id": "null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "type": "string"
             }
         ]
@@ -479,7 +479,7 @@
                 "qu_id": "integer",
                 "recipe_id": "integer",
                 "round_up": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "variable_amount": "null"
             }
         ]
@@ -534,7 +534,7 @@
                 "description": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null"
             }
         ]
@@ -547,7 +547,7 @@
                 "description": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -556,7 +556,7 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "id": "integer",
                 "import_epoch": "integer",
                 "location_id": "integer",
@@ -568,8 +568,8 @@
                 "opened_qu_id": "null",
                 "opened_tare": "null",
                 "product_id": "integer",
-                "purchased_date": "string",
-                "row_created_timestamp": "string",
+                "purchased_date": "string(date)",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "stock_id": "string"
             }
@@ -593,20 +593,20 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "correlation_id": "null|string",
                 "id": "integer",
                 "location_id": "integer",
                 "note": "null",
                 "opened_amount": "null",
-                "opened_date": "null|string",
+                "opened_date": "null|string(date)",
                 "opened_measured_at": "null",
                 "opened_qu_id": "null",
                 "opened_tare": "null",
                 "product_id": "integer",
-                "purchased_date": "string",
+                "purchased_date": "string(date)",
                 "recipe_id": "integer|null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "spoiled": "boolean",
                 "stock_id": "string",
@@ -614,8 +614,8 @@
                 "transaction_id": "string",
                 "transaction_type": "string",
                 "undone": "integer",
-                "undone_timestamp": "null|string",
-                "used_date": "null|string",
+                "undone_timestamp": "null|string(date-time)",
+                "used_date": "null|string(date)",
                 "user_id": "integer"
             }
         ]
@@ -629,7 +629,7 @@
                 "max_temp_c": "integer",
                 "min_temp_c": "integer",
                 "name": "string",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "sort_order": "integer",
                 "treats_as_freezer": "integer"
             }
@@ -643,7 +643,7 @@
                 "description": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -659,7 +659,7 @@
                 "due_date": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -696,7 +696,7 @@
             "id": "integer",
             "import_epoch": "integer",
             "name": "string",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "used_in": "null",
             "userfields": {
                 "__empty_list__": true
@@ -724,8 +724,8 @@
             "rescheduled_date": "null",
             "rescheduled_next_execution_assigned_to_user_id": "null",
             "rollover": "boolean",
-            "row_created_timestamp": "string",
-            "start_date": "string",
+            "row_created_timestamp": "string(date-time)",
+            "start_date": "string(date-time)",
             "track_date_only": "boolean",
             "userfields": {
                 "__empty_list__": true
@@ -739,7 +739,7 @@
             "id": "integer",
             "instruction_manual_file_name": "null",
             "name": "string",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             }
@@ -754,7 +754,7 @@
             "is_freezer": "integer",
             "name": "string",
             "parent_location_id": "null",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "storage_class_id": "null",
             "tare_qu_id": "null",
             "tare_weight": "null",
@@ -778,7 +778,7 @@
             "note": "null",
             "product_id": "integer",
             "qu_id": "integer",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "shopping_location_id": "null",
             "userfields": {
                 "__empty_list__": true
@@ -794,7 +794,7 @@
             "min_stock_amount": "integer",
             "name": "string",
             "parent_product_group_id": "null",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             }
@@ -853,7 +853,7 @@
             "quick_consume_amount": "integer",
             "quick_open_amount": "integer",
             "quick_refill_amount": "integer",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "shopping_location_id": "null",
             "should_not_be_frozen": "integer",
             "tare_weight": "integer",
@@ -876,7 +876,7 @@
             "not_check_shoppinglist": "integer",
             "picture_file_name": "null",
             "product_id": "null",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "type": "string",
             "userfields": {
                 "__empty_list__": true
@@ -897,7 +897,7 @@
             "qu_id": "integer",
             "recipe_id": "integer",
             "round_up": "integer",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             },
@@ -949,7 +949,7 @@
             "description": "null",
             "id": "integer",
             "name": "string",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             }
@@ -959,7 +959,7 @@
         "status": 200,
         "shape": {
             "amount": "integer",
-            "best_before_date": "string",
+            "best_before_date": "string(date)",
             "id": "integer",
             "import_epoch": "integer",
             "location_id": "integer",
@@ -971,8 +971,8 @@
             "opened_qu_id": "null",
             "opened_tare": "null",
             "product_id": "integer",
-            "purchased_date": "string",
-            "row_created_timestamp": "string",
+            "purchased_date": "string(date)",
+            "row_created_timestamp": "string(date-time)",
             "shopping_location_id": "null",
             "stock_id": "string",
             "userfields": {
@@ -987,7 +987,7 @@
             "description": "null",
             "id": "integer",
             "name": "string",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             }
@@ -1004,7 +1004,7 @@
             "due_date": "null",
             "id": "integer",
             "name": "string",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "userfields": {
                 "__empty_list__": true
             }
@@ -1065,7 +1065,7 @@
                 "amount_measured": "integer",
                 "amount_opened": "integer",
                 "amount_opened_aggregated": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "due_type": "integer",
                 "is_aggregated_amount": "boolean",
                 "product": {
@@ -1106,7 +1106,7 @@
                     "quick_consume_amount": "integer",
                     "quick_open_amount": "integer",
                     "quick_refill_amount": "integer",
-                    "row_created_timestamp": "string",
+                    "row_created_timestamp": "string(date-time)",
                     "shopping_location_id": "null",
                     "should_not_be_frozen": "integer",
                     "tare_weight": "integer",
@@ -1120,7 +1120,7 @@
         "status": 200,
         "shape": {
             "amount": "integer",
-            "best_before_date": "string",
+            "best_before_date": "string(date)",
             "correlation_id": "null",
             "id": "integer",
             "location_id": "integer",
@@ -1131,9 +1131,9 @@
             "opened_qu_id": "null",
             "opened_tare": "null",
             "product_id": "integer",
-            "purchased_date": "string",
+            "purchased_date": "string(date)",
             "recipe_id": "null",
-            "row_created_timestamp": "string",
+            "row_created_timestamp": "string(date-time)",
             "shopping_location_id": "null",
             "spoiled": "boolean",
             "stock_id": "string",
@@ -1141,7 +1141,7 @@
             "transaction_id": "string",
             "transaction_type": "string",
             "undone": "integer",
-            "undone_timestamp": "string",
+            "undone_timestamp": "string(date-time)",
             "used_date": "null",
             "user_id": "integer"
         }
@@ -1150,7 +1150,7 @@
         "status": 200,
         "shape": {
             "amount": "integer",
-            "best_before_date": "string",
+            "best_before_date": "string(date)",
             "id": "integer",
             "import_epoch": "integer",
             "location_id": "integer",
@@ -1162,8 +1162,8 @@
             "opened_qu_id": "null",
             "opened_tare": "null",
             "product_id": "integer",
-            "purchased_date": "string",
-            "row_created_timestamp": "string",
+            "purchased_date": "string(date)",
+            "row_created_timestamp": "string(date-time)",
             "shopping_location_id": "null",
             "stock_id": "string"
         }
@@ -1173,7 +1173,7 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "id": "integer",
                 "import_epoch": "integer",
                 "location_id": "integer",
@@ -1185,8 +1185,8 @@
                 "opened_qu_id": "null",
                 "opened_tare": "null",
                 "product_id": "integer",
-                "purchased_date": "string",
-                "row_created_timestamp": "string",
+                "purchased_date": "string(date)",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "stock_id": "string"
             }
@@ -1204,7 +1204,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "default_quantity_unit_purchase": {
                 "active": "integer",
@@ -1213,14 +1213,14 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "default_shopping_location_id": "null",
             "has_childs": "boolean",
             "is_aggregated_amount": "boolean",
-            "last_purchased": "string",
+            "last_purchased": "string(date)",
             "last_shopping_location_id": "null",
-            "last_used": "string",
+            "last_used": "string(date)",
             "location": {
                 "active": "integer",
                 "description": "null",
@@ -1228,9 +1228,9 @@
                 "is_freezer": "integer",
                 "name": "string",
                 "parent_location_id": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
-            "next_due_date": "string",
+            "next_due_date": "string(date)",
             "product": {
                 "active": "integer",
                 "auto_reprint_stock_label": "integer",
@@ -1269,7 +1269,7 @@
                 "quick_consume_amount": "integer",
                 "quick_open_amount": "integer",
                 "quick_refill_amount": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "should_not_be_frozen": "integer",
                 "tare_weight": "integer",
@@ -1283,7 +1283,7 @@
                     "note": "null",
                     "product_id": "integer",
                     "qu_id": "integer",
-                    "row_created_timestamp": "string",
+                    "row_created_timestamp": "string(date-time)",
                     "shopping_location_id": "null"
                 }
             ],
@@ -1296,7 +1296,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "quantity_unit_stock": {
                 "active": "integer",
@@ -1305,7 +1305,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "spoil_rate_percent": "integer",
             "stock_amount": "integer",
@@ -1330,7 +1330,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "default_quantity_unit_purchase": {
                 "active": "integer",
@@ -1339,14 +1339,14 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "default_shopping_location_id": "null",
             "has_childs": "boolean",
             "is_aggregated_amount": "boolean",
-            "last_purchased": "string",
+            "last_purchased": "string(date)",
             "last_shopping_location_id": "null",
-            "last_used": "string",
+            "last_used": "string(date)",
             "location": {
                 "active": "integer",
                 "description": "null",
@@ -1354,9 +1354,9 @@
                 "is_freezer": "integer",
                 "name": "string",
                 "parent_location_id": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
-            "next_due_date": "string",
+            "next_due_date": "string(date)",
             "product": {
                 "active": "integer",
                 "auto_reprint_stock_label": "integer",
@@ -1395,7 +1395,7 @@
                 "quick_consume_amount": "integer",
                 "quick_open_amount": "integer",
                 "quick_refill_amount": "integer",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "should_not_be_frozen": "integer",
                 "tare_weight": "integer",
@@ -1409,7 +1409,7 @@
                     "note": "null",
                     "product_id": "integer",
                     "qu_id": "integer",
-                    "row_created_timestamp": "string",
+                    "row_created_timestamp": "string(date-time)",
                     "shopping_location_id": "null"
                 }
             ],
@@ -1422,7 +1422,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "quantity_unit_stock": {
                 "active": "integer",
@@ -1431,7 +1431,7 @@
                 "name": "string",
                 "name_plural": "string",
                 "plural_forms": "null",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             },
             "spoil_rate_percent": "integer",
             "stock_amount": "integer",
@@ -1449,7 +1449,7 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "id": "integer",
                 "location_id": "integer",
                 "note": "null",
@@ -1461,8 +1461,8 @@
                 "opened_tare": "null",
                 "priority": "integer",
                 "product_id": "integer",
-                "purchased_date": "string",
-                "row_created_timestamp": "string",
+                "purchased_date": "string(date)",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "stock_id": "string"
             }
@@ -1492,20 +1492,20 @@
         "shape": [
             {
                 "amount": "integer",
-                "best_before_date": "string",
+                "best_before_date": "string(date)",
                 "correlation_id": "null",
                 "id": "integer",
                 "location_id": "integer",
                 "note": "null",
                 "opened_amount": "null",
-                "opened_date": "string",
+                "opened_date": "string(date)",
                 "opened_measured_at": "null",
                 "opened_qu_id": "null",
                 "opened_tare": "null",
                 "product_id": "integer",
-                "purchased_date": "string",
+                "purchased_date": "string(date)",
                 "recipe_id": "null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "shopping_location_id": "null",
                 "spoiled": "boolean",
                 "stock_id": "string",
@@ -1513,8 +1513,8 @@
                 "transaction_id": "string",
                 "transaction_type": "string",
                 "undone": "integer",
-                "undone_timestamp": "string",
-                "used_date": "string",
+                "undone_timestamp": "string(date-time)",
+                "used_date": "string(date)",
                 "user_id": "integer"
             }
         ]
@@ -1539,7 +1539,7 @@
     "GET /api/system/db-changed-time": {
         "status": 200,
         "shape": {
-            "changed_time": "string"
+            "changed_time": "string(date-time)"
         }
     },
     "GET /api/system/info": {
@@ -1552,7 +1552,7 @@
             "php_version": "string",
             "sqlite_version": "string",
             "victual_version": {
-                "ReleaseDate": "string",
+                "ReleaseDate": "string(date)",
                 "Version": "string"
             }
         }
@@ -1884,9 +1884,9 @@
         "status": 200,
         "shape": {
             "offset": "integer",
-            "time_local": "string",
-            "time_local_sqlite3": "string",
-            "time_utc": "string",
+            "time_local": "string(date-time-offset)",
+            "time_local_sqlite3": "string(date-time-offset)",
+            "time_utc": "string(date-time)",
             "timestamp": "integer",
             "timezone": "string"
         }
@@ -1905,7 +1905,7 @@
                 "due_date": "null",
                 "id": "integer",
                 "name": "string",
-                "row_created_timestamp": "string"
+                "row_created_timestamp": "string(date-time)"
             }
         ]
     },
@@ -1918,7 +1918,7 @@
                 "id": "integer",
                 "last_name": "null",
                 "picture_file_name": "null",
-                "row_created_timestamp": "string",
+                "row_created_timestamp": "string(date-time)",
                 "username": "string"
             }
         ]

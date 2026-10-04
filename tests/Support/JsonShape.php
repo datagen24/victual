@@ -16,9 +16,43 @@ namespace Victual\Tests\Support;
  * sometimes typed keeps both: "integer|null" rather than either type alone, because a
  * client written against one observed type is exactly what a silently-nullable column
  * would break.
+ *
+ * A string's shape also names its format when it is one of the date and time renderings
+ * this API has sent, because which of them a field carries is part of the wire contract
+ * (ADR-0027 decision 2, issue #650): `string(date-time)` for an instant in the wire
+ * rendering, `string(date-time-offset)` for `time_local`'s offset rendering,
+ * `string(local-date-time)` for the wall clock the API sent before migration 0301, and
+ * `string(date)` for a calendar date. Any other string is `string`. The format is a shape,
+ * not a value, so it is as stable as the fixture's choice of which columns are dates.
  */
 class JsonShape
 {
+	/** The format suffix a string's shape carries, or '' for none of them. */
+	private static function FormatOf(string $value): string
+	{
+		if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/D', $value) === 1)
+		{
+			return '(date-time)';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2}$/D', $value) === 1)
+		{
+			return '(date-time-offset)';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/D', $value) === 1)
+		{
+			return '(local-date-time)';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value) === 1)
+		{
+			return '(date)';
+		}
+
+		return '';
+	}
+
 	/** @param mixed $value A value already run through json_decode(..., true). */
 	public static function Of($value, int $depth = 0)
 	{
@@ -49,7 +83,7 @@ class JsonShape
 
 		if (is_string($value))
 		{
-			return 'string';
+			return 'string' . self::FormatOf($value);
 		}
 
 		if (is_array($value))
