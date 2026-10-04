@@ -83,7 +83,7 @@ class LabelWorkerCredentialService extends LabelService
         $expires = $sessionId === null ? Instant::NEVER : $this->Query('SELECT LEAST(expires_at,CURRENT_TIMESTAMP+make_interval(secs=>?)) FROM label_worker_sessions WHERE id=?', [$this->credentialSeconds,$sessionId])->fetchColumn();
         $id = (int)$this->Query('INSERT INTO api_keys(api_key,key_hint,user_id,expires,key_type,description) VALUES (?,?,?,?,?,?) RETURNING id', [ApiKeyService::HashKey($key),ApiKeyService::HintFor($key),$ownerId,$expires,$keyType,($keyType===ApiKeyService::API_KEY_TYPE_LABEL_RENDERER?'Label renderer ':'Label worker ').$workerId])->fetchColumn();
         $this->Query('INSERT INTO label_worker_credentials(api_key_id,worker_id,session_id) VALUES (?,?,?)', [$id,$workerId,$sessionId]);
-        return ['credential_id' => $id,'credential' => $key,'expires_at' => Instant::ToWire(Instant::Parse($expires)),'worker_id' => $workerId];
+        return ['credential_id' => $id,'credential' => $key,'expires_at' => Instant::ToWire(Instant::ParseStored($expires)),'worker_id' => $workerId];
     }
     public function Authenticate(string $key, bool $rotation = false, string $keyType = ApiKeyService::API_KEY_TYPE_LABEL_WORKER): ?array
     {
@@ -132,7 +132,7 @@ class LabelWorkerCredentialService extends LabelService
             if (!$next) {
                 $this->Refuse('credential', 'unauthorized', 'Successor was revoked');
             }
-            return ['credential_id' => (int)$next['id'],'credential' => $key,'expires_at' => Instant::ToWire(Instant::Parse($next['expires'])),'worker_id' => (int)$c['worker_id']];
+            return ['credential_id' => (int)$next['id'],'credential' => $key,'expires_at' => Instant::ToWire(Instant::ParseStored($next['expires'])),'worker_id' => (int)$c['worker_id']];
         }
         $key = self::Derive((int)$c['api_key_id'], $requestId, $material);
         $next = $this->Issue((int)$c['worker_id'], (int)$c['user_id'], (int)$c['session_id'], $key);
