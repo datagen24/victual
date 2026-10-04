@@ -1,0 +1,152 @@
+{
+ "environment": {
+  "php": "8.5.10",
+  "postgres": "15.19 (Debian 15.19-1.pgdg13+2)"
+ },
+ "note": "Model probe repeated on the minimum supported PostgreSQL major. Outcomes compared with the 16.15 run: identical.",
+ "outcomes_identical_to_16_15": true,
+ "outcomes": {
+  "E1_full_consumption_and_undo_in_window": [
+   [
+    "accepted",
+    "revived"
+   ]
+  ],
+  "E2_one_consumption_two_labelled_rows": [],
+  "E3_expiry_boundary": [
+   [
+    "accepted",
+    "revived"
+   ],
+   [
+    "accepted",
+    "declined:expired"
+   ]
+  ],
+  "E4_after_expiry_cleanup_never_ran": [
+   [
+    "accepted",
+    "declined:expired"
+   ]
+  ],
+  "E5_different_restored_row_id": [
+   [
+    "accepted",
+    "declined:id_changed"
+   ]
+  ],
+  "E6_import_between_retirement_and_undo": [
+   [
+    "accepted",
+    "no_reference"
+   ]
+  ],
+  "E7_restored_target_already_labelled": [
+   [
+    "accepted",
+    "declined:target_labelled"
+   ]
+  ],
+  "E8_consume_undo_consume_undo": [
+   [
+    "accepted",
+    "revived"
+   ],
+   [
+    "accepted",
+    "revived"
+   ]
+  ],
+  "E9_ambiguous_legacy_retirement": [
+   [
+    "accepted",
+    "no_reference"
+   ]
+  ],
+  "E10_partial_consumption_never_retires": [
+   [
+    "accepted",
+    "no_reference"
+   ]
+  ],
+  "E11_purchase_undo_is_unproven": [
+   [
+    "accepted",
+    "no_reference"
+   ]
+  ],
+  "E16_other_retirement_paths": {
+   "product deleted (cascade)": [
+    [
+     "unproven",
+     "declined",
+     "unproven"
+    ]
+   ],
+   "direct DELETE FROM stock, no booking": [
+    [
+     "unproven",
+     "declined",
+     "unproven"
+    ]
+   ],
+   "stale context: another row deleted after an unrelated consumption in the same transaction": [
+    [
+     "unproven",
+     "declined",
+     "unproven"
+    ]
+   ]
+  },
+  "E12_booking_no_longer_matches_the_retirement": [
+   [
+    "accepted",
+    "declined:mismatch"
+   ],
+   [
+    "accepted",
+    "declined:mismatch"
+   ]
+  ],
+  "E13_rollback_after_attempted_revival": {
+   "retry_revival": "revived",
+   "state_after_is_identical": true,
+   "state_unchanged": null
+  },
+  "E14_refused_undo": {
+   "retry_revival": null,
+   "state_after_is_identical": null,
+   "state_unchanged": true
+  },
+  "E15_print_jobs_across_retirement_and_revival": [
+   [
+    "accepted",
+    "revived"
+   ]
+  ],
+  "E2_by_booking": {
+   "6": "revived",
+   "5": "revived"
+  }
+ },
+ "concurrency_blocked_after_1_5s": {
+  "C1_issuance_vs_undo": true,
+  "C2_two_undo_requests": true,
+  "C3a_import_waits_for_the_revival": true,
+  "C3b_revival_waits_for_the_import": null
+ },
+ "cost_20000_events": {
+  "events": 20000,
+  "insert_labels_s": 0.13,
+  "insert_labels_and_events_s": 0.25,
+  "table_bytes": 5382144,
+  "total_bytes_with_indexes": 7176192,
+  "labels_total_bytes_same_rows": 4907008,
+  "bytes_per_event_with_indexes": 359,
+  "probe_by_epoch_and_booking": {
+   "execution_ms": 0.01,
+   "node": "Index Scan",
+   "index": "stock_label_retirements_booking"
+  }
+ }
+}

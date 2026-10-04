@@ -1,0 +1,491 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "migrations_applied": 299,
+        "latest_migration": 300
+    },
+    "S0_schema": {
+        "labels_columns": [
+            {
+                "column_name": "uid",
+                "data_type": "text",
+                "is_nullable": "NO"
+            },
+            {
+                "column_name": "kind",
+                "data_type": "text",
+                "is_nullable": "NO"
+            },
+            {
+                "column_name": "target_id",
+                "data_type": "bigint",
+                "is_nullable": "YES"
+            },
+            {
+                "column_name": "row_created_timestamp",
+                "data_type": "timestamp with time zone",
+                "is_nullable": "NO"
+            },
+            {
+                "column_name": "retired_at",
+                "data_type": "timestamp with time zone",
+                "is_nullable": "YES"
+            },
+            {
+                "column_name": "retirement_snapshot",
+                "data_type": "jsonb",
+                "is_nullable": "YES"
+            }
+        ],
+        "labels_constraints": [
+            {
+                "conname": "labels_check",
+                "def": "CHECK ((((retired_at IS NULL) AND (target_id IS NOT NULL) AND (retirement_snapshot IS NULL)) OR ((retired_at IS NOT NULL) AND (target_id IS NULL) AND (retirement_snapshot IS NOT NULL))))"
+            },
+            {
+                "conname": "labels_kind_check",
+                "def": "CHECK ((kind = ANY (ARRAY['location'::text, 'product'::text, 'stock_entry'::text, 'recipe'::text, 'chore'::text, 'battery'::text])))"
+            },
+            {
+                "conname": "labels_pkey",
+                "def": "PRIMARY KEY (uid)"
+            },
+            {
+                "conname": "labels_uid_check",
+                "def": "CHECK ((uid ~ '^[0-9A-F][0-9A-HJKMNP-TV-Z]{12}$'::text))"
+            }
+        ],
+        "labels_indexes": [
+            {
+                "indexname": "labels_one_live_per_target",
+                "indexdef": "CREATE UNIQUE INDEX labels_one_live_per_target ON phpunit_6705df46508cb719.labels USING btree (kind, target_id) WHERE (retired_at IS NULL)"
+            },
+            {
+                "indexname": "labels_pkey",
+                "indexdef": "CREATE UNIQUE INDEX labels_pkey ON phpunit_6705df46508cb719.labels USING btree (uid)"
+            }
+        ],
+        "triggers_on_labels": [],
+        "retirement_triggers": [
+            {
+                "on_table": "batteries",
+                "tgname": "retire_battery_labels"
+            },
+            {
+                "on_table": "chores",
+                "tgname": "retire_chore_labels"
+            },
+            {
+                "on_table": "locations",
+                "tgname": "retire_location_labels"
+            },
+            {
+                "on_table": "products",
+                "tgname": "cascade_product_removal"
+            },
+            {
+                "on_table": "products",
+                "tgname": "retire_product_labels"
+            },
+            {
+                "on_table": "recipes",
+                "tgname": "retire_recipe_labels"
+            },
+            {
+                "on_table": "stock",
+                "tgname": "retire_stock_entry_labels"
+            }
+        ],
+        "foreign_keys_into_or_out_of_labels": [],
+        "invalid_row_probes": {
+            "live label carrying a snapshot": "rejected: SQLSTATE[23514]: Check violation: 7 ERROR: new row for relation \"labels\" violates check constraint \"labels_check\"",
+            "retired label keeping a target": "rejected: SQLSTATE[23514]: Check violation: 7 ERROR: new row for relation \"labels\" violates check constraint \"labels_check\"",
+            "retired label with no snapshot": "rejected: SQLSTATE[23514]: Check violation: 7 ERROR: new row for relation \"labels\" violates check constraint \"labels_check\"",
+            "second live label on one target": "rejected: SQLSTATE[23505]: Unique violation: 7 ERROR: duplicate key value violates unique constraint \"labels_one_live_per_target\"",
+            "revival UPDATE of a retired label (retired_at NULL, new target, snapshot NULL)": "see revival_by_update below"
+        }
+    },
+    "S1_full_consume_undo_id_free": [
+        {
+            "step": "purchase 3, label issued",
+            "rows": [
+                {
+                    "id": 2,
+                    "stock_id": "6ac26dd2184ef",
+                    "amount": 3
+                }
+            ],
+            "label": {
+                "target_id": 2,
+                "retired": false,
+                "retirement_snapshot": null,
+                "resolve_status": "resolved",
+                "resolve_target_id": 2
+            }
+        },
+        {
+            "step": "consume 3 (whole row)",
+            "rows": [],
+            "label": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 2,
+                    "amount": 3,
+                    "product_name": "p2",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "booking": {
+                "id": 3,
+                "stock_row_id": 2,
+                "stock_id": "6ac26dd2184ef",
+                "amount": -3,
+                "transaction_type": "consume"
+            }
+        },
+        {
+            "step": "undo consume (booking 3)",
+            "result": "accepted"
+        },
+        {
+            "step": "after undo",
+            "rows": [
+                {
+                    "id": 2,
+                    "stock_id": "6ac26dd2184ef",
+                    "amount": 3
+                }
+            ],
+            "label": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 2,
+                    "amount": 3,
+                    "product_name": "p2",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "original_row_id": 2
+        },
+        {
+            "step": "revival by plain UPDATE inside a transaction (rolled back afterwards)",
+            "label": {
+                "target_id": 2,
+                "retired": false,
+                "retirement_snapshot": null,
+                "resolve_status": "resolved",
+                "resolve_target_id": 2
+            }
+        }
+    ],
+    "S2_original_id_taken": [
+        {
+            "step": "consume 2, then an unrelated row of another product is inserted under the freed id 3 (as an import with RESTART IDENTITY would)",
+            "unrelated_row": {
+                "id": 3,
+                "product_id": 4,
+                "amount": 7
+            }
+        },
+        {
+            "step": "undo consume (booking 5)",
+            "result": "accepted"
+        },
+        {
+            "step": "after undo",
+            "rows_of_product": [
+                {
+                    "id": 4,
+                    "stock_id": "6ac26dd22126a",
+                    "amount": 2
+                }
+            ],
+            "unrelated_row_untouched": {
+                "id": 3,
+                "product_id": 4,
+                "amount": 7
+            },
+            "label": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 3,
+                    "amount": 2,
+                    "product_name": "p3",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "consumed_row_id": 3
+        }
+    ],
+    "S3_partial_consume": [
+        {
+            "step": "consume 2 of 5",
+            "rows": [
+                {
+                    "id": 5,
+                    "stock_id": "6ac26dd228c91",
+                    "amount": 3
+                }
+            ],
+            "label": {
+                "target_id": 5,
+                "retired": false,
+                "retirement_snapshot": null,
+                "resolve_status": "resolved",
+                "resolve_target_id": 5
+            }
+        },
+        {
+            "step": "undo (booking 7)",
+            "result": "accepted"
+        },
+        {
+            "step": "after undo",
+            "rows": [
+                {
+                    "id": 5,
+                    "stock_id": "6ac26dd228c91",
+                    "amount": 3
+                },
+                {
+                    "id": 6,
+                    "stock_id": "6ac26dd228c91",
+                    "amount": 2
+                }
+            ],
+            "label": {
+                "target_id": 5,
+                "retired": false,
+                "retirement_snapshot": null,
+                "resolve_status": "resolved",
+                "resolve_target_id": 5
+            },
+            "labelled_row": 5
+        }
+    ],
+    "S4_one_consume_two_labelled_rows": [
+        {
+            "step": "consume 5 across both rows (one transaction, two bookings)",
+            "rows": [],
+            "bookings": [
+                {
+                    "id": 10,
+                    "stock_row_id": 7,
+                    "amount": -2
+                },
+                {
+                    "id": 11,
+                    "stock_row_id": 8,
+                    "amount": -3
+                }
+            ],
+            "label_1": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 7,
+                    "amount": 2,
+                    "product_name": "p6",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "label_2": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 8,
+                    "amount": 3,
+                    "product_name": "p6",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            }
+        },
+        {
+            "step": "UndoTransaction",
+            "result": "accepted"
+        },
+        {
+            "step": "after undo",
+            "rows": [
+                {
+                    "id": 7,
+                    "stock_id": "6ac26dd22fb86",
+                    "amount": 2
+                },
+                {
+                    "id": 8,
+                    "stock_id": "6ac26dd23217b",
+                    "amount": 3
+                }
+            ],
+            "label_1": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 7,
+                    "amount": 2,
+                    "product_name": "p6",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "label_2": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 8,
+                    "amount": 3,
+                    "product_name": "p6",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            },
+            "consumed_row_ids": [
+                7,
+                8
+            ]
+        }
+    ],
+    "S5_row_id_names_two_bookings": {
+        "label": {
+            "target_id": null,
+            "retired": true,
+            "retirement_snapshot": {
+                "id": 9,
+                "amount": 3,
+                "product_name": "p7",
+                "best_before_date": "2999-12-31"
+            },
+            "resolve_status": "retired"
+        },
+        "bookings_with_stock_row_id_equal_to_snapshot_id": [
+            {
+                "id": 13,
+                "amount": -2,
+                "transaction_type": "consume"
+            },
+            {
+                "id": 14,
+                "amount": -3,
+                "transaction_type": "consume"
+            }
+        ],
+        "note": "the snapshot holds the row id and amount, not the booking; two bookings carry that row id"
+    },
+    "S6a_purchase_undo_retires_label": [
+        {
+            "step": "undo the purchase (booking 15)",
+            "result": "accepted"
+        },
+        {
+            "label": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 10,
+                    "amount": 4,
+                    "product_name": "p8",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            }
+        }
+    ],
+    "S6b_product_deletion_retires_label": {
+        "label": {
+            "target_id": null,
+            "retired": true,
+            "retirement_snapshot": {
+                "id": 11,
+                "amount": 4,
+                "product_name": "p9",
+                "best_before_date": "2999-12-31"
+            },
+            "resolve_status": "retired"
+        },
+        "stock_log_rows_left_for_product": 0
+    },
+    "S7_refused_undo_changes_nothing": [
+        {
+            "step": "consume 2, then the booking's location is deleted; undo booking 18",
+            "result": "refused",
+            "message": "Cannot undo booking: original location no longer exists"
+        },
+        {
+            "rows": [],
+            "booking_undone": false,
+            "label": {
+                "target_id": null,
+                "retired": true,
+                "retirement_snapshot": {
+                    "id": 12,
+                    "amount": 2,
+                    "product_name": "p10",
+                    "best_before_date": "2999-12-31"
+                },
+                "resolve_status": "retired"
+            }
+        }
+    ],
+    "S8_retirement_and_print_jobs": {
+        "jobs_before": {
+            "queued": {
+                "cancelled": false,
+                "attempts_authorized": 1,
+                "attempts_made": 0,
+                "has_attempt": false
+            },
+            "claimed_uncertain": {
+                "cancelled": false,
+                "attempts_authorized": 1,
+                "attempts_made": 1,
+                "has_attempt": true
+            },
+            "authorized_retry": {
+                "cancelled": false,
+                "attempts_authorized": 2,
+                "attempts_made": 1,
+                "has_attempt": true
+            }
+        },
+        "jobs_after_retirement": {
+            "queued": {
+                "cancelled": true,
+                "attempts_authorized": 1,
+                "attempts_made": 0,
+                "has_attempt": false
+            },
+            "claimed_uncertain": {
+                "cancelled": false,
+                "attempts_authorized": 1,
+                "attempts_made": 1,
+                "has_attempt": true
+            },
+            "authorized_retry": {
+                "cancelled": false,
+                "attempts_authorized": 2,
+                "attempts_made": 1,
+                "has_attempt": true
+            }
+        },
+        "job_ids": {
+            "queued": 1,
+            "claimed_uncertain": 2,
+            "authorized_retry": 3
+        },
+        "claimable_ids_while_retired_by_existing_claim_predicate": [],
+        "finding": "queued job is cancelled; the claimed job and the authorized retry are left as they were; the retired-label predicate is what keeps the retry unclaimable",
+        "claimable_ids_after_a_naive_revival_UPDATE": [
+            3
+        ]
+    }
+}

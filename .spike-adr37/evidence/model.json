@@ -1,0 +1,1795 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)"
+    },
+    "E1_full_consumption_and_undo_in_window": [
+        {
+            "step": "purchase 3, label L issued on the row",
+            "state": {
+                "stock": [
+                    {
+                        "id": 1,
+                        "amount": 3,
+                        "product_id": 1
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 1,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 1,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 1"
+                    }
+                },
+                "events": []
+            }
+        },
+        {
+            "step": "consume 3 (booking 2), the whole row",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 1,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 2,
+                        "stock_row_id": 1,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 1,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 1,
+                        "cause": "consumption",
+                        "booking_id": 2,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 1,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 2",
+            "undo": "accepted",
+            "revival": "revived",
+            "state": {
+                "stock": [
+                    {
+                        "id": 1,
+                        "amount": 3,
+                        "product_id": 1
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 1,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 2,
+                        "stock_row_id": 1,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 1,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 1"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 1,
+                        "cause": "consumption",
+                        "booking_id": 2,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 1,
+                        "snapshot_row": 1,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "a user prints \"a replacement label\" for the restored row (issuance)",
+            "returned_uid_is_L": true,
+            "live_labels_on_row": 1
+        }
+    ],
+    "E2_one_consumption_two_labelled_rows": [
+        {
+            "step": "consume 5 across both rows (two bookings, two retirements)",
+            "bookings": [
+                5,
+                6
+            ],
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 3,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 4,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 5,
+                        "stock_row_id": 2,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 6,
+                        "stock_row_id": 3,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L1": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 2,
+                        "scan": "retired"
+                    },
+                    "L2": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 3,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 2,
+                        "cause": "consumption",
+                        "booking_id": 5,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 2,
+                        "window_s": 2592000,
+                        "label": "L1"
+                    },
+                    {
+                        "id": 3,
+                        "cause": "consumption",
+                        "booking_id": 6,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 3,
+                        "window_s": 2592000,
+                        "label": "L2"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo the transaction, newest booking first",
+            "undo": "accepted",
+            "revival_by_booking": {
+                "6": "revived",
+                "5": "revived"
+            },
+            "state": {
+                "stock": [
+                    {
+                        "id": 2,
+                        "amount": 2,
+                        "product_id": 2
+                    },
+                    {
+                        "id": 3,
+                        "amount": 3,
+                        "product_id": 2
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 3,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 4,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 5,
+                        "stock_row_id": 2,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    },
+                    {
+                        "id": 6,
+                        "stock_row_id": 3,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L1": {
+                        "target": 2,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 2"
+                    },
+                    "L2": {
+                        "target": 3,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 3"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 2,
+                        "cause": "consumption",
+                        "booking_id": 5,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 2,
+                        "snapshot_row": 2,
+                        "window_s": 2592000,
+                        "label": "L1"
+                    },
+                    {
+                        "id": 3,
+                        "cause": "consumption",
+                        "booking_id": 6,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 3,
+                        "snapshot_row": 3,
+                        "window_s": 2592000,
+                        "label": "L2"
+                    }
+                ]
+            }
+        }
+    ],
+    "E3_expiry_boundary": [
+        {
+            "step": "undo evaluated one microsecond before the deadline",
+            "undo": "accepted",
+            "revival": "revived",
+            "state": {
+                "stock": [
+                    {
+                        "id": 4,
+                        "amount": 2,
+                        "product_id": 3
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 7,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 8,
+                        "stock_row_id": 4,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 4,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 4"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 4,
+                        "cause": "consumption",
+                        "booking_id": 8,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 4,
+                        "snapshot_row": 4,
+                        "window_s": 115409948,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo evaluated exactly at the deadline",
+            "undo": "accepted",
+            "revival": "declined:expired",
+            "state": {
+                "stock": [
+                    {
+                        "id": 5,
+                        "amount": 2,
+                        "product_id": 4
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 9,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 10,
+                        "stock_row_id": 5,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 5,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 5,
+                        "cause": "consumption",
+                        "booking_id": 10,
+                        "outcome": "declined",
+                        "reason": "expired",
+                        "revived_target_id": null,
+                        "snapshot_row": 5,
+                        "window_s": 115409948,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E4_after_expiry_cleanup_never_ran": [
+        {
+            "step": "consumed 40 days ago; nothing has ever cleaned up (no workload exists)",
+            "pending_rows_past_their_deadline": 1
+        },
+        {
+            "step": "undo booking 12",
+            "undo": "accepted",
+            "revival": "declined:expired",
+            "state": {
+                "stock": [
+                    {
+                        "id": 6,
+                        "amount": 2,
+                        "product_id": 5
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 11,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 12,
+                        "stock_row_id": 6,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 6,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 6,
+                        "cause": "consumption",
+                        "booking_id": 12,
+                        "outcome": "declined",
+                        "reason": "expired",
+                        "revived_target_id": null,
+                        "snapshot_row": 6,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "pending_rows_past_their_deadline_afterwards": 0
+        }
+    ],
+    "E5_different_restored_row_id": [
+        {
+            "step": "consume (booking 14); an unrelated row of product 7 now holds id 7",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 13,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 14,
+                        "stock_row_id": 7,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 7,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 7,
+                        "cause": "consumption",
+                        "booking_id": 14,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 7,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 14",
+            "undo": "accepted",
+            "revival": "declined:id_changed",
+            "unrelated_row": {
+                "id": 7,
+                "product_id": 7,
+                "amount": 7,
+                "live_labels": 0
+            },
+            "state": {
+                "stock": [
+                    {
+                        "id": 8,
+                        "amount": 2,
+                        "product_id": 6
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 13,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 14,
+                        "stock_row_id": 7,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 7,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 7,
+                        "cause": "consumption",
+                        "booking_id": 14,
+                        "outcome": "declined",
+                        "reason": "id_changed",
+                        "revived_target_id": null,
+                        "snapshot_row": 7,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E6_import_between_retirement_and_undo": [
+        {
+            "step": "consume (booking 16); then an import: epoch + 1, row id 9 and booking id 16 now belong to product 9",
+            "a_repoint_by_snapshot_id_would_target": {
+                "id": 9,
+                "product_id": 9,
+                "amount": 7
+            },
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 15,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 9,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 8,
+                        "cause": "consumption",
+                        "booking_id": 16,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 9,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 16 (now a booking of product 9)",
+            "undo": "accepted",
+            "revival": "no_reference",
+            "state": {
+                "stock": [
+                    {
+                        "id": 9,
+                        "amount": 7,
+                        "product_id": 9
+                    },
+                    {
+                        "id": 10,
+                        "amount": 2,
+                        "product_id": 9
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 16,
+                        "stock_row_id": 9,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 9,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 8,
+                        "cause": "consumption",
+                        "booking_id": 16,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 9,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "label_L_after": {
+                "L": {
+                    "target": null,
+                    "retired": true,
+                    "snapshot_row": 9,
+                    "scan": "retired"
+                }
+            },
+            "events": [
+                {
+                    "id": 8,
+                    "cause": "consumption",
+                    "booking_id": 16,
+                    "outcome": null,
+                    "reason": null,
+                    "revived_target_id": null,
+                    "snapshot_row": 9,
+                    "window_s": 2592000,
+                    "label": "L"
+                }
+            ]
+        }
+    ],
+    "E7_restored_target_already_labelled": [
+        {
+            "step": "consume (booking 18); fixture inserts a live label M on id 11, the id the undo will restore",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 17,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 18,
+                        "stock_row_id": 11,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 11,
+                        "scan": "retired"
+                    },
+                    "M": {
+                        "target": 11,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "error: Live label has no target"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 9,
+                        "cause": "consumption",
+                        "booking_id": 18,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 11,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 18",
+            "undo": "accepted",
+            "revival": "declined:target_labelled",
+            "state": {
+                "stock": [
+                    {
+                        "id": 11,
+                        "amount": 2,
+                        "product_id": 10
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 17,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 18,
+                        "stock_row_id": 11,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 11,
+                        "scan": "retired"
+                    },
+                    "M": {
+                        "target": 11,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 11"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 9,
+                        "cause": "consumption",
+                        "booking_id": 18,
+                        "outcome": "declined",
+                        "reason": "target_labelled",
+                        "revived_target_id": null,
+                        "snapshot_row": 11,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E8_consume_undo_consume_undo": [
+        {
+            "step": "consume (booking 20)",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 19,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 20,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 12,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 10,
+                        "cause": "consumption",
+                        "booking_id": 20,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 20",
+            "undo": "accepted",
+            "revival": "revived",
+            "state": {
+                "stock": [
+                    {
+                        "id": 12,
+                        "amount": 3,
+                        "product_id": 11
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 19,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 20,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 12,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 12"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 10,
+                        "cause": "consumption",
+                        "booking_id": 20,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 12,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "consume again (booking 21)",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 19,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 20,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    },
+                    {
+                        "id": 21,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 12,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 10,
+                        "cause": "consumption",
+                        "booking_id": 20,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 12,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    },
+                    {
+                        "id": 11,
+                        "cause": "consumption",
+                        "booking_id": 21,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 21",
+            "undo": "accepted",
+            "revival": "revived",
+            "second_window_starts_at_second_retirement": true,
+            "state": {
+                "stock": [
+                    {
+                        "id": 12,
+                        "amount": 3,
+                        "product_id": 11
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 19,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 3,
+                        "undone": 0
+                    },
+                    {
+                        "id": 20,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    },
+                    {
+                        "id": 21,
+                        "stock_row_id": 12,
+                        "type": "consume",
+                        "amount": -3,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 12,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 12"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 10,
+                        "cause": "consumption",
+                        "booking_id": 20,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 12,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    },
+                    {
+                        "id": 11,
+                        "cause": "consumption",
+                        "booking_id": 21,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 12,
+                        "snapshot_row": 12,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E9_ambiguous_legacy_retirement": [
+        {
+            "step": "legacy retirement (written before the trigger existed), booking 23",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 22,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 23,
+                        "stock_row_id": 13,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 13,
+                        "scan": "retired"
+                    }
+                },
+                "events": []
+            }
+        },
+        {
+            "step": "backfill",
+            "events_written": 1,
+            "evidence_a_guess_would_use_but_the_design_does_not": {
+                "snapshot_id_equals_booking_row_id": true
+            },
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 22,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 23,
+                        "stock_row_id": 13,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 13,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 12,
+                        "cause": "legacy",
+                        "booking_id": null,
+                        "outcome": "declined",
+                        "reason": "legacy",
+                        "revived_target_id": null,
+                        "snapshot_row": 13,
+                        "window_s": null,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "undo booking 23",
+            "undo": "accepted",
+            "revival": "no_reference",
+            "state": {
+                "stock": [
+                    {
+                        "id": 13,
+                        "amount": 2,
+                        "product_id": 12
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 22,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 23,
+                        "stock_row_id": 13,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 13,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 12,
+                        "cause": "legacy",
+                        "booking_id": null,
+                        "outcome": "declined",
+                        "reason": "legacy",
+                        "revived_target_id": null,
+                        "snapshot_row": 13,
+                        "window_s": null,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "second backfill run writes": 0
+        }
+    ],
+    "E10_partial_consumption_never_retires": [
+        {
+            "step": "consume 2 of 5 (booking 25)",
+            "state": {
+                "stock": [
+                    {
+                        "id": 14,
+                        "amount": 3,
+                        "product_id": 13
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 24,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 5,
+                        "undone": 0
+                    },
+                    {
+                        "id": 25,
+                        "stock_row_id": 14,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 0
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 14,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 14"
+                    }
+                },
+                "events": []
+            }
+        },
+        {
+            "step": "undo booking 25",
+            "undo": "accepted",
+            "revival": "no_reference",
+            "state": {
+                "stock": [
+                    {
+                        "id": 14,
+                        "amount": 3,
+                        "product_id": 13
+                    },
+                    {
+                        "id": 15,
+                        "amount": 2,
+                        "product_id": 13
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 24,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 5,
+                        "undone": 0
+                    },
+                    {
+                        "id": 25,
+                        "stock_row_id": 14,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 14,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 14"
+                    }
+                },
+                "events": []
+            }
+        }
+    ],
+    "E11_purchase_undo_is_unproven": [
+        {
+            "step": "undo the purchase (booking 26)",
+            "undo": "accepted",
+            "revival": "no_reference",
+            "state": {
+                "stock": [],
+                "bookings": [
+                    {
+                        "id": 26,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 4,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 16,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 13,
+                        "cause": "unproven",
+                        "booking_id": null,
+                        "outcome": "declined",
+                        "reason": "unproven",
+                        "revived_target_id": null,
+                        "snapshot_row": 16,
+                        "window_s": null,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E16_other_retirement_paths": {
+        "product deleted (cascade)": [
+            {
+                "cause": "unproven",
+                "booking_id": null,
+                "outcome": "declined",
+                "reason": "unproven",
+                "snapshot_product": "p15"
+            }
+        ],
+        "direct DELETE FROM stock, no booking": [
+            {
+                "cause": "unproven",
+                "booking_id": null,
+                "outcome": "declined",
+                "reason": "unproven",
+                "snapshot_product": "p16"
+            }
+        ],
+        "stale context: another row deleted after an unrelated consumption in the same transaction": [
+            {
+                "cause": "unproven",
+                "booking_id": null,
+                "outcome": "declined",
+                "reason": "unproven",
+                "snapshot_product": "p18"
+            }
+        ]
+    },
+    "E12_booking_no_longer_matches_the_retirement": [
+        {
+            "step": "product changed by a product merge, then undo booking 33",
+            "undo": "accepted",
+            "revival": "declined:mismatch",
+            "state": {
+                "stock": [
+                    {
+                        "id": 21,
+                        "amount": 2,
+                        "product_id": 20
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 33,
+                        "stock_row_id": 21,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 21,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 17,
+                        "cause": "consumption",
+                        "booking_id": 33,
+                        "outcome": "declined",
+                        "reason": "mismatch",
+                        "revived_target_id": null,
+                        "snapshot_row": 21,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        {
+            "step": "amount rescaled by a unit change, then undo booking 35",
+            "undo": "accepted",
+            "revival": "declined:mismatch",
+            "state": {
+                "stock": [
+                    {
+                        "id": 22,
+                        "amount": 2000,
+                        "product_id": 21
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 34,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 35,
+                        "stock_row_id": 22,
+                        "type": "consume",
+                        "amount": -2000,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 22,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 18,
+                        "cause": "consumption",
+                        "booking_id": 35,
+                        "outcome": "declined",
+                        "reason": "mismatch",
+                        "revived_target_id": null,
+                        "snapshot_row": 22,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    ],
+    "E13_rollback_after_attempted_revival": {
+        "result": "rolled back: forced failure after the revival step",
+        "state_before": {
+            "stock": [],
+            "bookings": [
+                {
+                    "id": 36,
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 37,
+                    "stock_row_id": 23,
+                    "type": "consume",
+                    "amount": -2,
+                    "undone": 0
+                }
+            ],
+            "labels": {
+                "L": {
+                    "target": null,
+                    "retired": true,
+                    "snapshot_row": 23,
+                    "scan": "retired"
+                }
+            },
+            "events": [
+                {
+                    "id": 19,
+                    "cause": "consumption",
+                    "booking_id": 37,
+                    "outcome": null,
+                    "reason": null,
+                    "revived_target_id": null,
+                    "snapshot_row": 23,
+                    "window_s": 2592000,
+                    "label": "L"
+                }
+            ]
+        },
+        "state_after_is_identical": true,
+        "state_after": {
+            "stock": [],
+            "bookings": [
+                {
+                    "id": 36,
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 37,
+                    "stock_row_id": 23,
+                    "type": "consume",
+                    "amount": -2,
+                    "undone": 0
+                }
+            ],
+            "labels": {
+                "L": {
+                    "target": null,
+                    "retired": true,
+                    "snapshot_row": 23,
+                    "scan": "retired"
+                }
+            },
+            "events": [
+                {
+                    "id": 19,
+                    "cause": "consumption",
+                    "booking_id": 37,
+                    "outcome": null,
+                    "reason": null,
+                    "revived_target_id": null,
+                    "snapshot_row": 23,
+                    "window_s": 2592000,
+                    "label": "L"
+                }
+            ]
+        },
+        "retry": {
+            "undo": "accepted",
+            "revival": "revived"
+        }
+    },
+    "E14_refused_undo": {
+        "undo": "refused: Cannot undo booking: original location no longer exists",
+        "revival": "not attempted",
+        "state_unchanged": true,
+        "state": {
+            "stock": [],
+            "bookings": [
+                {
+                    "id": 38,
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 39,
+                    "stock_row_id": 24,
+                    "type": "consume",
+                    "amount": -2,
+                    "undone": 0
+                }
+            ],
+            "labels": {
+                "L": {
+                    "target": null,
+                    "retired": true,
+                    "snapshot_row": 24,
+                    "scan": "retired"
+                }
+            },
+            "events": [
+                {
+                    "id": 20,
+                    "cause": "consumption",
+                    "booking_id": 39,
+                    "outcome": null,
+                    "reason": null,
+                    "revived_target_id": null,
+                    "snapshot_row": 24,
+                    "window_s": 2592000,
+                    "label": "L"
+                }
+            ]
+        }
+    },
+    "E15_print_jobs_across_retirement_and_revival": [
+        {
+            "step": "retirement",
+            "jobs": {
+                "queued": {
+                    "cancelled": true,
+                    "attempts_authorized": 1,
+                    "attempts_made": 0
+                },
+                "uncertain_attempt": {
+                    "cancelled": false,
+                    "attempts_authorized": 1,
+                    "attempts_made": 1
+                },
+                "authorized_retry": {
+                    "cancelled": false,
+                    "attempts_authorized": 2,
+                    "attempts_made": 1
+                }
+            },
+            "job_ids": {
+                "queued": 1,
+                "uncertain_attempt": 2,
+                "authorized_retry": 3
+            },
+            "event_jobs_through_id": 3
+        },
+        {
+            "step": "undo booking 41",
+            "undo": "accepted",
+            "revival": "revived",
+            "jobs_unchanged_by_revival": {
+                "queued": {
+                    "cancelled": true,
+                    "attempts_authorized": 1,
+                    "attempts_made": 0
+                },
+                "uncertain_attempt": {
+                    "cancelled": false,
+                    "attempts_authorized": 1,
+                    "attempts_made": 1
+                },
+                "authorized_retry": {
+                    "cancelled": false,
+                    "attempts_authorized": 2,
+                    "attempts_made": 1
+                }
+            },
+            "claimable_with_todays_predicate": [
+                3
+            ],
+            "claimable_with_the_proposed_predicate": []
+        },
+        {
+            "step": "a job requested after the revival",
+            "job_id": 4,
+            "claimable_with_the_proposed_predicate": [
+                4
+            ]
+        }
+    ],
+    "concurrency": {
+        "C1_issuance_vs_undo": {
+            "issuance_before_the_undo": {
+                "result": "refused",
+                "message": "Stock entry not found in the requested import epoch",
+                "waited_s": 0
+            },
+            "issuance_started_during_the_undo": {
+                "result": "issuance returned a uid",
+                "uid": "DAVM1S8RDQKDA",
+                "waited_s": 1.5
+            },
+            "child_still_blocked_after_1.5s": true,
+            "issued_uid_is_the_revived_L": true,
+            "live_labels_on_restored_row": 1,
+            "state": {
+                "stock": [
+                    {
+                        "id": 26,
+                        "amount": 2,
+                        "product_id": 26
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 42,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 43,
+                        "stock_row_id": 26,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 26,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 26"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 22,
+                        "cause": "consumption",
+                        "booking_id": 43,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 26,
+                        "snapshot_row": 26,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        "C2_two_undo_requests": {
+            "second_request_blocked_after_1.5s": true,
+            "second_request": {
+                "result": "refused",
+                "message": "Booking does not exist or was already undone",
+                "waited_s": 1.49
+            },
+            "state": {
+                "stock": [
+                    {
+                        "id": 27,
+                        "amount": 2,
+                        "product_id": 27
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 44,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 45,
+                        "stock_row_id": 27,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": 27,
+                        "retired": false,
+                        "snapshot_row": null,
+                        "scan": "resolved -> row 27"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 23,
+                        "cause": "consumption",
+                        "booking_id": 45,
+                        "outcome": "revived",
+                        "reason": null,
+                        "revived_target_id": 27,
+                        "snapshot_row": 27,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        },
+        "C3a_import_waits_for_the_revival": {
+            "importer_blocked_after_1.5s": true,
+            "importer": {
+                "result": "epoch bumped",
+                "waited_s": 1.49
+            },
+            "live_labels_after": 1,
+            "note": "a live label makes the real importer refuse (DatabaseImporter: live labels name rows this import replaces)"
+        },
+        "C3b_revival_waits_for_the_import": {
+            "undo": "accepted",
+            "revival": "no_reference",
+            "undo_waited_s": 1.33,
+            "importer": {
+                "result": "epoch bumped",
+                "waited_s": 2.01
+            },
+            "state": {
+                "stock": [
+                    {
+                        "id": 29,
+                        "amount": 2,
+                        "product_id": 29
+                    }
+                ],
+                "bookings": [
+                    {
+                        "id": 48,
+                        "stock_row_id": null,
+                        "type": "purchase",
+                        "amount": 2,
+                        "undone": 0
+                    },
+                    {
+                        "id": 49,
+                        "stock_row_id": 29,
+                        "type": "consume",
+                        "amount": -2,
+                        "undone": 1
+                    }
+                ],
+                "labels": {
+                    "L": {
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 29,
+                        "scan": "retired"
+                    }
+                },
+                "events": [
+                    {
+                        "id": 25,
+                        "cause": "consumption",
+                        "booking_id": 49,
+                        "outcome": null,
+                        "reason": null,
+                        "revived_target_id": null,
+                        "snapshot_row": 29,
+                        "window_s": 2592000,
+                        "label": "L"
+                    }
+                ]
+            }
+        }
+    },
+    "cost": {
+        "events": 100000,
+        "insert_labels_s": 0.42,
+        "insert_labels_and_events_s": 1.11,
+        "table_bytes": 27230208,
+        "total_bytes_with_indexes": 35880960,
+        "labels_total_bytes_same_rows": 24682496,
+        "bytes_per_event_with_indexes": 359,
+        "probe_by_epoch_and_booking": {
+            "execution_ms": 0.013,
+            "node": "Index Scan",
+            "index": "stock_label_retirements_booking"
+        }
+    }
+}

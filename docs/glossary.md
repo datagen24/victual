@@ -182,10 +182,22 @@ A new print job using retained artifact bytes. It does not repeat the original b
 or capture fresh entity data. See
 [ADR-0021](adr/0021-label-templates-are-application-data.md).
 
+### Retirement event
+
+Proposed in [ADR-0037](adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) (Proposed, not implemented). One row in `stock_label_retirements` for each retirement of a
+`stock_entry` label. It keeps the retirement snapshot, the cause and, for a whole-row
+consumption, the booking and the deadline for revival. It is permanent history.
+
 ### Revised print
 
 A print request that captures updated entity data while keeping the label identity.
 See [Label printing](manual/operator/label-printing.md).
+
+### Revival
+
+Proposed in [ADR-0037](adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) (Proposed, not implemented). A retired `stock_entry` label becomes live again on the
+row that the undo of its consuming booking rebuilds under its original id, inside a fixed window. It is not a reprint
+and not a general reassignment of a label to other stock.
 
 ### Worker
 
