@@ -1,0 +1,11 @@
+contract-admin.json {'local-date-time -> date-time': 92, 'date unchanged': 66, 'string (PostgreSQL TIMESTAMPTZ text / format c) -> date-time': 3, 'local-date-time -> date-time-offset': 2}
+  local-date-time still present on branch: []
+   ('tz', '/GET /api/objects/{entity} (roles)/shape[]/row_created_timestamp', 'string', 'string(date-time)')
+   ('tz', '/GET /api/objects/{entity}/{objectId} (roles)/shape/row_created_timestamp', 'string', 'string(date-time)')
+   ('tz', '/GET /api/roles/shape[]/row_created_timestamp', 'string', 'string(date-time)')
+   ('offset', '/GET /api/system/time/shape/time_local', 'string(local-date-time)', 'string(date-time-offset)')
+   ('offset', '/GET /api/system/time/shape/time_local_sqlite3', 'string(local-date-time)', 'string(date-time-offset)')
+contract-restricted.json {'local-date-time -> date-time': 72, 'date unchanged': 31, 'local-date-time -> date-time-offset': 2}
+  local-date-time still present on branch: []
+   ('offset', '/GET /api/system/time/shape/time_local', 'string(local-date-time)', 'string(date-time-offset)')
+   ('offset', '/GET /api/system/time/shape/time_local_sqlite3', 'string(local-date-time)', 'string(date-time-offset)')
