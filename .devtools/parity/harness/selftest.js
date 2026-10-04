@@ -198,3 +198,34 @@ test('a stalled Influx response body aborts within the timeout', async () => {
 		: `\x1b[31m${failed} of ${cases.length} harness self-tests failed\x1b[0m`);
 	process.exit(failed === 0 ? 0 : 1);
 })();
+
+// **The ADR-0027 entry accepts one instant in two renderings and nothing else** (issue #650).
+// Upstream sends a wall clock in its server's zone, the fork sends RFC 3339 in UTC; the entry
+// must not become "any two timestamps". Each refusal below is a difference the suite has to
+// keep reporting.
+test('the ADR-0027 timestamp entry compares instants, not shapes', async () => {
+	const { classify } = require('./lib/accepted');
+	const step = { method: 'GET', path: '/objects/chores/1' };
+	const entryFor = (upstream, victual, pointer = '/body/tracked_time') => {
+		const entry = classify(step, { kind: 'value', pointer, upstream, victual });
+		return entry === null ? null : entry.id;
+	};
+	const saved = process.env.PARITY_UPSTREAM_TIMEZONE;
+	try {
+		delete process.env.PARITY_UPSTREAM_TIMEZONE;
+		assert.strictEqual(entryFor('2026-10-04 18:30:00', '2026-10-04T18:30:00.000000Z'), 'adr-0027-timestamps-are-utc-instants', 'control: the same instant');
+		assert.strictEqual(entryFor('2026-10-04 18:30:00', '2026-10-04T14:30:00.000000Z'), null, 'a wrong offset is a different instant');
+		assert.strictEqual(entryFor('2026-10-04 18:30:00', '2026-10-04T18:30:00.123456Z'), null, 'an invented fraction is a difference');
+		assert.strictEqual(entryFor('2026-10-04 18:30:00', '2026-10-04T18:30:00Z'), null, 'the wire rendering has exactly six fractional digits');
+		assert.strictEqual(entryFor('2026-10-04 18:30:00', '2026-10-04T18:30:00.000000'), null, 'a fork value with no zone is malformed');
+		assert.strictEqual(entryFor('2026-10-04', '2026-10-04T00:00:00.000000Z', '/body/best_before_date'), null, 'a calendar date turned into an instant is a difference');
+
+		process.env.PARITY_UPSTREAM_TIMEZONE = 'America/New_York';
+		assert.strictEqual(entryFor('2026-11-01 01:30:00', '2026-11-01T05:30:00.000000Z'), 'adr-0027-timestamps-are-utc-instants', 'the repeated hour is the earlier instant');
+		assert.strictEqual(entryFor('2026-11-01 01:30:00', '2026-11-01T06:30:00.000000Z'), null, 'not the later one');
+		assert.strictEqual(entryFor('2026-03-08 02:30:00', '2026-03-08T07:30:00.000000Z'), null, 'a skipped wall clock names no instant');
+	} finally {
+		if (saved === undefined) delete process.env.PARITY_UPSTREAM_TIMEZONE;
+		else process.env.PARITY_UPSTREAM_TIMEZONE = saved;
+	}
+});

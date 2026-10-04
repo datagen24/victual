@@ -56,7 +56,7 @@ const ACCEPTED = [
 			difference.kind === 'type' &&
 			difference.pointer.endsWith('/next_estimated_execution_time') &&
 			difference.upstream === null &&
-			/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(difference.victual))
+			(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(difference.victual)) || WIRE_RE.test(String(difference.victual)))
 	},
 
 	{
@@ -455,9 +455,13 @@ const ACCEPTED = [
 			if (difference.kind !== 'value' || !/^\/body(\/\d+)?\/start_date$/.test(difference.pointer)) return false;
 			if (!/^(GET|POST) \/objects\/chores(\/\d+)?$/.test(routeOf(step))) return false;
 			const re = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
-			if (!re.test(String(difference.victual)) || !re.test(String(difference.upstream))) return false;
-			const ms = (v) => Date.parse(String(v).replace(' ', 'T') + 'Z');
-			return Math.abs(ms(difference.victual) - ms(difference.upstream)) <= 2000;
+			if (!re.test(String(difference.upstream))) return false;
+			// The fork's side is an instant (ADR-0027 decision 2), the upstream side a wall clock
+			// in the upstream zone; both become microseconds since the epoch.
+			const victual = WIRE_RE.test(String(difference.victual)) ? wireToMicros(String(difference.victual)) : null;
+			const upstream = wallClockToMicros(String(difference.upstream), upstreamZone());
+			if (victual === null || upstream === null) return false;
+			return Math.abs(victual - upstream) <= 2000000;
 		}
 	},
 
@@ -495,6 +499,23 @@ const ACCEPTED = [
 			typeof difference.victual === 'boolean' &&
 			isNumericish(difference.upstream) &&
 			Number(difference.upstream) === (difference.victual ? 1 : 0)
+	},
+
+	{
+		id: 'adr-0027-timestamps-are-utc-instants',
+		reference: 'docs/adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md (decision 2), https://github.com/datagen24/victual/issues/650',
+		reason:
+			'Every instant is RFC 3339 in UTC with six fractional digits here ("2026-10-04T18:30:00.000000Z") ' +
+			'and a wall clock in the server\'s zone upstream ("2026-10-04 18:30:00"). ADR-0027 decision 2 ' +
+			'moved the wire; upstream did not.\n\n' +
+			'The matcher compares **instants**, never shapes: the upstream wall clock is read in ' +
+			'PARITY_UPSTREAM_TIMEZONE (the stack runs upstream with TZ=UTC, so UTC by default) by the ' +
+			'same rule the fork applies - a repeated hour is the earlier instant, a skipped one names ' +
+			'none - and the two must be the same microsecond. A wrong offset, a lost fraction, a value ' +
+			'with no zone on the fork\'s side, and a calendar date on either side are all still reported.',
+		match: ({ difference }) =>
+			difference.kind === 'value' &&
+			isSameInstantAcrossTheMigration(difference.upstream, difference.victual)
 	},
 
 	{
@@ -666,12 +687,17 @@ function isNumericish(v) {
 
 // "2025-01-01" against "2025-01-01 00:00:00" and nothing looser. A date-only value on one
 // side and midnight of that same date on the other is the accepted rendering difference;
-// a different date, or a non-midnight time, is not.
+// a different date, or a non-midnight time, is not. Since ADR-0027 decision 2 the fork's
+// side is an instant, and the midnight it must name is the upstream zone's.
 function isSameInstantDateOnly(dateOnly, withTime) {
 	const a = String(dateOnly);
 	const b = String(withTime);
 	const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 	const midnightRe = /^(\d{4}-\d{2}-\d{2})[ T]00:00:00$/;
+
+	if (dateRe.test(a) && WIRE_RE.test(b)) {
+		return wallClockToMicros(`${a} 00:00:00`, upstreamZone()) === wireToMicros(b);
+	}
 
 	if (dateRe.test(a)) {
 		const m = midnightRe.exec(b);
@@ -693,6 +719,63 @@ function renamedPair(victualValue, upstreamValue) {
 }
 
 // Classifies one difference. Returns the entry that explains it, or null.
+// ---------------------------------------------------------------- ADR-0027 instants
+//
+// The fork's wire rendering, and the arithmetic to compare it with an upstream wall clock.
+// Microseconds as BigInt so that a lost or invented fraction is a difference rather than a
+// float rounding away.
+
+const WIRE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})Z$/;
+const WALL_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?$/;
+
+function upstreamZone() {
+	return process.env.PARITY_UPSTREAM_TIMEZONE || 'UTC';
+}
+
+function wireToMicros(value) {
+	const m = WIRE_RE.exec(value);
+	if (!m) return null;
+	return BigInt(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) * 1000n + BigInt(m[7]);
+}
+
+// The UTC offset of `zone` at an instant (epoch milliseconds), in milliseconds.
+function offsetMs(zone, epochMs) {
+	const parts = {};
+	new Intl.DateTimeFormat('en-US', {
+		timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit', second: '2-digit'
+	}).formatToParts(new Date(epochMs)).forEach((p) => { parts[p.type] = p.value; });
+	const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+	return asUtc - Math.floor(epochMs / 1000) * 1000;
+}
+
+// The instant a wall clock names in `zone`, by the fork's rule: every offset the zone uses
+// within a day either side is a candidate, a candidate is valid when the zone is at that
+// offset there, and the earliest valid one wins. Null for a wall clock the zone skipped.
+function wallClockToMicros(value, zone) {
+	const m = WALL_RE.exec(value);
+	if (!m) return null;
+	const naive = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+	const window = 26 * 3600 * 1000;
+	const offsets = new Set([offsetMs(zone, naive - window), offsetMs(zone, naive), offsetMs(zone, naive + window)]);
+	let best = null;
+	for (const offset of offsets) {
+		const candidate = naive - offset;
+		if (offsetMs(zone, candidate) === offset && (best === null || candidate < best)) best = candidate;
+	}
+	if (best === null) return null;
+	return BigInt(best) * 1000n + BigInt((m[7] || '').padEnd(6, '0') || '0');
+}
+
+// The ADR-0027 entry's test: the fork sent an instant in the wire rendering, upstream a wall
+// clock with a time of day, and they name the same microsecond.
+function isSameInstantAcrossTheMigration(upstream, victual) {
+	if (typeof upstream !== 'string' || typeof victual !== 'string') return false;
+	const fork = wireToMicros(victual);
+	const theirs = wallClockToMicros(upstream, upstreamZone());
+	return fork !== null && theirs !== null && fork === theirs;
+}
+
 // Which modes an entry speaks for.
 //
 // **An entry with no `modes` applies to parity and nowhere else**, and that default is the
@@ -775,4 +858,4 @@ function classifyUi(context) {
 	return null;
 }
 
-module.exports = { ACCEPTED, UI_ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify, classifyUi, appliesInMode };
+module.exports = { ACCEPTED, UI_ACCEPTED, FORK_ADDED_FIELDS, FORK_ONLY_ENTITIES, classify, classifyUi, appliesInMode, isSameInstantAcrossTheMigration, wallClockToMicros };
