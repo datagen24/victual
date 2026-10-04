@@ -1,6 +1,8 @@
-# ADR-0027: The API's timestamps are local wall-clock strings, and its documented booleans are booleans
+# ADR-0027: The API's timestamps are UTC instants in RFC 3339, and its documented booleans are booleans
 
-- **Status:** Proposed.
+- **Status:** Proposed. Decider's answers recorded 2026-10-04 (below); decision 2 was
+  revised by them, and the record cannot be accepted until that revision is implemented
+  (acceptance prerequisite 5).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-21.
@@ -21,6 +23,28 @@
   [17 — Ecosystem clients](../plans/17-ecosystem-clients.md), whose catalogue this adds to;
   [14](../plans/landed/14-contract-and-regression-scaffolding.md) piece 2, whose snapshot is
   what measured the first decision.
+
+## Decider's answers (2026-10-04)
+
+The decider answered acceptance prerequisites 1 to 3 in an interview on 2026-10-04. The
+record was originally written proposing that the document move for timestamps (the old
+title was "The API's timestamps are local wall-clock strings"). One of the answers reverses
+that, so decision 2, decision 5, the options and the consequences below are revised in
+place. Nothing is superseded, because the record was never accepted. The file name still
+carries the old slug so that existing links keep working.
+
+| Question | Answer |
+|---|---|
+| Decision 1: eleven documented booleans sent as `0`/`1` | **Confirmed. The wire moves.** |
+| Decision 2: fifty-four `format: date-time` properties that are not RFC 3339 | **Reversed. The wire moves to RFC 3339.** Option A replaces option B. |
+| How to record the reversal | **Revise this record in place**, not a superseding ADR. Decision 5's cost list becomes the implementation scope. |
+| Which offset | **UTC, written as `Z`**: `2026-10-04T18:30:00Z`. Not the server's local offset. |
+| Storage | **Migrate the legacy `TIMESTAMP` columns to `TIMESTAMPTZ`.** Converting only on output was rejected. |
+| Scope | **One rule for the whole API**: the label surface's `TIMESTAMPTZ` values, `TimeResponse.time_utc` and the echoed write fields all join it. SQL `DATE` columns stay `YYYY-MM-DD`. |
+| Browser display zone | **The viewer's device zone**, not the server's configured zone. |
+| Clients being locked down before this lands | **Decode both renderings** until decision 2 is implemented, then drop the old one. |
+| Decision 4: generic write bodies become `GenericEntityWrite` | **Confirmed.** |
+| Prerequisite 3: three entities decode under a member that is not theirs | **Accepted only while it is tracked for a fix**, as [issue 648](https://github.com/datagen24/victual/issues/648). The decider wants it fixed, not left as a permanent limit. |
 
 ## Context
 
@@ -53,8 +77,9 @@ The two type mismatches were measured rather than guessed, against
   0272 keeps absolute instants in `TIMESTAMPTZ` and renders them with an offset, and
   `TimeResponse.time_utc` is UTC rather than the configured zone. The rendering this fork
   sends is therefore not uniform, and a rule written as though it were would not survive
-  contact with the label routes. Decision 2 states the rule over the surface it was
-  measured on and names the three renderings outside it.
+  contact with the label routes. The first draft of decision 2 therefore stated its rule
+  over the surface it was measured on and named three renderings outside it. The revised
+  decision 2 removes the non-uniformity instead: every timestamp moves to one rendering.
 
 The consequences differ in kind, which is why the two are decided differently below. An
 integer where a boolean was promised fails a strict decoder on that field; for `spoiled`
@@ -68,6 +93,10 @@ wrong". Both engines agree here. Nothing in the corpus said what happens when th
 is the party that is wrong, and answering "the document is always right" would commit this
 project to rendering RFC 3339 across fifty-four fields on the strength of a `format`
 keyword nobody deliberately chose.
+
+On 2026-10-04 the decider chose RFC 3339 deliberately, and for
+a stronger reason than the keyword: a timestamp should be an instant on the wire and in
+storage. The decider's answers above record this.
 
 ## Decision
 
@@ -94,56 +123,64 @@ keyword nobody deliberately chose.
      key/value pairs attached under a `userfields` key, so a household with a userfield
      named `spoiled` would otherwise have its value answered as `true`.
 
-2. **The legacy surface's timestamps are local wall-clock strings and the document says so.**
-   Every date and time rendered or accepted by the routes over the pre-label schema — whose
-   date columns are SQL `TIMESTAMP`, and which is where all fifty-four mistyped properties
-   are — is `YYYY-MM-DD HH:MM:SS` in the server's configured zone, documented as a `string`
-   with that `pattern` and no `format`. A field whose column is a SQL `DATE` carries
-   `format: date`, which it already satisfies — `Task.due_date`,
-   `CurrentTaskResponse.due_date` and `ProductPriceHistory.date` were typed `date-time` and
-   are dates.
+2. **Every timestamp this API stores or sends is an exact instant. It is stored as
+   `TIMESTAMPTZ`, sent as RFC 3339 in UTC with a `Z` suffix, and documented as
+   `format: date-time`.** *Revised 2026-10-04 by the decider. As first written, this
+   decision went the other way: it kept the wire unchanged and corrected the document
+   instead (option B, now rejected).*
 
-   Three renderings sit outside that rule and are named, because the same rule stated over
-   *every* timestamp this API sends would be false on the day it was accepted:
+   - **Storage.** The legacy schema's `TIMESTAMP` columns behind the fifty-four properties
+     migrate to `TIMESTAMPTZ`. Each existing value is a wall-clock time in the server's
+     configured zone, and the migration converts it on that basis
+     (`col AT TIME ZONE '<configured zone>'`). When daylight saving ends, one clock hour
+     occurs twice. A value in that repeated hour is read as the **earlier** of the two
+     instants, the same rule
+     [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) applies to a new
+     write without an offset. The import of a legacy SQLite database converts upstream's
+     wall-clock values the same way. The label surface (migrations 0269 to 0272) already
+     stores `TIMESTAMPTZ` and does not migrate.
+   - **Rendering.** `YYYY-MM-DDTHH:MM:SSZ`, for example `2026-10-04T18:30:00Z`, where the
+     record stored `2026-10-04 14:30:00` on a server set to `America/New_York`. The `Z` is
+     part of the contract: a client may compare these values as text.
+   - **One rule, no exceptions.** The three renderings that the record as first written
+     set aside are now covered by it:
+     - `TimeResponse.time_utc` renders as `2026-10-04T18:30:00Z`. Its former rendering
+       used the local format with no offset.
+     - `observed_at` on the label evidence endpoint is already RFC 3339. It is normalised
+       to `Z`.
+     - The label surface's `TIMESTAMPTZ` values are covered too. `labels.retired_at` on
+       `GET /labels/resolve/{code}` changes from `2026-03-04 05:06:07.891011-05` to
+       `2026-03-04T10:06:07…Z`; whether the fraction is kept is open question 2. The same
+       applies to `expires_at` on the two worker-credential routes, which `->format('c')`
+       currently renders with the server's offset.
+   - **The write fields echo it.** `tracked_time` on chore execution and battery charge
+     and `done_time` on task completion accept what ADR-0028 lists. They are stored as
+     instants and rendered back by this rule.
+   - **Dates stay dates.** A field whose column is a SQL `DATE` is a calendar date, not an
+     instant. It keeps `YYYY-MM-DD` and `format: date`. This covers `best_before_date`,
+     `purchased_date`, `Task.due_date`, `CurrentTaskResponse.due_date` and
+     `ProductPriceHistory.date`. The last three were typed `date-time` and are corrected to
+     `format: date`.
+   - **Each viewer sees their own zone.** The browser converts each instant to the viewing
+     device's zone for display. It therefore sends writes with an explicit offset: an
+     offset-free value is read in the server's configured zone (ADR-0028), which is not
+     necessarily the zone the viewer typed the value in. The consequences below state what
+     this costs.
+   - **Until this is implemented, the wire is unchanged.** The server still sends local
+     wall-clock strings, and the document still describes them as it does today, with the
+     `pattern` [PR #234](https://github.com/datagen24/victual/pull/234) added and no
+     `format`. The document changes in the same commit as the wire, under
+     [ADR-0005](0005-wire-contract-is-the-invariant.md). Until then, first-party clients
+     accept both renderings and send RFC 3339, which ADR-0028 already accepts.
 
-   - **`TimeResponse.time_utc` is UTC**, not the configured zone:
-     `ApplicationService::GetSystemTime()` renders it through `new DateTimeZone('UTC')`. It
-     keeps the local *shape*, and therefore the `pattern`, with the zone carried by the
-     property name rather than by the value. The document described it as local time —
-     `time_local`'s description, verbatim — which this record corrects.
-   - **`observed_at` on the label evidence endpoint is RFC 3339** and keeps
-     `format: date-time`. It is the only property in the document carrying that keyword.
-   - **The label surface keeps its own clocks.** Migrations 0269 to 0272 store absolute
-     instants as `TIMESTAMPTZ`, deliberately, and what PostgreSQL renders for one carries a
-     UTC offset and fractional seconds: `2026-03-04 05:06:07.891011-05`. `labels.retired_at`
-     on `GET /labels/resolve/{code}` is the one such value in a response body this document
-     describes, and it is documented as an opaque `string` with neither the `pattern` nor a
-     `format`. `expires_at` on the two worker-credential routes is rendered with
-     `->format('c')`, which is RFC 3339, inside responses the document types only as
-     `object`. That surface is a newer schema with a different rule about absolute time, and
-     retyping it is not what this record is for.
-
-   The three write fields in this family — `tracked_time` on chore execution and battery
-   charge, `done_time` on task completion — are documented the same way. Documenting them
-   as `format: date-time` was worse than inaccurate there: it invited a generated client to
-   send RFC 3339 and have its timestamp discarded without a word.
-   `helpers/extensions.php`'s `IsIsoDateTime()` demanded exactly `Y-m-d H:i:s`, and the
-   controllers' `if` **silently ignored** a value in any other rendering and booked the
-   current time instead.
-
-   **That last sentence described the tree when this record was written and no longer
-   does.** [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) decided the
-   question this record deliberately left open — whether to refuse such a value or to widen
-   what is accepted — and did both. The three fields now accept a bare date and the RFC 3339
-   renderings, normalised to the rendering above, and refuse with 400 anything they cannot
-   read. Their `pattern` and description in the document say so.
-
-   Nothing else in this decision changes; in particular they are still not `format:
-   date-time`, because what they *store* is still a local wall-clock string on the legacy
-   surface this decision is stated over. Widening what they *accept* to include RFC 3339
-   does not move them out of that surface, and does not make them a fourth exception beside
-   the three named above. An offset a caller sends is resolved to the server's zone and
-   discarded, never stored and never rendered back.
+   **The three write fields' history, kept for the record.** When this record was first
+   written, `helpers/extensions.php`'s `IsIsoDateTime()` accepted exactly `Y-m-d H:i:s`.
+   The controllers silently ignored a value in any other format and booked the current
+   time instead, so documenting the fields as `format: date-time` invited a generated
+   client to send a value that would be thrown away.
+   [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) settled the
+   question this record left open: it refuses what it cannot read and accepts the RFC
+   3339 forms.
 
 3. **The three document-only defects are fixed in the document.** `GET /user` is an array of
    `UserDto`, which is what `GetUsersAsDto()->where(...)` serialises to. The
@@ -166,31 +203,44 @@ keyword nobody deliberately chose.
    schemas would now mean documenting `id` as mandatory on a create and forcing a
    read-modify-write for every partial update.
 
-5. **Moving the rendering to RFC 3339 stays available, and is not done here.** What it
-   would take is named so a later record can cost it:
+5. **What decision 2 costs, and therefore its implementation scope.** The record as first
+   written listed these costs as the reason to defer the change. The decider has chosen to
+   pay them:
 
-   - a response normaliser keyed by field name (nothing else knows which strings are
-     timestamps — the values come from base tables through LessQL, from the SQL views, and
-     from service-built arrays)
-   - an offset resolved per instant rather than from the current zone so it survives a DST
-     boundary
-   - coordinated updates to plan 18's MQTT payloads, the iCal feed, the browser code that
-     reads these strings, and every Victual-owned client
-
-   A superseding ADR is how that happens, not a patch.
+   - **The migration**: about fifty-four columns move to `TIMESTAMPTZ`, and every SQL view
+     that reads them is rewritten. The differential suite's `views` phase compares against
+     the frozen SQLite line, which has no timezone-aware type, so that phase needs an
+     accepted difference or a normalised comparison.
+   - **A renderer** that writes every instant in the decision 2 format. PostgreSQL's ISO
+     output (`2026-10-04 18:30:00+00`) is not RFC 3339, so values still have to be
+     rewritten on the way out. The draft identified timestamps in a response by field name
+     only, and called that a second, weaker copy of the schema. Once the columns are
+     `TIMESTAMPTZ`, the renderer may be able to use the column's type instead of the
+     field's name, but that is not yet verified. Without it, the field-name approach and
+     its risk remain.
+   - **Coordinated changes** to plan 18's MQTT payloads, the iCal feed, and the browser
+     code that reads and writes these values. That code converts to the device's zone for
+     display and sends writes with an offset.
+   - **Every Victual-owned client.** They already accept both renderings under decision 2's
+     interim rule.
+   - **ADR-0028's storage step** changes from storing a wall-clock time to storing an
+     instant. That record carries the change.
+   - **The parity suite** gains an accepted difference: upstream sends local wall-clock
+     strings, and this fork sends UTC instants that should describe the same moment.
 
 ## Options considered
 
-**A. Render RFC 3339 and keep `format: date-time`.** The document would be right and the
-values would be correct for any consumer. Rejected for now, under decision 5: it is a
-wire change on fifty-four fields whose cheapest implementation is a name-keyed response
-normaliser — a second, weaker copy of the schema, sitting where a bug in it silently
-rewrites data. It also needs a timezone rule this project has never had to state.
+**A. Render RFC 3339 and keep `format: date-time`.** **The decision, as of 2026-10-04**,
+taken further than the option as first written. Storage migrates to `TIMESTAMPTZ`, the
+wire carries UTC with `Z`, and the API's former exceptions are brought under the same rule.
+The document becomes correct, every value is an unambiguous instant, and generated clients
+get real date types. The costs the record first used to reject this option are listed
+under decision 5, and the decider has accepted them.
 
-**B. Document what is sent.** The decision. It costs a generated client the convenience of a
-date type and gains it a response that decodes, which is the trade the issue was raised
-about. It also makes the document say something true about the three write fields, where
-`format: date-time` was actively misleading.
+**B. Document what is sent.** *Proposed as the decision when this record was written, and
+rejected by the decider on 2026-10-04.* It would have kept a generated client decoding at
+the price of a date type. It would also have left every timestamp dependent on a configured
+zone the value does not carry, and kept three exceptions to the rule.
 
 **C. Retype the eleven booleans as `integer` and change nothing on the wire.** Symmetrical
 with B, and the API's prevailing convention — `undone`, `active` and `no_own_stock` are all
@@ -215,6 +265,30 @@ tenth of the scale, and is where this would be decided.
 
 ## Consequences
 
+- **Every timestamp on the wire changes once decision 2 is implemented.** This is a breaking
+  change on essentially every read route. For example, `"2026-10-04 14:30:00"` becomes
+  `"2026-10-04T18:30:00Z"` on a New York server. A consumer that displays the string
+  without parsing it will show UTC. That includes a Home Assistant template, an iCal
+  subscriber that reads the raw value, or a script. It is the reason decision 5 lists
+  every consumer that has to move with the change.
+- **Two people viewing the same record can see different clock times.** The browser shows
+  each viewer their own device's zone. A chore done at 14:30 in New York appears as 19:30 to
+  a household member viewing from London. Boundaries the server computes stay in the
+  server's configured zone: "due today", "overdue", "expires in N days", and the day a
+  `DATE` falls on. A viewer in another zone can therefore see a record due "today" whose
+  displayed time falls on their tomorrow. The decider accepted this mismatch in exchange for
+  showing each viewer their own time.
+- **The browser must send an offset.** If the browser shows a viewer their own zone but
+  sends an offset-free value, that value is read in the server's zone, and the booking
+  lands at the wrong instant. `moment().format('YYYY-MM-DD HH:mm:ss')` in
+  `choretracking.js`, `choresoverview.js`, `batterytracking.js`, `batteriesoverview.js` and
+  `tasks.js` must become a format that carries an offset. A chore whose `track_date_only` is
+  set is the exception: it still sends a bare date, which has no offset to carry.
+- **The upgrade is a data migration over live history.** Every existing timestamp is
+  reinterpreted from a wall-clock time to an instant, using the configured zone in force
+  when the migration runs. A server whose zone was changed after data was written will
+  convert its older rows at the new zone's offset. Nothing in the stored data can detect or
+  correct that.
 - **Eleven fields change value type on the wire**, on about twenty routes. The browser is
   unaffected: every reader of these fields in `public/viewjs/` compares with `== 1`, `!= 1`
   or truthiness, and the Blade views that compare with `== 1` in PHP read from the
@@ -231,7 +305,8 @@ tenth of the scale, and is where this would be decided.
   deliberate and it is the improvement: a loud failure in place of a silent wrong answer.
   Writing their schemas is separate work.
 - **Three are still a candidate for a member that is not theirs, and this record does not
-  claim otherwise.** A `stock_log` row carries `id`, `stock_id` and `product_id`, which is
+  pretend otherwise. [Issue 648](https://github.com/datagen24/victual/issues/648) tracks the
+  fix; the decider accepts the residual only while that issue is open.** A `stock_log` row carries `id`, `stock_id` and `product_id`, which is
   everything `StockEntry` requires; a `product_barcodes_view` row carries `barcode` and
   `product_id`, which is everything `ProductBarcode` requires; and `uihelper_shopping_list`
   is a superset of `shopping_list`, so it carries `id` and `shopping_list_id` and matches
@@ -274,10 +349,13 @@ tenth of the scale, and is where this would be decided.
     turns on values, so a row whose nullable columns happen to be set could validate where
     another does not.
 
-- **`victual-kit` sheds three workarounds** — the middleware that strips the charset
-  parameter, the date transcoder that accepts both renderings, and the boolean remapping in
-  its specification normalizer — and keeps reading `GET /objects/{entity}` outside its
-  generated client for any entity without a schema.
+- **`victual-kit` sheds two workarounds now and a third later.** The two that go now are
+  the middleware that strips the charset parameter and the boolean remapping in its
+  specification normalizer. The date transcoder that accepts both renderings **stays until
+  decision 2 is implemented**, under that decision's interim rule. It then shrinks to plain
+  RFC 3339, with the `format: date-time` the document will carry. `victual-kit` still
+  reads `GET /objects/{entity}` outside its generated client for any entity without a
+  schema, until issue 648 is fixed.
 - **A generated client loses its typed write body** for the two generic entity write
   routes. What it loses was not real: the union was matched by declaration order, so every
   entity's create body was already a `Product`, and two of `Product`'s properties were
@@ -337,21 +415,50 @@ tenth of the scale, and is where this would be decided.
   a test behind its claim, so a new unreferenced schema cannot arrive without making one of
   them true.
 
+## Open questions
+
+Decision 2's revision raised these. None blocks recording the decision; each must be
+answered before decision 2 is implemented.
+
+1. **`TimeResponse.time_local`.** By definition it is the server's local wall-clock time.
+   Should it carry the server's offset (`2026-10-04T14:30:00-04:00`), which is the one
+   place a non-`Z` RFC 3339 value would remain, or be retired in favour of `time_utc` and
+   the configured zone name?
+2. **Fractional seconds.** The legacy columns hold whole seconds. The label surface's
+   `TIMESTAMPTZ` values hold microseconds. Should the renderer truncate to whole seconds
+   everywhere, or send whatever precision is stored?
+3. **The differential suite's `views` phase.** Should the phase gain an accepted difference
+   for the `TIMESTAMPTZ` columns, or compare after normalising both sides to instants?
+
 ## Acceptance prerequisites
 
 This record changes a wire contract, so accepting it requires:
 
-1. The decider confirms decisions 1 and 2 as written — in particular that the eleven
-   booleans move the wire and the fifty-four timestamps move the document, which are
-   opposite answers to superficially similar questions. It also confirms that decision 2's
-   rule is stated over the legacy surface with `time_utc`, `observed_at` and the label
-   surface's `TIMESTAMPTZ` renderings named as sitting outside it.
-2. The decider confirms decision 4, the one change here that no issue asked for.
+1. The decider confirms decisions 1 and 2. **Met 2026-10-04**, with decision 2 revised:
+   the eleven booleans move the wire (confirmed), and the timestamps also move the wire,
+   to RFC 3339 in UTC over `TIMESTAMPTZ` storage, under one rule with no exceptions. The
+   first draft proposed the opposite for timestamps.
+2. The decider confirms decision 4, the one change here that no issue asked for. **Met
+   2026-10-04.**
 3. The decider accepts that `stock_log`, `product_barcodes_view` and `uihelper_shopping_list`
    are still candidates for a member that is not theirs. Since `c6d27881` modelled the
    members' nullability, each is now a successful decode under a schema that is not its own,
    rather than a candidate a strict validator would reject. Closing that needs option E or
-   option D rather than more `required` properties.
+   option D rather than more `required` properties. **Met conditionally, 2026-10-04.** The
+   decider accepts the residual only while
+   [issue 648](https://github.com/datagen24/victual/issues/648) is open and tracked. The
+   accepting pull request must link the issue in that state, or show it fixed.
 4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.
+5. **Decision 2 is implemented and demonstrated**, in separate changes from the acceptance,
+   tracked as [issue 650](https://github.com/datagen24/victual/issues/650):
+   - the `TIMESTAMPTZ` migration, run against a copy of real data that contains a value in
+     a repeated fall-back hour, showing the earlier instant was chosen
+   - the contract snapshot regenerated, with every timestamp in the decision 2 format and
+     every `DATE` unchanged
+   - the browser showing the device's zone and sending writes with an offset
+   - the MQTT payloads, the iCal feed and `victual-kit` updated
+   - the parity suite's accepted difference for timestamps, checked to compare instants
+     and not just accept anything
+   - the open questions above answered

@@ -1,6 +1,7 @@
 # ADR-0028: A timestamp a write route cannot read is refused, and the readable set is widened
 
-- **Status:** Proposed.
+- **Status:** Proposed. Decider's answers recorded 2026-10-04 (below). Acceptance
+  prerequisites 1 and 2 are met; prerequisite 3 is not.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-21.
@@ -8,8 +9,12 @@
   decision 2 decided that the legacy surface's timestamps are local wall-clock strings and
   that the document says so — and, since the revision of 2026-09-21, names the three
   renderings that sit outside that rule (`TimeResponse.time_utc`, `observed_at`, and the
-  label surface's `TIMESTAMPTZ` columns). The three write fields this record is about are
-  inside it: what they store is a local wall-clock string, whatever rendering it arrived in. **Nothing of that decision is superseded here**, and it could not be:
+  label surface's `TIMESTAMPTZ` columns). The revision of 2026-10-04 removes those
+  exceptions: every timestamp becomes a UTC instant in RFC 3339. The three write fields this
+  record is about are inside it. When this record was written, what they stored was a local wall-clock time,
+  whatever rendering it arrived in. ADR-0027 decision 2 was revised on 2026-10-04 so that
+  they store an instant (`TIMESTAMPTZ`), and this record's decision 2 says how a value is
+  read into one. **Nothing of that decision is superseded here**, and it could not be:
   0027 is Proposed, so there is no accepted decision to supersede. Decision 2 also
   *describes* what the server does with the three write fields — "silently ignores a value
   in any other rendering and books the current time instead" — and this record is what stops
@@ -23,6 +28,21 @@
   catalogue this adds to; `helpers/extensions.php`'s `ParseApiDateTime()` and
   `BaseApiController::RequestedTimestamp()`, which implement it;
   `tests/Pgsql/WireContractTest.php`, which holds the regression.
+
+## Decider's answers (2026-10-04)
+
+Recorded from the decider's interview on 2026-10-04, held together with ADR-0027's.
+
+| Question | Answer |
+|---|---|
+| Decision 1: a present but unreadable timestamp | **Confirmed: 400 naming the field.** This breaks any caller that relied on the silent fallback. |
+| Decision 3: `null` and `""` | **Confirmed: refused as present values.** Only an absent key means "now". A client whose encoder writes `null` for an unset optional must leave the key out instead. |
+| An offset-free value, now that storage is an instant | **Read in the server's configured zone**, then stored as that instant. A value with no offset is not refused. |
+| An offset-free value in a repeated DST hour | **Book the earlier instant.** For example, `2026-11-01 01:30:00` on `America/New_York` books 01:30 EDT (`05:30Z`). A client that means the later 01:30 sends the offset. |
+
+The last two answers follow from ADR-0027's revision to `TIMESTAMPTZ` storage. Before it,
+the repeated hour was not a question: the wall-clock time was stored unchanged, and which of
+the two instants it named was never decided. Decision 2 below is amended to match.
 
 ## Context
 
@@ -88,6 +108,11 @@ so never grew one.
    per ADR-0027 decision 2). `helpers/extensions.php`'s `ParseApiDateTime()` is the one
    place that decides:
 
+   The "Stored" column shows the storage format in force when this record was written.
+   Once ADR-0027 decision 2 is implemented, each row stores the *instant* that wall-clock
+   time names in the server's configured zone. The instant is rendered back as RFC 3339 in
+   UTC. A value that carries an offset is that instant directly.
+
    | Sent | Stored |
    |---|---|
    | `2026-09-21 14:30:00` | itself — the storage rendering, unchanged |
@@ -127,12 +152,18 @@ so never grew one.
    check — `2026-03-08T02:30:00Z` is a real moment and 21:30 the previous evening in New
    York is where it falls.
 
-   **The repeated hour is kept**: `2026-11-01 01:30:00` happens twice there, PHP takes
-   the first, and the wall clock survives unchanged, which is all this API stores. Which
-   of the two instants was meant is a question a wall-clock string cannot ask — that is
-   ADR-0027 decision 2's premise, not a defect here — and refusing the value would lose a
-   booking that is perfectly expressible. A client that needs to say which one sends the
-   offset.
+   **The repeated hour books the earlier instant** (decider, 2026-10-04).
+   `2026-11-01 01:30:00` happens twice in New York, and PHP takes the first. When this
+   record was written, that choice did not matter: the wall-clock time was stored
+   unchanged, and which instant it named was never decided. Under ADR-0027's revised
+   decision 2 the API stores an instant, so the choice is now a decision: the earlier
+   occurrence, 01:30 EDT (`2026-11-01T05:30:00Z`).
+
+   Refusing the value was considered and
+   rejected, because it would lose a booking that looks perfectly ordinary to the person
+   entering it. A client that means the later occurrence sends the offset
+   (`2026-11-01T01:30:00-05:00`). The ADR-0027 migration converts existing rows in that
+   hour by the same rule.
 
    All three routes accept all of it. The chore route's bare date stops being a local
    exception and becomes the rule, which is what it should have been: three fields with one
@@ -235,7 +266,11 @@ where that is decided.
   "book the current time" to "book midnight of that date". No caller in this tree does it;
   the change is named here because it is the one case where a request that used to succeed
   still succeeds and stores something different.
-- **The browser is unaffected.** All six senders were read rather than assumed.
+- **The browser is unaffected by this record. It is not unaffected by ADR-0027's revised
+  decision 2**, under which the browser shows times in the viewer's device zone. From then
+  on, an offset-free value the browser sends is read in the *server's* zone, so the
+  senders below must include an offset. Until then, the following holds. All six senders
+  were read rather than assumed.
   `batterytracking.js`, `batteriesoverview.js` and `tasks.js` send
   `moment().format('YYYY-MM-DD HH:mm:ss')`; `choretracking.js` and `choresoverview.js` send
   that too, **except** for a chore whose `track_date_only` is set, where both switch to
@@ -270,9 +305,10 @@ where that is decided.
 This record changes a wire contract, so accepting it requires:
 
 1. The decider confirms decision 1 — that a present-but-unreadable timestamp becomes a 400,
-   which is a breaking change for any caller relying on the fallback.
+   which is a breaking change for any caller relying on the fallback. **Met 2026-10-04.**
 2. The decider confirms decision 3's treatment of `null` and the empty string as present
    values, which is the one place the rule could reasonably have gone the other way.
+   **Met 2026-10-04.**
 3. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.
