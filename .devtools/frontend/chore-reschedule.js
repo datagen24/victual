@@ -38,6 +38,19 @@ const assert = require('node:assert/strict');
 
 		await page.goto(base + '/choresoverview');
 
+		// The modal prefills the chore's current assignee. The API sends that id as a JSON
+		// number, and a guard that kept strings only used to blank it - so an untouched save
+		// sent null and dropped the assignment. Check the prefill on a chore that has one.
+		const assigned = (await api('objects/chores')).find(candidate => candidate.active == 1 && candidate.next_execution_assigned_to_user_id !== null);
+		assert.ok(assigned, 'the demo data has an active chore with an assignee');
+		await page.locator('.reschedule-chore-button[data-chore-id="' + assigned.id + '"]').first().dispatchEvent('click');
+		await page.locator('#reschedule-chore-modal').waitFor({ state: 'visible' });
+		await page.waitForFunction((id) => Victual.Components.UserPicker.GetValue() === id, String(assigned.next_execution_assigned_to_user_id), { timeout: 5000 })
+			.catch(async () => assert.fail('the modal prefills the current assignee ' + assigned.next_execution_assigned_to_user_id
+				+ ' (picker reads ' + JSON.stringify(await page.evaluate(() => Victual.Components.UserPicker.GetValue())) + ')'));
+		// Start the save check from a fresh page rather than a modal mid-fade.
+		await page.reload();
+
 		// Any active chore will do. The modal switches the date picker to a date-only format
 		// for a chore that tracks no time (every demo chore does), so the date set below
 		// follows the chore's own format.
@@ -74,16 +87,25 @@ const assert = require('node:assert/strict');
 		{
 			throw new Error('rescheduling with no assignee should save (got ' + response.status() + ': ' + await response.text() + ')');
 		}
-		assert.equal(sent.rescheduled_next_execution_assigned_to_user_id, null, 'a blank assignee is sent as null, not ""');
 
-		await reload;
-		const saved = await api('objects/chores/' + chore.id);
-		assert.ok(saved.rescheduled_date && saved.rescheduled_date.startsWith('2031-10-20'),
-			'the reschedule was stored (got ' + JSON.stringify(saved.rescheduled_date) + ')');
-		assert.equal(saved.rescheduled_next_execution_assigned_to_user_id, null, 'the blank assignee is stored as NULL');
+		// The save went through, so the chore is modified from here on: put it back whatever
+		// the assertions below decide, without letting a failed restore hide their failure.
+		try
+		{
+			assert.equal(sent.rescheduled_next_execution_assigned_to_user_id, null, 'a blank assignee is sent as null, not ""');
 
-		// Put the chore back the way the modal's own Reset button does.
-		await api('objects/chores/' + chore.id, 'PUT', { rescheduled_date: chore.rescheduled_date, rescheduled_next_execution_assigned_to_user_id: chore.rescheduled_next_execution_assigned_to_user_id });
+			await reload;
+			const saved = await api('objects/chores/' + chore.id);
+			assert.ok(saved.rescheduled_date && saved.rescheduled_date.startsWith('2031-10-20'),
+				'the reschedule was stored (got ' + JSON.stringify(saved.rescheduled_date) + ')');
+			assert.equal(saved.rescheduled_next_execution_assigned_to_user_id, null, 'the blank assignee is stored as NULL');
+		}
+		finally
+		{
+			await reload.catch(() => {});
+			await api('objects/chores/' + chore.id, 'PUT', { rescheduled_date: chore.rescheduled_date, rescheduled_next_execution_assigned_to_user_id: chore.rescheduled_next_execution_assigned_to_user_id })
+				.catch(error => console.error('could not restore chore ' + chore.id + ': ' + error.message));
+		}
 
 		console.log('CHORE RESCHEDULE CHECKS PASSED');
 	}

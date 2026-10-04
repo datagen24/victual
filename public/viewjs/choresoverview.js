@@ -317,13 +317,12 @@ $(document).on("click", ".reschedule-chore-button", function(e)
 			Victual.Components.DateTimePicker.SetValue(moment(prefillDate).format("YYYY-MM-DD HH:mm:ss"));
 		}
 
-		if (typeof choreDetails.chore.next_execution_assigned_to_user_id != "string")
+		// The id arrives as a JSON number on PostgreSQL; a guard that kept strings only
+		// blanked every real assignee, and the save then sent null in its place.
+		var assignedToUserId = choreDetails.chore.next_execution_assigned_to_user_id;
+		if (assignedToUserId !== null && assignedToUserId !== undefined && assignedToUserId !== "")
 		{
-			choreDetails.chore.next_execution_assigned_to_user_id = "";
-		}
-		if (choreDetails.chore.next_execution_assigned_to_user_id)
-		{
-			Victual.Components.UserPicker.SetId(choreDetails.chore.next_execution_assigned_to_user_id)
+			Victual.Components.UserPicker.SetId(assignedToUserId.toString());
 		}
 		else
 		{
