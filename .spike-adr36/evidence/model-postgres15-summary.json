@@ -1,0 +1,170 @@
+{
+ "environment": {
+  "php": "8.5.10",
+  "postgres": "15.19 (Debian 15.19-1.pgdg13+2)",
+  "schema": "phpunit_379ea53de49b3740"
+ },
+ "scenarios_run": 17,
+ "violations_or_errors": [],
+ "backfill_classes": [
+  {
+   "family_class": "X",
+   "families": 1,
+   "stock_rows": 1
+  },
+  {
+   "family_class": "E",
+   "families": 4,
+   "stock_rows": 5
+  },
+  {
+   "family_class": "U",
+   "families": 4,
+   "stock_rows": 4
+  },
+  {
+   "family_class": "N",
+   "families": 1,
+   "stock_rows": 0
+  }
+ ],
+ "ddl_checks": [
+  [
+   "two pool contributions for one row (NULLS NOT DISTINCT)",
+   "rejected: SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint \"stock_row_lots_stock_row_id_lot_id_key\"\nDETAIL:  Key (stock_row_id,"
+  ],
+  [
+   "pool with a recorded basis",
+   "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_row_lots\" violates check constraint \"stock_row_lots_check\"\nDETAIL:  Failing row contains"
+  ],
+  [
+   "contribution <= 0",
+   "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_row_lots\" violates check constraint \"stock_row_lots_amount_check\"\nDETAIL:  Failing row c"
+  ],
+  [
+   "contribution naming a missing row",
+   "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_row_lots\" violates foreign key constraint \"stock_row_lots_stock_row_id_fkey\"\n"
+  ],
+  [
+   "contribution naming a missing lot",
+   "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_row_lots\" violates foreign key constraint \"stock_row_lots_lot_id_fkey\"\nDETAIL"
+  ],
+  [
+   "allocation of zero",
+   "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_booking_lots\" violates check constraint \"stock_booking_lots_amount_check\"\nDETAIL:  Faili"
+  ],
+  [
+   "allocation naming a missing booking",
+   "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_booking_lots\" violates foreign key constraint \"stock_booking_lots_booking_id_"
+  ],
+  [
+   "deleting the row removes its contributions (ON DELETE CASCADE)",
+   "cascaded"
+  ],
+  [
+   "deleting a lot booking removes the contributions and allocations that name it (ON DELETE CASCADE)",
+   "cascaded"
+  ]
+ ],
+ "concurrency": {
+  "a_booking_during_maintenance": {
+   "child_still_blocked_after_1.5s": true,
+   "child": {
+    "elapsed_s": 1.53,
+    "output": {
+     "result": "consumed",
+     "waited_s": 1.52
+    }
+   },
+   "invariants_violated": [],
+   "view": {
+    "stock": [
+     "row 80 [s88, loc 3, price 1] = 4 (A:2+B:2)"
+    ],
+    "ledger": [
+     "#107 purchase 3 [s87] allocs A:3",
+     "#108 purchase 2 [s88] allocs B:2",
+     "#109 consume -1 [s88, row 80] allocs A:-1"
+    ]
+   }
+  },
+  "b_label_issuance_against_merge": {
+   "child_still_blocked_after_1.5s": true,
+   "child": {
+    "elapsed_s": 1.52,
+    "output": {
+     "result": "row gone: issuance refused, no label inserted",
+     "waited_s": 1.51
+    }
+   },
+   "live_labels_for_deleted_row": 0
+  },
+  "c_label_before_recheck": {
+   "rows_after_merge": 2,
+   "view": {
+    "stock": [
+     "row 83 [s91, loc 3, price 1] = 3 (A:3)",
+     "row 84 [s92, loc 3, price 1] = 2 (B:2)"
+    ],
+    "ledger": [
+     "#112 purchase 3 [s91] allocs A:3",
+     "#113 purchase 2 [s92] allocs B:2"
+    ]
+   }
+  },
+  "d_maintenance_waits_behind_issuance": {
+   "maintenance_waited_for_row_locks_s": 1.02,
+   "groups_merged": 0,
+   "child": {
+    "elapsed_s": 2.02,
+    "output": {
+     "result": "label issued",
+     "waited_s": 2
+    }
+   },
+   "rows_after": 2,
+   "label_live": 1
+  }
+ },
+ "cost_n20000": {
+  "rows": {
+   "stock_log": 40114,
+   "stock": 16047,
+   "stock_row_lots": 16056,
+   "stock_booking_lots": 40115
+  },
+  "generated_seconds": 0.25,
+  "backfill_seconds": 0.8,
+  "bytes_before": {
+   "stock_log": 10780672,
+   "stock": 2973696
+  },
+  "bytes_new_tables": {
+   "stock_row_lots": 2162688,
+   "stock_booking_lots": 5726208
+  },
+  "new_tables_over_stock_log_percent": 73.2,
+  "queries": {
+   "dependency_check_one_lot": {
+    "execution_ms": 0.013,
+    "plan": "Limit / Nested Loop"
+   },
+   "where_is_lot": {
+    "execution_ms": 0.005,
+    "plan": "Index Scan / "
+   },
+   "lots_of_row": {
+    "execution_ms": 0.019,
+    "plan": "Index Scan / Result"
+   },
+   "allocations_of_booking": {
+    "execution_ms": 0.004,
+    "plan": "Index Scan / "
+   },
+   "existing_dependency_check_by_stock_id": {
+    "execution_ms": 0.012,
+    "plan": "Aggregate / Bitmap Heap Scan"
+   }
+  }
+ }
+}
