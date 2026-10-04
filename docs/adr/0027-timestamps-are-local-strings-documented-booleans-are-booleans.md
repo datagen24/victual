@@ -451,7 +451,8 @@ This record changes a wire contract, so accepting it requires:
 4. `.devtools/pgsql/run-tests.sh all` green on a working copy, with the `contract` phase
    passing against the committed snapshot rather than regenerating it. Stated in the
    accepting pull request with the date and the working copy it was run against.
-5. **Decision 2 is implemented and demonstrated**, in separate changes from the acceptance:
+5. **Decision 2 is implemented and demonstrated**, in separate changes from the acceptance,
+   tracked as [issue 650](https://github.com/datagen24/victual/issues/650):
    - the `TIMESTAMPTZ` migration, run against a copy of real data that contains a value in
      a repeated fall-back hour, showing the earlier instant was chosen
    - the contract snapshot regenerated, with every timestamp in the decision 2 format and
