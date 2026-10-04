@@ -1,0 +1,1192 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+        "schema": "phpunit_fb075ef831a56821"
+    },
+    "backfill": {
+        "classes": [
+            {
+                "family_class": "X",
+                "families": 1,
+                "stock_rows": 1
+            },
+            {
+                "family_class": "U",
+                "families": 4,
+                "stock_rows": 4
+            },
+            {
+                "family_class": "E",
+                "families": 4,
+                "stock_rows": 5
+            },
+            {
+                "family_class": "N",
+                "families": 1,
+                "stock_rows": 0
+            }
+        ],
+        "milliseconds": 4.1,
+        "rows_after_first_and_second_run": {
+            "first": [
+                11,
+                15
+            ],
+            "second": [
+                11,
+                15
+            ],
+            "idempotent": true
+        },
+        "stock_stock_log_origins_byte_identical_before_and_after": true,
+        "per_product_totals_unchanged": true,
+        "fixtures": {
+            "L1": {
+                "name": "L1 single purchase",
+                "view": {
+                    "stock": [
+                        "row 1 [6ac266ad5659e, loc 3, price 1] = 5 (#1:5)"
+                    ],
+                    "ledger": [
+                        "#1 purchase 5 [6ac266ad5659e] allocs #1(derived):5"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L2": {
+                "name": "L2 merged 3+2, nothing else",
+                "view": {
+                    "stock": [
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 5 (#2:3+#3:2)"
+                    ],
+                    "ledger": [
+                        "#2 purchase 3 [6ac266ad5a9ed] allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L3": {
+                "name": "L3 merged 3+2, then consume 1",
+                "view": {
+                    "stock": [
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 4 (pool:4)"
+                    ],
+                    "ledger": [
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L4": {
+                "name": "L4 purchase 5, open 2 (split with recorded origin)",
+                "view": {
+                    "stock": [
+                        "row 6 [6ac266ad6c39b, loc 3, price 1, open] = 2 (#7:2)",
+                        "row 7 [6ac266ad78a16, loc 3, price 1] = 3 (#7:3)"
+                    ],
+                    "ledger": [
+                        "#7 purchase 5 [6ac266ad6c39b] allocs #7(derived):5",
+                        "#8 product-opened 2 [6ac266ad6c39b, row 6] allocs #7(derived):2"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L5": {
+                "name": "L5 as L4 but the origin row is absent (a pre-0267 split)",
+                "view": {
+                    "stock": [
+                        "row 8 [6ac266ad87252, loc 3, price 1, open] = 2 (pool:2)",
+                        "row 9 [6ac266ad8955f, loc 3, price 1] = 3 (pool:3)"
+                    ],
+                    "ledger": [
+                        "#9 purchase 5 [6ac266ad87252] allocs #9(unknown):5",
+                        "#10 product-opened 2 [6ac266ad87252, row 8] allocs -"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L6": {
+                "name": "L6 purchase 5, transfer 2 (split, shared stock_id)",
+                "view": {
+                    "stock": [
+                        "row 10 [6ac266ad8c999, loc 3, price 1] = 3 (#11:3)",
+                        "row 11 [6ac266ad8c999, loc 4, price 1] = 2 (#11:2)"
+                    ],
+                    "ledger": [
+                        "#11 purchase 5 [6ac266ad8c999] allocs #11(derived):5",
+                        "#12 transfer_from -2 [6ac266ad8c999, row 10] allocs #11(derived):-2",
+                        "#13 transfer_to 2 [6ac266ad8c999, row 11] allocs #11(derived):2"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L7": {
+                "name": "L7 merged 3+2, then an amount edit",
+                "view": {
+                    "stock": [
+                        "row 13 [6ac266ad91734, loc 3, price 1] = 4.5 (pool:4.5)"
+                    ],
+                    "ledger": [
+                        "#14 purchase 3 [6ac266ad91734] allocs #14(unknown):3",
+                        "#15 purchase 2 [6ac266ad91734] allocs #15(unknown):2",
+                        "#16 stock-edit-old 5 [6ac266ad91734, row 13] allocs -",
+                        "#17 stock-edit-new 4.5 [6ac266ad91734, row 13] allocs -"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L8": {
+                "name": "L8 purchase 3, fully consumed",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#18 purchase 3 [6ac266ad987a0] allocs #18(derived):3",
+                        "#19 consume -3 [6ac266ad987a0, row 14] allocs #18(derived):-3"
+                    ]
+                },
+                "invariant_violations": []
+            },
+            "L9": {
+                "name": "L9 purchase 3 undone",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#20 purchase 3 [6ac266ad9cd72] UNDONE allocs -"
+                    ]
+                },
+                "invariant_violations": []
+            }
+        }
+    },
+    "_fixtures": {
+        "L1": 1,
+        "L2": 2,
+        "L3": 3,
+        "L4": 4,
+        "L5": 5,
+        "L6": 6,
+        "L7": 7,
+        "L8": 8,
+        "L9": 9
+    },
+    "ddl_constraint_checks": [
+        [
+            "two pool contributions for one row (NULLS NOT DISTINCT)",
+            "rejected: SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint \"stock_row_lots_stock_row_id_lot_id_key\"\nDETAIL:  Key (stock_row_id,"
+        ],
+        [
+            "pool with a recorded basis",
+            "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_row_lots\" violates check constraint \"stock_row_lots_check\"\nDETAIL:  Failing row contains"
+        ],
+        [
+            "contribution <= 0",
+            "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_row_lots\" violates check constraint \"stock_row_lots_amount_check\"\nDETAIL:  Failing row c"
+        ],
+        [
+            "contribution naming a missing row",
+            "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_row_lots\" violates foreign key constraint \"stock_row_lots_stock_row_id_fkey\"\n"
+        ],
+        [
+            "contribution naming a missing lot",
+            "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_row_lots\" violates foreign key constraint \"stock_row_lots_lot_id_fkey\"\nDETAIL"
+        ],
+        [
+            "allocation of zero",
+            "rejected: SQLSTATE[23514]: Check violation: 7 ERROR:  new row for relation \"stock_booking_lots\" violates check constraint \"stock_booking_lots_amount_check\"\nDETAIL:  Faili"
+        ],
+        [
+            "allocation naming a missing booking",
+            "rejected: SQLSTATE[23503]: Foreign key violation: 7 ERROR:  insert or update on table \"stock_booking_lots\" violates foreign key constraint \"stock_booking_lots_booking_id_"
+        ],
+        [
+            "deleting the row removes its contributions (ON DELETE CASCADE)",
+            "cascaded"
+        ],
+        [
+            "deleting a lot booking removes the contributions and allocations that name it (ON DELETE CASCADE)",
+            "cascaded"
+        ]
+    ],
+    "scenarios": {
+        "E1_merge_3-then-2": [
+            {
+                "state": "two purchases",
+                "view": {
+                    "stock": [
+                        "row 18 [s1, loc 3, price 1] = 3 (A:3)",
+                        "row 19 [s2, loc 3, price 1] = 2 (B:2)"
+                    ],
+                    "ledger": [
+                        "#22 purchase 3 [s1] allocs A:3",
+                        "#23 purchase 2 [s2] allocs B:2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "after the maintenance merge",
+                "view": {
+                    "stock": [
+                        "row 19 [s2, loc 3, price 1] = 5 (A:3+B:2)"
+                    ],
+                    "ledger": [
+                        "#22 purchase 3 [s1] allocs A:3",
+                        "#23 purchase 2 [s2] allocs B:2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "stock_log_unchanged_by_merge": true
+            }
+        ],
+        "E2_merge_3-then-2_consume_2": [
+            {
+                "state": "merged 3+2 then consume 2",
+                "view": {
+                    "stock": [
+                        "row 21 [s4, loc 3, price 1] = 3 (A:1+B:2)"
+                    ],
+                    "ledger": [
+                        "#24 purchase 3 [s3] allocs A:3",
+                        "#25 purchase 2 [s4] allocs B:2",
+                        "#26 consume -2 [s4, row 21] allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase 3 (A, booking 24)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 26 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 2 (B, booking 25)",
+                "result": "accepted"
+            },
+            {
+                "state": "after those two attempts",
+                "view": {
+                    "stock": [
+                        "row 21 [s4, loc 3, price 1] = 1 (A:1)"
+                    ],
+                    "ledger": [
+                        "#24 purchase 3 [s3] allocs A:3",
+                        "#25 purchase 2 [s4] UNDONE allocs B:2",
+                        "#26 consume -2 [s4, row 21] allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the consume (booking 26)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 2 again",
+                "result": "refused",
+                "message": "Booking does not exist or was already undone",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 3 again",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#24 purchase 3 [s3] UNDONE allocs A:3",
+                        "#25 purchase 2 [s4] UNDONE allocs B:2",
+                        "#26 consume -2 [s4, row 21] UNDONE allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E2_merge_3-then-2_consume_4": [
+            {
+                "state": "merged 3+2 then consume 4",
+                "view": {
+                    "stock": [
+                        "row 24 [s7, loc 3, price 1] = 1 (B:1)"
+                    ],
+                    "ledger": [
+                        "#27 purchase 3 [s6] allocs A:3",
+                        "#28 purchase 2 [s7] allocs B:2",
+                        "#29 consume -4 [s7, row 24] allocs A:-3,B:-1"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase 3 (A, booking 27)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 29 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 2 (B, booking 28)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 29 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "state": "after those two attempts",
+                "view": {
+                    "stock": [
+                        "row 24 [s7, loc 3, price 1] = 1 (B:1)"
+                    ],
+                    "ledger": [
+                        "#27 purchase 3 [s6] allocs A:3",
+                        "#28 purchase 2 [s7] allocs B:2",
+                        "#29 consume -4 [s7, row 24] allocs A:-3,B:-1"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the consume (booking 29)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 2 again",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 3 again",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#27 purchase 3 [s6] UNDONE allocs A:3",
+                        "#28 purchase 2 [s7] UNDONE allocs B:2",
+                        "#29 consume -4 [s7, row 24] UNDONE allocs A:-3,B:-1"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E1_merge_2-then-3": [
+            {
+                "state": "two purchases",
+                "view": {
+                    "stock": [
+                        "row 26 [s9, loc 3, price 1] = 2 (A:2)",
+                        "row 27 [s10, loc 3, price 1] = 3 (B:3)"
+                    ],
+                    "ledger": [
+                        "#30 purchase 2 [s9] allocs A:2",
+                        "#31 purchase 3 [s10] allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "after the maintenance merge",
+                "view": {
+                    "stock": [
+                        "row 27 [s10, loc 3, price 1] = 5 (A:2+B:3)"
+                    ],
+                    "ledger": [
+                        "#30 purchase 2 [s9] allocs A:2",
+                        "#31 purchase 3 [s10] allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "stock_log_unchanged_by_merge": true
+            }
+        ],
+        "E2_merge_2-then-3_consume_2": [
+            {
+                "state": "merged 2+3 then consume 2",
+                "view": {
+                    "stock": [
+                        "row 29 [s12, loc 3, price 1] = 3 (B:3)"
+                    ],
+                    "ledger": [
+                        "#32 purchase 2 [s11] allocs A:2",
+                        "#33 purchase 3 [s12] allocs B:3",
+                        "#34 consume -2 [s12, row 29] allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase 2 (A, booking 32)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 34 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 3 (B, booking 33)",
+                "result": "accepted"
+            },
+            {
+                "state": "after those two attempts",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#32 purchase 2 [s11] allocs A:2",
+                        "#33 purchase 3 [s12] UNDONE allocs B:3",
+                        "#34 consume -2 [s12, row 29] allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the consume (booking 34)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 3 again",
+                "result": "refused",
+                "message": "Booking does not exist or was already undone",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 2 again",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#32 purchase 2 [s11] UNDONE allocs A:2",
+                        "#33 purchase 3 [s12] UNDONE allocs B:3",
+                        "#34 consume -2 [s12, row 29] UNDONE allocs A:-2"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E2_merge_2-then-3_consume_4": [
+            {
+                "state": "merged 2+3 then consume 4",
+                "view": {
+                    "stock": [
+                        "row 31 [s15, loc 3, price 1] = 1 (B:1)"
+                    ],
+                    "ledger": [
+                        "#35 purchase 2 [s14] allocs A:2",
+                        "#36 purchase 3 [s15] allocs B:3",
+                        "#37 consume -4 [s15, row 31] allocs A:-2,B:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase 2 (A, booking 35)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 37 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase 3 (B, booking 36)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings (booking 37 touched the same lot), undo not possible",
+                "state_unchanged": true
+            },
+            {
+                "state": "after those two attempts",
+                "view": {
+                    "stock": [
+                        "row 31 [s15, loc 3, price 1] = 1 (B:1)"
+                    ],
+                    "ledger": [
+                        "#35 purchase 2 [s14] allocs A:2",
+                        "#36 purchase 3 [s15] allocs B:3",
+                        "#37 consume -4 [s15, row 31] allocs A:-2,B:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the consume (booking 37)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 3 again",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase 2 again",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#35 purchase 2 [s14] UNDONE allocs A:2",
+                        "#36 purchase 3 [s15] UNDONE allocs B:3",
+                        "#37 consume -4 [s15, row 31] UNDONE allocs A:-2,B:-2"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E3_merge_transfer_merge_reversal": [
+            {
+                "state": "merged 3+2, then transfer 2 to L2 (a split: both rows share one stock_id)",
+                "view": {
+                    "stock": [
+                        "row 34 [s18, loc 3, price 1] = 3 (A:1+B:2)",
+                        "row 35 [s18, loc 4, price 1] = 2 (A:2)"
+                    ],
+                    "ledger": [
+                        "#38 purchase 3 [s17] allocs A:3",
+                        "#39 purchase 2 [s18] allocs B:2",
+                        "#40 transfer_from -2 [s18, row 34] allocs A:-2",
+                        "#41 transfer_to 2 [s18, row 35] allocs A:2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "second maintenance run",
+                "groups_merged": 1
+            },
+            {
+                "state": "after purchase C=4 and a second merge at L1 (the L2 row shares a stock_id with a row in the group; the baseline refuses this group)",
+                "view": {
+                    "stock": [
+                        "row 35 [s18, loc 4, price 1] = 2 (A:2)",
+                        "row 36 [s21, loc 3, price 1] = 7 (A:1+B:2+C:4)"
+                    ],
+                    "ledger": [
+                        "#38 purchase 3 [s17] allocs A:3",
+                        "#39 purchase 2 [s18] allocs B:2",
+                        "#40 transfer_from -2 [s18, row 34] allocs A:-2",
+                        "#41 transfer_to 2 [s18, row 35] allocs A:2",
+                        "#42 purchase 4 [s21] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the transfer",
+                "result": "accepted"
+            },
+            {
+                "state": "after undoing the transfer",
+                "view": {
+                    "stock": [
+                        "row 34 [s18, loc 3, price 1] = 2 (A:2)",
+                        "row 36 [s21, loc 3, price 1] = 7 (A:1+B:2+C:4)"
+                    ],
+                    "ledger": [
+                        "#38 purchase 3 [s17] allocs A:3",
+                        "#39 purchase 2 [s18] allocs B:2",
+                        "#40 transfer_from -2 [s18, row 34] UNDONE allocs A:-2",
+                        "#41 transfer_to 2 [s18, row 35] UNDONE allocs A:2",
+                        "#42 purchase 4 [s21] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "third maintenance run",
+                "view": {
+                    "stock": [
+                        "row 36 [s21, loc 3, price 1] = 9 (A:3+B:2+C:4)"
+                    ],
+                    "ledger": [
+                        "#38 purchase 3 [s17] allocs A:3",
+                        "#39 purchase 2 [s18] allocs B:2",
+                        "#40 transfer_from -2 [s18, row 34] UNDONE allocs A:-2",
+                        "#41 transfer_to 2 [s18, row 35] UNDONE allocs A:2",
+                        "#42 purchase 4 [s21] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase A (3)",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 36 [s21, loc 3, price 1] = 6 (B:2+C:4)"
+                    ],
+                    "ledger": [
+                        "#38 purchase 3 [s17] UNDONE allocs A:3",
+                        "#39 purchase 2 [s18] allocs B:2",
+                        "#40 transfer_from -2 [s18, row 34] UNDONE allocs A:-2",
+                        "#41 transfer_to 2 [s18, row 35] UNDONE allocs A:2",
+                        "#42 purchase 4 [s21] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E4a_open_whole_rows_merge_undo": [
+            {
+                "state": "purchase A=2, B=3, open 2, open 3",
+                "view": {
+                    "stock": [
+                        "row 37 [s22, loc 3, price 1, open] = 2 (A:2)",
+                        "row 38 [s23, loc 3, price 1, open] = 3 (B:3)"
+                    ],
+                    "ledger": [
+                        "#43 purchase 2 [s22] allocs A:2",
+                        "#44 purchase 3 [s23] allocs B:3",
+                        "#45 product-opened 2 [s22, row 37] allocs A:2",
+                        "#46 product-opened 3 [s23, row 38] allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "both opened rows merged",
+                "view": {
+                    "stock": [
+                        "row 38 [s23, loc 3, price 1, open] = 5 (A:2+B:3)"
+                    ],
+                    "ledger": [
+                        "#43 purchase 2 [s22] allocs A:2",
+                        "#44 purchase 3 [s23] allocs B:3",
+                        "#45 product-opened 2 [s22, row 37] allocs A:2",
+                        "#46 product-opened 3 [s23, row 38] allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the second opening (booking 46)",
+                "result": "accepted"
+            },
+            {
+                "state": "after",
+                "view": {
+                    "stock": [
+                        "row 38 [s23, loc 3, price 1, open] = 2 (A:2)",
+                        "row 39 [s23, loc 3, price 1] = 3 (B:3)"
+                    ],
+                    "ledger": [
+                        "#43 purchase 2 [s22] allocs A:2",
+                        "#44 purchase 3 [s23] allocs B:3",
+                        "#45 product-opened 2 [s22, row 37] allocs A:2",
+                        "#46 product-opened 3 [s23, row 38] UNDONE allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the first opening (booking 45)",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 38 [s23, loc 3, price 1] = 2 (A:2)",
+                        "row 39 [s23, loc 3, price 1] = 3 (B:3)"
+                    ],
+                    "ledger": [
+                        "#43 purchase 2 [s22] allocs A:2",
+                        "#44 purchase 3 [s23] allocs B:3",
+                        "#45 product-opened 2 [s22, row 37] UNDONE allocs A:2",
+                        "#46 product-opened 3 [s23, row 38] UNDONE allocs B:3"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E4b_partial_open_purchase_merge_undo": [
+            {
+                "state": "merged 2+3, open 2 (split), purchase C=4",
+                "view": {
+                    "stock": [
+                        "row 41 [s27, loc 3, price 1, open] = 2 (A:2)",
+                        "row 42 [s29, loc 3, price 1] = 3 (B:3)",
+                        "row 43 [s30, loc 3, price 1] = 4 (C:4)"
+                    ],
+                    "ledger": [
+                        "#47 purchase 2 [s26] allocs A:2",
+                        "#48 purchase 3 [s27] allocs B:3",
+                        "#49 product-opened 2 [s27, row 41] allocs A:2",
+                        "#50 purchase 4 [s30] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "second merge: the unopened remainder (B:3) and C:4 now merge, lineage by contribution",
+                "view": {
+                    "stock": [
+                        "row 41 [s27, loc 3, price 1, open] = 2 (A:2)",
+                        "row 43 [s30, loc 3, price 1] = 7 (B:3+C:4)"
+                    ],
+                    "ledger": [
+                        "#47 purchase 2 [s26] allocs A:2",
+                        "#48 purchase 3 [s27] allocs B:3",
+                        "#49 product-opened 2 [s27, row 41] allocs A:2",
+                        "#50 purchase 4 [s30] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the opening (booking 49)",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 41 [s27, loc 3, price 1] = 2 (A:2)",
+                        "row 43 [s30, loc 3, price 1] = 7 (B:3+C:4)"
+                    ],
+                    "ledger": [
+                        "#47 purchase 2 [s26] allocs A:2",
+                        "#48 purchase 3 [s27] allocs B:3",
+                        "#49 product-opened 2 [s27, row 41] UNDONE allocs A:2",
+                        "#50 purchase 4 [s30] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E5a_edit_price_merge_undo_edit": [
+            {
+                "state": "purchase A=3 at 1.0, B=2 at 1.2, then edit B price to 1.0",
+                "view": {
+                    "stock": [
+                        "row 44 [s31, loc 3, price 1] = 3 (A:3)",
+                        "row 45 [s32, loc 3, price 1] = 2 (B:2)"
+                    ],
+                    "ledger": [
+                        "#51 purchase 3 [s31] allocs A:3",
+                        "#52 purchase 2 [s32] allocs B:2",
+                        "#53 stock-edit-old 2 [s32, row 45] allocs B:2",
+                        "#54 stock-edit-new 2 [s32, row 45] allocs B:2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "state": "merged",
+                "view": {
+                    "stock": [
+                        "row 45 [s32, loc 3, price 1] = 5 (A:3+B:2)"
+                    ],
+                    "ledger": [
+                        "#51 purchase 3 [s31] allocs A:3",
+                        "#52 purchase 2 [s32] allocs B:2",
+                        "#53 stock-edit-old 2 [s32, row 45] allocs B:2",
+                        "#54 stock-edit-new 2 [s32, row 45] allocs B:2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the edit (booking 54)",
+                "result": "accepted"
+            },
+            {
+                "state": "end: B keeps its original price, A is untouched",
+                "view": {
+                    "stock": [
+                        "row 45 [s32, loc 3, price 1] = 3 (A:3)",
+                        "row 46 [s32, loc 3, price 1.2] = 2 (B:2)"
+                    ],
+                    "ledger": [
+                        "#51 purchase 3 [s31] allocs A:3",
+                        "#52 purchase 2 [s32] allocs B:2",
+                        "#53 stock-edit-old 2 [s32, row 45] UNDONE allocs B:2",
+                        "#54 stock-edit-new 2 [s32, row 45] UNDONE allocs B:2"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E5b_edit_amount_merge_undo_edit": [
+            {
+                "state": "edit B 2 -> 2.5 (new lot E=0.5), merge",
+                "view": {
+                    "stock": [
+                        "row 48 [s36, loc 3, price 1] = 5.5 (A:3+B:2+E:0.5)"
+                    ],
+                    "ledger": [
+                        "#55 purchase 3 [s35] allocs A:3",
+                        "#56 purchase 2 [s36] allocs B:2",
+                        "#57 stock-edit-old 2 [s36, row 48] allocs B:2",
+                        "#58 stock-edit-new 2.5 [s36, row 48] allocs B:2,E:0.5"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the edit (booking 58)",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 48 [s36, loc 3, price 1] = 3 (A:3)",
+                        "row 49 [s36, loc 3, price 1] = 2 (B:2)"
+                    ],
+                    "ledger": [
+                        "#55 purchase 3 [s35] allocs A:3",
+                        "#56 purchase 2 [s36] allocs B:2",
+                        "#57 stock-edit-old 2 [s36, row 48] UNDONE allocs B:2",
+                        "#58 stock-edit-new 2.5 [s36, row 48] UNDONE allocs B:2,E:0.5"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E6_full_consume_undo": [
+            {
+                "state": "merged 3+2, then consume 5 (the row is deleted)",
+                "view": {
+                    "stock": [],
+                    "ledger": [
+                        "#59 purchase 3 [s39] allocs A:3",
+                        "#60 purchase 2 [s40] allocs B:2",
+                        "#61 consume -5 [s40, row 51] allocs A:-3,B:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the consume (booking 61)",
+                "result": "accepted"
+            },
+            {
+                "state": "end: the row returns under id 51 with both contributions",
+                "view": {
+                    "stock": [
+                        "row 51 [s40, loc 3, price 1] = 5 (A:3+B:2)"
+                    ],
+                    "ledger": [
+                        "#59 purchase 3 [s39] allocs A:3",
+                        "#60 purchase 2 [s40] allocs B:2",
+                        "#61 consume -5 [s40, row 51] UNDONE allocs A:-3,B:-2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "row_id_preserved": true
+            }
+        ],
+        "E7_legacy_ambiguous_group": [
+            {
+                "state": "legacy: merged 3+2 then consume 1 (classified U: pool, basis unknown)",
+                "view": {
+                    "stock": [
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 4 (pool:4)"
+                    ],
+                    "ledger": [
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo purchase booking 4",
+                "result": "refused",
+                "message": "Booking cannot be undone: its units were merged before lineage was tracked and cannot be told apart",
+                "state_unchanged": true
+            },
+            {
+                "step": "undo purchase booking 5",
+                "result": "refused",
+                "message": "Booking cannot be undone: its units were merged before lineage was tracked and cannot be told apart",
+                "state_unchanged": true
+            },
+            {
+                "state": "a new consume of 1 draws from the pool and records the draw",
+                "view": {
+                    "stock": [
+                        "row 5 [6ac266ad62729, loc 3, price 1] = 3 (pool:3)"
+                    ],
+                    "ledger": [
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] allocs pool:-1"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo that new consume (booking 62) - exact, back into the pool",
+                "result": "accepted"
+            },
+            {
+                "state": "a new purchase C=4 merges with the legacy row; the pool stays a pool",
+                "view": {
+                    "stock": [
+                        "row 53 [s43, loc 3, price 1] = 8 (pool:4+C:4)"
+                    ],
+                    "ledger": [
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] UNDONE allocs pool:-1",
+                        "#63 purchase 4 [s43] allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo C (booking 63) - exact",
+                "result": "accepted"
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 53 [s43, loc 3, price 1] = 4 (pool:4)"
+                    ],
+                    "ledger": [
+                        "#4 purchase 3 [6ac266ad62729] allocs #4(unknown):3",
+                        "#5 purchase 2 [6ac266ad62729] allocs #5(unknown):2",
+                        "#6 consume -1 [6ac266ad62729, row 5] allocs -",
+                        "#62 consume -1 [6ac266ad62729, row 5] UNDONE allocs pool:-1",
+                        "#63 purchase 4 [s43] UNDONE allocs C:4"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E7b_legacy_exact_group_X": [
+            {
+                "state": "legacy: merged 3+2, nothing else (class X: derived by ledger arithmetic)",
+                "view": {
+                    "stock": [
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 5 (#2:3+#3:2)"
+                    ],
+                    "ledger": [
+                        "#2 purchase 3 [6ac266ad5a9ed] allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "step": "undo the older purchase (booking 2)",
+                "result": "accepted"
+            },
+            {
+                "state": "end: exactly the 3 left the row",
+                "view": {
+                    "stock": [
+                        "row 3 [6ac266ad5a9ed, loc 3, price 1] = 2 (#3:2)"
+                    ],
+                    "ledger": [
+                        "#2 purchase 3 [6ac266ad5a9ed] UNDONE allocs #2(derived):3",
+                        "#3 purchase 2 [6ac266ad5a9ed] allocs #3(derived):2"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E8_interrupted_maintenance_and_repeat": [
+            {
+                "step": "maintenance interrupted after its first group",
+                "raised": true,
+                "state_byte_identical_after_rollback": true
+            },
+            {
+                "step": "repeat run",
+                "first_complete_run_merged_groups": 2,
+                "second_run_merged_groups": 0,
+                "second_run_changed_nothing": true
+            },
+            {
+                "state": "end",
+                "view": {
+                    "stock": [
+                        "row 55 [s45, loc 3, price 1] = 5 (A:3+B:2)",
+                        "row 57 [s47, loc 3, price 2] = 2 (D:1+E:1)"
+                    ],
+                    "ledger": [
+                        "#64 purchase 3 [s44] allocs A:3",
+                        "#65 purchase 2 [s45] allocs B:2",
+                        "#66 purchase 1 [s46] allocs D:1",
+                        "#67 purchase 1 [s47] allocs E:1"
+                    ]
+                },
+                "invariants_violated": []
+            }
+        ],
+        "E10_average_price_unchanged_by_attribution": [
+            {
+                "2.0-priced units edited down to": 4,
+                "merged": [
+                    2.2,
+                    []
+                ],
+                "control_unmerged": [
+                    2.2,
+                    []
+                ]
+            },
+            {
+                "2.0-priced units edited down to": 2,
+                "merged": [
+                    2.333333333,
+                    []
+                ],
+                "control_unmerged": [
+                    2.333333333,
+                    []
+                ]
+            },
+            {
+                "2.0-priced units edited down to": 1,
+                "merged": [
+                    2.5,
+                    []
+                ],
+                "control_unmerged": [
+                    2.5,
+                    []
+                ]
+            }
+        ],
+        "E9_label_exclusion_and_merge_alias": [
+            {
+                "state": "row of B carries a live label: it is not a merge candidate, A and C merge",
+                "view": {
+                    "stock": [
+                        "row 77 [s85, loc 3, price 1] = 2 (B:2)",
+                        "row 78 [s86, loc 3, price 1] = 4 (A:3+C:1)"
+                    ],
+                    "ledger": [
+                        "#104 purchase 3 [s84] allocs A:3",
+                        "#105 purchase 2 [s85] allocs B:2",
+                        "#106 purchase 1 [s86] allocs C:1"
+                    ]
+                },
+                "invariants_violated": []
+            },
+            {
+                "label_still_live": true,
+                "alias_lookup_lot_A_row": 78
+            }
+        ]
+    },
+    "concurrency": {
+        "a_booking_during_maintenance": {
+            "child_still_blocked_after_1.5s": true,
+            "child": {
+                "elapsed_s": 1.55,
+                "output": {
+                    "result": "consumed",
+                    "waited_s": 1.53
+                }
+            },
+            "invariants_violated": [],
+            "view": {
+                "stock": [
+                    "row 80 [s88, loc 3, price 1] = 4 (A:2+B:2)"
+                ],
+                "ledger": [
+                    "#107 purchase 3 [s87] allocs A:3",
+                    "#108 purchase 2 [s88] allocs B:2",
+                    "#109 consume -1 [s88, row 80] allocs A:-1"
+                ]
+            }
+        },
+        "b_label_issuance_against_merge": {
+            "child_still_blocked_after_1.5s": true,
+            "child": {
+                "elapsed_s": 1.52,
+                "output": {
+                    "result": "row gone: issuance refused, no label inserted",
+                    "waited_s": 1.5
+                }
+            },
+            "live_labels_for_deleted_row": 0
+        },
+        "c_label_before_recheck": {
+            "rows_after_merge": 2,
+            "view": {
+                "stock": [
+                    "row 83 [s91, loc 3, price 1] = 3 (A:3)",
+                    "row 84 [s92, loc 3, price 1] = 2 (B:2)"
+                ],
+                "ledger": [
+                    "#112 purchase 3 [s91] allocs A:3",
+                    "#113 purchase 2 [s92] allocs B:2"
+                ]
+            }
+        },
+        "d_maintenance_waits_behind_issuance": {
+            "maintenance_waited_for_row_locks_s": 1.01,
+            "groups_merged": 0,
+            "child": {
+                "elapsed_s": 2.02,
+                "output": {
+                    "result": "label issued",
+                    "waited_s": 2
+                }
+            },
+            "rows_after": 2,
+            "label_live": 1
+        }
+    },
+    "cost": {
+        "rows": {
+            "stock_log": 100114,
+            "stock": 40047,
+            "stock_row_lots": 40056,
+            "stock_booking_lots": 100115
+        },
+        "generated_seconds": 0.66,
+        "backfill_seconds": 4.49,
+        "bytes_before": {
+            "stock_log": 26722304,
+            "stock": 7266304
+        },
+        "bytes_new_tables": {
+            "stock_row_lots": 5636096,
+            "stock_booking_lots": 14368768
+        },
+        "new_tables_over_stock_log_percent": 74.9,
+        "queries": {
+            "dependency_check_one_lot": {
+                "execution_ms": 0.015,
+                "plan": "Limit \/ Nested Loop"
+            },
+            "where_is_lot": {
+                "execution_ms": 0.006,
+                "plan": "Index Scan \/ "
+            },
+            "lots_of_row": {
+                "execution_ms": 0.017,
+                "plan": "Index Scan \/ Result"
+            },
+            "allocations_of_booking": {
+                "execution_ms": 0.005,
+                "plan": "Index Scan \/ "
+            },
+            "existing_dependency_check_by_stock_id": {
+                "execution_ms": 0.015,
+                "plan": "Aggregate \/ Bitmap Heap Scan"
+            }
+        }
+    }
+}

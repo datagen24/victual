@@ -1,0 +1,41 @@
+{
+ "rows": {
+  "stock_log": 200114,
+  "stock": 80047,
+  "stock_row_lots": 80056,
+  "stock_booking_lots": 200115
+ },
+ "generated_seconds": 1.4,
+ "backfill_seconds": 7.64,
+ "bytes_before": {
+  "stock_log": 53534720,
+  "stock": 14434304
+ },
+ "bytes_new_tables": {
+  "stock_row_lots": 11534336,
+  "stock_booking_lots": 28483584
+ },
+ "new_tables_over_stock_log_percent": 74.8,
+ "queries": {
+  "dependency_check_one_lot": {
+   "execution_ms": 0.015,
+   "plan": "Limit / Nested Loop"
+  },
+  "where_is_lot": {
+   "execution_ms": 0.004,
+   "plan": "Index Scan / "
+  },
+  "lots_of_row": {
+   "execution_ms": 0.014,
+   "plan": "Index Scan / Result"
+  },
+  "allocations_of_booking": {
+   "execution_ms": 0.003,
+   "plan": "Index Scan / "
+  },
+  "existing_dependency_check_by_stock_id": {
+   "execution_ms": 0.018,
+   "plan": "Aggregate / Bitmap Heap Scan"
+  }
+ }
+}

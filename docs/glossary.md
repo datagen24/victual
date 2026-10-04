@@ -18,11 +18,23 @@ Changing a definition does not change an accepted decision. Follow the
 
 ## Stock and household data
 
+### Allocation
+
+Proposed in [ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) (Proposed, not implemented). The signed amount of one lot that one
+booking added, removed, or moved. Allocations record which addition booking a quantity is
+charged to; they are accounting attribution, not physical provenance.
+
 ### Booking
 
 A recorded stock operation, such as a purchase, consumption, transfer, inventory
 correction, or opening. The stock journal records booking history and supports undo.
 See [Stock](manual/using-victual/stock.md).
+
+### Contribution
+
+Proposed in [ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) (Proposed, not implemented). The amount of one lot currently held by one
+stock entry. A merged entry has one contribution per lot. A contribution with no lot is the
+unattributed pool of quantity merged before lineage was tracked.
 
 ### Directed substitution
 
@@ -42,6 +54,13 @@ when the context could be ambiguous. See [Stock](manual/using-victual/stock.md).
 A place where stock is stored, represented by `locations`. Locations can nest, such as
 a shelf inside a fridge. A location can also represent a refillable vessel.
 A shopping location identifies a store. See [Stock](manual/using-victual/stock.md).
+
+### Lot
+
+Proposed in [ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) (Proposed, not implemented). The units introduced by one addition booking,
+identified by that booking's `stock_log.id`. A lot is not a stock entry: a merge puts several
+lots in one entry, and a split puts one lot in several. The manual's **batch** means a stock
+entry.
 
 ### Master data
 
