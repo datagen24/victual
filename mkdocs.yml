@@ -148,6 +148,7 @@ nav:
           - 0033 Stock rows merge only in maintenance: development/adr/0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md
           - 0034 Group minimums count descendant stock: development/adr/0034-product-group-minimum-counts-descendant-groups.md
           - 0035 Batteries, equipment and calendar need view permissions: development/adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md
+          - 0036 Stock quantities are attributed to the bookings that added them: development/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md

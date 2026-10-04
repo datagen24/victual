@@ -8,7 +8,8 @@
 - **Referenced by:** [issue 488](https://github.com/datagen24/victual/issues/488) (C1),
   [issue 491](https://github.com/datagen24/victual/issues/491) (H2); relies on
   [PR #531](https://github.com/datagen24/victual/pull/531) (open, unmerged at
-  2026-09-27, head `e60a5d22`) remaining the safety net named in decision 4;
+  2026-09-27, head `e60a5d22`; merged 2026-09-27 as `d48e5b30`) remaining the safety net
+  named in decision 4;
   [ADR-0010](0010-workload-standard.md), whose workload standard the new maintenance
   routine must meet.
 
@@ -157,13 +158,16 @@ location-total weighing behavior below are proposed refinements requiring accept
   identity and lineage rewrites on eligible groups, so issue #487 Corrections item 5's
   finding stands: a stable row id does not by itself recover which booking contributed which
   quantity after a merge. This decision bounds the finding's surface to rows that can never
-  expire and carry no label; it does not close it. `stock_log.stock_row_id` stays
+  expire and carry no label; it does not close it. [ADR-0036](0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)
+  (Proposed) is the design for that gap. `stock_log.stock_row_id` stays
   unchanged, so bookings on deleted rows retain their original physical row ids.
   PR #531 can refuse edit/open undo when that identity is gone; consume undo can recreate
   a fully consumed row under its original id. Reusing an id does not itself revive a label.
-- Nothing here is built: no maintenance command, no CronJob, no changed `stock_splits`
-  predicate. This record constrains the design of that work; it does not describe code that
-  exists.
+- Implementation status at 2026-10-03: [PR #580](https://github.com/datagen24/victual/pull/580)
+  (merged 2026-09-28 as `0e3e61c1`) built decisions 1, 3 and 5, the maintenance command
+  `bin/victual-compact-stock` and the narrowed `stock_splits` view (`migrations/0290.pgsql.sql`).
+  No CronJob is declared (decision 2, acceptance prerequisite 3). The record is still
+  Proposed, and the accepting pull request has not yet stated how each prerequisite was met.
 
 ## Open questions
 

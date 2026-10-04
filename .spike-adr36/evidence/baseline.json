@@ -1,0 +1,1495 @@
+{
+    "environment": {
+        "php": "8.5.10",
+        "postgres": "16.15 (Debian 16.15-1.pgdg13+2)"
+    },
+    "merge_3-then-2": {
+        "steps": [
+            {
+                "step": "before merge",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 1,
+                            "stock_id": "6ac1a6d88b647",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88fd46",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 1,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88fd46",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after CompactStockEntries",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "amount": 5,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 1,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after consume 4",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 1,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 3,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": 2,
+                            "type": "consume",
+                            "amount": -4,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo purchase of 3 (booking 1)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            },
+            {
+                "step": "undo purchase of 2 (booking 2)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            },
+            {
+                "step": "undo consume (booking 3)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase of 2 (booking 2) after consume undone",
+                "result": "refused",
+                "message": "Booking cannot be undone: its stock entry is split across multiple rows in a way that cannot be unambiguously reversed"
+            },
+            {
+                "step": "after undo of the second purchase",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 3,
+                            "stock_id": "6ac1a6d88b647",
+                            "amount": 4,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 1,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 2,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 3,
+                            "stock_id": "6ac1a6d88b647",
+                            "stock_row_id": 2,
+                            "type": "consume",
+                            "amount": -4,
+                            "undone": 1
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo purchase of 3 (booking 1)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 2,
+                    "stock_id": "6ac1a6d88b647",
+                    "amount": 1,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 3,
+                    "stock_id": "6ac1a6d88b647",
+                    "amount": 4,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 1,
+                    "stock_id": "6ac1a6d88b647",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 2,
+                    "stock_id": "6ac1a6d88b647",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 3,
+                    "stock_id": "6ac1a6d88b647",
+                    "stock_row_id": 2,
+                    "type": "consume",
+                    "amount": -4,
+                    "undone": 1
+                }
+            ]
+        }
+    },
+    "merge_2-then-3": {
+        "steps": [
+            {
+                "step": "before merge",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 4,
+                            "stock_id": "6ac1a6d89b447",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89e708",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 4,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89e708",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after CompactStockEntries",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "amount": 5,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 4,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after consume 4",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 4,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 6,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": 5,
+                            "type": "consume",
+                            "amount": -4,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo purchase of 2 (booking 4)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            },
+            {
+                "step": "undo purchase of 3 (booking 5)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            },
+            {
+                "step": "undo consume (booking 6)",
+                "result": "accepted"
+            },
+            {
+                "step": "undo purchase of 3 (booking 5) after consume undone",
+                "result": "refused",
+                "message": "Booking cannot be undone: its stock entry is split across multiple rows in a way that cannot be unambiguously reversed"
+            },
+            {
+                "step": "after undo of the second purchase",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 6,
+                            "stock_id": "6ac1a6d89b447",
+                            "amount": 4,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 4,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 5,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 6,
+                            "stock_id": "6ac1a6d89b447",
+                            "stock_row_id": 5,
+                            "type": "consume",
+                            "amount": -4,
+                            "undone": 1
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo purchase of 2 (booking 4)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 5,
+                    "stock_id": "6ac1a6d89b447",
+                    "amount": 1,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 6,
+                    "stock_id": "6ac1a6d89b447",
+                    "amount": 4,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 4,
+                    "stock_id": "6ac1a6d89b447",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 5,
+                    "stock_id": "6ac1a6d89b447",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 6,
+                    "stock_id": "6ac1a6d89b447",
+                    "stock_row_id": 5,
+                    "type": "consume",
+                    "amount": -4,
+                    "undone": 1
+                }
+            ]
+        }
+    },
+    "merge_then_undo_without_consumption": {
+        "steps": [
+            {
+                "step": "undo older purchase (booking 7) first",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            },
+            {
+                "step": "undo newer purchase (booking 8)",
+                "result": "accepted"
+            },
+            {
+                "step": "after newer undone",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 8,
+                            "stock_id": "6ac1a6d8a913c",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 7,
+                            "stock_id": "6ac1a6d8a913c",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 8,
+                            "stock_id": "6ac1a6d8a913c",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 1
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo older purchase (booking 7)",
+                "result": "accepted"
+            }
+        ],
+        "final": {
+            "stock": [],
+            "stock_log": [
+                {
+                    "id": 7,
+                    "stock_id": "6ac1a6d8a913c",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 1
+                },
+                {
+                    "id": 8,
+                    "stock_id": "6ac1a6d8a913c",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 1
+                }
+            ]
+        }
+    },
+    "same_stock_id_after_merge_is_all_the_ledger_keeps": {
+        "steps": [
+            {
+                "step": "purchases 3 and 2 merged; query: which units belong to which purchase?",
+                "live_additions_per_stock_id": [
+                    {
+                        "stock_id": "6ac1a6d8b2439",
+                        "bookings": 2,
+                        "amounts": "{3,2}"
+                    }
+                ]
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 10,
+                    "stock_id": "6ac1a6d8b2439",
+                    "amount": 5,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 9,
+                    "stock_id": "6ac1a6d8b2439",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 10,
+                    "stock_id": "6ac1a6d8b2439",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "transfer_split_then_merge": {
+        "steps": [
+            {
+                "step": "transfer 2 of the merged 5 to L2 (split; both rows now share a stock_id)",
+                "result": "accepted"
+            },
+            {
+                "step": "maintenance merge with two new purchases at L1",
+                "result": "accepted"
+            },
+            {
+                "step": "state after second maintenance run",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 12,
+                            "stock_id": "6ac1a6d8b954a",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 13,
+                            "stock_id": "6ac1a6d8b954a",
+                            "amount": 2,
+                            "location_id": 4,
+                            "open": 0
+                        },
+                        {
+                            "id": 14,
+                            "stock_id": "6ac1a6d8c22c8",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 15,
+                            "stock_id": "6ac1a6d8c4d9e",
+                            "amount": 4,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 11,
+                            "stock_id": "6ac1a6d8b954a",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 12,
+                            "stock_id": "6ac1a6d8b954a",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 13,
+                            "stock_id": "6ac1a6d8b954a",
+                            "stock_row_id": 12,
+                            "type": "transfer_from",
+                            "amount": -2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 14,
+                            "stock_id": "6ac1a6d8b954a",
+                            "stock_row_id": 13,
+                            "type": "transfer_to",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 15,
+                            "stock_id": "6ac1a6d8c22c8",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 1,
+                            "undone": 0
+                        },
+                        {
+                            "id": 16,
+                            "stock_id": "6ac1a6d8c4d9e",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 4,
+                            "undone": 0
+                        }
+                    ]
+                }
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 12,
+                    "stock_id": "6ac1a6d8b954a",
+                    "amount": 3,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 13,
+                    "stock_id": "6ac1a6d8b954a",
+                    "amount": 2,
+                    "location_id": 4,
+                    "open": 0
+                },
+                {
+                    "id": 14,
+                    "stock_id": "6ac1a6d8c22c8",
+                    "amount": 1,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 15,
+                    "stock_id": "6ac1a6d8c4d9e",
+                    "amount": 4,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 11,
+                    "stock_id": "6ac1a6d8b954a",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 12,
+                    "stock_id": "6ac1a6d8b954a",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 13,
+                    "stock_id": "6ac1a6d8b954a",
+                    "stock_row_id": 12,
+                    "type": "transfer_from",
+                    "amount": -2,
+                    "undone": 0
+                },
+                {
+                    "id": 14,
+                    "stock_id": "6ac1a6d8b954a",
+                    "stock_row_id": 13,
+                    "type": "transfer_to",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 15,
+                    "stock_id": "6ac1a6d8c22c8",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 1,
+                    "undone": 0
+                },
+                {
+                    "id": 16,
+                    "stock_id": "6ac1a6d8c4d9e",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 4,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "open_then_purchase_then_merge_then_undo_open": {
+        "steps": [
+            {
+                "step": "merge 5 -> open 2 (split) -> purchase 4",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 17,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 18,
+                            "stock_id": "6ac1a6d8cf267",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 19,
+                            "stock_id": "6ac1a6d8d1b80",
+                            "amount": 4,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 17,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 18,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 19,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": 17,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 20,
+                            "stock_id": "6ac1a6d8d1b80",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 4,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after maintenance run",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 17,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 18,
+                            "stock_id": "6ac1a6d8cf267",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        },
+                        {
+                            "id": 19,
+                            "stock_id": "6ac1a6d8d1b80",
+                            "amount": 4,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 17,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 18,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 19,
+                            "stock_id": "6ac1a6d8c8c79",
+                            "stock_row_id": 17,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 20,
+                            "stock_id": "6ac1a6d8d1b80",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 4,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo the opening (booking 19)",
+                "result": "accepted"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 17,
+                    "stock_id": "6ac1a6d8c8c79",
+                    "amount": 2,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 18,
+                    "stock_id": "6ac1a6d8cf267",
+                    "amount": 3,
+                    "location_id": 3,
+                    "open": 0
+                },
+                {
+                    "id": 19,
+                    "stock_id": "6ac1a6d8d1b80",
+                    "amount": 4,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 17,
+                    "stock_id": "6ac1a6d8c8c79",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 18,
+                    "stock_id": "6ac1a6d8c8c79",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 19,
+                    "stock_id": "6ac1a6d8c8c79",
+                    "stock_row_id": 17,
+                    "type": "product-opened",
+                    "amount": 2,
+                    "undone": 1
+                },
+                {
+                    "id": 20,
+                    "stock_id": "6ac1a6d8d1b80",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 4,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "open_whole_rows_then_merge_then_undo_each_open": {
+        "steps": [
+            {
+                "step": "purchases 2 and 3, then open 2 and open 3 (two whole-row openings)",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 20,
+                            "stock_id": "6ac1a6d8d6053",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 21,
+                            "stock_id": "6ac1a6d8d8ac2",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 1
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 21,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 22,
+                            "stock_id": "6ac1a6d8d8ac2",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 23,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": 20,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 24,
+                            "stock_id": "6ac1a6d8d8ac2",
+                            "stock_row_id": 21,
+                            "type": "product-opened",
+                            "amount": 3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after maintenance run",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 21,
+                            "stock_id": "6ac1a6d8d6053",
+                            "amount": 5,
+                            "location_id": 3,
+                            "open": 1
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 21,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 22,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 23,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": 20,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 24,
+                            "stock_id": "6ac1a6d8d6053",
+                            "stock_row_id": 21,
+                            "type": "product-opened",
+                            "amount": 3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo the second opening (booking 24)",
+                "result": "refused",
+                "message": "Booking cannot be undone: the stock entry it opened no longer exists in that state"
+            },
+            {
+                "step": "undo the first opening (booking 23)",
+                "result": "refused",
+                "message": "Booking has subsequent dependent bookings, undo not possible"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 21,
+                    "stock_id": "6ac1a6d8d6053",
+                    "amount": 5,
+                    "location_id": 3,
+                    "open": 1
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 21,
+                    "stock_id": "6ac1a6d8d6053",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 22,
+                    "stock_id": "6ac1a6d8d6053",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 23,
+                    "stock_id": "6ac1a6d8d6053",
+                    "stock_row_id": 20,
+                    "type": "product-opened",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 24,
+                    "stock_id": "6ac1a6d8d6053",
+                    "stock_row_id": 21,
+                    "type": "product-opened",
+                    "amount": 3,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "partial_opens_then_merge": {
+        "steps": [
+            {
+                "step": "purchases 2 and 3; open 2 (whole row), open 1 (splits the 3)",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 22,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 23,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 24,
+                            "stock_id": "6ac1a6d8ea40f",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 25,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 26,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 27,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "stock_row_id": 22,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 28,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "stock_row_id": 23,
+                            "type": "product-opened",
+                            "amount": 1,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after maintenance run (opened 2 and opened 1 share every grouping column)",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 22,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 23,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "amount": 1,
+                            "location_id": 3,
+                            "open": 1
+                        },
+                        {
+                            "id": 24,
+                            "stock_id": "6ac1a6d8ea40f",
+                            "amount": 2,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 25,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 26,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 27,
+                            "stock_id": "6ac1a6d8e1e8d",
+                            "stock_row_id": 22,
+                            "type": "product-opened",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 28,
+                            "stock_id": "6ac1a6d8e4a02",
+                            "stock_row_id": 23,
+                            "type": "product-opened",
+                            "amount": 1,
+                            "undone": 0
+                        }
+                    ]
+                },
+                "origins": [
+                    {
+                        "stock_id": "6ac1a6d8cf267",
+                        "origin_stock_id": "6ac1a6d8c8c79"
+                    },
+                    {
+                        "stock_id": "6ac1a6d8ea40f",
+                        "origin_stock_id": "6ac1a6d8e4a02"
+                    }
+                ]
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 22,
+                    "stock_id": "6ac1a6d8e1e8d",
+                    "amount": 2,
+                    "location_id": 3,
+                    "open": 1
+                },
+                {
+                    "id": 23,
+                    "stock_id": "6ac1a6d8e4a02",
+                    "amount": 1,
+                    "location_id": 3,
+                    "open": 1
+                },
+                {
+                    "id": 24,
+                    "stock_id": "6ac1a6d8ea40f",
+                    "amount": 2,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 25,
+                    "stock_id": "6ac1a6d8e1e8d",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 26,
+                    "stock_id": "6ac1a6d8e4a02",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 27,
+                    "stock_id": "6ac1a6d8e1e8d",
+                    "stock_row_id": 22,
+                    "type": "product-opened",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 28,
+                    "stock_id": "6ac1a6d8e4a02",
+                    "stock_row_id": 23,
+                    "type": "product-opened",
+                    "amount": 1,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "edit_then_merge_then_undo_edit": {
+        "steps": [
+            {
+                "step": "edit second row 2 -> 2.5, then merge",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 26,
+                            "stock_id": "6ac1a6d8eec66",
+                            "amount": 5.5,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 29,
+                            "stock_id": "6ac1a6d8eec66",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 30,
+                            "stock_id": "6ac1a6d8eec66",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 31,
+                            "stock_id": "6ac1a6d8eec66",
+                            "stock_row_id": 26,
+                            "type": "stock-edit-old",
+                            "amount": 2,
+                            "undone": 0
+                        },
+                        {
+                            "id": 32,
+                            "stock_id": "6ac1a6d8eec66",
+                            "stock_row_id": 26,
+                            "type": "stock-edit-new",
+                            "amount": 2.5,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo the edit (booking 32)",
+                "result": "refused",
+                "message": "Booking cannot be undone: its stock entry has changed since this edit (likely merged with another entry) and the edit's own effect cannot be isolated"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 26,
+                    "stock_id": "6ac1a6d8eec66",
+                    "amount": 5.5,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 29,
+                    "stock_id": "6ac1a6d8eec66",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 30,
+                    "stock_id": "6ac1a6d8eec66",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 31,
+                    "stock_id": "6ac1a6d8eec66",
+                    "stock_row_id": 26,
+                    "type": "stock-edit-old",
+                    "amount": 2,
+                    "undone": 0
+                },
+                {
+                    "id": 32,
+                    "stock_id": "6ac1a6d8eec66",
+                    "stock_row_id": 26,
+                    "type": "stock-edit-new",
+                    "amount": 2.5,
+                    "undone": 0
+                }
+            ]
+        }
+    },
+    "full_consume_then_undo": {
+        "steps": [
+            {
+                "step": "before",
+                "state": {
+                    "stock": [
+                        {
+                            "id": 27,
+                            "stock_id": "6ac1a6d904d6f",
+                            "amount": 3,
+                            "location_id": 3,
+                            "open": 0
+                        }
+                    ],
+                    "stock_log": [
+                        {
+                            "id": 33,
+                            "stock_id": "6ac1a6d904d6f",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "after full consume",
+                "state": {
+                    "stock": [],
+                    "stock_log": [
+                        {
+                            "id": 33,
+                            "stock_id": "6ac1a6d904d6f",
+                            "stock_row_id": null,
+                            "type": "purchase",
+                            "amount": 3,
+                            "undone": 0
+                        },
+                        {
+                            "id": 34,
+                            "stock_id": "6ac1a6d904d6f",
+                            "stock_row_id": 27,
+                            "type": "consume",
+                            "amount": -3,
+                            "undone": 0
+                        }
+                    ]
+                }
+            },
+            {
+                "step": "undo consume (booking 34)",
+                "result": "accepted"
+            }
+        ],
+        "final": {
+            "stock": [
+                {
+                    "id": 27,
+                    "stock_id": "6ac1a6d904d6f",
+                    "amount": 3,
+                    "location_id": 3,
+                    "open": 0
+                }
+            ],
+            "stock_log": [
+                {
+                    "id": 33,
+                    "stock_id": "6ac1a6d904d6f",
+                    "stock_row_id": null,
+                    "type": "purchase",
+                    "amount": 3,
+                    "undone": 0
+                },
+                {
+                    "id": 34,
+                    "stock_id": "6ac1a6d904d6f",
+                    "stock_row_id": 27,
+                    "type": "consume",
+                    "amount": -3,
+                    "undone": 1
+                }
+            ]
+        }
+    }
+}
