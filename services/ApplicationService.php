@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 /**
@@ -186,16 +188,6 @@ class ApplicationService extends BaseService
 	}
 
 	/**
-	 * Formats a Unix timestamp as "Y-m-d H:i:s" in UTC.
-	 */
-	private static function convertToUtc(int $timestamp): string
-	{
-		$dt = new \DateTime('now', new \DateTimeZone('UTC'));
-		$dt->setTimestamp($timestamp);
-		return $dt->format('Y-m-d H:i:s');
-	}
-
-	/**
 	 * The current local time as SQLite itself computes it (shifted by $offset seconds), or
 	 * an empty string where the driver is not installed.
 	 *
@@ -241,15 +233,35 @@ class ApplicationService extends BaseService
 	public function GetSystemTime(int $offset = 0): array
 	{
 		$timestamp = time() + $offset;
-		$timeLocal = date('Y-m-d H:i:s', $timestamp);
-		$timeUTC = self::convertToUtc($timestamp);
+		$instant = new \DateTimeImmutable('@' . $timestamp);
+		// ADR-0027 open question 1: time_local is the same instant with the configured zone's
+		// offset - the one value on the wire that does not end in Z - and time_utc is the
+		// wire rendering.
+		$timeLocal = $instant->setTimezone(Instant::ServerZone())->format('Y-m-d\\TH:i:s.uP');
+		$timeUTC = Instant::ToWire($instant);
 		return [
 			'timezone' => date_default_timezone_get(),
 			'time_local' => $timeLocal,
-			'time_local_sqlite3' => self::getSqliteLocaltime($offset),
+			'time_local_sqlite3' => self::WithServerOffset(self::getSqliteLocaltime($offset)),
 			'time_utc' => $timeUTC,
 			'timestamp' => $timestamp,
 			'offset' => $offset
 		];
+	}
+
+	/**
+	 * SQLite's local wall clock in time_local's rendering (ADR-0027 open question 1): read in
+	 * the configured zone and given that zone's offset. The empty string - every serving
+	 * image, which has no pdo_sqlite - stays empty.
+	 */
+	private static function WithServerOffset(string $wallClock): string
+	{
+		if ($wallClock === '')
+		{
+			return '';
+		}
+
+		// SQLite's datetime() always answers "Y-m-d H:i:s", which FromWallClock() reads.
+		return Instant::FromWallClock($wallClock, Instant::ServerZone(), false)->setTimezone(Instant::ServerZone())->format('Y-m-d\\TH:i:s.uP');
 	}
 }

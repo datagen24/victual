@@ -2,6 +2,8 @@
 
 namespace Victual\Controllers;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Services\BatteriesService;
 use Victual\Services\UserfieldsService;
 use Victual\Services\UsersService;
@@ -135,15 +137,17 @@ class BatteriesController extends BaseController
 		{
 			if (FindObjectInArrayByPropertyValue($batteries, 'id', $currentBattery->battery_id)->charge_interval_days > 0)
 			{
-				if ($currentBattery->next_estimated_charge_time < date('Y-m-d H:i:s'))
+				// Instants in the wire rendering compare as text (ADR-0027 decision 2); the day
+				// boundaries are the configured zone's, as they always were.
+				if ($currentBattery->next_estimated_charge_time < Instant::Now())
 				{
 					$currentBattery->due_type = 'overdue';
 				}
-				elseif ($currentBattery->next_estimated_charge_time <= date('Y-m-d 23:59:59'))
+				elseif ($currentBattery->next_estimated_charge_time <= Instant::EndOfServerDay(date('Y-m-d')))
 				{
 					$currentBattery->due_type = 'duetoday';
 				}
-				elseif ($nextXDays > 0 && $currentBattery->next_estimated_charge_time <= date('Y-m-d H:i:s', strtotime('+' . $nextXDays . ' days')))
+				elseif ($nextXDays > 0 && $currentBattery->next_estimated_charge_time <= Instant::ToWire(new \DateTimeImmutable('+' . $nextXDays . ' days')))
 				{
 					$currentBattery->due_type = 'duesoon';
 				}

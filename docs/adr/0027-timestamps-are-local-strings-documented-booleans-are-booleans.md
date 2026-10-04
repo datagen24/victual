@@ -131,26 +131,40 @@ storage. The decider's answers above record this.
 
    - **Storage.** The legacy schema's `TIMESTAMP` columns behind the fifty-four properties
      migrate to `TIMESTAMPTZ`. Each existing value is a wall-clock time in the server's
-     configured zone, and the migration converts it on that basis
-     (`col AT TIME ZONE '<configured zone>'`). When daylight saving ends, one clock hour
-     occurs twice. A value in that repeated hour is read as the **earlier** of the two
-     instants, the same rule
+     configured zone, and the migration converts it on that basis. When daylight saving
+     ends, one clock hour occurs twice. A value in that repeated hour is read as the
+     **earlier** of the two instants, the same rule
      [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md) applies to a new
      write without an offset. The import of a legacy SQLite database converts upstream's
      wall-clock values the same way. The label surface (migrations 0269 to 0272) already
      stores `TIMESTAMPTZ` and does not migrate.
-   - **Rendering.** `YYYY-MM-DDTHH:MM:SSZ`, for example `2026-10-04T18:30:00Z`, where the
-     record stored `2026-10-04 14:30:00` on a server set to `America/New_York`. The `Z` is
-     part of the contract: a client may compare these values as text.
+
+     *Corrected 2026-10-04 (issue #650):* this bullet first named the conversion as
+     `col AT TIME ZONE '<configured zone>'`. That expression reads a repeated hour as the
+     **later** instant (`2026-11-01 01:30:00` on `America/New_York` becomes `06:30Z`) and
+     moves a skipped hour forward without a word, so it cannot implement this rule. PHP's
+     own reading takes the earlier instant on New York and the later one on
+     `Australia/Lord_Howe`.
+
+     Migration 0301 therefore converts with
+     `victual_local_to_instant()`, which tries every offset the zone uses near the wall
+     clock and keeps the earliest valid one, and refuses a skipped wall clock. The SQLite
+     import and the API's offset-free writes use the same algorithm in PHP, and a test
+     requires the two to agree around every transition from 2020 to 2027 in eight zones.
+   - **Rendering.** `YYYY-MM-DDTHH:MM:SS.ffffffZ`, for example
+     `2026-10-04T18:30:00.000000Z`, where the record stored `2026-10-04 14:30:00` on a
+     server set to `America/New_York`. The fraction always has six digits (open question
+     2). The `Z` and the fixed width are part of the contract: a client may compare these
+     values as text. `TimeResponse.time_local` is the one exception (open question 1).
    - **One rule, no exceptions.** The three renderings that the record as first written
      set aside are now covered by it:
-     - `TimeResponse.time_utc` renders as `2026-10-04T18:30:00Z`. Its former rendering
+     - `TimeResponse.time_utc` renders as `2026-10-04T18:30:00.000000Z`. Its former rendering
        used the local format with no offset.
      - `observed_at` on the label evidence endpoint is already RFC 3339. It is normalised
        to `Z`.
      - The label surface's `TIMESTAMPTZ` values are covered too. `labels.retired_at` on
        `GET /labels/resolve/{code}` changes from `2026-03-04 05:06:07.891011-05` to
-       `2026-03-04T10:06:07…Z`; whether the fraction is kept is open question 2. The same
+       `2026-03-04T10:06:07.891011Z`; the fraction is kept (open question 2). The same
        applies to `expires_at` on the two worker-credential routes, which `->format('c')`
        currently renders with the server's offset.
    - **The write fields echo it.** `tracked_time` on chore execution and battery charge
@@ -218,6 +232,13 @@ storage. The decider's answers above record this.
      `TIMESTAMPTZ`, the renderer may be able to use the column's type instead of the
      field's name, but that is not yet verified. Without it, the field-name approach and
      its risk remain.
+
+     *Settled 2026-10-04 (issue #650):* pdo_pgsql reports a result column's type for table
+     columns, view columns, aliases, expressions, joins and unions alike, so the renderer
+     uses the type and never the name. It is the statement class of every application
+     connection (`services/Database/InstantStatement.php`). `getColumnMeta()` costs two
+     catalogue queries per column, so it is asked only about a column whose fetched values
+     have PostgreSQL's `TIMESTAMPTZ` shape. A text column holding such text is left alone.
    - **Coordinated changes** to plan 18's MQTT payloads, the iCal feed, and the browser
      code that reads and writes these values. That code converts to the device's zone for
      display and sends writes with an offset.
@@ -267,7 +288,7 @@ tenth of the scale, and is where this would be decided.
 
 - **Every timestamp on the wire changes once decision 2 is implemented.** This is a breaking
   change on essentially every read route. For example, `"2026-10-04 14:30:00"` becomes
-  `"2026-10-04T18:30:00Z"` on a New York server. A consumer that displays the string
+  `"2026-10-04T18:30:00.000000Z"` on a New York server. A consumer that displays the string
   without parsing it will show UTC. That includes a Home Assistant template, an iCal
   subscriber that reads the raw value, or a script. It is the reason decision 5 lists
   every consumer that has to move with the change.
@@ -418,17 +439,52 @@ tenth of the scale, and is where this would be decided.
 ## Open questions
 
 Decision 2's revision raised these. None blocks recording the decision; each must be
-answered before decision 2 is implemented.
+answered before decision 2 is implemented. The decider answered all three on 2026-10-04,
+during the work tracked as [issue 650](https://github.com/datagen24/victual/issues/650).
 
 1. **`TimeResponse.time_local`.** By definition it is the server's local wall-clock time.
    Should it carry the server's offset (`2026-10-04T14:30:00-04:00`), which is the one
    place a non-`Z` RFC 3339 value would remain, or be retired in favour of `time_utc` and
    the configured zone name?
+
+   > **Response (decider, 2026-10-04):** keep it, with the server's offset.
+   > `time_local` names the same instant as `time_utc`, rendered in the configured zone
+   > with that zone's offset: `2026-10-04T14:30:00.000000-04:00` on a server set to
+   > `America/New_York`, and `2026-10-04T18:30:00.000000+00:00` on a UTC server. It is
+   > the one value on the wire that does not end in `Z`, and the text-comparison promise
+   > in decision 2 does not cover it. `time_local_sqlite3` gets the same rendering when it
+   > is not the empty string. No field is removed.
+
 2. **Fractional seconds.** The legacy columns hold whole seconds. The label surface's
    `TIMESTAMPTZ` values hold microseconds. Should the renderer truncate to whole seconds
    everywhere, or send whatever precision is stored?
+
+   > **Response (decider, 2026-10-04):** six fractional digits on every instant, always.
+   > The rendering is `YYYY-MM-DDTHH:MM:SS.ffffffZ`, for example
+   > `2026-10-04T18:30:00.000000Z`, including for values stored as whole seconds.
+   >
+   > Variable-length fractions were rejected because they break decision 2's promise that
+   > a client may compare values as text: `…:07.5Z` sorts before `…:07Z`, since `.` sorts
+   > before `Z`. With a fixed width, text order is chronological order and text equality
+   > is instant equality. Truncating to whole seconds was rejected because it discards
+   > the label surface's stored microseconds, so two label events in the same second would
+   > compare equal on the wire.
+   >
+   > Storage keeps microseconds, which is `TIMESTAMPTZ`'s default precision. A write field
+   > that carries a fraction keeps it to the microsecond, and digits after the sixth are
+   > dropped, not rounded. [ADR-0028](0028-a-timestamp-a-write-route-cannot-read-is-refused.md)
+   > decision 2 is amended to match.
+
 3. **The differential suite's `views` phase.** Should the phase gain an accepted difference
    for the `TIMESTAMPTZ` columns, or compare after normalising both sides to instants?
+
+   > **Response (decider, 2026-10-04):** normalise both sides to instants. The phase takes
+   > the PostgreSQL side's timestamp columns from the driver's column metadata, reads the
+   > SQLite side's wall-clock value in an explicitly named source zone by the same
+   > earlier-instant rule as the migration, and compares the two instants to the
+   > microsecond. No timestamp column is exempted. Negative controls show that the
+   > comparison still fails on a wrong offset, a lost fraction, a `DATE` converted to an
+   > instant, and a value with a malformed or missing zone.
 
 ## Acceptance prerequisites
 

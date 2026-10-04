@@ -600,6 +600,22 @@ class BaseApiController extends BaseController
 				$sqlOrNull = ' OR ' . $matches['field'] . ' IS NULL';
 			}
 
+			// A comparison with an instant column compares instants: the value is read like
+			// any timestamp a write route takes (ParseApiDateTime()), so an offset-free value
+			// means the configured zone and an RFC 3339 value means itself, rather than
+			// whatever PostgreSQL's cast would make of it. "null" keeps its meaning above.
+			if ($columnTypes[$matches['field']] === 'timestamp with time zone' && strtolower($matches['value']) !== 'null'
+				&& in_array($matches['op'], ['=', '!=', '<', '>', '<=', '>='], true))
+			{
+				$instant = ParseApiDateTime($matches['value']);
+				if ($instant === null)
+				{
+					throw new HttpException($request, 'Invalid query: ' . $this->WhyNotATimestamp($matches['field'], $matches['value']), 400);
+				}
+
+				$matches['value'] = $instant;
+			}
+
 			switch ($matches['op'])
 			{
 				case '=':
@@ -758,13 +774,13 @@ class BaseApiController extends BaseController
 	 *
 	 * @param array $requestBody The parsed request body
 	 * @param string $field The body field to read - 'tracked_time' or 'done_time'
-	 * @return string The instant to book, as 'Y-m-d H:i:s'
+	 * @return string The instant to book, in the wire rendering (Instant::WIRE_FORMAT)
 	 */
 	protected function RequestedTimestamp(Request $request, array $requestBody, string $field): string
 	{
 		if (!array_key_exists($field, $requestBody))
 		{
-			return date('Y-m-d H:i:s');
+			return \Victual\Services\Time\Instant::Now();
 		}
 
 		$parsed = ParseApiDateTime($requestBody[$field]);
@@ -788,7 +804,7 @@ class BaseApiController extends BaseController
 	 * impossible. API_DATE_TIME_PATTERN is what tells the two apart, and it is the same
 	 * expression ParseApiDateTime() gates on and the schemas document.
 	 */
-	private function WhyNotATimestamp(string $field, $value): string
+	protected function WhyNotATimestamp(string $field, $value): string
 	{
 		if (is_string($value) && preg_match('/' . API_DATE_TIME_PATTERN . '/D', $value) === 1)
 		{
@@ -798,9 +814,52 @@ class BaseApiController extends BaseController
 				. 'entirely to record the current time.';
 		}
 
-		return 'Invalid ' . $field . ': expected "YYYY-MM-DD HH:MM:SS" (the rendering this API stores, in the server\'s time zone), '
-			. '"YYYY-MM-DD" for midnight of that date, or an RFC 3339-shaped date and time such as "2026-09-21T14:30:00Z". '
-			. 'Omit the field entirely to record the current time.';
+		return 'Invalid ' . $field . ': expected an RFC 3339-shaped date and time such as "2026-09-21T14:30:00Z" or '
+			. '"2026-09-21T14:30:00+02:00", or a wall clock in the server\'s time zone: "YYYY-MM-DD HH:MM:SS", or "YYYY-MM-DD" '
+			. 'for midnight of that date. Omit the field entirely to record the current time.';
+	}
+
+	/** Per request: entity => [column => information_schema data_type]. */
+	private static array $InstantColumnCache = [];
+
+	/**
+	 * A generic write body with every value bound for a TIMESTAMPTZ column read the way the
+	 * three timestamp write routes read theirs (ParseApiDateTime(), ADR-0028 as amended by
+	 * ADR-0027 decision 2), so that an offset-free value means the configured zone with the
+	 * earlier instant in a repeated hour and a skipped hour is refused - rather than reaching
+	 * PostgreSQL, whose own cast reads a repeated hour as the later instant and moves a
+	 * skipped one forward.
+	 *
+	 * The column's type decides, read from the catalogue, never its name. A null value is
+	 * left for the column's own nullability to decide, and the empty string for the database
+	 * to refuse as it always did; only a non-empty string is read here, and one that is not a
+	 * time is refused with 400 naming the field.
+	 */
+	protected function WithInstantsRead(Request $request, string $entity, array $body): array
+	{
+		if (!array_key_exists($entity, self::$InstantColumnCache))
+		{
+			$database = DatabaseService::GetInstance();
+			self::$InstantColumnCache[$entity] = $database->GetDialect()->GetColumnTypes($database->GetDbConnectionRaw(), $entity);
+		}
+
+		foreach ($body as $key => $value)
+		{
+			if (!is_string($value) || $value === '' || (self::$InstantColumnCache[$entity][$key] ?? null) !== 'timestamp with time zone')
+			{
+				continue;
+			}
+
+			$instant = ParseApiDateTime($value);
+			if ($instant === null)
+			{
+				throw new HttpException($request, $this->WhyNotATimestamp((string)$key, $value), 400);
+			}
+
+			$body[$key] = $instant;
+		}
+
+		return $body;
 	}
 
 	/**

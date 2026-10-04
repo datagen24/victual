@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Helpers\UrlManager;
 use Victual\Controllers\Users\User;
 
@@ -95,7 +97,10 @@ class CalendarService extends BaseService
 
 				$choreEvents[] = [
 					'title' => $titlePrefix . $chore->name . $assignedToText,
-					'start' => $currentChoreEntry->next_estimated_execution_time,
+					// A date-only chore is due on a calendar day, and the configured zone says
+					// which: its due instant is that day's 23:59:59 there, which is already the
+					// next UTC day on a server west of UTC.
+					'start' => $chore->track_date_only == 1 ? Instant::ServerDateOf($currentChoreEntry->next_estimated_execution_time) : $currentChoreEntry->next_estimated_execution_time,
 					'date_format' => 'datetime',
 					'link' => $this->UrlManager->ConstructUrl('/choresoverview'),
 					'allDay' => $chore->track_date_only == 1,
@@ -155,7 +160,7 @@ class CalendarService extends BaseService
 
 				$mealPlanRecipeEvents[] = [
 					'title' => $titlePrefix . $titlePrefix2 . FindObjectInArrayByPropertyValue($recipes, 'id', $mealPlanDayRecipe->recipe_id)->name,
-					'start' => $start,
+					'start' => $dateFormat === 'datetime' ? self::ServerWallClockToInstant($start) : $start,
 					'date_format' => $dateFormat,
 					'description' => $this->UrlManager->ConstructUrl('/mealplan' . '?week=' . $mealPlanDayRecipe->day),
 					'link' => $this->UrlManager->ConstructUrl('/recipes' . '?recipe=' . $mealPlanDayRecipe->recipe_id . '#fullscreen'),
@@ -187,7 +192,7 @@ class CalendarService extends BaseService
 
 				$mealPlanNotesEvents[] = [
 					'title' => $titlePrefix . $titlePrefix2 . $mealPlanDayNote->note,
-					'start' => $start,
+					'start' => $dateFormat === 'datetime' ? self::ServerWallClockToInstant($start) : $start,
 					'date_format' => $dateFormat,
 					'link' => $this->UrlManager->ConstructUrl('/mealplan' . '?start=' . $start),
 					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan'],
@@ -218,7 +223,7 @@ class CalendarService extends BaseService
 
 				$mealPlanProductEvents[] = [
 					'title' => $titlePrefix . $titlePrefix2 . FindObjectInArrayByPropertyValue($products, 'id', $mealPlanDayProduct->product_id)->name,
-					'start' => $start,
+					'start' => $dateFormat === 'datetime' ? self::ServerWallClockToInstant($start) : $start,
 					'date_format' => $dateFormat,
 					'link' => $this->UrlManager->ConstructUrl('/mealplan' . '?start=' . $start),
 					'color' => $usersService->GetUserSettings(VICTUAL_USER_ID)['calendar_color_meal_plan'],
@@ -229,5 +234,17 @@ class CalendarService extends BaseService
 		}
 
 		return array_merge($stockEvents, $taskEvents, $choreEvents, $batteryEvents, $mealPlanRecipeEvents, $mealPlanNotesEvents, $mealPlanProductEvents);
+	}
+
+	/**
+	 * A meal plan section's time on a given day - a wall clock in the configured zone, the
+	 * zone the household plans in - as the instant it names there, so the calendar shows it
+	 * in each viewer's zone like every other timed event (ADR-0027 decision 2). A section
+	 * time that is not a clock time (it is free text) is passed through unchanged.
+	 */
+	private static function ServerWallClockToInstant(string $wallClock): string
+	{
+		$instant = Instant::FromWallClock($wallClock, Instant::ServerZone(), false);
+		return $instant === null ? $wallClock : Instant::ToWire($instant);
 	}
 }

@@ -101,6 +101,8 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `retire_chore_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `retire_battery_labels` | function + trigger | 0283, redefined 0296 | `016-label-retirement-family.sql`, `023-label-retirement-cancels-jobs.sql` |
 | `cancel_queued_label_jobs` | function | 0296 | `023-label-retirement-cancels-jobs.sql` |
+| `victual_local_to_instant` | function | 0301 (in `services/Database/TimestampMigration.php`) | `027-timestamptz-conversion.sql` |
+| `trg_default_start_date_when_empty_ins`, `trg_default_start_date_when_empty_upd` | function | baseline, redefined 0301 | `027-timestamptz-conversion.sql` |
 | `stock_current` (opened aggregate, mixed conversion factors) | view | 0289 | `018-audit-view-corrections.sql` |
 | `uihelper_stock_journal` (deleted-location history) | view | 0289 | `018-audit-view-corrections.sql` |
 | `chores_current` (yearly leap-day anchor, weekly undone filter) | view | 0289 | `018-audit-view-corrections.sql` |

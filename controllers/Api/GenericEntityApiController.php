@@ -73,6 +73,7 @@ class GenericEntityApiController extends BaseApiController
 				}
 
 				$requestBody = self::WithoutServerOwnedColumns($requestBody);
+				$requestBody = $this->WithInstantsRead($request, $args['entity'], $requestBody);
 
 				if ($args['entity'] === 'products')
 				{
@@ -383,6 +384,7 @@ class GenericEntityApiController extends BaseApiController
 				}
 
 				$requestBody = self::WithoutServerOwnedColumns($requestBody);
+				$requestBody = $this->WithInstantsRead($request, $args['entity'], $requestBody);
 
 				if ($args['entity'] === 'products')
 				{

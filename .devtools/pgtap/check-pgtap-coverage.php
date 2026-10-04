@@ -69,8 +69,30 @@ function CreatedByMigrations(string $migrationsPath): array
 		}
 	}
 
+	// A PHP migration can keep its SQL in a service class rather than in the migration
+	// file, and then the scan above never sees it. Each such source is named here with the
+	// migration that runs it, so what it creates is held to the same list.
+	foreach (MIGRATION_HELPER_SOURCES as $source => $number)
+	{
+		foreach (file(__DIR__ . '/../../' . $source) as $line)
+		{
+			if (preg_match('/^\s*CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([A-Za-z0-9_]+)/i', $line, $found)
+				|| preg_match('/^\s*CREATE\s+TRIGGER\s+([A-Za-z0-9_]+)/i', $line, $found))
+			{
+				$created[$found[1]] = ['migration' => $number, 'file' => $source];
+			}
+		}
+	}
+
 	return $created;
 }
+
+/**
+ * Service classes a PHP migration takes its SQL from, with that migration's number.
+ */
+const MIGRATION_HELPER_SOURCES = [
+	'services/Database/TimestampMigration.php' => 301
+];
 
 /**
  * The README's "Name" column, as a flat set of the names it lists. A cell like

@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Database;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Services\DatabaseMigrationService;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\StockService;
@@ -649,6 +651,7 @@ class DatabaseImporter
 		$this->AssertStockLocations();
 		$this->AssertProductReferences($tables);
 		$this->AssertStockAmounts($tables);
+		$this->AssertSourceTimestamps($tables);
 
 		$report = [];
 
@@ -866,7 +869,7 @@ class DatabaseImporter
 
 		while ($row = $select->fetch(\PDO::FETCH_ASSOC))
 		{
-			$batch[] = $row;
+			$batch[] = $this->SourceInstantsRead($table, $row);
 
 			if (count($batch) >= self::BATCH_SIZE)
 			{
@@ -883,6 +886,126 @@ class DatabaseImporter
 		($this->Progress)(sprintf('  %-46s %7d rows', $table, $copied));
 
 		return $copied;
+	}
+
+	/** Per import: table => list of the target's TIMESTAMPTZ columns. */
+	private array $InstantColumns = [];
+
+	/**
+	 * The target's TIMESTAMPTZ columns in $table, read from the catalogue.
+	 */
+	private function InstantColumnsOf(string $table): array
+	{
+		if (!array_key_exists($table, $this->InstantColumns))
+		{
+			$types = $this->TargetDialect->GetColumnTypes($this->Target, $table);
+			$this->InstantColumns[$table] = array_keys(array_filter($types, fn($type) => $type === 'timestamp with time zone'));
+		}
+
+		return $this->InstantColumns[$table];
+	}
+
+	/**
+	 * A source value bound for a TIMESTAMPTZ column, as the instant it is stored as - or
+	 * null when it names no instant (a wall clock the configured zone skipped, or text that
+	 * is not a time). ADR-0027 decision 2: upstream grocy and this fork's frozen SQLite line
+	 * store wall clocks in the configured zone, read by the same rule migration 0301 applies
+	 * to an upgrade - a repeated hour is the earlier instant, a skipped one is refused. A
+	 * value that already carries an offset is an instant and is kept as one, never read
+	 * again as a wall clock.
+	 */
+	public static function SourceInstant(string $value): ?string
+	{
+		$instant = Instant::Parse($value);
+		if ($instant === null)
+		{
+			$wallClock = preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value) === 1 ? $value . ' 00:00:00' : $value;
+			$instant = Instant::FromWallClock($wallClock, Instant::ServerZone(), true);
+		}
+
+		return $instant === null ? null : Instant::ToWire($instant);
+	}
+
+	/**
+	 * A source row with every value bound for a TIMESTAMPTZ column converted by
+	 * SourceInstant(). Null and the empty string are left for the target to decide on, as
+	 * the copy always did; AssertSourceTimestamps() has already refused anything else that
+	 * does not convert, so nothing here is guessed at.
+	 */
+	private function SourceInstantsRead(string $table, array $row): array
+	{
+		foreach ($this->InstantColumnsOf($table) as $column)
+		{
+			if (isset($row[$column]) && is_string($row[$column]) && $row[$column] !== '')
+			{
+				$row[$column] = self::SourceInstant($row[$column]) ?? $row[$column];
+			}
+		}
+
+		return $row;
+	}
+
+	/**
+	 * A target row with its TIMESTAMPTZ values in the wire rendering, whichever connection
+	 * read it: the application's connection already renders them so (InstantStatement), a
+	 * plain PDO - the differential suite's - hands back PostgreSQL's own rendering.
+	 */
+	private function TargetInstantsRead(string $table, array $row): array
+	{
+		foreach ($this->InstantColumnsOf($table) as $column)
+		{
+			if (isset($row[$column]) && is_string($row[$column]))
+			{
+				$row[$column] = Instant::FromDatabase($row[$column]) ?? $row[$column];
+			}
+		}
+
+		return $row;
+	}
+
+	/**
+	 * Refuses the import, before anything is written, when a source timestamp cannot be
+	 * converted to an instant - the same preflight migration 0301 runs over an upgrade. The
+	 * refusal counts values per column and names none of them.
+	 */
+	private function AssertSourceTimestamps(array $tables): void
+	{
+		$zone = date_default_timezone_get();
+		$refusals = [];
+
+		foreach ($tables as $table)
+		{
+			$common = $this->GetCommonColumns($table);
+			foreach ($this->InstantColumnsOf($table) as $column)
+			{
+				if (!in_array($column, $common, true))
+				{
+					continue;
+				}
+
+				$bad = 0;
+				$values = $this->Source->query('SELECT ' . $this->SourceColumnExpression($table, $column) . ' FROM "' . $table . '"')->fetchAll(\PDO::FETCH_COLUMN);
+				foreach ($values as $value)
+				{
+					if (is_string($value) && $value !== '' && self::SourceInstant($value) === null)
+					{
+						$bad++;
+					}
+				}
+
+				if ($bad > 0)
+				{
+					$refusals[] = "$table.$column: $bad value(s) are not a time in $zone (a wall clock the zone skipped, or not a date and time at all)";
+				}
+			}
+		}
+
+		if (!empty($refusals))
+		{
+			throw new \RuntimeException("Import refused: some timestamps cannot be converted to instants in time zone $zone. Nothing was written.\n  - " . implode("\n  - ", $refusals));
+		}
+
+		($this->Progress)("  source timestamps read as wall clocks in $zone (ADR-0027 decision 2)");
 	}
 
 	/**
@@ -1638,12 +1761,14 @@ class DatabaseImporter
 			$list = implode(', ', array_map(fn($c) => $this->TargetDialect->QuoteIdentifier($c), $columns));
 			$sourceList = implode(', ', array_map(fn($c) => $this->SourceColumnExpression($table, $c), $columns));
 
+			// The source's wall clocks are compared as the instants the copy made of them -
+			// by the same function, so a disagreement here is a copy that did something else.
 			$sourceRows = array_map(
-				[ValueComparison::class, 'NormaliseRow'],
+				fn($row) => ValueComparison::NormaliseRow($this->SourceInstantsRead($table, $row)),
 				$this->Source->query('SELECT ' . $sourceList . ' FROM "' . $table . '"')->fetchAll(\PDO::FETCH_ASSOC)
 			);
 			$targetRows = array_map(
-				[ValueComparison::class, 'NormaliseRow'],
+				fn($row) => ValueComparison::NormaliseRow($this->TargetInstantsRead($table, $row)),
 				$this->Target->query('SELECT ' . $list . ' FROM ' . $this->TargetDialect->QuoteIdentifier($table))->fetchAll(\PDO::FETCH_ASSOC)
 			);
 

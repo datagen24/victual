@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 /**
  * Rate limits password guessing, by counting failed attempts per username inside a rolling
  * window.
@@ -90,7 +92,7 @@ class LoginThrottleService extends BaseService
 
 	private static function WindowStart(): string
 	{
-		return date('Y-m-d H:i:s', time() - ((int)VICTUAL_LOGIN_THROTTLE_WINDOW_MINUTES * 60));
+		return Instant::FromNow(-((int)VICTUAL_LOGIN_THROTTLE_WINDOW_MINUTES * 60));
 	}
 
 	private function CountSince(string $username, string $since): int

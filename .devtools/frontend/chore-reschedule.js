@@ -96,8 +96,15 @@ const assert = require('node:assert/strict');
 
 			await reload;
 			const saved = await api('objects/chores/' + chore.id);
-			assert.ok(saved.rescheduled_date && saved.rescheduled_date.startsWith('2031-10-20'),
-				'the reschedule was stored (got ' + JSON.stringify(saved.rescheduled_date) + ')');
+			// A timed reschedule is the browser's wall clock sent with its offset, stored and
+			// sent back as a UTC instant (ADR-0027 decision 2, issue #650), so it is compared
+			// as an instant; Node reads the typed wall clock in the same host zone the browser
+			// used. A date-only one is the server's midnight of that date.
+			const stored = saved.rescheduled_date;
+			assert.ok(stored && (chore.track_date_only == 1
+				? stored.startsWith('2031-10-20')
+				: Date.parse(stored) === new Date(rescheduledDate.replace(' ', 'T')).getTime()),
+				'the reschedule was stored (got ' + JSON.stringify(stored) + ')');
 			assert.equal(saved.rescheduled_next_execution_assigned_to_user_id, null, 'the blank assignee is stored as NULL');
 		}
 		finally

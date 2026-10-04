@@ -2,6 +2,8 @@
 
 namespace Victual\Controllers\Api;
 
+use Victual\Services\Time\Instant;
+
 use Eluceo\iCal\Domain\Entity\Calendar;
 use Eluceo\iCal\Domain\Entity\Event;
 use Eluceo\iCal\Domain\Entity\TimeZone;
@@ -151,12 +153,23 @@ class CalendarApiController extends BaseApiController
 				}
 				else
 				{
-					// Time-point event
-					$start = new DateTime(\DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $event['start']), true);
-					$end = new DateTime(\DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $event['start']), true);
+					// Time-point event. The start is an instant (ADR-0027 decision 2); iCalendar
+					// gets it as the configured zone's wall clock with TZID and the VTIMEZONE
+					// added below (RFC 5545 3.3.5 form 3), so a subscriber shows it at the
+					// right moment in its own zone across a DST change. Not the API's RFC
+					// 3339 string, which is not an iCalendar DATE-TIME.
+					$startInstant = Instant::ParseStored($event['start']);
+					if ($startInstant === null)
+					{
+						continue;
+					}
+
+					$local = \DateTime::createFromImmutable($startInstant->setTimezone(Instant::ServerZone()));
+					$start = new DateTime(\DateTimeImmutable::createFromMutable($local), true);
+					$end = new DateTime(\DateTimeImmutable::createFromMutable($local), true);
 					$vEventOccurrence = new TimeSpan($start, $end);
 
-					$compareDate = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $event['start']);
+					$compareDate = $startInstant->setTimezone(Instant::ServerZone());
 				}
 
 				// Create event with a deterministic UID based on event type and entity ID

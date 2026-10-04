@@ -168,10 +168,11 @@
 				class="form-text text-info mt-n2"></p>
 
 			@php
-			$value = date('Y-m-d H:i:s');
+			// An instant: the picker shows it in the viewer's zone (ADR-0027 decision 2)
+			$value = \Victual\Services\Time\Instant::Now();
 			if ($mode == 'edit')
 			{
-			$value = date('Y-m-d H:i:s', strtotime($chore->start_date));
+			$value = $chore->start_date;
 			}
 			@endphp
 			@include('components.datetimepicker', array(

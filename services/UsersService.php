@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use LessQL\Result;
 
 /**
@@ -376,7 +378,7 @@ class UsersService extends BaseService
 		{
 			$settingRow->update([
 				'value' => $settingValue,
-				'row_updated_timestamp' => date('Y-m-d H:i:s')
+				'row_updated_timestamp' => Instant::Now()
 			]);
 		}
 		else

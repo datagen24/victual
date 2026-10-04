@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Mqtt;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Services\BaseService;
 use Victual\Services\Database\ValueComparison;
 use Victual\Services\StockService;
@@ -119,7 +121,7 @@ class StateSnapshotAssembler extends BaseService
 	/**
 	 * The whole snapshot: entity id => ['state' => scalar|null, 'attributes' => array].
 	 *
-	 * @param string|null $publishedAt "Y-m-d H:i:s" for the last_published sensor; defaults
+	 * @param string|null $publishedAt An instant for the last_published sensor; defaults
 	 *                                 to now. Passed in only so a test can pin it.
 	 * @throws \Exception When the assembled payload carries a forbidden key
 	 */
@@ -134,7 +136,7 @@ class StateSnapshotAssembler extends BaseService
 			self::ENTITY_PRODUCTS_DUE_SOON => $this->AssembleProductsDueSoon(),
 			self::ENTITY_PRODUCTS_EXPIRED => $this->AssembleProductsExpired(),
 			self::ENTITY_LAST_PUBLISHED => [
-				'state' => self::ToIso8601($publishedAt ?? date('Y-m-d H:i:s')),
+				'state' => self::ToIso8601($publishedAt ?? Instant::Now()),
 				'attributes' => []
 			]
 		];
@@ -563,7 +565,7 @@ class StateSnapshotAssembler extends BaseService
 	}
 
 	/**
-	 * A date column as the ISO 8601 instant that date stops being "today" locally.
+	 * A date column as the instant that date stops being "today" in the configured zone.
 	 */
 	private static function AsEndOfDayFact($value): ?string
 	{
@@ -574,17 +576,26 @@ class StateSnapshotAssembler extends BaseService
 			return null;
 		}
 
-		return self::ToIso8601(substr($value, 0, 10) . ' 23:59:59');
+		return Instant::EndOfServerDay(substr($value, 0, 10));
 	}
 
 	/**
-	 * "Y-m-d H:i:s" (what both engines store and hand back) as ISO 8601 with the server's
-	 * UTC offset. The stored timestamps are local times - see
-	 * DatabaseDialect::GetNowExpression() - so they are read in the configured timezone.
+	 * An instant in the API's wire rendering (ADR-0027 decision 2), which Home Assistant's
+	 * "timestamp" device class accepts: RFC 3339 in UTC. The same string the REST API sends
+	 * for the same value, so a template comparing the two compares like with like.
+	 *
+	 * The value is an instant from the database (already the wire rendering) or, from a
+	 * caller that predates migration 0301, a wall clock in the configured zone.
 	 */
-	private static function ToIso8601(string $localTimestamp): string
+	private static function ToIso8601(string $value): string
 	{
-		return (new \DateTimeImmutable($localTimestamp))->format(\DateTimeInterface::ATOM);
+		$instant = Instant::ParseStored($value);
+		if ($instant === null)
+		{
+			throw new \Exception('Not a timestamp: ' . $value);
+		}
+
+		return Instant::ToWire($instant);
 	}
 
 	/**

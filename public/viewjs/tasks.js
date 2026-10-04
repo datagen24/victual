@@ -101,7 +101,8 @@ $(document).on('click', '.do-task-button', function (e)
 
 	var taskId = $(e.currentTarget).attr('data-task-id');
 	var taskName = $(e.currentTarget).attr('data-task-name');
-	var doneTime = moment().format('YYYY-MM-DD HH:mm:ss');
+	// The device's wall clock with its offset (ADR-0027 decision 2)
+	var doneTime = Victual.Instant.Now();
 
 	Victual.Api.Post('tasks/' + taskId + '/complete', { 'done_time': doneTime },
 		function ()
@@ -124,7 +125,7 @@ $(document).on('click', '.do-task-button', function (e)
 			// taskName goes into a toastr message, which is rendered as HTML - escape it
 			// here, at the point of use, rather than trusting the data- attribute it came
 			// from (sweep finding S29)
-			toastr.success(__t('Marked task %s as completed on %s', Victual.FrontendHelpers.EscapeHtml(taskName), doneTime));
+			toastr.success(__t('Marked task %s as completed on %s', Victual.FrontendHelpers.EscapeHtml(taskName), Victual.Instant.ToDevice(doneTime)));
 			RefreshContextualTimeago("#task-" + taskId + "-row");
 			RefreshStatistics();
 		},
@@ -210,26 +211,27 @@ function RefreshStatistics()
 			var dueTodayCount = 0;
 			var dueSoonCount = 0;
 			var overdueCount = 0;
-			var overdueThreshold = moment().subtract(1, "days").endOf("day");
-			var nextXDaysThreshold = moment().endOf("day").add(nextXDays, "days");
-			var todayThreshold = moment().endOf("day");
+			// due_date is a calendar date, compared with the server's today as TasksController
+			// does - never converted between zones (ADR-0027 decision 2)
+			var today = Victual.Instant.ServerToday();
+			var lastSoonDay = moment(today, "YYYY-MM-DD").add(nextXDays, "days").format("YYYY-MM-DD");
 
 			result.forEach(element =>
 			{
 				if (element.due_date)
 				{
-					var date = moment(element.due_date + " 23:59:59").endOf("day");
+					var date = element.due_date.substring(0, 10);
 
-					if (date.isSameOrBefore(overdueThreshold))
+					if (date < today)
 					{
 						overdueCount++;
 					}
-					else if (date.isSameOrBefore(todayThreshold))
+					else if (date == today)
 					{
 						dueTodayCount++;
 						dueSoonCount++;
 					}
-					else if (date.isSameOrBefore(nextXDaysThreshold))
+					else if (date <= lastSoonDay)
 					{
 						dueSoonCount++;
 					}

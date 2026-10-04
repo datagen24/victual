@@ -85,8 +85,14 @@ have recorded it.
 | 0298 | issue [#622](https://github.com/datagen24/victual/issues/622) (#487 remediation), maintainer decision D4 (issue #553) — `stock_current` redefined so an unconvertible sub product, or one whose only resolved conversion has a non-positive factor, contributes nothing to `amount_aggregated`, `amount_opened_aggregated` or `amount_measured`, matching the exclusion rule PR #621 already applies on the write side. Merged to `master` via PR [#628](https://github.com/datagen24/victual/pull/628) | in `master` |
 | 0299 | issue [#521](https://github.com/datagen24/victual/issues/521) (#487 remediation) — `BATTERIES_VIEW`, `CALENDAR_VIEW`, `EQUIPMENT_VIEW` permission leaves, nested under `BATTERIES`/`CALENDAR`/`EQUIPMENT` the same way `STOCK_PRICES_VIEW` (0281) nests under `STOCK_PURCHASE` | in `master` |
 | 0300 | issue [#629](https://github.com/datagen24/victual/issues/629) (#487 remediation, maintainer decision D4, issue #553), [PR #634](https://github.com/datagen24/victual/pull/634) — `products_current_substitutions` never chooses an unconvertible sub product as `product_id_effective`, so recipe cost/calorie views stop counting it 1:1, the same exclusion rule PR #628 already applies to `stock_current`'s own rollup | in this tree |
-| 0301 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0302 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0301 | issue [#650](https://github.com/datagen24/victual/issues/650), [ADR-0027](../docs/adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md) decision 2 — every legacy `TIMESTAMP` column becomes `TIMESTAMPTZ`, read as a wall clock in the configured zone with the earlier instant for a repeated hour; a read-only preflight refuses skipped wall clocks, infinities and out-of-range values; dependent views are recreated | pending PR |
+| 0302 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0303 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered on 2026-10-04: issue #650's `TIMESTAMPTZ` migration is being written and takes the
+lowest free slot, **0301**, under the lowest-free-slot rule. Plan 22's two unwritten claims
+yield and move up in turn, from 0301–0302 to **0302–0303**, keeping their own order. The next
+unclaimed number is now **0304**.
 
 Renumbered again on 2026-09-29, once more: PRs [#624](https://github.com/datagen24/victual/pull/624),
 [#626](https://github.com/datagen24/victual/pull/626), [#627](https://github.com/datagen24/victual/pull/627)

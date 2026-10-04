@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Controllers\Users\PermissionMissingException;
 use Victual\Controllers\Users\User;
 
@@ -306,10 +308,23 @@ class ChoresService extends BaseService
 			throw new \Exception('Chore consumes a product on execution but has no product_amount configured');
 		}
 
+		// An instant from the API (RequestedTimestamp) or a legacy wall clock from an internal
+		// caller; either way what is stored is an instant (ADR-0027 decision 2).
+		$trackedInstant = Instant::ParseStored($trackedTime);
+		if ($trackedInstant === null)
+		{
+			throw new \Exception('Invalid tracked time');
+		}
+
 		if ($chore->track_date_only == 1)
 		{
-			$trackedTime = substr($trackedTime, 0, 10) . ' 00:00:00';
+			// A date-only chore is done on a calendar day, and the server's zone says which
+			// day an instant falls on (ADR-0027: server-defined days stay in that zone).
+			// Midnight is lenient because some zones skip it.
+			$trackedInstant = Instant::FromWallClock($trackedInstant->setTimezone(Instant::ServerZone())->format('Y-m-d') . ' 00:00:00', Instant::ServerZone(), false);
 		}
+
+		$trackedTime = Instant::ToWire($trackedInstant);
 
 		if ($skipped)
 		{
@@ -496,7 +511,7 @@ class ChoresService extends BaseService
 			// Update log entry
 			$logRow->update([
 				'undone' => 1,
-				'undone_timestamp' => date('Y-m-d H:i:s')
+				'undone_timestamp' => Instant::Now()
 			]);
 
 			$this->CalculateNextExecutionAssignment($logRow->chore_id);

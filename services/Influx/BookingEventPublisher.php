@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Influx;
 
+use Victual\Services\Time\Instant;
+
 use Ramsey\Uuid\Uuid;
 use Victual\Services\DatabaseService;
 use Victual\Services\Outbox\OutboxService;
@@ -243,7 +245,7 @@ class BookingEventPublisher
 			// not.
 			'event_id' => Uuid::uuid4()->toString(),
 			'transaction_id' => $transactionId,
-			'occurred_at' => date('Y-m-d H:i:s'),
+			'occurred_at' => Instant::Now(),
 			'bookings' => $bookings,
 			'stock' => $snapshot
 		];
@@ -667,8 +669,9 @@ class BookingEventPublisher
 	/**
 	 * Why a timestamp field cannot be read, or null when it can.
 	 *
-	 * Both engines hand these back as a local "Y-m-d H:i:s", and InfluxEventWriter's
-	 * ToNanoseconds() turns them into the epoch a point is identified by - so anything else
+	 * The database hands these back as instants in the wire rendering, and an event queued
+	 * before migration 0301 still carries a local "Y-m-d H:i:s"; InfluxEventWriter's
+	 * ToNanoseconds() turns either into the epoch a point is identified by - so anything else
 	 * is either an exception mid-batch or, worse, a point at a time that is not when the
 	 * thing happened. The shape is checked before DateTimeImmutable sees it, because that
 	 * constructor accepts a great deal that is not a timestamp ("now", "+1 day") and none of
@@ -683,18 +686,9 @@ class BookingEventPublisher
 			return $where . ' is missing or is not a string (' . self::Describe($value) . ')';
 		}
 
-		if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/', $value) !== 1)
+		if (Instant::ParseStored($value) === null)
 		{
-			return $where . ' is not a "Y-m-d H:i:s" timestamp (' . self::Describe($value) . ')';
-		}
-
-		try
-		{
-			new \DateTimeImmutable($value);
-		}
-		catch (\Throwable $ex)
-		{
-			return $where . ' is not a valid date and time (' . self::Describe($value) . ')';
+			return $where . ' is not an instant or a "Y-m-d H:i:s" wall clock (' . self::Describe($value) . ')';
 		}
 
 		return null;

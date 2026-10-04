@@ -106,21 +106,24 @@ $(document).on('click', '.track-chore-button', function(e)
 	Victual.Api.Get('chores/' + choreId,
 		function(choreDetails)
 		{
-			var trackedTime = moment().format('YYYY-MM-DD HH:mm:ss');
+			// An instant: the device's current wall clock with its offset, or the scheduled
+			// instant exactly as the server sent it (ADR-0027 decision 2)
+			var trackedTime = Victual.Instant.Now();
 			if ((skipped || !now) && choreDetails.next_estimated_execution_time != null)
 			{
-				trackedTime = moment(choreDetails.next_estimated_execution_time).format('YYYY-MM-DD HH:mm:ss');
+				trackedTime = choreDetails.next_estimated_execution_time;
 			}
 
+			// A date-only chore is done on a calendar day, and the server's zone says which
 			if (choreDetails.chore.track_date_only == 1)
 			{
 				if ((skipped || !now) && choreDetails.next_estimated_execution_time != null)
 				{
-					trackedTime = moment(choreDetails.next_estimated_execution_time).format('YYYY-MM-DD');
+					trackedTime = Victual.Instant.ServerDate(choreDetails.next_estimated_execution_time);
 				}
 				else
 				{
-					trackedTime = moment().format('YYYY-MM-DD');
+					trackedTime = Victual.Instant.ServerToday();
 				}
 			}
 
@@ -132,29 +135,28 @@ $(document).on('click', '.track-chore-button', function(e)
 						function(result)
 						{
 							var choreRow = $('#chore-' + choreId + '-row');
-							var nextXDaysThreshold = moment().add($("#info-due-soon-chores").data("next-x-days"), "days");
-							var todayThreshold = moment().endOf("day");
-							var now = moment();
-							var nextExecutionTime = moment(result.next_estimated_execution_time);
+							// The server's days (ADR-0027): the same categories ChoresController
+							// gives the rows when it renders the page
+							var dueType = Victual.Instant.DueType(result.next_estimated_execution_time, $("#info-due-soon-chores").data("next-x-days"));
 
 							choreRow.removeClass("table-warning");
 							choreRow.removeClass("table-danger");
 							choreRow.removeClass("table-info");
-							$('#chore-' + choreId + '-due-filter-column').html("");
-							if (nextExecutionTime.isBefore(now))
+							$('#chore-' + choreId + '-due-filter-column').text("");
+							if (dueType == "overdue")
 							{
 								choreRow.addClass("table-danger");
-								$('#chore-' + choreId + '-due-filter-column').html("overdue");
+								$('#chore-' + choreId + '-due-filter-column').text("overdue");
 							}
-							else if (nextExecutionTime.isSameOrBefore(todayThreshold))
+							else if (dueType == "duetoday")
 							{
 								choreRow.addClass("table-info");
-								$('#chore-' + choreId + '-due-filter-column').html("duetoday");
+								$('#chore-' + choreId + '-due-filter-column').text("duetoday");
 							}
-							else if (nextExecutionTime.isBefore(nextXDaysThreshold))
+							else if (dueType == "duesoon")
 							{
 								choreRow.addClass("table-warning");
-								$('#chore-' + choreId + '-due-filter-column').html("duesoon");
+								$('#chore-' + choreId + '-due-filter-column').text("duesoon");
 							}
 
 							animateCSS("#chore-" + choreId + "-row td:not(:first)", "flash");
@@ -248,24 +250,20 @@ function RefreshStatistics()
 			var dueSoonCount = 0;
 			var overdueCount = 0;
 			var assignedToMeCount = 0;
-			var overdueThreshold = moment();
-			var nextXDaysThreshold = moment().add(nextXDays, "days");
-			var todayThreshold = moment().endOf("day");
-
 			result.forEach(element =>
 			{
-				var date = moment(element.next_estimated_execution_time);
+				var dueType = Victual.Instant.DueType(element.next_estimated_execution_time, nextXDays);
 
-				if (date.isBefore(overdueThreshold))
+				if (dueType == "overdue")
 				{
 					overdueCount++;
 				}
-				else if (date.isSameOrBefore(todayThreshold))
+				else if (dueType == "duetoday")
 				{
 					dueTodayCount++;
 					dueSoonCount++;
 				}
-				else if (date.isSameOrBefore(nextXDaysThreshold))
+				else if (dueType == "duesoon")
 				{
 					dueSoonCount++;
 				}
@@ -300,7 +298,7 @@ $(document).on("click", ".reschedule-chore-button", function(e)
 	Victual.EditObjectId = choreId;
 	Victual.Api.Get("chores/" + choreId, function(choreDetails)
 	{
-		var prefillDate = choreDetails.next_estimated_execution_time || moment().format("YYYY-MM-DD HH:mm:ss");
+		var prefillDate = choreDetails.next_estimated_execution_time || Victual.Instant.Now();
 		if (choreDetails.chore.rescheduled_date)
 		{
 			prefillDate = choreDetails.chore.rescheduled_date;
@@ -309,7 +307,8 @@ $(document).on("click", ".reschedule-chore-button", function(e)
 		if (choreDetails.chore.track_date_only == 1)
 		{
 			Victual.Components.DateTimePicker.ChangeFormat("YYYY-MM-DD");
-			Victual.Components.DateTimePicker.SetValue(moment(prefillDate).format("YYYY-MM-DD"));
+			// The server's calendar day, not the device's (ADR-0027)
+			Victual.Components.DateTimePicker.SetValue(Victual.Instant.ServerDate(prefillDate));
 		}
 		else
 		{
@@ -355,7 +354,9 @@ $("#reschedule-chore-save-button").on("click", function(e)
 		? null
 		: parseInt(assignedToUserId, 10);
 
-	Victual.Api.Put('objects/chores/' + Victual.EditObjectId, { "rescheduled_date": Victual.Components.DateTimePicker.GetValue(), "rescheduled_next_execution_assigned_to_user_id": assignedToUserId },
+	// A date for a date-only chore, otherwise the device's wall clock with its offset
+	// (ADR-0027 decision 2, issue #650)
+	Victual.Api.Put('objects/chores/' + Victual.EditObjectId, { "rescheduled_date": Victual.Components.DateTimePicker.GetInstant(), "rescheduled_next_execution_assigned_to_user_id": assignedToUserId },
 		function(result)
 		{
 			Victual.Api.Post('chores/executions/calculate-next-assignments', { "chore_id": Victual.EditObjectId },

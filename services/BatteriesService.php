@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 /**
  * Business logic for battery tracking: charge cycle journal and per battery details.
  */
@@ -67,7 +69,7 @@ class BatteriesService extends BaseService
 
 		$logRow = $this->DB->battery_charge_cycles()->createRow([
 			'battery_id' => $batteryId,
-			'tracked_time' => $trackedTime
+			'tracked_time' => self::Instant($trackedTime)
 		]);
 		$logRow->save();
 
@@ -92,7 +94,7 @@ class BatteriesService extends BaseService
 		// Update log entry
 		$logRow->update([
 			'undone' => 1,
-			'undone_timestamp' => date('Y-m-d H:i:s')
+			'undone_timestamp' => Instant::Now()
 		]);
 	}
 
@@ -104,5 +106,20 @@ class BatteriesService extends BaseService
 	{
 		$batteryRow = $this->DB->batteries()->where('id = :1', $batteryId)->fetch();
 		return $batteryRow !== null;
+	}
+
+	/**
+	 * A tracked time from the API (already an instant) or from an internal caller (a legacy
+	 * wall clock in the configured zone), as the instant that is stored.
+	 */
+	private static function Instant(string $value): string
+	{
+		$instant = Instant::ParseStored($value);
+		if ($instant === null)
+		{
+			throw new \Exception('Invalid tracked time');
+		}
+
+		return Instant::ToWire($instant);
 	}
 }

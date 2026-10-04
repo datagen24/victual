@@ -21,10 +21,14 @@ $('#save-batterytracking-button').on('click', function (e)
 	var jsonForm = $('#batterytracking-form').serializeJSON();
 	Victual.FrontendHelpers.BeginUiBusy("batterytracking-form");
 
+	// The device's wall clock with its offset (ADR-0027 decision 2). The picker's own
+	// validity refuses a skipped wall clock.
+	var trackedTime = Victual.Components.DateTimePicker.GetInstant();
+
 	Victual.Api.Get('batteries/' + jsonForm.battery_id,
 		function (batteryDetails)
 		{
-			Victual.Api.Post('batteries/' + jsonForm.battery_id + '/charge', { 'tracked_time': $('#tracked_time').find('input').val() },
+			Victual.Api.Post('batteries/' + jsonForm.battery_id + '/charge', { 'tracked_time': trackedTime },
 				function (result)
 				{
 					Victual.EditObjectId = result.id;

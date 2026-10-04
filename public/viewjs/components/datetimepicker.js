@@ -51,6 +51,25 @@ Victual.Components.CreateDateTimePicker = function (suffix)
 		return picker.GetInputElement().val();
 	}
 
+	/**
+	 * The current value as the API should receive it (ADR-0027 decision 2). A date-only
+	 * picker sends its calendar date unchanged - a date has no zone to convert. A date and
+	 * time is the device's wall clock, so it is sent as an instant with the device's offset;
+	 * null when the device's zone skipped that wall clock (the input's validity says so too).
+	 * @returns {string|null}
+	 */
+	picker.GetInstant = function ()
+	{
+		var format = picker.GetInputElement().data("format");
+		var value = picker.GetValue();
+		if (format == "YYYY-MM-DD")
+		{
+			return value;
+		}
+
+		return Victual.Instant.FromDevice(value, format);
+	}
+
 	/** Sets the input value directly and un-checks the shortcut checkbox if it no longer applies */
 	picker.SetValue = function (value, inputElement = picker.GetInputElement())
 	{
@@ -323,7 +342,15 @@ Victual.Components.CreateDateTimePicker = function (suffix)
 		}
 		else
 		{
-			if (picker.GetInputElement().data('limit-end-to-now') === true && dateObj.isAfter(moment()))
+			// A wall clock the device's zone skipped when daylight saving began parses, and
+			// moment moves it forward an hour; it is not a time there, so it is refused
+			// rather than booked an hour later than typed (ADR-0028's rule, applied in the
+			// zone the viewer typed in).
+			if (dateObj.format(format) !== value)
+			{
+				element.setCustomValidity("error");
+			}
+			else if (picker.GetInputElement().data('limit-end-to-now') === true && dateObj.isAfter(moment()))
 			{
 				element.setCustomValidity("error");
 			}

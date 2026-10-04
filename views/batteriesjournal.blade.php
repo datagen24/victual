@@ -114,7 +114,7 @@
 						<span class="name-anchor @if($chargeCycleEntry->undone == 1) text-strike-through @endif">{{ FindObjectInArrayByPropertyValue($batteries, 'id', $chargeCycleEntry->battery_id)->name }}</span>
 						@if($chargeCycleEntry->undone == 1)
 						<br>
-						{{ $__t('Undone on') . ' ' . $chargeCycleEntry->undone_timestamp }}
+						{{ $__t('Undone on') }} <span>{{ $chargeCycleEntry->undone_timestamp }}</span>
 						<time class="timeago timeago-contextual"
 							datetime="{{ $chargeCycleEntry->undone_timestamp }}"></time>
 						@endif

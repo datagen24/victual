@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 use LessQL\Result;
 
 /**
@@ -62,7 +64,7 @@ class TasksService extends BaseService
 		$taskRow = $this->DB->tasks()->where('id = :1', $taskId)->fetch();
 		$taskRow->update([
 			'done' => 1,
-			'done_timestamp' => $doneTime
+			'done_timestamp' => Instant::ToWire(Instant::ParseStored($doneTime) ?? throw new \Exception('Invalid done time'))
 		]);
 
 		return true;

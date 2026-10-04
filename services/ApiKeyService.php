@@ -2,6 +2,8 @@
 
 namespace Victual\Services;
 
+use Victual\Services\Time\Instant;
+
 /**
  * Manages API keys: creation, validation and lookup, including the special purpose
  * key used for the iCal calendar sharing URL.
@@ -158,13 +160,14 @@ class ApiKeyService extends BaseService
 	{
 		if (!in_array($keyType, self::USER_ISSUED_KEY_TYPES, true))
 		{
-			return '2999-12-31 23:59:59';
+			return Instant::NEVER;
 		}
 
 		$maxDays = max(1, (int)VICTUAL_API_KEY_MAX_LIFETIME_DAYS);
 		$days = $lifetimeDays === null ? $maxDays : max(1, min($lifetimeDays, $maxDays));
 
-		return date('Y-m-d H:i:s', strtotime("+{$days} days"));
+		// Days on the configured zone's calendar, as before; the instant is what is stored.
+		return Instant::ToWire(new \DateTimeImmutable("+{$days} days"));
 	}
 
 	/**
@@ -242,7 +245,7 @@ class ApiKeyService extends BaseService
 			return null;
 		}
 
-		$apiKeyRow = $this->DB->api_keys()->where('key_type = :1 AND user_id = :2 AND expires > :3', $keyType, VICTUAL_USER_ID, date('Y-m-d H:i:s', time()))->fetch();
+		$apiKeyRow = $this->DB->api_keys()->where('key_type = :1 AND user_id = :2 AND expires > :3', $keyType, VICTUAL_USER_ID, Instant::Now())->fetch();
 
 		if ($apiKeyRow !== null)
 		{
@@ -304,7 +307,7 @@ class ApiKeyService extends BaseService
 		}
 
 		$apiKeyRow = $this->DB->api_keys()
-			->where('api_key = :1 AND expires > :2', self::StoredValueOf($apiKey, $keyTypes[0]), date('Y-m-d H:i:s', time()))
+			->where('api_key = :1 AND expires > :2', self::StoredValueOf($apiKey, $keyTypes[0]), Instant::Now())
 			->where('key_type', array_values($keyTypes))
 			->fetch();
 
@@ -317,15 +320,16 @@ class ApiKeyService extends BaseService
 		// every call, which is a write on the hot path of the endpoint clients poll most
 		// and an invalidation of the row's cache line for a value nobody reads to the
 		// second. The manage-keys screen shows a date; a date is what is kept accurate.
+		// The configured zone's day, as the screen shows it: last_used is an instant now.
 		$today = date('Y-m-d');
 
-		if (substr((string)$apiKeyRow->last_used, 0, 10) !== $today)
+		if (Instant::ServerDateOf($apiKeyRow->last_used) !== $today)
 		{
 			// This should not change the database file modification time as this is used
 			// to determine if REALLY something has changed
 			$dbModTime = DatabaseService::GetInstance()->GetDbChangedTime();
 			$apiKeyRow->update([
-				'last_used' => date('Y-m-d H:i:s', time())
+				'last_used' => Instant::Now()
 			]);
 			DatabaseService::GetInstance()->SetDbChangedTime($dbModTime);
 		}

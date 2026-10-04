@@ -19,7 +19,8 @@ $('#save-chore-button').on('click', function(e)
 	}
 
 	var jsonData = $('#chore-form').serializeJSON();
-	jsonData.start_date = Victual.Components.DateTimePicker.GetValue();
+	// The device's wall clock with its offset (ADR-0027 decision 2); the picker refuses a skipped one
+	jsonData.start_date = Victual.Components.DateTimePicker.GetInstant();
 
 	if (Victual.FeatureFlags.VICTUAL_FEATURE_FLAG_CHORES_ASSIGNMENTS)
 	{

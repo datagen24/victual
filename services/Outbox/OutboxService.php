@@ -2,6 +2,8 @@
 
 namespace Victual\Services\Outbox;
 
+use Victual\Services\Time\Instant;
+
 use Victual\Services\BaseService;
 use Victual\Services\DatabaseService;
 
@@ -242,7 +244,7 @@ class OutboxService extends BaseService
 
 		$this->AsBookkeeping(function () use ($ids)
 		{
-			$now = date('Y-m-d H:i:s');
+			$now = Instant::Now();
 
 			foreach ($ids as $id)
 			{
@@ -309,7 +311,7 @@ class OutboxService extends BaseService
 
 		$this->AsBookkeeping(function () use ($ids, $reason)
 		{
-			$now = date('Y-m-d H:i:s');
+			$now = Instant::Now();
 
 			foreach ($ids as $id)
 			{
