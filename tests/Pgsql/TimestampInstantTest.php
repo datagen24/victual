@@ -7,7 +7,11 @@ use Victual\Services\Database\DatabaseImporter;
 use Victual\Services\Database\InstantStatement;
 use Victual\Services\Database\TimestampMigration;
 use Victual\Services\Database\ValueComparison;
+use Victual\Services\BatteriesService;
+use Victual\Services\ChoresService;
+use Victual\Services\DatabaseService;
 use Victual\Services\Influx\InfluxEventWriter;
+use Victual\Services\Mqtt\StateSnapshotAssembler;
 use Victual\Services\Time\Instant;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -326,5 +330,150 @@ class TimestampInstantTest extends PgsqlSchemaTestCase
 
 		$ny = new \DateTimeZone('America/New_York');
 		self::assertSame('2026-11-01T05:30:00.000000Z', ValueComparison::NormaliseInstant('2026-11-01 01:30:00', $ny), 'the named source zone, earlier instant');
+	}
+
+	// ------------------------------------------------------------ edges and refusals
+
+	public function testTheRemainingFetchShapesAndTheTypeCache(): void
+	{
+		self::$db->exec("CREATE TEMP TABLE IF NOT EXISTS tz650b (at timestamptz)");
+		self::$db->exec("TRUNCATE tz650b; INSERT INTO tz650b VALUES ('2026-10-04 18:30:00+00')");
+
+		self::assertSame('2026-10-04T18:30:00.000000Z', self::$db->query('SELECT at FROM tz650b')->fetch(PDO::FETCH_COLUMN));
+
+		// FETCH_BOUND writes into variables the statement class cannot see, so it is left
+		// as PDO returns it.
+		$statement = self::$db->query('SELECT at FROM tz650b');
+		$statement->bindColumn(1, $bound);
+		self::assertTrue($statement->fetch(PDO::FETCH_BOUND));
+		self::assertSame('2026-10-04 18:30:00+00', $bound);
+
+		// The per-process cache of column types is bounded: past its limit it starts again
+		// rather than growing for the life of a long-running process.
+		$cache = new \ReflectionProperty(InstantStatement::class, 'KnownColumnTypes');
+		$cache->setValue(null, array_fill_keys(array_map(fn($i) => "q$i", range(1, 2049)), [0 => false]));
+		self::assertSame('2026-10-04T18:30:00.000000Z', self::$db->query('SELECT at AS again FROM tz650b')->fetchColumn());
+		self::assertCount(1, $cache->getValue());
+	}
+
+	public function testTheChangedTimeRoundTripsAnInstantAndRefusesAnythingElse(): void
+	{
+		$dialect = DatabaseService::GetInstance()->GetDialect();
+		$dialect->SetDbChangedTime(self::$db, '2026-10-04T18:30:00.123456Z');
+		self::assertSame('2026-10-04T18:30:00.123456Z', $dialect->GetDbChangedTime(self::$db), 'microseconds are kept both ways');
+
+		self::$db->exec('DELETE FROM system_db_changed_time');
+		self::assertMatchesRegularExpression('/' . Instant::WIRE_PATTERN . '/D', $dialect->GetDbChangedTime(self::$db), 'a missing row answers now');
+		self::$db->exec('INSERT INTO system_db_changed_time (id) VALUES (1)');
+
+		$this->expectException(\InvalidArgumentException::class);
+		$dialect->SetDbChangedTime(self::$db, 'not a time');
+	}
+
+	public function testTheReadersRefuseAValueThatIsNotATime(): void
+	{
+		self::assertNull(Instant::FromWallClock('2026-02-30 00:00:00', new \DateTimeZone('UTC'), true), 'a day the month does not have');
+		self::assertNull(Instant::FromWallClock('yesterday', new \DateTimeZone('UTC'), false));
+		self::assertNull(Instant::Parse('2026-02-30T00:00:00Z'));
+
+		foreach ([fn() => InfluxEventWriter::ToNanoseconds('yesterday'),
+			fn() => (new \ReflectionMethod(StateSnapshotAssembler::class, 'ToIso8601'))->invoke(null, 'yesterday')] as $read)
+		{
+			try
+			{
+				$read();
+				self::fail('a value that is not a time was read as one');
+			}
+			catch (\Exception $ex)
+			{
+				self::assertStringContainsString('Not a timestamp', $ex->getMessage());
+			}
+		}
+	}
+
+	public function testTheServicesRefuseATrackedTimeThatIsNotATime(): void
+	{
+		self::$db->exec("INSERT INTO batteries (id, name, charge_interval_days, active) VALUES (9650, 'Tz650 battery', 0, 1)");
+		self::$db->exec("INSERT INTO chores (id, name, period_type, period_interval, active) VALUES (9650, 'Tz650 chore', 'manually', 1, 1)");
+		self::$db->exec("INSERT INTO users (id, username, password) VALUES (9000, 'phpunit-caller', 'fixture') ON CONFLICT (id) DO NOTHING");
+
+		foreach ([fn() => BatteriesService::GetInstance()->TrackChargeCycle(9650, 'yesterday'),
+			fn() => ChoresService::GetInstance()->TrackChore(9650, 'yesterday')] as $track)
+		{
+			try
+			{
+				$track();
+				self::fail('a tracked time that is not a time was booked');
+			}
+			catch (\Exception $ex)
+			{
+				self::assertSame('Invalid tracked time', $ex->getMessage());
+			}
+		}
+	}
+
+	public function testTheMigrationRefusesWhatItCannotCarryOver(): void
+	{
+		// An unknown zone is a refusal, not a guess.
+		$report = (new TimestampMigration(self::$db))->PreflightStandalone('Not/AZone');
+		self::assertStringContainsString('not known to this PostgreSQL server', $report['refusals'][0]);
+
+		// A default it does not recognise.
+		$pdo = self::LegacySchema('tz650_default', ["ALTER TABLE things ADD COLUMN fixed TIMESTAMP DEFAULT '2020-01-01 00:00:00'"]);
+		$pdo->beginTransaction();
+		try
+		{
+			(new TimestampMigration($pdo))->Apply('UTC');
+			self::fail('an unknown default was carried over');
+		}
+		catch (\RuntimeException $ex)
+		{
+			self::assertStringContainsString('does not know how to carry the default of things.fixed', $ex->getMessage());
+		}
+		finally
+		{
+			$pdo->rollBack();
+		}
+
+		// A view that derives a wall clock from nothing it converts would still send one.
+		$pdo->exec('CREATE VIEW wall_clock_view AS SELECT LOCALTIMESTAMP AS at');
+		$pdo->exec('ALTER TABLE things DROP COLUMN fixed');
+		$pdo->beginTransaction();
+		try
+		{
+			(new TimestampMigration($pdo))->Apply('UTC');
+			self::fail('a wall-clock view column was left behind silently');
+		}
+		catch (\RuntimeException $ex)
+		{
+			self::assertStringContainsString('left wall-clock columns behind: wall_clock_view.at', $ex->getMessage());
+		}
+		finally
+		{
+			$pdo->rollBack();
+			$pdo->exec('DROP SCHEMA tz650_default CASCADE; SET search_path TO ' . self::Schema() . ', public');
+		}
+	}
+
+	public function testTheMigrationKeepsAViewsOwnerAndColumnComments(): void
+	{
+		$pdo = self::LegacySchema('tz650_owner', [
+			"DO $$ BEGIN CREATE ROLE tz650_owner_role; EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+			'GRANT USAGE, CREATE ON SCHEMA tz650_owner TO tz650_owner_role',
+			'GRANT SELECT ON things TO tz650_owner_role',
+			'CREATE VIEW owned_view AS SELECT id, happened FROM things',
+			'ALTER VIEW owned_view OWNER TO tz650_owner_role',
+			"COMMENT ON COLUMN things_view.happened IS 'when it happened'"
+		]);
+
+		$pdo->beginTransaction();
+		(new TimestampMigration($pdo))->Apply('UTC');
+		$pdo->commit();
+
+		self::assertSame('tz650_owner_role', $pdo->query("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'owned_view'::regclass")->fetchColumn());
+		self::assertSame('when it happened', $pdo->query("SELECT col_description('things_view'::regclass, 2)")->fetchColumn());
+
+		$pdo->exec('DROP SCHEMA tz650_owner CASCADE; SET search_path TO ' . self::Schema() . ', public');
+		$pdo->exec('DROP OWNED BY tz650_owner_role; DROP ROLE tz650_owner_role');
 	}
 }

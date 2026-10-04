@@ -1330,6 +1330,61 @@ class WireContractTest extends PgsqlSchemaTestCase
 		);
 	}
 
+	/**
+	 * A generic entity write reads a value bound for an instant column by the same rule as
+	 * the three write routes (issue #650): an offset-free value is a wall clock in the
+	 * server's zone with the earlier instant in a repeated hour, and a value that is not a
+	 * time is refused with 400 naming the field rather than reaching PostgreSQL's own cast.
+	 */
+	public function testAGenericWriteReadsInstantColumnsByTheSameRule(): void
+	{
+		$repeated = self::send('PUT', '/api/objects/chores/9501', [], ['rescheduled_date' => '2026-11-01 01:30:00'], self::DST_ZONE);
+		self::assertSame(204, $repeated['status'], $repeated['body']);
+		self::assertSame('2026-11-01T05:30:00.000000Z', self::get('/api/objects/chores/9501')['rescheduled_date'], 'the earlier instant, not PostgreSQL\'s later one');
+
+		$refused = self::send('PUT', '/api/objects/chores/9501', [], ['rescheduled_date' => '2026-13-01 00:00:00']);
+		self::assertSame(400, $refused['status'], $refused['body']);
+		self::assertStringContainsString('rescheduled_date', $refused['body']);
+
+		$cleared = self::send('PUT', '/api/objects/chores/9501', [], ['rescheduled_date' => null]);
+		self::assertSame(204, $cleared['status'], $cleared['body']);
+		self::assertNull(self::get('/api/objects/chores/9501')['rescheduled_date'], 'null is left for the column to take');
+	}
+
+	/** A query[] comparison with an instant column compares instants. */
+	public function testAQueryFilterOnAnInstantColumnComparesInstants(): void
+	{
+		$before = self::get('/api/objects/quantity_units?query[]=' . rawurlencode('row_created_timestamp<2999-01-01T00:00:00+02:00'));
+		self::assertNotEmpty($before, 'every unit was created before 2999');
+
+		$refused = self::send('GET', '/api/objects/quantity_units?query[]=' . rawurlencode('row_created_timestamp>yesterday'));
+		self::assertSame(400, $refused['status'], $refused['body']);
+		self::assertStringContainsString('row_created_timestamp', $refused['body']);
+	}
+
+	/**
+	 * A meal plan section's time is free text. One that is not a clock time cannot become a
+	 * timed iCalendar event, and the feed leaves it out rather than failing.
+	 */
+	public function testTheCalendarFeedSkipsAFreeTextSectionTime(): void
+	{
+		self::$db->exec("INSERT INTO meal_plan_sections (id, name, sort_number, time_info) VALUES (9650, 'WireFreeText', 1, 'after lunch')");
+		self::$db->exec("INSERT INTO meal_plan (id, day, type, note, section_id) VALUES (9650, DATE '2026-10-05', 'note', 'WireFreeTextNote', 9650)");
+
+		try
+		{
+			$feed = self::send('GET', '/api/calendar/ical');
+			self::assertSame(200, $feed['status'], $feed['body']);
+			self::assertStringContainsString('BEGIN:VCALENDAR', $feed['body']);
+			self::assertStringNotContainsString('WireFreeTextNote', $feed['body']);
+		}
+		finally
+		{
+			self::$db->exec('DELETE FROM meal_plan WHERE id = 9650');
+			self::$db->exec('DELETE FROM meal_plan_sections WHERE id = 9650');
+		}
+	}
+
 	private static function rowCount(string $table): int
 	{
 		return (int)self::$db->query('SELECT count(*) FROM ' . $table)->fetchColumn();

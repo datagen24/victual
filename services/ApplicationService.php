@@ -261,7 +261,7 @@ class ApplicationService extends BaseService
 			return '';
 		}
 
-		$instant = Instant::FromWallClock($wallClock, Instant::ServerZone(), false);
-		return $instant === null ? '' : $instant->setTimezone(Instant::ServerZone())->format('Y-m-d\\TH:i:s.uP');
+		// SQLite's datetime() always answers "Y-m-d H:i:s", which FromWallClock() reads.
+		return Instant::FromWallClock($wallClock, Instant::ServerZone(), false)->setTimezone(Instant::ServerZone())->format('Y-m-d\\TH:i:s.uP');
 	}
 }

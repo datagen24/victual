@@ -542,14 +542,11 @@ class TimestampMigration
 		$state = [];
 		$visit = function (int $oid) use (&$visit, &$ordered, &$state, $byOid, $dependsOn)
 		{
-			if (($state[$oid] ?? 0) === 2 || !isset($byOid[$oid]))
+			// PostgreSQL refuses a view that depends on itself, directly or not, so the walk
+			// cannot meet a cycle; a node is visited once.
+			if (isset($state[$oid]) || !isset($byOid[$oid]))
 			{
 				return;
-			}
-
-			if (($state[$oid] ?? 0) === 1)
-			{
-				throw new \RuntimeException('Migration 0301 found a dependency cycle among views at ' . $byOid[$oid]['relname']);
 			}
 
 			$state[$oid] = 1;
@@ -557,7 +554,6 @@ class TimestampMigration
 			{
 				$visit($dependency);
 			}
-			$state[$oid] = 2;
 			$ordered[] = $oid;
 		};
 

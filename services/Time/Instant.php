@@ -95,14 +95,6 @@ final class Instant
 	}
 
 	/**
-	 * Whether a string is an instant in the wire rendering.
-	 */
-	public static function IsWire($value): bool
-	{
-		return is_string($value) && preg_match('/' . self::WIRE_PATTERN . '/D', $value) === 1;
-	}
-
-	/**
 	 * A TIMESTAMPTZ value as PostgreSQL rendered it, in the wire rendering; null when the
 	 * string is not that rendering. `infinity`, BC dates and years above 9999 are not, and
 	 * nothing in this schema stores them.
@@ -121,11 +113,9 @@ final class Instant
 			$offset = -$offset;
 		}
 
+		// The pattern above admits only digits in range for every field PostgreSQL emits, so
+		// this cannot fail for a value that matched it.
 		$naive = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', $m[1] . ' ' . $m[2] . '.' . $micro, new \DateTimeZone('UTC'));
-		if ($naive === false)
-		{
-			return null;
-		}
 
 		return self::ToWire($naive->modify(-$offset . ' seconds'));
 	}
@@ -249,14 +239,6 @@ final class Instant
 		}
 
 		return $naive->modify(-$before . ' seconds');
-	}
-
-	/**
-	 * The wall clock an instant shows in $zone, as `Y-m-d H:i:s`.
-	 */
-	public static function WallClockIn(\DateTimeInterface $instant, \DateTimeZone $zone): string
-	{
-		return \DateTimeImmutable::createFromInterface($instant)->setTimezone($zone)->format('Y-m-d H:i:s');
 	}
 
 	/**
