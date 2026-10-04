@@ -488,6 +488,11 @@ during the work tracked as [issue 650](https://github.com/datagen24/victual/issu
 
 ## Acceptance prerequisites
 
+As confirmed by the maintainer on 2026-10-04, Victual has never had a production
+deployment or production dataset. Release 0.3.0 prepares for that deployment. Migration
+evidence uses reproducible generated data created under the previous release. Available
+NAS PostgreSQL, MQTT and InfluxDB services do not establish a production Victual instance.
+
 This record changes a wire contract, so accepting it requires:
 
 1. The decider confirms decisions 1 and 2. **Met 2026-10-04**, with decision 2 revised:
@@ -509,8 +514,16 @@ This record changes a wire contract, so accepting it requires:
    accepting pull request with the date and the working copy it was run against.
 5. **Decision 2 is implemented and demonstrated**, in separate changes from the acceptance,
    tracked as [issue 650](https://github.com/datagen24/victual/issues/650):
-   - the `TIMESTAMPTZ` migration, run against a copy of real data that contains a value in
-     a repeated fall-back hour, showing the earlier instant was chosen
+   - the `TIMESTAMPTZ` migration demonstrated in disposable Podman PostgreSQL environments
+     against a reproducible dataset created under `v0.2.0-MVP`, then upgraded through the
+     release candidate's migrations. Include ordinary timestamps, a repeated fall-back
+     hour, calendar dates, stock history and label records. Independently calculated
+     expectations confirm that ambiguous wall-clock values select the earlier instant,
+     existing instants retain their meaning, and calendar dates remain unchanged.
+     A separate invalid-data fixture demonstrates preflight refusal without partial
+     conversion. Record fixture generation, source and target revisions, configured
+     timezone, PostgreSQL versions, commands and results. A production dataset is not
+     required.
    - the contract snapshot regenerated, with every timestamp in the decision 2 format and
      every `DATE` unchanged
    - the browser showing the device's zone and sending writes with an offset
