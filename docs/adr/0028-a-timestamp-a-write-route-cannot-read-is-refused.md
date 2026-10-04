@@ -39,6 +39,7 @@ Recorded from the decider's interview on 2026-10-04, held together with ADR-0027
 | Decision 3: `null` and `""` | **Confirmed: refused as present values.** Only an absent key means "now". A client whose encoder writes `null` for an unset optional must leave the key out instead. |
 | An offset-free value, now that storage is an instant | **Read in the server's configured zone**, then stored as that instant. A value with no offset is not refused. |
 | An offset-free value in a repeated DST hour | **Book the earlier instant.** For example, `2026-11-01 01:30:00` on `America/New_York` books 01:30 EDT (`05:30Z`). A client that means the later 01:30 sends the offset. |
+| Fractional seconds, once storage is an instant (ADR-0027 open question 2) | **Kept to the microsecond.** Digits after the sixth are dropped, not rounded. `2026-09-21T14:30:00.123456789Z` stores `14:30:00.123456` UTC. |
 
 The last two answers follow from ADR-0027's revision to `TIMESTAMPTZ` storage. Before it,
 the repeated hour was not a question: the wall-clock time was stored unchanged, and which of
@@ -119,7 +120,7 @@ so never grew one.
    | `2026-09-21` | `2026-09-21 00:00:00` — a bare date is its midnight |
    | `2026-09-21T14:30:00` | `2026-09-21 14:30:00` — no offset means the server's zone |
    | `2026-09-21T14:30:00Z`, `…+02:00` | that instant, rendered in the server's zone |
-   | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded, however many |
+   | `2026-09-21T14:30:00.123456789Z` | the same, fractional seconds discarded, however many. Amended 2026-10-04: kept to the microsecond (Consequences) |
 
    **The `T` forms are RFC 3339 *shaped* and this is deliberately not that grammar**, in
    both directions. That distinction is worth naming: calling the set "RFC 3339" would
@@ -292,6 +293,11 @@ where that is decided.
 - **A client may send fractional seconds of any length.** They are discarded, so refusing a
   value for carrying more of them than PHP parses would have been a refusal over precision
   this API throws away.
+
+  *Amended 2026-10-04 (decider, ADR-0027 open question 2).* Once storage is `TIMESTAMPTZ`,
+  a fraction is kept to the microsecond, which is what the column holds, and digits after
+  the sixth are dropped rather than rounded so that a value never moves to a later
+  microsecond than the caller wrote. Any length is still accepted.
 - **Two `format: date-time` write fields' worth of Swift client workaround goes away**, and
   `victual-kit` can send whatever its date encoder produces for these three fields.
 - **Nothing else that takes a date changes.** `best_before_date`, `purchased_date` and
