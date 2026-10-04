@@ -35,7 +35,7 @@
   # `flake` CI job's fixed-output-derivation failure report the real value, per
   # nix/README.md's "Bootstrapping the hashes" - the same "got:" value a local
   # `nix build .#frontend` would have produced.
-  yarnOfflineCache = "sha256-5jQ6uSjMasoAtL5wCPjaS9jzhj3sYb5HVCA/iMCIfow=";
+  yarnOfflineCache = "sha256-x2XMm2WiivWFi9x0cirAEHwSFbjwnWUWDKDH/1kjglc=";
 
   # Hash of the npm dependency tree for mcp/, built from mcp/package-lock.json.
   #
