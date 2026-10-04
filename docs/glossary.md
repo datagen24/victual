@@ -196,7 +196,7 @@ See [Label printing](manual/operator/label-printing.md).
 ### Revival
 
 Proposed in [ADR-0037](adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) (Proposed, not implemented). A retired `stock_entry` label becomes live again on the
-row that the undo of its consuming booking rebuilds, inside a fixed window. It is not a reprint
+row that the undo of its consuming booking rebuilds under its original id, inside a fixed window. It is not a reprint
 and not a general reassignment of a label to other stock.
 
 ### Worker

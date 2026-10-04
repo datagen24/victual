@@ -32,7 +32,7 @@
   "E5_different_restored_row_id": [
    [
     "accepted",
-    "revived"
+    "declined:id_changed"
    ]
   ],
   "E6_import_between_retirement_and_undo": [
@@ -109,12 +109,12 @@
    ]
   ],
   "E13_rollback_after_attempted_revival": {
-   "revival": "revived",
+   "retry_revival": "revived",
    "state_after_is_identical": true,
    "state_unchanged": null
   },
   "E14_refused_undo": {
-   "revival": null,
+   "retry_revival": null,
    "state_after_is_identical": null,
    "state_unchanged": true
   },
@@ -137,14 +137,14 @@
  },
  "cost_20000_events": {
   "events": 20000,
-  "insert_labels_s": 0.12,
+  "insert_labels_s": 0.13,
   "insert_labels_and_events_s": 0.25,
   "table_bytes": 5382144,
   "total_bytes_with_indexes": 7176192,
   "labels_total_bytes_same_rows": 4907008,
   "bytes_per_event_with_indexes": 359,
   "probe_by_epoch_and_booking": {
-   "execution_ms": 0.009,
+   "execution_ms": 0.01,
    "node": "Index Scan",
    "index": "stock_label_retirements_booking"
   }

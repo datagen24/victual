@@ -350,7 +350,7 @@
                         "reason": null,
                         "revived_target_id": 4,
                         "snapshot_row": 4,
-                        "window_s": 115417908,
+                        "window_s": 115409948,
                         "label": "L"
                     }
                 ]
@@ -401,7 +401,7 @@
                         "reason": "expired",
                         "revived_target_id": null,
                         "snapshot_row": 5,
-                        "window_s": 115417908,
+                        "window_s": 115409948,
                         "label": "L"
                     }
                 ]
@@ -515,7 +515,7 @@
         {
             "step": "undo booking 14",
             "undo": "accepted",
-            "revival": "revived",
+            "revival": "declined:id_changed",
             "unrelated_row": {
                 "id": 7,
                 "product_id": 7,
@@ -548,10 +548,10 @@
                 ],
                 "labels": {
                     "L": {
-                        "target": 8,
-                        "retired": false,
-                        "snapshot_row": null,
-                        "scan": "resolved -> row 8"
+                        "target": null,
+                        "retired": true,
+                        "snapshot_row": 7,
+                        "scan": "retired"
                     }
                 },
                 "events": [
@@ -559,9 +559,9 @@
                         "id": 7,
                         "cause": "consumption",
                         "booking_id": 14,
-                        "outcome": "revived",
-                        "reason": null,
-                        "revived_target_id": 8,
+                        "outcome": "declined",
+                        "reason": "id_changed",
+                        "revived_target_id": null,
                         "snapshot_row": 7,
                         "window_s": 2592000,
                         "label": "L"
@@ -1606,8 +1606,8 @@
             },
             "issuance_started_during_the_undo": {
                 "result": "issuance returned a uid",
-                "uid": "DMS7D1PBKG99R",
-                "waited_s": 1.49
+                "uid": "DAVM1S8RDQKDA",
+                "waited_s": 1.5
             },
             "child_still_blocked_after_1.5s": true,
             "issued_uid_is_the_revived_L": true,
@@ -1780,14 +1780,14 @@
     },
     "cost": {
         "events": 100000,
-        "insert_labels_s": 0.44,
-        "insert_labels_and_events_s": 1.17,
+        "insert_labels_s": 0.42,
+        "insert_labels_and_events_s": 1.11,
         "table_bytes": 27230208,
         "total_bytes_with_indexes": 35880960,
         "labels_total_bytes_same_rows": 24682496,
         "bytes_per_event_with_indexes": 359,
         "probe_by_epoch_and_booking": {
-            "execution_ms": 0.012,
+            "execution_ms": 0.013,
             "node": "Index Scan",
             "index": "stock_label_retirements_booking"
         }

@@ -7,12 +7,14 @@
   (includes [PR 645](https://github.com/datagen24/victual/pull/645); clean working copy), on
   branch `claude/sonnet5_label-revival-adr-7c2f41`. The session started on
   `claude/stock-label-undo-grace-period-aa752a` at `a7bf78a31d70f1351019aa6d6cc1e22479402b59`,
-  clean and older than PR 645, so the work moved to a branch cut from current `master`.
+  clean and older than PR 645, so the work moved to a branch cut from current `master`. Rebased the
+  same day onto `fc990867` ([PR 649](https://github.com/datagen24/victual/pull/649)), which adds
+  ADR-0033 decision 6; the design and the model were aligned with it.
 - **Referenced by:** [issue 612](https://github.com/datagen24/victual/issues/612) (the design
   request) and [issue 491](https://github.com/datagen24/victual/issues/491) (the maintainer
   decision of 2026-09-28); answers
   [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) open question 1
-  and the revival question that
+  and its decision 6 (the decider's answer of 2026-10-04), and the revival question that
   [ADR-0036](0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) section 10
   leaves open; evidence in [`.spike-adr37/RESULTS.md`](../../.spike-adr37/RESULTS.md).
 
@@ -26,9 +28,10 @@ label revival.
 
 | State | Fact | Source |
 |---|---|---|
-| Maintainer decision | After a consumption is undone, the label stays retired and the user prints a new one. Repointing a recently retired label is an optional later improvement. | [Issue 491](https://github.com/datagen24/victual/issues/491), 2026-09-28 |
+| Maintainer decision | After a consumption is undone, the label stays retired and the user prints a new one. Repointing a recently retired label is an optional later improvement. Superseded for the undo case by the next row. | [Issue 491](https://github.com/datagen24/victual/issues/491), 2026-09-28 |
+| Decider's answer | Undoing a full consume brings back the label that consume retired, and no other. The row must return under its original id, no other live label may target it, and the label must record which booking retired it. Nothing else revives a label. The decision states no time limit. | [ADR-0033](0033-stock-rows-merge-only-in-maintenance-for-non-expiring-rows.md) decision 6, 2026-10-04 |
 | Maintainer request | A design covering the grace period, the purge job, what "repoint" means for the retirement snapshot, and the interaction with ADR-0019 label identity. | [Issue 612](https://github.com/datagen24/victual/issues/612) |
-| Record status | ADR-0033 and ADR-0036 are Proposed. PR 645 (merged 2026-10-04T14:58:04Z) delivered ADR-0036 and its spike. It implemented no per-booking lineage. ADR-0036 section 10 leaves revival out of scope. | `git log`, GitHub |
+| Record status | ADR-0033 (including decision 6) and ADR-0036 are Proposed. PR 645 (merged 2026-10-04T14:58:04Z) delivered ADR-0036 and its spike. It implemented no per-booking lineage. ADR-0036 section 10 leaves revival out of scope. | `git log`, GitHub |
 | Implemented | Retirement triggers (`0269`, `0283`, `0295`, `0296`) and an undo that rebuilds a consumed row. Nothing of this design. | Tree at `7e311cd3` |
 | Not implemented | A deployed schedule for any maintenance command. [Issue 133](https://github.com/datagen24/victual/issues/133) (K3S apply) is backlogged, and this design does not depend on it. | `deploy/`, plan 20 |
 | Verified here | The behavior in the next two sections, by running the real `StockService` and label services in a disposable schema. Test suites were not run. | [`baseline.json`](../../.spike-adr37/evidence/baseline.json) |
@@ -85,9 +88,14 @@ Verified against a schema migrated to HEAD (299 migrations applied, latest 0300)
 ## Decision
 
 A successful undo of the whole-row consumption that retired a stock-entry label revives that
-label on the row the undo rebuilds. Revival happens only when the rebuild is proven to be that
-consumption's and the undo runs inside a fixed 30-day window. In every other case the label stays
-retired and a person prints a new one, as today.
+label on the row the undo rebuilds under its original id. Revival happens only when the rebuild is
+proven to be that consumption's and the undo runs inside a fixed 30-day window. In every other case
+the label stays retired and a person prints a new one, as today.
+
+This record is the detailed design for ADR-0033 decision 6, which the decider wrote on 2026-10-04.
+It adopts that decision's conditions. It adds a window, an event table instead of a column on
+`labels`, an import epoch and a claim predicate. Section "Relationship to ADR-0033 decision 6" lists
+the differences.
 
 ### 1. Scope
 
@@ -99,8 +107,8 @@ retired and a person prints a new one, as today.
 
 ### 2. Revival is automatic
 
-The undo revives an eligible label without a second request. Section "Options considered"
-compares the alternatives. The reasons are:
+ADR-0033 decision 6 decides that an undo brings the label back. This section records why the
+revival needs no second request. Section "Options considered" compares the alternatives.
 
 - The undo itself rebuilds the row the label belonged to. The system holds the proof that a person
   would otherwise have to supply.
@@ -137,8 +145,9 @@ requires. The event keeps the snapshot, so each retirement stays explainable.
 ### 4. Proof that the restored stock is the same stock
 
 "Same restored stock" means the one row that the undo of booking B inserts, where B is the
-whole-row consumption whose deletion retired the label. A numeric id never decides it. Revival
-requires all of these inside the undo transaction, under the locks in section 7:
+whole-row consumption whose deletion retired the label. A numeric id is necessary and never
+sufficient: decision 6 requires the original id, and booking, epoch and amount must also match.
+Revival requires all of these inside the undo transaction, under the locks in section 7:
 
 1. A pending `consumption` event exists for B in the current import epoch.
 2. The database clock is before `revivable_until` (section 5).
@@ -146,8 +155,9 @@ requires all of these inside the undo transaction, under the locks in section 7:
    amount equals the event's within the ADR-0032 tolerance.
 4. The rebuilt row was inserted by this undo, has B's product, has the event's amount, and carries
    the current import epoch.
-5. No live label names the rebuilt row.
-6. The label is still retired.
+5. The rebuilt row has the row id in the event's snapshot, its original id.
+6. No live label names the rebuilt row.
+7. The label is still retired.
 
 An undo of a whole-row consumption always inserts a new row and never merges into an existing one.
 The amount check in condition 4 declines the case where a row would hold other stock. One
@@ -159,7 +169,7 @@ same product or the same old id cannot claim the stock.
 
 | Question | Answer |
 |---|---|
-| Does a window exist? | Yes. A booking is permanent history, but the longer an undo comes after the consumption, the weaker the case that the sticker is on the same item. |
+| Does a window exist? | Yes, as an addition to decision 6, which states no time limit (open question 2). A booking is permanent history, but the longer an undo comes after the consumption, the weaker the case that the sticker is on the same item. |
 | Duration | 30 days (2,592,000 s), the example in issue 612. Not measured; the maintainer decides it (open question 2). |
 | Fixed or configurable | Fixed. It is a constant in `StockService`, stored per event as `revivable_until`. No deployment setting, no user setting. |
 | Why fixed | Nothing shows that households need different values, and each setting adds validation, a reference-page entry and tests. A release changes the constant. Zero disables new references. |
@@ -181,6 +191,7 @@ the undo succeeds. The event records the reason.
 | Deadline reached | Declined | Stays retired | `declined`, `expired` |
 | A live label already names the rebuilt row | Declined | The live label is untouched; the old one stays retired | `declined`, `target_labelled` |
 | Product, amount or row of the booking differs from the event | Declined | Stays retired | `declined`, `mismatch` |
+| The row came back under a new id | Declined | Stays retired | `declined`, `id_changed` |
 | Retirement was `unproven` or `legacy`, the epoch differs, or no event exists | Not attempted | Stays retired | Unchanged |
 | The original product was deleted | The undo refuses ("does not exist"), because its bookings were deleted | Stays retired | Stays pending, inert |
 | An unexpected database error | The whole undo rolls back | Unchanged | Unchanged |
@@ -371,8 +382,8 @@ Undoing the transaction revives both labels, each on its own rebuilt row (E2).
 | Case | Rebuilt row | Label after the undo |
 |---|---|---|
 | Original id free (E1) | Original id | Revived on the original id |
-| An unrelated row holds the id (E5) | Fresh id 8; the unrelated row 7 (7 units, other product) is untouched | Revived on row 8. Row 7 has no live label. |
-| Import between retirement and undo (E6): epoch 0 to 1, row id 9 and booking id 16 now belong to another product | A row of that other product | Stays retired. A repoint by the snapshot's id would have named row 9, which holds 7 units of unrelated stock. |
+| An unrelated row holds the id (E5) | Fresh id 8; the unrelated row 7 (7 units, other product) is untouched | Stays retired (`id_changed`), as decision 6 requires. Row 7 has no live label. |
+| Import between retirement and undo (E6): epoch 0 to 1, row id 9 and booking id 16 now belong to another product | A row of that other product | Stays retired (`no_reference`): the event belongs to epoch 0. A match on row id 9 alone would have named unrelated stock. |
 
 ### E10, E7, E8. Partial consumption, a live label on the target, repeated cycles
 
@@ -447,6 +458,25 @@ predicate follows. They ship together.
 - Rolling the image back leaves the table unused. There is no down migration. Reversing this
   record needs a later migration that drops the objects.
 
+## Relationship to ADR-0033 decision 6
+
+ADR-0033 decision 6 (decider, 2026-10-04) decides that an undo of a full consume brings back the
+label that consume retired. This record is its detailed design. The table separates what it adopts
+from what it adds.
+
+| Decision 6 | This record |
+|---|---|
+| Only the label retired by the undone consume | Adopted: the event names the booking (condition 1 and 3). |
+| The row returns under its original id | Adopted: condition 5. A new id leaves the label retired (`id_changed`, example E5). |
+| No other live label targets the row | Adopted: condition 6. |
+| Nothing else revives a label | Adopted: imports, product deletion, undo of a purchase and unrelated bookings never match. |
+| The label row records which booking retired it | Changed. The booking is stored in an event table, because a live label must have no snapshot and the booking must outlive the revival as history. The requirement that retirement records its booking holds. |
+| No time limit stated | Added: a 30-day window, which issue 612 asked for. Open question 2 asks whether to keep it. |
+| Not mentioned | Added: an import epoch, the claim predicate for print jobs, and the legacy backfill. |
+
+Decision 6's acceptance prerequisite 5 lists the tests it needs. Examples E1, E5, E7, E8, E9, E11 and
+E16 cover each of its cases.
+
 ## Relationship to ADR-0036
 
 #612 does not need ADR-0036. Revival needs the booking that deleted the row, which `stock_row_id` has
@@ -476,7 +506,7 @@ that assumption is not a recorded decision.
 | ADR-0019 retention | Label identities and retirement mappings are outside print-history cleanup. | Extended to events. |
 | ADR-0021 decision 3 | Retired snapshots survive an import; no foreign key to a truncated table. | Followed. Events survive and have no such key. |
 | ADR-0021 consequences | Bytes are kept while a label is live; retirement makes them collectable. | Unchanged. A reprint after revival is refused if the bytes were collected. |
-| ADR-0033 open question 1 | Whether undo revives the label. | Answered by this record if accepted. ADR-0033 is not edited in substance. |
+| ADR-0033 open question 1 | Whether undo revives the label. | Answered by decision 6 of the same record. This record designs it and supersedes nothing in it. |
 | ADR-0036 section 10 | "Label revival after undo stays the open question 1 of ADR-0033, unanswered here" | Answered here. No clause of ADR-0036 changes. |
 
 If the maintainer decides the narrowing of ADR-0011 needs a record, the accepting change adds the
@@ -486,7 +516,7 @@ forward pointer under the lifecycle rule.
 
 | Criterion | A. Keep reprinting | B. Event table with a booking-linked, automatic revival (chosen) | C. Keep the retired row targetable and purge (issue 612's sketch) | D. Revival inside ADR-0036's lots | E. Explicit "restore label" action |
 |---|---|---|---|---|---|
-| Correctness | Always correct. | Proof by booking, epoch and amount. | Needs a target that survives. The CHECK and ADR-0021 forbid a retired label with a target. A stored old id can name unrelated stock. | As B, with lot data that revival does not use. | As B, plus a person's choice. |
+| Correctness | Always correct. | Proof by booking, epoch, amount and original id. | Needs a target that survives. The CHECK and ADR-0021 forbid a retired label with a target. A stored old id can name unrelated stock. | As B, with lot data that revival does not use. | As B, plus a person's choice. |
 | History | Snapshot only. | Event per retirement. | Overwrites the snapshot. | As B. | As B. |
 | Complexity | None. | One table, one trigger, one hook, one claim predicate. | A cleanup workload and a changed CHECK. | B plus the lot model. | B plus an endpoint and a screen. |
 | Migration | None. | One table and a backfill. | Changes the identity table. | ADR-0036's migration first. | As B. |
@@ -510,7 +540,7 @@ not use. Neither record needs the other.
 
 ## Consequences
 
-- **A sticker survives an undo caught within 30 days.** The old sticker scans as `resolved`. A person
+- **A sticker survives an undo caught within 30 days that restores the original id.** The old sticker scans as `resolved`. A person
   who undoes later, or whose undo is declined, prints a new label as today.
 - **Revival never blocks an undo, and an undo never half-succeeds.** Stock correctness is unchanged.
 - **A retired label can become live again.** Any code that assumed `retired_at` is final needs
@@ -580,18 +610,23 @@ separate bookkeeping-only pull request, and implementation is a separate change.
 
 ## Open questions
 
-No maintainer responses are recorded yet. An answer goes directly below its question as a
-`> **Response:**` block.
+An answer goes directly below its question as a `> **Response:**` block.
 
 1. **Should an undo revive the label automatically?** Options are automatic revival (recommended),
    an explicit action, and keeping the reprint. Automatic revival has no wire change and a declined
    case costs a reprint. An explicit action adds an endpoint or a request field and relies on the
    user knowing a sticker exists. Keeping the reprint is the current decision and implements
    nothing.
-2. **Is 30 days right, and should it be fixed?** The record recommends a fixed constant of 30 days,
-   exclusive at the deadline, with zero disabling it. No measurement of how late households undo exists.
-   A shorter window loses the late undo and a longer one revives stickers likely already discarded,
-   which costs nothing.
+
+   > **Response:** Resolved by ADR-0033 decision 6 (decider, 2026-10-04): an undo of a full consume
+   > brings back the label that consume retired, and no other. This record designs it.
+
+2. **Should revival have a window, and is 30 days right?** ADR-0033 decision 6 states no time limit.
+   Issue 612 asked for a grace period. The record recommends a fixed 30 days, exclusive at the
+   deadline, with zero disabling it, and flags this as the one place it narrows decision 6. The
+   alternative is no limit: store no deadline and drop the expiry branch. No measurement of how late
+   households undo exists. A shorter window loses the late undo. A longer one revives stickers likely
+   already discarded, which costs nothing.
 3. **Should the user be told the result?** Recommended: not now. The scan shows the result and the
    Manual explains it. A message in the undo response or interface is an additive change under
    ADR-0005 and needs its own decision and probe.

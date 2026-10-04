@@ -8,6 +8,9 @@ changed. The reference model is not a candidate implementation.
 - **Commit:** `7e311cd35c26c7422855d02887f46b5e2e7b4d22` (`master`, includes PR 645), clean working
   copy, branch `claude/sonnet5_label-revival-adr-7c2f41`. `run.sh` extracts that tree with
   `git archive HEAD` and overlays this directory.
+- **Rebase:** the branch was rebased onto `fc990867` (PR 649, ADR-0033 decision 6). The model and its
+  evidence were rerun with the original-id condition (`id_changed`). `run.sh` now removes the committed
+  copy of this directory before overlaying the working copy.
 - **Host:** macOS 27.0.1, Apple Silicon, podman 6.0.2, libkrun VM with 4 CPUs and 8 GiB.
 - **Images:** `localhost/victual:dev` (id `97aabbf5cf1f`, PHP 8.5.10) and
   `localhost/victual-pg:pgtap` (id `3ad78171b5ab`, PostgreSQL 16.15). The model probe was
@@ -56,9 +59,10 @@ PG_IMAGE=docker.io/library/postgres:15 ADR37_N=20000 .spike-adr37/run.sh model  
 
 **Model (PostgreSQL 16.15 and 15.19, identical outcomes).** Sixteen examples and three race tests ran.
 
-- Revival happened for the full consumption, for each row of a multi-row consumption, for the second
-  of two consume and undo cycles, and for a restored row under a different id.
-- Revival was declined at and after the deadline, with the pending row never cleaned up, for a
+- Revival happened for the full consumption, for each row of a multi-row consumption, and for the
+  second of two consume and undo cycles.
+- Revival was declined for a row restored under a new id (`id_changed`, required by ADR-0033
+  decision 6), at and after the deadline, with the pending row never cleaned up, for a
   booking whose product or amount changed, for a restored target that already carries a live label,
   and under a legacy, unproven or other-epoch retirement.
 - A rollback after the revival step restored stock, booking, label and event exactly. A refused undo

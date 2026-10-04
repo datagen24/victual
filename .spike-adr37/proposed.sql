@@ -119,6 +119,10 @@ BEGIN
 		UPDATE stock_label_retirements SET outcome = 'declined', reason = 'mismatch', closed_at = v_now WHERE id = e.id;
 		RETURN 'declined:mismatch';
 	END IF;
+	IF p_restored_row <> (e.snapshot ->> 'id')::BIGINT THEN      -- ADR-0033 decision 6: only the same id
+		UPDATE stock_label_retirements SET outcome = 'declined', reason = 'id_changed', closed_at = v_now WHERE id = e.id;
+		RETURN 'declined:id_changed';
+	END IF;
 	IF EXISTS (SELECT 1 FROM labels WHERE kind = 'stock_entry' AND target_id = p_restored_row AND retired_at IS NULL) THEN
 		UPDATE stock_label_retirements SET outcome = 'declined', reason = 'target_labelled', closed_at = v_now WHERE id = e.id;
 		RETURN 'declined:target_labelled';
