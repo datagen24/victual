@@ -296,15 +296,25 @@ here:
 - Printing and MCP companions are required with the target (issue question 5).
 
 1. Which disposable Home Assistant OS architectures, printer, and MCP client are available
-   for testing? The pilot environment below is empty until this is answered.
+   for testing?
+
+   > **Response (maintainer, 2026-10-04):** Testing runs on the existing Home Assistant
+   > installation, version 2026.9.4. The printer used in earlier label testing is
+   > available on the LAN; its model is the only one with a driver profile.
+
+   The pilot environment below reflects that answer. The installation is the household's
+   own and not disposable, so destructive checks, such as the host reboot in 654-A4, need
+   the maintainer's agreement before they run.
 
    | Item | Value |
    |---|---|
-   | Home Assistant OS, Core, and Supervisor versions | Not provided |
-   | CPU architecture of the first instance | Not provided |
+   | Home Assistant version | 2026.9.4, as stated; whether this is the Core version is unconfirmed |
+   | Home Assistant OS and Supervisor versions | Not provided |
+   | CPU architecture of the first instance | Not provided. [Plan 17](17-ecosystem-clients.md) records the installation on a Home Assistant Yellow, which would make it `aarch64`; unconfirmed |
    | PostgreSQL version and location | Not provided |
-   | Printer model and transport | Not provided |
+   | Printer model and transport | Brother QL-820NWBc, the only model in `.devtools/labels/fixtures/brother-ql.json`, which declares the `tcp` transport only |
    | MCP client and version | Not provided |
+   | Second architecture | None available; `amd64` stays unverified |
 
 2. Which Supervisor-enforceable topology keeps the migration credential away from the serving
    processes?
