@@ -59,16 +59,37 @@ One browser request per probe through the Home Assistant panel:
   `X-Hass-Source: core.ingress`, `X-Remote-User-Id`, `X-Remote-User-Name`,
   `X-Remote-User-Display-Name`, and the browser's `Cookie`.
 
-## Not measured in this run
+## Second run: probe 0.2.1
+
+Run 2026-10-05 01:20 UTC from commit `9a29ee32`, with `tmpfs: true` added to both manifests.
+Version 0.2.0 wrote its helper scripts to `/tmp` and could not run them; 0.2.1 builds them
+into the image.
+
+- `/tmp` became `tmpfs` mounted `rw,nosuid,nodev,noexec`. Executables placed in `/tmp`
+  cannot run.
+- `GET http://supervisor/addons/self/options/config` with the inherited `SUPERVISOR_TOKEN`
+  returned `HTTP/1.1 200 OK` and the option keys `fail_after_seconds` and `probe_secret`:
+  - as root in the root probe;
+  - as a UID 65532 child of root that inherited the environment;
+  - as UID 65532 in the user probe.
+- With `SUPERVISOR_TOKEN` and `HASSIO_TOKEN` removed from the environment, the helper had no
+  credential to send.
+- The manifests declare no `hassio_api` or `hassio_role`, so the token's default role
+  returns the add-on's own options, including fields of schema type `password`.
+
+The probe records option keys only. That the response holds the values follows from the
+endpoint's purpose and the 200 status; the values were not printed.
+
+## Not measured in either run
 
 - Watchdog restart after the listener stops (`fail_after_seconds`); the watchdog was not
   enabled.
-- Whether a process can fetch its options through the Supervisor API
-  (`/addons/self/options/config`) with the `SUPERVISOR_TOKEN` it inherits, including a
-  UID 65532 child of a root process.
 - Whether children survive the stop of PID 1's script; the container stop ends them
   regardless.
 - Any manifest control that lowers the capability set, enables seccomp, sets a memory limit,
   or makes the root filesystem read-only.
 - A forged `X-Ingress-Path` on a directly published port; the probe published none.
+- Whether a process can read `/proc/1/environ` when `docker-init` runs as the same UID, as
+  it does in the UID 65532 probe.
+- Whether one add-on's token can read another add-on's options.
 - The `amd64` architecture.

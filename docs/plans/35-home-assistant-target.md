@@ -241,15 +241,22 @@ measured the following:
 - The Supervisor honours the image's `USER`. An image with `USER 65532:65532` starts as that
   user with no effective capabilities.
 - `/data/options.json` is `600 root:root`, and `/data` is root-owned. A non-root process
-  cannot read its own options or write to `/data`. Starting the published images as UID 65532
-  therefore leaves them unable to read their configuration from the options file.
+  cannot read the options file or write to `/data`.
+- Every add-on receives `SUPERVISOR_TOKEN` and `HASSIO_TOKEN` in its environment, with no
+  `hassio_api` declared. With that token, `GET http://supervisor/addons/self/options/config`
+  answers 200 with the add-on's own options, including `password` fields. It answered for a
+  root process, for a UID 65532 child of root that inherited the environment, and for a
+  UID 65532 container. A non-root launcher can therefore read its configuration without the
+  options file, and any process holding the token can read every credential in the options.
 - A UID 65532 child of a root process cannot read the options file, the root process's
   environment, or its open descriptors. It can read the root process's command line.
-  Whether it can fetch the options through the Supervisor API with the token it inherits is
-  unmeasured.
-- Every add-on receives `SUPERVISOR_TOKEN` and `HASSIO_TOKEN` in its environment. With
-  `clear_env = no`, PHP-FPM workers would receive both.
-- The root filesystem is a writable overlay, `/tmp` is not a tmpfs, no seccomp filter is
+- G2 therefore needs both tokens removed from every serving process's environment, and no
+  serving process able to read the environment of a process that still holds them. With
+  `clear_env = no`, PHP-FPM workers inherit both tokens. `docker-init` is PID 1 and holds the
+  container's starting environment; whether a same-UID process can read its
+  `/proc/1/environ` is unmeasured.
+- `tmpfs: true` mounts `/tmp` as `tmpfs` with `noexec`, `nosuid`, and `nodev`.
+- The root filesystem is a writable overlay, `/tmp` is not a tmpfs unless `tmpfs` is set, no seccomp filter is
   applied, AppArmor runs `docker-default`, and no memory limit is set. A root process holds
   14 capabilities, including `setuid`, `setgid`, `dac_override`, and `net_raw`. The probe set
   no privilege-related manifest key, so these are the defaults. The defaults do not provide
@@ -265,8 +272,10 @@ measured the following:
   the pilot host's panel is reachable from outside the LAN behind Home Assistant's login.
   This is an input to open question 3.
 
-The watchdog, manifest controls that might reduce privileges, and forged headers on a
-direct listener were not measured.
+The watchdog, manifest controls that might reduce privileges, forged headers on a direct
+listener, and whether one add-on's token can read another add-on's options were not
+measured. If it cannot, separate add-ons isolate credentials through their own options,
+which is an input to the topology comparison under G1.
 
 ## Gates
 
