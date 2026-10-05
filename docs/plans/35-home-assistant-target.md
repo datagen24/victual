@@ -276,11 +276,15 @@ measured the following:
 - The Ingress request arrived over HTTPS with a client address outside the add-on network:
   the pilot host's panel is reachable from outside the LAN behind Home Assistant's login.
   This is an input to open question 3.
+- With `watchdog: "tcp://[HOST]:[PORT:8099]"` on an unpublished Ingress port, the
+  Supervisor restarted the add-on 2 minutes 38 seconds after its listener stopped, although
+  PID 1 was still running. A watchdog failure costs minutes of unavailability before the
+  restart.
 
 These measurements leave two topologies, compared under [Topology](#topology).
 
-The watchdog, manifest controls that might reduce privileges, and forged headers on a direct
-listener were not measured.
+Manifest controls that might reduce privileges and forged headers on a direct listener were
+not measured.
 
 ## Gates
 

@@ -103,10 +103,24 @@ Environment of other processes, reporting only whether `SUPERVISOR_TOKEN` is pre
 In every case the reader's own environment had no token, so removing the variables
 worked for the process itself.
 
+## Watchdog run
+
+Root probe 0.3.0 with the watchdog enabled and `fail_after_seconds: 60`
+(`watchdog: "tcp://[HOST]:[PORT:8099]"`, port 8099 not published to the host):
+
+| Time (UTC) | Event |
+|---|---|
+| 01:30:21 | Start number 6; listener up |
+| 01:31:23 | Listener stopped; PID 1 still running |
+| 01:34:01 | SIGTERM to the probe |
+| 01:34:02 | Start number 7; listener up |
+
+The restart came 2 minutes 38 seconds after the listener stopped, with no restart requested
+from the user interface (maintainer to confirm). The TCP watchdog works on an unpublished
+Ingress port, and it restarts a container whose PID 1 is still alive.
+
 ## Not measured in these runs
 
-- Watchdog restart after the listener stops (`fail_after_seconds`); the watchdog was not
-  enabled.
 - Whether children survive the stop of PID 1's script; the container stop ends them
   regardless.
 - Any manifest control that lowers the capability set, enables seccomp, sets a memory limit,
