@@ -300,7 +300,8 @@ here:
 
    > **Response (maintainer, 2026-10-04):** Testing runs on the existing Home Assistant
    > installation, version 2026.9.4. The printer used in earlier label testing is
-   > available on the LAN; its model is the only one with a driver profile.
+   > available on the LAN; its model is the only one with a driver profile. The host is a
+   > Home Assistant Yellow with a Raspberry Pi Compute Module 5 (16 GB).
 
    The pilot environment below reflects that answer. The installation is the household's
    own and not disposable, so destructive checks, such as the host reboot in 654-A4, need
@@ -310,7 +311,7 @@ here:
    |---|---|
    | Home Assistant version | 2026.9.4, as stated; whether this is the Core version is unconfirmed |
    | Home Assistant OS and Supervisor versions | Not provided |
-   | CPU architecture of the first instance | Not provided. [Plan 17](17-ecosystem-clients.md) records the installation on a Home Assistant Yellow, which would make it `aarch64`; unconfirmed |
+   | CPU architecture of the first instance | `aarch64`: Home Assistant Yellow with a Raspberry Pi Compute Module 5, 16 GB |
    | PostgreSQL version and location | Not provided |
    | Printer model and transport | Brother QL-820NWBc, the only model in `.devtools/labels/fixtures/brother-ql.json`, which declares the `tcp` transport only |
    | MCP client and version | Not provided |
