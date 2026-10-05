@@ -252,9 +252,14 @@ measured the following:
   environment, or its open descriptors. It can read the root process's command line.
 - G2 therefore needs both tokens removed from every serving process's environment, and no
   serving process able to read the environment of a process that still holds them. With
-  `clear_env = no`, PHP-FPM workers inherit both tokens. `docker-init` is PID 1 and holds the
-  container's starting environment; whether a same-UID process can read its
-  `/proc/1/environ` is unmeasured.
+  `clear_env = no`, PHP-FPM workers inherit both tokens.
+- Removing the tokens from a process's own environment is not enough when it shares a UID
+  with a holder. `docker-init` is PID 1 and keeps the container's starting environment. A
+  process started without the tokens read `SUPERVISOR_TOKEN` from `/proc/1/environ` and from
+  a same-UID sibling, both as root and in the UID 65532 container. A UID 65532 child of a
+  root container could read neither.
+- A token is scoped to its own add-on. `GET /addons/<other>/info`,
+  `GET /addons/<other>/options/config`, and `GET /addons` answered 403 to both probes.
 - `tmpfs: true` mounts `/tmp` as `tmpfs` with `noexec`, `nosuid`, and `nodev`.
 - The root filesystem is a writable overlay, `/tmp` is not a tmpfs unless `tmpfs` is set, no seccomp filter is
   applied, AppArmor runs `docker-default`, and no memory limit is set. A root process holds
@@ -272,10 +277,16 @@ measured the following:
   the pilot host's panel is reachable from outside the LAN behind Home Assistant's login.
   This is an input to open question 3.
 
-The watchdog, manifest controls that might reduce privileges, forged headers on a direct
-listener, and whether one add-on's token can read another add-on's options were not
-measured. If it cannot, separate add-ons isolate credentials through their own options,
-which is an input to the topology comparison under G1.
+Two topologies satisfy these measurements. In one add-on, a root launcher reads the
+options and starts the serving processes under a UID that neither PID 1 nor any token holder
+uses, with the tokens removed; running the launcher as root is a departure from ADR-0010
+that needs its own record. In separate add-ons, each add-on's token reads only its own
+options, so a serving add-on configured with the application role cannot reach the
+migration credential. That comparison, and how a separate serving add-on waits for the
+schema, belong to the topology design.
+
+The watchdog, manifest controls that might reduce privileges, and forged headers on a direct
+listener were not measured.
 
 ## Gates
 

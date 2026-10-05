@@ -80,7 +80,30 @@ into the image.
 The probe records option keys only. That the response holds the values follows from the
 endpoint's purpose and the 200 status; the values were not printed.
 
-## Not measured in either run
+## Third run: probe 0.3.0
+
+Run 2026-10-05 01:26 UTC from commit `85150f32`, both probes running.
+
+Another add-on's options, with each probe's own token:
+
+| Request | Root probe | UID 65532 probe |
+|---|---|---|
+| `GET /addons/<other>/info` | 403 Forbidden | 403 Forbidden |
+| `GET /addons/<other>/options/config` | 403 Forbidden | 403 Forbidden |
+| `GET /addons` | 403 Forbidden | 403 Forbidden |
+
+Environment of other processes, reporting only whether `SUPERVISOR_TOKEN` is present:
+
+| Reader | PID 1 (`docker-init`) | A sibling holding the token |
+|---|---|---|
+| Root probe, root process started without the tokens | readable, token present | readable, token present |
+| Root probe, UID 65532 child started without the tokens | not readable | not readable |
+| UID 65532 probe, process started without the tokens | readable, token present (PID 1 runs as 65532) | readable, token present |
+
+In every case the reader's own environment had no token, so removing the variables
+worked for the process itself.
+
+## Not measured in these runs
 
 - Watchdog restart after the listener stops (`fail_after_seconds`); the watchdog was not
   enabled.
@@ -89,7 +112,4 @@ endpoint's purpose and the 200 status; the values were not printed.
 - Any manifest control that lowers the capability set, enables seccomp, sets a memory limit,
   or makes the root filesystem read-only.
 - A forged `X-Ingress-Path` on a directly published port; the probe published none.
-- Whether a process can read `/proc/1/environ` when `docker-init` runs as the same UID, as
-  it does in the UID 65532 probe.
-- Whether one add-on's token can read another add-on's options.
 - The `amd64` architecture.
