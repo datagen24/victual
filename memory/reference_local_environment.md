@@ -96,6 +96,18 @@ Grocycode routes on 2026-09-30 — after that merge nothing under `services/`, `
 `helpers/` references the package at all, so `interficieis/php-barcode` may now be an unused
 dependency; `docs/plans/06-location-barcodes.md` is the only other mention.
 
+**A coverage run needs more memory than a plain one** (measured 2026-10-05, PostgreSQL 16.15,
+`victual:dev` PHP 8.4.25). With `--memory 1536m` on the PostgreSQL container, a backend was
+SIGKILLed in the mealplan phase: the tmpfs data directory holds every phase's leftover
+databases and counts against the cap. `--memory 3g` completed. The closing `report.php` then
+dies on PHP's default 128 MiB `memory_limit`, because the image has no `php.ini` and the runner
+sets its own `PHP_INI_SCAN_DIR`, so an outer one has no effect. Keep the `.cov` files by putting
+`SUITE_SCRATCH` under a host mount and run
+`php -d memory_limit=2560M .devtools/coverage/report.php <scratch>/coverage` yourself. A
+scratch directory on the host mount, however, fails `StorageFilesTest`'s filesystem listing
+case (no `.`/`..` entries there), so take the pass/fail result from a run with scratch in
+`/tmp`. The runner's own figure omits the extra tests CI merges, so it reads below CI's ratchet.
+
 ## The frontend security probes (`frontend-security` CI job)
 
 These run from the host, not a container. Install once:

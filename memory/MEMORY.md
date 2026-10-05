@@ -59,6 +59,13 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-10-05 — `stock_edited_entries` was quadratic in the whole ledger** (branch
+  `claude/opus5_stock-edited-entries-quadratic-7c41e2`): every booking, undo and product
+  details read paid for it; 48 s per purchase at 19,416 rows. Migration 0302 makes it linear
+  (0.29 s), same rows; pgTAP 028 guards with a plan-work bound. An upgrade from 0288 still runs
+  0292's reconcile under the old view, which needs a maintainer decision. Realistic ledgers come from
+  `.devtools/pgsql/ledger-generator.php`; see [[reference_local_environment]] for running a
+  coverage suite.
 - **2026-09-30 — `run-tests.sh all` was red in the dev image, green in CI** (branch
   `claude/hopeful-mccarthy-3b6bb2`): six cases, one shape — a PHP diagnostic on a subprocess
   helper's **stdout**, in front of the JSON, so `json_decode()` gave `null`. One was PHP 8.5
@@ -94,17 +101,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   per-request log line half still open), and login checks that accepted wrong passwords (a
   failed login is also a 302). Plan 19's permissions shape and #46's prices approved as
   differences (#219). See [[reference_local_environment]].
-- **2026-09-19 — No more admin/admin** (branch `claude/opus5_bootstrap-admin-credential-435539`,
-  CodeRabbit's finding on PR 211): `InitialDataSeeder` seeds `admin` from
-  `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` (getenv, never a Setting) or a generated 24-hex password
-  printed once to the migration's stderr and flagged `must_change_password`; login now only
-  *raises* the flag. A flagged account gets 403 on every API route but `PUT /api/users/{own}`,
-  `GET /api/user`, `GET /api/system/db-changed-time` — keys included. No migration: existing
-  admin/admin installs are flagged at next login. `run-tests.sh bootstrapadmin`
-  (`tests/Pgsql/BootstrapAdminTest.php`); run-tests.sh exports a suite bootstrap password so
-  migrated schemas don't log generated ones. **walk.py now needs `--password`** (nix.yml reads
-  the generated one from the migrate container); the parity stack uses
-  `PARITY_VICTUAL_ADMIN_PASSWORD`. The kind half is PR 214.
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues
