@@ -342,8 +342,8 @@ cross-add-on Supervisor permissions:
    (`services/DatabaseMigrationService.php:89-95,104-139`).
 2. The serving add-on checks compatibility with the application identity: the migration set
    comparison that `SchemaVersionMiddleware` makes, plus whether any session holds the
-   migration lock. The `pg_locks` view is readable by every role, so the application
-   identity can see the lock.
+   migration lock. The spike confirmed that `victual_app` can read the lock in `pg_locks`
+   (`locktype advisory, classid 0, objid 1986947956, objsubid 1`).
 3. The serving add-on stays unready while the schema is absent, older, newer, or unreadable,
    or while the lock is held. It retries with a bounded interval and total time, and it
    reports which condition it is waiting on.
@@ -421,6 +421,59 @@ S6 and S7 depend on what PostgreSQL's DDL locks do to concurrent queries, so the
 measurement, not reasoning. S6 is meaningful with the `v0.2.0-MVP` fixture because that
 release's middleware already refuses unknown migrations (`SchemaVersionMiddleware.php:77`
 at the tag).
+
+#### Spike results
+
+The first spike run on 2026-10-05 used podman on a developer machine, so it is not
+Supervisor evidence. Its results are in the
+[evidence record](../../.devtools/home-assistant/evidence/2026-10-05-lifecycle-spike.md).
+
+| Case | Result |
+|---|---|
+| S1 Empty database | Partial: serving waited, then served after migration, but reported the empty database as unreadable |
+| S2 Older schema | Pass |
+| S3 Newer schema | Serving refused; `bin/victual-migrate` exited 0 and called migration 9990 "up to date" |
+| S4 Unreadable | Partial: a wrong password and a stopped server answered 503, with the same message as S1 |
+| S5 Lock held | The lock check works; `/login` answered 200 while the lock was held |
+| S6 Running during upgrade | Pass for `/login`: 200 until the first new migration committed, then 503 for the whole 809-second upgrade, with no 500 |
+| S7 Failed migration | Pass: the migration rolled back and serving refused |
+| S8 Concurrent migrators | Pass: one waited on the lock, and the result equalled a single run |
+
+The results support coordination through PostgreSQL. They add five requirements to the
+design:
+
+- The serving check needs the migration lock as well as the migration set. With the schema
+  current and the lock held, `SchemaVersionMiddleware` let requests through (S5).
+- The serving check must tell an empty database apart from one it cannot read. On connect,
+  `PostgresDialect::OnConnected` (`services/Database/PostgresDialect.php:121-193`) runs
+  `CREATE TABLE IF NOT EXISTS system_db_changed_time` when that table is missing. The
+  application role cannot create tables, so on an empty database it fails with SQLSTATE
+  42501, and the middleware reports "the schema version could not be read at all". A wrong
+  password and a stopped server produce the same message (S1, S4).
+- The migrator must refuse a newer schema. It currently accepts one and exits 0 (S3), as
+  [Schema lifecycle](#schema-lifecycle) records.
+- A migration must not outlive the main add-on. Killing the migrator's container left its
+  PostgreSQL session running migration 0292 and holding the lock for 46 minutes, until it
+  was terminated by hand. The schema stayed at 0291, and the old code refused to serve
+  throughout. Stopping the main add-on stops its container in the same way, so a serving
+  add-on would wait behind an orphaned session, and a restarted main add-on would wait on
+  its predecessor's lock. Detecting a dead client is a candidate remedy:
+  PostgreSQL's `client_connection_check_interval` (available since PostgreSQL 14) or TCP
+  keepalives on the migration connection. Neither has been tested.
+- The serving add-on must tolerate long upgrades. Migration 0292
+  (`migrations/0292.pgsql.sql`) rebuilds the price caches for one product at a time
+  through the `products_average_price` and `products_last_purchased` views. Both views
+  reach `stock_edited_entries`, whose `resolved` CTE is planned as a nested loop over the
+  whole ledger, so each call costs the square of the `stock_log` row count. With 20,000
+  rows over 10 products the upgrade took 809 seconds, about 80 seconds per product; with
+  200 products it would take hours. The view's plan is a defect repaired outside this plan.
+  Even after that repair, an upgrade can outlast the watchdog's three-minute interval, so a
+  serving add-on that does not listen until the schema check passes would be restarted
+  repeatedly. Listening from the start and answering 503 avoids that.
+
+An empty migration file makes the migrator exit 255 with an uncaught `ValueError` from
+`PDO::exec()` (`services/DatabaseService.php:109`) instead of reporting a failed migration.
+The spike created such a file by accident; no shipped migration is empty.
 
 ## Dependencies
 
