@@ -232,6 +232,36 @@ capabilities, `apparmor`, `backup` and `backup_exclude`, `schema`, `services`,
 container user, the UID, a read-only root filesystem, or a health check other than
 `watchdog`. Gate G1 measures these on a running Supervisor.
 
+### Supervisor measurements
+
+A probe run on the pilot host on 2026-10-04 (Supervisor 2026.09.3,
+[evidence record](../../.devtools/home-assistant/evidence/2026-10-04-g1-supervisor-probe.md))
+measured the following:
+
+- The Supervisor honours the image's `USER`. An image with `USER 65532:65532` starts as that
+  user with no effective capabilities.
+- `/data/options.json` is `600 root:root`, and `/data` is root-owned. A non-root process
+  cannot read its own options or write to `/data`. Starting the published images as UID 65532
+  therefore leaves them unable to read their configuration from the options file.
+- A UID 65532 child of a root process cannot read the options file, the root process's
+  environment, or its open descriptors. It can read the root process's command line.
+- Every add-on receives `SUPERVISOR_TOKEN` and `HASSIO_TOKEN` in its environment. With
+  `clear_env = no`, PHP-FPM workers would receive both.
+- The root filesystem is a writable overlay, `/tmp` is not a tmpfs, no seccomp filter is
+  applied, AppArmor runs `docker-default`, and no memory limit is set. A root process holds
+  14 capabilities, including `setuid`, `setgid`, `dac_override`, and `net_raw`. The probe set
+  no privilege-related manifest key, so these are the defaults. The defaults do not provide
+  ADR-0010's read-only root filesystem or dropped capabilities.
+- Ingress requests arrive from 172.30.32.2. `X-Ingress-Path` is `/api/hassio_ingress/<token>`
+  with a token per add-on, and the forwarded request URI has the prefix removed. The proxy
+  also forwards `X-Forwarded-Proto: https`, `X-Forwarded-Host`, and Home Assistant user
+  headers (`X-Remote-User-Id`, `X-Remote-User-Name`, `X-Remote-User-Display-Name`). Victual
+  must not treat the user headers as authentication: identity mapping is out of scope.
+- The MQTT and InfluxDB add-ons resolve by host name on the add-on network.
+
+The watchdog, manifest controls that might reduce privileges, and forged headers on a
+direct listener were not measured.
+
 ## Gates
 
 | Gate | Evidence | Work it gates |
