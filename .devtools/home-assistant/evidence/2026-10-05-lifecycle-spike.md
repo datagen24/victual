@@ -84,7 +84,8 @@ Nested Loop, Join Filter: (r_1.origin_stock_id = sl_new.origin_stock_id)
 The planner estimates one row for the aggregate and compares 20,000 rows with 20,000 rows on
 every call, whatever the product. The cost grows with the square of the whole ledger, so it
 is not an artefact of how the fixture spreads rows over products. Migration 0292 calls the
-two views once per product. The repair is tracked separately from plan 35. S6's request loop
+two views once per product. The repair is [migration 0302](../../../migrations/0302.pgsql.sql),
+outside plan 35. It does not shorten this upgrade, because 0292 runs before it. S6's request loop
 covered `/login` only, so it shows the middleware's response during the upgrade, not reads of
 tables the migration had locked.
 
