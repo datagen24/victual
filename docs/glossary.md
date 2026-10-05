@@ -238,6 +238,27 @@ The API response shapes and values clients depend on, governed by Victual's own 
 specification and recorded exceptions. See
 [ADR-0005](adr/0005-wire-contract-is-the-invariant.md).
 
+## Deployment
+
+### Companion add-on
+
+A Home Assistant add-on that runs one Victual workload beside the main add-on, such as the
+label renderer, the label delivery worker, or the MCP server. Proposed in
+[plan 35](plans/35-home-assistant-target.md); none is built.
+
+### Ingress
+
+Home Assistant's authenticated reverse proxy for add-on web interfaces. It serves each
+add-on under an installation-specific path prefix, sends that prefix in `X-Ingress-Path`,
+and displays the page in a frame. Not Kubernetes Ingress, which `deploy/` also mentions. See
+[plan 35](plans/35-home-assistant-target.md).
+
+### Supervisor
+
+The Home Assistant OS component that installs add-ons from `config.yaml` manifests, writes
+their options to `/data/options.json`, and starts, stops, and watches their containers. See
+[plan 35](plans/35-home-assistant-target.md).
+
 ## Project records
 
 ### ADR
