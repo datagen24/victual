@@ -25,6 +25,19 @@ The [audit view-correction tests](018-audit-view-corrections.sql) cover migratio
 history, and `chores_current`'s leap-day yearly anchor and undone-execution-filtered weekly
 schedule (issues #501, #505, #497 and the weekly-schedule half of #506).
 
+The [stock_edited_entries scaling tests](028-stock-edited-entries-scaling.sql) cover
+migration 0302. The view's 0267 definition joined two aggregates of a materialised CTE, and
+PostgreSQL planned that join as a nested loop that scanned the whole ledger once per origin
+group. The price-cache triggers and `uihelper_product_details` read the view, so every
+booking and every product details read cost time quadratic in `stock_log`.
+
+On a fixture of about 3,500 rows the file compares the new definition with 0267's text, kept verbatim as a
+temporary view, as a multiset. It also bounds each plan's executed work (rows produced plus
+rows filtered out, times loops) by a multiple of the row count. 0267's text exceeds the
+bound in the same file, and installing it as the view fails the three bound assertions. A last
+assertion checks that `trg_stock_log_INS()` and `rebuild_stock_log_cache_for_product()` run
+with `jit = off`, which the same migration sets.
+
 The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
 migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
 retires those labels with the product's own name, not null. `trg_cascade_product_removal`
@@ -115,6 +128,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
 | `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 | `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
+| `stock_edited_entries` (linear in `stock_log`, same rows as 0267) | view | 0302 | `028-stock-edited-entries-scaling.sql` |
 
 ## Completeness
 
