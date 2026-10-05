@@ -69,15 +69,16 @@ Line references below are to that commit.
 `flake.nix:95-106` builds six images for `x86_64-linux` and `aarch64-linux`: `victual-app`
 (php-fpm on 127.0.0.1:9000), `victual-web` (nginx on 8080), `victual-migrate`,
 `victual-label-renderer`, `victual-label-worker`, and `victual-mcp` (Node on 3000). Every
-image runs as `65532:65532` and has no shell (`nix/checks.nix:60-177`). The Kubernetes
+image runs as `65532:65532` and has no shell (`nix/checks.nix:59-177`). The Kubernetes
 manifests and the `nix.yml` boot test supply the read-only root filesystem and the `/tmp`
 tmpfs; the images assume both and do not enforce them.
 
 `release.yml` publishes multi-architecture tags to `ghcr.io/datagen24/victual-<component>`.
 Tag `v0.2.0-MVP` (`ecc2944a`, 2026-09-24) published all six; the GitHub release lists their
 digests. An anonymous token request and manifest fetch for `victual-app:0.2.0-MVP` returned
-HTTP 200 on 2026-10-04, so the packages are publicly pullable. The
-[release record](../releases/0.2.0-MVP.md) still lists setting them public as not done.
+HTTP 200 on 2026-10-04, so that package is publicly pullable; the other five were not
+tested. The [release record](../releases/0.2.0-MVP.md) still lists setting the packages
+public as not done.
 
 The label renderer and delivery worker are Rust crates in separate repositories, pinned at
 `f05c432f` and `da925898` in `flake.lock` (`flake.nix:27-32`). Their transports, `--health`
@@ -159,7 +160,9 @@ nginx listens on 8080 and forwards to PHP-FPM over 127.0.0.1:9000
 configuration. Two behaviours conflict with Ingress before path handling is considered:
 
 - nginx sends `X-Frame-Options SAMEORIGIN` (`nix/runtime/nginx-conf.nix:105`). Home
-  Assistant renders Ingress panels in a frame on its own origin.
+  Assistant renders Ingress panels in a frame on its own origin. Upstream grocy fixed
+  dialogs inside a frame for the community Home Assistant add-on in 4.4.2
+  (`changelog/79_4.4.2_2025-02-28.md:17`).
 - The base path is a build input. `bin/victual-warm-cache` writes a route cache whose file
   name hashes `BASE_PATH` (`helpers/CachePaths.php:39-45`), the cache directory is
   read-only, and a different runtime value makes Slim refuse to start. Every published image
