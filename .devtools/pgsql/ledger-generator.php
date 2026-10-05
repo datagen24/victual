@@ -3,7 +3,7 @@
 // Grows a realistic stock ledger by driving StockService, for measuring how the stock_log
 // cache rebuild scales with ledger size (issue: stock_edited_entries' quadratic plan).
 //
-//   php .devtools/pgsql/ledger-generator.php --products=N --days=N [--seed=N] [--start=YYYY-MM-DD]
+//   php .devtools/pgsql/ledger-generator.php --products=N --days=N [--seed=N] [--start=YYYY-MM-DD] [--reconcile]
 //
 // It books through the same service methods the API calls, so the ledger has the shapes a
 // household produces: several purchases per product at varying prices and due dates, FIFO
@@ -16,11 +16,14 @@
 // The ledger rows do not depend on the caches, and leaving the triggers on would make
 // generating a large ledger cost exactly what is being measured. The caches are therefore
 // stale afterwards until reconcile_stock_log_cache() runs, which is itself one of the
-// measurements. Run bin/victual-migrate against the database first. The database comes
-// from config.php, as for every bin/ script.
+// measurements, so it is not run by default: until it is, the API reports no last or
+// average price for the generated products. Pass --reconcile to run it before exiting.
+// Run bin/victual-migrate against the database first. The database comes from config.php,
+// as for every bin/ script.
 //
-// Prints one line: the database's stock_log, stock and stock_entry_origins row counts, and
-// how many stock_log rows are live edits ("stock-edit-new") and undone bookings.
+// Prints one line: the database's stock_log, stock and stock_entry_origins row counts, how
+// many stock_log rows are live edits ("stock-edit-new") and undone bookings, and how many
+// bookings StockService refused, by operation and exception class.
 
 use Victual\Services\DatabaseService;
 use Victual\Services\StockService;
@@ -30,15 +33,16 @@ if (PHP_SAPI !== 'cli')
 	exit('This is a command line script');
 }
 
-$options = getopt('', ['products:', 'days:', 'seed::', 'start::']);
+$options = getopt('', ['products:', 'days:', 'seed::', 'start::', 'reconcile']);
 $productCount = intval($options['products'] ?? 0);
 $dayCount = intval($options['days'] ?? 0);
 $seed = intval($options['seed'] ?? 20261005);
 $start = $options['start'] ?? '2024-01-01';
+$reconcile = array_key_exists('reconcile', $options);
 
 if ($productCount < 1 || $dayCount < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start))
 {
-	fwrite(STDERR, "Usage: php .devtools/pgsql/ledger-generator.php --products=N --days=N [--seed=N] [--start=YYYY-MM-DD]\n");
+	fwrite(STDERR, "Usage: php .devtools/pgsql/ledger-generator.php --products=N --days=N [--seed=N] [--start=YYYY-MM-DD] [--reconcile]\n");
 	exit(1);
 }
 
@@ -69,6 +73,9 @@ mt_srand($seed);
 
 // mt_rand() in [0, 1).
 $chance = fn(): float => mt_rand() / (mt_getrandmax() + 1);
+
+// Refused bookings, keyed "operation:exception class".
+$refused = [];
 
 $cacheTriggers = 'stock_log_ins, stock_log_upd, stock_log_del';
 $db->exec('ALTER TABLE stock_log DISABLE TRIGGER ' . str_replace(', ', ', DISABLE TRIGGER ', $cacheTriggers));
@@ -126,6 +133,7 @@ try
 			$rows = $stockRows->fetchAll(PDO::FETCH_OBJ);
 			$inStock = array_sum(array_map(fn($r) => (float)$r->amount, $rows));
 			$roll = $chance();
+			$operation = 'purchase';
 
 			try
 			{
@@ -138,18 +146,21 @@ try
 				}
 				elseif ($roll < 0.70)
 				{
+					$operation = 'consume';
 					// Usually a whole unit or two; sometimes enough to drain several entries.
 					$amount = min($inStock, $chance() < 0.85 ? mt_rand(1, 2) : mt_rand(3, 8));
 					$stock->ConsumeProduct($productId, $amount, $chance() < 0.05, StockService::TRANSACTION_TYPE_CONSUME);
 				}
 				elseif ($roll < 0.85)
 				{
+					$operation = 'open';
 					// A partial open of an unopened entry holding more than one unit splits it
 					// and records the remainder's origin.
 					$stock->OpenProduct($productId, 1);
 				}
 				elseif ($roll < 0.92)
 				{
+					$operation = 'edit';
 					$row = $rows[mt_rand(0, count($rows) - 1)];
 					$entry = $db->query('SELECT * FROM stock WHERE id = ' . intval($row->id))->fetch(PDO::FETCH_OBJ);
 					$newAmount = max(1, (float)$entry->amount + ($chance() < 0.5 ? -1 : 1));
@@ -159,6 +170,7 @@ try
 				}
 				elseif ($roll < 0.96)
 				{
+					$operation = 'undo';
 					$lastBooking->execute([$productId]);
 					$bookingId = $lastBooking->fetchColumn();
 					if ($bookingId !== null && $bookingId !== false)
@@ -168,6 +180,7 @@ try
 				}
 				else
 				{
+					$operation = 'transfer';
 					$row = $rows[mt_rand(0, count($rows) - 1)];
 					$from = (int)$db->query('SELECT location_id FROM stock WHERE id = ' . intval($row->id))->fetchColumn();
 					$to = $locationIds[($from + 1) % count($locationIds)] ?? $locationIds[0];
@@ -180,7 +193,10 @@ try
 			catch (Exception $ex)
 			{
 				// A refused booking (an undo something depends on, a transfer of an opened
-				// remainder) is something a household meets too; skip it and carry on.
+				// remainder) is something a household meets too; skip it, count it, and carry
+				// on. The count is printed, so a run that lost a whole kind of booking says so.
+				$key = $operation . ':' . get_class($ex);
+				$refused[$key] = ($refused[$key] ?? 0) + 1;
 			}
 		}
 	}
@@ -190,9 +206,19 @@ finally
 	$db->exec('ALTER TABLE stock_log ENABLE TRIGGER ' . str_replace(', ', ', ENABLE TRIGGER ', $cacheTriggers));
 }
 
+if ($reconcile)
+{
+	$db->exec('SELECT reconcile_stock_log_cache()');
+}
+
+ksort($refused);
+
 echo 'stock_log=' . $db->query('SELECT COUNT(*) FROM stock_log')->fetchColumn()
 	. ' stock=' . $db->query('SELECT COUNT(*) FROM stock')->fetchColumn()
 	. ' stock_entry_origins=' . $db->query('SELECT COUNT(*) FROM stock_entry_origins')->fetchColumn()
 	. ' edits=' . $db->query("SELECT COUNT(*) FROM stock_log WHERE transaction_type = 'stock-edit-new'")->fetchColumn()
 	. ' undone=' . $db->query('SELECT COUNT(*) FROM stock_log WHERE undone = 1')->fetchColumn()
+	. ' refused=' . array_sum($refused)
+	. ($refused === [] ? '' : ' (' . implode(', ', array_map(fn($k, $v) => "$k=$v", array_keys($refused), $refused)) . ')')
+	. ($reconcile ? ' caches=reconciled' : ' caches=stale')
 	. PHP_EOL;
