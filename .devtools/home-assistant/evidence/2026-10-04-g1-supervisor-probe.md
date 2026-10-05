@@ -28,7 +28,7 @@ public host name, client address, Home Assistant user, and session values) are o
 | `/tmp` | writable, on the overlay (no tmpfs) | writable, on the overlay |
 | `/data` | `755 root:root`, writable | not writable |
 | `/data/options.json` | `600 root:root`, readable | **not readable** |
-| `/share` (mapped read-write) | writable | not writable (`755 root:root`) |
+| `/share` (mapped read-write) | writable | not writable (`755 root:root`); the report directory `/share/victual-probe` was made `1777` by `deploy.sh`, so the report landed there |
 | Environment names | `HASSIO_TOKEN`, `SUPERVISOR_TOKEN`, `TZ`, plus image variables | same |
 | `memory.max` / `cpu.max` / `pids.max` | `max` / `max 100000` / `19125` | same |
 | Open-file limit | 1024 | 1024 |
@@ -63,6 +63,9 @@ One browser request per probe through the Home Assistant panel:
 
 - Watchdog restart after the listener stops (`fail_after_seconds`); the watchdog was not
   enabled.
+- Whether a process can fetch its options through the Supervisor API
+  (`/addons/self/options/config`) with the `SUPERVISOR_TOKEN` it inherits, including a
+  UID 65532 child of a root process.
 - Whether children survive the stop of PID 1's script; the container stop ends them
   regardless.
 - Any manifest control that lowers the capability set, enables seccomp, sets a memory limit,

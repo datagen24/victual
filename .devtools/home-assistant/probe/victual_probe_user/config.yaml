@@ -1,6 +1,6 @@
 # Disposable gate G1 probe for plan 35. Not a Victual add-on; uninstall after the run.
 name: "Victual probe (user)"
-version: "0.1.0"
+version: "0.2.0"
 slug: victual_probe_user
 description: "Records what the Supervisor gives an add-on container. Plan 35, gate G1."
 arch:
@@ -13,7 +13,10 @@ ingress: true
 ingress_port: 8099
 ports:
   8099/tcp: null
+ports_description:
+  8099/tcp: "Direct probe listener, for the forged-header test. Disabled unless set."
 watchdog: "tcp://[HOST]:[PORT:8099]"
+tmpfs: true
 map:
   - type: share
     read_only: false

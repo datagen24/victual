@@ -74,6 +74,32 @@ if [ "$(id -u)" = 0 ]; then
 	run "grep -E '^(hidepid|proc)' /proc/mounts; grep ' /proc ' /proc/mounts"
 fi
 
+section "options through the Supervisor API"
+# Records the HTTP status and the option keys only, never values.
+cat > /tmp/api-options.sh <<'API'
+#!/bin/sh
+if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
+	echo "no SUPERVISOR_TOKEN in this environment"
+	exit 0
+fi
+hdr=$(mktemp)
+body=$(wget -S -q -O - --header "Authorization: Bearer $SUPERVISOR_TOKEN" \
+	http://supervisor/addons/self/options/config 2>"$hdr")
+status=$(grep -m1 'HTTP/' "$hdr" | sed 's/^ *//')
+echo "status: ${status:-none; $(head -n 1 "$hdr")}"
+printf '%s' "$body" | jq -r '.data | keys[]?' 2>/dev/null | sed 's/^/key: /'
+rm -f "$hdr"
+API
+chmod 755 /tmp/api-options.sh
+say "as uid $(id -u) with the inherited environment:"
+/tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+say "as uid $(id -u) with both tokens removed:"
+env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN /tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+if [ "$(id -u)" = 0 ]; then
+	say "as a uid 65532 child with the inherited environment:"
+	su-exec 65532:65532 /tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+fi
+
 section "resource limits"
 run "cat /proc/self/cgroup"
 for f in memory.max memory.high cpu.max cpu.weight pids.max; do

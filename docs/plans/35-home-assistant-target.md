@@ -245,6 +245,8 @@ measured the following:
   therefore leaves them unable to read their configuration from the options file.
 - A UID 65532 child of a root process cannot read the options file, the root process's
   environment, or its open descriptors. It can read the root process's command line.
+  Whether it can fetch the options through the Supervisor API with the token it inherits is
+  unmeasured.
 - Every add-on receives `SUPERVISOR_TOKEN` and `HASSIO_TOKEN` in its environment. With
   `clear_env = no`, PHP-FPM workers would receive both.
 - The root filesystem is a writable overlay, `/tmp` is not a tmpfs, no seccomp filter is
@@ -257,7 +259,11 @@ measured the following:
   also forwards `X-Forwarded-Proto: https`, `X-Forwarded-Host`, and Home Assistant user
   headers (`X-Remote-User-Id`, `X-Remote-User-Name`, `X-Remote-User-Display-Name`). Victual
   must not treat the user headers as authentication: identity mapping is out of scope.
-- The MQTT and InfluxDB add-ons resolve by host name on the add-on network.
+- The MQTT and InfluxDB add-ons resolve by host name on the add-on network, to IPv6
+  addresses only, so the pilot's connection checks in 654-A3 also exercise IPv6.
+- The Ingress request arrived over HTTPS with a client address outside the add-on network:
+  the pilot host's panel is reachable from outside the LAN behind Home Assistant's login.
+  This is an input to open question 3.
 
 The watchdog, manifest controls that might reduce privileges, and forged headers on a
 direct listener were not measured.
