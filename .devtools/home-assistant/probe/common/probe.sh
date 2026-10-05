@@ -85,6 +85,29 @@ if [ "$(id -u)" = 0 ]; then
 	su-exec 65532:65532 /opt/probe/api-options.sh 2>&1 | tee -a "$REPORT"
 fi
 
+section "another add-on's options through the Supervisor API"
+OTHER=${PROBE_OTHER_SLUG:-}
+if [ -n "$OTHER" ]; then
+	/opt/probe/api-options.sh "/addons/$OTHER/info" 2>&1 | tee -a "$REPORT"
+	/opt/probe/api-options.sh "/addons/$OTHER/options/config" 2>&1 | tee -a "$REPORT"
+fi
+/opt/probe/api-options.sh "/addons" 2>&1 | tee -a "$REPORT"
+
+section "environment of other processes"
+say "pid 1 is $(tr '\0' ' ' < /proc/1/cmdline) owned by uid $(stat -c %u /proc/1)"
+/opt/probe/token-in.sh 1 2>&1 | tee -a "$REPORT"
+# A same-uid process holding the tokens, and a sibling started with them removed, as a
+# scrubbed serving process would be.
+sleep 300 &
+HOLDER=$!
+say "same-uid process started with both tokens removed:"
+env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN /opt/probe/token-in.sh self 1 "$HOLDER" 2>&1 | tee -a "$REPORT"
+if [ "$(id -u)" = 0 ]; then
+	say "uid 65532 child started with both tokens removed:"
+	env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN su-exec 65532:65532 /opt/probe/token-in.sh self 1 "$HOLDER" 2>&1 | tee -a "$REPORT"
+fi
+kill "$HOLDER" 2>/dev/null
+
 section "resource limits"
 run "cat /proc/self/cgroup"
 for f in memory.max memory.high cpu.max cpu.weight pids.max; do

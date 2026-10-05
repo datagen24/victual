@@ -1,6 +1,6 @@
 # Disposable gate G1 probe for plan 35. Not a Victual add-on; uninstall after the run.
 name: "Victual probe (root)"
-version: "0.2.1"
+version: "0.3.0"
 slug: victual_probe_root
 description: "Records what the Supervisor gives an add-on container. Plan 35, gate G1."
 arch:
