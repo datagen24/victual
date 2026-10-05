@@ -385,6 +385,11 @@ These remain unresolved for the separated layout:
 - The main add-on's run shape after migrating. It can exit, with `startup: once`, or stay
   running to re-check the schema and report health. A watchdog only applies to a running
   add-on.
+- What "unready" means to the Supervisor. The Supervisor has no readiness state, only the
+  watchdog. A serving add-on can listen from the start and answer 503 while it waits, as
+  nginx and `SchemaVersionMiddleware` already do, or not listen until the schema check
+  passes. In the second shape a TCP watchdog restarts the add-on about every three minutes
+  for as long as a migration runs, as the watchdog measurement showed.
 - Companions during migration. The label renderer, delivery worker, and MCP server reach
   Victual over its API and receive 503 while the schema is incompatible. A print attempt
   whose lease expires during an upgrade becomes `uncertain` and needs an administrator to
@@ -411,7 +416,9 @@ serving side reports and whether any request was served against an incompatible 
 | S8 Concurrent migrators | Two migrator starts at once | One runs and one waits on the lock; the result equals a single run |
 
 S6 and S7 depend on what PostgreSQL's DDL locks do to concurrent queries, so they need
-measurement, not reasoning.
+measurement, not reasoning. S6 is meaningful with the `v0.2.0-MVP` fixture because that
+release's middleware already refuses unknown migrations (`SchemaVersionMiddleware.php:77`
+at the tag).
 
 ## Dependencies
 
