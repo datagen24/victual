@@ -277,13 +277,7 @@ measured the following:
   the pilot host's panel is reachable from outside the LAN behind Home Assistant's login.
   This is an input to open question 3.
 
-Two topologies satisfy these measurements. In one add-on, a root launcher reads the
-options and starts the serving processes under a UID that neither PID 1 nor any token holder
-uses, with the tokens removed; running the launcher as root is a departure from ADR-0010
-that needs its own record. In separate add-ons, each add-on's token reads only its own
-options, so a serving add-on configured with the application role cannot reach the
-migration credential. That comparison, and how a separate serving add-on waits for the
-schema, belong to the topology design.
+These measurements leave two topologies, compared under [Topology](#topology).
 
 The watchdog, manifest controls that might reduce privileges, and forged headers on a direct
 listener were not measured.
@@ -303,18 +297,117 @@ The current behaviour above already settles part of G2 and G3. A topology that p
 migration password in a container running PHP-FPM with `clear_env = no` and `/data` as its
 data path fails G2. An image that sends `X-Frame-Options SAMEORIGIN` fails G3.
 
-## Design candidates
+## Topology
 
-Two topologies are compared under G1. Both keep schema setup inside the main add-on's
-lifecycle; a separate import or upgrade add-on does not satisfy issue 655.
+### Recommendation
 
-1. One main add-on that runs web, PHP, and migration as isolated processes, with the
-   migration credential unreadable by the PHP user.
-2. Separate serving components coordinated by the main add-on's lifecycle.
+Separate add-ons are the recommended layout, provided the lifecycle spike below shows that
+they coordinate safely. The measurements under [Supervisor measurements](#supervisor-measurements)
+support this layout because it keeps ADR-0010's non-root property and still isolates the
+migration credential:
 
-The label renderer and delivery worker start as separate companions because their images and
-credentials are already separate. MCP is a companion whose client access does not pass
-through Ingress. Each recommendation stands only if Supervisor evidence supports it.
+- The main add-on holds the migration identity and runs schema setup and upgrades. Its
+  options contain the migration credential.
+- A serving add-on holds the application identity only. Its token reads only its own options
+  (`GET /addons/<other>/options/config` answered 403), so it cannot reach the migration
+  credential through the Supervisor API, its options file, or another container's process
+  state.
+- Both add-ons can start as UID 65532 and read their options through the Supervisor API,
+  so neither needs a root launcher.
+
+The recommendation keeps schema setup in the main add-on's lifecycle, as the maintainer's
+answer to issue 654's question 2 requires. A separate import or upgrade add-on still does not
+satisfy issue 655. The recommendation is a proposal. If the spike confirms it, it is recorded
+in an ADR, which is accepted in its own pull request.
+
+The alternative is one add-on with a root launcher. The launcher reads the options, then
+starts nginx and PHP-FPM under UIDs that no token holder uses, with both tokens removed from
+their environment. It needs an ADR that names root startup as a departure from ADR-0010
+property 3. It remains the fallback if separate add-ons cannot coordinate.
+
+### Coordination through the database
+
+PostgreSQL is the only state the add-ons share, so coordination uses it rather than
+cross-add-on Supervisor permissions:
+
+1. The main add-on runs `bin/victual-migrate` with the migration identity. The migration
+   holds the session advisory lock `1986947956` for the whole run, including the baseline,
+   the always-run migration 8888, sequence resynchronisation, and `ANALYZE`
+   (`services/DatabaseMigrationService.php:89-95,104-139`).
+2. The serving add-on checks compatibility with the application identity: the migration set
+   comparison that `SchemaVersionMiddleware` makes, plus whether any session holds the
+   migration lock. The `pg_locks` view is readable by every role, so the application
+   identity can see the lock.
+3. The serving add-on stays unready while the schema is absent, older, newer, or unreadable,
+   or while the lock is held. It retries with a bounded interval and total time, and it
+   reports which condition it is waiting on.
+4. It starts serving only after compatibility is established. `SchemaVersionMiddleware`
+   stays active for every request afterwards.
+
+Startup gating alone does not protect a serving add-on that is already running when an
+upgrade starts. Each migration commits in its own transaction. After the first new migration
+commits, the old code's middleware finds an unknown migration and answers 503. Before that
+commit, requests reach a schema that the migration may be altering under its locks. The spike
+measures what requests see in that window.
+
+The schema version alone may not establish safety at the end of an upgrade. Migration 8888 is
+excluded from the required set, so the set comparison can already match while the migrator is
+still running 8888, resynchronising sequences, or syncing user setting defaults. The lock
+check covers that interval if the lock is held until the run ends.
+
+`deploy/postgres/roles.sql:93` grants `victual_app` write access to every table, including
+`migrations`; its comment at lines 30-34 records the choice. The application identity can therefore insert or delete migration rows and so
+change the result of the compatibility check. Restricting that table is a hardening question
+for the ADR.
+
+### Open design questions
+
+These remain unresolved for the separated layout:
+
+- Install and update order. The Supervisor updates each add-on separately, and the main
+  add-on cannot start or stop the serving add-on without a Supervisor role above the default,
+  which this layout avoids. Updating the
+  main add-on first makes the old serving add-on answer 503 until it is updated. Updating the
+  serving add-on first makes it wait for the schema. Both orders fail closed; the operator
+  procedure states the expected order and what the panel shows in between.
+- The web tier's database boundary. In the Kubernetes pod, nginx runs in a container with no
+  database credential. A serving add-on that runs nginx and PHP-FPM as one UID gives nginx
+  access to the application credential, through PID 1's environment or the token. The
+  candidates are a separate web add-on that forwards FastCGI to the serving add-on over the
+  add-on network, which any add-on on that network could reach; a named ADR-0010 exception
+  for the web tier; or a root launcher in the serving add-on only.
+- Where Ingress lives. Home Assistant shows the panel for the add-on that declares
+  `ingress`, so the household opens the serving or web add-on, not the main add-on.
+- The main add-on's run shape after migrating. It can exit, with `startup: once`, or stay
+  running to re-check the schema and report health. A watchdog only applies to a running
+  add-on.
+- Companions during migration. The label renderer, delivery worker, and MCP server reach
+  Victual over its API and receive 503 while the schema is incompatible. A print attempt
+  whose lease expires during an upgrade becomes `uncertain` and needs an administrator to
+  authorize a retry. How each companion reports and retries a 503 is defined in the
+  renderer and worker repositories and is unverified.
+
+### Lifecycle spike
+
+The spike tests the coordination above against PostgreSQL with the two roles from
+`deploy/postgres/roles.sql`, running the migration CLI and the application code from this
+repository in containers. It is a container-level test and does not count as Supervisor
+evidence; the Supervisor run follows once the coordination holds. Each case records what the
+serving side reports and whether any request was served against an incompatible schema.
+
+| Case | Setup | Pass condition |
+|---|---|---|
+| S1 Empty database | Serving check starts before the migrator | Serving waits, reporting an absent schema, and starts after the migrator finishes |
+| S2 Older schema | Database at `v0.2.0-MVP` (migration 0288) | Serving waits, reporting missing migrations, until the upgrade to 0301 ends |
+| S3 Newer schema | Database with an applied migration the code does not know | Serving never starts and reports the database as newer; the migrator refuses too, once that refusal exists |
+| S4 Unreadable | Wrong application password, then PostgreSQL stopped | Serving reports an unreadable schema, distinct from an absent one, and gives up after its bound |
+| S5 Lock held | Migrator paused inside its run after the last numbered migration commits | Serving does not start while the lock is held, although the set comparison already matches |
+| S6 Running during upgrade | Serving at 0.2.0 handles a request loop while the migrator upgrades to 0301 | Every response is either correct for the old schema or 503; no 500 and no wrong data |
+| S7 Failed migration | A migration that fails partway | Serving stays unready, the failure is reported, and no partial schema is served |
+| S8 Concurrent migrators | Two migrator starts at once | One runs and one waits on the lock; the result equals a single run |
+
+S6 and S7 depend on what PostgreSQL's DDL locks do to concurrent queries, so they need
+measurement, not reasoning.
 
 ## Dependencies
 
