@@ -22,11 +22,11 @@
 --    The same measure applied to 0267's text must exceed the bound, or the bound proves
 --    nothing about this fixture.
 --
---    Measured 2026-10-05 on PostgreSQL 16.15 with 3,507 rows: 7.3 units per row for the
---    view (bound 20), 22 for the average-price refresh (bound 100), 70 for the
+--    Measured 2026-10-05 on PostgreSQL 16.15 with 3,507 rows: 8.9 units per row for the
+--    view (bound 20), 27 for the average-price refresh (bound 100), 95 for the
 --    last-purchased refresh (bound 200; it expands the view nine times), and 1,107 for
 --    0267's text on its own. With 0267's text installed as stock_edited_entries the three
---    bounds fail and every other assertion passes.
+--    bounds fail and every other assertion passes, on PostgreSQL 15.19 as well.
 --
 -- The cache triggers are disabled while the fixture loads (each insert would otherwise
 -- refresh two caches through the view under test) and nothing is ANALYZEd, which is the
@@ -36,7 +36,7 @@
 
 BEGIN;
 
-SELECT plan(9);
+SELECT plan(10);
 
 ALTER TABLE stock_log DISABLE TRIGGER stock_log_ins, DISABLE TRIGGER stock_log_upd, DISABLE TRIGGER stock_log_del;
 
@@ -284,6 +284,16 @@ SELECT cmp_ok(
 	'>',
 	20 * (SELECT n FROM spike28_size),
 	'Negative control: the same measure exceeds the bound for 0267''s definition on this fixture'
+);
+
+-- C: the two functions that run the cache queries once per stock_log row do so without JIT,
+-- whose compilation cost more than the query once the ledger passed about 17,000 rows.
+SELECT is(
+	(SELECT COUNT(*)::INTEGER FROM pg_proc
+		WHERE proname IN ('trg_stock_log_ins', 'rebuild_stock_log_cache_for_product')
+			AND 'jit=off' = ANY (proconfig)),
+	2,
+	'trg_stock_log_INS() and rebuild_stock_log_cache_for_product() run with jit off'
 );
 
 SELECT * FROM finish();

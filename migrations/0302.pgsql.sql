@@ -30,36 +30,51 @@
 -- old definition, with fresh statistics, and the same for a product with 7 rows as for one
 -- with 106. The pull request that adds this migration records the full curve.
 --
--- WHAT CHANGED. One pass over stock_log, grouped by origin, and no join between derived
+-- WHAT CHANGED. One pass over stock_log, partitioned by origin, and no join between derived
 -- relations:
 --   - `bookings` is stock_log with each live "stock-edit-new" row's correction attached.
 --     The correction's LATERAL lookup of the matching "stock-edit-old" row runs only in
 --     the UNION ALL branch that holds those rows, so the planner costs it for the edit rows
 --     alone. Attached to every row, the lookup was skipped at run time by a one-time
---     filter but still costed per row, and that estimate pushed the consumers above
---     jit_above_cost: about 95 ms of JIT compilation per call at 2,905 rows.
---   - `groups` aggregates `bookings` by origin with FILTER clauses: the origin amount, the
---     newest edit, the summed correction, and the group's stock_ids as an array.
---   - The output unnests each corrected group's stock_ids.
+--     filter but still costed per row, which inflated every consumer's estimate.
+--   - `keyed` computes, with window aggregates over each origin group, the group's origin
+--     amount, newest edit and summed correction, and carries them on every row.
+--   - The output keeps the rows of groups that have both, one per stock_id.
 -- The only joins are stock_log to stock_entry_origins on a column with real statistics
 -- and the LATERAL index lookup on ix_stock_log_performance1 (stock_id, transaction_type,
 -- amount). No join depends on an estimate of a CTE or an aggregate, so a database with no
 -- statistics yet (after pg_restore, bin/victual-db-import or a bulk load) gets the same
 -- plan shape as an analysed one.
 --
--- Grouping and the array use COLLATE "C". The database's default collation is
--- deterministic, so "C" forms exactly the same groups and distinct values; it only skips
--- locale-aware comparison, which made the sort about 3.5 times slower. The output column
--- is cast back to the default collation so the view's column definitions are unchanged,
--- which CREATE OR REPLACE VIEW requires.
+-- Window aggregates rather than GROUP BY and an array of each group's stock_ids, which
+-- performs the same: PostgreSQL estimates ten elements for an UNNEST, so that form was
+-- estimated at 115,510 rows on a ledger where it returns 779, and the consumers' plans
+-- followed the overestimate. Two consequences were measured on 11,667 rows. The
+-- last-purchased refresh crossed jit_above_cost and paid about 100 ms of JIT compilation
+-- per call. And the generic plan plpgsql caches for rebuild_stock_log_cache_for_product()
+-- after five calls evaluated the view eagerly even for a product with no rows left, so
+-- deleting a product, which fires the delete trigger once per booking, took 4 s for 43
+-- bookings. This form is estimated at 1,167 rows and its generic plan stays lazy.
+--
+-- The partition key uses COLLATE "C". The database's default collation is deterministic,
+-- so "C" forms exactly the same groups; it only skips locale-aware comparison, which made
+-- the sort about 3.5 times slower. The output columns keep their collation, which CREATE OR
+-- REPLACE VIEW requires.
+--
+-- JIT OFF FOR THE TWO TRIGGER-SIDE FUNCTIONS. Linear is still nine passes over the ledger
+-- for products_last_purchased, which reads this view six times directly and three times
+-- through products_price_history, and its estimated cost passes jit_above_cost at roughly
+-- 17,000 stock_log rows. From there every booking would compile the query before running
+-- it once: at 19,416 rows the refresh took 279 ms with JIT and 137 ms without, 126 ms of it
+-- compilation. trg_stock_log_INS() and rebuild_stock_log_cache_for_product() run these
+-- queries once per stock_log row, so JIT never pays for itself there; both are set to run
+-- with jit off. Nothing else changes, and their bodies are untouched.
 --
 -- SAME RESULTS. The rows are the same as 0267's: one per stock_id in a group that has at
 -- least one origin booking (undone = 0, purchase / inventory-correction / self-production,
 -- amount > 0) and at least one live "stock-edit-new" row. Each row carries the group's
--- newest edit and its origin amount plus the summed corrections. stock_id is NOT NULL in
--- stock_log, so no group has a NULL key, and a stock_id belongs to exactly one group, so
--- the unnested rows are distinct without a DISTINCT. .devtools/pgtap/028 compares this
--- definition with 0267's text row for row.
+-- newest edit and its origin amount plus the summed corrections. .devtools/pgtap/028
+-- compares this definition with 0267's text row for row.
 --
 -- One qualification applies to products_average_price, which divides two SUMs of double
 -- precision products. A different plan feeds those SUMs rows in a different order, and the
@@ -124,8 +139,9 @@ WITH bookings AS (
 	WHERE sl.transaction_type = 'stock-edit-new'
 		AND sl.undone = 0
 ),
-groups AS (
+keyed AS (
 	SELECT
+		b.stock_id,
 		-- What the group started with. SUM rather than a single row: CompactStockEntries()
 		-- merges entries that are equal in every attribute, rewriting their stock_ids to
 		-- one, so a stock_id can carry more than one purchase.
@@ -133,20 +149,21 @@ groups AS (
 			WHERE b.undone = 0
 				AND b.transaction_type IN ('purchase', 'inventory-correction', 'self-production')
 				AND b.amount > 0
-		) AS origin_amount,
-		MAX(b.id) FILTER (WHERE b.transaction_type = 'stock-edit-new' AND b.undone = 0) AS stock_log_id_of_newest_edited_entry,
-		SUM(b.correction) AS correction,
-		ARRAY_AGG(DISTINCT b.stock_id COLLATE "C") AS stock_ids
+		) OVER origin_group AS origin_amount,
+		MAX(b.id) FILTER (WHERE b.transaction_type = 'stock-edit-new' AND b.undone = 0) OVER origin_group AS stock_log_id_of_newest_edited_entry,
+		SUM(b.correction) OVER origin_group AS correction
 	FROM bookings b
 	LEFT JOIN stock_entry_origins seo
 		ON seo.stock_id = b.stock_id
-	GROUP BY COALESCE(seo.origin_stock_id, b.stock_id) COLLATE "C"
+	WINDOW origin_group AS (PARTITION BY COALESCE(seo.origin_stock_id, b.stock_id) COLLATE "C")
 )
-SELECT
-	s.stock_id COLLATE "default" AS stock_id,
-	g.stock_log_id_of_newest_edited_entry,
-	g.origin_amount + g.correction AS edited_origin_amount
-FROM groups g
-CROSS JOIN LATERAL UNNEST(g.stock_ids) AS s(stock_id)
-WHERE g.origin_amount IS NOT NULL
-	AND g.stock_log_id_of_newest_edited_entry IS NOT NULL;
+SELECT DISTINCT
+	k.stock_id,
+	k.stock_log_id_of_newest_edited_entry,
+	k.origin_amount + k.correction AS edited_origin_amount
+FROM keyed k
+WHERE k.origin_amount IS NOT NULL
+	AND k.stock_log_id_of_newest_edited_entry IS NOT NULL;
+
+ALTER FUNCTION trg_stock_log_INS() SET jit = off;
+ALTER FUNCTION rebuild_stock_log_cache_for_product(INTEGER) SET jit = off;

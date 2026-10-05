@@ -34,7 +34,9 @@ booking and every product details read cost time quadratic in `stock_log`.
 On a fixture of about 3,500 rows the file compares the new definition with 0267's text, kept verbatim as a
 temporary view, as a multiset. It also bounds each plan's executed work (rows produced plus
 rows filtered out, times loops) by a multiple of the row count. 0267's text exceeds the
-bound in the same file, and installing it as the view fails the three bound assertions.
+bound in the same file, and installing it as the view fails the three bound assertions. A last
+assertion checks that `trg_stock_log_INS()` and `rebuild_stock_log_cache_for_product()` run
+with `jit = off`, which the same migration sets.
 
 The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
 migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
