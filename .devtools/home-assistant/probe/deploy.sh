@@ -11,7 +11,7 @@ trap 'rm -rf "$stage"' EXIT
 for v in root user; do
 	mkdir -p "$stage/victual_probe_$v"
 	cp "$here/victual_probe_$v/config.yaml" "$here/victual_probe_$v/Dockerfile" "$stage/victual_probe_$v/"
-	cp "$here/common/probe.sh" "$stage/victual_probe_$v/"
+	cp "$here/common/probe.sh" "$here/common/api-options.sh" "$here/common/index.cgi" "$stage/victual_probe_$v/"
 done
 tar -C "$stage" -cf - victual_probe_root victual_probe_user |
 	ssh "$host" 'sudo mkdir -p /addons /share/victual-probe && sudo chmod 1777 /share/victual-probe && sudo tar -C /addons --no-same-owner -xf - && ls -l /addons/victual_probe_root /addons/victual_probe_user'

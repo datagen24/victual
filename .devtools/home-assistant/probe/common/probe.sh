@@ -76,28 +76,13 @@ fi
 
 section "options through the Supervisor API"
 # Records the HTTP status and the option keys only, never values.
-cat > /tmp/api-options.sh <<'API'
-#!/bin/sh
-if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
-	echo "no SUPERVISOR_TOKEN in this environment"
-	exit 0
-fi
-hdr=$(mktemp)
-body=$(wget -S -q -O - --header "Authorization: Bearer $SUPERVISOR_TOKEN" \
-	http://supervisor/addons/self/options/config 2>"$hdr")
-status=$(grep -m1 'HTTP/' "$hdr" | sed 's/^ *//')
-echo "status: ${status:-none; $(head -n 1 "$hdr")}"
-printf '%s' "$body" | jq -r '.data | keys[]?' 2>/dev/null | sed 's/^/key: /'
-rm -f "$hdr"
-API
-chmod 755 /tmp/api-options.sh
 say "as uid $(id -u) with the inherited environment:"
-/tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+/opt/probe/api-options.sh 2>&1 | tee -a "$REPORT"
 say "as uid $(id -u) with both tokens removed:"
-env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN /tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN /opt/probe/api-options.sh 2>&1 | tee -a "$REPORT"
 if [ "$(id -u)" = 0 ]; then
 	say "as a uid 65532 child with the inherited environment:"
-	su-exec 65532:65532 /tmp/api-options.sh 2>&1 | tee -a "$REPORT"
+	su-exec 65532:65532 /opt/probe/api-options.sh 2>&1 | tee -a "$REPORT"
 fi
 
 section "resource limits"
@@ -126,27 +111,9 @@ else
 fi
 
 section "ingress listener"
-mkdir -p /tmp/www/cgi-bin
-cat > /tmp/www/cgi-bin/index.cgi <<EOF
-#!/bin/sh
-{
-	echo ""
-	echo "### request \$(date -u +%Y%m%dT%H%M%SZ)"
-	echo "REMOTE_ADDR=\$REMOTE_ADDR"
-	echo "REQUEST_METHOD=\$REQUEST_METHOD REQUEST_URI=\$REQUEST_URI"
-	env | grep '^HTTP_' | grep -v -i -E '^HTTP_(COOKIE|AUTHORIZATION)=' | sort
-	env | grep -i -E '^HTTP_(COOKIE|AUTHORIZATION)=' | cut -d= -f1 | sed 's/\$/ (value withheld)/'
-} >> "$REPORT"
-printf 'Content-Type: text/plain\r\n\r\n'
-echo "victual probe $SLUG"
-echo "REMOTE_ADDR=\$REMOTE_ADDR"
-echo "X-Ingress-Path=\$HTTP_X_INGRESS_PATH"
-EOF
-chmod 755 /tmp/www/cgi-bin/index.cgi
-# busybox httpd runs CGI only under /cgi-bin; the root index redirects to the script so
-# a browser opening the Ingress panel reaches it.
-printf '<meta http-equiv="refresh" content="0; url=cgi-bin/index.cgi">\n' > /tmp/www/index.html
-httpd -f -p 8099 -h /tmp/www &
+# The listener's files are in the image: with tmpfs enabled, /tmp is mounted noexec.
+echo "$REPORT" > /tmp/report-path
+httpd -f -p 8099 -h /opt/probe/www &
 HTTPD=$!
 sleep 1
 if kill -0 "$HTTPD" 2>/dev/null; then say "httpd pid $HTTPD on 8099"; else say "httpd failed to start"; fi
