@@ -19,7 +19,8 @@
 // measurements. Run bin/victual-migrate against the database first. The database comes
 // from config.php, as for every bin/ script.
 //
-// Prints one line: the number of stock_log, stock and stock_entry_origins rows written.
+// Prints one line: the database's stock_log, stock and stock_entry_origins row counts, and
+// how many stock_log rows are live edits ("stock-edit-new") and undone bookings.
 
 use Victual\Services\DatabaseService;
 use Victual\Services\StockService;

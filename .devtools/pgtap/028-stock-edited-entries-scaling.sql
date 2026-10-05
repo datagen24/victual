@@ -29,8 +29,9 @@
 --    bounds fail and every other assertion passes, on PostgreSQL 15.19 as well.
 --
 -- The cache triggers are disabled while the fixture loads (each insert would otherwise
--- refresh two caches through the view under test) and nothing is ANALYZEd, which is the
--- state a database is in right after pg_restore or bin/victual-db-import. The whole file
+-- refresh two caches through the view under test), and the file does not ANALYZE, so the
+-- fixture's rows have no statistics of their own, as after pg_restore or
+-- bin/victual-db-import. The bounds do not depend on that. The whole file
 -- runs in one transaction and rolls back, so no later file sees the fixture or the
 -- disabled triggers.
 

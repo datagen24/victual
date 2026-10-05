@@ -26,9 +26,10 @@
 --
 -- Measured 2026-10-05 on PostgreSQL 16.15, ledgers grown by
 -- .devtools/pgsql/ledger-generator.php (80 products, StockService bookings) on master at
--- 46a35e34: rebuilding one product's caches took 1.07 s at 2,905 stock_log rows under the
+-- 46a35e34: rebuilding one product's caches took 1.05 s at 2,907 stock_log rows under the
 -- old definition, with fresh statistics, and the same for a product with 7 rows as for one
--- with 106. The pull request that adds this migration records the full curve.
+-- with 108; 40 s at 19,416 rows. The pull request that adds this migration records the
+-- full curve.
 --
 -- WHAT CHANGED. One pass over stock_log, partitioned by origin, and no join between derived
 -- relations:
@@ -68,7 +69,9 @@
 -- it once: at 19,416 rows the refresh took 279 ms with JIT and 137 ms without, 126 ms of it
 -- compilation. trg_stock_log_INS() and rebuild_stock_log_cache_for_product() run these
 -- queries once per stock_log row, so JIT never pays for itself there; both are set to run
--- with jit off. Nothing else changes, and their bodies are untouched.
+-- with jit off. Nothing else changes, and their bodies are untouched. CREATE OR REPLACE
+-- FUNCTION replaces a function's SET clauses, so a later redefinition of either one drops
+-- this setting unless it repeats it; .devtools/pgtap/028 asserts it.
 --
 -- SAME RESULTS. The rows are the same as 0267's: one per stock_id in a group that has at
 -- least one origin booking (undone = 0, purchase / inventory-correction / self-production,
@@ -79,8 +82,8 @@
 -- One qualification applies to products_average_price, which divides two SUMs of double
 -- precision products. A different plan feeds those SUMs rows in a different order, and the
 -- last bit of the quotient can change (measured: at most 5e-16 relative). 0267's view
--- already behaved this way: switching off merge joins alone changes 38 of 80 averages on the
--- same ledger. Every other column of every consumer is identical.
+-- already behaved this way: disabling merge joins and explicit sorts changes 38 of 80 of its
+-- averages on the same ledger. Every other column of every consumer is identical.
 --
 -- The price caches are not rebuilt here. Their contents do not depend on which definition
 -- produced them beyond that last bit, and rebuilding them would cost an upgrade one
