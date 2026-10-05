@@ -278,8 +278,10 @@ measured the following:
   This is an input to open question 3.
 - With `watchdog: "tcp://[HOST]:[PORT:8099]"` on an unpublished Ingress port, the
   Supervisor restarted the add-on 2 minutes 38 seconds after its listener stopped, although
-  PID 1 was still running. A watchdog failure costs minutes of unavailability before the
-  restart.
+  PID 1 was still running. Left running overnight, it restarted the add-on 167 times in
+  11 hours, almost always about three minutes after the listener stopped, with no back-off.
+  A watchdog failure costs about three minutes of unavailability per restart, and a
+  persistent failure becomes an indefinite restart loop.
 
 These measurements leave two topologies, compared under [Topology](#topology).
 

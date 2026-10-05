@@ -115,9 +115,15 @@ Root probe 0.3.0 with the watchdog enabled and `fail_after_seconds: 60`
 | 01:34:01 | SIGTERM to the probe |
 | 01:34:02 | Start number 7; listener up |
 
-The restart came 2 minutes 38 seconds after the listener stopped, with no restart requested
-from the user interface (maintainer to confirm). The TCP watchdog works on an unpublished
+The restart came 2 minutes 38 seconds after the listener stopped. The maintainer confirmed
+that nobody restarted the add-on: the watchdog did. The TCP watchdog works on an unpublished
 Ingress port, and it restarts a container whose PID 1 is still alive.
+
+The probe then ran unattended overnight. From 01:30:21 to 12:43:22 UTC on 2026-10-05 the
+root probe started 167 more times (start number 173 in the last report). Of the intervals
+between starts, 165 were 235–245 seconds (60 seconds of listening, then about three minutes
+until the restart), one was 481 seconds, starting at 09:06, and one was shorter. The
+Supervisor did not back off or give up over 11 hours.
 
 ## Not measured in these runs
 
