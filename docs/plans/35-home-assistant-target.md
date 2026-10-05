@@ -314,7 +314,7 @@ here:
    | PostgreSQL version and location | Not provided |
    | Printer model and transport | Brother QL-820NWBc, the only model in `.devtools/labels/fixtures/brother-ql.json`, which declares the `tcp` transport only |
    | MCP client and version | Not provided |
-   | Second architecture | None available; `amd64` stays unverified |
+   | Second architecture instance | Not provided |
 
 2. Which Supervisor-enforceable topology keeps the migration credential away from the serving
    processes?
