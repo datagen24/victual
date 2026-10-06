@@ -47,6 +47,10 @@ function fixture(PDO $db): void
  $property->setValue(null, $db);
  try { require dirname(__DIR__,2).'/migrations/0283.pgsql.php'; }
  finally { $property->setValue(null, $previous); }
+
+ // ADR-0037's retirement events (0303): PrintAttemptService::Claim() reads them in its
+ // candidate predicate, and the trigger on `labels` writes one per stock-entry retirement.
+ $db->exec(file_get_contents(dirname(__DIR__,2).'/migrations/0303.pgsql.sql'));
 }
 function driver(): array
 {
