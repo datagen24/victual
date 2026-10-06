@@ -21,8 +21,9 @@
 #     both containers get SIGTERM. See deploy/README.md, "Signals".
 #   - The initContainer failing while the roles do not exist yet is expected, and
 #     converges: it exited 1 once, was restarted by the kubelet, and succeeded.
-# Not yet applied to k3s itself. A k3s apply that reaches a printer is plan 25's
-# verification 12 and is still open.
+# Applied to a real cluster on 2026-10-06: the maintainer's Talos cluster (v1.37, arm64),
+# through deploy/talos, from the published images; the same three findings held. An apply
+# that reaches a printer is plan 25's verification 12 and is still open.
 #
 # PostgreSQL is not in here, nor ingress, nor a storage class: the fork declares what its
 # workloads need and the operator decides where they run (ADR-0010's boundary, and

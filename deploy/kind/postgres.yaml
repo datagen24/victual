@@ -89,6 +89,17 @@ spec:
               drop: ["ALL"]
           # Over TCP, not the socket: during init the image's temporary server listens on
           # its socket only, so a socket check passes before the real server is up.
+          #
+          # The same fact is why liveness waits on a startup probe rather than a fixed delay:
+          # the TCP check fails for all of init, and a liveness kill mid-init leaves a PGDATA
+          # with no `victual` database that the next start will not initialise again. On
+          # deploy/talos's NFS volume, init took about a minute; a 30 s delay killed it
+          # (exit 137, 2026-10-06). The startup probe allows five.
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "victual"]
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             exec:
               command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "victual"]
@@ -96,7 +107,6 @@ spec:
           livenessProbe:
             exec:
               command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "victual"]
-            initialDelaySeconds: 30
             periodSeconds: 10
           resources:
             requests:

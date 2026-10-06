@@ -10,12 +10,12 @@ else.
 plan used to have to work around.
 
 **Status:** **piece 1 complete, 2026-09-04; pieces 2, 3 and the credential split done and
-piece 4 written but not applied, 2026-09-18.** The flake under [`nix/`](../../nix/README.md)
-builds and the manifest under [`deploy/`](../../deploy/README.md) serves; the Executed
-sections below record what each round found. **Still open, and gated on a cluster this
-plan's author did not have:** piece 4's K3S apply (which is also plan 25's verification 12,
-and therefore [issue 93](https://github.com/datagen24/victual/issues/93)'s last gate) and
-the cluster half of verification 9. Piece 1 was ADR-0013's acceptance gate.
+piece 4 written 2026-09-18 and applied to a real cluster 2026-10-06.** The flake under
+[`nix/`](../../nix/README.md) builds and the manifest under [`deploy/`](../../deploy/README.md)
+serves; the Executed sections below record what each round found. **Still open:** the half
+of plan 25's verification 12 that reaches the printer (and therefore
+[issue 93](https://github.com/datagen24/victual/issues/93)'s last gate), and the cluster half
+of verification 9. Piece 1 was ADR-0013's acceptance gate.
 
 ## Today
 
@@ -532,7 +532,7 @@ order, with `docker` as podman — and pass; they have **not** yet run on GitHub
 as known so it can be a gate today; each fix deletes its `--known` line in
 `.github/workflows/nix.yml`. They are not fixed here.
 
-### Piece 4 — the k3s manifests — written, validated structurally, **not applied**
+### Piece 4 — the k3s manifests — written, validated structurally, applied 2026-10-06
 
 [`deploy/k3s/victual.yaml`](../../deploy/k3s/victual.yaml): a `ConfigMap`, the two Secrets, a
 `Service` named `victual` on 8080 (which is what `label-workers.yaml` already points at) and a
@@ -546,6 +546,24 @@ were checked by mutation. `check_deploy_manifest.py` passes it (10 documents) an
 **Plan 25's verification 12 — a K3S apply that reaches the printer — is not done and this
 does not advance it beyond having the manifest to apply.** It needs a cluster and the
 QL-820NWBc. Issue 93 stays open on it.
+
+**Applied to a real cluster, 2026-10-06.** The cluster gate this piece waited on is met; the
+printer gate is not. The target was the maintainer's Talos v1.14.2 cluster: Kubernetes
+v1.37.0, one arm64 Raspberry Pi node, Traefik behind MetalLB, NFS CSI. The overlay,
+[`deploy/talos/`](../../deploy/talos/kustomization.yaml), uses the published GHCR `0.2.0-MVP`
+images, adds an Ingress and an NFS-backed PostgreSQL, and leaves out the label workers
+because the cluster has no printer. What the run established:
+
+- `deploy/talos/up.sh` passed all four rollout gates.
+- The migrate initContainer held `victual-db-migrate` and php-fpm `victual-db-app`, read back
+  from the running pod's `envFrom`.
+- `/login` answered 200 through Traefik.
+- Deleting the PostgreSQL pod kept the database: 73 tables and 1 user before and after, no
+  re-init.
+- As on kind, the API server dropped `lifecycle.stopSignal`, so verification 9's cluster half
+  is unchanged.
+- It found a liveness defect in `deploy/kind/postgres.yaml`, now fixed with a startup probe;
+  the comment there has the detail.
 
 ### Verification 9's SIGTERM half — measured on podman, not on a cluster
 

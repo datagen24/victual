@@ -1,0 +1,19 @@
+# PostgreSQL's data on the cluster's NFS share, replacing deploy/kind's emptyDir (the patch in
+# kustomization.yaml swaps the volume and the user).
+#
+# The NAS exports the share with mapall to one native user, uid/gid 3000, so every file on it
+# is owned by 3000 whatever uid wrote it, and fsGroup changes nothing over NFS. PostgreSQL
+# refuses a data directory it does not own, so the container runs as 3000 rather than the
+# image's 999. Measured 2026-10-06: a file touched as root on the share lists as 3000:3000.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: victual-postgres-data
+  labels:
+    app.kubernetes.io/name: victual-postgres
+spec:
+  storageClassName: nfs-csi
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi

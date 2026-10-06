@@ -1,0 +1,4 @@
+# Your filled-in values (hostnames, and passwords with `secrets.source: inline`) and the
+# overlay render.py writes from them. Only values.example.yaml is committed.
+values.yaml
+build/

@@ -1,0 +1,89 @@
+# The operator's overlay for the Talos Raspberry Pi cluster (arm64, Traefik behind MetalLB,
+# NFS CSI). deploy/talos/up.sh is the entry point; it builds this with
+# `--load-restrictor LoadRestrictionsNone`, because the overlay names individual files from
+# deploy/k3s and deploy/kind rather than whole directories:
+#
+#   - deploy/k3s's Victual and MCP sidecar, but **not** its label workers: this cluster has
+#     no printer, and deploy/k3s/kustomization.yaml says an overlay without one drops them.
+#   - deploy/kind's PostgreSQL and roles Job, with the PostgreSQL patched below onto an NFS
+#     PersistentVolumeClaim (postgres-pvc.yaml) and run as the NAS's mapall uid.
+#   - Its three Secrets from 1Password (onepassword-items.yaml), not from this overlay: the
+#     base's two placeholder Secrets are deleted below, so an apply can never overwrite
+#     what the Connect operator wrote.
+#
+# The images are the published GHCR ones at the base's tag (amd64 and arm64), so there is no
+# `images:` override as deploy/kind has.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: victual
+
+resources:
+  - ../kind/namespace.yaml
+  - ../k3s/victual.yaml
+  - ../k3s/victual-mcp.yaml
+  - ../kind/postgres.yaml
+  - ../kind/roles-job.yaml
+  - postgres-pvc.yaml
+  - onepassword-items.yaml
+  - ingress.yaml
+
+configMapGenerator:
+  # The roles script from its one real location.
+  - name: victual-db-roles-sql
+    files:
+      - roles.sql=../postgres/roles.sql
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  # The base's placeholder Secrets; onepassword-items.yaml names the real ones.
+  - target:
+      kind: Secret
+      name: victual-db-migrate
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: victual-db-migrate
+  - target:
+      kind: Secret
+      name: victual-db-app
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: victual-db-app
+  - target:
+      kind: ConfigMap
+      name: victual-config
+    patch: |-
+      - op: replace
+        path: /data/VICTUAL_DB_HOST
+        value: victual-postgres
+      # Exactly what ingress.yaml publishes, scheme included.
+      - op: replace
+        path: /data/VICTUAL_BASE_URL
+        value: http://victual.10.130.34.240.nip.io
+  # PostgreSQL on the NFS claim, as the uid the share maps every client to; see
+  # postgres-pvc.yaml for why it cannot stay 999.
+  - target:
+      kind: Deployment
+      name: victual-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: data
+          persistentVolumeClaim:
+            claimName: victual-postgres-data
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsUser
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsGroup
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 3000

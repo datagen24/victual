@@ -226,6 +226,6 @@ connective makes the order ambiguous. Those get full prose.
   that build found nine defects in two rounds. The credential split landed 2026-09-18:
   `victual-app` holds a role that cannot run DDL ([deploy/postgres/roles.sql](deploy/postgres/roles.sql)),
   `victual-migrate` holds the one that can. What is still open in
-  [plan 20](docs/plans/20-container-infrastructure.md) needs a cluster: piece 4's K3S apply
-  (`deploy/k3s/victual.yaml` exists and has not been applied anywhere) and the cluster half of
-  the signal check.
+  [plan 20](docs/plans/20-container-infrastructure.md) is the cluster half of the signal check
+  and an apply that reaches the printer: `deploy/k3s/victual.yaml` was applied to the
+  maintainer's Talos cluster on 2026-10-06 through [deploy/talos/](deploy/talos/kustomization.yaml).
