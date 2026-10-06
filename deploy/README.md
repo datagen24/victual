@@ -26,7 +26,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
-| [`talos/`](talos/) | One operator's overlay, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, from the published images, with a Traefik Ingress, PostgreSQL on an NFS claim and no label workers. `talos/up.sh` applies it. Applied 2026-10-06 |
+| [`talos/`](talos/) | One operator's overlay, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, from the published images, with a Traefik Ingress, PostgreSQL on an NFS claim, Secrets from 1Password Connect and no label workers. `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` applies it. Applied 2026-10-06 |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |

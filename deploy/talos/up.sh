@@ -7,7 +7,9 @@
 #   deploy/talos/up.sh down      delete the namespace; the database's claim goes with it,
 #                                and nfs-csi's Delete reclaim policy removes its data
 #
-# Uses the current kubectl context; set KUBE_CONTEXT to name another.
+# Uses the current kubectl context; set KUBE_CONTEXT to name another. The database
+# passwords come from 1Password through the cluster's Connect operator: run
+# deploy/talos/seed-1password.sh once first, or the three Secrets never appear.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -23,20 +25,18 @@ if [ "${1:-up}" = down ]; then
 	exit 0
 fi
 
-# Generated once and reused, so a re-run keeps the passwords the database was initialised
-# with. Same files and keys as deploy/kind/up.sh.
-SECRETS=deploy/talos/.secrets
-mkdir -p "$SECRETS"
-password() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32; }
-[ -f "$SECRETS/superuser.env" ] || printf 'password=%s\n' "$(password)" > "$SECRETS/superuser.env"
-[ -f "$SECRETS/migrate.env" ] || printf 'VICTUAL_DB_USER=victual_migrate\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/migrate.env"
-grep -q '^VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=' "$SECRETS/migrate.env" \
-	|| printf 'VICTUAL_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "$(password)" >> "$SECRETS/migrate.env"
-[ -f "$SECRETS/app.env" ] || printf 'VICTUAL_DB_USER=victual_app\nVICTUAL_DB_PASSWORD=%s\n' "$(password)" > "$SECRETS/app.env"
-chmod 600 "$SECRETS"/*.env
-
 log "applying deploy/talos"
 "${KUBECTL[@]}" kustomize --load-restrictor LoadRestrictionsNone deploy/talos | "${KUBECTL[@]}" apply -f -
+
+log "waiting for the Connect operator to write the three Secrets"
+for secret in victual-postgres-superuser victual-db-migrate victual-db-app; do
+	for _ in $(seq 60); do
+		"${KUBECTL[@]}" -n "$NAMESPACE" get secret "$secret" >/dev/null 2>&1 && break
+		sleep 2
+	done
+	"${KUBECTL[@]}" -n "$NAMESPACE" get secret "$secret" >/dev/null \
+		|| { echo "Secret $secret did not appear: is its 1Password item seeded?" >&2; exit 1; }
+done
 
 log "waiting for PostgreSQL, the roles, Victual and the sidecar"
 "${KUBECTL[@]}" -n "$NAMESPACE" rollout status deployment/victual-postgres --timeout=300s
@@ -48,6 +48,6 @@ cat <<MSG
 
 Up at http://victual.10.130.34.240.nip.io
 
-Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from $SECRETS/migrate.env
-(it applies to the database this script first created).
+Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from the 1Password item
+victual-db-migrate (it applies to the database this overlay first created).
 MSG

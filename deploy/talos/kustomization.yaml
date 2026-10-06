@@ -7,6 +7,9 @@
 #     no printer, and deploy/k3s/kustomization.yaml says an overlay without one drops them.
 #   - deploy/kind's PostgreSQL and roles Job, with the PostgreSQL patched below onto an NFS
 #     PersistentVolumeClaim (postgres-pvc.yaml) and run as the NAS's mapall uid.
+#   - Its three Secrets from 1Password (onepassword-items.yaml), not from this overlay: the
+#     base's two placeholder Secrets are deleted below, so an apply can never overwrite
+#     what the Connect operator wrote.
 #
 # The images are the published GHCR ones at the base's tag (amd64 and arm64), so there is no
 # `images:` override as deploy/kind has.
@@ -21,6 +24,7 @@ resources:
   - ../kind/postgres.yaml
   - ../kind/roles-job.yaml
   - postgres-pvc.yaml
+  - onepassword-items.yaml
   - ingress.yaml
 
 configMapGenerator:
@@ -31,26 +35,26 @@ configMapGenerator:
     options:
       disableNameSuffixHash: true
 
-secretGenerator:
-  - name: victual-postgres-superuser
-    envs:
-      - .secrets/superuser.env
-    options:
-      disableNameSuffixHash: true
-  - name: victual-db-migrate
-    behavior: replace
-    envs:
-      - .secrets/migrate.env
-    options:
-      disableNameSuffixHash: true
-  - name: victual-db-app
-    behavior: replace
-    envs:
-      - .secrets/app.env
-    options:
-      disableNameSuffixHash: true
-
 patches:
+  # The base's placeholder Secrets; onepassword-items.yaml names the real ones.
+  - target:
+      kind: Secret
+      name: victual-db-migrate
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: victual-db-migrate
+  - target:
+      kind: Secret
+      name: victual-db-app
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: victual-db-app
   - target:
       kind: ConfigMap
       name: victual-config
