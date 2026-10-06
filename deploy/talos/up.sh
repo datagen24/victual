@@ -4,7 +4,8 @@
 # GHCR images. See kustomization.yaml for what the overlay contains and what it leaves out.
 #
 #   deploy/talos/up.sh           apply, wait for everything to be Ready
-#   deploy/talos/up.sh down      delete the namespace (the database goes with it)
+#   deploy/talos/up.sh down      delete the namespace; the database's claim goes with it,
+#                                and nfs-csi's Delete reclaim policy removes its data
 #
 # Uses the current kubectl context; set KUBE_CONTEXT to name another.
 set -euo pipefail
@@ -47,6 +48,6 @@ cat <<MSG
 
 Up at http://victual.10.130.34.240.nip.io
 
-Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from $SECRETS/migrate.env.
-The database is an emptyDir: it is lost when the PostgreSQL pod restarts.
+Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from $SECRETS/migrate.env
+(it applies to the database this script first created).
 MSG

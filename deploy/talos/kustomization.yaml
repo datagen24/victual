@@ -5,10 +5,8 @@
 #
 #   - deploy/k3s's Victual and MCP sidecar, but **not** its label workers: this cluster has
 #     no printer, and deploy/k3s/kustomization.yaml says an overlay without one drops them.
-#   - deploy/kind's throwaway PostgreSQL and roles Job. **Its data is an emptyDir**: a pod
-#     restart loses the database. It stands in until the NFS share can provision a volume
-#     (the `nfs-csi` provisioner fails with `mkdir … permission denied` on the export
-#     root as of 2026-10-06); swapping it for a PVC-backed PostgreSQL is the next step.
+#   - deploy/kind's PostgreSQL and roles Job, with the PostgreSQL patched below onto an NFS
+#     PersistentVolumeClaim (postgres-pvc.yaml) and run as the NAS's mapall uid.
 #
 # The images are the published GHCR ones at the base's tag (amd64 and arm64), so there is no
 # `images:` override as deploy/kind has.
@@ -22,6 +20,7 @@ resources:
   - ../k3s/victual-mcp.yaml
   - ../kind/postgres.yaml
   - ../kind/roles-job.yaml
+  - postgres-pvc.yaml
   - ingress.yaml
 
 configMapGenerator:
@@ -63,3 +62,24 @@ patches:
       - op: replace
         path: /data/VICTUAL_BASE_URL
         value: http://victual.10.130.34.240.nip.io
+  # PostgreSQL on the NFS claim, as the uid the share maps every client to; see
+  # postgres-pvc.yaml for why it cannot stay 999.
+  - target:
+      kind: Deployment
+      name: victual-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: data
+          persistentVolumeClaim:
+            claimName: victual-postgres-data
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsUser
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsGroup
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 3000
