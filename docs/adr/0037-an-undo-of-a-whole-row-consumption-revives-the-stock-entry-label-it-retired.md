@@ -89,7 +89,7 @@ Verified against a schema migrated to HEAD (299 migrations applied, latest 0300)
 
 A successful undo of the whole-row consumption that retired a stock-entry label revives that
 label on the row the undo rebuilds under its original id. Revival happens only when the rebuild is
-proven to be that consumption's and the undo runs inside a fixed 30-day window. In every other case
+proven to be that consumption's and the undo runs inside a window that defaults to 30 days. In every other case
 the label stays retired and a person prints a new one, as today.
 
 This record is the detailed design for ADR-0033 decision 6, which the decider wrote on 2026-10-04.
@@ -169,10 +169,9 @@ same product or the same old id cannot claim the stock.
 
 | Question | Answer |
 |---|---|
-| Does a window exist? | Yes, as an addition to decision 6, which states no time limit (open question 2). A booking is permanent history, but the longer an undo comes after the consumption, the weaker the case that the sticker is on the same item. |
-| Duration | 30 days (2,592,000 s), the example in issue 612. Not measured; the maintainer decides it (open question 2). |
-| Fixed or configurable | Fixed. It is a constant in `StockService`, stored per event as `revivable_until`. No deployment setting, no user setting. |
-| Why fixed | Nothing shows that households need different values, and each setting adds validation, a reference-page entry and tests. A release changes the constant. Zero disables new references. |
+| Does a window exist? | Yes, confirmed by the maintainer on 2026-10-06, as an addition to decision 6, which states no time limit. A booking is permanent history, but the longer an undo comes after the consumption, the weaker the case that the sticker is on the same item. |
+| Duration | Default: 30 days (2,592,000 s), chosen by the maintainer on 2026-10-06 (open question 2). |
+| Configuration | The draft uses a constant in `StockService`, stored per event as `revivable_until`. The maintainer chose the default duration; an operator or user setting has not been decided. Zero disables new references in the draft. |
 | Start | The retirement time, `labels.retired_at`, which is the database clock at the start of the consuming transaction. |
 | Clock | The database. The undo reads `clock_timestamp()` after it holds its locks. The application clock plays no part. |
 | Boundary | Exclusive. An undo is eligible while the clock is before `revivable_until`, and declined at that instant and after it. |
@@ -296,11 +295,19 @@ only and belongs in an existing maintenance command, not a new workload. Nothing
 
 ### 12. What the user sees
 
-The undo response is unchanged (204, no body). No route, field or page changes, so
-[ADR-0005](0005-wire-contract-is-the-invariant.md) is untouched. A user learns the result by
-scanning the sticker: `resolved` with the stock entry means revived, and `retired` means print a new
-label. The Manual's label chapter must say so when the feature ships. A notice in the undo response or
-in the interface is a wire or interface change and is left to open question 3.
+The undo interface tells the user whether the label was restored or remains retired and needs a
+new print. This is the maintainer's decision of 2026-10-06 (open question 3). A transaction that
+restores several stock rows must report mixed revival outcomes without implying that every label
+was restored. An undo with no affected label keeps its ordinary success message.
+
+The current undo response is 204 with no body. The implementation must define how the browser
+receives the committed revival result before building the notice. Any response change requires an
+explicit contract decision under [ADR-0005](0005-wire-contract-is-the-invariant.md), with matching
+OpenAPI and snapshot changes. The notice must not expose retirement events or snapshot fields to
+callers without their read permission. A refused or rolled-back undo must never report a revival.
+
+Scanning remains available: `resolved` with the stock entry means revived, and `retired` means print
+a new label. The Manual's label chapter must explain both the notice and the scan result.
 
 ## Identity and state model
 
@@ -471,7 +478,7 @@ from what it adds.
 | No other live label targets the row | Adopted: condition 6. |
 | Nothing else revives a label | Adopted: imports, product deletion, undo of a purchase and unrelated bookings never match. |
 | The label row records which booking retired it | Changed. The booking is stored in an event table, because a live label must have no snapshot and the booking must outlive the revival as history. The requirement that retirement records its booking holds. |
-| No time limit stated | Added: a 30-day window, which issue 612 asked for. Open question 2 asks whether to keep it. |
+| No time limit stated | Added: a window defaulting to 30 days, confirmed by the maintainer on 2026-10-06 (open question 2). |
 | Not mentioned | Added: an import epoch, the claim predicate for print jobs, and the legacy backfill. |
 
 Decision 6's acceptance prerequisite 5 lists the tests it needs. Examples E1, E5, E7, E8, E9, E11 and
@@ -523,7 +530,7 @@ forward pointer under the lifecycle rule.
 | Concurrency | None. | Existing locks plus one ordered extension. | A purge races every undo. | As B. | As B. |
 | Permissions | None. | `STOCK_EDIT`. | None. | None. | Needs a decision. |
 | Operator experience | Reprint after every undo. | The sticker works again within 30 days. | As B. | As B, after a larger delivery. | Requires knowing a sticker exists. |
-| Wire change | None. | None. | None. | None. | Yes (ADR-0005). |
+| Wire change | None. | Result transport remains to be designed for the required notice (section 12). | None. | None. | Yes (ADR-0005). |
 
 **A** is the current decision. It stays correct for every case B declines. B differs in avoiding a
 reprint for the common case of an undo that is caught quickly.
@@ -551,8 +558,10 @@ not use. Neither record needs the other.
 - **Storage is small and permanent.** 100,000 events took 35.9 MB with indexes, 359 bytes each, against
   24.7 MB for the 100,000 `labels` rows they reference. The figure is synthetic. A lookup by epoch and
   booking took 0.013 ms.
-- **The window is an unmeasured guess.** Thirty days is the example in issue 612. A constant change
-  alters new events only.
+- The maintainer chose a default of 30 days on 2026-10-06. Household undo timing has not been
+  measured. A duration change alters new events only.
+- The undo interface reports the label outcome. Result transport and any wire change require
+  design and contract verification before implementation.
 - **The record does not prove a sticker is on the restored item.** It proves the restored stock is
   the stock the label was on, by booking. A person who moved a sticker to other stock after the
   consumption defeats it.
@@ -564,7 +573,7 @@ Each prerequisite is a gate. The accepting pull request states how it was met. A
 separate bookkeeping-only pull request, and implementation is a separate change.
 
 1. **Open questions 1 to 3 answered** by the maintainer, and any answer that changes the window,
-   the trigger or the permission rule reflected in this record before acceptance.
+   the trigger, the permission rule or the notice reflected in this record before acceptance.
 2. **Migration number claimed** in `migrations/RESERVATIONS.md` before the file exists. The file is
    PostgreSQL-only and passes `check-migrations.php`.
 3. **pgTAP (tier 2).** A new file after `026-recipe-substitution-units.sql` covers the table CHECKs
@@ -589,9 +598,11 @@ separate bookkeeping-only pull request, and implementation is a separate change.
    epoch never matches. A catalogue assertion confirms the foreign-key rule in R5.
 8. **Permission.** A test shows a user holding `STOCK_EDIT` alone revives a label, that a caller
    without `STOCK_VIEW` still scans it as `unknown`, and that no endpoint returns an event.
-9. **Wire contract unchanged.** `tests/Pgsql/snapshots/contract-admin.json`,
-   `contract-restricted.json` and `victual.openapi.json` are byte-identical after the
-   implementation, or the change carries its own ADR under ADR-0005.
+9. **Notice and wire contract.** Define how the browser receives the committed revival outcome.
+   Document any wire change in an ADR under ADR-0005 before implementation, and update
+   `victual.openapi.json` and the contract snapshots in the same change as the wire.
+   If the transport preserves the contract, prove the snapshots and OpenAPI remain unchanged.
+   Permission tests show the notice exposes no protected event or snapshot fields.
 10. **Hot path.** A test counts the statements of an undo and of a consumption with no label. The undo
     adds one indexed read and takes no import lock. The consumption adds two `set_config` calls and
     no label statement.
@@ -603,8 +614,9 @@ separate bookkeeping-only pull request, and implementation is a separate change.
 13. **Coverage.** The `report.php --min=96.31198844487241217394` ratchet does not fall. A new file
     reaches 75% and every touched file stays at or above its prior figure and 75%. The pull request
     reports the aggregate and any file below the floor.
-14. **Browser probes.** None added, because no page changes. The existing `undo-toasts.js` probe stays
-    green. If open question 3 adds a notice, a probe is required.
+14. **Browser probes.** Extend `undo-toasts.js` to verify notices for restored labels, labels that
+    remain retired, mixed outcomes and an undo with no affected label. Refusal and rollback must
+    never display a revival success. Existing undo checks stay green.
 15. **Deployment and release notes.** The order in "Migration and legacy data" and the rolling
     overlap caveat appear in the release notes.
 
@@ -627,9 +639,17 @@ An answer goes directly below its question as a `> **Response:**` block.
    alternative is no limit: store no deadline and drop the expiry branch. No measurement of how late
    households undo exists. A shorter window loses the late undo. A longer one revives stickers likely
    already discarded, which costs nothing.
-3. **Should the user be told the result?** Recommended: not now. The scan shows the result and the
+
+   > **Response:** The maintainer chose a default expiration of 30 days on 2026-10-06.
+   > This answer sets the default duration; it does not decide whether to expose a setting.
+
+3. **Should the user be told the result?** The original recommendation was not to add a notice. The scan shows the result and the
    Manual explains it. A message in the undo response or interface is an additive change under
    ADR-0005 and needs its own decision and probe.
+
+   > **Response:** Yes. The maintainer requires the user to be told the result, 2026-10-06.
+   > Section 12 and prerequisites 9 and 14 require the notice, its result transport and tests.
+
 4. **Should anything ever delete closed events?** Recommended: no. They are permanent history like
    `labels`, 359 bytes each, and ADR-0019 keeps retirement mappings outside cleanup.
 5. **Should a later record extend revival to the other label kinds?** Recommended: no, until a need
