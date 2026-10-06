@@ -171,7 +171,7 @@ same product or the same old id cannot claim the stock.
 |---|---|
 | Does a window exist? | Yes, confirmed by the maintainer on 2026-10-06, as an addition to decision 6, which states no time limit. A booking is permanent history, but the longer an undo comes after the consumption, the weaker the case that the sticker is on the same item. |
 | Duration | Default: 30 days (2,592,000 s), chosen by the maintainer on 2026-10-06 (open question 2). |
-| Configuration | The draft uses a constant in `StockService`, stored per event as `revivable_until`. The maintainer chose the default duration; an operator or user setting has not been decided. Zero disables new references in the draft. |
+| Configuration | No setting, decided on 2026-10-06 during implementation as a routine detail. The duration is the constant `StockService::LABEL_REVIVAL_WINDOW_SECONDS`, stored per event as `revivable_until`. No household has asked for another value, and a setting needs validation, documentation and tests. A later setting needs no migration, because each event keeps its stored deadline. |
 | Start | The retirement time, `labels.retired_at`, which is the database clock at the start of the consuming transaction. |
 | Clock | The database. The undo reads `clock_timestamp()` after it holds its locks. The application clock plays no part. |
 | Boundary | Exclusive. An undo is eligible while the clock is before `revivable_until`, and declined at that instant and after it. |
@@ -215,6 +215,19 @@ state, events and print state as they were. The order extends the existing one
 3. With an event: the import lock (`LabelIdentityService::IMPORT_LOCK`), taken straight after the
    product lock and before the undo takes its location lock (`LockUndoLocation()`). Then the row
    rebuild, the `labels` row `FOR UPDATE`, the event row `FOR UPDATE`, and the checks and writes.
+
+A transaction undo and a correlated booking group undo several bookings in one transaction. The
+outermost call probes every booking it will undo in one indexed read, straight after its product
+locks, and takes the import lock once if any booking has a pending event. A later booking of the
+same transaction therefore never takes the import lock after an earlier booking took its location
+lock. The nested per-booking calls reuse that probe and read nothing more (decided 2026-10-06 during
+implementation).
+
+A `--force` import into a used database takes the import lock and then truncates tables that a
+concurrent undo has already read. If an undo with a pending event waits for the import lock at that
+moment, PostgreSQL detects the deadlock and aborts one of the two transactions. Both are atomic, so
+nothing is half-written, and the aborted one can be retried. The same exposure exists today for
+label issuance, and the documented import targets a freshly migrated database.
 
 Retirement takes the `labels` row, then writes the event, then cancels queued jobs (`0296`). Revival
 takes `labels` before the event, so both orders agree. Nothing takes the import lock after a row
@@ -308,6 +321,41 @@ callers without their read permission. A refused or rolled-back undo must never 
 
 Scanning remains available: `resolved` with the stock entry means revived, and `retired` means print
 a new label. The Manual's label chapter must explain both the notice and the scan result.
+
+#### 12a. Result transport (decided 2026-10-06)
+
+The outcome travels in one response header on the existing 204 response. Three operations carry
+it, because each one can undo a whole-row consumption:
+
+- `POST /api/stock/bookings/{bookingId}/undo`
+- `POST /api/stock/transactions/{transactionId}/undo`
+- `POST /api/chores/executions/{executionId}/undo`, which undoes the stock transaction the chore
+  execution booked
+
+The header is `Victual-Label-Revival`. Its value is a dictionary in the format of RFC 8941 with two
+integer members, for example `Victual-Label-Revival: restored=1, retired=1`.
+
+| Member | Counts |
+|---|---|
+| `restored` | Events of this undo closed as `revived`. Each label works again on its restored stock entry. |
+| `retired` | Events of this undo closed as `declined`, for any reason in section 6. Each label stays retired and needs a new print. |
+
+The header is absent when both counts are zero. An undo that touched no proven retirement therefore
+answers exactly as before, and the browser shows its ordinary success message.
+
+| Question | Answer |
+|---|---|
+| Why a header | The status (204) and the body stay unchanged, so existing clients, including clients generated from the OpenAPI document, keep working. The contract snapshots record status and body shape, and both stay byte-identical. A body would require a 200 status, which every existing client and both snapshots would see. |
+| Why not a follow-up read | A second request would need a new endpoint that reads events, which section 8 forbids, and could not tell which undo it was asking about. |
+| When it is set | The controller sets it after the service call returns. The service returns the counts only after the transaction that wrote the events has committed. A refusal or rollback raises an exception, so no header is set (example E13, E14). |
+| What it exposes | Two counts. No uid, event, snapshot field, product, amount or row id. The caller already holds `STOCK_EDIT`: the two stock routes require it, and a chore execution undo requires it whenever it reverses a live stock booking (`ChoresService::UndoChoreExecution()`). The counts describe labels on the stock that caller just restored. |
+| What it does not count | A retirement recorded as `unproven` or `legacy` names no booking, so no undo can claim it. Such a label stays retired and the undo answers with its ordinary success. The Manual says so. |
+| Cross-origin clients | `CorsMiddleware` adds `Access-Control-Expose-Headers: Victual-Label-Revival` for an allowed origin, so a browser client on another origin can read it. The application's own pages are same-origin. |
+| Wire contract | An additive response header. `victual.openapi.json` documents it under the 204 response of the three operations. PHPUnit asserts its presence and counts directly, because the contract snapshot does not record headers. |
+
+The browser shows one notice per undo. All labels restored: a success notice saying the labels
+were restored. Any label still retired: a warning notice that says how many were restored and how
+many stay retired and need a new print. No header: the ordinary success notice.
 
 ## Identity and state model
 
@@ -437,9 +485,10 @@ Undoing the transaction revives both labels, each on its own rebuilt row (E2).
 **A PostgreSQL-only migration is required.** It adds a table, two indexes, a trigger function and
 trigger, and the backfill. Migrations above 0265 are PostgreSQL-only ([ADR-0008](0008-postgresql-only-runtime-engine.md)).
 A new index on `print_jobs (label_uid, id)` serves the trigger's lookup and the claim predicate.
-The migration changes no `retire_*` function, no column of `labels` and not its CHECK. It does not
-reserve a number here. At the research date `migrations/RESERVATIONS.md` names 0303 as the next
-unclaimed number, and the implementing change must claim one first.
+The migration changes no `retire_*` function, no column of `labels` and not its CHECK. The research
+did not reserve a number. The implementation claimed 0303 on 2026-10-06, the lowest free slot under
+the rule in `migrations/RESERVATIONS.md`, and plan 22's two unwritten claims moved up to 0304 and
+0305.
 
 **Legacy retirements.** The migration writes one `legacy` event for every `stock_entry` label that is
 retired at migration time. It copies `retired_at` and the snapshot and nothing else. It does not set a
@@ -530,7 +579,7 @@ forward pointer under the lifecycle rule.
 | Concurrency | None. | Existing locks plus one ordered extension. | A purge races every undo. | As B. | As B. |
 | Permissions | None. | `STOCK_EDIT`. | None. | None. | Needs a decision. |
 | Operator experience | Reprint after every undo. | The sticker works again within 30 days. | As B. | As B, after a larger delivery. | Requires knowing a sticker exists. |
-| Wire change | None. | Result transport remains to be designed for the required notice (section 12). | None. | None. | Yes (ADR-0005). |
+| Wire change | None. | One additive response header on three 204 responses (section 12a). | None. | None. | Yes (ADR-0005). |
 
 **A** is the current decision. It stays correct for every case B declines. B differs in avoiding a
 reprint for the common case of an undo that is caught quickly.
@@ -560,8 +609,8 @@ not use. Neither record needs the other.
   booking took 0.013 ms.
 - The maintainer chose a default of 30 days on 2026-10-06. Household undo timing has not been
   measured. A duration change alters new events only.
-- The undo interface reports the label outcome. Result transport and any wire change require
-  design and contract verification before implementation.
+- The undo interface reports the label outcome through one additive response header
+  (section 12a). Clients that ignore the header see no change.
 - **The record does not prove a sticker is on the restored item.** It proves the restored stock is
   the stock the label was on, by booking. A person who moved a sticker to other stock after the
   consumption defeats it.
@@ -576,7 +625,7 @@ separate bookkeeping-only pull request, and implementation is a separate change.
    the trigger, the permission rule or the notice reflected in this record before acceptance.
 2. **Migration number claimed** in `migrations/RESERVATIONS.md` before the file exists. The file is
    PostgreSQL-only and passes `check-migrations.php`.
-3. **pgTAP (tier 2).** A new file after `026-recipe-substitution-units.sql` covers the table CHECKs
+3. **pgTAP (tier 2).** A new file after `028-stock-edited-entries-scaling.sql` covers the table CHECKs
    and the trigger for each retirement path. The paths are whole-row consumption with and without
    context, undo of a purchase, product deletion and a direct label update. The file also covers a
    stale context, the legacy backfill and its rerun, and R1 to R7 as assertions. A catalogue
