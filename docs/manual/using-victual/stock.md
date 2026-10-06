@@ -41,7 +41,8 @@ booking can be undone from the stock journal.
   from retained bytes or cancel a job; cancelling a job does not void a label identity.
 - **`/stockjournal`** is the full booking history: every purchase, consume, transfer,
   inventory and open, each undoable individually. Filter by product or by how many months
-  back to load. **`/stockjournal/summary`** aggregates the same history by product.
+  back to load. Undoing a consumption that used up a labelled entry can bring its label back;
+  the notice says whether it did ([Label printing](../operator/label-printing.md)). **`/stockjournal/summary`** aggregates the same history by product.
 - **`/stockreports/spendings`** reports what was spent, from the same booking history.
 
 ## Products and their master data

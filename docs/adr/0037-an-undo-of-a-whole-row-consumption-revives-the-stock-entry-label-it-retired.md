@@ -479,6 +479,12 @@ Undoing the transaction revives both labels, each on its own rebuilt row (E2).
 | A second undo of the same booking (C2) | Waited 1.49 s on the product lock, then refused ("already undone"). One revival. |
 | Importer step during the undo (C3a) | Waited 1.49 s; the label was live afterwards, which the real importer refuses. |
 | Undo during an importer step (C3b) | Waited 1.34 s; the epoch had changed, so no reference matched. The undo succeeded and the label stayed retired. |
+| C3b against the real importer (implementation, 2026-10-06) | A deadlock, detected by PostgreSQL. The undo was aborted (40P01) in three of three runs, rolled back whole, and the import committed. The label stayed retired. See section 7 and the note below. |
+
+The spike ran only the importer's first two steps. With `DatabaseImporter::Import()` itself, the
+importer's truncation waits for the table locks the undo already holds, while the undo waits for
+the import lock. `StockLabelRevivalRaceTest` accepts either side losing and asserts the consistent
+end state.
 
 ## Migration and legacy data
 
@@ -500,19 +506,24 @@ A legacy label is therefore never revivable. A person prints a new label, as tod
 event, or the migration fails and rolls back (migrations run inside a transaction). A second run
 writes nothing (example E9).
 
-**Deployment order.** The migration job runs first. The trigger is additive and, with no context
-set, writes `unproven` events. The image that sets the context, revives, and carries the claim
-predicate follows. They ship together.
+**Deployment order.** The migration job runs first. The image that sets the context, revives, and
+carries the claim predicate follows. They ship together.
 
-**Compatibility.**
+**Compatibility.** Corrected on 2026-10-06 during implementation. The research assumed that an
+older image keeps serving a migrated schema. It does not: `SchemaVersionMiddleware` refuses every
+request, worker routes included, when the database is ahead of the code.
 
-- An older image keeps working: its consumptions yield `unproven` events and its undo revives
-  nothing, which is today's behavior.
-- During a rolling deployment an older replica could claim a job without the new predicate. That
-  needs a revival and an authorized retry on one label in the overlap, and the retry is a job a
-  person authorized for a label whose stock was consumed. The release notes state this.
-- Rolling the image back leaves the table unused. There is no down migration. Reversing this
-  record needs a later migration that drops the objects.
+- An older image refuses to serve after the migration, so no older replica serves alongside a new
+  one, and no older replica can claim a job without the new predicate. The rolling-overlap caveat
+  this section used to carry does not arise.
+- A consumption booked before the upgrade wrote no context, so its later undo leaves the label
+  retired. The legacy backfill covers labels already retired; a label retired by an older image
+  in the minutes before the migration is covered the same way.
+- Returning to the previous image needs the backup taken before the upgrade, as for any migration.
+  There is no down migration. Reversing this record needs a later migration that drops the objects.
+
+The Manual's [Updating and migrations](../manual/operator/updating-migrations.md) page carries the
+order and these consequences for operators.
 
 ## Relationship to ADR-0033 decision 6
 
@@ -666,8 +677,9 @@ separate bookkeeping-only pull request, and implementation is a separate change.
 14. **Browser probes.** Extend `undo-toasts.js` to verify notices for restored labels, labels that
     remain retired, mixed outcomes and an undo with no affected label. Refusal and rollback must
     never display a revival success. Existing undo checks stay green.
-15. **Deployment and release notes.** The order in "Migration and legacy data" and the rolling
-    overlap caveat appear in the release notes.
+15. **Deployment and release notes.** The order and compatibility consequences in "Migration and
+    legacy data" appear in the upgrade documentation and in the release notes of the first release
+    that carries migration 0303.
 
 ## Open questions
 

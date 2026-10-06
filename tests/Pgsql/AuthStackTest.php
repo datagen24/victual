@@ -1406,6 +1406,8 @@ class AuthStackTest extends PgsqlSchemaTestCase
 		self::assertStringContainsString('VICTUAL-API-KEY', self::header($response, 'Access-Control-Allow-Headers'));
 		self::assertSame('600', self::header($response, 'Access-Control-Max-Age'));
 		self::assertSame('Origin', self::header($response, 'Vary'));
+		// ADR-0037 section 12a: a cross-origin client may read an undo's label revival counts.
+		self::assertSame('Victual-Label-Revival', self::header($response, 'Access-Control-Expose-Headers'));
 	}
 
 	/**

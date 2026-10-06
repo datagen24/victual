@@ -16,7 +16,7 @@ what a diagram says means editing the spec.
 
 A migration that adds or removes a table, changes a reference column, or moves a table
 between clusters needs the spec updated. The counts printed on the diagrams
-(`71 tables · 50 views · 65 triggers` on the ORM diagram, the per-cluster counts on the
+(`72 tables · 50 views · 67 triggers` on the ORM diagram, the per-cluster counts on the
 schema map) come from this, run against a tree with the migrations applied. Statements are
 matched in file order, so a `DROP VIEW` followed by a `CREATE VIEW` of the same name (0261
 does this twice) leaves the view in place, and the `.php` migrations are read too, because

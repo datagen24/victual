@@ -36,6 +36,17 @@
 // going quiet, then the form reporting valid - and a failing scenario prints which fields
 // were invalid, what the page last requested, and saves a screenshot.
 
+// Issue #612 / ADR-0037 section 12a: an undo that revives or leaves retired the stock entry
+// label a whole-row consumption retired answers with a Victual-Label-Revival header, and the
+// notice must say which labels work again and which need a new print - and never claim a
+// revival for a refused undo. The demo instance has no label printer to issue a sticker
+// through, so the 'label notice' scenarios run real undo requests and add the header to the
+// server's own committed response with page.route(); that the server sets the header, and
+// only after a commit, is tests/Pgsql/StockLabelRevivalTest.php's subject. The scenarios
+// cover the shared toast helper (UndoStockTransaction), the stock journal's own handler and
+// the chores journal's, each with restored, retired, mixed and absent counts, plus a refused
+// undo whose error response carries a forged header.
+
 const { chromium } = require('playwright');
 
 function arg(name, fallback)
@@ -306,6 +317,70 @@ async function reportFailure(page, label)
 	catch (e)
 	{
 		console.log('   [debug #637] ' + label + ' failure report itself failed: ' + e.message.split('\n')[0]);
+	}
+}
+
+/** Consumes one unit through the API on the page's own session and returns the transaction id. */
+async function consumeOne(page, productId)
+{
+	return await page.evaluate(async a =>
+	{
+		const res = await fetch(a.base + '/api/stock/products/' + a.id + '/consume', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ amount: 1, spoiled: false })
+		});
+		return (await res.json())[0].transaction_id;
+	}, { base: BASE, id: productId });
+}
+
+/**
+ * Passes every request matching `urlPattern` to the server unchanged and, when `header` is
+ * set, adds it to the server's own response as Victual-Label-Revival - the label revival
+ * counts a demo instance without a printer cannot produce for itself.
+ */
+async function withRevivalHeader(page, urlPattern, header)
+{
+	await page.unrouteAll({ behavior: 'wait' });
+	await page.route(url => urlPattern.test(url.href), async route =>
+	{
+		const response = await route.fetch();
+		const headers = Object.assign({}, response.headers());
+		if (header !== null)
+		{
+			headers['victual-label-revival'] = header;
+		}
+		await route.fulfill({ response, headers });
+	});
+}
+
+/** Waits for the undo notice and checks its type, its base message and its label lines. */
+async function expectNotice(page, message, expected)
+{
+	const toast = page.locator('#toast-container .toast-' + expected.type).first();
+	await toast.waitFor({ state: 'visible', timeout: 15000 });
+	const text = await page.locator('#toast-container').innerText();
+	const others = ['success', 'warning', 'error'].filter(t => t !== expected.type);
+	for (const other of others)
+	{
+		if (await page.locator('#toast-container .toast-' + other).count() > 0)
+		{
+			throw new Error('expected one ' + expected.type + ' notice, also found a ' + other + ' one: ' + JSON.stringify(text));
+		}
+	}
+	for (const line of [message].concat(expected.has))
+	{
+		if (!text.includes(line))
+		{
+			throw new Error('the notice lacks "' + line + '": ' + JSON.stringify(text));
+		}
+	}
+	for (const line of expected.lacks)
+	{
+		if (text.includes(line))
+		{
+			throw new Error('the notice must not say "' + line + '": ' + JSON.stringify(text));
+		}
 	}
 }
 
@@ -625,6 +700,96 @@ async function probe(browser, label, how, run)
 		}, { base: BASE, id: productId });
 		await page.evaluate(id => UndoStockTransaction(id), transactionId);
 		await page.waitForTimeout(2000);
+		return readUndoneCount(page, 'stock/transactions/' + transactionId);
+	});
+
+	// ---- label revival notice (ADR-0037 section 12a) ----------------------------------
+	const notices = [
+		{ name: 'restored', header: 'restored=1, retired=0', type: 'success', has: ['1 stock entry label was restored and works again'], lacks: ['stay retired', 'stays retired'] },
+		{ name: 'retired', header: 'restored=0, retired=2', type: 'warning', has: ['2 stock entry labels stay retired; print new labels'], lacks: ['restored and work'] },
+		{ name: 'mixed', header: 'restored=1, retired=1', type: 'warning', has: ['1 stock entry label was restored and works again', '1 stock entry label stays retired; print a new label'], lacks: [] },
+		{ name: 'none', header: null, type: 'success', has: [], lacks: ['stock entry label'] }
+	];
+
+	for (const notice of notices)
+	{
+		await probe(browser, 'notice-' + notice.name, 'UndoStockTransaction() toast, header ' + (notice.header || 'absent'), async page =>
+		{
+			await page.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+			const transactionId = await consumeOne(page, productId);
+			await withRevivalHeader(page, /\/api\/stock\/transactions\/[^/?]+\/undo(\?|$)/, notice.header);
+			await page.evaluate(() => toastr.remove());
+			await Promise.all([
+				page.waitForResponse(r => /\/api\/stock\/transactions\/[^/?]+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+				page.evaluate(id => UndoStockTransaction(id), transactionId)
+			]);
+			await expectNotice(page, 'Transaction successfully undone', notice);
+			return readUndoneCount(page, 'stock/transactions/' + transactionId);
+		});
+	}
+
+	await probe(browser, 'notice-journal', 'stock journal Undo button, header restored=1, retired=1', async page =>
+	{
+		await page.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+		const transactionId = await consumeOne(page, productId);
+		const bookingId = await page.evaluate(async a => (await (await fetch(a.base + '/api/stock/transactions/' + a.id)).json())[0].id, { base: BASE, id: transactionId });
+		await page.goto(BASE + '/stockjournal?months=1', { waitUntil: 'networkidle' });
+		await withRevivalHeader(page, /\/api\/stock\/bookings\/\d+\/undo(\?|$)/, 'restored=1, retired=1');
+		await page.evaluate(() => toastr.remove());
+		await Promise.all([
+			page.waitForResponse(r => /\/api\/stock\/bookings\/\d+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+			page.evaluate(id => $(document).find('.undo-stock-booking-button[data-booking-id="' + id + '"]').first().trigger('click'), String(bookingId))
+		]);
+		await expectNotice(page, 'Booking successfully undone', { type: 'warning', has: ['1 stock entry label was restored and works again', '1 stock entry label stays retired; print a new label'], lacks: [] });
+		return readUndoneCount(page, 'stock/bookings/' + bookingId);
+	});
+
+	await probe(browser, 'notice-chores', 'chores journal Undo button, header restored=1, retired=0', async page =>
+	{
+		await page.goto(BASE + '/choresjournal', { waitUntil: 'networkidle' });
+		const executionId = await page.evaluate(async base =>
+		{
+			const chores = await (await fetch(base + '/api/objects/chores')).json();
+			const res = await fetch(base + '/api/chores/' + chores[0].id + '/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+			return (await res.json()).id;
+		}, BASE);
+		await page.reload({ waitUntil: 'networkidle' });
+		await withRevivalHeader(page, /\/api\/chores\/executions\/\d+\/undo(\?|$)/, 'restored=1, retired=0');
+		await page.evaluate(() => toastr.remove());
+		await Promise.all([
+			page.waitForResponse(r => /\/api\/chores\/executions\/\d+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+			page.evaluate(id => $(document).find('.undo-chore-execution-button[data-execution-id="' + id + '"]').first().trigger('click'), String(executionId))
+		]);
+		await expectNotice(page, 'Chore execution successfully undone', { type: 'success', has: ['1 stock entry label was restored and works again'], lacks: ['stays retired'] });
+		const undone = await page.evaluate(async a => Number((await (await fetch(a.base + '/api/objects/chores_log/' + a.id)).json()).undone), { base: BASE, id: executionId });
+		return { booked: 1, undone };
+	});
+
+	// A refused undo never reports a revival, even when its error response carries the header.
+	await probe(browser, 'notice-refused', 'second undo of one transaction refuses; forged header ignored', async page =>
+	{
+		await page.goto(BASE + '/stockoverview', { waitUntil: 'networkidle' });
+		const transactionId = await consumeOne(page, productId);
+		await Promise.all([
+			page.waitForResponse(r => /\/api\/stock\/transactions\/[^/?]+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+			page.evaluate(id => UndoStockTransaction(id), transactionId)
+		]);
+		await withRevivalHeader(page, /\/api\/stock\/transactions\/[^/?]+\/undo(\?|$)/, 'restored=1, retired=0');
+		await page.evaluate(() => toastr.remove());
+		const [refusal] = await Promise.all([
+			page.waitForResponse(r => /\/api\/stock\/transactions\/[^/?]+\/undo(\?|$)/.test(r.url()), { timeout: 20000 }),
+			page.evaluate(id => UndoStockTransaction(id), transactionId)
+		]);
+		if (refusal.status() !== 400)
+		{
+			throw new Error('the second undo answered ' + refusal.status() + ', not the refusal this scenario needs');
+		}
+		await page.waitForSelector('#toast-container .toast-error', { timeout: 15000 });
+		const text = await page.locator('#toast-container').innerText();
+		if (/restored|successfully undone/.test(text) || await page.locator('#toast-container .toast-success').count() > 0)
+		{
+			throw new Error('a refused undo showed a success or revival notice: ' + JSON.stringify(text));
+		}
 		return readUndoneCount(page, 'stock/transactions/' + transactionId);
 	});
 

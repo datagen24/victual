@@ -55,7 +55,7 @@
     <div class="scroll">
     <svg viewBox="0 0 1200 920" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="erd-labels-title erd-labels-desc">
       <title id="erd-labels-title">Victual label templates and rendering data model</title>
-      <desc id="erd-labels-desc">A label template has immutable published versions and one working draft, and points at its default version. A render request combines a template version, a field capture and a media profile and yields an artifact; artifacts, requests and captures are linked by declared foreign keys, while captures name the label they were taken for by uid alone. Artifacts also copy the three ids they were rendered from, and requests may point at a draft template instead of a version; neither is drawn.</desc>
+      <desc id="erd-labels-desc">A label template has immutable published versions and one working draft, and points at its default version. A render request combines a template version, a field capture and a media profile and yields an artifact; artifacts, requests and captures are linked by declared foreign keys, while captures name the label they were taken for by uid alone. Artifacts also copy the three ids they were rendered from, and requests may point at a draft template instead of a version; neither is drawn. Each retirement of a stock entry label is kept as a retirement event, which names the label by a declared foreign key and nothing else.</desc>
       <rect width="100%" height="100%" fill="#f2e7d3"/>
     <path d="M 340,150 H 460" fill="none" stroke="#4a6459" stroke-width="1"/>
     <rect x="348" y="130" width="16" height="12" rx="2" fill="#f2e7d3"/>
@@ -245,6 +245,32 @@
     <text x="1144" y="484" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
     <text x="896" y="504" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">manifest</text>
     <text x="1144" y="504" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">jsonb</text>
+    <path d="M 1020,784 V 806 H 190 V 764" fill="none" stroke="#4a6459" stroke-width="1"/>
+    <rect x="198" y="772" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="206" y="782" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">1</text>
+    <rect x="1028" y="792" width="16" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="1036" y="802" fill="#4a6459" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">N</text>
+    <rect x="572" y="812" width="56" height="12" rx="2" fill="#f2e7d3"/>
+    <text x="600" y="821" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">LABEL_UID</text>
+    <rect x="880" y="600" width="280" height="184" rx="6" fill="#f2e7d3"/>
+    <rect x="880" y="600" width="280" height="184" rx="6" fill="#ffffff" stroke="#174b3a" stroke-width="1"/>
+    <rect x="880" y="600" width="280" height="44" rx="6" fill="rgba(23,75,58,0.04)" stroke="none"/>
+    <rect x="880" y="636" width="280" height="8" fill="rgba(23,75,58,0.04)"/>
+    <line x1="880" y1="644" x2="1160" y2="644" stroke="rgba(23,75,58,0.22)" stroke-width="1"/>
+    <text x="896" y="616" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">RETIREMENT EVENT</text>
+    <text x="896" y="634" fill="#174b3a" font-size="16" font-weight="600" font-family="'Geist', sans-serif">stock_label_retirements</text>
+    <text x="896" y="664" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace"># id</text>
+    <text x="1144" y="664" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">bigint</text>
+    <text x="896" y="684" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">→ label_uid</text>
+    <text x="1144" y="684" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="896" y="704" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">cause</text>
+    <text x="1144" y="704" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
+    <text x="896" y="724" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">booking_id</text>
+    <text x="1144" y="724" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">bigint</text>
+    <text x="896" y="744" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">revivable_until</text>
+    <text x="1144" y="744" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">timestamptz</text>
+    <text x="896" y="764" fill="#174b3a" font-size="12" font-family="'Geist Mono', monospace">outcome</text>
+    <text x="1144" y="764" fill="#6b8579" font-size="12" font-family="'Geist Mono', monospace" text-anchor="end">text</text>
     <line x1="40" y1="840" x2="1160" y2="840" stroke="rgba(23,75,58,0.12)" stroke-width="0.8"/>
     <text x="40" y="856" fill="#4a6459" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
     <rect x="40" y="874" width="16" height="12" rx="2" fill="rgba(200,90,61,0.04)" stroke="#c85a3d" stroke-width="1"/>
