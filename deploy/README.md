@@ -7,6 +7,9 @@ what its workloads need; the operator decides where they run.** So there is a po
 manifest here with probes, limits and a security context, and there is nothing here
 about ingress classes, storage classes, secret management or DNS. PostgreSQL is not
 here either — it is infrastructure the fork consumes, not a workload the fork ships.
+The two overlays are the exception that shows the line: [`kind/`](kind/) is a test
+harness and [`talos/`](talos/) is one operator's cluster, kept as a worked example. Both
+consume `k3s/` unchanged, and everything cluster-specific lives in the overlay.
 
 **Applied and serving since 2026-09-04.** The first application is what found
 [#49](https://github.com/datagen24/victual/issues/49) — two ways this manifest meant
@@ -23,6 +26,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
+| [`talos/`](talos/) | One operator's overlay, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, from the published images, with a Traefik Ingress, PostgreSQL on an NFS claim and no label workers. `talos/up.sh` applies it. Applied 2026-10-06 |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |
@@ -364,13 +368,17 @@ Stated plainly because the gap is the point of tracking it:
   reach `POST /api/labels/register` and `POST /api/labels/render/claim`, failing only on
   connection refused because no Victual was running.
 
-- ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied to kind,
-  2026-09-19; not yet to k3s.** `deploy/kind/up.sh` loads the four images, applies
+- ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied: kind
+  2026-09-19, a real cluster 2026-10-06.** `deploy/kind/up.sh` loads the four images, applies
   `deploy/k3s` through the `deploy/kind` overlay, and waits for every rollout. What it
   established: the migrate initContainer, the credential split and all three probes behave
   under a real kubelet as they did under podman; the MCP sidecar serves every tool from two
-  replicas; and `lifecycle.stopSignal` is dropped on v1.37 (see "Signals"). A K3S apply
-  that reaches a printer is still plan 25's verification 12, and it is what keeps
+  replicas; and `lifecycle.stopSignal` is dropped on v1.37 (see "Signals"). The real
+  cluster is the maintainer's Talos one (v1.37, arm64 Raspberry Pi, Traefik, NFS CSI),
+  through [`talos/`](talos/kustomization.yaml) from the published GHCR images. It showed the
+  same probes, credential split and dropped `stopSignal`. PostgreSQL's data also survived a
+  pod restart on NFS (plan 20, piece 4). An apply that reaches a printer is still plan 25's
+  verification 12, and it is what keeps
   [issue 93](https://github.com/datagen24/victual/issues/93) open.
 
 - ~~**One writable mount remains, and it is not the view cache.**~~ **Done, 2026-09-04.**
