@@ -46,6 +46,9 @@ $target = new PDO(
 	[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
 );
 $target->exec('SET search_path TO ' . getenv('RBAC_TEST_SCHEMA') . ', public');
+// So a calling test can find this backend in pg_stat_activity when it waits on a lock
+// (StockLabelRevivalRaceTest, ADR-0037 example C3).
+$target->exec("SET application_name = 'importer-lock-helper'");
 DatabaseService::GetInstance()->GetDialect()->OnConnected($target);
 (new ReflectionProperty(DatabaseService::class, 'DbConnectionRaw'))->setValue(null, $target);
 (new ReflectionProperty(DatabaseService::class, 'DbConnection'))->setValue(null, null);
@@ -77,5 +80,6 @@ try
 }
 catch (\Throwable $ex)
 {
-	echo json_encode(['status' => 400, 'error_message' => $ex->getMessage(), 'messages' => $messages]);
+	echo json_encode(['status' => 400, 'error_message' => $ex->getMessage(), 'messages' => $messages,
+		'sqlstate' => $ex instanceof \PDOException ? (string)$ex->getCode() : null]);
 }

@@ -38,6 +38,15 @@ bound in the same file, and installing it as the view fails the three bound asse
 assertion checks that `trg_stock_log_INS()` and `rebuild_stock_log_cache_for_product()` run
 with `jit = off`, which the same migration sets.
 
+The [stock-entry label retirement event tests](029-stock-label-retirement-events.sql) cover
+migration 0303 ([ADR-0037](../../docs/adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)).
+They check the event table's constraints and history guard, and the trigger on each retirement
+path: whole-row consumption with and without context, a stale, forged, zero or malformed context,
+an undone or mismatched booking, product deletion, a direct label update and a non-stock label. They
+also check the legacy backfill and its rerun, invariants R1, R2, R5 and R6, and
+`stock_amounts_equal()`. The revival is application code and is covered by
+`tests/Pgsql/StockLabelRevivalTest.php`.
+
 The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
 migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
 retires those labels with the product's own name, not null. `trg_cascade_product_removal`
@@ -129,6 +138,11 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 | `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
 | `stock_edited_entries` (linear in `stock_log`, same rows as 0267) | view | 0302 | `028-stock-edited-entries-scaling.sql` |
+| `stock_amounts_equal` | function | 0303 | `029-stock-label-retirement-events.sql` |
+| `record_stock_label_retirement` | function + trigger | 0303 | `029-stock-label-retirement-events.sql` |
+| `guard_stock_label_retirement_history` | function + trigger | 0303 | `029-stock-label-retirement-events.sql` |
+| `backfill_legacy_stock_label_retirements` | function | 0303 | `029-stock-label-retirement-events.sql` |
+| `stock_label_retirements_incomplete` | function | 0303 | `029-stock-label-retirement-events.sql` |
 
 ## Completeness
 
