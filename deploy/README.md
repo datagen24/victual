@@ -7,9 +7,11 @@ what its workloads need; the operator decides where they run.** So there is a po
 manifest here with probes, limits and a security context, and there is nothing here
 about ingress classes, storage classes, secret management or DNS. PostgreSQL is not
 here either — it is infrastructure the fork consumes, not a workload the fork ships.
-The two overlays are the exception that shows the line: [`kind/`](kind/) is a test
-harness and [`talos/`](talos/) is one operator's cluster, kept as a worked example. Both
-consume `k3s/` unchanged, and everything cluster-specific lives in the overlay.
+
+The overlays are the exception that shows the line. [`kind/`](kind/) is a test
+harness, [`talos/`](talos/) is one operator's cluster, kept as a worked example, and
+[`production/`](production/) renders an overlay from a values file. All three consume `k3s/`
+unchanged, and everything cluster-specific lives in the overlay or the values.
 
 **Applied and serving since 2026-09-04.** The first application is what found
 [#49](https://github.com/datagen24/victual/issues/49) — two ways this manifest meant
@@ -27,6 +29,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
 | [`talos/`](talos/) | One operator's overlay, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, from the published images, with a Traefik Ingress, PostgreSQL on an NFS claim, Secrets from 1Password Connect and no label workers. `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` applies it. Applied 2026-10-06 |
+| [`production/`](production/values.example.yaml) | The way to start a deployment of your own without writing kustomize: copy `values.example.yaml` to `values.yaml` (gitignored), fill it in, and `production/deploy.sh apply`. It renders an overlay on `k3s/` for an external PostgreSQL, optional MQTT and InfluxDB, and Secrets from 1Password or inline. Server dry-run only so far; not yet applied |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |

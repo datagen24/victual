@@ -1,0 +1,132 @@
+# Victual deployment values: everything a deployment needs, in one file.
+#
+#   cp deploy/production/values.example.yaml deploy/production/values.yaml
+#   $EDITOR deploy/production/values.yaml       # fill in every CHANGE-ME
+#   deploy/production/deploy.sh render           # check it: writes deploy/production/build/
+#   deploy/production/deploy.sh apply            # apply it and wait until it serves
+#
+# values.yaml and build/ are gitignored, because they name your hosts (and, with
+# `secrets.source: inline`, hold your passwords). This example is the only one committed.
+#
+# You never edit Kubernetes manifests: render.py turns this file into an overlay on
+# deploy/k3s, the same manifests every other deployment of Victual uses. Any value left as
+# CHANGE-ME stops the render with the name of the field.
+#
+# Before the first apply, once:
+#
+#   1. Create the database and the two roles on your PostgreSQL server, as a superuser:
+#
+#        psql -v ON_ERROR_STOP=1 -v db=victual \
+#             -v migrate_password="$MIGRATE_PASSWORD" -v app_password="$APP_PASSWORD" \
+#             -f deploy/postgres/roles.sql "postgresql://postgres@<db-host>/victual"
+#
+#      Run it again after the first apply has migrated the schema; roles.sql's header says
+#      why. The two passwords are the ones `secrets` below supplies.
+#   2. Put those passwords where `secrets` says they are (1Password, or below).
+
+# --- Where it runs ---------------------------------------------------------------------
+cluster:
+  # The kubectl context to deploy to. Empty uses your current context.
+  context: ""
+  # Created if missing. Everything below lives in it.
+  namespace: victual
+
+# --- Which version ---------------------------------------------------------------------
+image:
+  # A published release tag (amd64 and arm64 images on GHCR).
+  tag: 0.2.0-MVP
+
+# --- How people reach it -----------------------------------------------------------------
+ingress:
+  # The IngressClass your cluster's ingress controller answers to.
+  className: traefik
+  # The hostname Victual is served at. Its DNS must point at the ingress controller.
+  host: CHANGE-ME.example.com
+  tls:
+    # true serves https://<host>. Then either name an existing TLS Secret in the namespace,
+    # or leave secretName empty and let an annotation below (cert-manager, say) create it.
+    enabled: false
+    secretName: ""
+  # Extra annotations for the Ingress, e.g. cert-manager.io/cluster-issuer: letsencrypt.
+  annotations: {}
+
+# --- The database: your PostgreSQL server ------------------------------------------------
+database:
+  host: CHANGE-ME-postgres.example.internal
+  port: 5432
+  name: victual
+  # libpq sslmode: disable, allow, prefer, require, verify-ca or verify-full. Empty uses
+  # libpq's default (prefer).
+  sslmode: ""
+
+# --- Home Assistant over MQTT (optional) ---------------------------------------------------
+# docs/manual/operator/home-assistant-mqtt.md says what is published. Victual publishes after
+# every write; running bin/victual-publish-state after a deploy, which the manual also asks
+# for, is not automated by this template yet.
+mqtt:
+  enabled: false
+  host: CHANGE-ME-mqtt.example.internal
+  # 8883 is usual with tls: true.
+  port: 1883
+  tls: false
+  # Empty for an anonymous broker. The password comes from `secrets`.
+  username: ""
+  topicPrefix: victual
+  discoveryPrefix: homeassistant
+  # device (Home Assistant 2024.11+) or entity.
+  discoveryMode: device
+  deviceName: Victual
+
+# --- Price and stock-value events to InfluxDB v2 (optional) --------------------------------
+influxdb:
+  enabled: false
+  url: http://CHANGE-ME-influxdb.example.internal:8086
+  org: victual
+  bucket: victual
+  # The token comes from `secrets`.
+
+# --- The read-only MCP server for AI assistants (optional) ---------------------------------
+mcp:
+  # Two replicas, reachable only inside the cluster (service victual-mcp, port 3000).
+  enabled: true
+
+# --- Any other setting -------------------------------------------------------------------
+# Every setting in docs/manual/configuration.md, by its name there (no VICTUAL_ prefix).
+# The database, URL, MQTT and InfluxDB settings come from the sections above and are
+# refused here, as are MODE, DB_DRIVER and FILE_STORAGE, which this deployment fixes.
+settings:
+  CURRENCY: USD
+  DEFAULT_LOCALE: en
+  # ENTRY_PAGE: stock
+  # CALENDAR_FIRST_DAY_OF_WEEK: "1"
+
+# --- Passwords and tokens ------------------------------------------------------------------
+secrets:
+  # onepassword: read from 1Password through the cluster's Connect operator. Nothing secret
+  #              is in this file.
+  # inline:      written below, in this gitignored file, and applied as Kubernetes Secrets.
+  source: onepassword
+
+  onepassword:
+    # A vault your Connect server can read.
+    vault: CHANGE-ME-vault
+    # Two items. The operator makes a Secret from each, one key per field, so the field
+    # labels must be exactly these:
+    #
+    #   migrate item:  VICTUAL_DB_USER (victual_migrate), VICTUAL_DB_PASSWORD,
+    #                  VICTUAL_BOOTSTRAP_ADMIN_PASSWORD (the first admin login)
+    #   app item:      VICTUAL_DB_USER (victual_app), VICTUAL_DB_PASSWORD,
+    #                  and VICTUAL_MQTT_PASSWORD / VICTUAL_INFLUXDB_TOKEN if you use them
+    #
+    # deploy/talos/seed-1password.sh shows one way to create such items.
+    migrateItem: victual-db-migrate
+    appItem: victual-db-app
+
+  inline:
+    migratePassword: CHANGE-ME
+    appPassword: CHANGE-ME
+    # The first admin login's password. Used once, when the first apply creates the schema.
+    bootstrapAdminPassword: CHANGE-ME
+    # Only read when mqtt / influxdb are enabled.
+    mqttPassword: ""
+    influxdbToken: ""
