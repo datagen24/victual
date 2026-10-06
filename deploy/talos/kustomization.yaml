@@ -1,0 +1,65 @@
+# The operator's overlay for the Talos Raspberry Pi cluster (arm64, Traefik behind MetalLB,
+# NFS CSI). deploy/talos/up.sh is the entry point; it builds this with
+# `--load-restrictor LoadRestrictionsNone`, because the overlay names individual files from
+# deploy/k3s and deploy/kind rather than whole directories:
+#
+#   - deploy/k3s's Victual and MCP sidecar, but **not** its label workers: this cluster has
+#     no printer, and deploy/k3s/kustomization.yaml says an overlay without one drops them.
+#   - deploy/kind's throwaway PostgreSQL and roles Job. **Its data is an emptyDir**: a pod
+#     restart loses the database. It stands in until the NFS share can provision a volume
+#     (the `nfs-csi` provisioner fails with `mkdir … permission denied` on the export
+#     root as of 2026-10-06); swapping it for a PVC-backed PostgreSQL is the next step.
+#
+# The images are the published GHCR ones at the base's tag (amd64 and arm64), so there is no
+# `images:` override as deploy/kind has.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: victual
+
+resources:
+  - ../kind/namespace.yaml
+  - ../k3s/victual.yaml
+  - ../k3s/victual-mcp.yaml
+  - ../kind/postgres.yaml
+  - ../kind/roles-job.yaml
+  - ingress.yaml
+
+configMapGenerator:
+  # The roles script from its one real location.
+  - name: victual-db-roles-sql
+    files:
+      - roles.sql=../postgres/roles.sql
+    options:
+      disableNameSuffixHash: true
+
+secretGenerator:
+  - name: victual-postgres-superuser
+    envs:
+      - .secrets/superuser.env
+    options:
+      disableNameSuffixHash: true
+  - name: victual-db-migrate
+    behavior: replace
+    envs:
+      - .secrets/migrate.env
+    options:
+      disableNameSuffixHash: true
+  - name: victual-db-app
+    behavior: replace
+    envs:
+      - .secrets/app.env
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: victual-config
+    patch: |-
+      - op: replace
+        path: /data/VICTUAL_DB_HOST
+        value: victual-postgres
+      # Exactly what ingress.yaml publishes, scheme included.
+      - op: replace
+        path: /data/VICTUAL_BASE_URL
+        value: http://victual.10.130.34.240.nip.io
