@@ -4677,7 +4677,17 @@
 				],
 				"responses": {
 					"204": {
-						"description": "The operation was successful"
+						"description": "The operation was successful",
+						"headers": {
+							"Victual-Label-Revival": {
+								"description": "Present only when the undo restored or declined a stock entry label that a whole-row consumption had retired (ADR-0037). An RFC 8941 dictionary of two integers: `restored` counts labels that work again on their restored stock entry; `retired` counts labels that stay retired and need a new print. Absent when no label was affected. Set only after the undo committed; a refused undo carries no such header.",
+								"schema": {
+									"type": "string",
+									"pattern": "^restored=[0-9]+, retired=[0-9]+$",
+									"example": "restored=1, retired=0"
+								}
+							}
+						}
 					},
 					"400": {
 						"description": "The operation was not successful (possible errors are: Not existing booking)",
@@ -4787,7 +4797,17 @@
 				],
 				"responses": {
 					"204": {
-						"description": "The operation was successful"
+						"description": "The operation was successful",
+						"headers": {
+							"Victual-Label-Revival": {
+								"description": "Present only when the undo restored or declined a stock entry label that a whole-row consumption had retired (ADR-0037). An RFC 8941 dictionary of two integers: `restored` counts labels that work again on their restored stock entry; `retired` counts labels that stay retired and need a new print. Absent when no label was affected. Set only after the undo committed; a refused undo carries no such header.",
+								"schema": {
+									"type": "string",
+									"pattern": "^restored=[0-9]+, retired=[0-9]+$",
+									"example": "restored=1, retired=0"
+								}
+							}
+						}
 					},
 					"400": {
 						"description": "The operation was not successful (possible errors are: Not existing transaction)",
@@ -5397,7 +5417,17 @@
 				],
 				"responses": {
 					"204": {
-						"description": "The operation was successful"
+						"description": "The operation was successful",
+						"headers": {
+							"Victual-Label-Revival": {
+								"description": "Present only when the undo restored or declined a stock entry label that a whole-row consumption had retired (ADR-0037). An RFC 8941 dictionary of two integers: `restored` counts labels that work again on their restored stock entry; `retired` counts labels that stay retired and need a new print. Absent when no label was affected. Set only after the undo committed; a refused undo carries no such header.",
+								"schema": {
+									"type": "string",
+									"pattern": "^restored=[0-9]+, retired=[0-9]+$",
+									"example": "restored=1, retired=0"
+								}
+							}
+						}
 					},
 					"400": {
 						"description": "The operation was not successful (possible errors are: Not existing booking)",

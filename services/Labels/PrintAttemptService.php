@@ -55,12 +55,18 @@ class PrintAttemptService extends LabelService
         // verification 10) is all this checks for - ADR-0019 dead-letters an unclaimed job only
         // for a payload no version can read or a deleted printer, never for merely being
         // unclaimed, so a retired label's job is left exactly as queued as it was.
+        //
+        // ADR-0037 section 9: a stock-entry label can turn live again when an undo revives it.
+        // A job that existed when the label retired (id at or below the event's jobs_through_id)
+        // stays unclaimable, so an authorized retry from before the consumption does not print
+        // by itself. A job requested after the revival has a higher id and is claimable.
         $jobs = $this->Query("SELECT j.*,o.payload FROM print_jobs j JOIN outbox o ON o.id=j.outbox_id
    JOIN label_printers p ON p.id=j.printer_id
    WHERE p.worker_id=? AND j.outcome IS NULL AND j.cancelled_at IS NULL AND j.attempts_made<j.attempts_authorized
    AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM print_attempts a WHERE a.id=j.current_attempt_id AND a.ended_at IS NULL AND a.lease_expires_at>CURRENT_TIMESTAMP)
    AND NOT EXISTS (SELECT 1 FROM labels lb WHERE lb.uid=j.label_uid AND lb.retired_at IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM stock_label_retirements r WHERE r.label_uid=j.label_uid AND r.jobs_through_id>=j.id)
    ORDER BY j.outbox_id LIMIT 200" . $this->LockClause(), [$workerId])->fetchAll(\PDO::FETCH_ASSOC);
         $claimed = [];
         foreach ($jobs as $job) {

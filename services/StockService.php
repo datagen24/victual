@@ -6,6 +6,8 @@ use Victual\Services\Time\Instant;
 
 use Victual\Helpers\Grocycode;
 use Victual\Services\Influx\BookingEventPublisher;
+use Victual\Services\Labels\LabelIdentityService;
+use Victual\Services\Labels\StockLabelRevivalService;
 use Victual\Services\Storage\FileStorage;
 
 /**
@@ -70,6 +72,24 @@ class StockService extends BaseService
 
 	/** Absolute floor for ADR-0032's stock-unit comparison tolerance. */
 	const AMOUNT_TOLERANCE = 1e-9;
+
+	/**
+	 * How long after a whole-row consumption its undo may revive the stock-entry label the
+	 * consumption retired (ADR-0037 section 5): 30 days, the maintainer's default of 2026-10-06.
+	 * Stored per retirement event as its deadline, so a change here alters new events only.
+	 */
+	const LABEL_REVIVAL_WINDOW_SECONDS = 2592000;
+
+	/**
+	 * ADR-0037: the pending label revival events of the outermost undo in progress, booking id
+	 * => event id, or null when no undo is in progress. Set once, after the outermost undo's
+	 * product locks, so a transaction undo probes all its bookings in one read and takes the
+	 * import lock before any of them takes a location lock.
+	 */
+	private ?array $labelRevivalPending = null;
+
+	/** ADR-0037: what each revival attempt of the outermost undo in progress closed its event as. */
+	private array $labelRevivalOutcomes = [];
 
 	/**
 	 * Compares finite amounts in the same stock unit under ADR-0032.
@@ -903,6 +923,10 @@ class StockService extends BaseService
 							'opened_measured_at' => $stockEntry->opened_measured_at
 						]);
 						$logRow->save();
+
+						// ADR-0037: names this booking as the cause of the retirement the delete
+						// below triggers when the row carries a label, so its undo can revive it.
+						StockLabelRevivalService::SetRetirementContext(DatabaseService::GetInstance()->GetDbConnectionRaw(), (int)$logRow->id, self::LABEL_REVIVAL_WINDOW_SECONDS);
 
 						$stockEntry->delete();
 
@@ -3297,7 +3321,34 @@ class StockService extends BaseService
 		]);
 	}
 
+	/**
+	 * Undoes one booking, or its whole correlation group, in one transaction.
+	 *
+	 * @return array{restored: int, retired: int}|null For the outermost undo, how many
+	 *         stock-entry labels the undo revived and how many it left retired (ADR-0037
+	 *         section 12a). Returned only once the transaction this call opened has committed,
+	 *         or, when a caller's transaction encloses it, for that caller to report after its
+	 *         own commit. Null for a nested call.
+	 */
 	public function UndoBooking($bookingId, $skipCorrelatedBookings = false)
+	{
+		$outermost = $this->labelRevivalPending === null;
+		try
+		{
+			$this->UndoBookingInTransaction($bookingId, $skipCorrelatedBookings, $outermost);
+			return $outermost ? StockLabelRevivalService::Summarize($this->labelRevivalOutcomes) : null;
+		}
+		finally
+		{
+			if ($outermost)
+			{
+				$this->labelRevivalPending = null;
+				$this->labelRevivalOutcomes = [];
+			}
+		}
+	}
+
+	private function UndoBookingInTransaction($bookingId, $skipCorrelatedBookings, bool $outermost): void
 	{
 		// The whole thing - the "does it exist", "any subsequent booking depends on it" and
 		// per-branch "does the row it would restore still exist" checks, and the reversal
@@ -3307,7 +3358,7 @@ class StockService extends BaseService
 		// (as this used to) does not stop that at all, since a consume racing between the
 		// check and the purchase branch's delete() below books against an entry this undo
 		// is about to remove.
-		DatabaseService::GetInstance()->InTransaction(function () use ($bookingId, $skipCorrelatedBookings)
+		DatabaseService::GetInstance()->InTransaction(function () use ($bookingId, $skipCorrelatedBookings, $outermost)
 		{
 			$logRow = $this->DB->stock_log()->where('id = :1 AND undone = 0', $bookingId)->fetch();
 			if ($logRow == null)
@@ -3326,10 +3377,20 @@ class StockService extends BaseService
 				throw new \Exception('Booking does not exist or was already undone');
 			}
 
-			// Undo all correlated bookings first, in order from newest first to the oldest
+			$correlatedBookings = null;
 			if (!$skipCorrelatedBookings && !empty($logRow->correlation_id))
 			{
 				$correlatedBookings = $this->DB->stock_log()->where('undone = 0 AND correlation_id = :1', $logRow->correlation_id)->orderBy('id', 'DESC')->fetchAll();
+			}
+
+			if ($outermost)
+			{
+				$this->PrepareLabelRevival($correlatedBookings === null ? [(int)$logRow->id] : array_map(fn($booking) => (int)$booking->id, $correlatedBookings));
+			}
+
+			// Undo all correlated bookings first, in order from newest first to the oldest
+			if ($correlatedBookings !== null)
+			{
 
 				// The correlated bookings (a stock edit's old/new pair, a transfer's from/to
 				// pair) are only meaningful undone as a set - already covered by the outer
@@ -3593,10 +3654,24 @@ class StockService extends BaseService
 					}
 				}
 
-				if (!isset($rebuiltStockRow['id']))
+				if (isset($rebuiltStockRow['id']))
+				{
+					$restoredRowId = (int)$rebuiltStockRow['id'];
+				}
+				else
 				{
 					$stockRow = $this->DB->stock()->createRow($rebuiltStockRow);
 					$stockRow->save();
+					$restoredRowId = (int)$stockRow->id;
+				}
+
+				// ADR-0037: revive the label this booking's whole-row take retired, if any.
+				// A decline leaves the label retired and never blocks the undo.
+				$revivalEventId = $this->labelRevivalPending[(int)$logRow->id] ?? null;
+				if ($revivalEventId !== null)
+				{
+					$this->labelRevivalOutcomes[] = (new StockLabelRevivalService(DatabaseService::GetInstance()->GetDbConnectionRaw()))
+						->Revive($revivalEventId, (int)$logRow->id, $restoredRowId);
 				}
 
 				// Update log entry
@@ -4140,7 +4215,29 @@ class StockService extends BaseService
 	 * @throws \Exception When no (not yet undone) booking with this transaction id exists,
 	 *                    or any contained booking cannot be undone
 	 */
+	/**
+	 * @return array{restored: int, retired: int}|null See UndoBooking(): the label revival
+	 *         counts of the outermost undo, null for a nested call.
+	 */
 	public function UndoTransaction($transactionId)
+	{
+		$outermost = $this->labelRevivalPending === null;
+		try
+		{
+			$this->UndoTransactionInTransaction($transactionId, $outermost);
+			return $outermost ? StockLabelRevivalService::Summarize($this->labelRevivalOutcomes) : null;
+		}
+		finally
+		{
+			if ($outermost)
+			{
+				$this->labelRevivalPending = null;
+				$this->labelRevivalOutcomes = [];
+			}
+		}
+	}
+
+	private function UndoTransactionInTransaction($transactionId, bool $outermost): void
 	{
 		$transactionBookings = $this->DB->stock_log()->where('undone = 0 AND transaction_id = :1', $transactionId)->orderBy('id', 'DESC')->fetchAll();
 
@@ -4151,7 +4248,7 @@ class StockService extends BaseService
 
 		// A partially undone transaction is a state the ledger cannot represent, so the
 		// bookings are undone all together or not at all.
-		DatabaseService::GetInstance()->InTransaction(function () use ($transactionBookings, $transactionId)
+		DatabaseService::GetInstance()->InTransaction(function () use ($transactionBookings, $transactionId, $outermost)
 		{
 			// A transaction id can group bookings of more than one product (a recipe
 			// consumption books every ingredient under one transaction id), so every
@@ -4160,6 +4257,11 @@ class StockService extends BaseService
 			// set, read in different orders, could deadlock rather than one simply waiting
 			// for the other (issue #458).
 			DatabaseService::GetInstance()->LockProductsStock(array_map(fn($booking) => $booking->product_id, $transactionBookings));
+
+			if ($outermost)
+			{
+				$this->PrepareLabelRevival(array_map(fn($booking) => (int)$booking->id, $transactionBookings));
+			}
 
 			foreach ($transactionBookings as $transactionBooking)
 			{
@@ -4862,6 +4964,25 @@ class StockService extends BaseService
 			'opened_tare' => $tare,
 			'opened_measured_at' => Instant::Now(),
 		];
+	}
+
+	/**
+	 * ADR-0037 section 7: probes every booking the outermost undo will reverse for a pending
+	 * label revival event, in one indexed read, and takes the import lock once when any has
+	 * one. Called after the product locks and before any booking takes its location lock, so
+	 * the import lock never follows a row lock. An undo with no pending event takes no import
+	 * lock and adds this one read.
+	 *
+	 * @param int[] $bookingIds
+	 */
+	private function PrepareLabelRevival(array $bookingIds): void
+	{
+		$pdo = DatabaseService::GetInstance()->GetDbConnectionRaw();
+		$this->labelRevivalPending = (new StockLabelRevivalService($pdo))->PendingFor($bookingIds);
+		if (count($this->labelRevivalPending) > 0)
+		{
+			LabelIdentityService::LockImport($pdo);
+		}
 	}
 
 	/** Protects a historical restore location until the outer undo transaction ends. */

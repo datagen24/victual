@@ -184,9 +184,9 @@ Victual.Components.DateTimePicker.GetInputElement().on('keypress', function (e)
 function UndoChoreExecution(executionId)
 {
 	Victual.Api.Post('chores/executions/' + executionId.toString() + '/undo', {},
-		function (result)
+		function (result, xhr)
 		{
-			toastr.success(__t("Chore execution successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Chore execution successfully undone"), xhr);
 		}
 	);
 };

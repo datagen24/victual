@@ -165,8 +165,12 @@ class ChoresApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $request, $response)
 		{
-			$this->ApiResponse($response, ChoresService::GetInstance()->UndoChoreExecution($args['executionId'], $request));
-			return $this->EmptyApiResponse($response);
+			// ADR-0037 section 12a: an execution that booked a whole-row consumption can revive
+			// a stock-entry label on undo. The counts are set only after the commit; the body
+			// stays the JSON null it always carried.
+			$labelRevival = ChoresService::GetInstance()->UndoChoreExecution($args['executionId'], $request);
+			$this->ApiResponse($response, null);
+			return $this->WithLabelRevival($this->EmptyApiResponse($response), $labelRevival);
 		});
 	}
 

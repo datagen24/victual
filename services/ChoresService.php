@@ -479,11 +479,14 @@ class ChoresService extends BaseService
 	 * @throws \Victual\Controllers\Users\PermissionMissingException When a request was
 	 *              given and the acting user lacks STOCK_EDIT for an execution that will
 	 *              reverse a live linked booking
+	 * @return array{restored: int, retired: int}|null The stock undo's label revival counts
+	 *         (StockService::UndoTransaction()), or null when no stock booking was reversed
 	 */
 	public function UndoChoreExecution($executionId, $request = null)
 	{
 		return DatabaseService::GetInstance()->InTransaction(function () use ($executionId, $request)
 		{
+			$labelRevival = null;
 			$logRow = $this->DB->chores_log()->where('id = :1 AND undone = 0', $executionId)->fetch();
 			if ($logRow == null)
 			{
@@ -505,7 +508,7 @@ class ChoresService extends BaseService
 				// Runs first: if this refuses (StockService::UndoTransaction(), e.g. a
 				// later booking now depends on this one), the exception unwinds this
 				// whole InTransaction() and the chores_log update below never happens.
-				StockService::GetInstance()->UndoTransaction($logRow->stock_transaction_id);
+				$labelRevival = StockService::GetInstance()->UndoTransaction($logRow->stock_transaction_id);
 			}
 
 			// Update log entry
@@ -515,6 +518,10 @@ class ChoresService extends BaseService
 			]);
 
 			$this->CalculateNextExecutionAssignment($logRow->chore_id);
+
+			// ADR-0037 section 12a: the label revival counts of the stock undo, returned through
+			// this transaction so the caller reports them only once it has committed.
+			return $labelRevival;
 		});
 	}
 
