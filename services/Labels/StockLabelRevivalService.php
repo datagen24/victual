@@ -40,6 +40,10 @@ class StockLabelRevivalService
 	 */
 	public static function SetRetirementContext(\PDO $db, int $bookingId, int $windowSeconds): void
 	{
+		if (!self::Applies($db))
+		{
+			return;
+		}
 		$statement = $db->prepare('SELECT set_config(?, ?, true), set_config(?, ?, true)');
 		$statement->execute([self::CONTEXT_BOOKING, (string)$bookingId, self::CONTEXT_WINDOW, (string)$windowSeconds]);
 	}
@@ -55,7 +59,7 @@ class StockLabelRevivalService
 	 */
 	public function PendingFor(array $bookingIds): array
 	{
-		if (count($bookingIds) === 0)
+		if (count($bookingIds) === 0 || !self::Applies($this->db))
 		{
 			return [];
 		}
@@ -176,6 +180,17 @@ class StockLabelRevivalService
 	protected function Clock(): string
 	{
 		return (string)$this->db->query('SELECT clock_timestamp()')->fetchColumn();
+	}
+
+	/**
+	 * Label revival is PostgreSQL code over a PostgreSQL-only table (migration 0303). The one
+	 * SQLite connection this class can meet is the differential harness's comparison side
+	 * (DatabaseDialect::SQLITE_TOOLING_ENV), whose migration line is frozen at 0265 and has no
+	 * event table, so there the hook does nothing and the undo behaves as it did before.
+	 */
+	private static function Applies(\PDO $db): bool
+	{
+		return $db->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'pgsql';
 	}
 
 	private function Decline(int $eventId, string $reason, string $now): string
