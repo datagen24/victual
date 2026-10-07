@@ -172,10 +172,11 @@ the very booking its own guard exists to catch.
 `migrations` is not listed: `DatabaseMigrationService` creates it on every engine before
 the baseline loads, because it is what records that the baseline was applied.
 
-**Stock & products (15)** — `products`, `product_groups`, `product_barcodes`,
+**Stock & products (17)** — `products`, `product_groups`, `product_barcodes`,
 `product_substitutions`, `quantity_units`, `quantity_unit_conversions`, `locations`,
 `storage_classes`, `product_location_min_stock`, `shopping_locations`, `stock`, `stock_log`,
-`stock_entry_origins`, `shopping_list`, `shopping_lists`.
+`stock_entry_origins`, `stock_row_lots`, `stock_booking_lots`, `shopping_list`,
+`shopping_lists`.
 
 `stock` holds current entries and `stock_log` is the append-only ledger; a consumed entry
 disappears from `stock` while its bookings stay in the ledger the views read.
@@ -186,6 +187,19 @@ product or recipe adds to by default; like the other references they are by conv
 
 `stock_entry_origins` (migration 0267) links an entry split off by a partial open back to
 the purchase it came from, because the split entry has no `stock_log` row of its own.
+
+`stock_row_lots` and `stock_booking_lots` (migration 0304,
+[ADR-0036](adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md))
+attribute stock to the bookings that added it. A lot is the units one addition booking
+introduced, named by that booking's `stock_log.id`. `stock_row_lots` is current state: how
+much of each lot a `stock` row holds, with a `NULL` lot for quantity whose lot is unknown
+(the pool). `stock_booking_lots` is the record: how much of each lot a booking added, removed
+or moved.
+
+`StockLineageService` writes both tables under the product lock. The maintenance merge moves
+contributions and rewrites no booking, and an undo finds a booking's units by lot.
+`stock_lineage_violations()` reports invariants I1 to I3. Neither table is an exposed entity,
+and nothing on the wire changed.
 
 `locations` is a tree since migration 0273 ([plan 08](plans/landed/08-nested-locations.md)):
 `parent_location_id` is a reference by convention like every other, and `locations_resolved`

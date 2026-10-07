@@ -20,6 +20,10 @@
 
 > ⚠️ Several API failure paths now answer a different status code - `403` for a permission failure, `404` for a missing object on `PUT`/`DELETE`, `400` where a `500` or a `404` was returned for a malformed request. Every changed code is on a failure path and no successful response changed shape; see the API section below for the full list
 
+> ❗ Migration 0304 records which booking each unit of stock came from and fills that record from your existing history. Undo now finds a booking's units by what it booked rather than by which stock entry they are on, so it accepts several undos it used to refuse (for example the earlier of two merged purchases) and still refuses one whose units a later booking used. Purchases whose units were merged and then consumed or edited before this release cannot be told apart and can no longer be undone. See the operator manual, "Updating and migrations", for what the migration checks and how to recover
+
+> 💡 Merging duplicate stock entries (`bin/victual-compact-stock`) is not scheduled by the shipped deployment and this release does not add a schedule; entries are merged only when you run the command. The command no longer rewrites stock entry ids in the journal, and its database role needs the grant list in the command's header
+
 > ⚠️ The old "tare weight handling" product setting no longer does anything: `enable_tare_weight_handling` and `tare_weight` stay on `/objects/products` at their current values, but it can no longer be newly enabled (`PUT`/`POST` answers `400`), and its purchase/consume/inventory arithmetic is gone - the amount you enter for such a product is now the net amount, not a gross scale reading with the container weight subtracted automatically. Weigh an opened container by recording a measurement on the stock entry when you open it, or when you re-measure it later
 
 ### New Feature: xxxx
