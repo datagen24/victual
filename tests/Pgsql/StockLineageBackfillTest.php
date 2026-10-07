@@ -3,7 +3,10 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use ReflectionProperty;
 use Victual\Services\DatabaseMigrationService;
+use Victual\Services\DatabaseService;
+use Victual\Services\StockLineageService;
 use Victual\Services\Labels\LabelIdentityService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
@@ -142,7 +145,11 @@ class StockLineageBackfillTest extends PgsqlSchemaTestCase
 		return self::$db->query('SELECT * FROM stock_lineage_violations()')->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	/** Puts the database back to the state before 0304 ran: no tables, no functions, no record. */
+	/**
+	 * Puts the database back to the state before 0304 ran: no tables, no functions, no record.
+	 * trg_cascade_change_qu_id_stock keeps 0304's body, which names the dropped tables; no test
+	 * in this class changes a product's stock unit, and the migration rerun replaces it.
+	 */
 	private static function unmigrate(): void
 	{
 		self::$db->exec('DROP TABLE stock_row_lots, stock_booking_lots;
@@ -285,4 +292,70 @@ class StockLineageBackfillTest extends PgsqlSchemaTestCase
 			['I3', $purchase, 2.5, 3.0],
 		], $found);
 	}
+
+	/**
+	 * StockLineageService on the differential harness's SQLite side, which has no lineage
+	 * tables (migration 0304 is PostgreSQL-only): every method does nothing and reads nothing,
+	 * so the writers behave there exactly as before ADR-0036.
+	 */
+	public function testTheLineageServiceDoesNothingOnTheSqliteComparisonSide(): void
+	{
+		$connection = new ReflectionProperty(DatabaseService::class, 'DbConnectionRaw');
+		$postgres = $connection->getValue();
+		$connection->setValue(null, new PDO('sqlite::memory:'));
+		try
+		{
+			$lineage = StockLineageService::GetInstance();
+			self::assertFalse($lineage->Applies());
+			self::assertSame([], $lineage->RowLots(1));
+			self::assertSame(0.0, $lineage->RowLotTotal(1));
+			self::assertSame([], $lineage->TakeFifo(1, 2));
+			self::assertSame([], $lineage->AllocationsOf(1));
+			self::assertFalse($lineage->IsTracked(1));
+			self::assertNull($lineage->DependentBooking(1, 1, null));
+			$lineage->AddLot(1, 1, 1);
+			$lineage->SetLots(1, [[1, 1.0, 'recorded']]);
+			$lineage->RemoveLot(1, 1, 1);
+			$lineage->MoveLots(1, 2);
+			$lineage->Allocate(1, [[1, 1.0]]);
+			$lineage->RecordAddition(1, 1, 1);
+			$lineage->EnsureTracked(1);
+			$lineage->ReconcileProduct(1);
+			$lineage->Rescale(1, 2);
+		}
+		finally
+		{
+			$connection->setValue(null, $postgres);
+		}
+	}
+
+	/** The two guards a writer should never reach: an over-draw throws, and allocations netting to zero are not written. */
+	public function testTheLineageServiceRefusesAnOverdrawAndSkipsANetZeroAllocation(): void
+	{
+		$row = (int)self::$db->query('SELECT id FROM stock WHERE product_id = ' . self::product('E_plain'))->fetchColumn();
+		$purchase = (int)self::$db->query('SELECT id FROM stock_log WHERE product_id = ' . self::product('E_plain'))->fetchColumn();
+		self::$db->query('SELECT count(*) FROM stock_lineage_backfill()');
+		$lineage = StockLineageService::GetInstance();
+
+		self::$db->beginTransaction();
+		try
+		{
+			$lineage->TakeFifo($row, 5);
+			self::fail('Drawing more than a row holds must throw');
+		}
+		catch (\LogicException $exception)
+		{
+			self::assertStringContainsString("Stock row $row holds less than 5", $exception->getMessage());
+		}
+		finally
+		{
+			self::$db->rollBack();
+		}
+
+		$consume = (int)self::$db->query('SELECT id FROM stock_log WHERE product_id = ' . self::product('E_consumed') . " AND transaction_type = 'consume'")->fetchColumn();
+		self::$db->exec("DELETE FROM stock_booking_lots WHERE booking_id = $consume");
+		$lineage->Allocate($consume, [[$purchase, 1.0], [$purchase, -1.0]]);
+		self::assertSame(0, (int)self::$db->query("SELECT count(*) FROM stock_booking_lots WHERE booking_id = $consume")->fetchColumn());
+	}
+
 }

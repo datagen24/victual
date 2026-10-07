@@ -434,19 +434,4 @@ class StockLineageService extends BaseService
 
 		return true;
 	}
-
-	/**
-	 * Invariants I1 to I3 for one product (or all), as migration 0304's stock_lineage_violations()
-	 * reports them. Empty when they hold.
-	 */
-	public function Violations(?int $productId = null): array
-	{
-		if (!$this->Applies())
-		{
-			return [];
-		}
-
-		return $this->Query('SELECT invariant, subject_id, expected, actual FROM stock_lineage_violations(?)', [$productId])
-			->fetchAll(\PDO::FETCH_ASSOC);
-	}
 }

@@ -117,6 +117,7 @@
 			<file>tests/Pgsql/StockUndoIntegrityTest.php</file>
 			<file>tests/Pgsql/StockAmountPolicyTest.php</file>
 			<file>tests/Pgsql/UndoMeasuredContainerCoherenceTest.php</file>
+			<file>tests/Pgsql/StockUndoUntrackedBookingTest.php</file>
 			<file>tests/Pgsql/StockLogDeleteTriggerTest.php</file>
 			<file>tests/Pgsql/MeasuredContainerPartialOperationsTest.php</file>
 			<file>tests/Pgsql/SubProductUnitConvertibilityTest.php</file>

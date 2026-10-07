@@ -10,6 +10,7 @@ use Victual\Services\Labels\LabelIdentityService;
 use Victual\Services\Labels\StockLabelRevivalService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\StockLineage;
 
 /**
  * ADR-0037 (issue #612): an undo of the whole-row consumption that retired a stock-entry label
@@ -290,6 +291,48 @@ class StockLabelRevivalTest extends PgsqlSchemaTestCase
 
 		self::assertSame($uid, self::label($row), 'Issuing "a replacement" returns the same uid; no second label exists');
 		self::assertSame(1, (int)self::$db->query("SELECT count(*) FROM labels WHERE kind = 'stock_entry' AND target_id = $row")->fetchColumn());
+	}
+
+	// --- ADR-0036 integration: lots on a revived row -----------------------------------
+
+	/**
+	 * Issue #665 asks whichever of ADR-0036 and ADR-0037 lands second to supply this test, and
+	 * ADR-0036 landed second. A merged row can be labelled afterwards (ADR-0036 section 10), so
+	 * one labelled row can hold two lots. Consuming it whole and undoing the consume must revive
+	 * the label on the row rebuilt under its original id, and that row must hold exactly the
+	 * lots the consume took, so its later undos still follow them.
+	 */
+	public function testAWholeRowConsumeUndoRevivesTheLabelOnARowHoldingTheConsumedLots(): void
+	{
+		$product = self::product('Lineage revival');
+		self::purchase($product, 3);
+		self::purchase($product, 2);
+		[$purchaseA, $purchaseB] = array_map('intval', self::$db->query("SELECT id FROM stock_log WHERE product_id = $product AND transaction_type = 'purchase' ORDER BY id")->fetchAll(PDO::FETCH_COLUMN));
+		StockService::GetInstance()->CompactStockEntries($product);
+		$row = (int)self::$db->query("SELECT id FROM stock WHERE product_id = $product")->fetchColumn();
+		self::assertSame([$row => [$purchaseA => 3.0, $purchaseB => 2.0]], StockLineage::Lots(self::$db, $product), 'Precondition: one merged row holding both lots');
+		$uid = self::label($row);
+
+		[, $bookings] = self::consume($product, 5);
+		self::assertCount(1, $bookings, 'Precondition: one whole-row booking');
+		$booking = $bookings[0];
+		self::assertSame([$purchaseA => -3.0, $purchaseB => -2.0], StockLineage::Allocations(self::$db, $booking));
+		self::assertSame('consumption', self::lastEvent($uid)['cause']);
+
+		$summary = StockService::GetInstance()->UndoBooking($booking);
+
+		self::assertSame(['restored' => 1, 'retired' => 0], $summary);
+		self::assertSame(5.0, (float)self::stockRow($row)['amount'], 'The row is rebuilt under its original id');
+		self::assertSame([$row => [$purchaseA => 3.0, $purchaseB => 2.0]], StockLineage::Lots(self::$db, $product), 'and holds exactly the lots the consume took');
+		self::assertNull(self::labelRow($uid)['retired_at'], 'The label is revived');
+		self::assertSame($row, (int)self::labelRow($uid)['target_id']);
+		self::assertSame('revived', self::lastEvent($uid)['outcome']);
+		StockLineage::AssertHolds(self::$db, $product);
+
+		StockService::GetInstance()->UndoBooking($purchaseB);
+		self::assertSame([$row => [$purchaseA => 3.0]], StockLineage::Lots(self::$db, $product), 'A later undo on the labelled row still follows the lots');
+		self::assertNull(self::labelRow($uid)['retired_at'], 'and the label stays live on the row that still exists');
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	// --- E2: several rows in one consumption, mixed outcomes ----------------------------
