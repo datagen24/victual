@@ -206,8 +206,15 @@ class DatabaseImporter
 	 * from - see ImportSnapshot() and AssertDerivedStateIsEmpty(). When the source *does*
 	 * carry the table it is already a common table, copied and truncated the ordinary way;
 	 * this list only closes the gap for a source that predates it.
+	 *
+	 * - `stock_row_lots` and `stock_booking_lots` (0304, ADR-0036): the lot contributions and
+	 *   allocations, keyed to `stock.id` and `stock_log.id`, which this import replaces. Like
+	 *   `stock_entry_origins`, no supported source can carry them. Unlike it, they are rebuilt
+	 *   after the copy: RebuildStockLineage() runs migration 0304's backfill over the imported
+	 *   ledger, inside the import transaction, and refuses the import if invariants I1 to I3
+	 *   do not hold afterwards.
 	 */
-	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins'];
+	const DERIVED_STATE_TABLES = ['mqtt_product_entities', 'login_attempts', 'stock_entry_origins', 'stock_row_lots', 'stock_booking_lots'];
 
 	/**
 	 * The SQLite-dialect migration numbers above DatabaseMigrationService::BASELINE_MIGRATION_ID
@@ -762,6 +769,7 @@ class DatabaseImporter
 
 			$this->SetTriggersEnabled($tables, true);
 			$this->TargetDialect->ResyncGeneratedIdCounters($this->Target);
+			$this->RebuildStockLineage();
 		}
 		catch (\Throwable $ex)
 		{
@@ -848,6 +856,30 @@ class DatabaseImporter
 		}
 
 		return $report;
+	}
+
+	/**
+	 * ADR-0036: classifies the imported ledger into lots with migration 0304's backfill, the
+	 * same function a migrated database ran, and refuses the import when I1 to I3 do not hold
+	 * afterwards. Inside the import transaction, so a refusal leaves the target as it was. A
+	 * target without the lineage tables (none in the supported span) is left alone.
+	 */
+	private function RebuildStockLineage(): void
+	{
+		if ($this->Target->query("SELECT to_regclass('stock_row_lots')")->fetchColumn() === null)
+		{
+			return;
+		}
+
+		$classes = $this->Target->query('SELECT family_class, families FROM stock_lineage_backfill()')->fetchAll(\PDO::FETCH_KEY_PAIR);
+		$violation = $this->Target->query('SELECT invariant, subject_id FROM stock_lineage_violations() LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+		if ($violation !== false)
+		{
+			throw new \RuntimeException('Import refused: the imported stock ledger violates booking lineage invariant ' . $violation['invariant'] . ' at ' . $violation['subject_id']);
+		}
+
+		ksort($classes);
+		($this->Progress)('  ' . str_pad('stock lineage', 46) . ' rebuilt (families: ' . implode(', ', array_map(fn($class, $count) => "$class $count", array_keys($classes), $classes)) . ')');
 	}
 
 	/**

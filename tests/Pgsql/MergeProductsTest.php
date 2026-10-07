@@ -7,6 +7,7 @@ use ReflectionProperty;
 use Victual\Services\BaseService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\StockLineage;
 
 /**
  * Issue #503 (audit finding M3): StockService::MergeProducts() multiplied a moved stock/
@@ -226,6 +227,59 @@ class MergeProductsTest extends PgsqlSchemaTestCase
 
 		self::assertSame([], self::stockRows($remove), 'Then: nothing remains attributed to the removed product id');
 		self::assertFalse(self::productExists($remove), 'Then: the removed product row itself is gone');
+	}
+
+	/**
+	 * ADR-0036 acceptance prerequisite 8: a product merge with a factor of 1 and with a factor
+	 * other than 1, and a change of qu_id_stock, rescale lot contributions and allocations with
+	 * stock.amount and stock_log.amount, so I1 to I3 hold afterwards and a tracked booking can
+	 * still be undone by its lots.
+	 */
+	public static function lineageRescaleCases(): array
+	{
+		return ['merge, factor 1' => ['merge', 1.0], 'merge, factor 0.001' => ['merge', 0.001], 'qu_id_stock change, factor 0.001' => ['unit', 0.001]];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('lineageRescaleCases')]
+	public function testLotsRescaleWithTheLedgerOnAMergeOrAUnitChange(string $how, float $factor): void
+	{
+		$sourceUnit = $factor === 1.0 ? self::$ids['kilogram'] : self::$ids['gram'];
+		$units = fn(int $unit) => ['qu_id_purchase' => $unit, 'qu_id_stock' => $unit, 'qu_id_consume' => $unit, 'qu_id_price' => $unit];
+		$keep = self::insertProduct('Lineage Rescale Keep ' . $how . $factor, $units(self::$ids['kilogram']));
+		$source = self::insertProduct('Lineage Rescale Source ' . $how . $factor, $units($sourceUnit));
+		if ($factor !== 1.0)
+		{
+			self::insertRow('quantity_unit_conversions', ['from_qu_id' => self::$ids['gram'], 'to_qu_id' => self::$ids['kilogram'], 'factor' => $factor, 'product_id' => $source]);
+		}
+
+		$stock = StockService::GetInstance();
+		$stock->AddProduct($keep, 2, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 1.0, self::$ids['pantry']);
+		$stock->AddProduct($source, 500, '2030-01-01', StockService::TRANSACTION_TYPE_PURCHASE, '2026-09-01', 0.01, self::$ids['pantry']);
+		$consume = $stock->ConsumeProduct($source, 200, false, StockService::TRANSACTION_TYPE_CONSUME);
+		$purchase = (int)self::$db->query("SELECT id FROM stock_log WHERE product_id = $source AND transaction_type = 'purchase'")->fetchColumn();
+		$consumeBooking = (int)self::$db->query("SELECT id FROM stock_log WHERE transaction_id = '$consume'")->fetchColumn();
+
+		if ($how === 'merge')
+		{
+			$stock->MergeProducts($keep, $source);
+			$product = $keep;
+		}
+		else
+		{
+			self::$db->exec('UPDATE products SET qu_id_stock = ' . self::$ids['kilogram'] . " WHERE id = $source");
+			$product = $source;
+		}
+
+		StockLineage::AssertHolds(self::$db, $product, "after the $how");
+		$row = (int)self::$db->query("SELECT id FROM stock WHERE product_id = $product AND stock_id = (SELECT stock_id FROM stock_log WHERE id = $purchase)")->fetchColumn();
+		self::assertEqualsWithDelta(300 * $factor, StockLineage::Lots(self::$db, $product)[$row][$purchase], 1e-9, 'The contribution is rescaled');
+		self::assertEqualsWithDelta(500 * $factor, StockLineage::Allocations(self::$db, $purchase)[$purchase], 1e-9, 'and so is the purchase\'s allocation');
+		self::assertEqualsWithDelta(-200 * $factor, StockLineage::Allocations(self::$db, $consumeBooking)[$purchase], 1e-9, 'and the consume\'s');
+
+		$stock->UndoTransaction($consume);
+		StockLineage::AssertHolds(self::$db, $product, 'after undoing the consume');
+		self::assertEqualsWithDelta(500 * $factor, array_sum(array_map(fn($lots) => $lots[$purchase] ?? 0, StockLineage::Lots(self::$db, $product))), 1e-9,
+			'The undone consume returned its rescaled units to the purchase\'s lot');
 	}
 
 	// ------------------------------------------------------------------------------
