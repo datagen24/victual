@@ -34,7 +34,7 @@ cluster:
 # --- Which version ---------------------------------------------------------------------
 image:
   # A published release tag (amd64 and arm64 images on GHCR).
-  tag: 0.2.0-MVP
+  tag: 0.3.0
 
 # --- How people reach it -----------------------------------------------------------------
 ingress:

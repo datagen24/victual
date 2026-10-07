@@ -155,7 +155,7 @@ spec:
         # See deploy/podman/victual.yaml for why migration is a startup step and why this
         # is the only container holding a role that can run DDL.
         - name: migrate
-          image: ghcr.io/datagen24/victual-migrate:0.2.0-MVP
+          image: ghcr.io/datagen24/victual-migrate:0.3.0
           envFrom:
             - configMapRef:
                 name: victual-config
@@ -178,7 +178,7 @@ spec:
 
       containers:
         - name: app
-          image: ghcr.io/datagen24/victual-app:0.2.0-MVP
+          image: ghcr.io/datagen24/victual-app:0.3.0
           ports:
             - name: fastcgi
               containerPort: 9000
@@ -221,7 +221,7 @@ spec:
             stopSignal: SIGQUIT
 
         - name: web
-          image: ghcr.io/datagen24/victual-web:0.2.0-MVP
+          image: ghcr.io/datagen24/victual-web:0.3.0
           ports:
             - name: http
               containerPort: 8080
