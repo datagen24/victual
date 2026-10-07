@@ -433,6 +433,45 @@ class StockLineageWorkedExamplesTest extends PgsqlSchemaTestCase
 		self::assertUndone([$old, $new], 1, 'undo the edit');
 	}
 
+	/**
+	 * An edit to or from zero leaves one half of the edit pair with no allocations: the
+	 * snapshot of an empty row is empty. The pair is still undone by lot as one unit, so the
+	 * row returns to its old amount and lots (CodeRabbit review of PR #669).
+	 */
+	public function testExample4EditToZeroAndBackIsUndoneByLot(): void
+	{
+		$p = self::product('4e');
+		$a = $this->buy($p, 3, 'A');
+		[$row] = self::rowIds($p);
+		$keep = StockService::KeepStoredValue();
+		[$old, $new] = self::bookingsOf(self::$stock->EditStockEntry($row, 0, $keep, $keep, $keep, $keep, $keep, $keep));
+		$this->assertAllocations($old, ['A' => 3], 'edit to 0: the old snapshot');
+		$this->assertAllocations($new, [], 'edit to 0: the new snapshot is empty');
+		$this->assertRows($p, [[0, []]], 'edit to 0');
+
+		self::$stock->UndoBooking($new);
+		$this->assertRows($p, [[3, ['A' => 3]]], 'undo the edit to 0', [['id' => (string)$row]]);
+		self::assertUndone([$old, $new], 1, 'undo the edit to 0');
+		self::assertUndone([$a], 0, 'undo the edit to 0');
+	}
+
+	public function testExample4EditOfAnEmptyRowUpIsUndoneByLot(): void
+	{
+		$p = self::product('4f');
+		$this->buy($p, 3, 'A');
+		[$row] = self::rowIds($p);
+		$keep = StockService::KeepStoredValue();
+		self::$stock->EditStockEntry($row, 0, $keep, $keep, $keep, $keep, $keep, $keep);
+		[$old, $new] = self::bookingsOf(self::$stock->EditStockEntry($row, 2, $keep, $keep, $keep, $keep, $keep, $keep));
+		$this->names[$new] = 'E';
+		$this->assertAllocations($old, [], 'edit up: the old snapshot of an empty row');
+		$this->assertAllocations($new, ['E' => 2], 'edit up: the new lot');
+
+		self::$stock->UndoBooking($old);
+		$this->assertRows($p, [[0, []]], 'undo the edit up', [['id' => (string)$row]]);
+		self::assertUndone([$old, $new], 1, 'undo the edit up');
+	}
+
 	// ------------------------------------------------------------------------------
 	// Example 5: fully consumed stock
 	// ------------------------------------------------------------------------------

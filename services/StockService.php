@@ -3487,6 +3487,21 @@ class StockService extends BaseService
 			{
 				$lineage->ReconcileProduct((int)$logRow->product_id);
 				$tracked = $lineage->IsTracked((int)$logRow->id);
+
+				// A correlated pair (edit, transfer) is reversed as one unit by its newer half.
+				// One half can carry no allocations - the snapshot of a row edited to or from
+				// zero is empty - so it follows its partner rather than the legacy rules.
+				if (!$tracked && !empty($logRow->correlation_id))
+				{
+					foreach ($this->DB->stock_log()->where('correlation_id = :1 AND id != :2', $logRow->correlation_id, $logRow->id)->fetchAll() as $partner)
+					{
+						if ($lineage->IsTracked((int)$partner->id))
+						{
+							$tracked = true;
+							break;
+						}
+					}
+				}
 			}
 
 			if ($tracked)
