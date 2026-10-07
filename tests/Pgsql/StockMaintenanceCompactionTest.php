@@ -138,6 +138,9 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		return json_encode([
 			'stock' => self::$db->query('SELECT * FROM stock ORDER BY id')->fetchAll(PDO::FETCH_ASSOC),
 			'stock_log' => self::$db->query('SELECT * FROM stock_log ORDER BY id')->fetchAll(PDO::FETCH_ASSOC),
+			// ADR-0036: the lot record is part of what a refusal or a rolled-back run must leave as it was.
+			'stock_row_lots' => self::$db->query('SELECT * FROM stock_row_lots ORDER BY id')->fetchAll(PDO::FETCH_ASSOC),
+			'stock_booking_lots' => self::$db->query('SELECT * FROM stock_booking_lots ORDER BY id')->fetchAll(PDO::FETCH_ASSOC),
 		]);
 	}
 
@@ -844,7 +847,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		StockService::GetInstance()->CompactStockEntries($product);
 
 		self::assertCount(2, self::rows($product), 'The label, committed before this run, protected its row - nothing merged');
-		self::assertTrue(self::liveLabelExistsFor($rowId), 'and the label is still live');
+		self::assertTrue(self::liveLabelExistsFor($rowId), 'and the label is still live');		self::assertLineageHolds($product);
 	}
 
 	/**
@@ -892,7 +895,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::assertSame(200, $compactionResult['status'], 'The maintenance run, unblocked once B committed, completes: ' . ($compactionResult['error_message'] ?? ''));
 
 		self::assertCount(2, self::rows($product), 'The row survives, unmerged - protected by the label B committed before the run\'s re-read');
-		self::assertTrue(self::liveLabelExistsFor($targetRowId), 'and its label is live');
+		self::assertTrue(self::liveLabelExistsFor($targetRowId), 'and its label is live');		self::assertLineageHolds($product);
 	}
 
 	/**
@@ -946,7 +949,7 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		// this same shared schema issue labels of their own, live for the rest of the run.
 		$labelsForTheseRows = self::$db->prepare('SELECT COUNT(*) FROM labels WHERE kind = ? AND target_id IN (?, ?)');
 		$labelsForTheseRows->execute(['stock_entry', $losingId, $keptId]);
-		self::assertSame(0, (int)$labelsForTheseRows->fetchColumn(), 'No orphan label row (live or retired) was inserted for either row in this race');
+		self::assertSame(0, (int)$labelsForTheseRows->fetchColumn(), 'No orphan label row (live or retired) was inserted for either row in this race');		self::assertLineageHolds($product);
 	}
 
 	// ================================================================================
@@ -1188,6 +1191,70 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 
 		StockService::GetInstance()->CompactStockEntries($product);
 		self::assertCount(1, self::rows($product), 'A repeat run afterwards completes normally and actually merges the two rows');
+	}
+
+	/**
+	 * ADR-0036 worked example 7, first case, with two real connections: a consume issued while
+	 * maintenance holds the product lock and the group's row locks waits for the whole merge to
+	 * commit, then runs against the merged row, drawing FIFO from the lots the merge moved onto
+	 * it.
+	 */
+	public function testConsumeIssuedDuringMaintenanceWaitsAndRunsAgainstTheMergedRow(): void
+	{
+		$product = self::insertProduct('Maintenance Concurrent Consume');
+		$purchaseA = self::purchase($product, 2, null, self::$locationA, 1.0);
+		$purchaseB = self::purchase($product, 2, null, self::$locationA, 1.0);
+
+		$control = self::secondConnection();
+		$controlBackendPid = (int)$control->query('SELECT pg_backend_pid()')->fetchColumn();
+		$control->prepare('SELECT pg_advisory_lock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+
+		$maintenance = self::startCompactSubprocess($product, 'after_row_locks');
+		$maintenancePid = (int)self::readJsonLine($maintenance[1][1])['backend_pid'];
+		self::waitUntilBlockedBy(self::waitForTestPauseWaiter($product), $controlBackendPid);
+
+		$inherited = array_filter(array_merge($_SERVER, $_ENV), 'is_scalar');
+		$consume = proc_open(
+			[PHP_BINARY, __DIR__ . '/stock-consume-subprocess-helper.php', (string)$product, '1'],
+			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+			$consumePipes,
+			null,
+			array_merge($inherited, [
+				'RBAC_TEST_SCHEMA' => self::Schema(),
+				'PHPUNIT_DB_NAME' => getenv('PHPUNIT_DB_NAME'),
+				'VICTUAL_DATAPATH' => getenv('VICTUAL_DATAPATH'),
+				'PGHOST' => getenv('PGHOST'),
+				'PGPORT' => getenv('PGPORT'),
+				'PGUSER' => getenv('PGUSER'),
+				'PGPASSWORD' => getenv('PGPASSWORD'),
+				'VICTUAL_ROOT' => VICTUAL_ROOT_PATH,
+			])
+		);
+		self::readJsonLine($consumePipes[1]);
+		self::waitUntilBlockedBy(self::waitForAdvisoryWaiter($product), $maintenancePid);
+		self::assertCount(2, self::rows($product), 'Sanity: the consume is waiting and nothing is merged yet');
+
+		$control->prepare('SELECT pg_advisory_unlock(?, ?)')->execute([self::TEST_COMPACT_PAUSE_LOCK_CLASS, $product]);
+		$merged = self::finishCompactSubprocess($maintenance);
+		self::assertSame(200, $merged['status'], 'The merge completes: ' . ($merged['error_message'] ?? ''));
+
+		$output = stream_get_contents($consumePipes[1]);
+		$errors = stream_get_contents($consumePipes[2]);
+		fclose($consumePipes[1]);
+		fclose($consumePipes[2]);
+		proc_close($consume);
+		$consumed = json_decode(trim($output), true);
+		self::assertSame(200, $consumed['status'] ?? null, "The waiting consume then succeeds: $output $errors");
+
+		$rows = self::rows($product);
+		self::assertCount(1, $rows, 'It ran against the merged row');
+		self::assertSame(3.0, (float)$rows[0]['amount']);
+		$lotA = (int)$purchaseA[0]['id'];
+		$lotB = (int)$purchaseB[0]['id'];
+		self::assertSame([(int)$rows[0]['id'] => [$lotA => 1.0, $lotB => 2.0]], self::lots($product), 'drawing FIFO from the lots the merge moved onto it');
+		$consumeBooking = (int)self::$db->query("SELECT id FROM stock_log WHERE transaction_id = '" . $consumed['transaction_id'] . "'")->fetchColumn();
+		self::assertSame([$lotA => -1.0], self::lotsOf($consumeBooking));
+		self::assertLineageHolds($product);
 	}
 
 	/** Idempotence: a run that finds nothing newly eligible changes nothing, including identity. */
