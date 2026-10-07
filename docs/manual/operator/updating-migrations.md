@@ -166,3 +166,61 @@ A consumption booked before the upgrade retired its label without naming its boo
 undo after the upgrade leaves that label retired. Only consumptions booked by the new version
 can bring their label back.
 
+## Migration 0304: booking lineage
+
+Migration 0304 records which booking each unit of stock came from
+([ADR-0036](../../adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)).
+It adds two tables and fills them from the existing ledger. It does not change `stock`,
+`stock_log`, `stock_entry_origins` or `labels`, and no API response changes.
+
+### What the migration does with existing history
+
+The migration groups stock rows and bookings into families: a `stock_id` plus the split
+entries `stock_entry_origins` links to it. It then classifies each family by arithmetic.
+
+| Family | Shape | Result |
+|---|---|---|
+| Exact | One live purchase, and the ledger and the rows agree. | Every row and booking is attributed to that purchase. |
+| Exact by arithmetic | Two or more live purchases merged into one row, nothing else. | The row holds each purchase's amount. |
+| Unknown | Anything else, such as a merged row that was later consumed or edited. | The row's quantity is unattributed. |
+| Nothing | Nothing live and no rows. | Nothing is written. |
+
+Nothing is guessed. In an unknown family, consuming, opening, transferring, editing and
+weighing work as before, and so does undoing those new bookings. The purchases of an
+unknown family can no longer be undone, and the refusal says so. Older consumptions and
+edits in such a family keep the undo rules they had.
+
+The migration refuses an amount that is not a finite number (`NaN` or infinity) in `stock`
+or `stock_log`, naming the row or booking, and checks the result before it commits. Either
+failure rolls the whole migration back, tables included; correct the named row and run the
+migration again. A second run writes nothing. ADR-0036's feasibility spike measured about
+4 seconds per 100,000 bookings on a laptop.
+
+Run it the usual way: the migration first, then the new version of the application. An older
+application refuses to serve the migrated schema, so the two versions never book together.
+There is no down migration; to return to the previous version, restore the backup taken
+before the upgrade.
+
+### What changes after the upgrade
+
+- An undo finds a booking's units by what it booked, not by which row they are on. It now
+  accepts undos it used to refuse, for example the earlier of two merged purchases, or an
+  opening or edit of a row that was merged since. It still refuses an undo when a later
+  booking took units from the same purchase.
+- `bin/victual-compact-stock` no longer rewrites `stock_id` values in `stock`, `stock_log`
+  or `stock_entry_origins`. The kept row keeps its own `stock_id`. Rows split off by a
+  transfer or an opening are merged by the same rules as any other row.
+- The database role that runs `bin/victual-compact-stock` needs a different grant list;
+  the command's header lists it. The application role in
+  [`deploy/postgres/roles.sql`](../../../deploy/postgres/roles.sql) already has it.
+- `bin/victual-db-import` rebuilds the lineage from the imported ledger with the same rules,
+  and refuses the import if the result does not check out.
+
+### Merging is not scheduled
+
+The deployment in [`deploy/`](../../../deploy/README.md) does not run
+`bin/victual-compact-stock` on a schedule, and this release does not add one. Stock rows are
+merged only when you run the command yourself. Nothing depends on merging: unmerged rows are
+the normal state, and the research behind ADR-0033 and ADR-0036 found no measurement that
+shows merging is needed.
+

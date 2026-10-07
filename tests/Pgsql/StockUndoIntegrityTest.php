@@ -10,8 +10,10 @@ use Slim\Psr7\Response;
 use Victual\Controllers\Api\RecipesApiController;
 use Victual\Controllers\Api\StockApiController;
 use Victual\Services\Database\PostgresDialect;
+use Victual\Services\StockLineageService;
 use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\StockLineage;
 
 /**
  * Issue #487 workstream 1 (undo integrity): regressions for #489 C2 (transfer undo
@@ -206,6 +208,34 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * date, and this helper now calls CompactStockEntries() itself, explicitly, where the
 	 * inline call used to fire.
 	 */
+	/**
+	 * Merges a real 0.004-unit purchase onto the product's existing row at $locationId the way
+	 * CompactStockEntries() merges (ADR-0036 section 6): its lot contribution moves onto the
+	 * survivor, its row goes and the survivor's amount grows by 0.004. Before ADR-0036 these
+	 * tests modelled that merge as a raw `UPDATE stock SET amount = ...`. That no longer models
+	 * a merge, because the row's lots would not add up to its amount and the next writer would
+	 * turn them into an unattributed pool.
+	 */
+	private function compactASmallLotOnto(int $productId, int $locationId): void
+	{
+		$target = (int)self::$db->query("SELECT id FROM stock WHERE product_id = $productId AND location_id = $locationId")->fetchColumn();
+		$this->expectStatus(
+			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 0.004, 'location_id' => $locationId, 'best_before_date' => self::FAR_FUTURE_DATE, 'purchased_date' => self::FAR_FUTURE_DATE]), new Response(), ['productId' => $productId]),
+			200,
+			'A real 0.004-unit lot is purchased at the destination'
+		);
+		$small = (int)self::$db->query("SELECT max(id) FROM stock WHERE product_id = $productId")->fetchColumn();
+		StockLineageService::GetInstance()->MoveLots($small, $target);
+		self::$db->exec("DELETE FROM stock WHERE id = $small");
+		self::$db->exec("UPDATE stock SET amount = amount + 0.004 WHERE id = $target");
+	}
+
+	/** The ids of a product's purchase bookings, oldest first. */
+	private static function purchaseIds(int $productId): array
+	{
+		return array_map('intval', self::$db->query("SELECT id FROM stock_log WHERE product_id = $productId AND transaction_type = 'purchase' ORDER BY id")->fetchAll(PDO::FETCH_COLUMN));
+	}
+
 	private function purchaseEditAndCompact(string $productName, float $firstAmount, string $firstDue, float $secondAmount, string $secondDue, string $editWhich): array
 	{
 		$product = self::insertProduct($productName);
@@ -746,18 +776,31 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * the target row's current amount against the correlated STOCK_EDIT_NEW booking's
 	 * recorded post-edit amount and refuses atomically on a mismatch, rather than
 	 * attempting the lot/lineage redesign #488 explicitly defers to the maintainer.
+	 *
+	 * ADR-0036 is that redesign. The edit's units are found by lot inside the merged row and
+	 * extracted into a row with the pre-edit attributes; the other purchase's units stay where
+	 * they are (worked example 4, third row). The refusal became an acceptance for that reason,
+	 * and the assertion that matters - both purchases' units intact - is kept.
 	 */
-	public function testUndoingAnEditAfterCompactionRefusesRatherThanDestroyingTheOtherContribution(): void
+	public function testUndoingAnEditAfterCompactionExtractsTheEditedLotAndKeepsTheOtherContribution(): void
 	{
 		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction A', 3.0, self::NEVER_EXPIRES, 2.0, '2030-02-02', 'second');
+		[$first, $second] = self::purchaseIds($product);
+		$merged = (int)self::rows($product)[0]['id'];
 
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldId]),
-			400,
-			'Undoing the edit after an explicit maintenance merge is refused, not silently overwriting the merged row'
+			204,
+			'Undoing the edit after an explicit maintenance merge is accepted'
 		);
 
 		self::assertSame(5.0, self::stockAmount($product), 'both purchases\' units are still intact');
+		$rows = self::rows($product);
+		self::assertCount(2, $rows);
+		self::assertSame([$merged, '2999-12-31', 3.0], [(int)$rows[0]['id'], $rows[0]['best_before_date'], (float)$rows[0]['amount']], 'The merged row keeps the first purchase\'s three units');
+		self::assertSame(['2030-02-02', 2.0], [$rows[1]['best_before_date'], (float)$rows[1]['amount']], 'and the edited purchase\'s two units return with their pre-edit due date');
+		self::assertSame([$merged => [$first => 3.0], (int)$rows[1]['id'] => [$second => 2.0]], StockLineage::Lots(self::$db, $product));
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	/**
@@ -767,18 +810,30 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * undone" - the booking does exist, and its stock_id's units are still live, just
 	 * under a different row id. The refusal message need not name the merge, but the
 	 * ledger must stay untouched and no live contribution may be lost either way.
+	 *
+	 * ADR-0036: the edited row is gone, but its units are found by lot in the survivor and
+	 * extracted with the pre-edit attributes. Accepted instead of refused, for the same reason
+	 * as the test above; no live contribution is lost.
 	 */
-	public function testUndoingAnEditAfterCompactionRefusesInTheReversedRowIdOrderToo(): void
+	public function testUndoingAnEditAfterCompactionExtractsTheEditedLotInTheReversedRowIdOrderToo(): void
 	{
 		[$product, $editOldId] = $this->purchaseEditAndCompact('Undo Edit Compaction B', 3.0, '2030-01-01', 2.0, self::NEVER_EXPIRES, 'first');
+		[$first, $second] = self::purchaseIds($product);
+		$merged = (int)self::rows($product)[0]['id'];
 
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldId]),
-			400,
-			'Undoing the edit after an explicit maintenance merge is refused in the reversed row-id order too (#488 C1)'
+			204,
+			'Undoing the edit after an explicit maintenance merge is accepted in the reversed row-id order too'
 		);
 
 		self::assertSame(5.0, self::stockAmount($product), 'both purchases\' units are still intact');
+		$rows = self::rows($product);
+		self::assertCount(2, $rows);
+		self::assertSame([$merged, '2999-12-31', 2.0], [(int)$rows[0]['id'], $rows[0]['best_before_date'], (float)$rows[0]['amount']], 'The survivor keeps the second purchase\'s two units');
+		self::assertSame(['2030-01-01', 3.0], [$rows[1]['best_before_date'], (float)$rows[1]['amount']], 'and the edited purchase\'s three units return with their pre-edit due date');
+		self::assertSame([$merged => [$second => 2.0], (int)$rows[1]['id'] => [$first => 3.0]], StockLineage::Lots(self::$db, $product));
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	/**
@@ -791,6 +846,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * #488 decision, matching STOCK_EDIT_OLD's own compaction guard, is to refuse
 	 * atomically with the ledger completely untouched, since the merge has destroyed which
 	 * physical row corresponds to which opening.
+	 *
+	 * ADR-0036 records which lot each opening opened, so the merge no longer destroys that.
+	 * Undoing the one-unit opening extracts its unit from the merged opened row into a new
+	 * unopened row, and opened stock goes from 3 to 2 (worked example 4, second row). The
+	 * refusal became an acceptance for that reason; the assertion it protected - opened stock
+	 * never stays at 3 after an accepted undo - is now asserted directly.
 	 */
 	public function testUndoingAnOpenAfterAMatchingPurchaseCompactsTheRemainder(): void
 	{
@@ -838,14 +899,24 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		self::assertSame(3.0, self::openedAmount($product), 'Three units are opened before the undo');
 
-		$this->expectRefusalWithUntouchedLedger(
+		[$first, $second, $third] = self::purchaseIds($product);
+		self::assertSame([$second => 1.0], StockLineage::Allocations(self::$db, (int)$secondOpen[0]['id']), 'Sanity: the one-unit opening opened one unit of the second purchase');
+
+		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $secondOpen[0]['transaction_id']]),
-			400,
-			'Undoing the one-unit opening after the compaction merged it with the other opened portion is refused (#488 interim decision), not marked undone while opened stock silently stays at 3'
+			204,
+			'Undoing the one-unit opening after the compaction merged it with the other opened portion is accepted'
 		);
 
-		self::assertSame(3.0, self::openedAmount($product), 'opened stock is unchanged by the refusal');
+		self::assertSame(2.0, self::openedAmount($product), 'opened stock goes from 3 to 2: the undone opening\'s unit is unopened again');
 		self::assertSame(9.0, self::stockAmount($product), 'and total stock is untouched');
+		$opened = self::$db->query('SELECT id FROM stock WHERE open = 1 AND product_id = ' . $product)->fetchAll(PDO::FETCH_COLUMN);
+		self::assertCount(1, $opened);
+		$lots = StockLineage::Lots(self::$db, $product);
+		self::assertSame([$first => 2.0], $lots[(int)$opened[0]], 'The opened row keeps the first opening\'s two units');
+		$unopened = self::$db->query('SELECT id, amount FROM stock WHERE open = 0 AND product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR);
+		self::assertSame([$second => 1.0], $lots[(int)array_key_last($unopened)], 'and the extracted row holds the reopened unit of the second purchase');
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -1006,9 +1077,9 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Three of the five are split off to B'
 		);
 
-		// Simulates a real 0.004-unit lot having compacted onto this same row at B (e.g. a
-		// matching purchase there) - not a float artifact, a genuine small remainder.
-		self::$db->exec('UPDATE stock SET amount = 3.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+		// A real 0.004-unit lot compacted onto this same row at B (e.g. a matching purchase
+		// there) - not a float artifact, a genuine small remainder.
+		$this->compactASmallLotOnto($product, self::$locationB);
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
@@ -1094,8 +1165,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * 0.004: round(x, 2) rounds 3.004 and 3 to the same two-decimal value, so the mismatch
 	 * went undetected and the undo would overwrite the merged row with the edit's pre-edit
 	 * amount, destroying the compacted-in purchase's contribution.
+	 *
+	 * ADR-0036: the merge is no longer detected by comparing amounts but by lot, and the undo
+	 * no longer refuses: it extracts the edited purchase's three units and leaves the 0.004
+	 * lot in place. Changed from a refusal for that reason; what it protected (the 0.004
+	 * contribution is never destroyed) is asserted directly.
 	 */
-	public function testUndoingAnEditDetectsACompactionMergeSmallerThanTheOldRoundingThreshold(): void
+	public function testUndoingAnEditAfterACompactionMergeSmallerThanTheOldRoundingThresholdKeepsThatMerge(): void
 	{
 		$product = self::insertProduct('Undo Edit Small Merge');
 		$this->expectStatus(
@@ -1130,11 +1206,21 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 
 		$editOld = array_values(array_filter($edit, fn($row) => $row['transaction_type'] === StockService::TRANSACTION_TYPE_STOCK_EDIT_OLD))[0];
 
-		$this->expectRefusalWithUntouchedLedger(
+		[$small, $edited] = self::purchaseIds($product);
+
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$editOld['id']]),
-			400,
-			'Undoing the edit is refused: the 0.004-unit merge is detected even though it is below the old 0.005 rounding threshold'
+			204,
+			'Undoing the edit is accepted'
 		);
+
+		self::assertEqualsWithDelta(3.004, self::stockAmount($product), 1e-9, 'No units are lost or made');
+		$rows = self::rows($product);
+		self::assertCount(2, $rows);
+		self::assertEqualsWithDelta(0.004, (float)$rows[0]['amount'], 1e-12, 'The 0.004-unit lot stays on the merged row');
+		self::assertSame(['2030-02-02', 3.0], [$rows[1]['best_before_date'], (float)$rows[1]['amount']], 'and the edited purchase returns with its pre-edit due date');
+		self::assertSame([(int)$rows[0]['id'] => [$small => 0.004], (int)$rows[1]['id'] => [$edited => 3.0]], StockLineage::Lots(self::$db, $product));
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -1401,6 +1487,10 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 *   itself never inserts a stock_log row, and this is the newest one in the group either
 	 *   way (id order, not row survival, decides "newest").
 	 *
+	 * ADR-0036: neither branch is reached any more for a booking with lots. Undo finds the
+	 * opening's unit by lot inside the merged opened row and extracts it into a new unopened
+	 * row (worked example 4, first row), so W1 and W2 below now assert that outcome.
+	 *
 	 * @return array{0: int, 1: int} product id, the newest PRODUCT_OPENED booking's id
 	 */
 	private function twoWholeRowOpenedTwinsMerging(string $productName, bool $openR2First): array
@@ -1447,38 +1537,54 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * subsequent-bookings guard a merged StockMaintenanceCompactionTest fixture reaches
 	 * instead (its own second merge rewrites both openings onto the kept stock_id before
 	 * either is undone, so nothing there is left to exercise this specific branch).
+	 *
+	 * ADR-0036: accepted, extracting the unit by lot; see twoWholeRowOpenedTwinsMerging().
 	 */
-	public function testUndoingTheNewestOpeningRefusesWhenTheMergeDeletedItsRow(): void
+	public function testUndoingTheNewestOpeningExtractsItsUnitWhenTheMergeDeletedItsRow(): void
 	{
 		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Deleted', true);
+		$openedLot = array_key_first(StockLineage::Allocations(self::$db, $newestOpenId));
+		$merged = (int)self::rows($product)[0]['id'];
 
-		$decoded = $this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
-			400,
-			'Undoing the newest opening is refused - the merge deleted the row it named'
+			204,
+			'Undoing the newest opening is accepted'
 		);
-		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
 
-		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not resurrect or split the merged row');
+		$rows = self::rows($product);
+		self::assertCount(2, $rows, 'The undone opening\'s unit leaves the merged row');
+		self::assertSame([$merged, 1, 1.0], [(int)$rows[0]['id'], (int)$rows[0]['open'], (float)$rows[0]['amount']], 'The merged row stays open with the other opening\'s unit');
+		self::assertSame([0, 1.0], [(int)$rows[1]['open'], (float)$rows[1]['amount']], 'and the undone opening\'s unit is unopened in a row of its own');
+		self::assertSame([$openedLot => 1.0], StockLineage::Lots(self::$db, $product)[(int)$rows[1]['id']], 'holding the lot that opening opened');
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	/**
 	 * W2 (rebuilt, see twoWholeRowOpenedTwinsMerging()'s own docblock): the newest opening's
 	 * row SURVIVED the merge, but the merge overwrote its amount with the group's sum - the
 	 * identity check's AMOUNT MISMATCH branch.
+	 *
+	 * ADR-0036: accepted, extracting the unit by lot; see twoWholeRowOpenedTwinsMerging().
 	 */
-	public function testUndoingTheNewestOpeningRefusesWhenTheMergeKeptButChangedItsRow(): void
+	public function testUndoingTheNewestOpeningExtractsItsUnitWhenTheMergeKeptButChangedItsRow(): void
 	{
 		[$product, $newestOpenId] = $this->twoWholeRowOpenedTwinsMerging('Newest Opening Row Kept', false);
+		$openedLot = array_key_first(StockLineage::Allocations(self::$db, $newestOpenId));
+		$merged = (int)self::rows($product)[0]['id'];
 
-		$decoded = $this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $newestOpenId]),
-			400,
-			'Undoing the newest opening is refused - the row it named still exists, but the merge changed its amount underneath it'
+			204,
+			'Undoing the newest opening is accepted'
 		);
-		self::assertStringContainsString('no longer exists', $decoded['error_message'] ?? $decoded['ErrorMessage'] ?? json_encode($decoded), 'via the identity check\'s own message (its amount-mismatch branch, same text as the null-row branch), not the subsequent-bookings guard\'s "subsequent dependent bookings" one');
 
-		self::assertCount(1, self::rows($product), 'Sanity: the refusal did not split the merged row back apart');
+		$rows = self::rows($product);
+		self::assertCount(2, $rows, 'The undone opening\'s unit leaves the merged row');
+		self::assertSame([$merged, 1, 1.0], [(int)$rows[0]['id'], (int)$rows[0]['open'], (float)$rows[0]['amount']], 'The merged row stays open with the other opening\'s unit');
+		self::assertSame([0, 1.0], [(int)$rows[1]['open'], (float)$rows[1]['amount']], 'and the undone opening\'s unit is unopened in a row of its own');
+		self::assertSame([$openedLot => 1.0], StockLineage::Lots(self::$db, $product)[(int)$rows[1]['id']], 'holding the lot that opening opened');
+		StockLineage::AssertHolds(self::$db, $product);
 	}
 
 	// ------------------------------------------------------------------------------
@@ -1565,11 +1671,11 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'The whole five-unit entry is transferred to B (a whole-row transfer)'
 		);
 
-		// Simulates a real 0.004-unit lot having compacted onto this same row at B after
-		// the transfer - not a float artifact, a genuine small remainder, and well beyond
-		// AMOUNT_TOLERANCE, so the clean-relocate check must recognise this row is no
-		// longer exactly what the transfer moved.
-		self::$db->exec('UPDATE stock SET amount = 5.004 WHERE product_id = ' . $product . ' AND location_id = ' . self::$locationB);
+		// A real 0.004-unit lot compacted onto this same row at B after the transfer - not a
+		// float artifact, a genuine small remainder, and well beyond AMOUNT_TOLERANCE, so the
+		// clean-relocate check must recognise this row is no longer exactly what the
+		// transfer moved.
+		$this->compactASmallLotOnto($product, self::$locationB);
 
 		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
@@ -1895,8 +2001,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * whose booking still names X's original id, must refuse rather than match Y by
 	 * that id alone and undo Y's opening instead - overwriting Y's due date, leaving
 	 * X's own rebuilt row open, and marking the booking undone regardless.
+	 *
+	 * ADR-0036 section 7 rule 4 finds the opening's units by lot, never by stock.id, so the
+	 * id Y took no longer matters: the undo un-opens X's rebuilt row, which holds X's lot, and
+	 * leaves Y alone. The refusal became an acceptance for that reason; every assertion about Y
+	 * is kept.
 	 */
-	public function testUndoingAnOpeningRefusesRatherThanMatchingAnUnrelatedRowThatReusedItsId(): void
+	public function testUndoingAnOpeningFollowsItsLotRatherThanAnUnrelatedRowThatReusedItsId(): void
 	{
 		$product = self::insertProduct('Undo Opening Reused Id Guard');
 		$this->expectStatus(
@@ -1948,11 +2059,13 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 		self::assertNotNull($xRebuilt, 'Sanity: X came back under a different id, not colliding with Y');
 		self::assertSame(1, (int)$xRebuilt['open'], 'Sanity: the rebuilt X is still open');
 
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => (int)$open[0]['id']]),
-			400,
-			'Undoing the opening is refused: its booking\'s stock_row_id is now Y\'s id, and Y is not the lot this booking opened'
+			204,
+			'Undoing the opening is accepted and finds X by its lot, not by the id Y now holds'
 		);
+		$rowById->execute([(int)$xRebuilt['id']]);
+		self::assertSame(0, (int)$rowById->fetch(PDO::FETCH_ASSOC)['open'], 'X\'s rebuilt row is the one un-opened');
 
 		$rowById->execute([$xId]);
 		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);
@@ -1967,8 +2080,12 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 	 * the consume, undo the transfer. The id-only clean-relocate check at
 	 * TRANSFER_TO/FROM would relocate Y back to A instead of refusing, since Y happens
 	 * to share the destination location and amount the transfer itself recorded.
+	 *
+	 * ADR-0036 section 7 rule 4: the transfer's units are found by lot at B, in X's rebuilt
+	 * row, and returned to A; Y, which holds a different lot, is never considered. The refusal
+	 * became an acceptance for that reason; every assertion about Y is kept.
 	 */
-	public function testUndoingAWholeRowTransferRefusesRatherThanRelocatingAnUnrelatedRowThatReusedItsId(): void
+	public function testUndoingAWholeRowTransferFollowsItsLotRatherThanAnUnrelatedRowThatReusedItsId(): void
 	{
 		$product = self::insertProduct('Undo Transfer Reused Id Guard');
 		$this->expectStatus(
@@ -2014,11 +2131,14 @@ class StockUndoIntegrityTest extends PgsqlSchemaTestCase
 			'Undoing the consume is accepted, rebuilding X under a fresh id'
 		);
 
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoTransaction(self::request('POST'), new Response(), ['transactionId' => $transfer[0]['transaction_id']]),
-			400,
-			'Undoing the transfer is refused: its bookings\' stock_row_id is now Y\'s id, and Y is not the lot this transfer moved'
+			204,
+			'Undoing the transfer is accepted and moves X\'s lot back to A'
 		);
+		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationA), 'X\'s unit is back at A');
+		self::assertSame(1.0, self::stockAmountAtLocation($product, self::$locationB), 'and B holds only Y');
+		StockLineage::AssertHolds(self::$db, $product);
 
 		$rowById->execute([$xId]);
 		$yRow = $rowById->fetch(PDO::FETCH_ASSOC);

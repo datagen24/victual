@@ -47,6 +47,14 @@ also check the legacy backfill and its rerun, invariants R1, R2, R5 and R6, and
 `stock_amounts_equal()`. The revival is application code and is covered by
 `tests/Pgsql/StockLabelRevivalTest.php`.
 
+The [stock lineage tests](030-stock-lineage.sql) cover migration 0304
+([ADR-0036](../../docs/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md)).
+They check the two tables' constraints, the addition and delta helpers, the classification of
+families E, X and U, a product-scoped and a full backfill and its rerun, the refusal of a
+non-finite amount, invariants I1 to I3, and `trg_cascade_change_qu_id_stock`'s rescale of
+contributions and allocations. The backfill over history written by the real pre-0304
+`StockService` is `tests/Pgsql/StockLineageBackfillTest.php`.
+
 The [product removal label retirement tests](022-product-removal-label-retirement.sql) cover
 migration 0295 (issue #558). Deleting a product whose stock entries carry a live label now
 retires those labels with the product's own name, not null. `trg_cascade_product_removal`
@@ -133,7 +141,7 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `trg_stock_log_UPD` (trigger `stock_log_UPD`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `trg_stock_log_DEL` (trigger `stock_log_DEL`) | function + trigger | 0292 | `019-stock-log-cache-rebuild.sql` |
 | `product_groups_missing` (member join rolled up through `product_groups_resolved`) | view | 0293 | `020-product-group-rollup.sql` |
-| `trg_cascade_change_qu_id_stock` | function | 0294 | `021-cascade-qu-id-stock.sql` |
+| `trg_cascade_change_qu_id_stock` | function | 0294, redefined 0304 | `021-cascade-qu-id-stock.sql`, `030-stock-lineage.sql` |
 | `stock_amount_non_negative_check` | check constraint | 0297 | `024-stock-amount-non-negative.sql` |
 | `stock_current` (unconvertible/non-positive-factor sub product excluded from `amount_aggregated`, `amount_opened_aggregated`, `amount_measured`) | view | 0298 | `025-unconvertible-subproduct-aggregation.sql` |
 | `products_current_substitutions` (unconvertible/non-positive-factor sub product excluded) | view | 0300 | `026-recipe-substitution-units.sql` |
@@ -143,6 +151,11 @@ that baseline creates has a row below or `check-pgtap-coverage.php` fails the bu
 | `guard_stock_label_retirement_history` | function + trigger | 0303 | `029-stock-label-retirement-events.sql` |
 | `backfill_legacy_stock_label_retirements` | function | 0303 | `029-stock-label-retirement-events.sql` |
 | `stock_label_retirements_incomplete` | function | 0303 | `029-stock-label-retirement-events.sql` |
+| `stock_log_is_addition` | function | 0304 | `030-stock-lineage.sql` |
+| `stock_log_lineage_delta` | function | 0304 | `030-stock-lineage.sql` |
+| `stock_lineage_families` | function | 0304 | `030-stock-lineage.sql` |
+| `stock_lineage_backfill` | function | 0304 | `030-stock-lineage.sql` |
+| `stock_lineage_violations` | function | 0304 | `030-stock-lineage.sql` |
 
 ## Completeness
 

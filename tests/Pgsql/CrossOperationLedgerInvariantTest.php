@@ -3,6 +3,7 @@
 namespace Victual\Tests\Pgsql;
 
 use PDO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Slim\Exception\HttpException;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
@@ -64,6 +65,17 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 	private const MIN_ACCEPTED_OP_TYPES = 8;
 
 	/** Number of scripted operations the seeded sequence runs. Kept small so the phase stays well under a minute. */
+	/**
+	 * ADR-0036 acceptance prerequisite 4: two further seeds run SCRIPT plus never-expiring
+	 * purchases and maintenance merges, so the lot invariants are checked across merges and
+	 * the undo of merged stock as well. The original seed keeps the original script, so its
+	 * sequence is unchanged.
+	 */
+	private const LINEAGE_SEEDS = [20261007, 665];
+	private const LINEAGE_EXTRA_OPS = ['purchase_never', 'purchase_never', 'purchase_never', 'compact', 'compact', 'undo', 'undo', 'consume'];
+	/** Appended unshuffled, so every lineage seed ends with at least one real merge and undoes across it. */
+	private const LINEAGE_TAIL = ['purchase_never', 'purchase_never', 'compact', 'undo', 'consume', 'undo', 'undo'];
+
 	private const SCRIPT = [
 		'purchase', 'purchase', 'purchase',
 		'consume', 'consume_partial', 'consume_cross_entry',
@@ -305,8 +317,16 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/** ADR-0036 invariants I1 to I3 (migration 0304's stock_lineage_violations()), for every product. */
+	private function assertLineageInvariants(string $context): void
+	{
+		$violations = self::$db->query('SELECT * FROM stock_lineage_violations(NULL)')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertSame([], $violations, "$context: ADR-0036 invariants I1 to I3 must hold");
+	}
+
 	private function assertAllInvariants(string $context): void
 	{
+		$this->assertLineageInvariants($context);
 		$this->assertLedgerBalance($context);
 		$this->assertNoNegativeStock($context);
 		$this->assertStockCurrentAgreesWithStock($context, self::$plainProduct);
@@ -326,9 +346,8 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 	 * running it) is reproducible from the seed alone - a failure reports "seed=... step="
 	 * and the same seed replays the identical sequence.
 	 */
-	private static function shuffledScript(): array
+	private static function shuffledScript(array $script): array
 	{
-		$script = self::SCRIPT;
 		for ($i = count($script) - 1; $i > 0; $i--)
 		{
 			$j = mt_rand(0, $i);
@@ -337,12 +356,23 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 		return $script;
 	}
 
-	public function testSeededCrossOperationSequenceMaintainsLedgerInvariants(): void
+	public static function seeds(): array
 	{
-		mt_srand(self::SEED);
-		$script = self::shuffledScript();
+		$seeds = ['original seed ' . self::SEED => [self::SEED, self::SCRIPT, []]];
+		foreach (self::LINEAGE_SEEDS as $seed)
+		{
+			$seeds["lineage seed $seed"] = [$seed, array_merge(self::SCRIPT, self::LINEAGE_EXTRA_OPS), self::LINEAGE_TAIL];
+		}
+		return $seeds;
+	}
 
-		$this->assertAllInvariants('seed=' . self::SEED . ' step=0 (fixtures created, before any operation)');
+	#[DataProvider('seeds')]
+	public function testSeededCrossOperationSequenceMaintainsLedgerInvariants(int $seed, array $script, array $tail): void
+	{
+		mt_srand($seed);
+		$script = array_merge(self::shuffledScript($script), $tail);
+
+		$this->assertAllInvariants('seed=' . $seed . ' step=0 (fixtures created, before any operation)');
 
 		// Stock the fixtures through real purchases first. Without this the shuffled script
 		// can drain the only early purchase (an undo right after it) and then spend most
@@ -363,15 +393,15 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 				'price' => 1.5,
 				'location_id' => $location,
 			]), new Response(), ['productId' => $product]));
-			self::assertLessThan(400, $primed['status'], "seed=" . self::SEED . " prime=$i: priming purchase must be accepted");
-			$this->assertAllInvariants('seed=' . self::SEED . " prime=$i");
+			self::assertLessThan(400, $primed['status'], "seed=" . $seed . " prime=$i: priming purchase must be accepted");
+			$this->assertAllInvariants('seed=' . $seed . " prime=$i");
 		}
 
 		$accepted = [];
 		foreach ($script as $index => $op)
 		{
 			$step = $index + 1;
-			$context = 'seed=' . self::SEED . " step=$step op=$op";
+			$context = 'seed=' . $seed . " step=$step op=$op";
 
 			$before = self::ledger();
 			$result = $this->runScriptedOperation($op, $context);
@@ -396,14 +426,18 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 		// (a new validation or permission check on AddProduct, say), no step would change
 		// the ledger and every invariant would hold trivially. Skipped steps (no candidate
 		// row) are not counted as accepted.
-		$acceptedSummary = 'seed=' . self::SEED . ' accepted=' . json_encode($accepted);
+		$acceptedSummary = 'seed=' . $seed . ' accepted=' . json_encode($accepted);
 		self::assertGreaterThan(0, $accepted['purchase'] ?? 0, "$acceptedSummary: at least one purchase must be accepted");
+		if (in_array('compact', $script, true))
+		{
+			self::assertGreaterThan(0, $accepted['compact'] ?? 0, "$acceptedSummary: a lineage seed must merge at least once");
+		}
 		self::assertGreaterThanOrEqual(self::MIN_ACCEPTED_OP_TYPES, count($accepted), "$acceptedSummary: the sequence must exercise at least " . self::MIN_ACCEPTED_OP_TYPES . ' distinct accepted operation types');
 	}
 
 	/**
 	 * Runs one scripted operation, picking its concrete parameters from mt_rand() (so
-	 * they are reproducible from self::SEED too) and returns ['status' => ..., 'body' => ...].
+	 * they are reproducible from $seed too) and returns ['status' => ..., 'body' => ...].
 	 * A refusal (status >= 400, including a thrown HttpException recovered by attempt())
 	 * is an accepted outcome for every op here except the fixture-independent ones -
 	 * the caller checks the ledger stayed untouched, not that the call always succeeds.
@@ -427,6 +461,25 @@ class CrossOperationLedgerInvariantTest extends PgsqlSchemaTestCase
 					'price' => round(mt_rand(50, 500) / 100, 2),
 					'location_id' => $location,
 				]), new Response(), ['productId' => $product]));
+
+			case 'purchase_never':
+				// Never-expiring, unlabelled and otherwise identical, so the maintenance merge
+				// below has groups to merge (ADR-0033 eligibility).
+				return $this->attempt(fn() => self::$stock->AddProduct(self::request('POST', [
+					'amount' => (float)mt_rand(1, 4),
+					'best_before_date' => '2999-12-31',
+					'purchased_date' => '2026-01-01',
+					'price' => 1.5,
+					'location_id' => $location,
+				]), new Response(), ['productId' => self::$plainProduct]));
+
+			case 'compact':
+				// Counted as accepted only when it merged something, so a seed cannot pass
+				// with merges that never happened.
+				$rowsBefore = (int)self::$db->query('SELECT count(*) FROM stock')->fetchColumn();
+				StockService::GetInstance()->CompactStockEntries();
+				$merged = (int)self::$db->query('SELECT count(*) FROM stock')->fetchColumn() < $rowsBefore;
+				return ['status' => 200, 'body' => [], 'skipped' => !$merged];
 
 			case 'consume':
 				$product = self::pickProductWithStock();

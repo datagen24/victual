@@ -16,6 +16,7 @@ use Victual\Services\StockReportsService;
 use Victual\Services\StockService;
 use Victual\Services\UsersService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
+use Victual\Tests\Support\StockLineage;
 
 /**
  * Plan 33's "Stock bookings" and "Stock reads and lists" rows, for the behaviour the
@@ -2223,15 +2224,17 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertSame(2.0, self::stockAmount(self::$ids['undo_compacted']), 'and the product\'s on-hand amount agrees');
 
 		$firstLogId = (int)$firstPurchase[0]['id'];
-		$undoneFlags = self::$db->prepare('SELECT id, undone FROM stock_log WHERE stock_id = ? ORDER BY id');
-		$undoneFlags->execute([$sharedStockId]);
-		$undoneFlags = $undoneFlags->fetchAll(PDO::FETCH_KEY_PAIR);
+		// ADR-0036: the merge no longer rewrites stock_log.stock_id, so the two bookings keep
+		// their own stock_ids and are looked up by id. The old final assertion summed live
+		// bookings by the shared stock_id; the lot record is what now ties the surviving row to
+		// the first purchase.
+		$undoneFlags = self::$db->query('SELECT id, undone FROM stock_log WHERE id IN (' . $firstLogId . ', ' . $secondLogId . ') ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR);
 		self::assertSame(0, (int)$undoneFlags[$firstLogId], 'The first (earlier) booking is still live');
 		self::assertSame(1, (int)$undoneFlags[$secondLogId], 'The second (later) booking is now undone');
 
-		$liveBookingTotal = self::$db->prepare('SELECT COALESCE(SUM(amount), 0) FROM stock_log WHERE stock_id = ? AND undone = 0');
-		$liveBookingTotal->execute([$sharedStockId]);
-		self::assertSame(2.0, (float)$liveBookingTotal->fetchColumn(), 'The sum of live bookings for the stock_id agrees with the surviving row amount');
+		self::assertSame([(int)$remaining[0]['id'] => [$firstLogId => 2.0]], StockLineage::Lots(self::$db, self::$ids['undo_compacted']),
+			'The surviving row holds exactly the first purchase\'s lot');
+		StockLineage::AssertHolds(self::$db, self::$ids['undo_compacted']);
 	}
 
 	/**
@@ -2258,13 +2261,15 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Undoing the earlier of two compacted purchases while the later one is still live must
-	 * stay refused - the "no live subsequent booking" guard (fixed by #442) already covers
-	 * this, but it is worth pinning specifically for a compacted pair, since #457's fix
-	 * touches the same branch this guard protects.
+	 * Undoing the earlier of two compacted purchases while the later one is still live used to
+	 * be refused: the "no live subsequent booking" guard (#442) compared stock_ids, and the
+	 * merge had given both purchases one. ADR-0036 section 7 rule 3 applies that guard per lot,
+	 * and nothing later touched the earlier purchase's lot, so the undo is accepted and removes
+	 * exactly its two units (ADR-0036 worked example 1 and Consequences). Changed from a refusal
+	 * for that reason.
 	 */
 	#[Depends('testCreatesFixtures')]
-	public function testUndoRefusesTheEarlierOfTwoCompactedPurchasesWhileTheLaterIsLive(): void
+	public function testUndoOfTheEarlierOfTwoCompactedPurchasesRemovesOnlyItsLotWhileTheLaterIsLive(): void
 	{
 		self::$ids['undo_compacted_refused'] = self::insertProduct('Coverage Undo Compacted Refused');
 
@@ -2273,7 +2278,7 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 			200,
 			'Two units are purchased'
 		);
-		$this->expectStatus(
+		$secondPurchase = $this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 3, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 2.0]), new Response(), ['productId' => self::$ids['undo_compacted_refused']]),
 			200,
 			'Three more, matching every grouping column, are purchased the same day'
@@ -2283,12 +2288,17 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 
 		$firstLogId = (int)$firstPurchase[0]['id'];
 
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $firstLogId]),
-			400,
-			'Undoing the earlier compacted purchase while the later one is still live is refused'
+			204,
+			'Undoing the earlier compacted purchase while the later one is still live is accepted'
 		);
-		self::assertSame(5.0, self::stockAmount(self::$ids['undo_compacted_refused']), 'and the stock is untouched');
+		self::assertSame(3.0, self::stockAmount(self::$ids['undo_compacted_refused']), 'and only its two units leave');
+		$rows = self::$db->query('SELECT id FROM stock WHERE product_id = ' . self::$ids['undo_compacted_refused'])->fetchAll(PDO::FETCH_COLUMN);
+		self::assertCount(1, $rows);
+		self::assertSame([(int)$rows[0] => [(int)$secondPurchase[0]['id'] => 3.0]], StockLineage::Lots(self::$db, self::$ids['undo_compacted_refused']),
+			'The merged row keeps the later purchase\'s three units');
+		StockLineage::AssertHolds(self::$db, self::$ids['undo_compacted_refused']);
 	}
 
 	/**
@@ -2445,7 +2455,14 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Reaches UndoBooking's "more than one row shares this stock_id and location" refusal.
+	 * Was: reaches UndoBooking's "more than one row shares this stock_id and location" refusal.
+	 * ADR-0036 section 7 finds a purchase's units by lot, so the ambiguity this test pinned no
+	 * longer exists: the consume of 1 drew FIFO from the earlier (2-unit) purchase's lot, its
+	 * undo returned that unit as a second row, and the 3-unit purchase's lot is still wholly
+	 * on the first row. Undoing it is accepted and removes exactly those three units
+	 * (ADR-0036 worked example 2 and Option C's note on "split across multiple rows"). Changed
+	 * from a refusal for that reason. The old description follows.
+	 *
 	 * Two compacted purchases (2 + 3, matching every grouping column) land on one row of 5.
 	 * A partial consume of 1 (row becomes 4) is then undone, which - like the CONSUME undo
 	 * branch always does - recreates the taken amount as a *new* row (1) rather than
@@ -2455,11 +2472,11 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 	 * the two rows), so it must refuse rather than guess.
 	 */
 	#[Depends('testCreatesFixtures')]
-	public function testUndoRefusesAPurchaseSplitAcrossMultipleRowsItCannotUnambiguouslyReverse(): void
+	public function testUndoOfAPurchaseWhoseRowsWereSplitByAConsumeUndoFollowsItsLot(): void
 	{
 		self::$ids['undo_ambiguous_split'] = self::insertProduct('Coverage Undo Ambiguous Split');
 
-		$this->expectStatus(
+		$firstPurchase = $this->expectStatus(
 			fn() => self::$stock->AddProduct(self::request('POST', ['amount' => 2, 'best_before_date' => self::NEVER_EXPIRES, 'purchased_date' => self::CLOSED_MONTH_DATE, 'price' => 1.0]), new Response(), ['productId' => self::$ids['undo_ambiguous_split']]),
 			200,
 			'Two units are purchased'
@@ -2487,13 +2504,20 @@ class StockCoverageTest extends PgsqlSchemaTestCase
 		self::assertCount(2, $rows, 'Two rows now share the purchases\' stock_id and location');
 		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'and their amounts still total five');
 
+		$firstLogId = (int)$firstPurchase[0]['id'];
 		$secondLogId = (int)$secondPurchase[0]['id'];
-		$this->expectRefusalWithUntouchedLedger(
+		self::assertSame([(int)$rows[0]['id'] => [$firstLogId => 1.0, $secondLogId => 3.0], (int)$rows[1]['id'] => [$firstLogId => 1.0]],
+			StockLineage::Lots(self::$db, self::$ids['undo_ambiguous_split']), 'The consume took FIFO from the first purchase; its undo returned that unit as its own row');
+
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $secondLogId]),
-			400,
-			'Undoing the second purchase, now split unknowably across two rows, is refused'
+			204,
+			'Undoing the second purchase is accepted: its lot is wholly on the first row'
 		);
-		self::assertSame(5.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'and the stock is untouched');
+		self::assertSame(2.0, self::stockAmount(self::$ids['undo_ambiguous_split']), 'and exactly its three units leave');
+		self::assertSame([(int)$rows[0]['id'] => [$firstLogId => 1.0], (int)$rows[1]['id'] => [$firstLogId => 1.0]],
+			StockLineage::Lots(self::$db, self::$ids['undo_ambiguous_split']));
+		StockLineage::AssertHolds(self::$db, self::$ids['undo_ambiguous_split']);
 	}
 
 	#[Depends('testCreatesFixtures')]

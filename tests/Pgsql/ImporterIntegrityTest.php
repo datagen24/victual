@@ -624,6 +624,76 @@ class ImporterIntegrityTest extends PgsqlSchemaTestCase
 	}
 
 	/**
+	 * ADR-0036 acceptance prerequisite 9. The lineage tables are derived state: an import
+	 * truncates them with the ledger it replaces, then RebuildStockLineage() runs migration
+	 * 0304's backfill over the imported ledger. The source here holds one family of each class
+	 * the backfill can prove or must leave unknown: E (a purchase of 4 and a consume of 1, one
+	 * row of 3), X (purchases of 3 and 2 merged into one row of 5 under one stock_id) and U (the
+	 * same merge followed by a consume of 1).
+	 */
+	public function testImportTruncatesTheLineageTablesAndRebuildsThemByTheBackfill(): void
+	{
+		$db = self::Pdo();
+		$product = (int)$db->query("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES ('Lineage stale target', 1, 2, 2) RETURNING id")->fetchColumn();
+		$staleBooking = (int)$db->query("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id) VALUES ($product, 99, 'stale-lot', 'purchase', 1, 0, 1) RETURNING id")->fetchColumn();
+		$staleRow = (int)$db->query("INSERT INTO stock (product_id, amount, stock_id) VALUES ($product, 99, 'stale-lot') RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO stock_row_lots (stock_row_id, lot_id, amount, basis) VALUES ($staleRow, $staleBooking, 99, 'recorded')");
+		$db->exec("INSERT INTO stock_booking_lots (booking_id, lot_id, amount, basis) VALUES ($staleBooking, $staleBooking, 99, 'recorded')");
+
+		$source = $this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX);
+		$source->exec("INSERT INTO products (id, name, location_id, qu_id_purchase, qu_id_stock) VALUES (8601, 'Lineage import fixture', 1, 2, 2)");
+		$source->exec("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id, purchased_date) VALUES "
+			. "(8601, 4, 'lin-e', 'purchase', 1, 0, 1, '2026-01-01'), (8601, -1, 'lin-e', 'consume', 1, 0, 1, '2026-01-01'), "
+			. "(8601, 3, 'lin-x', 'purchase', 1, 0, 1, '2026-01-01'), (8601, 2, 'lin-x', 'purchase', 1, 0, 1, '2026-01-01'), "
+			. "(8601, 3, 'lin-u', 'purchase', 1, 0, 1, '2026-01-01'), (8601, 2, 'lin-u', 'purchase', 1, 0, 1, '2026-01-01'), (8601, -1, 'lin-u', 'consume', 1, 0, 1, '2026-01-01')");
+		$source->exec("INSERT INTO stock (product_id, amount, stock_id, purchased_date) VALUES (8601, 3, 'lin-e', '2026-01-01'), (8601, 5, 'lin-x', '2026-01-01'), (8601, 4, 'lin-u', '2026-01-01')");
+
+		$messages = [];
+		$this->importer($source, function ($message) use (&$messages)
+		{
+			$messages[] = $message;
+		})->Import(true);
+
+		self::assertSame(0, (int)$db->query('SELECT count(*) FROM stock_row_lots WHERE amount = 99')->fetchColumn(), 'The target\'s own lineage rows went with the ledger they described');
+		$lots = $db->query("SELECT s.stock_id, rl.lot_id IS NULL AS pool, rl.amount, rl.basis FROM stock_row_lots rl JOIN stock s ON s.id = rl.stock_row_id
+			WHERE s.product_id = 8601 ORDER BY s.stock_id, rl.lot_id NULLS FIRST")->fetchAll(PDO::FETCH_ASSOC);
+		self::assertSame([
+			['lin-e', false, 3.0, 'derived'],
+			['lin-u', true, 4.0, 'unknown'],
+			['lin-x', false, 3.0, 'derived'],
+			['lin-x', false, 2.0, 'derived'],
+		], array_map(fn($row) => [$row['stock_id'], (bool)$row['pool'], (float)$row['amount'], $row['basis']], $lots), 'E and X are attributed; U is one unknown pool');
+		self::assertSame([], $db->query('SELECT * FROM stock_lineage_violations()')->fetchAll(PDO::FETCH_ASSOC), 'I1 to I3 hold after the import');
+		self::assertNotEmpty(preg_grep('/stock lineage .*rebuilt \(families: .*U \d+, X \d+\)/', $messages), 'The rebuild is reported: ' . implode("\n", $messages));
+	}
+
+	/** ADR-0036 acceptance prerequisite 9: a non-forced import into a target with stock, and so with lots, is refused and changes nothing. */
+	public function testNonForceImportRefusesATargetHoldingLots(): void
+	{
+		$db = self::Pdo();
+		$product = (int)$db->query("INSERT INTO products (name, location_id, qu_id_purchase, qu_id_stock) VALUES ('Lineage refused target', 1, 2, 2) RETURNING id")->fetchColumn();
+		$booking = (int)$db->query("INSERT INTO stock_log (product_id, amount, stock_id, transaction_type, price, undone, user_id) VALUES ($product, 2, 'refused-lot', 'purchase', 1, 0, 1) RETURNING id")->fetchColumn();
+		$row = (int)$db->query("INSERT INTO stock (product_id, amount, stock_id) VALUES ($product, 2, 'refused-lot') RETURNING id")->fetchColumn();
+		$db->exec("INSERT INTO stock_row_lots (stock_row_id, lot_id, amount, basis) VALUES ($row, $booking, 2, 'recorded')");
+		$db->exec("INSERT INTO stock_booking_lots (booking_id, lot_id, amount, basis) VALUES ($booking, $booking, 2, 'recorded')");
+		$lineage = fn() => [$db->query('SELECT * FROM stock_row_lots ORDER BY id')->fetchAll(PDO::FETCH_ASSOC), $db->query('SELECT * FROM stock_booking_lots ORDER BY id')->fetchAll(PDO::FETCH_ASSOC)];
+		$before = $lineage();
+
+		try
+		{
+			$this->importer($this->sourceCopy(DatabaseImporter::SUPPORTED_SOURCE_MIGRATION_MAX))->Import(false);
+			self::fail('A non-forced import into a target holding stock and lots must be refused');
+		}
+		catch (\Exception $exception)
+		{
+			self::assertStringContainsString('already contains data', $exception->getMessage());
+		}
+
+		self::assertSame($before, $lineage(), 'The refusal leaves the lots as they were');
+		$db->exec('TRUNCATE stock, stock_log CASCADE');
+	}
+
+	/**
 	 * RebuildPriceCaches() used to only upsert from the views, which cannot remove a row
 	 * for a product neither view returns a row for any more - only add or correct one for
 	 * a product a view still names. A source that undid its only purchase of a product is

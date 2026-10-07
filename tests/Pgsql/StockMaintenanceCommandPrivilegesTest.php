@@ -45,6 +45,15 @@ use Victual\Tests\Support\PgsqlSchemaTestCase;
  * tables too or the merge fails with "permission denied for table
  * cache__products_average_price". Every grant that remains is proved necessary below.
  *
+ * ADR-0036 (migration 0304) changes what a merge writes: it moves lot contributions
+ * (stock_row_lots) and rewrites no stock_id, so it no longer updates stock_log or
+ * stock_entry_origins and no longer fires trg_stock_log_UPD. UPDATE on stock_log and on
+ * stock_entry_origins, DELETE on stock_entry_origins, the two cache__ tables and the two price
+ * views leave the list. It gains stock_row_lots, stock_booking_lots and SELECT on stock_log and
+ * stock_entry_origins, which the lazy reclassification of a row an older image wrote reads and
+ * writes (StockLineageService::EnsureTracked()). The fixture exercises that path so each of the
+ * new grants is shown to be necessary, not assumed.
+ *
  * Sufficiency: a role holding exactly the corrected list runs a real merge end to end AND the
  * same shutdown changed-time flush the real command's process exit runs afterwards, asserting
  * changed_time actually advanced rather than only that nothing threw.
@@ -65,15 +74,13 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 	 */
 	private const GRANTS = [
 		['GRANT SELECT, UPDATE, DELETE ON %SCHEMA%.stock TO %ROLE%', 'stock'],
-		['GRANT SELECT, UPDATE ON %SCHEMA%.stock_log TO %ROLE%', 'stock_log'],
-		['GRANT SELECT, UPDATE, DELETE ON %SCHEMA%.stock_entry_origins TO %ROLE%', 'stock_entry_origins'],
+		['GRANT SELECT ON %SCHEMA%.stock_log TO %ROLE%', 'stock_log'],
+		['GRANT SELECT ON %SCHEMA%.stock_entry_origins TO %ROLE%', 'stock_entry_origins'],
+		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.stock_row_lots TO %ROLE%', 'stock_row_lots'],
+		['GRANT SELECT, INSERT, UPDATE ON %SCHEMA%.stock_booking_lots TO %ROLE%', 'stock_booking_lots'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.labels TO %ROLE%', 'labels'],
 		['GRANT SELECT ON %SCHEMA%.products TO %ROLE%', 'products'],
 		['GRANT SELECT ON %SCHEMA%.stock_splits TO %ROLE%', 'stock_splits (view)'],
-		['GRANT SELECT ON %SCHEMA%.products_average_price TO %ROLE%', 'products_average_price (view)'],
-		['GRANT SELECT ON %SCHEMA%.products_last_purchased TO %ROLE%', 'products_last_purchased (view)'],
-		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.cache__products_average_price TO %ROLE%', 'cache__products_average_price'],
-		['GRANT SELECT, INSERT, UPDATE, DELETE ON %SCHEMA%.cache__products_last_purchased TO %ROLE%', 'cache__products_last_purchased'],
 		['GRANT SELECT, UPDATE ON %SCHEMA%.system_db_changed_time TO %ROLE%', 'system_db_changed_time'],
 	];
 
@@ -115,19 +122,27 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 	}
 
 	/**
-	 * Two never-expiring, otherwise-identical purchases through the real AddProduct() flow -
-	 * not a bare INSERT into `stock` - so each one has a genuine stock_log booking row too.
-	 * That matters here: CompactStockEntries()'s stock_log rewrite is what fires the
-	 * stock_log_UPD trigger that reads products_average_price/products_last_purchased and
-	 * writes the two cache__ tables, and a stock row with no matching stock_log row (a bare
-	 * INSERT) never fires that trigger at all - which would make this test unable to prove
-	 * those grants are actually necessary.
+	 * Three never-expiring, otherwise-identical purchases through the real AddProduct() flow,
+	 * so each has a genuine booking and a lot. Two of them are then made to look like rows an
+	 * older image left behind, because that is the only case in which the merge reads the
+	 * ledger or writes allocations (ADR-0036 section 5, StockLineageService::EnsureTracked()):
+	 *
+	 * - the 3-unit purchase loses its lineage rows, as if an image without migration 0304's
+	 *   writers had booked it, so EnsureTracked() hands it to stock_lineage_backfill(), which
+	 *   reads stock_log and stock_entry_origins and inserts its contribution and allocation;
+	 * - the 4-unit row's amount is lowered to 3.5 with its contribution left at 4, as if an older
+	 *   image had consumed from it, so EnsureTracked() pools the row and marks its lot's
+	 *   allocations unknown with an UPDATE on stock_booking_lots.
+	 *
+	 * Without those two, the stock_log, stock_entry_origins and stock_booking_lots grants
+	 * would be unused in this test and their necessity unproven.
 	 */
 	private static function seedMergeableProduct(string $name): int
 	{
 		$product = self::insertProduct($name);
 
-		foreach ([2, 3] as $amount)
+		$stockIds = [];
+		foreach ([2, 3, 4] as $amount)
 		{
 			$response = self::$stock->AddProduct(
 				self::request('POST', ['amount' => $amount, 'best_before_date' => '2222-02-02', 'purchased_date' => '2026-01-01', 'price' => 1.0, 'location_id' => self::$locationA]),
@@ -135,9 +150,13 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 				['productId' => $product]
 			);
 			self::assertSame(200, $response->getStatusCode(), 'purchase fixture');
-			$stockId = json_decode((string)$response->getBody(), true)[0]['stock_id'];
-			self::$db->prepare('UPDATE stock SET best_before_date = NULL WHERE stock_id = ?')->execute([$stockId]);
+			$stockIds[$amount] = json_decode((string)$response->getBody(), true)[0]['stock_id'];
+			self::$db->prepare('UPDATE stock SET best_before_date = NULL WHERE stock_id = ?')->execute([$stockIds[$amount]]);
 		}
+
+		self::$db->prepare('DELETE FROM stock_row_lots WHERE stock_row_id IN (SELECT id FROM stock WHERE stock_id = ?)')->execute([$stockIds[3]]);
+		self::$db->prepare('DELETE FROM stock_booking_lots WHERE booking_id IN (SELECT id FROM stock_log WHERE stock_id = ?)')->execute([$stockIds[3]]);
+		self::$db->prepare('UPDATE stock SET amount = 3.5 WHERE stock_id = ?')->execute([$stockIds[4]]);
 
 		return $product;
 	}
@@ -241,7 +260,13 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		$rows = self::$db->prepare('SELECT amount FROM stock WHERE product_id = ?');
 		$rows->execute([$product]);
 		$amounts = $rows->fetchAll(PDO::FETCH_COLUMN);
-		self::assertSame([5.0], array_map('floatval', $amounts), 'Sanity: the merge actually happened (one row, amount 5)');
+		self::assertSame([8.5], array_map('floatval', $amounts), 'Sanity: the merge actually happened (one row, amount 2 + 3 + 3.5)');
+
+		$lineage = self::$db->prepare('SELECT rl.lot_id IS NULL AS pool, rl.amount, rl.basis FROM stock_row_lots rl JOIN stock s ON s.id = rl.stock_row_id WHERE s.product_id = ? ORDER BY rl.lot_id NULLS FIRST');
+		$lineage->execute([$product]);
+		self::assertSame([[true, 3.5, 'unknown'], [false, 2.0, 'recorded'], [false, 3.0, 'derived']],
+			array_map(static fn($row) => [(bool)$row['pool'], (float)$row['amount'], $row['basis']], $lineage->fetchAll(PDO::FETCH_ASSOC)),
+			'Sanity: the backfill and the pool fallback both ran under this role');
 
 		self::assertTrue($flushSucceeded, 'The real command\'s shutdown handler flushes the deferred changed-time write under this same role - DatabaseService swallows a failure there (exit 0, no visible error), so this asserts the value actually advanced, not merely that nothing threw: ' . ($flushError ?? '(no exception, but changed_time did not advance)'));
 	}
@@ -322,7 +347,7 @@ class StockMaintenanceCommandPrivilegesTest extends PgsqlSchemaTestCase
 		$before = self::$db->prepare('SELECT * FROM stock WHERE product_id = ? ORDER BY id');
 		$before->execute([$product]);
 		$before = $before->fetchAll(PDO::FETCH_ASSOC);
-		self::assertCount(2, $before, 'Sanity: two still-separate candidate rows before the binary runs');
+		self::assertCount(3, $before, 'Sanity: three still-separate candidate rows before the binary runs (seedMergeableProduct())');
 
 		[$exitCode, , $stderr] = self::runBinary(array_merge($args, ['--quiet']));
 

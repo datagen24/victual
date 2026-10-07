@@ -87,9 +87,16 @@ have recorded it.
 | 0300 | issue [#629](https://github.com/datagen24/victual/issues/629) (#487 remediation, maintainer decision D4, issue #553), [PR #634](https://github.com/datagen24/victual/pull/634) — `products_current_substitutions` never chooses an unconvertible sub product as `product_id_effective`, so recipe cost/calorie views stop counting it 1:1, the same exclusion rule PR #628 already applies to `stock_current`'s own rollup | in this tree |
 | 0301 | issue [#650](https://github.com/datagen24/victual/issues/650), [ADR-0027](../docs/adr/0027-timestamps-are-local-strings-documented-booleans-are-booleans.md) decision 2 — every legacy `TIMESTAMP` column becomes `TIMESTAMPTZ`, read as a wall clock in the configured zone with the earlier instant for a repeated hour; a read-only preflight refuses skipped wall clocks, infinities and out-of-range values; dependent views are recreated | in `master` |
 | 0302 | `stock_edited_entries` rewritten without a join between two aggregated CTEs, so the price-cache triggers, `reconcile_stock_log_cache()` and `uihelper_product_details` stop costing time quadratic in `stock_log`; same rows as 0267's definition | in `master` |
-| 0303 | issue [#612](https://github.com/datagen24/victual/issues/612), [ADR-0037](../docs/adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) — `stock_label_retirements` (one event per stock-entry label retirement, written by a trigger on `labels`), the legacy backfill with its own validation, and an index on `print_jobs (label_uid, id)` for the trigger and the claim predicate | pending PR |
-| 0304 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
-| 0305 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+| 0303 | issue [#612](https://github.com/datagen24/victual/issues/612), [ADR-0037](../docs/adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md) — `stock_label_retirements` (one event per stock-entry label retirement, written by a trigger on `labels`), the legacy backfill with its own validation, and an index on `print_jobs (label_uid, id)` for the trigger and the claim predicate | in `master` |
+| 0304 | issue [#665](https://github.com/datagen24/victual/issues/665), [ADR-0036](../docs/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) — `stock_row_lots` (contributions) and `stock_booking_lots` (allocations), the legacy backfill (`stock_lineage_families()`, `stock_lineage_backfill()`) with invariant validation (`stock_lineage_violations()`), and `trg_cascade_change_qu_id_stock` redefined to rescale both tables | pending PR |
+| 0305 | [plan 22](../docs/plans/22-medication-tracking.md) — `medication_products`, `medication_stock_attributes`, `subjects` | **claimed, unwritten** |
+| 0306 | [plan 22](../docs/plans/22-medication-tracking.md) — `regimens`, `regimen_doses`, `administrations`, `storage_excursions` | **claimed, unwritten** |
+
+Renumbered on 2026-10-07: issue #665's booking lineage migration (ADR-0036) is being written
+and takes the lowest free slot, **0304**, under the lowest-free-slot rule. Plan 22's two unwritten
+claims yield and move up in turn, from 0304–0305 to **0305–0306**, keeping their own order. 0303
+is on disk in `master` (PR #663) and its status says so now. The next unclaimed number is now
+**0307**.
 
 Renumbered on 2026-10-06: issue #612's label revival migration (ADR-0037) is being written and
 takes the lowest free slot, **0303**, under the lowest-free-slot rule. Plan 22's two unwritten claims

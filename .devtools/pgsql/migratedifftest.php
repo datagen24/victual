@@ -76,7 +76,11 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  'permission_fields',
  // ADR-0037, migration 0303. Same freeze: label retirement history exists only where labels
  // do, and its trigger and revival are PostgreSQL code checked by pgTAP 029 and PHPUnit.
- 'stock_label_retirements'];
+ 'stock_label_retirements',
+ // ADR-0036, migration 0304. Same freeze: lot contributions and allocations are written by
+ // PostgreSQL-only writers (StockLineageService does nothing on the SQLite side) and checked by
+ // pgTAP 030 and PHPUnit.
+ 'stock_row_lots', 'stock_booking_lots'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

@@ -446,6 +446,17 @@ class StockAmountPolicyTest extends PgsqlSchemaTestCase
 		}
 	}
 
+	/**
+	 * The undo compares the row against the booking within ADR-0032's tolerance on the scale of
+	 * the original operands (1e9 here, so 1e-3): a drift of 0.0005 either way is the same
+	 * amount, and the undo removes the row.
+	 *
+	 * A drift beyond tolerance is refused in both directions. Before ADR-0036 the upward case
+	 * (+0.002) was accepted and left a 0.002 row behind. ADR-0036 section 5 changes that: the
+	 * drift is a stock change no booking explains, so the row's lots no longer add up to its
+	 * amount, the row becomes an unattributed pool, and the purchase's lot can no longer be
+	 * undone. The downward case was already refused and still is.
+	 */
 	public function testPositiveBookingUndoUsesOriginalOperandScale(): void
 	{
 		foreach ([StockService::TRANSACTION_TYPE_PURCHASE, StockService::TRANSACTION_TYPE_SELF_PRODUCTION, StockService::TRANSACTION_TYPE_INVENTORY_CORRECTION] as $type)
@@ -455,15 +466,15 @@ class StockAmountPolicyTest extends PgsqlSchemaTestCase
 				$product = self::product();
 				self::$stock->AddProduct($product, 1e9, '2035-01-01', $type, '2026-09-27', null, self::$source);
 				self::$db->exec('UPDATE stock SET amount = ' . sprintf('%.17g', 1e9 + $difference) . ' WHERE product_id = ' . $product);
-				if ($difference < -0.001)
+				if (abs($difference) > 0.001)
 				{
 					self::refuse($product, fn() => self::undo($product));
 				}
 				else
 				{
 					self::undo($product);
-					self::assertCount($difference > 0.001 ? 1 : 0, self::snapshot($product)[0]);
-					self::assertEqualsWithDelta($difference > 0.001 ? (1e9 + $difference) - 1e9 : 0, self::total($product), 1e-12);
+					self::assertCount(0, self::snapshot($product)[0]);
+					self::assertEqualsWithDelta(0, self::total($product), 1e-12);
 				}
 			}
 		}
