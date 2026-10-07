@@ -4,8 +4,8 @@
 command. The command generates the new passwords, stores them where the cluster reads
 them, applies them to PostgreSQL with a superuser credential typed at a prompt, and
 restarts the pods. The cost to running requests is known and measured beforehand.
-**Depends on:** [ADR-0038](https://github.com/datagen24/victual/blob/claude/helm-operator-k8s-deployments-a4b377/docs/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md)
-decision 10 (Proposed, on branch `claude/helm-operator-k8s-deployments-a4b377`), which
+**Depends on:** [ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md)
+decision 10 (Proposed), which
 keeps `roles.sql` a manual step outside the chart and names this handler as separate work.
 [ADR-0010](../adr/0010-workload-standard.md) property 3 defines the two roles.
 **Status:** draft, research only. No script exists. Open questions 1 and 2 decide the design.
@@ -62,11 +62,17 @@ app item may hold `VICTUAL_MQTT_PASSWORD` and `VICTUAL_INFLUXDB_TOKEN`
 and it sets both passwords on every run (`ALTER ROLE … PASSWORD :'…'`). Rotating one role
 therefore requires passing the other's current password too.
 
-The documented invocation, in the script's header and in `values.example.yaml`, passes both
-passwords as `psql -v name=value`. `deploy/kind/roles-job.yaml` does the same through
-`$(MIGRATE_PASSWORD)` substitution in the container's `command`. Both put the passwords in
-`psql`'s argument list, visible in `ps` to other users of the machine or node. The handler
-cannot reuse that interface.
+On master as of 2026-10-07, the documented invocation (the script's header and
+`values.example.yaml`) passes both passwords as `psql -v name=value`.
+`deploy/kind/roles-job.yaml` does the same through `$(MIGRATE_PASSWORD)` substitution in the
+container's `command`. Both put the passwords in `psql`'s argument list, visible in `ps` to
+other users of the machine or node.
+
+Branch `claude/roles-sql-env-passwords` replaces that interface, as open question 8's
+answer requires. `roles.sql` reads `MIGRATE_PASSWORD` and `APP_PASSWORD` from psql's
+environment with `\getenv`, discards any `-v` value, and refuses to run without them or on
+a psql older than 15. On that branch a refusal also exits non-zero; on master, `\quit 1`
+exits 0. Every call site in the tree moves to the environment form there.
 
 PostgreSQL stores one password per role. `VALID UNTIL` sets an expiry, not a second accepted
 value, so one role cannot accept an old and a new password at the same time.
@@ -89,7 +95,8 @@ operator finds the Deployments that use a Secret; that is open question 6.
 "ALTER ROLE first and the item second". That order keeps an operator-triggered restart from
 starting a pod against a password PostgreSQL does not yet accept. It also makes every
 request fail between the `ALTER ROLE` and the eventual restart, which waits for the next
-poll. The [ordering section](#ordering) replaces that guidance.
+poll. The [ordering section](#ordering) replaces that guidance. The maintainer's direction
+(2026-10-07): the comment changes when the handler is implemented, to the order it uses.
 
 ### How the pod restarts
 
@@ -171,29 +178,26 @@ The recommendation is the second: the operator types the password once, and the 
 is limited to the operator's own user and root for seconds. `PGPASSFILE` is not used,
 because it needs a file.
 
-**The role passwords.** The handler feeds `psql` the variable definitions on standard
-input, ahead of the script, instead of `-v` arguments:
+**The role passwords.** The handler passes them the way `roles.sql` reads them, in the
+`psql` child's environment beside `PGPASSWORD`:
 
 ```sh
-# Illustrative. Values travel on the pipe; psql's argument list holds no secret.
-{ printf '\\set migrate_password %s\n\\set app_password %s\n' "$m" "$a"
-  cat deploy/postgres/roles.sql; } \
-  | PGPASSWORD="$su" psql -v ON_ERROR_STOP=1 -v db=victual "postgresql://$suname@$host/$db"
+# Illustrative. The values are in psql's environment; its argument list holds no secret.
+PGPASSWORD="$su" MIGRATE_PASSWORD="$m" APP_PASSWORD="$a" \
+  psql -v ON_ERROR_STOP=1 -v db=victual -f deploy/postgres/roles.sql \
+  "postgresql://$suname@$host/$db"
 ```
 
-`printf` is a shell builtin, so the values do not appear as a process argument. `roles.sql`
-needs no change for this, because its `\if :{?…}` checks accept variables set by `\set`.
-psql 15 and later also offer `\getenv`, which reads a variable from psql's environment; that
-form would add the role passwords to the `environ` exposure described for `PGPASSWORD`.
+The variables are set for that one command, not exported into the handler's shell. Their
+exposure is the same `/proc/<pid>/environ` residual as the superuser password's. Feeding
+`\set` lines to `psql` on standard input does not work: `roles.sql` unsets both variables
+before reading the environment, so that a `-v` value cannot survive.
 
 **Rotating one role.** The handler passes the other role's current password, read from the
 store in preflight and already proven to authenticate, so `roles.sql` rewrites it with the
 same value. The alternative is to make each password variable optional in `roles.sql`. That
 changes the script's documented "all three or refuse" contract, and nothing else needs it.
 
-**The kind roles Job and the documented `-v` form** keep the argument-list exposure this
-plan rejects. Changing them is outside this plan; it is a follow-up to raise with the
-maintainer, since `values.example.yaml` tells operators to use that form.
 
 ### Store writes
 
@@ -310,6 +314,8 @@ passwords against PostgreSQL before deciding which store version to keep.
 - ADR-0038 decision 10 (Proposed): the handler is outside the chart and needs a human with
   the superuser credential.
 - ADR-0010 property 3: one role per job. Options B and C stretch it.
+- `roles.sql`'s environment interface, on branch `claude/roles-sql-env-passwords` (open
+  question 8). The handler's [secret handling](#secret-handling) assumes it.
 - `deploy/talos/seed-1password.sh` and `values.example.yaml`: item names and field labels
   the handler must keep.
 - The 1Password Connect operator's polling and auto-restart behaviour, read from its usage
@@ -344,9 +350,14 @@ passwords against PostgreSQL before deciding which store version to keep.
 7. **Does `op item edit` with a template merge fields or replace them?** If it replaces
    them, the handler must always send the whole item, and a field added between the read
    and the write is lost. Test against a scratch item before relying on either behaviour.
-8. **Should the kind roles Job and the documented `-v` form stop passing passwords as
-   arguments?** It is the same exposure this plan rejects for the handler, but it is
-   separate work.
+8. ~~**Should the kind roles Job and the documented `-v` form stop passing passwords as
+   arguments?**~~ **Answered: yes.** It is the same exposure this plan rejects for the
+   handler.
+
+   > **Response (datagen24, 2026-10-07):** This needs to be fixed; that is bad practice.
+   > *Fixed on branch `claude/roles-sql-env-passwords`; reconciled in
+   > [How passwords reach PostgreSQL](#how-passwords-reach-postgresql) and
+   > [Secret handling](#secret-handling).*
 
 ## Verification
 
