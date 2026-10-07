@@ -194,6 +194,7 @@
 			<file>tests/Pgsql/StockMaintenanceCompactionTest.php</file>
 			<file>tests/Pgsql/StockMaintenanceLineageConfinementKeptIdTest.php</file>
 			<file>tests/Pgsql/StockMaintenanceCommandPrivilegesTest.php</file>
+			<file>tests/Pgsql/StockLineageBackfillTest.php</file>
 		</testsuite>
 	</testsuites>
 </phpunit>
