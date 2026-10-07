@@ -653,7 +653,9 @@ evidence and carries only lifecycle bookkeeping.
 
 ## Open questions
 
-No maintainer responses are recorded yet. An answer goes directly below its question as a
+Questions 1 and 2 were answered by the maintainer on 2026-10-07; their responses are recorded
+below them. Questions 3 and 4 have no response and stay open; neither is implicitly
+authorized by the answers to 1 and 2. An answer goes directly below its question as a
 `> **Response:**` block.
 
 1. **Should merging stay?** Option C deletes the cause and the migration. It reverses the
@@ -663,12 +665,23 @@ No maintainer responses are recorded yet. An answer goes directly below its ques
    measured above. If the answer is to stop merging, the legacy classification and `unknown`
    handling remain needed only for the already-merged rows, and a smaller record can replace
    this one.
+
+   > **Response (datagen24, 2026-10-07):** Keep merging. Option A stands as written. The
+   > alternatives offered were stopping merging (Option C) and keeping the merge but gating
+   > the schema on evidence of need; neither was chosen. This answer does not change the
+   > design, so no section above is reconciled. Prerequisite 1 is met for question 1.
 2. **Is FIFO by addition booking the attribution policy?** It makes a consume charge the
    oldest lot first, so a later purchase can be undone while earlier units were consumed. The
    alternatives (newest lot first, proportional) give different undo outcomes: newest-first
    would refuse the later purchase in the same case, and proportional needs fractional
    contributions. Recommended: FIFO, because it matches the consume rule's stated order and
    gives whole-number results for whole-number bookings.
+
+   > **Response (datagen24, 2026-10-07):** FIFO by addition booking. Newest-lot-first and
+   > proportional attribution were offered and not chosen. Section 4 (Allocation policy) and
+   > Worked example 2 already encode FIFO, so the design is unchanged. The consequence stands:
+   > after a consume that charged an older lot, the older purchase is the one that becomes
+   > un-undoable. Prerequisite 1 is met for question 2.
 3. **Should lots be shown to users?** This record changes no response and no page. A lot
    history field or a journal column is an additive wire change under ADR-0005 and needs its
    own decision. Recommended: defer until the contributions exist and a real need appears.
