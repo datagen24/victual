@@ -3474,10 +3474,43 @@ class StockService extends BaseService
 			// stock_id/id/undone check: a booking's own correlated half never reaches here as a "subsequent"
 			// booking, because the group-undo branch above already marks it undone (in id-descending order)
 			// before this member's own check runs.
-			$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id)->count() > 0;
-			if ($hasSubsequentBookings)
+			//
+			// ADR-0036 section 7: a booking with allocations (tracked) is undone by its lots
+			// instead. Rows an older image left without matching contributions are reconciled
+			// first, so the lots read below describe the rows as they are. Rule 2: a booking
+			// whose units were merged before lineage was recorded cannot be told apart and is
+			// refused. Rule 3: the "newest first" check applies per lot, so only a later booking
+			// that touched one of this booking's lots blocks it.
+			$lineage = StockLineageService::GetInstance();
+			$tracked = false;
+			if ($lineage->Applies())
 			{
-				throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
+				$lineage->ReconcileProduct((int)$logRow->product_id);
+				$tracked = $lineage->IsTracked((int)$logRow->id);
+			}
+
+			if ($tracked)
+			{
+				foreach ($lineage->AllocationsOf((int)$logRow->id) as [, , $basis])
+				{
+					if ($basis === StockLineageService::BASIS_UNKNOWN)
+					{
+						throw new \Exception('Booking cannot be undone: its units were merged with another booking\'s before booking lineage was recorded and cannot be told apart');
+					}
+				}
+
+				if ($lineage->DependentBooking((int)$logRow->id, (int)$logRow->product_id, $logRow->correlation_id) !== null)
+				{
+					throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
+				}
+			}
+			else
+			{
+				$hasSubsequentBookings = $this->DB->stock_log()->where('stock_id = :1 AND id > :2 AND undone = 0', $logRow->stock_id, $logRow->id)->count() > 0;
+				if ($hasSubsequentBookings)
+				{
+					throw new \Exception('Booking has subsequent dependent bookings, undo not possible');
+				}
 			}
 
 			if ($logRow->transaction_type === self::TRANSACTION_TYPE_CONSUME
@@ -3491,7 +3524,13 @@ class StockService extends BaseService
 			// Every branch below reverses the booking's effect on `stock` and only then marks the
 			// booking undone - a failure between those two writes would leave a booking whose
 			// undone flag disagrees with the stock it was supposed to restore.
-			if ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || $logRow->transaction_type === self::TRANSACTION_TYPE_SELF_PRODUCTION || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
+			if ($tracked && $this->UndoTrackedBooking($logRow))
+			{
+				// Reversed by lot (ADR-0036 section 7). Consumes and measurements are not: they
+				// take the branches below, which rebuild or restore by snapshot exactly as a lot
+				// reversal would, and a consume's rebuild re-adds its lots there.
+			}
+			elseif ($logRow->transaction_type === self::TRANSACTION_TYPE_PURCHASE || $logRow->transaction_type === self::TRANSACTION_TYPE_SELF_PRODUCTION || ($logRow->transaction_type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
 			{
 				// Subtract only this booking's own contribution, the way TRANSFER_TO already
 				// does for a stock_id it shares with another location (below): CompactStockEntries()
@@ -3728,6 +3767,15 @@ class StockService extends BaseService
 
 				// ADR-0037: revive the label this booking's whole-row take retired, if any.
 				// A decline leaves the label retired and never blocks the undo.
+				// ADR-0036: the rebuilt row holds exactly the lots this booking took.
+				if ($tracked)
+				{
+					foreach ($lineage->AllocationsOf((int)$logRow->id) as [$lot, $allocated])
+					{
+						$lineage->AddLot($restoredRowId, $lot, -$allocated);
+					}
+				}
+
 				$revivalEventId = $this->labelRevivalPending[(int)$logRow->id] ?? null;
 				if ($revivalEventId !== null)
 				{
@@ -4252,6 +4300,14 @@ class StockService extends BaseService
 				throw new \Exception('This booking cannot be undone');
 			}
 
+			// A legacy-rule undo writes rows without contributions. Reconciling gives them
+			// derived lots where the ledger proves them and the pool otherwise (ADR-0036
+			// section 5), so I1 holds without anything being guessed.
+			if (!$tracked)
+			{
+				$lineage->ReconcileProduct((int)$logRow->product_id);
+			}
+
 			// Inside the transaction on purpose: the outbox row and the ledger rows commit
 			// together or not at all, so a rolled back booking leaves no event behind and a
 			// crash after the commit still delivers one.
@@ -4276,6 +4332,326 @@ class StockService extends BaseService
 	 * @throws \Exception When no (not yet undone) booking with this transaction id exists,
 	 *                    or any contained booking cannot be undone
 	 */
+	/**
+	 * ADR-0036 section 7: reverses a tracked booking by its lots. Returns false for the booking
+	 * types whose existing branches already reverse by snapshot (consume, negative inventory
+	 * correction, measurement), which UndoBookingInTransaction() then runs.
+	 *
+	 * A correlated pair is reversed by its newer half, which UndoBookingInTransaction() reaches
+	 * first (newest first): transfer_to moves the units back, stock-edit-new restores the old
+	 * snapshot, and the older half only marks itself undone.
+	 *
+	 * Runs inside UndoBookingInTransaction()'s transaction and product lock, after rules 1 to 3
+	 * have been checked. A refusal throws, and the transaction rolls everything back.
+	 */
+	private function UndoTrackedBooking($logRow): bool
+	{
+		$type = $logRow->transaction_type;
+
+		if ($type === self::TRANSACTION_TYPE_PURCHASE || $type === self::TRANSACTION_TYPE_SELF_PRODUCTION
+			|| ($type === self::TRANSACTION_TYPE_INVENTORY_CORRECTION && $logRow->amount > 0))
+		{
+			$this->UndoTrackedAddition($logRow);
+			return true;
+		}
+
+		if ($type === self::TRANSACTION_TYPE_PRODUCT_OPENED)
+		{
+			$this->UndoTrackedOpening($logRow);
+			return true;
+		}
+
+		if ($type === self::TRANSACTION_TYPE_TRANSFER_TO)
+		{
+			$this->UndoTrackedTransfer($logRow);
+			return true;
+		}
+
+		if ($type === self::TRANSACTION_TYPE_STOCK_EDIT_NEW)
+		{
+			$this->UndoTrackedEdit($logRow);
+			return true;
+		}
+
+		if ($type === self::TRANSACTION_TYPE_TRANSFER_FROM || $type === self::TRANSACTION_TYPE_STOCK_EDIT_OLD)
+		{
+			$newerHalf = $type === self::TRANSACTION_TYPE_TRANSFER_FROM ? self::TRANSACTION_TYPE_TRANSFER_TO : self::TRANSACTION_TYPE_STOCK_EDIT_NEW;
+			$liveNewerHalf = $logRow->correlation_id === null ? null
+				: $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2 AND undone = 0', $logRow->correlation_id, $newerHalf)->fetch();
+			if ($liveNewerHalf !== null)
+			{
+				throw new \Exception('Booking cannot be undone on its own: undo the transfer or edit it belongs to');
+			}
+
+			$this->MarkBookingUndone($logRow);
+			return true;
+		}
+
+		return false;
+	}
+
+	/** An addition: its lot must be wholly in stock, wherever it is now; it leaves every row holding it. */
+	private function UndoTrackedAddition($logRow): void
+	{
+		$lineage = StockLineageService::GetInstance();
+		$lot = (int)$logRow->id;
+		$original = 0.0;
+		foreach ($lineage->AllocationsOf($lot) as [$allocatedLot, $amount])
+		{
+			if ($allocatedLot === $lot)
+			{
+				$original = $amount;
+			}
+		}
+
+		$plan = $lineage->Gather([[$lot, $original]], (int)$logRow->product_id, null);
+		$total = (float)DatabaseService::GetInstance()->ExecuteDbQuery(
+			'SELECT COALESCE(sum(amount), 0) FROM stock_row_lots WHERE lot_id = ?', [$lot])->fetchColumn();
+		if ($plan === null || self::CompareAmounts($total, $original) != 0)
+		{
+			throw new \Exception('Booking cannot be undone: the units it added are no longer all in stock');
+		}
+
+		$this->DetachLots($plan);
+		$this->MarkBookingUndone($logRow);
+	}
+
+	/**
+	 * An opening: the opened units are found by lot among open rows. A row holding exactly them is
+	 * un-opened in place; otherwise they are extracted into a new un-opened row with the due date
+	 * the booking recorded, and the rest of the row stays open.
+	 */
+	private function UndoTrackedOpening($logRow): void
+	{
+		$lineage = StockLineageService::GetInstance();
+		$allocations = $lineage->AllocationsOf((int)$logRow->id);
+		$preferred = $logRow->stock_row_id === null ? null : (int)$logRow->stock_row_id;
+		$plan = $lineage->Gather($allocations, (int)$logRow->product_id, $preferred, 's.open = 1');
+		if ($plan === null || count($plan) === 0)
+		{
+			throw new \Exception('Booking cannot be undone: the stock entry it opened no longer exists in that state');
+		}
+
+		$rowId = array_key_first($plan);
+		if (count($plan) === 1 && $lineage->HoldsExactly($rowId, $allocations))
+		{
+			$this->DB->stock()->where('id = :1', $rowId)->fetch()->update([
+				'open' => 0,
+				'opened_date' => null,
+				'best_before_date' => $logRow->best_before_date,
+				'opened_amount' => null,
+				'opened_qu_id' => null,
+				'opened_tare' => null,
+				'opened_measured_at' => null
+			]);
+		}
+		else
+		{
+			$template = $this->DB->stock()->where('id = :1', $rowId)->fetch();
+			$lots = $this->DetachLots($plan);
+			$restored = $this->DB->stock()->createRow([
+				'product_id' => $logRow->product_id,
+				'amount' => array_sum(array_column($lots, 1)),
+				'best_before_date' => $logRow->best_before_date,
+				'purchased_date' => $template->purchased_date,
+				'stock_id' => $logRow->stock_id,
+				'price' => $template->price,
+				'open' => 0,
+				'location_id' => $template->location_id,
+				'shopping_location_id' => $template->shopping_location_id,
+				'note' => $template->note
+			]);
+			$restored->save();
+			$lineage->SetLots((int)$restored->id, $lots);
+		}
+
+		$this->MarkBookingUndone($logRow);
+	}
+
+	/**
+	 * A transfer pair, reversed at its transfer_to half: the transferred units are found by lot
+	 * at the destination. A whole-row transfer whose row holds exactly them relocates back in
+	 * place; otherwise they are detached and returned to the source row, or to a row rebuilt at
+	 * the source from the transfer_from snapshot.
+	 */
+	private function UndoTrackedTransfer($logRow): void
+	{
+		$lineage = StockLineageService::GetInstance();
+		$from = $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_TRANSFER_FROM)->fetch();
+		if ($from === null)
+		{
+			throw new \Exception('Booking cannot be undone: its transfer has no source booking');
+		}
+
+		$this->LockUndoLocation($from->location_id);
+		$allocations = $lineage->AllocationsOf((int)$logRow->id);
+		$preferred = $logRow->stock_row_id === null ? null : (int)$logRow->stock_row_id;
+		$plan = $lineage->Gather($allocations, (int)$logRow->product_id, $preferred, 's.location_id IS NOT DISTINCT FROM ?', [$logRow->location_id]);
+		if ($plan === null || count($plan) === 0)
+		{
+			throw new \Exception('Booking cannot be undone: its destination stock entry no longer exists');
+		}
+
+		$rowId = array_key_first($plan);
+		$wholeRow = count($plan) === 1 && $preferred !== null && $rowId === $preferred
+			&& $from->stock_row_id !== null && (int)$from->stock_row_id === $preferred
+			&& $lineage->HoldsExactly($rowId, $allocations);
+		if ($wholeRow)
+		{
+			$this->DB->stock()->where('id = :1', $rowId)->fetch()->update([
+				'location_id' => $from->location_id,
+				'best_before_date' => $from->best_before_date
+			]);
+		}
+		else
+		{
+			$lots = $this->DetachLots($plan);
+			$amount = array_sum(array_column($lots, 1));
+			$home = $from->stock_row_id === null ? null
+				: $this->DB->stock()->where('id = :1 AND location_id IS NOT DISTINCT FROM :2', $from->stock_row_id, $from->location_id)->fetch();
+			if ($home !== null)
+			{
+				$home->update(['amount' => $home->amount + $amount]);
+				$homeId = (int)$home->id;
+			}
+			else
+			{
+				$homeId = $this->InsertRowFromBooking($from, $amount);
+			}
+
+			foreach ($lots as [$lot, $lotAmount, $basis])
+			{
+				$lineage->AddLot($homeId, $lot, $lotAmount, $basis);
+			}
+		}
+
+		$this->MarkBookingUndone($logRow);
+	}
+
+	/**
+	 * An edit pair, reversed at its stock-edit-new half: a row holding exactly the snapshot after
+	 * the edit is restored to the snapshot before it in place; otherwise the edit's units are
+	 * extracted from wherever they are and a row with the old attributes and old lots is created.
+	 */
+	private function UndoTrackedEdit($logRow): void
+	{
+		$lineage = StockLineageService::GetInstance();
+		$old = $this->DB->stock_log()->where('correlation_id = :1 AND transaction_type = :2', $logRow->correlation_id, self::TRANSACTION_TYPE_STOCK_EDIT_OLD)->fetch();
+		if ($old === null)
+		{
+			throw new \Exception('Booking cannot be undone: its edit has no snapshot of the stock entry before it');
+		}
+
+		$this->LockUndoLocation($old->location_id);
+		if ($old->opened_amount !== null && self::CompareAmounts($old->amount, 1.0) !== 0)
+		{
+			throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+		}
+
+		$before = $lineage->AllocationsOf((int)$old->id);
+		$after = $lineage->AllocationsOf((int)$logRow->id);
+		$row = $logRow->stock_row_id === null ? null : $this->DB->stock()->where('id = :1', $logRow->stock_row_id)->fetch();
+
+		if ($row !== null && self::CompareAmounts((float)$row->amount, (float)$logRow->amount) == 0 && $lineage->HoldsExactly((int)$row->id, $after))
+		{
+			$row->update([
+				'amount' => $old->amount,
+				'best_before_date' => $old->best_before_date,
+				'purchased_date' => $old->purchased_date,
+				'price' => $old->price,
+				'location_id' => $old->location_id,
+				'shopping_location_id' => $old->shopping_location_id,
+				'open' => $old->opened_date !== null,
+				'opened_date' => $old->opened_date,
+				'note' => $old->note,
+				'opened_amount' => $old->opened_amount,
+				'opened_qu_id' => $old->opened_qu_id,
+				'opened_tare' => $old->opened_tare,
+				'opened_measured_at' => $old->opened_measured_at
+			]);
+			$lineage->SetLots((int)$row->id, $before);
+		}
+		else
+		{
+			$plan = $lineage->Gather($after, (int)$logRow->product_id, $row === null ? null : (int)$row->id);
+			if ($plan === null || count($plan) === 0)
+			{
+				throw new \Exception('Booking cannot be undone: its stock entry no longer exists in its edited state');
+			}
+
+			$this->DetachLots($plan);
+			$restoredId = $this->InsertRowFromBooking($old, (float)$old->amount);
+			$lineage->SetLots($restoredId, $before);
+		}
+
+		$this->MarkBookingUndone($logRow);
+	}
+
+	/**
+	 * Removes a Gather() plan's units from their rows: the contributions go down, each row's
+	 * amount goes down by the same total, and a row left empty is deleted (a live label on it
+	 * retires through retire_stock_entry_labels, as on any delete).
+	 *
+	 * @return array<int, array{0: int|null, 1: float, 2: string}> the [lot, amount, basis] triples removed
+	 */
+	private function DetachLots(array $plan): array
+	{
+		$lineage = StockLineageService::GetInstance();
+		$detached = [];
+		foreach ($plan as $rowId => $items)
+		{
+			$taken = 0.0;
+			foreach ($items as [$lot, $amount, $basis])
+			{
+				$lineage->RemoveLot($rowId, $lot, $amount);
+				$detached[] = [$lot, $amount, $basis];
+				$taken += $amount;
+			}
+
+			$row = $this->DB->stock()->where('id = :1', $rowId)->fetch();
+			if (self::CompareAmounts((float)$row->amount, $taken) <= 0)
+			{
+				$row->delete();
+			}
+			else
+			{
+				$row->update(['amount' => $row->amount - $taken]);
+			}
+		}
+
+		return $detached;
+	}
+
+	/** Inserts a stock row from a booking's snapshot columns with the given amount; returns its id. */
+	private function InsertRowFromBooking($booking, float $amount): int
+	{
+		if ($booking->opened_amount !== null && self::CompareAmounts($amount, 1.0) !== 0)
+		{
+			throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
+		}
+
+		$row = $this->DB->stock()->createRow([
+			'product_id' => $booking->product_id,
+			'amount' => $amount,
+			'best_before_date' => $booking->best_before_date,
+			'purchased_date' => $booking->purchased_date,
+			'stock_id' => $booking->stock_id,
+			'price' => $booking->price,
+			'location_id' => $booking->location_id,
+			'opened_date' => $booking->opened_date,
+			'open' => $booking->opened_date !== null,
+			'note' => $booking->note,
+			'shopping_location_id' => $booking->shopping_location_id,
+			'opened_amount' => $booking->opened_amount,
+			'opened_qu_id' => $booking->opened_qu_id,
+			'opened_tare' => $booking->opened_tare,
+			'opened_measured_at' => $booking->opened_measured_at
+		]);
+		$row->save();
+
+		return (int)$row->id;
+	}
+
 	/**
 	 * @return array{restored: int, retired: int}|null See UndoBooking(): the label revival
 	 *         counts of the outermost undo, null for a nested call.
@@ -4491,6 +4867,10 @@ class StockService extends BaseService
 				throw new \Exception('Cannot merge: $productIdToRemove has sub products, and $productIdToKeep already has an unrelated parent product (only one level of nesting is supported)');
 			}
 
+			// ADR-0036 section 3: contributions and allocations are stock-unit amounts too and
+			// rescale by the same factor in the same transaction, before the product_id move
+			// below loses which rows and bookings are the removed product's.
+			StockLineageService::GetInstance()->Rescale($productIdToRemove, (float)$factor);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 			DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET product_id = ' . $productIdToKeep . ', amount = amount * ' . $factor . ', price = price / ' . $factor . ' WHERE product_id = ' . $productIdToRemove);
 

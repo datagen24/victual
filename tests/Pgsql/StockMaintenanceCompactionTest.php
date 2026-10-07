@@ -633,6 +633,17 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		return $result;
 	}
 
+	/** A booking's allocations as [lot booking id or 'pool' => amount]. */
+	private static function lotsOf(int $bookingId): array
+	{
+		$result = [];
+		foreach (self::$db->query('SELECT lot_id, amount FROM stock_booking_lots WHERE booking_id = ' . $bookingId . ' ORDER BY lot_id NULLS FIRST')->fetchAll(PDO::FETCH_ASSOC) as $row)
+		{
+			$result[$row['lot_id'] === null ? 'pool' : (int)$row['lot_id']] = (float)$row['amount'];
+		}
+		return $result;
+	}
+
 	private static function assertLineageHolds(int $product): void
 	{
 		self::assertSame([], self::$db->query('SELECT * FROM stock_lineage_violations(' . $product . ')')->fetchAll(PDO::FETCH_ASSOC), 'ADR-0036 invariants I1 to I3 hold');
@@ -991,22 +1002,31 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * an inline one. Both row-id orders: the edited entry can end up as either the row
 	 * CompactStockEntries() keeps or the one it deletes, depending on which purchase's id is
 	 * larger, and the refusal must hold either way.
+	 *
+	 * ADR-0036 replaces that refusal: the edit's units are found by lot in the merged row and
+	 * extracted with the pre-edit attributes, in either row order (worked example 4, third
+	 * row). Changed from two refusals to two acceptances for that reason; no unit is lost or
+	 * made in either order.
 	 */
-	public function testUndoRefusesStockEditOldAfterExplicitMaintenanceMergeBothRowOrders(): void
+	public function testUndoOfStockEditAfterExplicitMaintenanceMergeExtractsTheEditedLotBothRowOrders(): void
 	{
-		[$productA, $editOldA] = $this->purchaseEditAndExplicitlyMerge('Maintenance Undo Edit First', 3, self::NEVER_EXPIRES, 2, null, 'second');
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldA]),
-			400,
-			'Undoing the edit after an explicit maintenance merge is refused (row order: edited entry keeps the lower id)'
-		);
+		foreach ([['Maintenance Undo Edit First', 3, self::NEVER_EXPIRES, 2, null, 'second'], ['Maintenance Undo Edit Second', 3, null, 2, self::NEVER_EXPIRES, 'first']] as $case)
+		{
+			[$product, $editOld] = $this->purchaseEditAndExplicitlyMerge(...$case);
+			$edited = (int)self::$db->query("SELECT id FROM stock_log WHERE product_id = $product AND transaction_type = 'purchase' ORDER BY id " . ($case[5] === 'second' ? 'DESC' : 'ASC') . ' LIMIT 1')->fetchColumn();
+			$this->expectStatus(
+				fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOld]),
+				204,
+				'Undoing the edit after an explicit maintenance merge is accepted (' . $case[0] . ')'
+			);
 
-		[$productB, $editOldB] = $this->purchaseEditAndExplicitlyMerge('Maintenance Undo Edit Second', 3, null, 2, self::NEVER_EXPIRES, 'first');
-		$this->expectRefusalWithUntouchedLedger(
-			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $editOldB]),
-			400,
-			'Undoing the edit after an explicit maintenance merge is refused (row order: edited entry keeps the higher id)'
-		);
+			$rows = self::rows($product);
+			self::assertCount(2, $rows, 'The edited purchase\'s units leave the merged row');
+			self::assertSame(5.0, array_sum(array_map(fn($row) => (float)$row['amount'], $rows)), 'and nothing is lost or made');
+			$lots = self::lots($product);
+			self::assertSame([$edited => (float)($case[5] === 'second' ? 2 : 3)], $lots[(int)$rows[1]['id']], 'The new row holds exactly the edited purchase\'s lot');
+			self::assertLineageHolds($product);
+		}
 	}
 
 	/**
@@ -1014,8 +1034,14 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 	 * the maintenance command, not inline), two partial opens on the merged row also merge on
 	 * a matching purchase elsewhere, and undoing one of the two now-indistinguishable openings
 	 * is refused rather than silently closing the wrong one.
+	 *
+	 * ADR-0036: the two openings are no longer indistinguishable. Each recorded the lot it
+	 * opened, and here both opened a unit of the first purchase. Undoing the earlier one is
+	 * still refused, now because the later opening touched the same lot (rule 3), with the
+	 * ledger untouched. Undoing the later one is accepted and extracts its unit; then the
+	 * earlier one is accepted too. Changed from two refusals for that reason.
 	 */
-	public function testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge(): void
+	public function testUndoOfProductOpenedAfterExplicitMaintenanceMergeFollowsTheLots(): void
 	{
 		$product = self::insertProduct('Maintenance Undo Opened');
 		self::purchase($product, 2, self::NEVER_EXPIRES, self::$locationA, 1.0);
@@ -1050,18 +1076,31 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		// branch - the row exists, but the merge overwrote its amount with the group's sum,
 		// so it no longer matches what that specific booking recorded. Both must refuse.
 		$openLogId = (int)$openFirst[0]['id'];
+		$secondOpenLogId = (int)$secondOpenLog[0]['id'];
+		$firstPurchase = (int)self::$db->query("SELECT min(id) FROM stock_log WHERE product_id = $product AND transaction_type = 'purchase'")->fetchColumn();
+		self::assertSame([$firstPurchase => 1.0], self::lotsOf($openLogId), 'Sanity: the first opening opened a unit of the first purchase');
+		self::assertSame([$firstPurchase => 1.0], self::lotsOf($secondOpenLogId), 'and so did the second');
+
 		$this->expectRefusalWithUntouchedLedger(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $openLogId]),
 			400,
-			'Undoing the opening whose row the merge deleted is refused, not silently closing the wrong one'
+			'Undoing the earlier opening is refused while the later opening of the same lot is live'
 		);
 
-		$secondOpenLogId = (int)$secondOpenLog[0]['id'];
-		$this->expectRefusalWithUntouchedLedger(
+		$this->expectStatus(
 			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $secondOpenLogId]),
-			400,
-			'Undoing the opening whose row the merge kept is also refused - its amount no longer matches what this booking recorded'
+			204,
+			'Undoing the later opening is accepted'
 		);
+		self::assertSame(1.0, array_sum(array_map(fn($row) => (float)$row['amount'], array_filter(self::rows($product), fn($row) => (int)$row['open'] === 1))), 'One opened unit remains');
+		$this->expectStatus(
+			fn() => self::$stock->UndoBooking(self::request('POST'), new Response(), ['bookingId' => $openLogId]),
+			204,
+			'and then the earlier opening is accepted'
+		);
+		self::assertCount(0, array_filter(self::rows($product), fn($row) => (int)$row['open'] === 1), 'Nothing is open any more');
+		self::assertSame(9.0, array_sum(array_map(fn($row) => (float)$row['amount'], self::rows($product))), 'and all nine units are in stock');
+		self::assertLineageHolds($product);
 	}
 
 	/**
