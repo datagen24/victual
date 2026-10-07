@@ -58,6 +58,18 @@ presence check rather than a null check, or arithmetic over it produces `NaN`. N
 in `query[]` or `order` is answered `400` rather than applied. Today the only fields this
 applies to are prices; [Prices](roles-permissions.md#prices) lists them.
 
+## Undo responses
+
+`POST /api/stock/bookings/{bookingId}/undo`, `POST /api/stock/transactions/{transactionId}/undo`
+and `POST /api/chores/executions/{executionId}/undo` answer 204 as before. When the undo
+restored or left retired a stock entry label that a whole-row consumption had retired, the
+response also carries `Victual-Label-Revival: restored=<n>, retired=<n>`. `restored` counts
+labels that work again; `retired` counts labels that need a new print. The header is absent
+when no label was affected, and a refused undo never carries it
+([ADR-0037](../../adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)
+section 12a). A browser client on another origin can read it when its origin is in
+`CORS_ALLOWED_ORIGINS`.
+
 ## Comparing against upstream grocy
 
 The [parity suite](../../../.devtools/parity/README.md) exercises Victual against grocy

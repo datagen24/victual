@@ -278,7 +278,7 @@ def orm():
     b.append(node(70, 336, 200, 64, "DIALECT", "PostgresDialect", "quoting · locks · changed-time"))
     b.append(node(730, 336, 220, 64, "ASYNC", "Outbox · MQTT · Influx", "outbox in tx · publish at request end", kind="optional"))
     b.append(node(750, 464, 200, 80, "LABELS", "Label services", "raw SQL · in transactions"))
-    b.append(node(350, 464, 300, 80, "ENGINE", "PostgreSQL 16", "71 tables · 50 views · 65 triggers", kind="store"))
+    b.append(node(350, 464, 300, 80, "ENGINE", "PostgreSQL 16", "72 tables · 50 views · 67 triggers", kind="store"))
     b.append(legend(572, 1000, [
         ("swatch", (ACC_04, ACCENT, "Single point of access")),
         ("swatch", (WHITE, INK, "PHP class")),
@@ -330,7 +330,7 @@ def schema_map():
     b.append(node(340, 288, 400, 104, "15 TABLES", "Stock & products", "products · stock · stock_log · locations · storage_classes", kind="focal"))
     b.append(node(840, 288, 280, 104, "7 TABLES", "Caches & infrastructure", "cache__* · outbox · files · mqtt_*", kind="store"))
     b.append(node(340, 496, 400, 88, "DERIVED", "Read layer", "50 views · 3 of them materialised as cache__*", kind="store"))
-    b.append(node(840, 496, 280, 104, "21 TABLES", "Labels & printing", "labels · label_templates · print_jobs"))
+    b.append(node(840, 496, 280, 104, "22 TABLES", "Labels & printing", "labels · label_templates · print_jobs"))
     b.append(legend(624, 1200, [
         ("swatch", (ACC_04, ACCENT, "Hub domain")),
         ("swatch", (WHITE, INK, "Table cluster")),
@@ -339,7 +339,7 @@ def schema_map():
         ("line", ("solid", "Column named for its target")),
     ]))
     write("schema-map.html", page(
-        "schema-map", "ARCHITECTURE · VICTUAL", "Schema map · 71 tables in seven clusters",
+        "schema-map", "ARCHITECTURE · VICTUAL", "Schema map · 72 tables in seven clusters",
         "0 0 1200 700",
         "Victual schema map",
         "Seven table clusters around a stock and products hub: recipes, household chores and tasks, "
@@ -808,6 +808,16 @@ def erd_labels():
         ("# id", "int"), ("→ render_request_id", "int"), ("form", "text"),
         ("byte_digest", "text"), ("mime_type", "text"), ("manifest", "jsonb")],
         tag="RENDERED BYTES"))
+    # stock_label_retirements.label_uid -> labels.uid (ADR-0037, migration 0303), routed below
+    # label_captures
+    b.append(rel("M 1020,784 V 806 H 190 V 764", dashed=False))
+    b.append(card(206, 772, "1"))
+    b.append(card(1036, 792, "N"))
+    b.append(label(600, 812, "LABEL_UID"))
+    b.append(entity(880, 600, 280, "stock_label_retirements", [
+        ("# id", "bigint"), ("→ label_uid", "text"), ("cause", "text"),
+        ("booking_id", "bigint"), ("revivable_until", "timestamptz"), ("outcome", "text")],
+        tag="RETIREMENT EVENT"))
     b.append(legend(840, 1200, [
         ("swatch", (ACC_04, ACCENT, "Hub entity")),
         ("glyph", ("#", "Primary key")),
@@ -825,7 +835,8 @@ def erd_labels():
         "profile and yields an artifact; artifacts, requests and captures are linked by declared foreign "
         "keys, while captures name the label they were taken for by uid alone. Artifacts also copy the "
         "three ids they were rendered from, and requests may point at a draft template instead of a "
-        "version; neither is drawn.",
+        "version; neither is drawn. Each retirement of a stock entry label is kept as a retirement "
+        "event, which names the label by a declared foreign key and nothing else.",
         "\n".join(b), min_width=1100))
 
 

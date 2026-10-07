@@ -18,7 +18,7 @@
 // (truncated JSON, a bare scalar, the literal "null", a JSON array) rather than a
 // well-formed object built from a PHP array. "body" and "rawBody" are mutually exclusive;
 // "rawBody" wins if both are given.
-// Output: {"status": <int>, "body": "<response body>"}. Attaches to the schema the calling
+// Output: {"status": <int>, "body": "<response body>", "headers": {name: [values]}}. Attaches to the schema the calling
 // test class migrated (RBAC_TEST_SCHEMA / PHPUNIT_DB_NAME), like the root helper.
 
 define('VICTUAL_ROOT_PATH', getenv('VICTUAL_ROOT') ?: dirname(__DIR__, 2));
@@ -129,5 +129,9 @@ DatabaseService::GetInstance()->GetDialect()->FlushDbChangedTime($pdo);
 
 echo json_encode([
 	'status' => $response->getStatusCode(),
-	'body' => (string)$response->getBody()
+	'body' => (string)$response->getBody(),
+	// Response headers, each name to its values, for a test that reads one - an undo's
+	// Victual-Label-Revival counts (ADR-0037 section 12a). Callers that read status and body
+	// only are unaffected.
+	'headers' => $response->getHeaders()
 ]);

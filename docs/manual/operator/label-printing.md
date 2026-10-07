@@ -67,6 +67,38 @@ because it was opened, frozen or thawed gets its label reprinted (a revised prin
 identity) only if one was already printed for that entry. Opening or moving stock never
 mints a first label on its own.
 
+**Undoing a consumption.** Consuming a stock entry's whole amount retires its label: a scan
+of the sticker answers `retired` and shows what the entry held. When that consumption is
+undone within 30 days, the undo restores the same stock entry and the same label works again. Its sticker scans as the restored stock entry, and nothing needs to be
+printed ([ADR-0037](../../adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)).
+
+The undo's notice says what happened to the labels:
+
+| Notice | Meaning |
+|---|---|
+| The ordinary success message only | The undo touched no label that a consumption retired. |
+| "N stock entry label(s) restored" (success) | Each of those stickers works again. |
+| "N stock entry label(s) stay retired; print new labels" (warning) | Those stickers stay retired. Print a new label for the restored entry. |
+
+An undo of several entries at once, such as a recipe or a multi-entry consumption, can show
+both lines. A label stays retired in these cases:
+
+- The undo comes 30 days or more after the consumption.
+- Another entry has taken the consumed entry's internal id, so the stock comes back as a new
+  entry.
+- The booking no longer matches the label, for example after a product merge or a stock unit
+  change.
+
+Some labels are never restored and are not mentioned in the notice: labels retired before
+this version, and labels retired by deleting a product or undoing a purchase. A scan of them
+still answers `retired`. A refused undo changes no label and shows no label message.
+
+Undoing needs `STOCK_EDIT` and nothing else. Scanning a restored label still needs
+`STOCK_VIEW`. A print job that existed when the label retired is not printed after the label
+comes back, even if a retry was authorized; request a new print or reprint instead. API clients
+read the same counts from the `Victual-Label-Revival` response header of the three undo
+operations ([REST API](rest-api.md)).
+
 **Registering a printer and a worker.** Use the forms on `/labelprinters` (`ADMIN`).
 The worker form registers a worker in declared or paired mode; its buttons issue a
 credential or pairing material and revoke credentials. The printer form registers a

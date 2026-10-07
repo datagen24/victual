@@ -32,9 +32,9 @@
 function UndoStockBooking(bookingId)
 {
 	Victual.Api.Post('stock/bookings/' + bookingId.toString() + '/undo', {},
-		function (result)
+		function (result, xhr)
 		{
-			toastr.success(__t("Booking successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Booking successfully undone"), xhr);
 
 			Victual.Api.Get('stock/bookings/' + bookingId.toString(),
 				function (result)
@@ -58,9 +58,9 @@ function UndoStockBooking(bookingId)
 function UndoStockTransaction(transactionId)
 {
 	Victual.Api.Post('stock/transactions/' + transactionId.toString() + '/undo', {},
-		function (result)
+		function (result, xhr)
 		{
-			toastr.success(__t("Transaction successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Transaction successfully undone"), xhr);
 
 			Victual.Api.Get('stock/transactions/' + transactionId.toString(),
 				function (result)
@@ -87,10 +87,10 @@ function UndoStockTransaction(transactionId)
 function UndoStockBookingEntry(bookingId, stockRowId, productId)
 {
 	Victual.Api.Post('stock/bookings/' + bookingId.toString() + '/undo', {},
-		function (result)
+		function (result, xhr)
 		{
 			Victual.StockDialogs.BroadcastProductChanged(productId);
-			toastr.success(__t("Booking successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Booking successfully undone"), xhr);
 		}
 	);
 };
@@ -105,6 +105,70 @@ Victual.StockDialogs = {};
 Victual.StockDialogs.BroadcastProductChanged = function (productId)
 {
 	Victual.GetTopmostWindow().postMessage(WindowMessageBag("BroadcastMessage", WindowMessageBag("ProductChanged", productId)), Victual.BaseUrl);
+};
+
+/**
+ * Reads an undo response's label revival counts (ADR-0037 section 12a): the
+ * Victual-Label-Revival header, an RFC 8941 dictionary such as "restored=1, retired=0".
+ * The header is absent when the undo touched no stock entry label.
+ * @param {XMLHttpRequest} [xhr] The undo request
+ * @returns {{restored: number, retired: number}|null} The counts, or null without the header
+ */
+Victual.StockDialogs.LabelRevival = function (xhr)
+{
+	var header = xhr && xhr.getResponseHeader ? xhr.getResponseHeader('Victual-Label-Revival') : null;
+	if (!header)
+	{
+		return null;
+	}
+
+	var counts = { restored: 0, retired: 0 };
+	header.split(',').forEach(function (member)
+	{
+		var parts = member.trim().split('=');
+		if (parts.length === 2 && Object.prototype.hasOwnProperty.call(counts, parts[0]) && /^[0-9]+$/.test(parts[1]))
+		{
+			counts[parts[0]] = parseInt(parts[1], 10);
+		}
+	});
+
+	return counts.restored + counts.retired > 0 ? counts : null;
+};
+
+/**
+ * Shows the notice for a committed undo. Without label revival counts it is the caller's
+ * ordinary success message. With them it adds how many stock entry labels work again and how
+ * many stay retired and need a new print, and becomes a warning when any stay retired, so a
+ * mixed outcome never reads as if every label was restored.
+ *
+ * Called only from an undo's success callback: a refused or failed undo goes to the error
+ * handler and never reaches here.
+ * @param {string} message The ordinary success message, already translated
+ * @param {XMLHttpRequest} [xhr] The undo request
+ */
+Victual.StockDialogs.ShowUndoSuccess = function (message, xhr)
+{
+	var revival = Victual.StockDialogs.LabelRevival(xhr);
+	if (revival === null)
+	{
+		toastr.success(message);
+		return;
+	}
+
+	// Only translated strings and integers reach the toast, never a server-supplied string.
+	var lines = [message];
+	if (revival.restored > 0)
+	{
+		lines.push(__n(revival.restored, "%s stock entry label was restored and works again", "%s stock entry labels were restored and work again"));
+	}
+	if (revival.retired > 0)
+	{
+		lines.push(__n(revival.retired, "%s stock entry label stays retired; print a new label", "%s stock entry labels stay retired; print new labels"));
+		toastr.warning(lines.join('<br>'));
+		return;
+	}
+
+	toastr.success(lines.join('<br>'));
 };
 
 Victual.StockDialogs.UndoStockBooking = UndoStockBooking;

@@ -2902,3 +2902,13 @@ msgstr ""
 
 msgid "Stock access is required to add this to the shopping list"
 msgstr ""
+
+msgid "%s stock entry label was restored and works again"
+msgid_plural "%s stock entry labels were restored and work again"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%s stock entry label stays retired; print a new label"
+msgid_plural "%s stock entry labels stay retired; print new labels"
+msgstr[0] ""
+msgstr[1] ""

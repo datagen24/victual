@@ -1495,8 +1495,11 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			$this->ApiResponse($response, StockService::GetInstance()->UndoBooking($args['bookingId']));
-			return $this->EmptyApiResponse($response);
+			// The service returns only after its transaction committed; a refusal throws
+			// before any header is set. The body stays the JSON null it always carried.
+			$labelRevival = StockService::GetInstance()->UndoBooking($args['bookingId']);
+			$this->ApiResponse($response, null);
+			return $this->WithLabelRevival($this->EmptyApiResponse($response), $labelRevival);
 		});
 	}
 
@@ -1511,8 +1514,10 @@ class StockApiController extends BaseApiController
 
 		return $this->HandleApiCall($response, function () use ($args, $response)
 		{
-			$this->ApiResponse($response, StockService::GetInstance()->UndoTransaction($args['transactionId']));
-			return $this->EmptyApiResponse($response);
+			// See UndoBooking() above for the order: committed first, then the header.
+			$labelRevival = StockService::GetInstance()->UndoTransaction($args['transactionId']);
+			$this->ApiResponse($response, null);
+			return $this->WithLabelRevival($this->EmptyApiResponse($response), $labelRevival);
 		});
 	}
 

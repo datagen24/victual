@@ -133,13 +133,13 @@ $(document).on('click', '.undo-stock-booking-button', function(e)
 	}
 
 	Victual.Api.Post('stock/bookings/' + bookingId.toString() + '/undo', {},
-		function(result)
+		function(result, xhr)
 		{
 			correspondingBookingsRoot.addClass("text-muted");
 			correspondingBookingsRoot.find("span.name-anchor").addClass("text-strike-through").after("<br>" + __t("Undone on") + " " + moment().format("YYYY-MM-DD HH:mm:ss") + " <time class='timeago timeago-contextual' datetime='" + moment().format("YYYY-MM-DD HH:mm:ss") + "'></time>");
 			correspondingBookingsRoot.find(".undo-stock-booking-button").addClass("disabled");
 			RefreshContextualTimeago("#stock-booking-" + bookingId + "-row");
-			toastr.success(__t("Booking successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Booking successfully undone"), xhr);
 		}
 		// No error callback: this hand-rolled toastr.error was one of two in the tree that
 		// re-implemented what Victual.Api.DefaultErrorHandler now does by default - and

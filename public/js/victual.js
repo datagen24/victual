@@ -87,7 +87,10 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 		// timeout fires readystatechange *and* ontimeout, so without this exactly one
 		// failure would call the error callback twice.
 		var settled = false;
-		var settle = function (callback, argument)
+		// The XMLHttpRequest travels as a second argument to a success callback, for the one
+		// response that carries something in a header: an undo's label revival counts
+		// (ADR-0037 section 12a). Callbacks that take one argument are unaffected.
+		var settle = function (callback, argument, request)
 		{
 			if (settled)
 			{
@@ -98,7 +101,7 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 
 			if (callback)
 			{
-				callback(argument);
+				callback(argument, request);
 			}
 		};
 
@@ -115,11 +118,11 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 				{
 					if (xhr.status === 204)
 					{
-						settle(success, {});
+						settle(success, {}, xhr);
 					}
 					else
 					{
-						settle(success, JSON.parse(xhr.responseText));
+						settle(success, JSON.parse(xhr.responseText), xhr);
 					}
 				}
 				else if (xhr.status === 0)
@@ -202,7 +205,8 @@ Victual.Api.DefaultErrorHandler = function (xhr)
 	 * Executes a POST request (JSON body) against the Victual API.
 	 * @param {string} apiFunction API path relative to /api
 	 * @param {Object} jsonData Request body, sent as JSON
-	 * @param {Function} [success] Called with the parsed JSON response ({} on HTTP 204)
+	 * @param {Function} [success] Called with the parsed JSON response ({} on HTTP 204) and
+	 *                             the XMLHttpRequest, for a response header
 	 * @param {Function} [error] Called with the XMLHttpRequest on any non 200/204 status
 	 * @param {Object} [headers] Extra request headers, e.g. an Idempotency-Key
 	 */

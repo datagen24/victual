@@ -136,3 +136,25 @@ to the previous version, stop the application, restore the backup taken before t
 into an empty database, and run the previous version against it. Bookings made after the
 upgrade are not in that backup, so prefer correcting forward when the problem is a single
 row.
+
+## Migration 0303: stock-entry label retirement events
+
+Migration 0303 adds the table that lets an undo bring back a stock-entry label
+([ADR-0037](../../adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)).
+From then on every retirement of a stock-entry label writes one row to
+`stock_label_retirements`. The migration also writes one closed `legacy` row for each
+stock-entry label that is already retired. Those labels are never restored by an undo; a
+person prints a new label for them, as before. The migration checks that every retired
+stock-entry label has exactly one row and rolls back if not. It needs no preflight and adds
+an index to `print_jobs`.
+
+Run it the usual way: the migration first, then the new version of the application and the
+label workers. An older application refuses to serve the migrated schema ("the database is
+ahead of the code"). No old and new version therefore serve together. An old version cannot
+claim a print job that the new version keeps from printing after its label comes back. For the same reason, returning to the previous
+version means restoring the backup taken before the upgrade; there is no down migration.
+
+A consumption booked before the upgrade retired its label without naming its booking, so an
+undo after the upgrade leaves that label retired. Only consumptions booked by the new version
+can bring their label back.
+

@@ -319,9 +319,13 @@ Collected because most of them are only visible from inside the existing code.
   [14](landed/14-contract-and-regression-scaffolding.md) piece 2.
 - **Demo data must be transparently fictional.** Plausible-looking prescriptions attached to a
   demo household are a bad thing to have screenshotted.
-- **Migration numbering.** Two files, claiming **0303** (medication master data and subjects)
-  and **0304** (regimens, administrations, excursions) — see
+- **Migration numbering.** Two files, claiming **0304** (medication master data and subjects)
+  and **0305** (regimens, administrations, excursions) — see
   [RESERVATIONS.md](../../migrations/RESERVATIONS.md). The numbers have moved:
+
+  - 0303–0304 until issue #612's label revival migration (ADR-0037) was written on 2026-10-06 and
+    took **0303**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims
+    move up once more, to **0304–0305**.
 
   - 0302–0303 until the `stock_edited_entries` performance fix was written on 2026-10-05 and
     took **0302**, the lowest free slot. Per the lowest-free-slot rule this plan's two claims

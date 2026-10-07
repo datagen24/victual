@@ -3,10 +3,10 @@
 Victual stores everything in one PostgreSQL database: tables defined in DDL, views layered
 on top of them, and triggers that stand in for the constraints the schema does not declare.
 
-The DDL files define 71 tables and 50 views, with 65 triggers. A migrated database holds two
+The DDL files define 72 tables and 50 views, with 67 triggers. A migrated database holds two
 more base tables, which are created at run time and appear on no diagram: `migrations`
 (by `DatabaseMigrationService`) and `system_db_changed_time` (by `PostgresDialect`).
-Counted 2026-09-19 against PostgreSQL 16 after `bin/victual-migrate`; the query and the
+Counted 2026-10-06 against PostgreSQL 16.15 after `bin/victual-migrate` on branch `claude/opus5_stock-entry-label-revival-53a24c` (74 base tables, 50 views, 67 triggers in the catalogue); the query and the
 matching file-based count are in the [diagram generator's README](../.devtools/diagrams/README.md).
 
 This document names what is where; the ten diagrams listed below show how the pieces
@@ -39,7 +39,7 @@ step. They render at 1100px or wider and scroll horizontally below that.
 | Diagram | Shows |
 |---|---|
 | [Data access · from request to engine](diagrams/orm-stack.html) | How a request reaches the database: controllers and services, LessQL, `DatabaseService`, the dialect, and the work deferred to commit. |
-| [Schema map](diagrams/schema-map.html) | All 71 tables as seven clusters, and the columns by which one cluster names another's rows. |
+| [Schema map](diagrams/schema-map.html) | All 72 tables as seven clusters, and the columns by which one cluster names another's rows. |
 | [Stock & products](diagrams/erd-stock.html) | The hub cluster: `products` and the seven tables around it, including `product_substitutions`. |
 | [Places](diagrams/erd-locations.html) | Locations and their tree, storage classes, stores, shopping lists, and per-location minimums. |
 | [Recipes & meal plan](diagrams/erd-recipes.html) | Recipes, their line items, recipe nesting, and the meal plan. |
@@ -139,6 +139,11 @@ the very booking its own guard exists to catch.
   in the same order.
 - **Blocking, not refusing:** `pg_advisory_xact_lock` blocks until it can be taken; a
   second booking waits behind the first rather than being refused.
+- **Undo and the label import lock:** an undo whose bookings include a whole-row
+  consumption that retired a stock-entry label takes `LabelIdentityService::IMPORT_LOCK`
+  after its product locks and before any location lock, once per outermost undo
+  ([ADR-0037](adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)
+  section 7). An undo with no such booking takes no import lock.
 - **SQLite:** `SqliteDialect::LockProductStock()` is a deliberate no-op
   (`services/Database/SqliteDialect.php:167`), for the same reason as the migration and
   publication locks — under [ADR-0008](adr/0008-postgresql-only-runtime-engine.md) SQLite
@@ -237,14 +242,16 @@ events out of the request transaction ([plan 18](plans/18-mqtt-state-publication
 `prevent_self_nested_recipes` and `prevent_infinite_nested_recipes` (four triggers, insert
 and update each) are what keep it acyclic.
 
-**Labels & printing (21)** — identity and templates: `labels`, `label_import_state`,
+**Labels & printing (22)** — identity and templates: `labels`, `label_import_state`,
 `label_templates`, `label_template_drafts`, `label_template_versions`, `label_assets`,
 `label_media_profiles`, `label_captures`, `label_render_requests`, `label_artifacts`,
 `label_idempotency_keys`; printing: `label_workers`, `label_drivers`,
 `label_worker_capabilities`, `label_printers`, `label_printer_status`,
 `label_worker_sessions`, `label_worker_credentials`, `print_jobs`, `print_attempts`,
-`print_evidence`. Plans [25](plans/25-label-infrastructure.md) and
-[27](plans/landed/27-label-templates-and-rendering.md) own them.
+`print_evidence`; history: `stock_label_retirements`. Plans [25](plans/25-label-infrastructure.md) and
+[27](plans/landed/27-label-templates-and-rendering.md) own them, and
+[ADR-0037](adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md)
+owns the last.
 
 **Extensibility (4)** — `userfields`, `userfield_values`, `userentities`, `userobjects`.
 `userfields.entity` is a table name held as text and `userfield_values.object_id` is an id

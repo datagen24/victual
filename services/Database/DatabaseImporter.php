@@ -154,8 +154,13 @@ class DatabaseImporter
 	 * `label_worker_credentials` is emptied indirectly, by `TRUNCATE ... CASCADE` on
 	 * `api_keys` (a common table, not in this list) - see the class docblock's
 	 * replacement-scope list for why that is correct rather than an oversight.
+	 *
+	 * `stock_label_retirements` (ADR-0037, migrations/0303.pgsql.sql) is label history like
+	 * `labels`: neither copied nor cleared. Its only foreign key names `labels`, which this class
+	 * never truncates, and an event of an earlier import epoch never matches an undo, so the
+	 * epoch bump below is what retires every pending revival without a write here.
 	 */
-	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials', 'outbox', 'mqtt_published_entities'];
+	const NOT_COPIED_TABLES = ['migrations', 'labels', 'label_import_state', 'label_workers', 'label_drivers', 'label_worker_capabilities', 'label_printers', 'label_printer_status', 'print_jobs', 'print_attempts', 'print_evidence', 'label_worker_sessions', 'label_worker_credentials', 'outbox', 'mqtt_published_entities', 'stock_label_retirements'];
 
 	/**
 	 * Target tables that must not survive under a stale reference once the data they are

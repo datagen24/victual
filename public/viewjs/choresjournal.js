@@ -83,13 +83,13 @@ $(document).on('click', '.undo-chore-execution-button', function(e)
 	var executionId = $(e.currentTarget).attr('data-execution-id');
 
 	Victual.Api.Post('chores/executions/' + executionId.toString() + '/undo', {},
-		function(result)
+		function(result, xhr)
 		{
 			element.closest("tr").addClass("text-muted");
 			element.parent().siblings().find("span.name-anchor").addClass("text-strike-through").after("<br>" + __t("Undone on") + " " + moment().format("YYYY-MM-DD HH:mm:ss") + " <time class='timeago timeago-contextual' datetime='" + moment().format("YYYY-MM-DD HH:mm:ss") + "'></time>");
 			element.closest(".undo-stock-booking-button").addClass("disabled");
 			RefreshContextualTimeago("#chore-execution-" + executionId + "-row");
-			toastr.success(__t("Chore execution successfully undone"));
+			Victual.StockDialogs.ShowUndoSuccess(__t("Chore execution successfully undone"), xhr);
 		}
 	);
 });

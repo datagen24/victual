@@ -73,7 +73,10 @@ const ENGINE_EXCLUSIVE_TABLES = ['files', 'roles', 'role_permissions', 'user_rol
  // field policy that answers "which fields must this user not see" is new machinery the
  // pre-freeze permission model never had, not a column on a table that already existed on
  // both engines.
- 'permission_fields'];
+ 'permission_fields',
+ // ADR-0037, migration 0303. Same freeze: label retirement history exists only where labels
+ // do, and its trigger and revival are PostgreSQL code checked by pgTAP 029 and PHPUnit.
+ 'stock_label_retirements'];
 
 $sqlitePath = getenv('MIGRATEDIFF_SQLITE_PATH');
 $pgsqlDsn = getenv('MIGRATEDIFF_PGSQL_DSN');

@@ -52,6 +52,26 @@ class BaseApiController extends BaseController
 		return $response->withStatus($status);
 	}
 
+	/** The response header that carries an undo's label revival counts (ADR-0037 section 12a). */
+	public const LABEL_REVIVAL_HEADER = 'Victual-Label-Revival';
+
+	/**
+	 * Adds the label revival counts of a committed undo as an RFC 8941 dictionary, for example
+	 * `restored=1, retired=0`. Leaves the response untouched when no label was affected, so an
+	 * ordinary undo answers exactly as before. Two counts only: no uid, event or snapshot field.
+	 *
+	 * @param array{restored: int, retired: int}|null $labelRevival
+	 */
+	protected function WithLabelRevival(Response $response, ?array $labelRevival): Response
+	{
+		if ($labelRevival === null || ($labelRevival['restored'] + $labelRevival['retired']) === 0)
+		{
+			return $response;
+		}
+
+		return $response->withHeader(self::LABEL_REVIVAL_HEADER, 'restored=' . (int)$labelRevival['restored'] . ', retired=' . (int)$labelRevival['retired']);
+	}
+
 	/**
 	 * Returns a JSON error body of the shape { "error_message": string } with the given status code (default 400).
 	 *
