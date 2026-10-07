@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Decider:** datagen24
-- **Recorded:** 2026-10-07; decider's answers to open questions 1 and 2 recorded the same
-  day, and decisions 2, 8 and 9 reconciled with them
+- **Recorded:** 2026-10-07; decider's answers to open questions 1, 2 and 3 recorded the
+  same day, and decisions 2, 8, 9 and 10 reconciled with them
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -149,6 +149,13 @@ Two runtime properties constrain what a rollback can do:
    the values matrix of decision 3, which renders hooks. Because decision 2 renders
    `deploy/k3s/` with `--no-hooks`, a `kubectl apply` of the base runs neither, which is
    what it does today.
+10. **The chart holds no PostgreSQL superuser credential, and `roles.sql` is a manual
+    step outside it.** Whoever administers the database runs `deploy/postgres/roles.sql`
+    before the first install and again for every password rotation, because the script
+    is where both roles' passwords are set. The chart's documentation and its install
+    notes say so. kind and talos are not exceptions: they own their in-cluster
+    PostgreSQL, and their roles Job runs from the manifests decision 8 keeps outside the
+    chart.
 
 ## Consequences
 
@@ -183,6 +190,12 @@ Two runtime properties constrain what a rollback can do:
   initContainer can read `victual-db-migrate`. The preflight Job also reads it.
   `test_deploy_pod_parity.py` checks the pod, not the chart, so the chart needs its own
   assertion that the preflight Job and the initContainer are the only readers.
+- **Rotation is manual and is not yet safe to do live.** The app opens database
+  connections per request, so changing a role's password in PostgreSQL before the pods
+  hold the new Secret refuses every request in between, and the pods read their Secrets
+  only at start. A rotation handler, as suggested in the response to open question 3,
+  has to order the secret-store write, the `ALTER ROLE` and the pod restart, and still
+  leaves a gap of one restart. Designing it is separate work.
 - **The talos deployment loses its evidence.** Its 2026-10-06 apply went through the
   kustomize overlay; decision 8 replaces that overlay, so acceptance prerequisite 6
   repeats the deployment through the chart.
@@ -227,7 +240,7 @@ Two runtime properties constrain what a rollback can do:
    after every deployment, and nothing runs it today.
 
    > **Response (datagen24, 2026-10-07):** Yes to both. *Reconciled as decision 9.*
-3. **Where does `roles.sql` run?** It needs a PostgreSQL superuser and runs twice, before
+3. ~~**Where does `roles.sql` run?**~~ **Answered: decision 10.** It needs a PostgreSQL superuser and runs twice, before
    and after the first migration. The chart would need the superuser's credential to run
    it as a hook. The lean is to keep it a documented manual step, as `values.example.yaml`
    describes today.
@@ -247,7 +260,13 @@ Two runtime properties constrain what a rollback can do:
 
    > **Response (datagen24, 2026-10-07):** More information needed before ruling. The
    > decider's inclination is that anything needing a superuser is a manual step on an
-   > external database. *Not yet a decision.*
+   > external database.
+   >
+   > **Response (datagen24, 2026-10-07, after the facts above):** Ruled: an external,
+   > manual step. A rotation handler is worth considering: one script that generates the
+   > new passwords into 1Password or HashiCorp Vault, asks for the superuser's name and
+   > password interactively, and runs `roles.sql`. *Reconciled as decision 10; the
+   > rotation handler is not part of this record.*
 
 ## Acceptance prerequisites
 
