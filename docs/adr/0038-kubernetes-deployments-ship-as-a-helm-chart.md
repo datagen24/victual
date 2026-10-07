@@ -2,7 +2,8 @@
 
 - **Status:** Proposed
 - **Decider:** datagen24
-- **Recorded:** 2026-10-07
+- **Recorded:** 2026-10-07; decider's answers to open questions 1 and 2 recorded the same
+  day, and decisions 2, 8 and 9 reconciled with them
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -91,10 +92,12 @@ Two runtime properties constrain what a rollback can do:
    `enabled` value. PostgreSQL stays outside the chart, as ADR-0010 requires.
 2. **`deploy/k3s/` becomes generated output and stays committed.** A script renders the
    chart with `helm template` and a committed values file
-   (`deploy/helm/victual/ci/k3s-values.yaml`) into `deploy/k3s/`; `deploy/k3s/kustomization.yaml` stays hand-written. The `lint` job renders
-   it again and fails if the result differs from the committed files. `kubectl apply -k
-   deploy/k3s` keeps working for anyone who does not use Helm. The kind and talos overlays,
-   `check_deploy_manifest.py` and both parity tests keep reading the same files.
+   (`deploy/helm/victual/ci/k3s-values.yaml`) into `deploy/k3s/`, with `--no-hooks`;
+   `deploy/k3s/kustomization.yaml` stays hand-written. The `lint` job renders it again and
+   fails if the result differs from the committed files. `kubectl apply -k deploy/k3s`
+   keeps working, with today's behaviour, for anyone who does not use Helm.
+   `check_deploy_manifest.py` and both parity tests keep reading the same files. The kind
+   and talos deployments stop reading them (decision 8).
 3. **Chart templates are excluded from `check_deploy_manifest.py`'s glob, and the
    chart's rendered output is checked instead.** The `lint` job renders the chart once
    per entry in a values matrix under `deploy/helm/victual/ci/`. The matrix enables each
@@ -125,6 +128,27 @@ Two runtime properties constrain what a rollback can do:
    kind overlay replaces them with `secretGenerator` and `behavior: replace`, the talos
    overlay deletes them with `$patch: delete`, and `test_deploy_pod_parity.py` reads their
    names. All three fail if the Secrets are absent from the base.
+8. **`deploy/kind/` and `deploy/talos/` become Helm values files.** Each keeps its
+   `up.sh`, which installs the chart with its own values file. Both also run a PostgreSQL
+   in the cluster, and the chart does not ship one, so `deploy/kind/postgres.yaml` and
+   `roles-job.yaml` stay plain manifests that `up.sh` applies before `helm install`, with
+   talos's NFS claim and uid patch moved into its own copy or a small overlay of them. The
+   kind values file points the images at the local `localhost/` builds, as the
+   kustomize `images:` override does today, so a kind run still tests the working tree.
+9. **Two hook Jobs, both rendered only under Helm.**
+   - A `pre-upgrade` Job runs the upgrade preflight from the migrate image, holding the
+     migrate role's Secret, which `bin/victual-timestamp-preflight` needs for its
+     rolled-back `CREATE`. A refusal (exit 2) fails `helm upgrade` before any pod
+     restarts, so the running version keeps serving and the report is in the Job's log.
+   - A `post-install` and `post-upgrade` Job runs `bin/victual-publish-state` from the app
+     image, holding the app role's Secret, when `mqtt.enabled` is true. This is the step
+     the [MQTT operator guide](../manual/operator/home-assistant-mqtt.md) asks for after
+     every deployment and nothing runs today.
+
+   Both are declared workloads under ADR-0010 and pass `check_deploy_manifest.py` through
+   the values matrix of decision 3, which renders hooks. Because decision 2 renders
+   `deploy/k3s/` with `--no-hooks`, a `kubectl apply` of the base runs neither, which is
+   what it does today.
 
 ## Consequences
 
@@ -148,9 +172,20 @@ Two runtime properties constrain what a rollback can do:
   rollback is a recovery only for releases that add no migration. The operator manual
   must say so, and acceptance prerequisite 4 records which outcome occurs.
 - **Migrations stay in the initContainer.** The pod is unchanged, so podman parity and the
-  credential check in `test_deploy_pod_parity.py` are unaffected. Moving migrations to a
-  `pre-upgrade` hook Job would change the pod, and would exist only under Helm. It is
-  open question 2, not part of this decision.
+  credential check in `test_deploy_pod_parity.py` are unaffected. Decision 9's hooks run
+  beside the pod, before and after it rolls; neither migrates. Moving the migration itself
+  into a hook would change the pod and would exist only under Helm.
+- **Helm and `kubectl apply` deployments behave differently on upgrade.** Only a Helm
+  upgrade runs the preflight and publishes MQTT state. A deployment from the rendered base
+  learns about a refusing migration from a `migrate` initContainer in a restart loop, as
+  it does today, and must run `victual-publish-state` by hand.
+- **The migrate credential is held by a second workload.** Today only the `migrate`
+  initContainer can read `victual-db-migrate`. The preflight Job also reads it.
+  `test_deploy_pod_parity.py` checks the pod, not the chart, so the chart needs its own
+  assertion that the preflight Job and the initContainer are the only readers.
+- **The talos deployment loses its evidence.** Its 2026-10-06 apply went through the
+  kustomize overlay; decision 8 replaces that overlay, so acceptance prerequisite 6
+  repeats the deployment through the chart.
 - **Release history lives in the cluster.** Helm stores each release's rendered manifests
   in a Secret in the namespace. With `secrets.source: inline`, the database passwords
   appear there as well as in the Secrets they populate. Anyone who can read Secrets in the
@@ -174,10 +209,13 @@ Two runtime properties constrain what a rollback can do:
 ## Open questions
 
 1. **Do `deploy/kind/` and `deploy/talos/` become Helm values files?** They can stay as
-   kustomize overlays over the rendered `deploy/k3s/` unchanged, which is the default
-   under decision 2. Both also apply an in-cluster PostgreSQL, which the chart does not
-   ship. Converting `talos/` to a values file plus a separate PostgreSQL manifest would
-   make the worked example demonstrate the recommended method.
+   kustomize overlays over the rendered `deploy/k3s/` unchanged. Both also apply an
+   in-cluster PostgreSQL, which the chart does not ship. Converting `talos/` to a values
+   file plus a separate PostgreSQL manifest would make the worked example demonstrate the
+   recommended method.
+
+   > **Response (datagen24, 2026-10-07):** Migrate both to Helm. Both have a Kubernetes
+   > API, and Helm has been run against both before. *Reconciled as decision 8.*
 2. **Should a `pre-upgrade` hook run a preflight before migrating?**
    `bin/victual-timestamp-preflight` reports in advance whether migration 0301 would
    refuse. A hook Job that runs it would block `helm upgrade` before any pod restarts,
@@ -187,10 +225,29 @@ Two runtime properties constrain what a rollback can do:
    `bin/victual-publish-state` becomes a `post-upgrade` hook when MQTT is enabled; the
    [MQTT operator guide](../manual/operator/home-assistant-mqtt.md) asks for it to run
    after every deployment, and nothing runs it today.
+
+   > **Response (datagen24, 2026-10-07):** Yes to both. *Reconciled as decision 9.*
 3. **Where does `roles.sql` run?** It needs a PostgreSQL superuser and runs twice, before
    and after the first migration. The chart would need the superuser's credential to run
    it as a hook. The lean is to keep it a documented manual step, as `values.example.yaml`
    describes today.
+
+   Facts that bear on it, read from `deploy/postgres/roles.sql` on 2026-10-07:
+   - The script creates the two roles, sets their passwords, makes `victual_migrate` own
+     the `public` schema, and grants `victual_app` row access, including default
+     privileges on everything `victual_migrate` creates later. A role with less than
+     superuser needs `CREATEROLE`, ownership of the database and membership in
+     `victual_migrate`; only superuser has been run.
+   - Password rotation needs it too: the passwords are set by `ALTER ROLE … PASSWORD` in
+     this script, so changing either one means running it again with the same privilege.
+   - The second run, after the first migration, appears to add nothing on a fresh database
+     where the first run preceded migration, because the default privileges already cover
+     every table `victual_migrate` creates. It matters when tables exist that another role
+     created. This reading has not been tested.
+
+   > **Response (datagen24, 2026-10-07):** More information needed before ruling. The
+   > decider's inclination is that anything needing a superuser is a manual step on an
+   > external database. *Not yet a decision.*
 
 ## Acceptance prerequisites
 
@@ -209,3 +266,9 @@ Two runtime properties constrain what a rollback can do:
 5. The first tag after the chart lands publishes it, and `helm pull
    oci://ghcr.io/datagen24/charts/victual --version <Version>` succeeds without
    credentials after the package is made public.
+6. `deploy/kind/up.sh` and `deploy/talos/up.sh` deploy through `helm install` with their
+   values files, and the talos cluster serves `/login` from the published chart.
+7. On kind, an upgrade whose preflight refuses (exit 2, from a database seeded with a
+   value migration 0301 refuses) fails `helm upgrade` while the previous pod keeps
+   serving. With MQTT enabled against a local broker, an upgrade's `post-upgrade` Job
+   publishes the retained state topics.
