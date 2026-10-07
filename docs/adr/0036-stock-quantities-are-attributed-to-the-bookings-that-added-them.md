@@ -1,6 +1,7 @@
 # ADR-0036: A stock row's quantity is attributed to the bookings that added it
 
-- **Status:** Proposed.
+- **Status:** Accepted 2026-10-07. Acceptance prerequisites 2-15 are not met; see the
+  accepting pull request.
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-10-03, against `master` at `a7bf78a31d70f1351019aa6d6cc1e22479402b59`
