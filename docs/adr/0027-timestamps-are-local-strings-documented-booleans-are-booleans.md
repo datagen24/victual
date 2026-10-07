@@ -2,7 +2,8 @@
 
 - **Status:** Proposed. Decider's answers recorded 2026-10-04 (below); decision 2 was
   revised by them, and the record cannot be accepted until that revision is implemented
-  (acceptance prerequisite 5).
+  (acceptance prerequisite 5) and `victual-kit` follows it after the 0.3.0 release
+  (prerequisite 6).
 - **Decider:** datagen24 (maintainer). Acceptance is its own pull request — see the
   lifecycle rule in [the index](README.md).
 - **Recorded:** 2026-09-21.
@@ -527,7 +528,14 @@ This record changes a wire contract, so accepting it requires:
    - the contract snapshot regenerated, with every timestamp in the decision 2 format and
      every `DATE` unchanged
    - the browser showing the device's zone and sending writes with an offset
-   - the MQTT payloads, the iCal feed and `victual-kit` updated
+   - the MQTT payloads and the iCal feed updated
    - the parity suite's accepted difference for timestamps, checked to compare instants
      and not just accept anything
    - the open questions above answered
+6. **`victual-kit` regenerated from the 0.3.0 release's document**, after that release, with
+   its dual-format date decoding reduced to RFC 3339. Issue 650 and issue
+   [612](https://github.com/datagen24/victual/issues/612) close before the API and container
+   0.3.0 release, and the client is regenerated afterwards, so this prerequisite does not
+   block issue 650 or the release. [ADR-0024](0024-the-fork-writes-its-own-clients.md)
+   decision 1 still requires a Victual-owned client to follow a breaking wire change, and
+   `.spike-adr27/CLIENT-HANDOFF.md` lists what that work needs.

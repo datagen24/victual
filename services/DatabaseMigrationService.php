@@ -582,6 +582,13 @@ class DatabaseMigrationService extends BaseService
 	/**
 	 * Mirrors the default user settings from the PHP configuration into the database, for
 	 * engines which resolve settings in SQL rather than through a PHP callback.
+	 *
+	 * This runs on every migration run, so it writes only a default that is missing or
+	 * different, and advances the changed time (GET /api/system/db-changed-time) only when
+	 * it wrote one. Upserting every default unconditionally made each run - every pod start,
+	 * with nothing to migrate - tell every polling client that data had changed. The issue
+	 * #650 upgrade rehearsal found it, re-running an upgrade that had nothing left to do;
+	 * migrations/8888.php avoids the same thing for the same reason.
 	 */
 	private function SyncUserSettingDefaults(DatabaseDialect $dialect)
 	{
@@ -592,13 +599,22 @@ class DatabaseMigrationService extends BaseService
 
 		global $VICTUAL_DEFAULT_USER_SETTINGS;
 
+		$upsert = DatabaseService::GetInstance()->GetDbConnectionRaw()->prepare(
+			'INSERT INTO user_settings_defaults (key, value) VALUES (?, ?) '
+			. 'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value '
+			. 'WHERE user_settings_defaults.value IS DISTINCT FROM EXCLUDED.value'
+		);
+		$written = 0;
+
 		foreach ($VICTUAL_DEFAULT_USER_SETTINGS as $key => $value)
 		{
-			DatabaseService::GetInstance()->ExecuteDbStatement(
-				'INSERT INTO user_settings_defaults (key, value) VALUES (?, ?) '
-				. 'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
-				[$key, is_bool($value) ? ($value ? '1' : '0') : (string)$value]
-			);
+			$upsert->execute([$key, is_bool($value) ? ($value ? '1' : '0') : (string)$value]);
+			$written += $upsert->rowCount();
+		}
+
+		if ($written > 0)
+		{
+			DatabaseService::GetInstance()->MarkDbChanged();
 		}
 	}
 
