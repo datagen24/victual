@@ -28,14 +28,14 @@ ConfigMap patch and either `OnePasswordItem` resources or inline Secret patches.
 also keeps release history, offers `helm diff` and `helm rollback`, and packages a
 versioned artifact. Victual's renderer has none of these.
 
-Updates require manual edits. The 0.3.0 version bump, commit `541076c9` on 2026-10-07,
-changed the image tag by hand in eight files under `deploy/`: the two k3s
+Updates require manual edits. The commit that carried the 0.3.0 version bump, `541076c9` on
+2026-10-07, changed the image tag by hand in eight files under `deploy/`: the two k3s
 manifests, the k3s label workers, the podman pod and label workers, the Compose label
 workers, `kind/up.sh` and `values.example.yaml`. `version.json` is already the authority
 for the version. [`nix/overlay.nix`](../../nix/overlay.nix) reads it, and
 `release.yml` refuses a tag that disagrees with it. No deploy file reads it.
 
-Four checks read `deploy/k3s/` as plain YAML:
+Three checks and one overlay read `deploy/k3s/` as plain YAML:
 
 - [`check_deploy_manifest.py`](../../.devtools/ci/check_deploy_manifest.py) enforces
   ADR-0010's manifest-level properties. It runs `rglob("*.yaml")` under `deploy/` and calls
@@ -116,10 +116,15 @@ Two runtime properties constrain what a rollback can do:
    `values.schema.json` that Helm enforces at install and upgrade. The schema covers
    required fields, types, the reserved setting names and the `CHANGE-ME` placeholder.
    `deploy/production/` is removed in the change that lands the chart.
-7. **Templates for cluster concerns are off by default.** The Ingress, `OnePasswordItem`
-   resources and the inline Secrets are rendered only when their values enable them, and
-   `deploy/k3s/`'s rendering enables none of them. The chart also accepts the name of an
-   existing Secret for each database role. This works with any secrets operator.
+7. **Templates for cluster concerns are off by default.** The Ingress and the
+   `OnePasswordItem` resources are rendered only when their values enable them, and
+   `deploy/k3s/`'s rendering enables neither. The two database-role Secrets are rendered
+   in three modes: placeholder, inline, or not at all because the values name an existing
+   Secret, which works with any secrets operator. `deploy/k3s/`'s rendering uses the
+   placeholder mode, so the base keeps the two placeholder Secrets it carries today. The
+   kind overlay replaces them with `secretGenerator` and `behavior: replace`, the talos
+   overlay deletes them with `$patch: delete`, and `test_deploy_pod_parity.py` reads their
+   names. All three fail if the Secrets are absent from the base.
 
 ## Consequences
 
@@ -127,15 +132,21 @@ Two runtime properties constrain what a rollback can do:
   1's answer and [deploy/README.md](../../deploy/README.md) say the fork's manifests stay
   silent on ingress, storage classes and secrets management. `deploy/production/` already
   departs from that without a record. Decision 7 states the departure: the chart may carry
-  optional templates for cluster concerns, off by default, and the rendered base stays
-  silent. On acceptance, this record supersedes that answer in part, and ADR-0010 gains a
+  optional templates for cluster concerns, off by default. The rendered base stays silent
+  on them and carries only the placeholder Secrets it has today. On acceptance, this record supersedes that answer in part, and ADR-0010 gains a
   forward pointer.
 - **`helm rollback` does not restore the database.** Migrations only move forward. After
   an upgrade that migrates, rolling back to the older chart starts older code against a
-  newer schema. `SchemaVersionMiddleware` answers every request with 503 until the newer
-  version is redeployed or the database is restored from a backup. Rollback is a recovery
-  only for releases that add no migration. The operator manual must say so, and acceptance
-  prerequisite 4 demonstrates it.
+  newer schema, and `SchemaVersionMiddleware` answers that code's requests with 503. The
+  expected result under the default rolling update is that nothing is served by the older
+  code. The web container's readiness probe requests `/login`, which the middleware
+  checks, so the rolled-back pod should never become ready. The newer pod would then keep
+  serving and `helm rollback --wait` would time out. If the newer pod is already gone, the
+  instance answers 503 until the newer version is redeployed or the database is restored
+  from a backup. Neither outcome has been observed, and what the older `migrate`
+  initContainer does with migrations it does not know is also unverified. Either way,
+  rollback is a recovery only for releases that add no migration. The operator manual
+  must say so, and acceptance prerequisite 4 records which outcome occurs.
 - **Migrations stay in the initContainer.** The pod is unchanged, so podman parity and the
   credential check in `test_deploy_pod_parity.py` are unaffected. Moving migrations to a
   `pre-upgrade` hook Job would change the pod, and would exist only under Helm. It is
@@ -145,9 +156,10 @@ Two runtime properties constrain what a rollback can do:
   appear there as well as in the Secrets they populate. Anyone who can read Secrets in the
   namespace already has the passwords, so this exposes nothing new. A backup of the
   namespace, however, now holds every past password.
-- **The chart can be installed without Helm on the workstation.** k3s's built-in Helm
-  controller installs a chart from a `HelmChart` resource. ArgoCD and Flux both install
-  OCI charts. The chart does not depend on any of them.
+- **Other tools can install the chart.** ArgoCD and Flux both install charts from an OCI
+  registry. k3s ships a Helm controller that installs a chart from a `HelmChart` resource;
+  whether it pulls from an OCI registry has not been checked. The chart depends on none of
+  them.
 - **A chart change and a base change happen in the same commit.** A pull request that
   edits a template also commits the regenerated `deploy/k3s/`, and the drift check rejects
   one without the other. The cost is a generated diff in review. The benefit is that a
@@ -191,8 +203,9 @@ Two runtime properties constrain what a rollback can do:
 3. `helm install` with `values.example.yaml` unedited fails and names a `CHANGE-ME`
    field, as `render.py` does.
 4. On kind, `helm install` at one version and `helm upgrade` to a version that adds a
-   migration both reach a ready Deployment. A `helm rollback` after that upgrade answers
-   503 from `SchemaVersionMiddleware`, as stated in *Consequences*.
+   migration both reach a ready Deployment. A `helm rollback` after that upgrade is run,
+   and the record states what happened: whether the older pod became ready, what the
+   older `migrate` initContainer did, and what clients received.
 5. The first tag after the chart lands publishes it, and `helm pull
    oci://ghcr.io/datagen24/charts/victual --version <Version>` succeeds without
    credentials after the package is made public.
