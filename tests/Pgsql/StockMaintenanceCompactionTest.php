@@ -620,171 +620,147 @@ class StockMaintenanceCompactionTest extends PgsqlSchemaTestCase
 		self::assertCount(2, self::rows($product), 'An "x"-prefixed stock_id keeps its row out of the merge, unchanged by ADR-0033');
 	}
 
+	/** The contributions of a product's rows as [row id => [lot booking id or 'pool' => amount]]. */
+	private static function lots(int $product): array
+	{
+		$result = [];
+		$rows = self::$db->query('SELECT rl.stock_row_id, rl.lot_id, rl.amount FROM stock_row_lots rl JOIN stock s ON s.id = rl.stock_row_id
+			WHERE s.product_id = ' . $product . ' ORDER BY rl.stock_row_id, rl.lot_id NULLS FIRST')->fetchAll(PDO::FETCH_ASSOC);
+		foreach ($rows as $row)
+		{
+			$result[(int)$row['stock_row_id']][$row['lot_id'] === null ? 'pool' : (int)$row['lot_id']] = (float)$row['amount'];
+		}
+		return $result;
+	}
+
+	private static function assertLineageHolds(int $product): void
+	{
+		self::assertSame([], self::$db->query('SELECT * FROM stock_lineage_violations(' . $product . ')')->fetchAll(PDO::FETCH_ASSOC), 'ADR-0036 invariants I1 to I3 hold');
+	}
+
 	/**
-	 * ADR-0033 decision 3's shared-stock_id guard. A split (partial open/transfer) can leave
-	 * two different `stock` rows carrying the same stock_id; if a merge group and a row
-	 * outside it share one, the group is skipped entirely rather than merged, because the
-	 * only rewrite CompactStockEntries() can issue ("every row with this stock_id") cannot
-	 * spare the outside row. The shared id is deliberately NOT the group's stock_id_to_keep
-	 * (MIN(stock_id)) - forced to sort after the other candidate's - so the rewrite this
-	 * guard exists to prevent would actually fire without it.
+	 * ADR-0036 acceptance prerequisite 6: a transfer-split group now merges. This was ADR-0033
+	 * decision 3's shared-stock_id guard test. A partial transfer leaves two rows carrying one
+	 * stock_id: the remainder at the source and the transferred units at the destination. The
+	 * old merge rewrote "every row with this stock_id", so a group containing the remainder was
+	 * skipped to spare the destination row. The merge no longer rewrites any stock_id, so the
+	 * remainder merges with the other candidate and the destination row - sharing its stock_id,
+	 * labelled, with its own TRANSFER_TO booking - is untouched.
 	 *
-	 * Built from the real application flow that actually produces a shared stock_id, rather
-	 * than a bare INSERT: TransferProduct()'s partial-amount branch moves the requested
-	 * amount into a brand NEW row at the destination location, carrying the SAME stock_id as
-	 * the source row it split from - and leaves the source row itself, still carrying that
-	 * same stock_id, at the original location with the remainder (see StockService::
-	 * TransferProduct()'s split branch, `$stockEntryNew`'s `stock_id` field). The protected
-	 * (outside) row is that destination row, so it carries all five of prerequisite 1's
-	 * properties for real: an amount of its own, its shared stock_id, a genuine
-	 * TRANSFER_TO booking, its own stock_entry_origins state (a transfer records none - the
-	 * shared id itself IS the lineage here), and a live label.
+	 * Changed from the ADR-0033 version, with the reason: "all three rows survive" became "the
+	 * group merges into one row and the outside row survives", because the guard it tested is
+	 * removed by ADR-0036 section 6. Every assertion about the outside row is kept.
 	 */
-	public function testSharedStockIdGuardSkipsTheWholeGroup(): void
+	public function testTransferSplitGroupNowMergesAndLeavesTheRowSharingItsStockIdUntouched(): void
 	{
 		$product = self::insertProduct('Maintenance Shared Stock Id');
 
-		self::purchase($product, 2, null, self::$locationA, 1.0);
-		self::purchase($product, 5, null, self::$locationA, 1.0);
+		$purchaseA = self::purchase($product, 2, null, self::$locationA, 1.0);
+		$purchaseB = self::purchase($product, 5, null, self::$locationA, 1.0);
 		$groupRows = self::$db->query('SELECT id FROM stock WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
 		self::assertCount(2, $groupRows, 'Sanity: two candidate rows for the group');
+		$stockIdB = self::$db->query('SELECT stock_id FROM stock WHERE id = ' . (int)$groupRows[1])->fetchColumn();
 
-		// 'guardtest-a' sorts before 'guardtest-z' - MIN(stock_id) keeps 'guardtest-a', so the
-		// rewrite direction is 'guardtest-z' -> 'guardtest-a', touching every row that
-		// currently carries 'guardtest-z'.
-		self::$db->exec('UPDATE stock SET stock_id = \'guardtest-a\' WHERE id = ' . $groupRows[0]);
-		self::$db->exec('UPDATE stock SET stock_id = \'guardtest-z\' WHERE id = ' . $groupRows[1]);
-
-		// A partial transfer of 2 of the 5-unit 'guardtest-z' row to Location B: the source row
-		// (id $groupRows[1]) stays at Location A carrying 'guardtest-z' with the 3-unit
-		// remainder - still a candidate, matching 'guardtest-a' on every stock_splits column -
-		// and a brand new row is created at Location B, also carrying 'guardtest-z', holding
-		// the transferred 2 units. That new row is the outside row this guard must protect.
+		// A partial transfer of 2 of the 5-unit row to Location B: the source row keeps the
+		// 3-unit remainder at Location A and still matches the 2-unit row on every stock_splits
+		// column; the new row at Location B carries the same stock_id.
 		$this->expectStatus(
-			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB, 'stock_entry_id' => 'guardtest-z']), new Response(), ['productId' => $product]),
+			fn() => self::$stock->TransferProduct(self::request('POST', ['amount' => 2, 'location_id_from' => self::$locationA, 'location_id_to' => self::$locationB, 'stock_entry_id' => $stockIdB]), new Response(), ['productId' => $product]),
 			200,
-			'Sanity: the partial transfer that naturally creates the shared stock_id succeeds'
+			'Sanity: the partial transfer that creates the shared stock_id succeeds'
 		);
 
-		$outsideRow = self::$db->query("SELECT * FROM stock WHERE stock_id = 'guardtest-z' AND location_id = " . self::$locationB)->fetch(PDO::FETCH_ASSOC);
-		self::assertNotFalse($outsideRow, 'Sanity: the transfer\'s destination row exists, sharing guardtest-z');
+		$outsideRow = self::$db->query('SELECT * FROM stock WHERE stock_id = ' . self::$db->quote($stockIdB) . ' AND location_id = ' . self::$locationB)->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($outsideRow, 'Sanity: the transfer\'s destination row exists, sharing the stock_id');
 		$outsideRowId = (int)$outsideRow['id'];
-		self::assertSame(2.0, (float)$outsideRow['amount'], 'Sanity: it holds the transferred amount');
-
 		self::issueLabel($outsideRowId);
-		self::assertTrue(self::liveLabelExistsFor($outsideRowId), 'Sanity: the protected row carries a live label');
-
-		$outsideBookingsBefore = self::$db->prepare('SELECT * FROM stock_log WHERE stock_row_id = ? ORDER BY id');
-		$outsideBookingsBefore->execute([$outsideRowId]);
-		$outsideBookingsBefore = $outsideBookingsBefore->fetchAll(PDO::FETCH_ASSOC);
-		self::assertNotEmpty($outsideBookingsBefore, 'Sanity: the protected row carries a genuine TRANSFER_TO booking of its own');
-		$outsideOriginBefore = self::$db->query("SELECT * FROM stock_entry_origins WHERE stock_id = 'guardtest-z'")->fetchAll(PDO::FETCH_ASSOC);
+		$outsideLotsBefore = self::lots($product)[$outsideRowId];
+		$ledgerBefore = self::$db->query('SELECT * FROM stock_log WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		$originsBefore = self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC);
 
 		StockService::GetInstance()->CompactStockEntries($product);
 
 		$rows = self::rows($product);
-		self::assertCount(3, $rows, 'The group is skipped outright: the merge never runs, so all three rows survive');
+		self::assertCount(2, $rows, 'The group merged into one row; the destination row survives beside it');
+		$survivor = array_values(array_filter($rows, fn($row) => (int)$row['id'] === (int)$groupRows[1]))[0];
+		self::assertSame(5.0, (float)$survivor['amount'], 'The survivor (MAX(id), the transfer source) holds 2 + 3');
+		self::assertSame($stockIdB, $survivor['stock_id'], 'and keeps its own stock_id');
 
 		$outside = array_values(array_filter($rows, fn($row) => (int)$row['id'] === $outsideRowId))[0];
-		self::assertSame('guardtest-z', $outside['stock_id'], 'The outside row keeps its own (shared) stock_id - never rewritten to the group\'s kept value');
-		self::assertSame(2.0, (float)$outside['amount'], 'and its amount is untouched');
-		self::assertSame((float)self::$locationB, (float)$outside['location_id'], 'and its location is untouched');
-
-		$outsideBookingsAfter = self::$db->prepare('SELECT * FROM stock_log WHERE stock_row_id = ? ORDER BY id');
-		$outsideBookingsAfter->execute([$outsideRowId]);
-		self::assertSame($outsideBookingsBefore, $outsideBookingsAfter->fetchAll(PDO::FETCH_ASSOC), 'and its bookings are byte-for-byte unchanged');
-		$outsideOriginAfter = self::$db->query("SELECT * FROM stock_entry_origins WHERE stock_id = 'guardtest-z'")->fetchAll(PDO::FETCH_ASSOC);
-		self::assertSame($outsideOriginBefore, $outsideOriginAfter, 'and its lineage (here, the absence of a stock_entry_origins row - the shared id itself IS the lineage) is unchanged');
+		self::assertSame($stockIdB, $outside['stock_id'], 'The outside row keeps its stock_id');
+		self::assertSame(2.0, (float)$outside['amount'], 'and its amount');
+		self::assertSame((float)self::$locationB, (float)$outside['location_id'], 'and its location');
 		self::assertTrue(self::liveLabelExistsFor($outsideRowId), 'and its label is still live');
 
-		$groupSurvivors = array_values(array_filter($rows, fn($row) => in_array((int)$row['id'], $groupRows, true)));
-		self::assertCount(2, $groupSurvivors, 'The two group rows also survive untouched, rather than one being deleted');
-		$amounts = array_map(fn($row) => (float)$row['amount'], $groupSurvivors);
-		sort($amounts);
-		self::assertSame([2.0, 3.0], $amounts, 'and neither amount was folded into the other - guardtest-z\'s source row kept its post-transfer remainder of 3');
+		self::assertSame($ledgerBefore, self::$db->query('SELECT * FROM stock_log WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC), 'No booking is rewritten');
+		self::assertSame($originsBefore, self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC), 'No origin link is rewritten');
+
+		$lotA = (int)$purchaseA[0]['id'];
+		$lotB = (int)$purchaseB[0]['id'];
+		self::assertSame([$survivor['id'] => [$lotA => 2.0, $lotB => 3.0], $outsideRowId => $outsideLotsBefore], self::lots($product),
+			'The survivor holds both purchases\' lots; the destination row still holds the 2 transferred units of B');
+		self::assertSame([$lotB => 2.0], $outsideLotsBefore);
+		self::assertLineageHolds($product);
 	}
 
 	/**
-	 * Lineage confinement (ADR-0033 decision 3's last sentence) - distinct from, and not
-	 * caught by, the shared-stock_id guard just above, which only looks at `stock` rows.
-	 * Built from real application flows rather than a bare inserted row, so the protected
-	 * row carries all five properties prerequisite 1 asks to be verified unchanged: amount,
-	 * stock_id, bookings, lineage and a live label.
+	 * ADR-0036 acceptance prerequisite 6: an open-split group now merges. This was ADR-0033's
+	 * lineage-confinement test. Purchases A and B are each opened by one unit, which keeps each
+	 * purchase's stock_id on the opened unit and gives each remainder a new stock_id with an
+	 * origin link. The two opened units match and used to be skipped, because rewriting B's
+	 * stock_id to A's would have repointed B's remainder's origin onto A. The merge no longer
+	 * rewrites stock_id or origins, so the opened units merge, B's remainder keeps naming B, and
+	 * each remainder keeps its own lot.
 	 *
-	 * Purchases A and B are otherwise identical (never-expiring, same location/price/
-	 * purchased date). Opening one unit of each - by explicit stock_entry_id, so which
-	 * physical row plays which role is pinned rather than left to FEFO's tie-breaking - keeps
-	 * each purchase's own stock_id on its one-unit opened portion and gives each one-unit
-	 * remainder a brand new stock_id, with stock_entry_origins recording which purchase it
-	 * split from (RecordSplitOrigin()). A split remainder has no booking of its own (only the
-	 * opened portion inherits the purchase's), so B's remainder is edited once - a booking
-	 * that changes nothing else - to give it one, then labelled.
-	 *
-	 * The two opened one-unit portions now match on every stock_splits column and would
-	 * merge; B's is forced to sort after A's, so it is the id that would be rewritten away -
-	 * the direction the guard has to stop, not the direction that would be safe by accident.
-	 * Without this PR's fix, that merge would proceed and silently repoint B's remainder's
-	 * origin_stock_id from B's own purchase onto A's: the remainder would go on existing,
-	 * correctly excluded from the merge itself by its label, while quietly misreporting a
-	 * different physical purchase as the one it actually came from.
+	 * Changed from the ADR-0033 version, with the reason: "the two opened portions did NOT merge"
+	 * and "every stock and stock_log row is untouched" became "they merge" and "every stock_log
+	 * row and origin link is untouched", because the guard it tested is removed by ADR-0036
+	 * section 6. The remainder's assertions are kept.
 	 */
-	public function testLineageConfinementSkipsAGroupThatWouldCorruptAnOutsideRowsOrigin(): void
+	public function testOpenSplitGroupNowMergesWithoutRepointingAnyOrigin(): void
 	{
 		$product = self::insertProduct('Maintenance Lineage Confinement');
-		$purchasedDate = '2026-01-01';
-		$price = 1.0;
+		$purchaseA = self::purchase($product, 2, null, self::$locationA, 1.0, '2026-01-01');
+		$purchaseB = self::purchase($product, 2, null, self::$locationA, 1.0, '2026-01-01');
+		$stockIdA = $purchaseA[0]['stock_id'];
+		$stockIdB = $purchaseB[0]['stock_id'];
 
-		$purchaseA = self::purchase($product, 2, null, self::$locationA, $price, $purchasedDate);
-		$purchaseB = self::purchase($product, 2, null, self::$locationA, $price, $purchasedDate);
+		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockIdA]), new Response(), ['productId' => $product]);
+		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => $stockIdB]), new Response(), ['productId' => $product]);
 
-		// Deterministic sort order: B's opened portion must sort AFTER A's, so it is the one
-		// CompactStockEntries() would keep A over rather than the reverse - the direction that
-		// actually exercises the guard, not one that would pass even without it.
-		foreach ([[$purchaseA[0]['stock_id'], 'lineage-a'], [$purchaseB[0]['stock_id'], 'lineage-z']] as [$old, $new])
-		{
-			self::$db->exec('UPDATE stock SET stock_id = ' . self::$db->quote($new) . ' WHERE stock_id = ' . self::$db->quote($old));
-			self::$db->exec('UPDATE stock_log SET stock_id = ' . self::$db->quote($new) . ' WHERE stock_id = ' . self::$db->quote($old));
-		}
-
-		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => 'lineage-a']), new Response(), ['productId' => $product]);
-		self::$stock->OpenProduct(self::request('POST', ['amount' => 1, 'stock_entry_id' => 'lineage-z']), new Response(), ['productId' => $product]);
-
-		$remainderOfB = self::$db->prepare('SELECT stock_id FROM stock_entry_origins WHERE origin_stock_id = ?');
-		$remainderOfB->execute(['lineage-z']);
-		$remainderStockId = $remainderOfB->fetchColumn();
-		self::assertNotFalse($remainderStockId, 'Sanity: opening B by stock_entry_id split off a remainder recording B as its origin');
-
-		$remainderRow = self::$db->prepare('SELECT * FROM stock WHERE stock_id = ?');
-		$remainderRow->execute([$remainderStockId]);
-		$remainderId = (int)$remainderRow->fetch(PDO::FETCH_ASSOC)['id'];
-
+		$remainderOfB = self::$db->prepare('SELECT s.* FROM stock s JOIN stock_entry_origins o ON o.stock_id = s.stock_id WHERE o.origin_stock_id = ?');
+		$remainderOfB->execute([$stockIdB]);
+		$remainder = $remainderOfB->fetch(PDO::FETCH_ASSOC);
+		self::assertNotFalse($remainder, 'Sanity: B\'s remainder records B as its origin');
+		$remainderId = (int)$remainder['id'];
 		$this->expectStatus(
 			fn() => self::$stock->EditStockEntry(self::request('PUT', ['amount' => 1, 'note' => 'gives the remainder a booking of its own']), new Response(), ['entryId' => $remainderId]),
 			200,
-			'Sanity: editing the remainder gives it a STOCK_EDIT booking pair of its own'
+			'Sanity: editing the remainder gives it a booking pair of its own'
 		);
 		self::issueLabel($remainderId);
 
-		$before = self::ledger();
-		$beforeOrigin = self::$db->query('SELECT * FROM stock_entry_origins WHERE stock_id = ' . self::$db->quote($remainderStockId))->fetch(PDO::FETCH_ASSOC);
-		self::assertSame('lineage-z', $beforeOrigin['origin_stock_id'], 'Sanity: the remainder\'s recorded origin is B, the id about to disappear if this group merges unprotected');
+		$ledgerBefore = self::$db->query('SELECT * FROM stock_log WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		$originsBefore = self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC);
+		$remainderLotsBefore = self::lots($product)[$remainderId];
 
 		StockService::GetInstance()->CompactStockEntries($product);
 
-		$openedRows = self::$db->query('SELECT * FROM stock WHERE product_id = ' . $product . ' AND open = 1')->fetchAll(PDO::FETCH_ASSOC);
-		self::assertCount(2, $openedRows, 'The two opened one-unit portions did NOT merge - doing so would have corrupted the remainder\'s lineage');
+		$opened = self::$db->query('SELECT * FROM stock WHERE product_id = ' . $product . ' AND open = 1')->fetchAll(PDO::FETCH_ASSOC);
+		self::assertCount(1, $opened, 'The two opened one-unit portions merge');
+		self::assertSame(2.0, (float)$opened[0]['amount']);
+		self::assertSame([(int)$purchaseA[0]['id'] => 1.0, (int)$purchaseB[0]['id'] => 1.0], self::lots($product)[(int)$opened[0]['id']],
+			'and the merged row holds one unit of each purchase\'s lot');
 
-		self::assertSame($before, self::ledger(), 'Every stock and stock_log row - including the remainder\'s own edit booking - is untouched: the whole group was skipped, not partially merged');
+		self::assertSame($ledgerBefore, self::$db->query('SELECT * FROM stock_log WHERE product_id = ' . $product . ' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC), 'No booking is rewritten, the remainder\'s edit included');
+		self::assertSame($originsBefore, self::$db->query('SELECT * FROM stock_entry_origins ORDER BY stock_id')->fetchAll(PDO::FETCH_ASSOC), 'B\'s remainder still names B, not A');
 
-		$afterOrigin = self::$db->query('SELECT * FROM stock_entry_origins WHERE stock_id = ' . self::$db->quote($remainderStockId))->fetch(PDO::FETCH_ASSOC);
-		self::assertSame($beforeOrigin, $afterOrigin, 'The remainder\'s lineage still names B, not silently repointed onto A');
-
-		$remainderAfter = self::$db->prepare('SELECT * FROM stock WHERE id = ?');
-		$remainderAfter->execute([$remainderId]);
-		$remainderAfter = $remainderAfter->fetch(PDO::FETCH_ASSOC);
+		$remainderAfter = self::$db->query('SELECT * FROM stock WHERE id = ' . $remainderId)->fetch(PDO::FETCH_ASSOC);
 		self::assertSame(1.0, (float)$remainderAfter['amount'], 'The remainder\'s amount is untouched');
-		self::assertSame($remainderStockId, $remainderAfter['stock_id'], 'and its stock_id is untouched');
+		self::assertSame($remainder['stock_id'], $remainderAfter['stock_id'], 'and its stock_id');
 		self::assertTrue(self::liveLabelExistsFor($remainderId), 'and its label is still live');
+		self::assertSame($remainderLotsBefore, self::lots($product)[$remainderId], 'and its lot');
+		self::assertLineageHolds($product);
 	}
 
 	/**

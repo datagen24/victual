@@ -27,34 +27,25 @@
 // time - changes nothing and still exits 0.
 //
 // Database privileges (for ADR-0010 property 3's least-privilege split, wired up separately
-// - see ADR-0033 acceptance prerequisite 3): SELECT, UPDATE, DELETE on stock; SELECT, UPDATE
-// on stock_log (rewriting stock_id only - never stock_row_id, never any other column);
-// SELECT, UPDATE, DELETE on stock_entry_origins (never INSERT - this command only ever
-// UPDATEs an existing row's origin_stock_id or DELETEs one outright; new rows are written by
-// RecordSplitOrigin(), called only from OpenProduct(), never from here); SELECT,
-// UPDATE on labels (read to evaluate eligibility, write because deleting a losing row fires
-// retire_stock_entry_labels - migrations/0283.pgsql.php - which UPDATEs the label it retires,
-// under this same caller's privileges since the trigger function carries none of its own);
-// SELECT on products (that same trigger's retirement_snapshot reads only the product name -
-// not userfield_values or userfields, which round 3 wrongly kept on this list: no statement
-// this command or its triggers run needs them directly, and stock_splits' own
-// userfield-eligibility check runs through the view below, which reads its underlying tables
-// as the view's OWNER, not this caller). Also SELECT on the views stock_splits (this
-// command's own candidate-group read - CompactStockEntries()'s very first query),
-// products_average_price and products_last_purchased; SELECT, INSERT, UPDATE, DELETE on
-// cache__products_average_price and cache__products_last_purchased, because every stock_log
-// row this command rewrites fires the stock_log_UPD trigger (trg_stock_log_UPD(),
-// db/pgsql/baseline/06_triggers_b.sql), which is SECURITY INVOKER like every other trigger
-// function here and so writes those two cache tables under this same caller's rights, not
-// its own - and, since migrations/0292.pgsql.sql (issue #588), what it writes is no longer a
-// plain upsert: trg_stock_log_UPD calls rebuild_stock_log_cache_for_product(), which
-// unconditionally DELETEs the stale cache row for the product before conditionally
-// re-INSERTing it from the view. DELETE is therefore required here too, alongside SELECT
-// (still needed to evaluate that DELETE's own WHERE product_id = ... condition) and INSERT;
-// UPDATE remains listed even though this rebuild itself no longer issues one against either
-// cache table (it replaced the INSERT ... ON CONFLICT DO UPDATE upsert this comment used to
-// describe), kept least-privilege-conservatively rather than narrowed as a side effect of an
-// unrelated fix; and SELECT, UPDATE on system_db_changed_time - not something
+// - see ADR-0033 acceptance prerequisite 3), as of ADR-0036 (migration 0304), under which a
+// merge moves lot contributions and rewrites no stock_log, stock_id or stock_entry_origins
+// value: SELECT, UPDATE, DELETE on stock (the survivor's amount, the merged-away rows);
+// SELECT, INSERT, UPDATE, DELETE on stock_row_lots (each member's contributions move onto the
+// survivor with INSERT ... ON CONFLICT DO UPDATE, then go); SELECT, INSERT, UPDATE on
+// stock_booking_lots, SELECT on stock_log and SELECT on stock_entry_origins (a member row an
+// older image wrote has no contributions, and StockLineageService::EnsureTracked() offers it
+// to stock_lineage_backfill(), which reads the ledger and the origin links and writes derived
+// lineage; a row that still does not add up becomes a pool contribution and its lots'
+// allocations are marked unknown with an UPDATE); SELECT, UPDATE on labels (read to evaluate
+// eligibility, write because deleting a losing row fires retire_stock_entry_labels -
+// migrations/0283.pgsql.php - which UPDATEs the label it retires, under this same caller's
+// privileges since the trigger function carries none of its own); SELECT on products (that
+// same trigger's retirement_snapshot reads only the product name); SELECT on the view
+// stock_splits (this command's own candidate-group read, which reads its underlying tables as
+// the view's OWNER, not this caller). Before ADR-0036 the list also carried UPDATE on
+// stock_log and stock_entry_origins and the two price caches with their views, because the
+// merge rewrote stock_id and so fired trg_stock_log_UPD; none of that runs any more. And
+// SELECT, UPDATE on system_db_changed_time - not something
 // CompactStockEntries() itself touches, but the process's own exit runs DatabaseService's
 // shutdown handler same as any other caller, which flushes a deferred changed-time write
 // there (PostgresDialect::FlushDbChangedTime(), a bare UPDATE ... WHERE id = 1) whenever this

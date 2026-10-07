@@ -11,6 +11,15 @@ use Victual\Services\StockService;
 use Victual\Tests\Support\PgsqlSchemaTestCase;
 
 /**
+ * ADR-0036 (migration 0304) note, read first: the two probes below were written for ADR-0033's
+ * lineage-confinement guard, which skipped these groups because the old merge rewrote stock_id
+ * in stock, stock_log and stock_entry_origins and so would have repriced one purchase through
+ * another. ADR-0036 section 6 removes that rewrite and the guards with it. Both probes now assert
+ * the opposite outcome - the group merges - and keep the assertions that mattered: product
+ * details avg_price and stock_edited_entries.edited_origin_amount are unchanged, and now also
+ * that every stock_log row is byte-for-byte unchanged. The history below is kept because it is
+ * why those value assertions exist.
+ *
  * ADR-0033 decision 3, round 3b: StockMaintenanceCompactionTest's own
  * testLineageConfinementSkipsAGroupThatWouldCorruptAnOutsideRowsOrigin only covers an OUTSIDE
  * row naming a DISAPPEARING group id as its origin. Round 2's guard checked exactly that
@@ -156,7 +165,7 @@ class StockMaintenanceLineageConfinementKeptIdTest extends PgsqlSchemaTestCase
 	 * member is A, and R's lineage names A. Correcting R's price must not let A's opened portion
 	 * absorb B's purchase through the merge - the merge must be skipped outright.
 	 */
-	public function testOutsideRemainderNamingTheKeptIdBlocksTheMerge(): void
+	public function testOutsideRemainderNamingTheKeptIdNoLongerBlocksTheMergeAndRepricesNothing(): void
 	{
 		$product = self::insertProduct('KeptId Probe1 Outside Names Kept');
 		$a = self::purchaseNull($product, 2, 1.0);
@@ -186,10 +195,16 @@ class StockMaintenanceLineageConfinementKeptIdTest extends PgsqlSchemaTestCase
 
 		$avgBefore = self::avgApi($product);
 		$editedBefore = self::editedOriginAmount('kp1-z');
+		$ledgerBefore = self::rowsOf('SELECT * FROM stock_log WHERE product_id = ? ORDER BY id', [$product]);
+		$originsBefore = self::rowsOf('SELECT * FROM stock_entry_origins ORDER BY stock_id', []);
 
 		StockService::GetInstance()->CompactStockEntries($product);
 
-		self::assertSame(2, count(self::rowsOf('SELECT id FROM stock WHERE product_id = ? AND open = 1', [$product])), 'The group must be SKIPPED: both opened portions survive, unmerged');
+		$opened = self::rowsOf('SELECT * FROM stock WHERE product_id = ? AND open = 1', [$product]);
+		self::assertCount(1, $opened, 'ADR-0036: the group merges - nothing it does can reattribute history any more');
+		self::assertSame(2.0, (float)$opened[0]['amount']);
+		self::assertSame($ledgerBefore, self::rowsOf('SELECT * FROM stock_log WHERE product_id = ? ORDER BY id', [$product]), 'No booking is rewritten');
+		self::assertSame($originsBefore, self::rowsOf('SELECT * FROM stock_entry_origins ORDER BY stock_id', []), 'No origin link is rewritten');
 		self::assertSame($avgBefore, self::avgApi($product), 'product-details avg_price must be unchanged: the merge must not reprice purchase B through the outside remainder\'s correction');
 		self::assertSame($editedBefore, self::editedOriginAmount('kp1-z'), 'stock_edited_entries.edited_origin_amount for purchase B must be unchanged');
 		self::assertSame((int)$b[0]['id'], $purchaseBBookingId, 'sanity guard against a fixture typo');
@@ -204,7 +219,7 @@ class StockMaintenanceLineageConfinementKeptIdTest extends PgsqlSchemaTestCase
 	 * B's purchase under an identity whose lineage already points at a different, unrelated
 	 * purchase.
 	 */
-	public function testKeptMembersOwnLineageNamingAnOutsideOriginBlocksTheMerge(): void
+	public function testKeptMembersOwnLineageNamingAnOutsideOriginNoLongerBlocksTheMergeAndRepricesNothing(): void
 	{
 		$product = self::insertProduct('KeptId Probe2 Kept Names Outside');
 		$a = self::purchaseNull($product, 2, 1.0);
@@ -228,12 +243,17 @@ class StockMaintenanceLineageConfinementKeptIdTest extends PgsqlSchemaTestCase
 
 		$avgBefore = self::avgApi($product);
 		$editedBefore = self::editedOriginAmount((string)$b[0]['stock_id']);
-		$remainderBefore = self::rowsOf('SELECT * FROM stock WHERE id = ?', [(int)$remainder['id']]);
+		$ledgerBefore = self::rowsOf('SELECT * FROM stock_log WHERE product_id = ? ORDER BY id', [$product]);
+		$originsBefore = self::rowsOf('SELECT * FROM stock_entry_origins ORDER BY stock_id', []);
 
 		StockService::GetInstance()->CompactStockEntries($product);
 
-		self::assertSame(2, count(self::rowsOf('SELECT id FROM stock WHERE product_id = ? AND open = 0', [$product])), 'The group must be SKIPPED: the remainder and B both survive, unmerged');
-		self::assertSame($remainderBefore, self::rowsOf('SELECT * FROM stock WHERE id = ?', [(int)$remainder['id']]), 'The remainder row (amount, stock_id) is byte-for-byte unchanged');
+		$unopened = self::rowsOf('SELECT * FROM stock WHERE product_id = ? AND open = 0', [$product]);
+		self::assertCount(1, $unopened, 'ADR-0036: the remainder and B merge');
+		self::assertSame(2.0, (float)$unopened[0]['amount']);
+		self::assertSame((string)$b[0]['stock_id'], $unopened[0]['stock_id'], 'The survivor is the MAX(id) row, B\'s, and keeps its own stock_id');
+		self::assertSame($ledgerBefore, self::rowsOf('SELECT * FROM stock_log WHERE product_id = ? ORDER BY id', [$product]), 'No booking is rewritten');
+		self::assertSame($originsBefore, self::rowsOf('SELECT * FROM stock_entry_origins ORDER BY stock_id', []), 'No origin link is rewritten');
 		self::assertSame($avgBefore, self::avgApi($product), 'product-details avg_price must be unchanged: the merge must not reprice purchase B through the outside opened unit\'s correction');
 		self::assertSame($editedBefore, self::editedOriginAmount((string)$b[0]['stock_id']), 'stock_edited_entries.edited_origin_amount for purchase B must be unchanged');
 	}

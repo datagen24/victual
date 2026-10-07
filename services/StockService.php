@@ -4640,20 +4640,15 @@ class StockService extends BaseService
 	 * call waited for the locks is seen before anything is deleted, since
 	 * LabelIdentityService::Issue() takes the same row lock before inserting a label and so
 	 * either wins the race and is honoured here, or loses it and fails cleanly against a row
-	 * already gone. A group sharing a stock_id with a row outside it is skipped outright
-	 * (below) rather than merged - a split (partial open/transfer) can leave two different
-	 * `stock` rows carrying the same stock_id, and rewriting "every row with this stock_id",
-	 * the only kind of statement this method can issue since stock_id rather than id is the
-	 * merge key, would corrupt that outside row's identity and history. A group is likewise
-	 * skipped when an outside row's own stock_entry_origins lineage names one of this group's
-	 * stock_ids as its origin (RecordSplitOrigin() leaves exactly that on the untouched
-	 * remainder of an earlier partial open/transfer) - that outside row was never a merge
-	 * candidate and must keep recording which purchase it actually split from, not whichever
-	 * one happened to end up surviving this group's own merge. All stock and stock_log rows
-	 * of an accepted group are rewritten to the surviving stock_id, the redundant stock rows
-	 * are deleted and the kept row is set to the group's total amount. The split lineage in
-	 * stock_entry_origins (see RecordSplitOrigin()) is rewritten with them. stock_log.stock_row_id
-	 * is never rewritten by this method.
+	 * already gone.
+	 *
+	 * A merge moves quantity and nothing else (ADR-0036 section 6). The kept row (MAX(id)) keeps
+	 * its own stock_id; every other member's lot contributions (stock_row_lots) move onto it,
+	 * summed per lot, and the other members are deleted. No stock.stock_id, stock_log row or
+	 * stock_entry_origins link is rewritten, so booking attribution survives the merge and an
+	 * undo still finds each booking's units by lot. Because nothing is rewritten, the
+	 * shared-stock_id and lineage-confinement skip rules ADR-0033 decision 3 needed are gone: a
+	 * transfer-split or open-split group merges like any other eligible group.
 	 *
 	 * @param int|null $productId Limit compacting to this product; null compacts all products
 	 * @return void
@@ -4759,154 +4754,29 @@ class StockService extends BaseService
 						continue;
 					}
 
-					// Shared stock_id guard (ADR-0033 decision 3): skip this whole group if any
-					// of its stock_id values is also carried by a `stock` row this group does
-					// not include. That other row's history and lineage must stay byte-for-byte
-					// unchanged, and the UPDATE ... WHERE stock_id = '...' statements below have
-					// no way to spare it - they rewrite every row sharing that stock_id, group
-					// member or not.
-					$idPlaceholders = implode(',', array_fill(0, count($idGroup), '?'));
-					$stockIdPlaceholders = implode(',', array_fill(0, count($stockIds), '?'));
-					$outsideRowCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
-						"SELECT 1 FROM stock WHERE stock_id IN ($stockIdPlaceholders) AND id NOT IN ($idPlaceholders) LIMIT 1",
-						array_merge($stockIds, $idGroup)
-					);
-					if ($outsideRowCheck->fetchColumn() !== false)
+					// ADR-0036 section 6: a merge moves quantity, not identity. No stock_id,
+					// stock_log row or stock_entry_origins link is rewritten, so the shared-tag
+					// and lineage-confinement guards ADR-0033 decision 3 needed while the merge
+					// rewrote tags have nothing left to protect and are gone: rows sharing a tag,
+					// or descending from different purchases, merge by the same eligibility as
+					// any other. Each member's contributions move onto the survivor (MAX(id), as
+					// before), summed per lot, and the other members are deleted with theirs.
+					$lineage = StockLineageService::GetInstance();
+					foreach ($idGroup as $stockEntryId)
 					{
-						continue;
+						$lineage->EnsureTracked((int)$stockEntryId);
 					}
 
-					// Lineage confinement (ADR-0033 decision 3's last sentence). Two guards,
-					// for two different failure modes. RecordSplitOrigin() always stores the
-					// FLATTENED origin (the ultimate purchase a chain of splits descends from,
-					// never an intermediate parent - see its own docblock), so this table can
-					// only ever link a stock_id to its true root: there is no chain to walk and
-					// no cycle it could form, so "the root of X" is a single lookup, not a
-					// recursion.
-					//
-					// Guard 1 (round 2, unchanged): an outside row can have RecordSplitOrigin()
-					// lineage naming one of the group's DISAPPEARING ids as its own origin - left
-					// behind on the untouched remainder of an earlier partial open/transfer that
-					// has nothing else to do with this group. The rewrite below only ever fires
-					// for a disappearing id (stock_id_to_keep's own identity never changes), but
-					// within that it rewrites every row naming one, group member or not, which
-					// would silently reattribute a real, unrelated entry's history to a different
-					// purchase than the one it actually split from. Unconditional: flattening
-					// means a disappearing id can only ever be named directly by an outside row
-					// when that id is itself a root, and round 3's probes below show exactly why
-					// that can never be let through.
-					$disappearingStockIds = [];
-					foreach ($stockIds as $stockId)
+					foreach ($idGroup as $stockEntryId)
 					{
-						if ($stockId != $splittedStockEntry->stock_id_to_keep)
+						if ((int)$stockEntryId != (int)$splittedStockEntry->id_to_keep)
 						{
-							$disappearingStockIds[] = $stockId;
-						}
-					}
-					if (count($disappearingStockIds) > 0)
-					{
-						$disappearingPlaceholders = implode(',', array_fill(0, count($disappearingStockIds), '?'));
-						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
-							"SELECT 1 FROM stock_entry_origins WHERE origin_stock_id IN ($disappearingPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders) LIMIT 1",
-							array_merge($disappearingStockIds, $stockIds)
-						);
-						if ($outsideLineageCheck->fetchColumn() !== false)
-						{
-							continue;
+							$lineage->MoveLots((int)$stockEntryId, (int)$splittedStockEntry->id_to_keep);
+							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . (int)$stockEntryId);
 						}
 					}
 
-					// Guard 2 (round 3): round 2's guard alone still misses two shapes, both
-					// real application flows, and both share one structural trait round 2's
-					// guard ignored - the group spans MORE THAN ONE ORIGIN ROOT (two originally
-					// separate purchases, only one of which has since been split):
-					//   - An outside row can name the group's KEPT id as its origin instead of a
-					//     disappearing one. The kept id's own identity never changes, but the
-					//     merge still moves a DIFFERENT root's history onto it, which the outside
-					//     row's lineage never signed up for.
-					//   - A group member's OWN lineage can name an outside row as ITS origin (the
-					//     member is an unopened remainder of a different root than its sibling).
-					// Merging either silently reattributes one root's purchase price/history onto
-					// the other, which prerequisite 1 forbids. But merging portions that all
-					// descend from a SINGLE shared root changes no purchase's resolved root and
-					// no root's total - that is ordinary compaction (e.g.
-					// testUndoRefusesProductOpenedAfterExplicitMaintenanceMerge's second merge:
-					// two opened portions of the same original purchase, one of them a second-
-					// generation remainder of the other) and must stay allowed even though an
-					// unrelated, still-live remainder of that same shared root sits outside the
-					// group - that remainder's resolved root does not change either, only the
-					// surviving id's spelling does. So this guard only ever runs when the group's
-					// members resolve to more than one distinct root; when they all share one
-					// root it is skipped entirely, deliberately including the kept id in the
-					// outside-link check when it does run.
-					$originRows = DatabaseService::GetInstance()->ExecuteDbQuery(
-						"SELECT stock_id, origin_stock_id FROM stock_entry_origins WHERE stock_id IN ($stockIdPlaceholders)",
-						$stockIds
-					)->fetchAll(\PDO::FETCH_KEY_PAIR);
-					$roots = [];
-					foreach ($stockIds as $stockId)
-					{
-						$roots[$originRows[$stockId] ?? $stockId] = true;
-					}
-					if (count($roots) > 1)
-					{
-						$outsideLineageCheck = DatabaseService::GetInstance()->ExecuteDbQuery(
-							"SELECT 1 FROM stock_entry_origins WHERE"
-							. " (stock_id IN ($stockIdPlaceholders) AND origin_stock_id NOT IN ($stockIdPlaceholders))"
-							. " OR (origin_stock_id IN ($stockIdPlaceholders) AND stock_id NOT IN ($stockIdPlaceholders))"
-							. " LIMIT 1",
-							array_merge($stockIds, $stockIds, $stockIds, $stockIds)
-						);
-						if ($outsideLineageCheck->fetchColumn() !== false)
-						{
-							continue;
-						}
-					}
-
-					foreach ($stockIds as $stockId)
-					{
-						if ($stockId != $splittedStockEntry->stock_id_to_keep)
-						{
-							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
-							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_log SET stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE stock_id = \'' . $stockId . '\'');
-
-							// The split lineage moves with the stock_ids above, or it would point
-							// at an entry that no longer exists. Three statements, and the order
-							// is load-bearing.
-							//
-							// First the disappearing entry's own row goes rather than being
-							// rewritten: what survives the merge is one entry, and it keeps the
-							// origin it already had.
-							//
-							// Then the row, if any, that would be left describing the surviving
-							// entry as split off itself. The third statement is about to point
-							// everything that descended from the disappearing entry at the
-							// surviving one - which is right, because that is where the
-							// disappearing entry's bookings just went - and the surviving entry
-							// may be one of those descendants. Once its origin's bookings are its
-							// own, it is its own origin and the row says nothing; leaving it to be
-							// rewritten instead would violate CHECK (stock_id <> origin_stock_id)
-							// and abort the whole compaction, and cleaning it up afterwards is not
-							// possible for the same reason - the constraint rejects the row the
-							// moment the update tries to write it, so no later DELETE can reach it.
-							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE stock_id = \'' . $stockId . '\'');
-							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock_entry_origins WHERE origin_stock_id = \'' . $stockId . '\' AND stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\'');
-							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock_entry_origins SET origin_stock_id = \'' . $splittedStockEntry->stock_id_to_keep . '\' WHERE origin_stock_id = \'' . $stockId . '\'');
-						}
-					}
-
-					$stockEntryIds = explode(',', $splittedStockEntry->id_group);
-					foreach ($stockEntryIds as $stockEntryId)
-					{
-						if ($stockEntryId != $splittedStockEntry->id_to_keep)
-						{
-							DatabaseService::GetInstance()->ExecuteDbStatement('DELETE FROM stock WHERE id = ' . $stockEntryId);
-						}
-						else
-						{
-							DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . $splittedStockEntry->id_to_keep);
-						}
-					}
+					DatabaseService::GetInstance()->ExecuteDbStatement('UPDATE stock SET amount = ' . $splittedStockEntry->total_amount . ' WHERE id = ' . (int)$splittedStockEntry->id_to_keep);
 
 					// This exact statement - the survivor's amount rewrite, the last statement
 					// of a group actually merged - is the seam a test observes

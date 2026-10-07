@@ -201,6 +201,24 @@ class StockLineageService extends BaseService
 		}
 	}
 
+	/**
+	 * Moves every contribution of one row onto another, summing per lot (ADR-0036 section 6,
+	 * the maintenance merge). The source row keeps none; deleting it is the caller's.
+	 */
+	public function MoveLots(int $fromStockRowId, int $toStockRowId): void
+	{
+		if (!$this->Applies())
+		{
+			return;
+		}
+
+		$this->Query('INSERT INTO stock_row_lots (stock_row_id, lot_id, amount, basis)
+			SELECT ?, lot_id, amount, basis FROM stock_row_lots WHERE stock_row_id = ?
+			ON CONFLICT (stock_row_id, lot_id) DO UPDATE SET amount = stock_row_lots.amount + EXCLUDED.amount',
+			[$toStockRowId, $fromStockRowId]);
+		$this->Query('DELETE FROM stock_row_lots WHERE stock_row_id = ?', [$fromStockRowId]);
+	}
+
 	/** An addition booking's lot: its self-allocation and the new row's one contribution. */
 	public function RecordAddition(int $bookingId, int $stockRowId, float $amount): void
 	{
