@@ -241,6 +241,12 @@ specification and recorded exceptions. See
 
 ## Deployment
 
+### Chart
+
+A Helm package: templates, a default values file and a schema, versioned and installed as a
+release. Proposed for Victual's Kubernetes deployment in
+[ADR-0038](adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md); none is built.
+
 ### Companion add-on
 
 A Home Assistant add-on that runs one Victual workload beside the main add-on, such as the
@@ -253,6 +259,13 @@ Home Assistant's authenticated reverse proxy for add-on web interfaces. It serve
 add-on under an installation-specific path prefix, sends that prefix in `X-Ingress-Path`,
 and displays the page in a frame. Not Kubernetes Ingress, which `deploy/` also mentions. See
 [plan 35](plans/35-home-assistant-target.md).
+
+### Kubernetes operator
+
+A controller that runs in the cluster and reconciles a custom resource, such as a
+database operator managing failover. Not the person running a deployment, whom `deploy/`
+and the manual also call the operator. Considered and rejected for Victual in
+[ADR-0038](adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md).
 
 ### Supervisor
 

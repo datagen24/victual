@@ -150,6 +150,7 @@ nav:
           - 0035 Batteries, equipment and calendar need view permissions: development/adr/0035-batteries-equipment-calendar-and-custom-entities-require-view-permissions.md
           - 0036 Stock quantities are attributed to the bookings that added them: development/adr/0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md
           - 0037 An undo of a whole-row consumption revives the stock-entry label it retired: development/adr/0037-an-undo-of-a-whole-row-consumption-revives-the-stock-entry-label-it-retired.md
+          - 0038 Kubernetes deployments ship as a Helm chart: development/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md
       - Build and deployment:
           - Container images: development/images.md
           - Deployment: development/deployment.md
