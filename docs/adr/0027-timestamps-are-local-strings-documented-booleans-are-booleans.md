@@ -532,15 +532,10 @@ This record changes a wire contract, so accepting it requires:
    - the parity suite's accepted difference for timestamps, checked to compare instants
      and not just accept anything
    - the open questions above answered
-
-   Corrected 2026-10-06: this item listed `victual-kit` with the MQTT payloads and the
-   iCal feed. The maintainer has set the release order. Issue 650 and issue
-   [612](https://github.com/datagen24/victual/issues/612) close before the API and
-   container 0.3.0 release. `victual-kit` is regenerated from that release's
-   `victual.openapi.json` after the release. The client therefore cannot be a condition
-   of issue 650, and it moved to prerequisite 6.
 6. **`victual-kit` regenerated from the 0.3.0 release's document**, after that release, with
-   its dual-format date decoding reduced to RFC 3339. This is post-release work. It does not
+   its dual-format date decoding reduced to RFC 3339. Issue 650 and issue
+   [612](https://github.com/datagen24/victual/issues/612) close before the API and container
+   0.3.0 release, and the client is regenerated afterwards, so this prerequisite does not
    block issue 650 or the release. [ADR-0024](0024-the-fork-writes-its-own-clients.md)
    decision 1 still requires a Victual-owned client to follow a breaking wire change, and
    `.spike-adr27/CLIENT-HANDOFF.md` lists what that work needs.

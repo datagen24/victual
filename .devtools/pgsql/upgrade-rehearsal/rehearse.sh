@@ -71,7 +71,9 @@ podman exec "$PG" pg_dump -U victual -Fc rehearsal650_valid > "$OUT/source-valid
 snapshot rehearsal650_valid before.json
 set +e
 php_in "$TARGET" rehearsal650_valid bin/victual-timestamp-preflight > "$OUT/preflight-valid.txt" 2>&1
-log "preflight on the v0.2.0 schema: exit $? ($(tail -1 "$OUT/preflight-valid.txt"))"
+vrc=$?
+log "preflight on the v0.2.0 schema: exit $vrc ($(tail -1 "$OUT/preflight-valid.txt"))"
+[ "$vrc" -eq 0 ] || status=1
 start=$(python3 -c 'import time; print(time.time())')
 php_in "$TARGET" rehearsal650_valid bin/victual-migrate > "$OUT/migrate-valid.txt" 2>&1
 rc=$?
