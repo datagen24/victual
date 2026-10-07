@@ -453,6 +453,44 @@ class StockLineageWorkedExamplesTest extends PgsqlSchemaTestCase
 	}
 
 	// ------------------------------------------------------------------------------
+	// Prerequisite 11: average price
+	// ------------------------------------------------------------------------------
+
+	/**
+	 * ADR-0036 Consequences and acceptance prerequisite 11: products_average_price weights each
+	 * purchase by what its stock_id's edits left, and an edit of a merged row logs the
+	 * survivor's stock_id, so one purchase's origin amount takes the whole change. Merge groups
+	 * share one price, so the average cannot move. This repeats the spike's comparison: a
+	 * merged row of 3 + 2 at 2.0 next to a separate unit at 3.0, edited down to 4, 2 and 1,
+	 * against an unmerged control holding the same 5 at 2.0 in one purchase.
+	 */
+	public function testAveragePriceOfAMergedRowEditedDownMatchesAnUnmergedControl(): void
+	{
+		$merged = self::product('avg merged');
+		$this->buy($merged, 3, 'A', 2.0);
+		$this->buy($merged, 2, 'B', 2.0);
+		self::merge($merged);
+		$this->buy($merged, 1, 'C', 3.0, self::$l2);
+
+		$control = self::product('avg control');
+		$this->buy($control, 5, 'A', 2.0);
+		$this->buy($control, 1, 'C', 3.0, self::$l2);
+
+		$average = static fn(int $product) => (float)self::$db->query("SELECT price FROM products_average_price WHERE product_id = $product")->fetchColumn();
+		$rowAtL1 = static fn(int $product) => (int)self::$db->query("SELECT id FROM stock WHERE product_id = $product AND location_id = " . self::$l1)->fetchColumn();
+		$keep = StockService::KeepStoredValue();
+
+		foreach ([4 => 11 / 5, 2 => 7 / 3, 1 => 5 / 2] as $amount => $expected)
+		{
+			self::$stock->EditStockEntry($rowAtL1($merged), $amount, $keep, $keep, $keep, $keep, $keep, $keep);
+			self::$stock->EditStockEntry($rowAtL1($control), $amount, $keep, $keep, $keep, $keep, $keep, $keep);
+			self::assertEqualsWithDelta($expected, $average($control), 1e-9, "the control's average after editing down to $amount");
+			self::assertEqualsWithDelta($average($control), $average($merged), 1e-9, "the merged row's average equals the control's after editing down to $amount");
+			StockLineage::AssertHolds(self::$db, $merged, "after editing down to $amount");
+		}
+	}
+
+	// ------------------------------------------------------------------------------
 	// Example 6: ambiguous legacy history (history written by the pre-0304 service)
 	// ------------------------------------------------------------------------------
 
