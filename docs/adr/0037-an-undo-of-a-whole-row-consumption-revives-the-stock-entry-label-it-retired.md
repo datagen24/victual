@@ -18,9 +18,10 @@
   [ADR-0036](0036-stock-quantities-are-attributed-to-the-bookings-that-added-them.md) section 10
   leaves open; evidence in [`.spike-adr37/RESULTS.md`](../../.spike-adr37/RESULTS.md).
 
-This record is design work. It changes no code, reserves no migration number, and does not
-accept ADR-0033 or ADR-0036. A Proposed record constrains nothing. It does not implement
-label revival.
+This record was written as design work and does not accept ADR-0033 or ADR-0036. A Proposed
+record constrains nothing. The implementation followed on 2026-10-06 in
+IMPLEMENTATION_PR; section "Implementation status" lists what it demonstrates for each
+acceptance prerequisite. Implementing the record does not accept it.
 
 ## Context
 
@@ -626,6 +627,32 @@ not use. Neither record needs the other.
   the stock the label was on, by booking. A person who moved a sticker to other stock after the
   consumption defeats it.
 - **Stale pending events remain.** They are inert and cost nothing at the measured size.
+
+## Implementation status
+
+Implemented on 2026-10-06 in IMPLEMENTATION_PR, on branch
+`claude/opus5_stock-entry-label-revival-53a24c`, which also carries
+[PR 662](https://github.com/datagen24/victual/pull/662)'s record of the maintainer's answers. The
+results below are local runs (PHP 8.4.25, PostgreSQL 16.15, podman on Apple Silicon) unless
+they say CI. Merged CI evidence is what an accepting pull request cites.
+
+| Prerequisite | State | Evidence |
+|---|---|---|
+| 1. Open questions 1 to 3 answered | Met | Question 1 by ADR-0033 decision 6; questions 2 and 3 by the maintainer on 2026-10-06 (PR 662). Section 12a records the transport the answer to question 3 needed. |
+| 2. Migration number claimed | Met | 0303 in `migrations/RESERVATIONS.md`; `check-migrations.php` passes. |
+| 3. pgTAP | Met locally | `.devtools/pgtap/029-stock-label-retirement-events.sql`, 48 assertions; `check-pgtap-coverage.php` passes. |
+| 4. PHPUnit on real PostgreSQL | Met locally | `tests/Pgsql/StockLabelRevivalTest.php` (E1 to E8, E10 to E14, E16, mixed outcomes); E9 is in pgTAP 029 and E15 in `StockLabelRevivalPrintJobTest.php`. The four named undo tests are unchanged and pass. |
+| 5. Concurrency | Met locally | `tests/Pgsql/StockLabelRevivalRaceTest.php`: C1, C2, C3a, C3b against the real importer, and a consumption racing the undo. The existing label race tests are unchanged and pass. |
+| 6. Claim predicate | Met locally | `StockLabelRevivalPrintJobTest.php`; a mutation that disables the predicate fails it. |
+| 7. Importer | Met locally | `tests/Pgsql/StockLabelRevivalImportTest.php`, C3a and C3b, and pgTAP 029's R5 catalogue assertion. |
+| 8. Permission | Met locally | HTTP tests in `StockLabelRevivalTest.php`: `STOCK_EDIT` alone revives, the header carries two counts only, a caller without `STOCK_VIEW` scans `unknown`, and no route exposes the table. |
+| 9. Notice and wire contract | Met locally | Section 12a. `victual.openapi.json` documents the header; both contract snapshots are byte-identical; PHPUnit asserts the header directly. |
+| 10. Hot path | Met locally | `StockLabelRevivalTest.php`: one event-table read and no import lock for an undo with no label, one read for a whole transaction, no event-table work for an unlabelled consumption. |
+| 11. Documentation | Met | The Manual's label, REST API, stock and upgrade pages; the glossary; the data model and its diagrams. Vale and `mkdocs build --strict` pass. |
+| 12. ADR-0036 interface | Met locally | ADR-0036 is not implemented; `StockLabelRevivalTest.php` asserts the interface now, so the later implementation inherits the test. |
+| 13. Coverage | Met locally; CI decides the ratchet | Local run at `8012aef4` with the label CLI tests merged: 11,762 of 12,197 lines (96.43%), above the 96.31% ratchet, without three CI-only steps. `StockLabelRevivalService.php` 95.24%. Every touched file is at or above its figure in master's CI clover at `082764b2` (for example `StockService.php` 98.38% to 98.41%), and no file is below 75%. |
+| 14. Browser probes | Met locally | `undo-toasts.js`: 15 of 15 scenarios, including restored, retired, mixed, absent and refused notices. The demo instance has no printer, so the probe adds the header to real undo responses; the server side is PHPUnit's. |
+| 15. Deployment and release notes | Partly met | The upgrade page carries the order and consequences. No release record for the first release with migration 0303 exists yet; that record must link the upgrade section. |
 
 ## Acceptance prerequisites
 
