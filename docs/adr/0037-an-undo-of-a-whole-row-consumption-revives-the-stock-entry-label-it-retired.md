@@ -20,7 +20,7 @@
 
 This record was written as design work and does not accept ADR-0033 or ADR-0036. A Proposed
 record constrains nothing. The implementation followed on 2026-10-06 in
-IMPLEMENTATION_PR; section "Implementation status" lists what it demonstrates for each
+[PR 663](https://github.com/datagen24/victual/pull/663); section "Implementation status" lists what it demonstrates for each
 acceptance prerequisite. Implementing the record does not accept it.
 
 ## Context
@@ -630,7 +630,7 @@ not use. Neither record needs the other.
 
 ## Implementation status
 
-Implemented on 2026-10-06 in IMPLEMENTATION_PR, on branch
+Implemented on 2026-10-06 in [PR 663](https://github.com/datagen24/victual/pull/663), on branch
 `claude/opus5_stock-entry-label-revival-53a24c`, which also carries
 [PR 662](https://github.com/datagen24/victual/pull/662)'s record of the maintainer's answers. The
 results below are local runs (PHP 8.4.25, PostgreSQL 16.15, podman on Apple Silicon) unless
