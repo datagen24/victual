@@ -4516,7 +4516,7 @@ class StockService extends BaseService
 			}
 			else
 			{
-				$homeId = $this->InsertRowFromBooking($from, $amount);
+				$homeId = $this->InsertRowFromBooking($from, $amount, $from->stock_row_id === null ? null : (int)$from->stock_row_id);
 			}
 
 			foreach ($lots as [$lot, $lotAmount, $basis])
@@ -4622,15 +4622,21 @@ class StockService extends BaseService
 		return $detached;
 	}
 
-	/** Inserts a stock row from a booking's snapshot columns with the given amount; returns its id. */
-	private function InsertRowFromBooking($booking, float $amount): int
+	/**
+	 * Inserts a stock row from a booking's snapshot columns with the given amount and returns its
+	 * id. With $preferredId, the row is rebuilt under that id when it is free, the way the
+	 * consume undo rebuilds a deleted row (AdvanceIdentitySequence() first, then an insert that
+	 * yields to any row that took the id meanwhile); otherwise, or when the id is taken, it gets a
+	 * fresh id.
+	 */
+	private function InsertRowFromBooking($booking, float $amount, ?int $preferredId = null): int
 	{
 		if ($booking->opened_amount !== null && self::CompareAmounts($amount, 1.0) !== 0)
 		{
 			throw new \Exception('Booking cannot be undone: its measured container amount is inconsistent with a single stock unit and cannot be safely restored');
 		}
 
-		$row = $this->DB->stock()->createRow([
+		$columns = [
 			'product_id' => $booking->product_id,
 			'amount' => $amount,
 			'best_before_date' => $booking->best_before_date,
@@ -4646,7 +4652,31 @@ class StockService extends BaseService
 			'opened_qu_id' => $booking->opened_qu_id,
 			'opened_tare' => $booking->opened_tare,
 			'opened_measured_at' => $booking->opened_measured_at
-		]);
+		];
+
+		$database = DatabaseService::GetInstance();
+		if ($preferredId !== null && $this->DB->stock()->where('id = :1', $preferredId)->fetch() === null
+			&& $database->GetDialect()->AdvanceIdentitySequence($database->GetDbConnectionRaw(), 'stock', 'id', $preferredId + 1))
+		{
+			$withId = array_merge(['id' => $preferredId], $columns);
+			$insert = $database->GetDbConnectionRaw()->prepare('INSERT INTO stock (' . implode(', ', array_keys($withId)) . ') VALUES ('
+				. implode(', ', array_fill(0, count($withId), '?')) . ') ON CONFLICT (id) DO NOTHING');
+			$insert->execute(array_map(fn($value) => is_bool($value) ? (int)$value : $value, array_values($withId)));
+			if ($insert->rowCount() === 1)
+			{
+				// A raw statement bypasses LessQL's change bookkeeping; see the consume undo's
+				// rebuild for the same two calls.
+				$database->MarkDbChanged();
+				if (!$database->IsBookkeeping())
+				{
+					$database->MarkDataChanged();
+				}
+
+				return $preferredId;
+			}
+		}
+
+		$row = $this->DB->stock()->createRow($columns);
 		$row->save();
 
 		return (int)$row->id;
