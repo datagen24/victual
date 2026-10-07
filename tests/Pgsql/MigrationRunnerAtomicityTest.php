@@ -509,14 +509,15 @@ PHP);
 		{
 			$rolesEnv = getenv();
 			$rolesEnv['PGDATABASE'] = $database;
+			// roles.sql reads the passwords from psql's environment and refuses -v arguments.
+			$rolesEnv['MIGRATE_PASSWORD'] = $migratePassword;
+			$rolesEnv['APP_PASSWORD'] = $appPassword;
 
 			$rolesProcess = proc_open(
 				[
 					'psql', '--no-psqlrc', '--quiet',
 					'-v', 'ON_ERROR_STOP=1',
 					'-v', 'db=' . $database,
-					'-v', 'migrate_password=' . $migratePassword,
-					'-v', 'app_password=' . $appPassword,
 					'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
 				],
 				[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],

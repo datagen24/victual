@@ -2,6 +2,8 @@
 # kind equivalent of step 2b of deploy/README.md's podman walkthrough. deploy/kind/up.sh
 # creates the ConfigMap holding the script from the file itself, so there is one copy of
 # roles.sql, not two. Retries until PostgreSQL answers; repeatable, like the script.
+# The two role passwords reach psql through its environment, which roles.sql reads; they
+# are not arguments, because a container's command line is visible on the node.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -36,10 +38,6 @@ spec:
             - ON_ERROR_STOP=1
             - -v
             - db=victual
-            - -v
-            - migrate_password=$(MIGRATE_PASSWORD)
-            - -v
-            - app_password=$(APP_PASSWORD)
             - -f
             - /sql/roles.sql
           env:

@@ -16,9 +16,12 @@
 #
 #   1. Create the database and the two roles on your PostgreSQL server, as a superuser:
 #
+#        export MIGRATE_PASSWORD APP_PASSWORD     # set without typing them inline
 #        psql -v ON_ERROR_STOP=1 -v db=victual \
-#             -v migrate_password="$MIGRATE_PASSWORD" -v app_password="$APP_PASSWORD" \
 #             -f deploy/postgres/roles.sql "postgresql://postgres@<db-host>/victual"
+#
+#      roles.sql reads both passwords from psql's environment and refuses `-v` arguments,
+#      which any user of the machine can read with `ps`. Its header shows how to set them.
 #
 #      Run it again after the first apply has migrated the schema; roles.sql's header says
 #      why. The two passwords are the ones `secrets` below supplies.
