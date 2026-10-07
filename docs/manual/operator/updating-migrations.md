@@ -117,6 +117,14 @@ rows from your own records (a skipped wall clock cannot be guessed at), then run
 preflight again. A value in a repeated hour becomes the earlier of its two instants, the
 same rule a new write without an offset follows.
 
+A refusal undoes migration 0301 only. Each migration commits on its own, so the migrations
+before 0301 in the same run stay applied. The 2026-10-06 upgrade rehearsal measured this
+([evidence](../../../.devtools/pgsql/upgrade-rehearsal/EVIDENCE.md)): an upgrade from
+0.2.0-MVP that 0301 refused left the database at migration 300, with every timestamp
+unconverted. The 0.2.0-MVP application does not serve that schema, because its migrations
+do not match. Correct the rows and run `bin/victual-migrate` again to continue from 0301,
+or restore the backup to go back.
+
 ### Running it
 
 Stop the application and the label workers, run `php bin/victual-migrate`, then start the

@@ -59,7 +59,7 @@ also compares PHP's and PostgreSQL's zone data at every transition in the data's
 | Issue #650 item | Evidence | Status |
 |---|---|---|
 | Migration to `TIMESTAMPTZ`, earlier instant in a repeated hour | `migrations/0301.pgsql.php`, `services/Database/TimestampMigration.php`; pgTAP `027-timestamptz-conversion.sql` (28 assertions); rehearsal below | Done |
-| Proven on a copy of real data with a repeated-hour value | Rehearsal on parity-generated data with a labelled fixture; no real data exists | Done with the stated substitution |
+| Proven on a copy of real data with a repeated-hour value | Rehearsal on parity-generated data with a labelled fixture; no real data exists. Replaced 2026-10-06 by the reproducible v0.2.0-MVP upgrade that ADR-0027 now requires: `.devtools/pgsql/upgrade-rehearsal/EVIDENCE.md` | Done; see the 2026-10-06 record |
 | Preflight; abort with a report | `bin/victual-timestamp-preflight`; refusal rehearsal below; `TimestampInstantTest::testThePreflightCountsAndRefusesWhatItCannotConvert` | Done |
 | Legacy SQLite import by the same rule | `DatabaseImporter::SourceInstant()`, preflight `AssertSourceTimestamps()`, verification compares instants; `import` phase; `TimestampInstantTest::testTheImportReadsWallClocksByTheSameRule` | Done |
 | Renderer: column type, not field names | `InstantStatement` (pdo_pgsql metadata, measured on tables, views, aliases, expressions, joins, unions); `testEveryFetchModeConvertsInstantsAndOnlyInstants`, `testTimestampShapedTextIsLeftAlone` | Done |
@@ -74,7 +74,7 @@ also compares PHP's and PostgreSQL's zone data at every transition in the data's
 | `views` phase compares instants | `difftest.php`, `trigdifftest.php`, `ValueComparison::NormaliseInstant()`; negative controls in `TimestampInstantTest` | Done |
 | Parity accepted difference compares instants | `adr-0027-timestamps-are-utc-instants`; `harness/selftest.js` controls | Done; full parity stack not run |
 | Open questions answered | `153b10ce` | Done |
-| Endpoint clients regenerated | `CLIENT-HANDOFF.md` | **Not done**: handoff only |
+| Endpoint clients regenerated | `CLIENT-HANDOFF.md` | **Not done**: handoff only. Since 2026-10-06 this is post-release work after 0.3.0 (ADR-0027 prerequisite 6), not a condition of #650 |
 | `run-tests.sh all` green, contract against the committed snapshot | PG15 and PG16 runs below | See below |
 
 ## Rehearsal on generated data
