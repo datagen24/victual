@@ -149,12 +149,12 @@ new_serving_down() { podman rm -f ha-spike-new >/dev/null 2>&1; }
 reset_db() {
 	podman exec "$PG" psql -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1 || { log "postgres not up"; return 1; }
 	podman exec "$PG" psql -U postgres -d postgres -q -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB" >/dev/null
-	podman exec -i "$PG" psql -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -v db="$DB" \
-		-v migrate_password="$MIGRATE_PW" -v app_password="$APP_PW" < "$ROOT/deploy/postgres/roles.sql" >/dev/null
+	MIGRATE_PASSWORD="$MIGRATE_PW" APP_PASSWORD="$APP_PW" podman exec -i -e MIGRATE_PASSWORD -e APP_PASSWORD "$PG" \
+		psql -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -v db="$DB" < "$ROOT/deploy/postgres/roles.sql" >/dev/null
 }
 regrant() { # roles.sql asks to be re-run after the first migration
-	podman exec -i "$PG" psql -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -v db="$DB" \
-		-v migrate_password="$MIGRATE_PW" -v app_password="$APP_PW" < "$ROOT/deploy/postgres/roles.sql" >/dev/null
+	MIGRATE_PASSWORD="$MIGRATE_PW" APP_PASSWORD="$APP_PW" podman exec -i -e MIGRATE_PASSWORD -e APP_PASSWORD "$PG" \
+		psql -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -v db="$DB" < "$ROOT/deploy/postgres/roles.sql" >/dev/null
 }
 
 observe() { # observe <label> <port>

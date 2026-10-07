@@ -1,10 +1,16 @@
 -- The two database roles a Victual deployment needs, and what each may do.
 --
---   psql -v ON_ERROR_STOP=1 \
---        -v db=victual \
---        -v migrate_password="$MIGRATE_PASSWORD" \
---        -v app_password="$APP_PASSWORD" \
+--   read -rs MIGRATE_PASSWORD; read -rs APP_PASSWORD     # or $(op read …): never typed inline
+--   export MIGRATE_PASSWORD APP_PASSWORD
+--   psql -v ON_ERROR_STOP=1 -v db=victual \
 --        -f deploy/postgres/roles.sql "postgresql://<superuser>@<host>/victual"
+--
+-- The two passwords come from psql's environment, MIGRATE_PASSWORD and APP_PASSWORD, and
+-- from nowhere else. A `-v migrate_password=…` argument is discarded, and without the
+-- environment variable the run is refused. A process's arguments are visible to every user
+-- of the machine (`ps`), and on a Kubernetes node to anything that can list its processes;
+-- its environment is readable only by the same user and root. Reading the environment
+-- needs psql 15 or later (`\getenv`); the server's version does not matter.
 --
 -- Run it once, against the database Victual will use, as a superuser. That is the only way it
 -- has been run. A lesser role would need at least CREATEROLE, ownership of the database, and
@@ -33,20 +39,35 @@
 -- thing that reaches a table created later). If a deployment wants that, it belongs in a
 -- follow-up that names the tables.
 
+-- A refusal is a failed statement, so psql exits non-zero. `\quit` cannot do that: it
+-- takes no exit status and leaves with 0, which a calling script reads as success.
+-- ON_ERROR_STOP is set here as well as on the command line, so a caller that forgets it
+-- still stops at the first refusal or error.
+\set ON_ERROR_STOP on
 \if :{?db}
 \else
-  \echo 'set -v db=<database name>'
-  \quit 1
+  DO $$ BEGIN RAISE EXCEPTION 'roles.sql: set -v db=<database name>'; END $$;
 \endif
+-- psql sets VERSION_NUM to its own version. \getenv is psql 15's; an older client would
+-- stop at it with "invalid command", which names the symptom rather than the cause.
+SELECT :VERSION_NUM >= 150000 AS psql_has_getenv \gset
+\if :psql_has_getenv
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'roles.sql needs psql 15 or later, to read the passwords from the environment'; END $$;
+\endif
+-- Unset first: \getenv leaves a variable alone when the environment lacks it, so a value
+-- given with -v would otherwise survive and the argument form would keep working.
+\unset migrate_password
+\unset app_password
+\getenv migrate_password MIGRATE_PASSWORD
+\getenv app_password APP_PASSWORD
 \if :{?migrate_password}
 \else
-  \echo 'set -v migrate_password=<password for victual_migrate>'
-  \quit 1
+  DO $$ BEGIN RAISE EXCEPTION 'roles.sql: put the victual_migrate password in psql''s environment as MIGRATE_PASSWORD, not -v'; END $$;
 \endif
 \if :{?app_password}
 \else
-  \echo 'set -v app_password=<password for victual_app>'
-  \quit 1
+  DO $$ BEGIN RAISE EXCEPTION 'roles.sql: put the victual_app password in psql''s environment as APP_PASSWORD, not -v'; END $$;
 \endif
 
 -- Roles. CREATE ROLE has no IF NOT EXISTS, and psql variables are not interpolated inside

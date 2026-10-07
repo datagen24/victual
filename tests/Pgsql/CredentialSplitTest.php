@@ -195,14 +195,15 @@ class CredentialSplitTest extends TestCase
 	{
 		$env = self::environment(getenv('PGUSER'), getenv('PGPASSWORD'));
 		$env['PGDATABASE'] = self::$database;
+		// roles.sql reads the passwords from psql's environment and refuses -v arguments.
+		$env['MIGRATE_PASSWORD'] = self::MIGRATE_PASSWORD;
+		$env['APP_PASSWORD'] = self::APP_PASSWORD;
 
 		$process = proc_open(
 			[
 				'psql', '--no-psqlrc', '--quiet',
 				'-v', 'ON_ERROR_STOP=1',
 				'-v', 'db=' . self::$database,
-				'-v', 'migrate_password=' . self::MIGRATE_PASSWORD,
-				'-v', 'app_password=' . self::APP_PASSWORD,
 				'-f', VICTUAL_ROOT_PATH . '/deploy/postgres/roles.sql',
 			],
 			[1 => ['pipe', 'w'], 2 => ['pipe', 'w']],

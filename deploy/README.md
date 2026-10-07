@@ -113,8 +113,10 @@ podman run -d --name victual-db \
 #     the pod ever holds it. See "Two database roles" below. Wait over TCP first: the
 #     image's init-time server listens on its socket only, so a socket check passes early.
 until podman exec victual-db pg_isready -q -h 127.0.0.1 -U postgres -d victual; do sleep 1; done
-podman exec -i victual-db psql -q -v ON_ERROR_STOP=1 -U postgres -d victual \
-  -v db=victual -v migrate_password=victual-migrate -v app_password=victual-app \
+#     The passwords go in psql's environment, never on a command line (roles.sql's header).
+MIGRATE_PASSWORD=victual-migrate APP_PASSWORD=victual-app \
+  podman exec -i -e MIGRATE_PASSWORD -e APP_PASSWORD victual-db \
+  psql -q -v ON_ERROR_STOP=1 -U postgres -d victual -v db=victual \
   < deploy/postgres/roles.sql
 
 # 3. The pod, with the ConfigMap and Secret it references appended to the same stream.

@@ -171,8 +171,10 @@ jobs:
           echo "::add-mask::$app_pw"
           echo "CI_MIGRATE_PASSWORD=$migrate_pw" >> "$GITHUB_ENV"
           echo "CI_APP_PASSWORD=$app_pw" >> "$GITHUB_ENV"
-          docker exec -i victual-db psql -q -v ON_ERROR_STOP=1 -U victual -d victual \
-            -v db=victual -v migrate_password="$migrate_pw" -v app_password="$app_pw" \
+          # roles.sql reads the passwords from psql's environment, not from arguments.
+          MIGRATE_PASSWORD="$migrate_pw" APP_PASSWORD="$app_pw" \
+            docker exec -i -e MIGRATE_PASSWORD -e APP_PASSWORD victual-db \
+            psql -q -v ON_ERROR_STOP=1 -U victual -d victual -v db=victual \
             < deploy/postgres/roles.sql
 
       - name: The images declare a non-root user
