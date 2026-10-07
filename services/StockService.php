@@ -439,6 +439,7 @@ class StockService extends BaseService
 							'note' => $note
 						]);
 						$stockRow->save();
+						StockLineageService::GetInstance()->RecordAddition((int)$logRow->id, (int)$stockRow->id, 1.0);
 
 						if (VICTUAL_FEATURE_FLAG_LABELS)
 						{
@@ -483,6 +484,8 @@ class StockService extends BaseService
 						'note' => $note
 					]);
 					$stockRow->save();
+					// ADR-0036: the booking is a lot, held whole by the row it created.
+					StockLineageService::GetInstance()->RecordAddition((int)$logRow->id, (int)$stockRow->id, (float)$amount);
 
 					if ($stockLabelType == 1 && VICTUAL_FEATURE_FLAG_LABELS)
 					{
@@ -840,6 +843,10 @@ class StockService extends BaseService
 						continue;
 					}
 
+					// ADR-0036: the row's contributions must add up before units are drawn from
+					// them, and before this booking is written (see EnsureTracked()).
+					StockLineageService::GetInstance()->EnsureTracked((int)$stockEntry->id);
+
 					if ($allowSubproductSubstitution && $stockEntry->product_id != $productId)
 					{
 						// A sub product will be used -> use QU conversions
@@ -923,6 +930,9 @@ class StockService extends BaseService
 							'opened_measured_at' => $stockEntry->opened_measured_at
 						]);
 						$logRow->save();
+						// ADR-0036: every lot the row holds leaves with it. Recorded before the
+						// delete below, which takes the row's contributions with it.
+						StockLineageService::GetInstance()->Allocate((int)$logRow->id, StockLineageService::GetInstance()->RowLots((int)$stockEntry->id), -1);
 
 						// ADR-0037: names this booking as the cause of the retirement the delete
 						// below triggers when the row carries a label, so its undo can revive it.
@@ -975,6 +985,8 @@ class StockService extends BaseService
 							'shopping_location_id' => $stockEntry->shopping_location_id
 						]);
 						$logRow->save();
+						// ADR-0036 section 4: the units leave in FIFO order by lot.
+						StockLineageService::GetInstance()->Allocate((int)$logRow->id, StockLineageService::GetInstance()->TakeFifo((int)$stockEntry->id, (float)$amount), -1);
 
 						$stockEntry->update([
 							'amount' => $restStockAmount
@@ -1089,6 +1101,11 @@ class StockService extends BaseService
 				throw new \Exception('Stock does not exist');
 			}
 
+			// ADR-0036: the old booking snapshots the row's contributions before the edit.
+			$lineage = StockLineageService::GetInstance();
+			$lineage->EnsureTracked((int)$stockRow->id);
+			$lineageSnapshotBefore = ['amount' => (float)$stockRow->amount, 'lots' => $lineage->RowLots((int)$stockRow->id)];
+
 			// A field the caller's request did not supply is resolved here, against this
 			// locked, freshly re-read row - never against the unlocked read the controller
 			// took before calling in, which a concurrent booking can have moved past by now.
@@ -1137,6 +1154,7 @@ class StockService extends BaseService
 				'note' => $stockRow->note
 			], $measurementBefore));
 			$logOldRowForStockUpdate->save();
+			$lineage->Allocate((int)$logOldRowForStockUpdate->id, $lineageSnapshotBefore['lots']);
 
 			$openedDate = $stockRow->opened_date;
 			if (boolval($open) && $openedDate == null)
@@ -1178,6 +1196,17 @@ class StockService extends BaseService
 				'note' => $stockRow->note
 			], $measurementAfter));
 			$logNewRowForStockUpdate->save();
+			// ADR-0036 section 5: a lower amount leaves in FIFO order; a higher one is a new lot,
+			// this booking. The new booking then snapshots the row.
+			if (self::CompareAmounts($amount, (float)$lineageSnapshotBefore['amount']) < 0)
+			{
+				$lineage->TakeFifo((int)$stockRow->id, (float)$lineageSnapshotBefore['amount'] - $amount);
+			}
+			elseif (self::CompareAmounts($amount, (float)$lineageSnapshotBefore['amount']) > 0)
+			{
+				$lineage->AddLot((int)$stockRow->id, (int)$logNewRowForStockUpdate->id, $amount - (float)$lineageSnapshotBefore['amount']);
+			}
+			$lineage->Allocate((int)$logNewRowForStockUpdate->id, $lineage->RowLots((int)$stockRow->id));
 
 			// No CompactStockEntries() call here (ADR-0033 decision 1, 2026-09-27): an edit
 			// that happens to make this entry match another no longer merges them inline. See
@@ -1234,6 +1263,10 @@ class StockService extends BaseService
 				throw new \Exception('Stock does not exist');
 			}
 
+			$lineage = StockLineageService::GetInstance();
+			$lineage->EnsureTracked((int)$stockRow->id);
+			$measuredLots = $lineage->RowLots((int)$stockRow->id);
+
 			if ($stockRow->open != 1 || $stockRow->amount != 1.0)
 			{
 				throw new \Exception('Only a single opened container (open, amount = 1) can be measured');
@@ -1287,6 +1320,9 @@ class StockService extends BaseService
 				'note' => $stockRow->note
 			], $resolved));
 			$logNewRow->save();
+			// ADR-0036: a measurement changes no quantity; both bookings snapshot the row.
+			$lineage->Allocate((int)$logOldRow->id, $measuredLots);
+			$lineage->Allocate((int)$logNewRow->id, $measuredLots);
 
 			// Inside the transaction on purpose: the outbox row and the ledger rows commit
 			// together or not at all, so a rolled back measurement leaves no event behind and
@@ -2429,6 +2465,9 @@ class StockService extends BaseService
 					break;
 				}
 
+				// ADR-0036: before this entry's units are used and before the booking is written.
+				StockLineageService::GetInstance()->EnsureTracked((int)$stockEntry->id);
+
 				$newBestBeforeDate = $stockEntry->best_before_date;
 				$shouldReviseStockEntryLabel = false;
 				if ($product->default_best_before_days_after_open > 0)
@@ -2511,6 +2550,8 @@ class StockService extends BaseService
 						'note' => $stockEntry->note
 					], $measurementColumns));
 					$logRow->save();
+					// ADR-0036: a whole-row opening carries every contribution unchanged.
+					StockLineageService::GetInstance()->Allocate((int)$logRow->id, StockLineageService::GetInstance()->RowLots((int)$stockEntry->id));
 
 					$stockEntry->update(array_merge([
 						'open' => 1,
@@ -2579,6 +2620,13 @@ class StockService extends BaseService
 						'note' => $stockEntry->note
 					], $measurementColumns));
 					$logRow->save();
+					// ADR-0036 section 4: the opened portion keeps this row and the earliest lots;
+					// the remainder row takes the rest.
+					$lineage = StockLineageService::GetInstance();
+					$openedLots = $lineage->TakeFifo((int)$stockEntry->id, (float)$amount);
+					$lineage->SetLots((int)$newStockRow->id, $lineage->RowLots((int)$stockEntry->id));
+					$lineage->SetLots((int)$stockEntry->id, $openedLots);
+					$lineage->Allocate((int)$logRow->id, $openedLots);
 
 					$stockEntry->update(array_merge([
 						'amount' => $amount,
@@ -2914,6 +2962,10 @@ class StockService extends BaseService
 					continue;
 				}
 
+				// ADR-0036: before this entry's units move and before the bookings are written.
+				$lineage = StockLineageService::GetInstance();
+				$lineage->EnsureTracked((int)$stockEntry->id);
+
 				$correlationId = uniqid();
 				if ($takeWholeEntry)
 				{
@@ -2977,6 +3029,10 @@ class StockService extends BaseService
 						'opened_measured_at' => $stockEntry->opened_measured_at
 					]);
 					$logRowForLocationTo->save();
+					// ADR-0036: a whole-row transfer moves every contribution with the row.
+					$movedLots = $lineage->RowLots((int)$stockEntry->id);
+					$lineage->Allocate((int)$logRowForLocationFrom->id, $movedLots, -1);
+					$lineage->Allocate((int)$logRowForLocationTo->id, $movedLots);
 
 					$stockEntry->update([
 						'location_id' => $locationIdTo,
@@ -3035,6 +3091,9 @@ class StockService extends BaseService
 						'opened_measured_at' => $stockEntry->opened_measured_at
 					]);
 					$logRowForLocationFrom->save();
+					// ADR-0036 section 4: the transferred portion takes the earliest lots.
+					$movedLots = $lineage->TakeFifo((int)$stockEntry->id, (float)$amount);
+					$lineage->Allocate((int)$logRowForLocationFrom->id, $movedLots, -1);
 
 					// This is the existing stock entry -> remains at the source location with the rest amount
 					$stockEntry->update([
@@ -3062,6 +3121,7 @@ class StockService extends BaseService
 						'note' => $stockEntry->note
 					]);
 					$stockEntryNew->save();
+					$lineage->SetLots((int)$stockEntryNew->id, $movedLots);
 
 					$logRowForLocationTo = $this->DB->stock_log()->createRow([
 						'product_id' => $stockEntry->product_id,
@@ -3085,6 +3145,7 @@ class StockService extends BaseService
 						'opened_measured_at' => $stockEntryNew->opened_measured_at
 					]);
 					$logRowForLocationTo->save();
+					$lineage->Allocate((int)$logRowForLocationTo->id, $movedLots);
 
 					$amount = 0;
 				}
