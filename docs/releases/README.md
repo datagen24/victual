@@ -33,8 +33,8 @@ git push origin v<version>
 
 The first time a package is published, GHCR creates it as private. Set each of the six
 image packages to public once, under the repository's Packages settings, or a node cannot
-pull them without a pull secret. After the first tag that publishes the chart, do the same
-once for `charts/victual`, then check that it pulls without credentials:
+pull them without a pull secret. After the first tag that publishes the chart, `v0.3.1`, do
+the same once for `charts/victual`, then check that it pulls without credentials:
 
 ```bash
 helm pull oci://ghcr.io/datagen24/charts/victual --version <version>
