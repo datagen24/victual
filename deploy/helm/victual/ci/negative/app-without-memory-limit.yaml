@@ -1,0 +1,7 @@
+# The negative control for the values matrix (ADR-0038 acceptance prerequisite 2): the app
+# container's memory limit removed. check_deploy_manifest.py must refuse this rendering; if
+# it passes, the matrix is not checking what it claims to.
+resources:
+  app:
+    limits:
+      memory: null

@@ -3,7 +3,9 @@
 - **Status:** Proposed
 - **Decider:** datagen24
 - **Recorded:** 2026-10-07; decider's answers to open questions 1, 2 and 3 recorded the
-  same day, and decisions 2, 8, 9 and 10 reconciled with them
+  same day, and decisions 2, 8, 9 and 10 reconciled with them; acceptance prerequisites 1
+  to 3 met 2026-10-08, with two implementation choices awaiting the decider (see
+  "Prerequisite status")
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -291,3 +293,44 @@ Two runtime properties constrain what a rollback can do:
    value migration 0301 refuses) fails `helm upgrade` while the previous pod keeps
    serving. With MQTT enabled against a local broker, an upgrade's `post-upgrade` Job
    publishes the retained state topics.
+
+## Prerequisite status
+
+Recorded 2026-10-08 against the branch `claude/adr38-helm-chart-gates-1-3`, rendered with
+Helm v4.3.0 (the version the `lint` job installs, pinned by checksum).
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | **Met** | `python3 .devtools/ci/render_k3s.py --check` reports `deploy/k3s/ matches the chart (3 file(s))`. The parity tests and `check_deploy_manifest.py` pass unchanged (`python3 -m unittest discover -s .devtools/ci`: 70 tests, OK). Changing `replicas: 1` to `3` in `deploy/k3s/victual.yaml` by hand made `--check` exit 1 with the diff, and failed two tests in `test_helm_chart.py`. The `lint` job runs both. `kubectl kustomize` of `deploy/k3s`, `deploy/kind` and `deploy/talos` was parsed before and after the change and compared by kind and name: 13, 18 and 17 documents, no differences |
+| 2 | **Met** | `test_helm_chart.ValuesMatrixTest`: six values files in `deploy/helm/victual/ci/` render with hooks and pass `validate()`. Between them they cover all four secrets modes, the MCP sidecar, both label CronJobs, the Ingress, and the MQTT and InfluxDB Secrets, which a test asserts. The negative control, `ci/negative/app-without-memory-limit.yaml`, fails with `container/app: resources.limits.memory must be set` |
+| 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
+| 4–7 | Not met | Nothing has been installed on a cluster or published |
+
+How the chart differs from `deploy/production/`'s values, which decision 6 says it keeps:
+
+- **The `cluster` section is gone.** `cluster.context` and `cluster.namespace` named the
+  kubectl context and the namespace for `deploy.sh`. Under Helm these are `--kube-context`
+  and `--namespace`, so the chart does not read them, and the schema refuses an unknown
+  section rather than ignoring it. *Awaiting the decider*, since decision 6 lists
+  `cluster` among the sections the chart keeps.
+- **`baseUrl` is a value of its own.** `render.py` derived `VICTUAL_BASE_URL` from
+  `ingress.host`, which worked because its Ingress was always on. Decision 7 makes the
+  Ingress optional, and the base renders none but needs a URL. `baseUrl` is therefore
+  required unless the Ingress is enabled; with it enabled and `baseUrl` empty, the URL is
+  derived as before. *Awaiting the decider.*
+- **Secrets have four modes:** `placeholder`, `inline`, `onepassword` and `existing`.
+  These are decision 7's three, with the `OnePasswordItem` resources as a mode of their
+  own. Every credential Secret follows the mode, including the four added by
+  [#679](https://github.com/datagen24/victual/pull/679) and the label workers'
+  `victual-label-credentials`. `secrets.names` sets the Secret names, which is how
+  `existing` refers to Secrets the operator already has.
+- **The label workers are in the chart**, behind `labelWorkers.enabled`. `values.yaml`
+  turns them on, as the base always has. `values.example.yaml` turns them off, as
+  `render.py` always did.
+- **`values.example.yaml` is in the chart**, at `deploy/helm/victual/values.example.yaml`,
+  and is packaged with it. In inline mode the bootstrap administrator's password is still
+  required, as `render.py` required it.
+- **Memory limits are values** (`resources.*`). The schema does not require them, so that
+  the negative control reaches `check_deploy_manifest.py`, which is the check this record
+  names.
+

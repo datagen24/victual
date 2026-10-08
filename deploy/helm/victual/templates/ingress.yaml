@@ -1,0 +1,38 @@
+{{- /*
+The Ingress, off by default: the ingress is the operator's (ADR-0010), and deploy/k3s/ renders
+none (ADR-0038 decision 7). With it on, VICTUAL_BASE_URL defaults to what it publishes.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: victual
+  labels:
+    app.kubernetes.io/name: victual
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- range $k, $v := . }}
+    {{ $k }}: {{ include "victual.setting" $v | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: victual
+                port:
+                  name: http
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default "victual-tls" | quote }}
+  {{- end }}
+{{- end }}

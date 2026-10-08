@@ -91,7 +91,7 @@ value, so one role cannot accept an old and a new password at the same time.
 | Deployment | Store | Path to the Secret |
 |---|---|---|
 | `deploy/talos/` | 1Password, vault `DevSecOps` | `OnePasswordItem` → Connect server → 1Password operator, which polls every `POLLING_INTERVAL` seconds (default 600) and writes a Secret with one key per field. |
-| `deploy/production/` | 1Password (`secrets.source: onepassword`) or values file (`inline`) | The same operator path, or `render.py` writes the Secret. |
+| `deploy/helm/victual/` | 1Password (`secrets.source: onepassword`), values file (`inline`), or Secrets that already exist (`existing`) | The same operator path, or Helm writes the Secret, or something else did. |
 | `deploy/kind/` | `deploy/kind/.secrets/*.env` (gitignored) | kustomize `secretGenerator` on `kubectl apply -k`. |
 
 The operator can restart Deployments when a Secret it manages changes. The
@@ -360,8 +360,8 @@ Secrets by the `app` container. The item names are for the implementation to cho
 
 Implemented 2026-10-08, before the handler: the items and Secrets are `victual-bootstrap-admin`,
 `victual-mqtt` and `victual-influxdb`. The bootstrap Secret is required; the MQTT and
-InfluxDB references are optional in the base and required by `render.py` when the feature
-is on. [deploy/README.md, "One Secret per credential"](../../deploy/README.md#one-secret-per-credential)
+InfluxDB references are optional in the base and required by the Helm chart when the
+feature is on (it replaced `deploy/production/render.py`, ADR-0038 decision 6). [deploy/README.md, "One Secret per credential"](../../deploy/README.md#one-secret-per-credential)
 has the migration for existing items.
 
 **The handler refuses a mixed layout.** Before writing anything, it checks that each
@@ -460,7 +460,7 @@ role name `victual_app`; the temporary role would need the same no-DDL checks.
 grants, with two login members, for example `victual_app_a` and `victual_app_b`. Each
 rotation sets the idle member's password, points the Secret at it, rolls once, then
 disables the other member's login. The cost: one rollout per rotation and no failed
-requests, but a permanent change to the role model. It touches `roles.sql`, `render.py`,
+requests, but a permanent change to the role model. It touches `roles.sql`, the Helm chart,
 the parity test and the documentation of ADR-0010 property 3. The migrate role can stay as
 it is: it has no live gap.
 

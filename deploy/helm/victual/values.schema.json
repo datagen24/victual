@@ -1,0 +1,719 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "render.py's refusals, ported (ADR-0038 decision 6). Every string refuses the CHANGE-ME placeholder, wherever it is; a section a deployment does not use leaves its strings empty rather than CHANGE-ME. Memory limits are deliberately not required here: check_deploy_manifest.py refuses a rendering without one, and the lint job's values matrix proves it does.",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "not": {
+        "pattern": "CHANGE-ME"
+      },
+      "$comment": "A string that is not the CHANGE-ME placeholder of values.example.yaml."
+    },
+    "secretName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 253
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "$ref": "#/$defs/text",
+          "minLength": 1
+        },
+        "tag": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "registry",
+        "tag"
+      ]
+    },
+    "baseUrl": {
+      "$ref": "#/$defs/text",
+      "pattern": "^(https?://[^\\s/]+.*)?$"
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "$ref": "#/$defs/text"
+        },
+        "host": {
+          "$ref": "#/$defs/text"
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "secretName": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "required": [
+            "enabled"
+          ]
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ],
+            "not": {
+              "type": "string",
+              "pattern": "CHANGE-ME"
+            }
+          }
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/text",
+          "minLength": 1
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "name": {
+          "$ref": "#/$defs/text",
+          "minLength": 1
+        },
+        "sslmode": {
+          "enum": [
+            "",
+            "disable",
+            "allow",
+            "prefer",
+            "require",
+            "verify-ca",
+            "verify-full"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "name"
+      ]
+    },
+    "mqtt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "host": {
+          "$ref": "#/$defs/text"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "tls": {
+          "type": "boolean"
+        },
+        "username": {
+          "$ref": "#/$defs/text"
+        },
+        "topicPrefix": {
+          "$ref": "#/$defs/text"
+        },
+        "discoveryPrefix": {
+          "$ref": "#/$defs/text"
+        },
+        "discoveryMode": {
+          "enum": [
+            "device",
+            "entity"
+          ]
+        },
+        "deviceName": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
+    "influxdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "url": {
+          "$ref": "#/$defs/text"
+        },
+        "org": {
+          "$ref": "#/$defs/text"
+        },
+        "bucket": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
+    "labelWorkers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
+    "settings": {
+      "type": "object",
+      "$comment": "Each name is one from docs/manual/configuration.md, without VICTUAL_, holding one value: a list cannot be set from the environment.",
+      "patternProperties": {
+        "^(VICTUAL_.*|MODE|DB_.*|FILE_STORAGE|BASE_URL|BASE_PATH|MQTT_.*|INFLUXDB_.*)$": {
+          "$comment": "Set by another section of the values, or fixed by this chart. BASE_PATH is a build input baked into the image's route cache, not a runtime setting.",
+          "not": {}
+        },
+        "^[A-Z][A-Z0-9_]*$": {
+          "$comment": "One value: a list cannot be set from the environment.",
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ],
+          "not": {
+            "type": "string",
+            "pattern": "CHANGE-ME"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "placeholder",
+            "inline",
+            "onepassword",
+            "existing"
+          ]
+        },
+        "names": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "migrate": {
+              "$ref": "#/$defs/secretName"
+            },
+            "app": {
+              "$ref": "#/$defs/secretName"
+            },
+            "bootstrapAdmin": {
+              "$ref": "#/$defs/secretName"
+            },
+            "mqtt": {
+              "$ref": "#/$defs/secretName"
+            },
+            "influxdb": {
+              "$ref": "#/$defs/secretName"
+            },
+            "labelCredentials": {
+              "$ref": "#/$defs/secretName"
+            }
+          },
+          "required": [
+            "migrate",
+            "app",
+            "bootstrapAdmin",
+            "mqtt",
+            "influxdb",
+            "labelCredentials"
+          ]
+        },
+        "onepassword": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vault": {
+              "$ref": "#/$defs/text"
+            },
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "migrate": {
+                  "$ref": "#/$defs/text"
+                },
+                "app": {
+                  "$ref": "#/$defs/text"
+                },
+                "bootstrapAdmin": {
+                  "$ref": "#/$defs/text"
+                },
+                "mqtt": {
+                  "$ref": "#/$defs/text"
+                },
+                "influxdb": {
+                  "$ref": "#/$defs/text"
+                },
+                "labelCredentials": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "required": [
+                "migrate",
+                "app",
+                "bootstrapAdmin",
+                "mqtt",
+                "influxdb",
+                "labelCredentials"
+              ]
+            }
+          },
+          "required": [
+            "vault",
+            "items"
+          ]
+        },
+        "inline": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "migratePassword": {
+              "$ref": "#/$defs/text"
+            },
+            "appPassword": {
+              "$ref": "#/$defs/text"
+            },
+            "bootstrapAdminPassword": {
+              "$ref": "#/$defs/text"
+            },
+            "mqttPassword": {
+              "$ref": "#/$defs/text"
+            },
+            "influxdbToken": {
+              "$ref": "#/$defs/text"
+            },
+            "labelRendererKey": {
+              "$ref": "#/$defs/text"
+            },
+            "labelWorkerKey": {
+              "$ref": "#/$defs/text"
+            }
+          }
+        }
+      },
+      "required": [
+        "source",
+        "names"
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ]
+      }
+    }
+  },
+  "required": [
+    "image",
+    "database",
+    "secrets"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseUrl": {
+            "minLength": 1
+          }
+        },
+        "required": [
+          "baseUrl"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "className": {
+                "minLength": 1
+              },
+              "host": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mqtt": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mqtt": {
+            "properties": {
+              "host": {
+                "minLength": 1
+              },
+              "topicPrefix": {
+                "minLength": 1
+              },
+              "discoveryPrefix": {
+                "minLength": 1
+              },
+              "deviceName": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "host",
+              "port",
+              "tls",
+              "topicPrefix",
+              "discoveryPrefix",
+              "discoveryMode",
+              "deviceName"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "influxdb": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "influxdb": {
+            "properties": {
+              "url": {
+                "minLength": 1
+              },
+              "org": {
+                "minLength": 1
+              },
+              "bucket": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "url",
+              "org",
+              "bucket"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "source": {
+                "const": "onepassword"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "onepassword": {
+                "properties": {
+                  "vault": {
+                    "minLength": 1
+                  },
+                  "items": {
+                    "properties": {
+                      "migrate": {
+                        "minLength": 1
+                      },
+                      "app": {
+                        "minLength": 1
+                      },
+                      "bootstrapAdmin": {
+                        "minLength": 1
+                      },
+                      "mqtt": {
+                        "minLength": 1
+                      },
+                      "influxdb": {
+                        "minLength": 1
+                      },
+                      "labelCredentials": {
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "source": {
+                "const": "inline"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "required": [
+              "inline"
+            ],
+            "properties": {
+              "inline": {
+                "properties": {
+                  "migratePassword": {
+                    "minLength": 1
+                  },
+                  "appPassword": {
+                    "minLength": 1
+                  },
+                  "bootstrapAdminPassword": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "migratePassword",
+                  "appPassword",
+                  "bootstrapAdminPassword"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "source": {
+                "const": "inline"
+              }
+            }
+          },
+          "mqtt": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "username": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "username"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "inline": {
+                "properties": {
+                  "mqttPassword": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "mqttPassword"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "source": {
+                "const": "inline"
+              }
+            }
+          },
+          "influxdb": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "inline": {
+                "properties": {
+                  "influxdbToken": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "influxdbToken"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "source": {
+                "const": "inline"
+              }
+            }
+          },
+          "labelWorkers": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "inline": {
+                "properties": {
+                  "labelRendererKey": {
+                    "minLength": 1
+                  },
+                  "labelWorkerKey": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "labelRendererKey",
+                  "labelWorkerKey"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

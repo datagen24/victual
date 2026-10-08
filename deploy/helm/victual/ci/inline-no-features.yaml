@@ -1,0 +1,10 @@
+# Every optional workload and feature off, with the Secrets written inline.
+baseUrl: https://victual.example.com
+database: {host: postgres.example.internal}
+mqtt: {enabled: false}
+influxdb: {enabled: false}
+mcp: {enabled: false}
+labelWorkers: {enabled: false}
+secrets:
+  source: inline
+  inline: {migratePassword: migrate-password, appPassword: app-password, bootstrapAdminPassword: admin-password}

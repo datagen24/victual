@@ -1,0 +1,15 @@
+# Victual's Kubernetes deployment (ADR-0038). deploy/k3s/ is this chart rendered with
+# ci/k3s-values.yaml; .devtools/ci/render_k3s.py writes it and the lint job fails when the
+# committed copy differs.
+#
+# `version` and `appVersion` are version.json's Version (ADR-0038 decision 4), and
+# .devtools/ci/test_helm_chart.py fails when they are not. A version bump edits all three.
+apiVersion: v2
+name: victual
+description: Victual, a self-hosted household inventory, with its MCP sidecar and label workers
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
+home: https://github.com/datagen24/victual
+sources:
+  - https://github.com/datagen24/victual

@@ -1,0 +1,24 @@
+# Every optional workload and feature on, with the Secrets written inline.
+baseUrl: ""
+ingress:
+  enabled: true
+  className: traefik
+  host: victual.example.com
+  tls: {enabled: true, secretName: ""}
+  annotations: {cert-manager.io/cluster-issuer: letsencrypt}
+database: {host: postgres.example.internal, port: 5432, name: victual, sslmode: require}
+mqtt: {enabled: true, host: mqtt.example.internal, port: 8883, tls: true, username: victual}
+influxdb: {enabled: true, url: "http://influxdb.example.internal:8086"}
+mcp: {enabled: true}
+labelWorkers: {enabled: true}
+settings: {CURRENCY: EUR, CALENDAR_FIRST_DAY_OF_WEEK: 1, FEATURE_FLAG_STOCK: true}
+secrets:
+  source: inline
+  inline:
+    migratePassword: migrate-password
+    appPassword: app-password
+    bootstrapAdminPassword: admin-password
+    mqttPassword: mqtt-password
+    influxdbToken: influxdb-token
+    labelRendererKey: renderer-key
+    labelWorkerKey: worker-key

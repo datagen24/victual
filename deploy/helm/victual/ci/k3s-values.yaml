@@ -1,0 +1,29 @@
+# The values deploy/k3s/ is rendered with (ADR-0038 decision 2). .devtools/ci/render_k3s.py
+# writes it; the lint job renders again and fails if the committed files differ.
+#
+# Mostly the chart's defaults, stated here so that changing a default does not quietly
+# change the base every `kubectl apply -k deploy/k3s` deploys. The base keeps the
+# placeholder Secrets: deploy/kind replaces them and deploy/talos deletes them, by name
+# (decision 7).
+image:
+  registry: ghcr.io/datagen24
+  tag: ""
+baseUrl: https://victual.example.internal
+ingress:
+  enabled: false
+database:
+  host: replace-me-postgres.example.internal
+  port: 5432
+  name: victual
+  sslmode: ""
+mqtt:
+  enabled: false
+influxdb:
+  enabled: false
+mcp:
+  enabled: true
+labelWorkers:
+  enabled: true
+settings: {}
+secrets:
+  source: placeholder

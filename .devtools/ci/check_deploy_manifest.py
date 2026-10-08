@@ -131,8 +131,21 @@ def validate(doc):
     return errors
 
 
+def _is_chart_template(path, root):
+    """A Helm chart's template: `{{ … }}` text, not YAML, until Helm renders it.
+
+    ADR-0038 decision 3: the templates are left out of the glob and the chart's renderings are
+    checked instead, one per values file in deploy/helm/victual/ci/ (see test_helm_chart.py).
+    The chart's values files are plain YAML and stay in.
+    """
+    parts = path.relative_to(root / "deploy").parts
+    return parts[0] == "helm" and "templates" in parts[:-1]
+
+
 def select_manifests(root):
-    return sorted((root / "deploy").rglob("*.yaml")) if (root / "deploy").is_dir() else []
+    if not (root / "deploy").is_dir():
+        return []
+    return sorted(p for p in (root / "deploy").rglob("*.yaml") if not _is_chart_template(p, root))
 
 
 def main():
