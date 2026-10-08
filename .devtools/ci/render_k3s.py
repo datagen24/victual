@@ -4,8 +4,8 @@
     python3 .devtools/ci/render_k3s.py --check    # exit 1, with a diff, if they differ
 
 ADR-0038 decision 2: the chart at deploy/helm/victual/ is the one source, and deploy/k3s/ is
-its rendering with ci/k3s-values.yaml, committed so that `kubectl apply -k deploy/k3s`, the
-parity tests and the talos overlay keep reading plain files. kustomization.yaml there is
+its rendering with ci/k3s-values.yaml, committed so that `kubectl apply -k deploy/k3s` and
+the parity tests keep reading plain files. kustomization.yaml there is
 hand-written and is not touched.
 
 Each template becomes the file of the same name. Helm sorts its output by kind and puts a

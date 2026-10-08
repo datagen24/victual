@@ -100,7 +100,7 @@ settings: {}
 # --- Passwords and tokens ------------------------------------------------------------------
 secrets:
   # placeholder:  Secrets holding values that will not connect. Only for rendering a base
-  #               that an overlay replaces, as deploy/kind and deploy/talos do.
+  #               that an overlay replaces, as deploy/k3s/'s rendering does.
   # inline:       written in your values file, and rendered as Kubernetes Secrets. Helm keeps
   #               every release's rendered manifests in a Secret in the namespace, so past
   #               passwords stay there too (ADR-0038, Consequences).

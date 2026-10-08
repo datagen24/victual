@@ -8,14 +8,16 @@ manifest here with probes, limits and a security context, and there is nothing h
 about ingress classes, storage classes, secret management or DNS. PostgreSQL is not
 here either — it is infrastructure the fork consumes, not a workload the fork ships.
 
-The overlays are the exception that shows the line. [`kind/`](kind/) is a test
-harness and [`talos/`](talos/) is one operator's cluster, kept as a worked example. Both
-consume `k3s/` unchanged, and everything cluster-specific lives in the overlay.
+The two deployments of the chart are the exception that shows the line. [`kind/`](kind/)
+is a test harness and [`talos/`](talos/) is one operator's cluster, kept as a worked
+example. Each is a values file for the chart plus the in-cluster PostgreSQL the chart does
+not ship, and everything cluster-specific lives there.
 
 **The Kubernetes deployment is a Helm chart,** [`helm/victual/`](helm/victual/)
 ([ADR-0038](../docs/adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md), **Proposed**).
 `k3s/` is its rendering with [`ci/k3s-values.yaml`](helm/victual/ci/k3s-values.yaml),
-committed so that `kubectl apply -k deploy/k3s` and the overlays keep reading plain files.
+committed so that `kubectl apply -k deploy/k3s` and the parity tests keep reading plain
+files.
 **Do not edit `k3s/*.yaml` by hand:** edit the chart's templates and run
 `python3 .devtools/ci/render_k3s.py`. The `lint` job fails when the two differ.
 `k3s/kustomization.yaml` stays hand-written.
@@ -35,8 +37,8 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
 | [`helm/victual/`](helm/victual/) | The Helm chart the three `k3s/` manifests are rendered from, and the way to deploy your own instance: copy [`values.example.yaml`](helm/victual/values.example.yaml), fill in every `CHANGE-ME` and follow its header. The schema refuses a missing value or a placeholder by field name. Checked in CI; not yet installed on a cluster |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
-| [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
-| [`talos/`](talos/) | One operator's overlay, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, from the published images, with a Traefik Ingress, PostgreSQL on an NFS claim, Secrets from 1Password Connect and no label workers. `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` applies it. Applied 2026-10-06 |
+| [`kind/`](kind/) | A test harness, not a deployment: the chart with [`kind/values.yaml`](kind/values.yaml) (the working tree's `localhost/` images) plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` and creates the Secrets from them |
+| [`talos/`](talos/) | One operator's deployment, kept as a worked example: the maintainer's Talos Raspberry Pi cluster, the published chart and images with [`talos/values.yaml`](talos/values.yaml) — a Traefik Ingress, Secrets from 1Password Connect, no label workers — and PostgreSQL on an NFS claim from the small overlay in [`talos/postgres/`](talos/postgres/kustomization.yaml). `talos/seed-1password.sh` seeds the vault once; `talos/up.sh` installs it. Applied through a kustomize overlay 2026-10-06; not yet through the chart |
 | [`postgres/roles.sql`](postgres/roles.sql) | The two database roles, and what each may do |
 | [`k3s/label-workers.yaml`](k3s/label-workers.yaml) | The label renderer and the label worker as `CronJob`s, in the kustomize base above. Neither holds a database credential |
 | [`podman/label-workers.yaml`](podman/label-workers.yaml) | The same two workloads as `Job`s, for `podman kube play --replace` on a systemd timer |
@@ -219,16 +221,28 @@ the default `filesystem` backend would fail on the first upload.
 
 ## Trying it on kind
 
-`deploy/kind/up.sh` is the Kubernetes counterpart of the podman walkthrough above. It
-needs a kind cluster (`KIND_CLUSTER`, default `kind-cluster`) and the four images in
-podman (`nix/build-in-podman.sh images`):
+`deploy/kind/up.sh` is the Kubernetes counterpart of the podman walkthrough above, through
+the Helm chart. It needs a kind cluster (`KIND_CLUSTER`, default `kind-cluster`), Helm, and
+the app, web, migrate and MCP images in podman (`nix/build-in-podman.sh images`), tagged
+with `version.json`'s version unless `VICTUAL_IMAGE_TAG` names another:
 
 ```sh
 deploy/kind/up.sh
-kubectl -n victual port-forward svc/victual 8080:8080
-kubectl -n victual port-forward svc/victual-mcp 3000:3000
-deploy/kind/up.sh down      # the database goes with the namespace
+kubectl --context kind-kind-cluster -n victual port-forward svc/victual 8080:8080
+kubectl --context kind-kind-cluster -n victual port-forward svc/victual-mcp 3000:3000
+deploy/kind/up.sh down      # the database and the Helm release go with the namespace
 ```
+
+It applies the namespace, [`kind/postgres.yaml`](kind/postgres.yaml) and the roles Job,
+creates the four Secrets from `deploy/kind/.secrets/`, then runs `helm upgrade --install`
+with [`kind/values.yaml`](kind/values.yaml) (`secrets.source: existing`, so no password
+passes through Helm or its release history). A second run is a `helm upgrade`, so the
+chart's pre-upgrade preflight runs too. `VICTUAL_NAMESPACE` picks another namespace, so two
+runs can share a cluster. The label workers are off: each needs a key an administrator
+issues after the first login. A namespace an earlier, kustomize-based `up.sh` applied is
+adopted into the release on the first install (`--take-ownership`); the old overlay's label
+CronJobs are left in place, and `kubectl delete cronjob victual-label-renderer
+victual-label-worker` removes them.
 
 `up.sh` runs every `kubectl` command against the context `kind-$KIND_CLUSTER` and never the
 current one, which on a machine that also manages a real cluster may well be that cluster.
@@ -248,16 +262,51 @@ A database first migrated without the key (before `up.sh` wrote it) has a genera
 instead, printed once in the migrate container's log and forced to change at first login:
 
 ```sh
-kubectl -n victual logs deploy/victual -c migrate --all-pods=true | grep 'generated password'
+kubectl --context kind-kind-cluster -n victual logs deploy/victual -c migrate --all-pods=true | grep 'generated password'
 ```
 
 Only the pod that created the database has that line. Until the password is changed the
 account can open only the change-password form, and the API answers
 `403` to everything but its save — an API key included.
 
-The overlay is also the pattern for a real cluster. Put `deploy/k3s` (or this repository at
-a pinned ref) in `resources`, then patch the ConfigMap's database host and base URL, the
-Secrets and the image references. Keep the Secrets out of anything committed.
+For a real cluster, install the chart with your own values file: start from
+[`helm/victual/values.example.yaml`](helm/victual/values.example.yaml), or from
+[`talos/values.yaml`](talos/values.yaml) for one that is in use. A kustomize overlay over
+`deploy/k3s` (or this repository at a pinned ref) still works for anyone who does not use
+Helm, with the ConfigMap's database host and base URL, the Secrets and the image references
+patched; it runs neither of the chart's hooks. Keep the Secrets out of anything committed.
+
+## The Talos cluster
+
+`deploy/talos/up.sh` installs the published chart,
+`oci://ghcr.io/datagen24/charts/victual` at `version.json`'s version (`CHART_VERSION`
+overrides it; the first published chart is 0.3.1, the tag after 0.3.0, so set
+`CHART_VERSION=0.3.1` until the release moves `version.json` there), with [`talos/values.yaml`](talos/values.yaml); `--local` installs
+`deploy/helm/victual/` from the working tree instead, still with the published images. It
+needs `KUBE_CONTEXT` and refuses to run without one rather than use the current context:
+
+```sh
+KUBE_CONTEXT=<talos context> deploy/talos/up.sh
+```
+
+It applies [`talos/postgres/`](talos/postgres/kustomization.yaml) first (deploy/kind's
+PostgreSQL and roles Job, patched onto the NFS claim and uid 3000, and the superuser's
+`OnePasswordItem`, which the chart does not hold), then the chart, whose
+`OnePasswordItem`s make the migrate, app and bootstrap Secrets. The roles Job needs two of
+those, so `up.sh` waits for it and for the rollouts after the install rather than with
+`--wait`.
+
+The cluster was deployed through a kustomize overlay on 2026-10-06; the first
+install adopts those resources (`--take-ownership`). Rendered against that overlay's
+output, the chart and `talos/postgres/` give the same objects with the same pod templates,
+less the Namespace (which `up.sh` creates) and plus the pre-upgrade preflight Job.
+
+That comparison is with the overlay as committed, at 0.3.0. The 2026-10-06 apply ran the
+`0.2.0-MVP` images, so if the cluster still runs them, the first install is also the upgrade
+to 0.3.0 and its migrations. **Helm runs no `pre-upgrade` hook on an install,** so the
+preflight does not run then: run it by hand first
+([updating-migrations.md](../docs/manual/operator/updating-migrations.md)), or a refusing
+migration shows as a `migrate` initContainer in a restart loop, as under `kubectl apply`.
 
 ## What a running instance needs
 
@@ -403,7 +452,7 @@ InfluxDB token in `victual-db-app`. Move them in this order, which never leaves 
 without a value it reads:
 
 1. **Create the new items, copying the current values.** For 1Password, run
-   `talos/seed-1password.sh` on the Talos overlay: it creates `victual-bootstrap-admin` from the
+   `talos/seed-1password.sh` for the Talos cluster: it creates `victual-bootstrap-admin` from the
    value in `victual-db-migrate`. Elsewhere, copy each field the same way, on a pipe so the value is on no
    command line:
 
@@ -479,13 +528,16 @@ Stated plainly because the gap is the point of tracking it:
   connection refused because no Victual was running.
 
 - ~~**The k3s manifest has never been applied to a cluster.**~~ **Applied: kind
-  2026-09-19, a real cluster 2026-10-06.** `deploy/kind/up.sh` loads the four images, applies
-  `deploy/k3s` through the `deploy/kind` overlay, and waits for every rollout. What it
+  2026-09-19, a real cluster 2026-10-06.** `deploy/kind/up.sh` loaded the four images,
+  applied `deploy/k3s` through what was then a kustomize overlay, and waited for every
+  rollout (it installs the chart since 2026-10-08). What it
   established: the migrate initContainer, the credential split and all three probes behave
   under a real kubelet as they did under podman; the MCP sidecar serves every tool from two
   replicas; and `lifecycle.stopSignal` is dropped on v1.37 (see "Signals"). The real
   cluster is the maintainer's Talos one (v1.37, arm64 Raspberry Pi, Traefik, NFS CSI),
-  through [`talos/`](talos/kustomization.yaml) from the published GHCR images. It showed the
+  through its kustomize overlay of the time,
+  [`talos/kustomization.yaml`](https://github.com/datagen24/victual/blob/b930242f/deploy/talos/kustomization.yaml),
+  from the published GHCR images. It showed the
   same probes, credential split and dropped `stopSignal`. PostgreSQL's data also survived a
   pod restart on NFS (plan 20, piece 4). An apply that reaches a printer is still plan 25's
   verification 12, and it is what keeps

@@ -59,6 +59,12 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-10-08 — ADR-0038 decision 8: kind and talos are chart values files** (branch
+  `claude/adr38-kind-talos-values`): `deploy/kind/up.sh` and `deploy/talos/up.sh` run
+  `helm upgrade --install`; talos needs `KUBE_CONTEXT` (the current context here is the prod
+  cluster). Helm 4 refuses resources `kubectl apply` created until `--take-ownership
+  --force-conflicts`, which both scripts pass on a first install only. Use
+  `VICTUAL_NAMESPACE` for scratch runs: other sessions use `victual` on kind.
 - **2026-10-08 — ADR-0038 prerequisites 1–3: the Helm chart lands** (branch
   `claude/opus5_adr38-helm-chart-8c96ee`, stacked on PR 679): `deploy/k3s/*.yaml` is now
   *generated* from `deploy/helm/victual/` by `.devtools/ci/render_k3s.py`. Never hand-edit
@@ -87,16 +93,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   (**Proposed**) refuses *and* widens. Five defects found in review, all from two mistakes:
   the accepted set written twice, and a test comparing the two by sampling. The durable
   part is [[feedback_one_definition_of_an_accepted_set]].
-- **2026-09-19 — First release freeze review** (branch `claude/first-release-freeze-e0318a`,
-  [PR 221](https://github.com/datagen24/victual/pull/221)): all nine open issues reviewed
-  against the tree. #219 closed (every decision landed in #220). #217's second half fixed:
-  `FileSizeLimit` no longer logs or memoizes, `ConfigurationValidator` announces the clamp
-  under `PHP_SAPI === 'cli'` only; new phase `uploadclamp` boots the validator under `php`
-  and `php-cgi` in a subprocess. What stays open is verification up a layer, not code:
-  #133/#93 (K3S apply, SIGTERM on a cluster), #139 (Home Assistant), #86 §11.4 (the real
-  client), plus backlogs #192, #209, #80. **Version identity is the freeze's one decision:**
-  `version.json` still says upstream's `4.6.0`, and `nix/overlay.nix`, every deploy manifest
-  and `deploy/kind/up.sh` derive the image tag from it. No git tag exists yet.
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues

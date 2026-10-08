@@ -1,0 +1,50 @@
+# The Talos cluster's in-cluster PostgreSQL, which the chart does not ship (ADR-0010, ADR-0038
+# decision 8). deploy/talos/up.sh applies it before `helm upgrade --install`, built with
+# `--load-restrictor LoadRestrictionsNone` because it names deploy/kind's two files rather
+# than copying them:
+#
+#   - deploy/kind's PostgreSQL and roles Job, with the PostgreSQL patched below onto an NFS
+#     PersistentVolumeClaim (pvc.yaml) and run as the NAS's mapall uid.
+#   - The superuser's Secret from 1Password (superuser-item.yaml). The roles Job also reads
+#     the migrate and app roles' Secrets, which the chart's OnePasswordItems create, so the
+#     Job completes only after the chart is installed; up.sh waits for it then.
+#   - roles.sql from its one real location, as a ConfigMap.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: victual
+
+resources:
+  - ../../kind/postgres.yaml
+  - ../../kind/roles-job.yaml
+  - pvc.yaml
+  - superuser-item.yaml
+
+configMapGenerator:
+  - name: victual-db-roles-sql
+    files:
+      - roles.sql=../../postgres/roles.sql
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  # PostgreSQL on the NFS claim, as the uid the share maps every client to; see pvc.yaml for
+  # why it cannot stay 999.
+  - target:
+      kind: Deployment
+      name: victual-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: data
+          persistentVolumeClaim:
+            claimName: victual-postgres-data
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsUser
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsGroup
+        value: 3000
+      - op: replace
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 3000

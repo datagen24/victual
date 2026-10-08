@@ -41,8 +41,8 @@
 #      not create (see "One Secret per credential" in deploy/README.md).
 #   3. The images below are the ones a release tag publishes to GHCR for amd64 and arm64
 #      (ADR-0030, .github/workflows/release.yml); a node pulls them by the version tag. To
-#      run a local build instead, point `image:` at what `nix run .#load` produces, or use
-#      a kustomize `images:` override as deploy/kind/kustomization.yaml does.
+#      run a local build instead, point `image:` at what `nix run .#load` produces, or set
+#      the chart's image.registry to `localhost` as deploy/kind/values.yaml does.
 ---
 # The role that owns the schema: held by the migrate initContainer and by nothing else.
 apiVersion: v1

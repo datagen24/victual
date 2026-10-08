@@ -1,0 +1,43 @@
+# The chart's values for the maintainer's Talos Raspberry Pi cluster (arm64, Traefik behind
+# MetalLB, NFS CSI), kept as a worked example (ADR-0038 decision 8). deploy/talos/up.sh is
+# the entry point: it applies the in-cluster PostgreSQL in deploy/talos/postgres/, then runs
+# `helm upgrade --install` with this file, from the published chart by default.
+#
+# The images are the published GHCR ones at the chart's appVersion (amd64 and arm64), so
+# `image` keeps the chart's defaults.
+
+# Through the cluster's Traefik. The host is a nip.io name for Traefik's MetalLB address, so
+# it resolves without any DNS change; replace it when the cluster gets a real name and a
+# certificate. baseUrl is left empty, so the chart derives it from the host: the URL and the
+# Ingress cannot disagree.
+baseUrl: ""
+ingress:
+  enabled: true
+  className: traefik
+  host: victual.10.130.34.240.nip.io
+  tls:
+    enabled: false
+
+# deploy/talos/postgres/, in the same namespace.
+database:
+  host: victual-postgres
+
+mcp:
+  enabled: true
+
+# No printer on this cluster.
+labelWorkers:
+  enabled: false
+
+# The migrate, app and bootstrap Secrets come from 1Password through the cluster's Connect
+# operator, which watches OnePasswordItems in every namespace. The items live in the
+# DevSecOps vault, the one vault its Connect server can read; seed-1password.sh creates them.
+# The superuser's item is not the chart's: deploy/talos/postgres/superuser-item.yaml.
+#
+# Rotating a database password means ALTER ROLE first and the item second: the operator
+# copies values, and does not know a password is also a database's state. That is also why
+# nothing here asks the operator to restart pods when an item changes.
+secrets:
+  source: onepassword
+  onepassword:
+    vault: DevSecOps

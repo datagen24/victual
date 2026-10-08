@@ -6,6 +6,9 @@
    each file in ci/negative/ fails it, which proves the check is looking.
 3. values.example.yaml, unedited, is refused at install with the CHANGE-ME field's path.
 
+Decision 8's two deployments, deploy/kind/values.yaml and deploy/talos/values.yaml, are
+checked the same way as the matrix, and for what each is for.
+
 The rest port deploy/production/render.py's tests (one Secret per credential, plan 36's item
 layout) and its refusals, now values.schema.json's.
 
@@ -30,6 +33,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CHART = ROOT / "deploy/helm/victual"
 MATRIX = sorted((CHART / "ci").glob("*.yaml"))
 NEGATIVE = sorted((CHART / "ci/negative").glob("*.yaml"))
+# What this repository deploys, as distinct from the matrix's what-can-ship (decision 8).
+KIND_VALUES = ROOT / "deploy/kind/values.yaml"
+TALOS_VALUES = ROOT / "deploy/talos/values.yaml"
+DEPLOYMENTS = [KIND_VALUES, TALOS_VALUES]
 DB_CREDENTIAL = {"VICTUAL_DB_USER", "VICTUAL_DB_PASSWORD"}
 
 HELM = shutil.which("helm")
@@ -284,6 +291,46 @@ class ExampleValuesTest(unittest.TestCase):
         docs = render(yaml.safe_load(text))
         self.assertEqual([e for d in docs for e in validate(d)], [])
         self.assertIn("victual", by_kind(docs, "Ingress"))
+
+
+@needs_helm
+class DeploymentValuesTest(unittest.TestCase):
+    """Decision 8: deploy/kind and deploy/talos are values files for the chart."""
+
+    def test_each_renders_and_passes(self):
+        for path in DEPLOYMENTS:
+            with self.subTest(path.parent.name):
+                errors = [e for d in render(path) for e in validate(d)]
+                self.assertEqual(errors, [])
+
+    def test_the_migrate_secret_has_two_readers(self):
+        for path in DEPLOYMENTS:
+            with self.subTest(path.parent.name):
+                self.assertEqual(secret_readers(render(path), "victual-db-migrate"), {
+                    ("Deployment", "victual", "migrate"),
+                    ("Job", HookJobTest.PREFLIGHT, "preflight"),
+                })
+
+    def test_kind_runs_the_local_build_against_its_own_postgres(self):
+        docs = render(KIND_VALUES)
+        images = {c["image"] for d in docs if d["kind"] in {"Deployment", "Job"}
+                  for c in pod_spec(d).get("initContainers", []) + pod_spec(d)["containers"]}
+        self.assertTrue(images)
+        self.assertTrue(all(i.startswith("localhost/victual-") for i in images), images)
+        self.assertEqual(by_kind(docs, "ConfigMap")["victual-config"]["data"]["VICTUAL_DB_HOST"], "victual-postgres")
+        # up.sh creates the Secrets from deploy/kind/.secrets/; the chart renders none.
+        self.assertEqual(by_kind(docs, "Secret"), {})
+        self.assertNotIn("victual-label-renderer", by_kind(docs, "CronJob"))
+
+    def test_talos_serves_its_ingress_host_with_secrets_from_1password(self):
+        docs = render(TALOS_VALUES)
+        (rule,) = by_kind(docs, "Ingress")["victual"]["spec"]["rules"]
+        url = by_kind(docs, "ConfigMap")["victual-config"]["data"]["VICTUAL_BASE_URL"]
+        self.assertEqual(url, f"http://{rule['host']}")
+        self.assertEqual(by_kind(docs, "Secret"), {})
+        self.assertEqual(set(by_kind(docs, "OnePasswordItem")),
+                         {"victual-db-migrate", "victual-db-app", "victual-bootstrap-admin"})
+        self.assertEqual(by_kind(docs, "CronJob"), {})
 
 
 def filled_inline(features):

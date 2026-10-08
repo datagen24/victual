@@ -1,0 +1,11 @@
+# PostgreSQL's superuser password, from 1Password. The chart renders the other three items
+# (values.yaml: secrets.source: onepassword) and holds no superuser credential (ADR-0038
+# decision 10), so this one stays beside the PostgreSQL it belongs to. The cluster's Connect
+# operator writes a Secret of the same name with one key, `password`, which postgres.yaml
+# and the roles Job read. deploy/talos/seed-1password.sh creates the item.
+apiVersion: onepassword.com/v1
+kind: OnePasswordItem
+metadata:
+  name: victual-postgres-superuser
+spec:
+  itemPath: vaults/DevSecOps/items/victual-postgres-superuser

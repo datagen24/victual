@@ -1,0 +1,34 @@
+# The chart's values for the kind test harness (ADR-0038 decision 8). deploy/kind/up.sh is
+# the entry point: it applies the throwaway PostgreSQL and the roles Job beside this
+# directory, creates the Secrets, then runs `helm upgrade --install` with this file.
+#
+# **No password is here.** up.sh generates them into deploy/kind/.secrets/ (gitignored) on
+# its first run and creates the Secrets from those files with `kubectl create secret`, so
+# the chart renders none (`secrets.source: existing`). Not `inline`: that would mean
+# passing the passwords to Helm on its command line or in a generated values file, and Helm
+# would keep a copy in every release's history Secret. The roles Job also needs the two
+# database Secrets before the chart is installed, which `existing` gives it.
+
+# The working tree's build, not the last release: up.sh loads `localhost/victual-*` into
+# the cluster and sets image.tag (version.json's Version unless VICTUAL_IMAGE_TAG says
+# otherwise).
+image:
+  registry: localhost
+
+# What `kubectl port-forward svc/victual 8080:8080` serves.
+baseUrl: http://localhost:8080
+
+# The PostgreSQL in deploy/kind/postgres.yaml, in the same namespace.
+database:
+  host: victual-postgres
+
+mcp:
+  enabled: true
+
+# Off: each CronJob authenticates with a key an administrator issues after the first login
+# (deploy/README.md, "The label workloads"), and a run without one fails every minute.
+labelWorkers:
+  enabled: false
+
+secrets:
+  source: existing
