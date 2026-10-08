@@ -2,10 +2,9 @@
 
 - **Status:** Proposed
 - **Decider:** datagen24
-- **Recorded:** 2026-10-07; decider's answers to open questions 1, 2 and 3 recorded the
-  same day, and decisions 2, 8, 9 and 10 reconciled with them; acceptance prerequisites 1
-  to 3 met 2026-10-08, with two implementation choices awaiting the decider (see
-  "Prerequisite status")
+- **Recorded:** 2026-10-07. Answers to open questions 1, 2 and 3 recorded the same day,
+  and decisions 2, 8, 9 and 10 reconciled with them. Prerequisites 1 to 3 met 2026-10-08,
+  with two rulings that day reconciled into decision 6 (see "Prerequisite status")
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -116,8 +115,11 @@ Two runtime properties constrain what a rollback can do:
    `packages: write` under ADR-0030 decision 5. No other job gains that permission. As
    ADR-0030 decision 7 requires for images, the chart has no `latest`.
 6. **The values file replaces `deploy/production/`.** The chart's `values.yaml` keeps the
-   sections `values.example.yaml` already defines: cluster, image, ingress, database,
-   MQTT, InfluxDB, MCP, settings and secrets. `render.py`'s refusals become a
+   sections `values.example.yaml` already defines: image, ingress, database, MQTT,
+   InfluxDB, MCP, settings and secrets. It drops `cluster`, whose context and namespace
+   are Helm's `--kube-context` and `--namespace`, and adds `baseUrl`, because the Ingress
+   that `VICTUAL_BASE_URL` was derived from is optional under decision 7. `render.py`'s
+   refusals become a
    `values.schema.json` that Helm enforces at install and upgrade. The schema covers
    required fields, types, the reserved setting names and the `CHANGE-ME` placeholder.
    `deploy/production/` is removed in the change that lands the chart.
@@ -306,18 +308,23 @@ Helm v4.3.0 (the version the `lint` job installs, pinned by checksum).
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4–7 | Not met | Nothing has been installed on a cluster or published |
 
-How the chart differs from `deploy/production/`'s values, which decision 6 says it keeps:
+How the chart differs from `deploy/production/`'s values:
 
 - **The `cluster` section is gone.** `cluster.context` and `cluster.namespace` named the
   kubectl context and the namespace for `deploy.sh`. Under Helm these are `--kube-context`
   and `--namespace`, so the chart does not read them, and the schema refuses an unknown
-  section rather than ignoring it. *Awaiting the decider*, since decision 6 lists
-  `cluster` among the sections the chart keeps.
+  section rather than ignoring it.
+
+  > **Response (datagen24, 2026-10-08):** Approved: drop `cluster`. *Reconciled into
+  > decision 6.*
 - **`baseUrl` is a value of its own.** `render.py` derived `VICTUAL_BASE_URL` from
   `ingress.host`, which worked because its Ingress was always on. Decision 7 makes the
   Ingress optional, and the base renders none but needs a URL. `baseUrl` is therefore
   required unless the Ingress is enabled; with it enabled and `baseUrl` empty, the URL is
-  derived as before. *Awaiting the decider.*
+  derived as before.
+
+  > **Response (datagen24, 2026-10-08):** Approved: keep `baseUrl`. *Reconciled into
+  > decision 6.*
 - **Secrets have four modes:** `placeholder`, `inline`, `onepassword` and `existing`.
   These are decision 7's three, with the `OnePasswordItem` resources as a mode of their
   own. Every credential Secret follows the mode, including the four added by
