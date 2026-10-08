@@ -39,7 +39,9 @@ needs_helm = unittest.skipUnless(HELM, "helm is not installed")
 
 
 def helm(*args):
-    return subprocess.run(["helm", *args], capture_output=True, text=True)
+    # No kubeconfig: nothing here may reach a cluster, and the CI runner has none to reach.
+    env = dict(os.environ, KUBECONFIG=os.devnull)
+    return subprocess.run(["helm", *args], capture_output=True, text=True, env=env)
 
 
 def render(values, *, hooks=True):
@@ -171,7 +173,6 @@ class ExampleValuesTest(unittest.TestCase):
         # --dry-run=client validates exactly as an install does, without a cluster.
         result = helm(
             "install", "victual", str(CHART), "-f", str(self.EXAMPLE), "--dry-run=client",
-            "--kube-context", "no-such-context",
         )
         self.assertNotEqual(result.returncode, 0)
         fields = list(self.placeholders(yaml.safe_load(self.EXAMPLE.read_text())))

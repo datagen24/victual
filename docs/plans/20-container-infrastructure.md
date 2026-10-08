@@ -534,6 +534,13 @@ as known so it can be a gate today; each fix deletes its `--known` line in
 
 ### Piece 4 — the k3s manifests — written, validated structurally, applied 2026-10-06
 
+**Since 2026-10-08 `deploy/k3s/*.yaml` is generated** from the Helm chart at
+[`deploy/helm/victual/`](../../deploy/helm/victual/) by `.devtools/ci/render_k3s.py`
+([ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md), **Proposed**,
+prerequisites 1–3). What follows describes the files as they were written by hand. The
+rendering changed no object: `kubectl kustomize` of k3s, kind and talos parsed the same
+before and after.
+
 [`deploy/k3s/victual.yaml`](../../deploy/k3s/victual.yaml): a `ConfigMap`, the two Secrets, a
 `Service` named `victual` on 8080 (which is what `label-workers.yaml` already points at) and a
 `Deployment` with `replicas: 1`. It carries the same pod as

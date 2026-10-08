@@ -60,8 +60,9 @@ jobs:
           curl -fsSLo "$RUNNER_TEMP/$archive" "https://get.helm.sh/$archive"
           echo "$HELM_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" linux-amd64/helm
-          install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
-          helm version
+          # On PATH for the later steps; GITHUB_PATH does not apply to this one.
+          echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/linux-amd64/helm" version
 
       - name: Check CI validation scripts
         run: python3 -m unittest discover -s .devtools/ci

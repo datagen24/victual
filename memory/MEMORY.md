@@ -59,6 +59,12 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
 
 <newest first; keep five. Concurrent branches both add a line here — on conflict keep both.>
 
+- **2026-10-08 — ADR-0038 prerequisites 1–3: the Helm chart lands** (branch
+  `claude/opus5_adr38-helm-chart-8c96ee`, stacked on PR 679): `deploy/k3s/*.yaml` is now
+  *generated* from `deploy/helm/victual/` by `.devtools/ci/render_k3s.py`. Never hand-edit
+  it; edit the template and re-render, or `lint` fails. `deploy/production/` is gone. Byte
+  comparison means the Helm version matters: CI pins v4.3.0 by checksum, the same as the
+  workstation's. Bump both together. Gates 4–7 need kind, a release tag and the Talos cluster.
 - **2026-10-05 — `stock_edited_entries` was quadratic in the whole ledger** (branch
   `claude/opus5_stock-edited-entries-quadratic-7c41e2`): every booking, undo and product
   details read paid for it; 48 s per purchase at 19,416 rows. Migration 0302 makes it linear
@@ -91,16 +97,6 @@ reproduce them, as [docs/documentation.md](../docs/documentation.md) requires of
   client), plus backlogs #192, #209, #80. **Version identity is the freeze's one decision:**
   `version.json` still says upstream's `4.6.0`, and `nix/overlay.nix`, every deploy manifest
   and `deploy/kind/up.sh` derive the image tag from it. No git tag exists yet.
-- **2026-09-19 — First full-stack year run against the MVP** (branch
-  `claude/full-stack-1yr-test-a49f77`): `parity year` PASS, 14/14 invariants, 0 clock
-  violations, ~23 min, after retiring the year's tare product (ADR-0022 removed product-level
-  tare). `parity all` now exits **0** for the first time. New: the stack boots on a
-  *generated* admin password and walks the forced change (`harness/bootstrap-admin.js`); a
-  `parity mcp` phase drives the sidecar with the SDK v2 client against the REST GETs each tool
-  wraps. Found and fixed: unknown-entity 500s (#218), the 32 MB upload clamp (#217, the
-  per-request log line half still open), and login checks that accepted wrong passwords (a
-  failed login is also a 302). Plan 19's permissions shape and #46's prices approved as
-  differences (#219). See [[reference_local_environment]].
 ## DOCTRINE (operator-locked decisions)
 
 - [Wire moves or document moves](feedback_wire_vs_document.md) — 2026-09-21, issues
