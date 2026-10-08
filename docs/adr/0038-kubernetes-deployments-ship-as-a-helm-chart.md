@@ -304,7 +304,8 @@ Recorded 2026-10-08 against the branch `claude/adr38-helm-chart-gates-1-3`, rend
 Helm v4.3.0 (the version the `lint` job installs, pinned by checksum). Rows 4 and 7
 were recorded the same day against `claude/adr38-helm-hooks`, on a one-node kind cluster
 (Kubernetes v1.37, podman provider, arm64). The commands, logs and the client's per-second
-record are in that branch's pull request.
+record are in that branch's pull request. Row 5's workflow was recorded the same day
+against `claude/adr38-chart-publish`.
 
 | # | Status | Evidence |
 |---|---|---|
@@ -312,8 +313,31 @@ record are in that branch's pull request.
 | 2 | **Met** | `test_helm_chart.ValuesMatrixTest`: six values files in `deploy/helm/victual/ci/` render with hooks and pass `validate()`. Between them they cover all four secrets modes, the MCP sidecar, both label CronJobs, the Ingress, and the MQTT and InfluxDB Secrets, which a test asserts. The negative control, `ci/negative/app-without-memory-limit.yaml`, fails with `container/app: resources.limits.memory must be set` |
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to the hook Jobs' build both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
-| 5–6 | Not met | Nothing has been published, and kind and talos are still kustomize overlays |
+| 5 | **Workflow in place; not met** | `release.yml` checks the tag against `Chart.yaml` and pushes the chart from `publish`. A local registry round-trip passed; the GHCR push is untested until the next tag. See [Prerequisite 5's workflow](#prerequisite-5s-workflow) |
+| 6 | Not met | kind and talos are still kustomize overlays |
 | 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
+
+### Prerequisite 5's workflow
+
+`release.yml`'s `identity` job refuses a tag whose version differs from `Chart.yaml`'s
+`version` or `appVersion`. The `publish` job, which already holds `packages: write`,
+installs Helm v4.3.0 with the `lint` job's checksum, runs `helm package`, logs in to GHCR
+with `GITHUB_TOKEN` and pushes to `oci://ghcr.io/datagen24/charts`. The only tag is the
+chart's version. The release notes carry `helm install victual
+oci://ghcr.io/datagen24/charts/victual:<Version>@sha256:…`, and Helm refuses that
+reference when the digest differs.
+
+The step's own script ran locally against a throwaway `registry:2`, with the GHCR login
+stubbed. It pushed `charts/victual:0.3.0`, the registry listed that as the only tag, and
+`helm pull` of the reference it wrote returned the packaged bytes. With `VERSION=0.3.1` it
+stopped before pushing, because the package was `victual-0.3.0.tgz`.
+
+Three things remain:
+
+1. The maintainer's next signed tag, which runs the push to GHCR for the first time.
+2. Making the `charts/victual` package public once.
+3. `helm pull oci://ghcr.io/datagen24/charts/victual --version <Version>` without
+   credentials.
 
 ### Prerequisite 4 on kind
 
