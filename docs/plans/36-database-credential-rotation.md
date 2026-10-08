@@ -7,9 +7,8 @@ restarts the pods. The cost to running requests is known and measured beforehand
 **Depends on:** [ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md)
 decision 10 (Proposed), which
 keeps `roles.sql` a manual step outside the chart and names this handler as separate work.
-**Status:** draft, research only. No script exists. Implementation waits on the logging
-hardening in [#676](https://github.com/datagen24/victual/pull/676) and on the availability
-decision in open questions 1 and 2.
+**Status:** draft, research only. No script exists. Implementation waits on open
+questions 1 and 2; rotation is enabled only after the [item-layout migration](#item-layout).
 
 ## Problem and outcome
 
@@ -58,9 +57,10 @@ The MCP sidecar (`deploy/k3s/victual-mcp.yaml`) and the label workers
 therefore restarts one Deployment, `victual`.
 
 Each Secret carries `VICTUAL_DB_USER` beside `VICTUAL_DB_PASSWORD`, so the role a container
-uses is also a Secret value. The migrate item holds `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`. The
-app item may hold `VICTUAL_MQTT_PASSWORD` and `VICTUAL_INFLUXDB_TOKEN`
-(`deploy/production/values.example.yaml`). A rotation must leave those fields unchanged.
+uses is also a Secret value. Today the migrate item also holds
+`VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, and the app item may hold `VICTUAL_MQTT_PASSWORD` and
+`VICTUAL_INFLUXDB_TOKEN` (`deploy/production/values.example.yaml`). Open question 13's answer
+moves those out before rotation is enabled ([Item layout](#item-layout)).
 
 ### How passwords reach PostgreSQL
 
@@ -79,7 +79,7 @@ to run without them or on a psql older than 15. A refusal exits 3; before #674, 
 exited 0. Every call site in the tree uses the environment form.
 
 The server still receives each password as a literal in `ALTER ROLE … PASSWORD`.
-[#676](https://github.com/datagen24/victual/pull/676), open, switches off every server
+[#676](https://github.com/datagen24/victual/pull/676), merged 2026-10-08, switches off every server
 setting that records statement text before that statement runs (see
 [Server logs](#server-logs)).
 
@@ -157,10 +157,12 @@ outline below is required behaviour; the names are illustrative.
    given, and that `kubectl` names the intended context and namespace.
 2. **Lock.** Open the superuser connection that holds the rotation lock for the whole run
    (see [Concurrency](#concurrency)). A second handler stops here.
-3. **Classify.** Read the rotation journal (see [Recovery](#recovery)). With an operation
-   in flight, reconcile it. With none, check that each store's current password
-   authenticates as its role; a mismatch is drift, and the handler stops before changing
-   anything.
+3. **Classify.** Check that each database item holds exactly `VICTUAL_DB_USER` and
+   `VICTUAL_DB_PASSWORD`; any other field stops the run before anything is written
+   ([Item layout](#item-layout)). Then read the rotation journal (see
+   [Recovery](#recovery)). With an operation in flight, reconcile it. With none, check that
+   each store's current password authenticates as its role; a mismatch is drift, and the
+   handler stops before changing anything.
 4. **Generate.** Create 32-character passwords with Python's `secrets` module, as
    `seed-1password.sh` does, and compute each one's SCRAM-SHA-256 verifier (see
    [Server logs](#server-logs)).
@@ -339,15 +341,40 @@ lock keeps other handlers out between them, but not an edit made in the 1Passwor
 Checking the version after writing can detect such an edit, but only after the handler has
 overwritten it. Nor can it guarantee that sibling fields survive.
 
-The design therefore gives each rotated credential an item the handler owns entirely:
-`victual-db-migrate` and `victual-db-app` hold `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD`
-and nothing else. `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, `VICTUAL_MQTT_PASSWORD` and
-`VICTUAL_INFLUXDB_TOKEN` move to items of their own, read as a second Secret through
-another `envFrom` entry. A whole-item write then has no sibling fields to lose. An edit to
-a handler-owned item outside the handler is unsupported; the post-write version check
-reports it rather than prevents it. This changes `seed-1password.sh`, the talos
-`OnePasswordItem`s, `values.example.yaml`, `render.py` and the chart's Secret references;
-open question 13.
+Exclusive item ownership ([Item layout](#item-layout)) removes unrelated fields from that
+overwrite risk. It does not make a 1Password write atomic, so the lock, the version checks
+and recovery all stay.
+
+### Item layout
+
+Decided 2026-10-08 (open question 13). Each database item holds the credential the handler
+rotates and nothing else:
+
+- `victual-db-migrate`: `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD`;
+- `victual-db-app`: `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD`.
+
+The bootstrap administrator password, the MQTT password and the InfluxDB token each get an
+item and a Kubernetes Secret of their own. Each Secret is referenced only by the container
+that consumes it: the bootstrap Secret by the `migrate` initContainer, the MQTT and InfluxDB
+Secrets by the `app` container. The item names are for the implementation to choose.
+
+**The handler refuses a mixed layout.** Before writing anything, it checks that each
+database item holds exactly those two fields. Any other field stops the run and names the
+field. That catches an installation that has not migrated, and a field added to a database
+item later.
+
+**Migration preserves every existing value.** For an installation on the current layout:
+
+1. Create the separate items, copying the existing bootstrap, MQTT and InfluxDB values.
+2. Point the manifests or chart values at the new Secrets, each on its consuming container.
+3. Wait until the operator has written the new Secrets.
+4. Roll the deployment and verify it: the pod becomes Ready, login works, and MQTT and
+   InfluxDB publishing still work where enabled.
+5. Remove the unrelated fields from `victual-db-migrate` and `victual-db-app`.
+
+Rotation is enabled only after step 5. The handler does not perform the migration; the
+layout check is what enforces the order. The change touches `seed-1password.sh`, the talos
+`OnePasswordItem`s, `values.example.yaml`, `render.py`, `deploy/k3s/` and the chart.
 
 ### Store writes
 
@@ -355,10 +382,12 @@ open question 13.
 pipes the whole item to `op item edit <item> --vault … --account …` as a template on
 standard input. The `op` reference says piped templates are accepted and that assignment
 arguments are "visible to other processes" (1Password CLI reference, read 2026-10-07).
-With handler-owned items ([Concurrency](#concurrency)) the whole item is the handler's to
-send. Until those items exist, whether `op` merges or replaces fields from a template
-decides whether sibling fields survive; open question 7. 1Password
-keeps item history, so the previous password is recoverable for rollback.
+
+The database items hold only the two fields the handler owns ([Item layout](#item-layout)),
+and the handler refuses any other layout, so the whole item is the handler's to send. Open
+question 7, whether a template edit merges or replaces fields, no longer decides whether
+sibling fields survive. 1Password keeps item history, so the previous password is
+recoverable for rollback.
 
 **Vault (deferred).** A Vault backend would write with `vault kv patch`, which merges the
 change into the existing data instead of replacing it, and reads the value from standard
@@ -495,7 +524,7 @@ so that both classification and restore are testable on the harness.
 
 | Fails at | State | Handler's response |
 |---|---|---|
-| Prompt, lock or classification | Nothing changed | Stop. |
+| Prompt, lock or classification, including a mixed item layout | Nothing changed | Stop; name the unexpected field. |
 | Journal `prepared` write | Nothing changed | Stop; nothing to recover. |
 | Store write, including an unknown outcome | Journal `prepared`; store old or new | Classify by the new-value hash and item version, as in [Recovery](#recovery); resume or restore. |
 | Secret propagation timeout | Store new, database old, pods old | Report; nothing is broken. A rerun enters recovery and resumes at the wait. |
@@ -577,12 +606,18 @@ so that both classification and restore are testable on the harness.
     store after an abandoned rotation does. If it cannot, a 1Password restore is a manual
     step in the 1Password app, and the handler says so.
 
-13. **Do the rotated credentials move to handler-owned 1Password items?** Without them, a
-    whole-item write can lose a sibling field edited concurrently, and `op` offers no
-    compare-and-swap to prevent it ([Concurrency](#concurrency)). Moving
-    `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, `VICTUAL_MQTT_PASSWORD` and `VICTUAL_INFLUXDB_TOKEN`
-    to items of their own changes the item layout every 1Password deployment uses, so it
-    needs a migration note for existing items.
+13. ~~**Do the rotated credentials move to handler-owned 1Password items?**~~ **Answered:
+    yes, with conditions.** Reconciled in [Item layout](#item-layout).
+
+    > **Response (datagen24, 2026-10-08):** Yes. Keep `victual-db-migrate` and
+    > `victual-db-app`, each containing only `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD`.
+    > Give bootstrap, MQTT and InfluxDB credentials separate items and Kubernetes Secrets,
+    > each exposed only to its consuming container. Make the handler refuse items containing
+    > unexpected fields before writing anything. Retain locking, version checks and
+    > recovery: exclusive ownership removes unrelated fields from the overwrite risk; it
+    > does not make 1Password writes atomic. Migrate by creating the separate items, updating
+    > Secret references, waiting for propagation, rolling and verifying the deployment, then
+    > removing the unrelated fields; enable rotation only after that sequence completes.
 
 ## Verification
 
@@ -599,8 +634,10 @@ Each criterion runs on `deploy/kind/` with the `kind-files` backend unless it na
    shows both roles `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`, as before.
 3. **One-role rotation leaves the other role alone.** Rotating only `victual_app` leaves
    `victual_migrate`'s `rolpassword` byte for byte as it was, and its prior password
-   authenticating. In 1Password, a scratch copy of
-   the migrate item keeps `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` byte for byte.
+   authenticating. In 1Password, a rotation leaves the separate bootstrap, MQTT and
+   InfluxDB items unchanged (same item version and values). A scratch database item in the
+   old mixed layout, holding `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, makes the handler stop
+   before any write, naming that field, with the item's version unchanged.
 4. **The gap is measured.** A probe Pod in the namespace requests an API GET from the
    Service (`http://victual:8080/…`) every 200 ms with an API key, and logs each status with
    a timestamp; on talos, a second probe uses the ingress host. The probe follows Service
