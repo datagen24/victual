@@ -118,13 +118,44 @@ def config_data(values: dict) -> dict[str, str]:
     return data
 
 
-def secret_resources(values: dict, mqtt: bool, influx: bool) -> tuple[list[dict], list[dict]]:
-    """Resources to add and patches to apply for the two Secrets the base names."""
+# What each Secret holds and which values.yaml field names its 1Password item. The database
+# Secrets hold the database credential and nothing else, so the credential rotation handler
+# can rewrite their items whole (docs/plans/36-database-credential-rotation.md, "Item layout");
+# every other secret value has a Secret of its own.
+#
+# Each pair is (Secret name, item field): names only, never a value. deploy.env carries the
+# names to deploy.sh, and CodeQL's sensitive-data heuristic reads any identifier containing
+# "secret" as holding one, hence ITEMS rather than SECRETS here.
+DB_ITEMS = (("victual-db-migrate", "migrateItem"), ("victual-db-app", "appItem"))
+BOOTSTRAP_ITEM = ("victual-bootstrap-admin", "bootstrapAdminItem")
+MQTT_ITEM = ("victual-mqtt", "mqttItem")
+INFLUX_ITEM = ("victual-influxdb", "influxdbItem")
+
+
+def wanted_items(values: dict, mqtt: bool, influx: bool) -> list[tuple[str, str]]:
+    """The Secrets this deployment needs, as (Secret name, values.yaml item field)."""
+    names = list(DB_ITEMS) + [BOOTSTRAP_ITEM]
+    # An anonymous broker has no password to hold.
+    if mqtt and get(values, "mqtt.username", required=False):
+        names.append(MQTT_ITEM)
+    if influx:
+        names.append(INFLUX_ITEM)
+    return names
+
+
+def credential_resources(values: dict, mqtt: bool, influx: bool) -> tuple[list[dict], list[dict], list[str]]:
+    """Resources to add, patches to apply, and the Secrets the 1Password operator must write.
+
+    The base names the two database Secrets and victual-bootstrap-admin, with placeholders;
+    victual-mqtt and victual-influxdb it references as optional and does not create.
+    """
     source = get(values, "secrets.source")
+    wanted = wanted_items(values, mqtt, influx)
+    base = {name for name, _ in DB_ITEMS + (BOOTSTRAP_ITEM,)}
     if source == "onepassword":
         vault = get(values, "secrets.onepassword.vault")
         items = []
-        for secret, field in (("victual-db-migrate", "migrateItem"), ("victual-db-app", "appItem")):
+        for secret, field in wanted:
             item = get(values, f"secrets.onepassword.{field}")
             items.append({
                 "apiVersion": "onepassword.com/v1",
@@ -136,29 +167,62 @@ def secret_resources(values: dict, mqtt: bool, influx: bool) -> tuple[list[dict]
         # Connect operator wrote.
         deletes = [
             {"$patch": "delete", "apiVersion": "v1", "kind": "Secret", "metadata": {"name": name}}
-            for name in ("victual-db-migrate", "victual-db-app")
+            for name in sorted(base)
         ]
-        return items, deletes
+        return items, deletes, [name for name, _ in wanted]
     if source == "inline":
-        migrate = {
-            "VICTUAL_DB_USER": "victual_migrate",
-            "VICTUAL_DB_PASSWORD": get(values, "secrets.inline.migratePassword"),
-            "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD": get(values, "secrets.inline.bootstrapAdminPassword"),
+        # Read only for the Secrets this deployment wants, so a disabled feature's empty
+        # password is not refused.
+        data = {
+            "victual-db-migrate": lambda: {
+                "VICTUAL_DB_USER": "victual_migrate",
+                "VICTUAL_DB_PASSWORD": get(values, "secrets.inline.migratePassword"),
+            },
+            "victual-db-app": lambda: {
+                "VICTUAL_DB_USER": "victual_app",
+                "VICTUAL_DB_PASSWORD": get(values, "secrets.inline.appPassword"),
+            },
+            "victual-bootstrap-admin": lambda: {
+                "VICTUAL_BOOTSTRAP_ADMIN_PASSWORD": get(values, "secrets.inline.bootstrapAdminPassword"),
+            },
+            "victual-mqtt": lambda: {"VICTUAL_MQTT_PASSWORD": get(values, "secrets.inline.mqttPassword")},
+            "victual-influxdb": lambda: {"VICTUAL_INFLUXDB_TOKEN": get(values, "secrets.inline.influxdbToken")},
         }
-        app = {
-            "VICTUAL_DB_USER": "victual_app",
-            "VICTUAL_DB_PASSWORD": get(values, "secrets.inline.appPassword"),
-        }
-        if mqtt and get(values, "mqtt.username", required=False):
-            app["VICTUAL_MQTT_PASSWORD"] = get(values, "secrets.inline.mqttPassword")
-        if influx:
-            app["VICTUAL_INFLUXDB_TOKEN"] = get(values, "secrets.inline.influxdbToken")
-        patches = [
-            {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": name}, "stringData": data}
-            for name, data in (("victual-db-migrate", migrate), ("victual-db-app", app))
-        ]
-        return [], patches
+        added, patches = [], []
+        for name, _ in wanted:
+            secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": name}, "stringData": data[name]()}
+            if name in base:
+                patches.append(secret)
+            else:
+                secret["metadata"]["labels"] = {"app.kubernetes.io/name": "victual"}
+                secret["type"] = "Opaque"
+                added.append(secret)
+        return added, patches, []
     raise ValuesError(f"secrets.source: {source!r} is not onepassword or inline")
+
+
+def required_secret_refs(names: list[str]) -> list[dict]:
+    """JSON patch ops making the base's optional references to these Secrets required.
+
+    The base marks victual-mqtt and victual-influxdb optional so a deployment without them
+    still starts. One that enables them wants the opposite: a pod that starts before the
+    Secret exists would run without the password and never publish, and nothing restarts it.
+    The indexes come from the base itself, and a `test` op guards each, so a reordered base
+    fails the build rather than patching the wrong entry.
+    """
+    (deployment,) = [
+        d for d in yaml.safe_load_all((HERE.parent / "k3s" / "victual.yaml").read_text())
+        if d and d["kind"] == "Deployment"
+    ]
+    ops = []
+    for c_index, container in enumerate(deployment["spec"]["template"]["spec"]["containers"]):
+        for e_index, ref in enumerate(container.get("envFrom", [])):
+            name = ref.get("secretRef", {}).get("name")
+            if name in names and ref["secretRef"].get("optional"):
+                path = f"/spec/template/spec/containers/{c_index}/envFrom/{e_index}/secretRef"
+                ops.append({"op": "test", "path": f"{path}/name", "value": name})
+                ops.append({"op": "replace", "path": f"{path}/optional", "value": False})
+    return ops
 
 
 def ingress(values: dict) -> dict:
@@ -193,7 +257,7 @@ def render(values: dict, out: Path) -> dict[str, str]:
     influx = get(values, "influxdb.enabled", kind=bool)
     mcp = get(values, "mcp.enabled", kind=bool)
     data = config_data(values)
-    items, secret_patches = secret_resources(values, mqtt, influx)
+    items, credential_patches, operator_written = credential_resources(values, mqtt, influx)
 
     if out.exists():
         shutil.rmtree(out)
@@ -213,13 +277,16 @@ def render(values: dict, out: Path) -> dict[str, str]:
         resources.append(str(k3s / "victual-mcp.yaml"))
     resources.append(write("ingress.yaml", ingress(values)))
     if items:
-        resources.append(write("onepassword-items.yaml", items))
+        resources.append(write("secrets.yaml" if not operator_written else "onepassword-items.yaml", items))
 
     patches = [{"path": write("config.yaml", {
         "apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "victual-config"}, "data": data,
     })}]
-    for patch in secret_patches:
+    for patch in credential_patches:
         patches.append({"path": write(f"secret-{patch['metadata']['name']}.yaml", patch)})
+    ops = required_secret_refs([name for name, _ in wanted_items(values, mqtt, influx)])
+    if ops:
+        patches.append({"target": {"kind": "Deployment", "name": "victual"}, "patch": yaml.safe_dump(ops, sort_keys=False)})
 
     images = ["victual-app", "victual-web", "victual-migrate"] + (["victual-mcp"] if mcp else [])
     write("kustomization.yaml", {
@@ -235,7 +302,8 @@ def render(values: dict, out: Path) -> dict[str, str]:
         "CONTEXT": get(values, "cluster.context", required=False) or "",
         "NAMESPACE": namespace,
         "MCP": "1" if mcp else "",
-        "ONEPASSWORD": "1" if items else "",
+        # The Secrets deploy.sh waits for the 1Password operator to write; empty for inline.
+        "OPERATOR_SECRETS": " ".join(operator_written),
         "URL": data["VICTUAL_BASE_URL"],
     }
     (out / "deploy.env").write_text("".join(f"{k}='{v}'\n" for k, v in deploy_env.items()))

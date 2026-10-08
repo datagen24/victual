@@ -113,17 +113,25 @@ secrets:
   onepassword:
     # A vault your Connect server can read.
     vault: CHANGE-ME-vault
-    # Two items. The operator makes a Secret from each, one key per field, so the field
-    # labels must be exactly these:
+    # One item per credential. The operator makes a Secret from each, one key per field, so
+    # the field labels must be exactly these, and an item holds nothing else:
     #
-    #   migrate item:  VICTUAL_DB_USER (victual_migrate), VICTUAL_DB_PASSWORD,
-    #                  VICTUAL_BOOTSTRAP_ADMIN_PASSWORD (the first admin login)
-    #   app item:      VICTUAL_DB_USER (victual_app), VICTUAL_DB_PASSWORD,
-    #                  and VICTUAL_MQTT_PASSWORD / VICTUAL_INFLUXDB_TOKEN if you use them
+    #   migrate item:        VICTUAL_DB_USER (victual_migrate), VICTUAL_DB_PASSWORD
+    #   app item:            VICTUAL_DB_USER (victual_app), VICTUAL_DB_PASSWORD
+    #   bootstrap item:      VICTUAL_BOOTSTRAP_ADMIN_PASSWORD (the first admin login)
+    #   MQTT item:           VICTUAL_MQTT_PASSWORD; read only with mqtt.enabled and a username
+    #   InfluxDB item:       VICTUAL_INFLUXDB_TOKEN; read only with influxdb.enabled
     #
-    # deploy/talos/seed-1password.sh shows one way to create such items.
+    # The database items hold the database credential alone so that rotating it can rewrite
+    # the item whole without losing another field. Items from before that split kept the
+    # other values in the database items; deploy/README.md, "One Secret per credential",
+    # moves them without changing one. deploy/talos/seed-1password.sh shows one way to
+    # create the items.
     migrateItem: victual-db-migrate
     appItem: victual-db-app
+    bootstrapAdminItem: victual-bootstrap-admin
+    mqttItem: victual-mqtt
+    influxdbItem: victual-influxdb
 
   inline:
     migratePassword: CHANGE-ME

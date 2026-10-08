@@ -24,7 +24,7 @@ and commented where they bit. See [plan 20](../docs/plans/20-container-infrastru
 | File | What it is |
 |---|---|
 | [`podman/victual.yaml`](podman/victual.yaml) | The pod: a migrate initContainer, php-fpm, nginx |
-| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and the two `Secret`s. Applied to kind on 2026-09-19 (see ["What this deployment does not yet do"](#what-this-deployment-does-not-yet-do)). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
+| [`k3s/victual.yaml`](k3s/victual.yaml) | The same pod as a `Deployment`, with its `Service`, `ConfigMap` and its `Secret`s, one per credential (see ["One Secret per credential"](#one-secret-per-credential)). Applied to kind on 2026-09-19 (see ["What this deployment does not yet do"](#what-this-deployment-does-not-yet-do)). `.devtools/ci/test_deploy_pod_parity.py` keeps it the same pod as the one above |
 | [`k3s/victual-mcp.yaml`](k3s/victual-mcp.yaml) | The read-only MCP sidecar ([docs/mcp-interface-spec.md](../docs/mcp-interface-spec.md)): its own `Deployment` (two replicas), `Service` and `ConfigMap`. It holds no database credential and no API key |
 | [`k3s/kustomization.yaml`](k3s/kustomization.yaml) | The workloads above as one kustomize base — Victual, the MCP sidecar and the label workloads — for an operator's overlay to patch |
 | [`kind/`](kind/) | A test harness, not a deployment: the base plus a throwaway PostgreSQL, driven by `kind/up.sh`, which generates local-only passwords into a gitignored `kind/.secrets/` |
@@ -119,7 +119,7 @@ MIGRATE_PASSWORD=victual-migrate APP_PASSWORD=victual-app \
   psql -q -v ON_ERROR_STOP=1 -U postgres -d victual -v db=victual \
   < deploy/postgres/roles.sql
 
-# 3. The pod, with the ConfigMap and Secret it references appended to the same stream.
+# 3. The pod, with the ConfigMap and Secrets it references appended to the same stream.
 { cat deploy/podman/victual.yaml; cat <<'YAML'
 ---
 apiVersion: v1
@@ -142,6 +142,12 @@ metadata:
 stringData:
   VICTUAL_DB_USER: victual_migrate
   VICTUAL_DB_PASSWORD: victual-migrate
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-bootstrap-admin
+stringData:
   VICTUAL_BOOTSTRAP_ADMIN_PASSWORD: victual-admin
 ---
 apiVersion: v1
@@ -162,14 +168,16 @@ the Secrets above write both passwords in the clear into objects a `podman kube 
 on the machine. Use them against the throwaway PostgreSQL in step 2 and nothing else; for a
 persistent or shared database pick your own and keep them out of anything committed.
 
-**The first administrator's password comes from the migrate Secret.** A fresh database has
+**The first administrator's password comes from its own Secret.** A fresh database has
 no `admin`/`admin` any more: the migrate container seeds the `admin` account with
 `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, read once, on the run that creates the database. It sits in
-`victual-db-migrate` and not in `victual-db-app` because the migrate container is the only
-one that seeds — the serving containers never need it, the same split as the database
-credentials.
+`victual-bootstrap-admin`, which only the migrate container names, because the migrate
+container is the only one that seeds; the serving containers never need it. It is not a key
+in `victual-db-migrate` because a database Secret holds the database credential and nothing
+else (see ["One Secret per credential"](#one-secret-per-credential)).
 
-Leave the key out and the first migration generates a password instead, prints it once to
+The pod requires the Secret, so a pod cannot start before it exists and seed a password
+nobody chose. Leave the value blank and the first migration generates a password instead, prints it once to
 the migrate container's log, and the account has to change it at first login; until it
 does, the API answers `403` to everything except the change itself. For a deployment that
 is the better default, since nothing then has to hold the password afterwards:
@@ -188,8 +196,9 @@ Either way the key does nothing after the first run: removing it, or changing it
 touch an account that already exists. [The Manual's first-login
 section](../docs/manual/getting-started.md#the-first-login) has the rest.
 
-**The ConfigMap and both Secrets must be in the stream, and each Secret must be a
-Kubernetes `Secret`.** Two plausible-looking alternatives both fail:
+**The ConfigMap and the three Secrets must be in the stream, and each Secret must be a
+Kubernetes `Secret`.** The `app` container also names `victual-mqtt` and `victual-influxdb`,
+as optional; leave them out unless MQTT or InfluxDB is enabled. Two plausible-looking alternatives both fail:
 
 - `podman kube play --secret …` takes a *podman* secret (`podman secret create`), which
   is not the same object. Passing one fails with
@@ -214,12 +223,19 @@ kubectl -n victual port-forward svc/victual-mcp 3000:3000
 deploy/kind/up.sh down      # the database goes with the namespace
 ```
 
+`up.sh` runs every `kubectl` command against the context `kind-$KIND_CLUSTER` and never the
+current one, which on a machine that also manages a real cluster may well be that cluster.
+`KUBE_CONTEXT` names another. Pass `--context kind-kind-cluster` to commands you type
+yourself for the same reason.
+
 There is no `admin`/`admin`. `up.sh` generates `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` into
-`deploy/kind/.secrets/migrate.env` with the database passwords, and the migrate container
+`deploy/kind/.secrets/bootstrap-admin.env`, beside the database passwords, and the migrate container
 seeds the `admin` account with it on the run that creates the database — log in as `admin`
 with that value, then create a key under *Manage API keys*. That key is what an MCP client
 presents as `Authorization: Bearer …`. The value is read once: a `.secrets/` older than the
-database it was generated beside, or one edited afterwards, does not change the account.
+database it was generated beside, or one edited afterwards, does not change the account. A
+`.secrets/` from before the bootstrap password had a file of its own kept it in
+`migrate.env`; `up.sh` moves it to `bootstrap-admin.env` with its value.
 
 A database first migrated without the key (before `up.sh` wrote it) has a generated password
 instead, printed once in the migrate container's log and forced to change at first login:
@@ -234,7 +250,7 @@ account can open only the change-password form, and the API answers
 
 The overlay is also the pattern for a real cluster. Put `deploy/k3s` (or this repository at
 a pinned ref) in `resources`, then patch the ConfigMap's database host and base URL, the
-two Secrets and the image references. Keep the Secrets out of anything committed.
+Secrets and the image references. Keep the Secrets out of anything committed.
 
 ## What a running instance needs
 
@@ -352,6 +368,88 @@ healthy pool and restarts it on every failure threshold. Setting the probe's `ho
 `/opt/victual/healthcheck` inside the container instead. What it cannot see — a pool
 accepting connections whose workers are all wedged — is covered by the web container's
 readiness probe, which renders `/login` through Blade.
+
+### One Secret per credential
+
+Each database Secret holds `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD` and nothing else. Every
+other secret value has a Secret of its own, named only by the container that reads it:
+
+| Secret (and 1Password item) | Holds | Named by |
+|---|---|---|
+| `victual-db-migrate` | `VICTUAL_DB_USER`, `VICTUAL_DB_PASSWORD` | the `migrate` initContainer |
+| `victual-bootstrap-admin` | `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` | the `migrate` initContainer |
+| `victual-db-app` | `VICTUAL_DB_USER`, `VICTUAL_DB_PASSWORD` | the `app` container |
+| `victual-mqtt` | `VICTUAL_MQTT_PASSWORD` | the `app` container, optionally |
+| `victual-influxdb` | `VICTUAL_INFLUXDB_TOKEN` | the `app` container, optionally |
+
+The reason is password rotation ([plan 36](../docs/plans/36-database-credential-rotation.md#item-layout)).
+Rotating a database password rewrites its 1Password item whole, and `op` cannot make that
+write conditional on nobody else having changed the item. With nothing else in the item,
+nothing else can be lost. The base references `victual-mqtt` and `victual-influxdb` as
+optional, so a deployment without MQTT or InfluxDB creates neither; `production/render.py`
+makes them required when the feature is on, so the pod cannot start without the password and
+silently publish nothing.
+
+**Moving an existing deployment to this layout.** Deployments created before 2026-10-08 kept
+the bootstrap password in `victual-db-migrate` and, where used, the MQTT password and
+InfluxDB token in `victual-db-app`. Move them in this order, which never leaves a container
+without a value it reads:
+
+1. **Create the new items, copying the current values.** For 1Password, run
+   `talos/seed-1password.sh` on the Talos overlay: it creates `victual-bootstrap-admin` from the
+   value in `victual-db-migrate`. Elsewhere, copy each field the same way, on a pipe so the value is on no
+   command line:
+
+   ```sh
+   VAULT=your-vault; FROM=victual-db-app; TO=victual-mqtt; FIELD=VICTUAL_MQTT_PASSWORD
+   op item get "$FROM" --vault "$VAULT" --format json --reveal \
+     | python3 -c 'import json, sys; to, field = sys.argv[1:]
+   value = {f["label"]: f.get("value") for f in json.load(sys.stdin)["fields"]}[field]
+   json.dump({"title": to, "category": "SECURE_NOTE", "fields": [
+       {"id": field, "label": field, "type": "CONCEALED", "value": value}]}, sys.stdout)' "$TO" "$FIELD" \
+     | op item create --vault "$VAULT" >/dev/null
+   ```
+
+   Repeat with `FROM=victual-db-migrate TO=victual-bootstrap-admin
+   FIELD=VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, and `TO=victual-influxdb FIELD=VICTUAL_INFLUXDB_TOKEN`
+   if InfluxDB is on. The bootstrap password does nothing to a database that already exists,
+   but the pod requires its Secret, and copying it keeps the record of what the first login
+   was. With `secrets.source: inline` there is nothing to create: the values stay in
+   `values.yaml`.
+2. **Update the Secret references.** Apply this release's manifests: `talos/up.sh`, or for
+   `production/`, add `bootstrapAdminItem`, `mqttItem` and `influxdbItem` to
+   `secrets.onepassword` in `values.yaml` (`values.example.yaml` has them) and run
+   `production/deploy.sh apply`. `render.py` refuses a 1Password `values.yaml` without
+   `bootstrapAdminItem`. The pod template changes, so this starts a rollout; the new pod
+   waits until every Secret it requires exists.
+3. **Wait for the operator to write the new Secrets.** Each must exist and hold the same
+   value as the field it was copied from. Compare digests, not values:
+
+   ```sh
+   kubectl -n victual get secret victual-bootstrap-admin -o jsonpath='{.data.VICTUAL_BOOTSTRAP_ADMIN_PASSWORD}' | shasum
+   kubectl -n victual get secret victual-db-migrate -o jsonpath='{.data.VICTUAL_BOOTSTRAP_ADMIN_PASSWORD}' | shasum
+   ```
+
+4. **Roll and verify.** `kubectl -n victual rollout status deployment/victual` reaches Ready;
+   an existing account logs in; with MQTT on, `bin/victual-publish-state` in the `app`
+   container succeeds and Home Assistant's entities update
+   ([Home Assistant and MQTT](../docs/manual/operator/home-assistant-mqtt.md)); with InfluxDB
+   on, a booking writes a point to the bucket.
+5. **Only then remove the moved fields from the database items:**
+
+   ```sh
+   op item edit victual-db-migrate --vault "$VAULT" 'VICTUAL_BOOTSTRAP_ADMIN_PASSWORD[delete]'
+   op item edit victual-db-app --vault "$VAULT" 'VICTUAL_MQTT_PASSWORD[delete]' 'VICTUAL_INFLUXDB_TOKEN[delete]'
+   ```
+
+   Wait for the operator to rewrite `victual-db-migrate` and `victual-db-app` without them.
+   The pod reads the moved values from their own Secrets by then, so no restart is needed.
+   An inline deployment's apply leaves the old keys in the database Secrets, because
+   `stringData` is write-only and `kubectl apply` cannot see them to remove; delete each with
+   `kubectl -n victual patch secret victual-db-migrate --type=json
+   -p '[{"op":"remove","path":"/data/VICTUAL_BOOTSTRAP_ADMIN_PASSWORD"}]'`.
+
+`kind/up.sh` makes the same move for `deploy/kind/.secrets/` by itself.
 
 ## What this deployment does not yet do
 

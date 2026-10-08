@@ -38,6 +38,14 @@ secretGenerator:
       - .secrets/app.env
     options:
       disableNameSuffixHash: true
+  # The first administrator's password, in a Secret of its own: the database Secrets hold
+  # the database credential and nothing else (plan 36, "Item layout").
+  - name: victual-bootstrap-admin
+    behavior: replace
+    envs:
+      - .secrets/bootstrap-admin.env
+    options:
+      disableNameSuffixHash: true
 
 # deploy/k3s names the published GHCR images. kind runs the local build instead:
 # up.sh loads `localhost/victual-*` into the cluster, and these overrides point the base at
