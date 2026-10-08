@@ -100,8 +100,11 @@ log "helm upgrade --install $RELEASE at $VERSION"
 # refuse them), and --force-conflicts lets its server-side apply overwrite the fields
 # `kubectl apply` owned. Only then, so a later run never takes another release's resources.
 # The old overlay's label CronJobs, which the chart does not render here, are left alone.
+# "Never installed" means no revision ever deployed: a first install that failed leaves a
+# release whose retry must adopt too.
 FIRST=()
-helm status "$RELEASE" --kube-context "$CONTEXT" -n "$NAMESPACE" >/dev/null 2>&1 \
+helm history "$RELEASE" --kube-context "$CONTEXT" -n "$NAMESPACE" -o json 2>/dev/null \
+	| grep -qE '"status":"(deployed|superseded)"' \
 	|| FIRST=(--take-ownership --force-conflicts)
 # --wait alone is Helm 4's `watcher`: it waits for the Deployments to be Ready, not only for
 # the hooks, which is what the flag's absence means.

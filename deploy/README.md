@@ -300,6 +300,13 @@ install adopts those resources (`--take-ownership`). Rendered against that overl
 output, the chart and `talos/postgres/` give the same objects with the same pod templates,
 less the Namespace (which `up.sh` creates) and plus the pre-upgrade preflight Job.
 
+That comparison is with the overlay as committed, at 0.3.0. The 2026-10-06 apply ran the
+`0.2.0-MVP` images, so if the cluster still runs them, the first install is also the upgrade
+to 0.3.0 and its migrations. **Helm runs no `pre-upgrade` hook on an install,** so the
+preflight does not run then: run it by hand first
+([updating-migrations.md](../docs/manual/operator/updating-migrations.md)), or a refusing
+migration shows as a `migrate` initContainer in a restart loop, as under `kubectl apply`.
+
 ## What a running instance needs
 
 **Configuration is environment variables.** `config-dist.php`'s `Setting()` resolves in

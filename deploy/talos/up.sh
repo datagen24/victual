@@ -66,8 +66,11 @@ log "helm upgrade --install $RELEASE, chart $CHART_VERSION"
 # first install --take-ownership adopts what that apply created (Helm would otherwise refuse
 # it), and --force-conflicts lets its server-side apply overwrite the fields kubectl owned.
 # Only then, so a later run never takes another release's resources.
+# "Never installed" means no revision ever deployed: a first install that failed leaves a
+# release whose retry must adopt too.
 FIRST=()
-helm status "$RELEASE" --kube-context "$KUBE_CONTEXT" -n "$NAMESPACE" >/dev/null 2>&1 \
+helm history "$RELEASE" --kube-context "$KUBE_CONTEXT" -n "$NAMESPACE" -o json 2>/dev/null \
+	| grep -qE '"status":"(deployed|superseded)"' \
 	|| FIRST=(--take-ownership --force-conflicts)
 # hookOnly: wait for the pre-upgrade preflight, not for the Deployments. On a first install
 # the migrate initContainer cannot log in until the roles Job has run, and that Job needs

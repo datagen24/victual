@@ -344,25 +344,6 @@ once a second throughout.
 This is the first outcome Consequences predicts. Rollback is a recovery only for releases
 that add no migration.
 
-### Prerequisite 7 on kind
-
-The same release, between revisions 1 and 3.
-
-1. A task completion of `infinity` was inserted as the superuser, as the upgrade
-   rehearsal's invalid fixture does.
-2. `helm upgrade --wait` to those images exited 1 after 3 seconds with
-   `pre-upgrade hooks failed: resource Job/adr38/victual-upgrade-preflight not ready`.
-   Revision 2 is `failed`.
-3. The preflight container exited 2. Its log is the report and ends `tasks.done_timestamp:
-   1 value(s) are infinite in UTC`.
-4. The 0.2.0-MVP pod was not replaced: it kept the same name and start time. The ConfigMap
-   kept revision 1's values, and the client got 200 on every request.
-5. After the row was corrected, the upgrade to revision 3 enabled MQTT against an anonymous
-   Mosquitto 2 broker in the namespace. Its `post-upgrade` Job completed in 3 seconds and
-   logged `Published the discovery payloads (device mode) and the state snapshot`.
-6. `mosquitto_sub --retained-only` read nine retained topics: eight under `victual/state/`
-   and the Home Assistant device discovery topic.
-
 ### Prerequisite 6: kind and talos through the chart
 
 Recorded 2026-10-08 against `claude/adr38-kind-talos-values`, with Helm v4.3.0 on the same
@@ -388,7 +369,10 @@ session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
    exists, it exited 0 with revision 1. The PostgreSQL pod was not replaced. The admin row's
    `row_created_timestamp` was the same before and after, and the login sequence gave the
    same codes. The overlay's two label CronJobs, which `values.yaml` leaves out, stayed in
-   place until deleted by hand.
+   place until deleted by hand. In a third namespace, an install with `--take-ownership`
+   alone over the same overlay failed on those conflicts and left revision 1 `failed`.
+   `up.sh` treats a release with no deployed revision as new, so its retry passed both flags
+   and upgraded it to a deployed revision 2 that logs in.
 4. **talos, not applied.** `helm template` with `deploy/talos/values.yaml` (11 documents,
    the preflight hook among them) and `kubectl kustomize deploy/talos/postgres` (6) pass
    `validate()`. Without the `OnePasswordItem`s, which kind has no CRD for, both pass
@@ -398,8 +382,29 @@ session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
    - The preflight Job is new.
    - The chart's three `OnePasswordItem`s gain the label `app.kubernetes.io/name: victual`.
 
-   So the first install over the cluster's 2026-10-06 deployment should adopt it without
-   restarting a pod. That is not yet observed.
+   The comparison is with the overlay as committed, at 0.3.0. The cluster was last applied
+   at `0.2.0-MVP`, so if it still runs those images the first install also upgrades it, and
+   an install runs no `pre-upgrade` hook: the preflight has to be run by hand first. Neither
+   the adoption nor that upgrade has been observed on the cluster.
+
+### Prerequisite 7 on kind
+
+The release of prerequisite 4, between its revisions 1 and 3.
+
+1. A task completion of `infinity` was inserted as the superuser, as the upgrade
+   rehearsal's invalid fixture does.
+2. `helm upgrade --wait` to those images exited 1 after 3 seconds with
+   `pre-upgrade hooks failed: resource Job/adr38/victual-upgrade-preflight not ready`.
+   Revision 2 is `failed`.
+3. The preflight container exited 2. Its log is the report and ends `tasks.done_timestamp:
+   1 value(s) are infinite in UTC`.
+4. The 0.2.0-MVP pod was not replaced: it kept the same name and start time. The ConfigMap
+   kept revision 1's values, and the client got 200 on every request.
+5. After the row was corrected, the upgrade to revision 3 enabled MQTT against an anonymous
+   Mosquitto 2 broker in the namespace. Its `post-upgrade` Job completed in 3 seconds and
+   logged `Published the discovery payloads (device mode) and the state snapshot`.
+6. `mosquitto_sub --retained-only` read nine retained topics: eight under `victual/state/`
+   and the Home Assistant device discovery topic.
 
 How the chart differs from `deploy/production/`'s values:
 
