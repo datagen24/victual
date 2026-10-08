@@ -270,7 +270,7 @@ the image's store path) are set by the image and should be left alone.
 
 `victual-migrate` and `victual-app` do not share a database credential
 ([ADR-0010](../docs/adr/0010-workload-standard.md) property 3, plan 20 verification 8).
-[`postgres/roles.sql`](postgres/roles.sql) creates both, once, as a role that can create roles:
+[`postgres/roles.sql`](postgres/roles.sql) creates both, once, run as a PostgreSQL superuser. It switches off statement logging for its session first, so the passwords it sets are not recorded by the server:
 
 | Role | Held by | Can |
 |---|---|---|

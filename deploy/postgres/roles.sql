@@ -12,11 +12,11 @@
 -- its environment is readable only by the same user and root. Reading the environment
 -- needs psql 15 or later (`\getenv`); the server's version does not matter.
 --
--- Run it once, against the database Victual will use, as a superuser. That is the only way it
--- has been run. A lesser role would need at least CREATEROLE, ownership of the database, and
--- membership in victual_migrate (ALTER SCHEMA ... OWNER TO and ALTER DEFAULT PRIVILEGES FOR
--- ROLE both require it, and CREATEROLE does not confer it automatically on every version);
--- this script does not grant that membership.
+-- Run it once, against the database Victual will use, as a superuser. A lesser role is
+-- refused: the script switches off statement logging before it sends the passwords, and
+-- those settings are superuser-only. (Without that, a lesser role would also need
+-- CREATEROLE, ownership of the database, and membership in victual_migrate, for ALTER
+-- SCHEMA ... OWNER TO and ALTER DEFAULT PRIVILEGES FOR ROLE.)
 -- It is safe to run again: roles are created only when missing, their restricted attributes
 -- and passwords are reset to what is written here and given, and every grant is repeatable. Run it *after* the first migration as
 -- well as before — `GRANT ... ON ALL TABLES` covers what exists, and the default
@@ -69,6 +69,35 @@ SELECT :VERSION_NUM >= 150000 AS psql_has_getenv \gset
 \else
   DO $$ BEGIN RAISE EXCEPTION 'roles.sql: put the victual_app password in psql''s environment as APP_PASSWORD, not -v'; END $$;
 \endif
+
+-- The ALTER ROLE ... PASSWORD statements below reach the server as text, with the password
+-- in a literal. Every server setting that would record a statement's text is switched off
+-- for this session first, so the passwords do not land in the server log, in
+-- pg_stat_statements or in pg_stat_activity:
+--
+--   log_statement, log_min_duration_statement   the statement log and slow-query log
+--   log_min_duration_sample, log_transaction_sample_rate
+--                                                sampled statement logging (PostgreSQL 13+),
+--                                                which logs independently of the two above
+--   log_min_error_statement                      the statement text attached to an error
+--   track_activities                             pg_stat_activity.query, while it runs
+--   pg_stat_statements.track_utility             pg_stat_statements keeps utility statements
+--                                                with their literals
+--   pgaudit.log                                  pgaudit's session log
+--
+-- All are superuser-settable, which this script already needs; a role without superuser
+-- fails here, before any password is sent. The two extension settings are accepted as
+-- placeholders when the extension is not loaded. Another library that logs statement text
+-- on its own is not covered; check shared_preload_libraries before running this on a
+-- server you do not know.
+SET log_statement = 'none';
+SET log_min_duration_statement = -1;
+SET log_min_duration_sample = -1;
+SET log_transaction_sample_rate = 0;
+SET log_min_error_statement = 'panic';
+SET track_activities = off;
+SET pg_stat_statements.track_utility = off;
+SET pgaudit.log = 'none';
 
 -- Roles. CREATE ROLE has no IF NOT EXISTS, and psql variables are not interpolated inside
 -- a DO block's dollar quotes, so the existence test is a query whose result \gexec runs.
