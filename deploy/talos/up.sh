@@ -9,7 +9,7 @@
 #
 # Uses the current kubectl context; set KUBE_CONTEXT to name another. The database
 # passwords come from 1Password through the cluster's Connect operator: run
-# deploy/talos/seed-1password.sh once first, or the three Secrets never appear.
+# deploy/talos/seed-1password.sh once first, or the four Secrets never appear.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -28,8 +28,8 @@ fi
 log "applying deploy/talos"
 "${KUBECTL[@]}" kustomize --load-restrictor LoadRestrictionsNone deploy/talos | "${KUBECTL[@]}" apply -f -
 
-log "waiting for the Connect operator to write the three Secrets"
-for secret in victual-postgres-superuser victual-db-migrate victual-db-app; do
+log "waiting for the Connect operator to write the four Secrets"
+for secret in victual-postgres-superuser victual-db-migrate victual-db-app victual-bootstrap-admin; do
 	for _ in $(seq 60); do
 		"${KUBECTL[@]}" -n "$NAMESPACE" get secret "$secret" >/dev/null 2>&1 && break
 		sleep 2
@@ -49,5 +49,5 @@ cat <<MSG
 Up at http://victual.10.130.34.240.nip.io
 
 Log in as admin with VICTUAL_BOOTSTRAP_ADMIN_PASSWORD from the 1Password item
-victual-db-migrate (it applies to the database this overlay first created).
+victual-bootstrap-admin (it applies to the database this overlay first created).
 MSG

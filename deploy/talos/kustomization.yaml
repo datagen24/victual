@@ -7,9 +7,10 @@
 #     no printer, and deploy/k3s/kustomization.yaml says an overlay without one drops them.
 #   - deploy/kind's PostgreSQL and roles Job, with the PostgreSQL patched below onto an NFS
 #     PersistentVolumeClaim (postgres-pvc.yaml) and run as the NAS's mapall uid.
-#   - Its three Secrets from 1Password (onepassword-items.yaml), not from this overlay: the
-#     base's two placeholder Secrets are deleted below, so an apply can never overwrite
-#     what the Connect operator wrote.
+#   - Its four Secrets from 1Password (onepassword-items.yaml), not from this overlay: the
+#     base's three placeholder Secrets are deleted below, so an apply can never overwrite
+#     what the Connect operator wrote. No MQTT or InfluxDB: the base's optional references
+#     to those Secrets find nothing and are skipped.
 #
 # The images are the published GHCR ones at the base's tag (amd64 and arm64), so there is no
 # `images:` override as deploy/kind has.
@@ -55,6 +56,15 @@ patches:
       kind: Secret
       metadata:
         name: victual-db-app
+  - target:
+      kind: Secret
+      name: victual-bootstrap-admin
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: victual-bootstrap-admin
   - target:
       kind: ConfigMap
       name: victual-config

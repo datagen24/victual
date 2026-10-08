@@ -30,8 +30,11 @@
 # deploy/README.md). Before applying:
 #
 #   1. Create the two database roles with deploy/postgres/roles.sql.
-#   2. Put their passwords in the two Secrets below, and the database's address in the
-#      ConfigMap. The values in this file are placeholders and will not connect.
+#   2. Put their passwords in the two database Secrets below, and the database's address
+#      in the ConfigMap. The values in this file are placeholders and will not connect.
+#      The first administrator's password has a Secret of its own, blank here; the MQTT
+#      password and the InfluxDB token have Secrets of their own too, which this file does
+#      not create (see "One Secret per credential" in deploy/README.md).
 #   3. The images below are the ones a release tag publishes to GHCR for amd64 and arm64
 #      (ADR-0030, .github/workflows/release.yml); a node pulls them by the version tag. To
 #      run a local build instead, point `image:` at what `nix run .#load` produces, or use
@@ -83,6 +86,22 @@ type: Opaque
 stringData:
   VICTUAL_DB_USER: "victual_app"
   VICTUAL_DB_PASSWORD: "replace-me-with-the-app-role-password"
+---
+# The first administrator's password, read once by the migrate initContainer when it creates
+# the database. Blank means unset: the first migration generates a password, prints it once
+# to the migrate container's log and forces a change at first login. Not a placeholder
+# password, because a known value here would be every forgetful deployment's admin password.
+# Its own Secret, not a key in victual-db-migrate: a database Secret holds the database
+# credential and nothing else, so rotating it rewrites nothing unrelated (plan 36).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: victual-bootstrap-admin
+  labels:
+    app.kubernetes.io/name: victual
+type: Opaque
+stringData:
+  VICTUAL_BOOTSTRAP_ADMIN_PASSWORD: ""
 ---
 apiVersion: v1
 kind: Service
@@ -161,6 +180,10 @@ spec:
                 name: victual-config
             - secretRef:
                 name: victual-db-migrate
+            # Required, so a pod cannot start before the Secret exists and seed a generated
+            # password in place of the operator's.
+            - secretRef:
+                name: victual-bootstrap-admin
           volumeMounts:
             - name: tmp-app
               mountPath: /tmp
@@ -187,6 +210,14 @@ spec:
                 name: victual-config
             - secretRef:
                 name: victual-db-app
+            # VICTUAL_MQTT_PASSWORD and VICTUAL_INFLUXDB_TOKEN, each in a Secret of its own and
+            # optional: a deployment without MQTT or InfluxDB creates neither.
+            - secretRef:
+                name: victual-mqtt
+                optional: true
+            - secretRef:
+                name: victual-influxdb
+                optional: true
           volumeMounts:
             - name: tmp-app
               mountPath: /tmp

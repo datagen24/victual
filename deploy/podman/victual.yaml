@@ -75,9 +75,11 @@ spec:
     #
     # It is also the only container here that holds a database role able to run DDL.
     # `victual-db-migrate` carries VICTUAL_DB_USER and VICTUAL_DB_PASSWORD for
-    # victual_migrate, the role that owns the schema; the `app` container below gets
-    # `victual-db-app` instead, for a role that can read and write rows and nothing else
-    # (ADR-0010 property 3, plan 20 verification 8). The two roles are created by
+    # victual_migrate, the role that owns the schema, and nothing else; the first
+    # administrator's password is `victual-bootstrap-admin`, a Secret of its own, so a
+    # database Secret can be rewritten whole when its password rotates (plan 36). The
+    # `app` container below gets `victual-db-app` instead, for a role that can read and
+    # write rows and nothing else (ADR-0010 property 3, plan 20 verification 8). The two roles are created by
     # deploy/postgres/roles.sql. VICTUAL_DB_USER is deliberately absent from the ConfigMap:
     # two envFrom sources that both define a key resolve to the later one, and a user name
     # that could be supplied by either would make "which role is this container" depend on
@@ -90,6 +92,10 @@ spec:
             name: victual-config
         - secretRef:
             name: victual-db-migrate
+        # Required, so a pod cannot start before the Secret exists and seed a generated
+        # password in place of the operator's.
+        - secretRef:
+            name: victual-bootstrap-admin
       volumeMounts:
         - name: tmp-app
           mountPath: /tmp
@@ -119,6 +125,14 @@ spec:
             name: victual-config
         - secretRef:
             name: victual-db-app
+        # VICTUAL_MQTT_PASSWORD and VICTUAL_INFLUXDB_TOKEN, each in a Secret of its own and
+        # optional: a deployment without MQTT or InfluxDB creates neither.
+        - secretRef:
+            name: victual-mqtt
+            optional: true
+        - secretRef:
+            name: victual-influxdb
+            optional: true
       volumeMounts:
         - name: tmp-app
           mountPath: /tmp

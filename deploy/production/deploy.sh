@@ -30,9 +30,9 @@ render)
 apply)
 	log "applying to namespace $NAMESPACE${CONTEXT:+ in context $CONTEXT}"
 	manifests | "${KUBECTL[@]}" apply -f -
-	if [ -n "$ONEPASSWORD" ]; then
+	if [ -n "$OPERATOR_SECRETS" ]; then
 		log "waiting for the 1Password Connect operator to write the Secrets"
-		for secret in victual-db-migrate victual-db-app; do
+		for secret in $OPERATOR_SECRETS; do
 			for _ in $(seq 60); do
 				"${KUBECTL[@]}" -n "$NAMESPACE" get secret "$secret" >/dev/null 2>&1 && break
 				sleep 2

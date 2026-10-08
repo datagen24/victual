@@ -236,7 +236,7 @@ Three more mechanisms sit outside `config.php` entirely:
 - **The first administrator's password.** `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` is an
   environment variable, not a setting, and is read once: when a migration creates the
   database from nothing and seeds the `admin` account. Set it only on whatever runs
-  `bin/victual-migrate` (the migrate container's Secret in [Deployment](../../deploy/README.md)),
+  `bin/victual-migrate` (the `victual-bootstrap-admin` Secret in [Deployment](../../deploy/README.md)),
   never on the serving containers. Changing or removing it later does nothing — the account
   exists by then and its password is changed like any other. Without it the migration
   generates a password, prints it once to stderr, and the account must change it at first

@@ -358,6 +358,12 @@ item and a Kubernetes Secret of their own. Each Secret is referenced only by the
 that consumes it: the bootstrap Secret by the `migrate` initContainer, the MQTT and InfluxDB
 Secrets by the `app` container. The item names are for the implementation to choose.
 
+Implemented 2026-10-08, before the handler: the items and Secrets are `victual-bootstrap-admin`,
+`victual-mqtt` and `victual-influxdb`. The bootstrap Secret is required; the MQTT and
+InfluxDB references are optional in the base and required by `render.py` when the feature
+is on. [deploy/README.md, "One Secret per credential"](../../deploy/README.md#one-secret-per-credential)
+has the migration for existing items.
+
 **The handler refuses a mixed layout.** Before writing anything, it checks that each
 database item holds exactly those two fields. Any other field stops the run and names the
 field. That catches an installation that has not migrated, and a field added to a database
