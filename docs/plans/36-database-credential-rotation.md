@@ -100,7 +100,8 @@ Deployment or the namespace, and `AUTO_RESTART` sets it for the whole operator, 
 order of precedence (operator usage guide, read 2026-10-07). The guide does not say how the
 operator finds the Deployments that use a Secret; that is open question 6.
 
-`deploy/talos/onepassword-items.yaml` sets no auto-restart. Its comment says rotation is
+deploy/talos's `OnePasswordItem`s set no auto-restart (`deploy/talos/values.yaml` since
+ADR-0038; `onepassword-items.yaml` before it). Its comment says rotation is
 "ALTER ROLE first and the item second". That order keeps an operator-triggered restart from
 starting a pod against a password PostgreSQL does not yet accept. It also makes every
 request fail between the `ALTER ROLE` and the eventual restart, which waits for the next
@@ -402,7 +403,8 @@ gives the same rollback as 1Password item history, and `-cas=<version>` gives th
 compare-and-swap `op` lacks. No overlay deploys a Vault consumer today (open question 4).
 
 **kind.** The `kind-files` backend rewrites `deploy/kind/.secrets/{migrate,app}.env` with
-mode 0600 and runs `kubectl apply -k deploy/kind`. This writes the password to disk, which
+mode 0600 and runs `deploy/kind/up.sh` (written as `kubectl apply -k deploy/kind`, before
+ADR-0038 made deploy/kind a values file for the chart). This writes the password to disk, which
 the other backends must not do. That is acceptable only because those files already hold
 the harness's passwords. The backend exists so the ordering and the gap can be measured
 without a 1Password account.

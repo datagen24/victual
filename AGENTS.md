@@ -228,4 +228,5 @@ connective makes the order ambiguous. Those get full prose.
   `victual-migrate` holds the one that can. What is still open in
   [plan 20](docs/plans/20-container-infrastructure.md) is the cluster half of the signal check
   and an apply that reaches the printer: `deploy/k3s/victual.yaml` was applied to the
-  maintainer's Talos cluster on 2026-10-06 through [deploy/talos/](deploy/talos/kustomization.yaml).
+  maintainer's Talos cluster on 2026-10-06 through deploy/talos/'s kustomize overlay of the time
+  ([pinned](https://github.com/datagen24/victual/blob/b930242f/deploy/talos/kustomization.yaml)).

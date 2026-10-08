@@ -557,7 +557,8 @@ QL-820NWBc. Issue 93 stays open on it.
 **Applied to a real cluster, 2026-10-06.** The cluster gate this piece waited on is met; the
 printer gate is not. The target was the maintainer's Talos v1.14.2 cluster: Kubernetes
 v1.37.0, one arm64 Raspberry Pi node, Traefik behind MetalLB, NFS CSI. The overlay,
-[`deploy/talos/`](../../deploy/talos/kustomization.yaml), uses the published GHCR `0.2.0-MVP`
+[`deploy/talos/`](https://github.com/datagen24/victual/blob/b930242f/deploy/talos/kustomization.yaml)
+as it was then (a kustomize overlay; ADR-0038 made it a values file for the chart), uses the published GHCR `0.2.0-MVP`
 images, adds an Ingress and an NFS-backed PostgreSQL, and leaves out the label workers
 because the cluster has no printer. What the run established:
 

@@ -5,7 +5,7 @@
 - **Recorded:** 2026-10-07. Answers to open questions 1, 2 and 3 recorded the same day,
   and decisions 2, 8, 9 and 10 reconciled with them. Prerequisites 1 to 3 met 2026-10-08,
   with two rulings that day reconciled into decision 6, and 4 and 7 met on kind the same
-  day (see "Prerequisite status")
+  day, as was 6's kind half (see "Prerequisite status")
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -312,7 +312,8 @@ record are in that branch's pull request.
 | 2 | **Met** | `test_helm_chart.ValuesMatrixTest`: six values files in `deploy/helm/victual/ci/` render with hooks and pass `validate()`. Between them they cover all four secrets modes, the MCP sidecar, both label CronJobs, the Ingress, and the MQTT and InfluxDB Secrets, which a test asserts. The negative control, `ci/negative/app-without-memory-limit.yaml`, fails with `container/app: resources.limits.memory must be set` |
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
 | 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to the hook Jobs' build both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
-| 5–6 | Not met | Nothing has been published, and kind and talos are still kustomize overlays |
+| 5 | Not met | Nothing has been published |
+| 6 | **Half met: kind** | `deploy/kind/up.sh` installs the chart with `deploy/kind/values.yaml`: from scratch, again over its own release, and over a namespace the old kustomize overlay had applied, each to a ready Deployment that logs in. `deploy/talos/up.sh` installs `oci://ghcr.io/datagen24/charts/victual` by version, or the local chart with `--local`; its rendering passes `validate()` and `kubectl apply --dry-run=client`, and has not been applied, so the talos cluster has not served `/login` from the published chart. See [Prerequisite 6](#prerequisite-6-kind-and-talos-through-the-chart) |
 | 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
 
 ### Prerequisite 4 on kind
@@ -361,6 +362,44 @@ The same release, between revisions 1 and 3.
    logged `Published the discovery payloads (device mode) and the state snapshot`.
 6. `mosquitto_sub --retained-only` read nine retained topics: eight under `victual/state/`
    and the Home Assistant device discovery topic.
+
+### Prerequisite 6: kind and talos through the chart
+
+Recorded 2026-10-08 against `claude/adr38-kind-talos-values`, with Helm v4.3.0 on the same
+kind cluster, in scratch namespaces (the cluster's `victual` namespace belonged to another
+session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
+
+1. **From scratch** (namespace `helmkind`). `up.sh` exited 0 in 23 seconds: namespace,
+   Secrets, PostgreSQL, the roles Job, then `helm upgrade --install --wait` installed
+   revision 1. The Deployment was 1/1 and the MCP sidecar 2/2. The migrate initContainer
+   reported the schema at migration 304. Through a port-forward, `GET /login` answered 200; a
+   `POST /login` with the generated bootstrap password answered 302 to `/`, which answered 302
+   to `/stockoverview`, which answered 200. A wrong password answered 302 to
+   `/login?invalid=true`.
+2. **Again over its own release.** `up.sh` exited 0 in 6 seconds with revision 2. The
+   pre-upgrade preflight Job completed and logged `No TIMESTAMP column is left to convert`.
+   The Victual pod kept its name, because nothing in its template changed. The same login
+   sequence gave the same codes.
+3. **Over the kustomize overlay** (namespace `helmadopt`). The old `deploy/kind` overlay,
+   rendered from `b930242f`, was applied with `kubectl apply`, and `up.sh` was then run
+   over it. The first attempt, without adoption, failed: Helm 4's server-side apply
+   conflicted with the fields `kubectl-client-side-apply` owned. With `--take-ownership
+   --force-conflicts` on the first install, which `up.sh` now passes only when no release
+   exists, it exited 0 with revision 1. The PostgreSQL pod was not replaced. The admin row's
+   `row_created_timestamp` was the same before and after, and the login sequence gave the
+   same codes. The overlay's two label CronJobs, which `values.yaml` leaves out, stayed in
+   place until deleted by hand.
+4. **talos, not applied.** `helm template` with `deploy/talos/values.yaml` (11 documents,
+   the preflight hook among them) and `kubectl kustomize deploy/talos/postgres` (6) pass
+   `validate()`. Without the `OnePasswordItem`s, which kind has no CRD for, both pass
+   `kubectl apply --dry-run=client` against kind. Compared by kind and name with the old
+   overlay's rendering from `b930242f`, every object is the same, except three:
+   - The Namespace is gone, because `up.sh` creates it.
+   - The preflight Job is new.
+   - The chart's three `OnePasswordItem`s gain the label `app.kubernetes.io/name: victual`.
+
+   So the first install over the cluster's 2026-10-06 deployment should adopt it without
+   restarting a pod. That is not yet observed.
 
 How the chart differs from `deploy/production/`'s values:
 
