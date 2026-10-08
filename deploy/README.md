@@ -280,7 +280,8 @@ patched; it runs neither of the chart's hooks. Keep the Secrets out of anything 
 
 `deploy/talos/up.sh` installs the published chart,
 `oci://ghcr.io/datagen24/charts/victual` at `version.json`'s version (`CHART_VERSION`
-overrides it), with [`talos/values.yaml`](talos/values.yaml); `--local` installs
+overrides it; the first published chart is 0.3.1, the tag after 0.3.0, so set
+`CHART_VERSION=0.3.1` until the release moves `version.json` there), with [`talos/values.yaml`](talos/values.yaml); `--local` installs
 `deploy/helm/victual/` from the working tree instead, still with the published images. It
 needs `KUBE_CONTEXT` and refuses to run without one rather than use the current context:
 

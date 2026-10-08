@@ -373,8 +373,10 @@ session). Images were built from `b930242f` and tagged `0.3.0-helmkind`.
    alone over the same overlay failed on those conflicts and left revision 1 `failed`.
    `up.sh` treats a release with no deployed revision as new, so its retry passed both flags
    and upgraded it to a deployed revision 2 that logs in.
-4. **talos, not applied.** `helm template` with `deploy/talos/values.yaml` (11 documents,
-   the preflight hook among them) and `kubectl kustomize deploy/talos/postgres` (6) pass
+4. **talos, not applied.** `up.sh` installs the chart at `version.json`'s version. The first
+   published chart will be 0.3.1, the tag after the gate pull requests merge, and that
+   release moves `version.json` to 0.3.1; no 0.3.0 chart exists.
+   `helm template` with `deploy/talos/values.yaml` (11 documents, the preflight hook among them) and `kubectl kustomize deploy/talos/postgres` (6) pass
    `validate()`. Without the `OnePasswordItem`s, which kind has no CRD for, both pass
    `kubectl apply --dry-run=client` against kind. Compared by kind and name with the old
    overlay's rendering from `b930242f`, every object is the same, except three:
