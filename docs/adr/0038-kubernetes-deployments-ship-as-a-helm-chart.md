@@ -19,11 +19,11 @@ plus three ways of turning it into something a cluster runs:
 |---|---|---|
 | [`deploy/kind/`](../../deploy/kind/) | Test harness: a throwaway PostgreSQL and local images | `resources: [../k3s]` |
 | [`deploy/talos/`](../../deploy/talos/) | The maintainer's cluster, kept as a worked example | Naming individual files, built with `--load-restrictor LoadRestrictionsNone` |
-| [`deploy/production/`](../../deploy/production/) | A values file rendered into an overlay by `render.py`, applied by `deploy.sh` | Generating a kustomization that lists the base's files and patches them |
+| [`deploy/production/`](https://github.com/datagen24/victual/tree/947407c3/deploy/production/) | A values file rendered into an overlay by `render.py`, applied by `deploy.sh` | Generating a kustomization that lists the base's files and patches them |
 
 `deploy/production/` is a values-to-manifests renderer written for this repository.
-[`render.py`](../../deploy/production/render.py) reads
-[`values.example.yaml`](../../deploy/production/values.example.yaml). It refuses a missing,
+[`render.py`](https://github.com/datagen24/victual/blob/947407c3/deploy/production/render.py) reads
+[`values.example.yaml`](https://github.com/datagen24/victual/blob/947407c3/deploy/production/values.example.yaml). It refuses a missing,
 mistyped or `CHANGE-ME` value by field name, then generates a namespace, an Ingress, a
 ConfigMap patch and either `OnePasswordItem` resources or inline Secret patches.
 `deploy.sh` applies the result and waits for the rollout. This is the job Helm does. Helm
