@@ -29,10 +29,12 @@ the string by position should parse it instead.
 ## Keeping the broker in sync
 
 Run `bin/victual-publish-state` once after every deployment — a postStart hook, or a Job
-alongside the `bin/victual-migrate` initContainer. It republishes the discovery payloads and
-the full snapshot, which is what makes a fresh deployment, a migration, a data import or a
-manual change in `psql` visible on the broker instead of silently drifting from what it
-still holds. `bin/victual-publish-state --retract` clears every retained topic this version
+alongside the `bin/victual-migrate` initContainer. The Helm chart does this for you: with
+`mqtt.enabled`, a `post-install` and `post-upgrade` hook Job runs it after each `helm install`
+and `helm upgrade`, but not after a `helm rollback`. The command republishes the discovery
+payloads and the full snapshot, which is what makes a fresh deployment, a migration, a data
+import or a manual change in `psql` visible on the broker instead of silently drifting from
+what it still holds. `bin/victual-publish-state --retract` clears every retained topic this version
 owns — use it when decommissioning the integration.
 
 Beyond that one command, publishing happens automatically at the end of any request that

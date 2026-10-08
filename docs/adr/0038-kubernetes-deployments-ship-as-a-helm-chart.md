@@ -3,9 +3,9 @@
 - **Status:** Proposed
 - **Decider:** datagen24
 - **Recorded:** 2026-10-07; decider's answers to open questions 1, 2 and 3 recorded the
-  same day, and decisions 2, 8, 9 and 10 reconciled with them; acceptance prerequisites 1
-  to 3 met 2026-10-08, with two implementation choices awaiting the decider (see
-  "Prerequisite status")
+  same day, and decisions 2, 8, 9 and 10 reconciled with them. Acceptance prerequisites 1
+  to 3 met 2026-10-08, with two implementation choices awaiting the decider, and 4 and 7
+  met on kind the same day (see "Prerequisite status")
 - **Referenced by:** [plan 20](../plans/20-container-infrastructure.md) (piece 4, the k3s
   manifests), [deploy/](../../deploy/README.md); would supersede in part the answer to
   [ADR-0010](0010-workload-standard.md) open question 1; extends
@@ -176,8 +176,9 @@ Two runtime properties constrain what a rollback can do:
   checks, so the rolled-back pod should never become ready. The newer pod would then keep
   serving and `helm rollback --wait` would time out. If the newer pod is already gone, the
   instance answers 503 until the newer version is redeployed or the database is restored
-  from a backup. Neither outcome has been observed, and what the older `migrate`
-  initContainer does with migrations it does not know is also unverified. Either way,
+  from a backup. The first outcome is what kind showed on 2026-10-08, and the older
+  `migrate` initContainer did not refuse the newer schema (acceptance prerequisite 4's
+  row under "Prerequisite status"). Either way,
   rollback is a recovery only for releases that add no migration. The operator manual
   must say so, and acceptance prerequisite 4 records which outcome occurs.
 - **Migrations stay in the initContainer.** The pod is unchanged, so podman parity and the
@@ -297,14 +298,66 @@ Two runtime properties constrain what a rollback can do:
 ## Prerequisite status
 
 Recorded 2026-10-08 against the branch `claude/adr38-helm-chart-gates-1-3`, rendered with
-Helm v4.3.0 (the version the `lint` job installs, pinned by checksum).
+Helm v4.3.0 (the version the `lint` job installs, pinned by checksum). Rows 4 and 7
+were recorded the same day against `claude/adr38-helm-hooks`, on a one-node kind cluster
+(Kubernetes v1.37, podman provider, arm64). The commands, logs and the client's per-second
+record are in that branch's pull request.
 
 | # | Status | Evidence |
 |---|---|---|
 | 1 | **Met** | `python3 .devtools/ci/render_k3s.py --check` reports `deploy/k3s/ matches the chart (3 file(s))`. The parity tests and `check_deploy_manifest.py` pass unchanged (`python3 -m unittest discover -s .devtools/ci`: 70 tests, OK). Changing `replicas: 1` to `3` in `deploy/k3s/victual.yaml` by hand made `--check` exit 1 with the diff, and failed two tests in `test_helm_chart.py`. The `lint` job runs both. `kubectl kustomize` of `deploy/k3s`, `deploy/kind` and `deploy/talos` was parsed before and after the change and compared by kind and name: 13, 18 and 17 documents, no differences |
 | 2 | **Met** | `test_helm_chart.ValuesMatrixTest`: six values files in `deploy/helm/victual/ci/` render with hooks and pass `validate()`. Between them they cover all four secrets modes, the MCP sidecar, both label CronJobs, the Ingress, and the MQTT and InfluxDB Secrets, which a test asserts. The negative control, `ci/negative/app-without-memory-limit.yaml`, fails with `container/app: resources.limits.memory must be set` |
 | 3 | **Met, with a different message** | `helm install victual deploy/helm/victual -f deploy/helm/victual/values.example.yaml --dry-run=client` exits non-zero and lists `at '/database/host'`, `at '/ingress/host'` and `at '/secrets/onepassword/vault'`, the example's three `CHANGE-ME` fields. Helm's validator words the refusal as `'not' failed` rather than `render.py`'s `still 'CHANGE-ME…'; fill it in`. Its regular-expression engine has no lookahead, so the schema can say "not this pattern" only through `not`. The example's header says what the refusal means |
-| 4–7 | Not met | Nothing has been installed on a cluster or published |
+| 4 | **Met** | On kind, install at 0.2.0-MVP and upgrade to this branch both reached a ready Deployment. `helm rollback` across the migration exited 1: the older pod never became ready and the newer pod kept serving. See [Prerequisite 4 on kind](#prerequisite-4-on-kind) |
+| 5–6 | Not met | Nothing has been published, and kind and talos are still kustomize overlays |
+| 7 | **Met** | On kind, a preflight refusal (exit 2) failed `helm upgrade` before any pod was replaced, and clients kept getting 200. The `post-upgrade` Job published nine retained topics to a local broker. See [Prerequisite 7 on kind](#prerequisite-7-on-kind) |
+
+### Prerequisite 4 on kind
+
+The release ran in namespace `adr38` with Helm v4.3.0 and `secrets.source: existing`.
+PostgreSQL and the roles came from `deploy/kind/`. An in-cluster client requested `/login`
+once a second throughout.
+
+1. **Install.** Revision 1, `helm install --wait` of the published `0.2.0-MVP` images, was
+   ready in 3 seconds with the schema at migration 288.
+2. **Upgrade.** Revision 3, `helm upgrade --wait` to this branch's images built as
+   `0.3.0-adr38`, exited 0. The new pod's `migrate` initContainer converted 317 timestamps
+   and reported the schema at migration 304. During the rollout the client got 503 three
+   times from the old pod, then one connection failure while the Service switched pods.
+3. **Rollback.** `helm rollback victual 1 --wait --timeout 3m` exited 1 with `context
+   deadline exceeded`, and revision 4 is `failed`.
+   - The older `migrate` initContainer exited 0 and logged `Schema is up to date at
+     migration 304`. Its own migrations stop at 288, so it neither ran nor refused
+     anything.
+   - The older pod never became ready. Its readiness probe failed 25 times with `GET
+     /login answered 503`. A request sent to that pod directly returned 503 with `Victual
+     cannot serve requests: the database schema does not match this code.`
+   - The newer pod stayed ready and answered all 177 of the client's requests with 200.
+   - The rollback restored revision 1's ConfigMap, so the newer pod would start with MQTT
+     off if it restarted.
+4. **Recovery.** `helm rollback victual 3 --wait` exited 0.
+
+This is the first outcome Consequences predicts. Rollback is a recovery only for releases
+that add no migration.
+
+### Prerequisite 7 on kind
+
+The same release, between revisions 1 and 3.
+
+1. A task completion of `infinity` was inserted as the superuser, as the upgrade
+   rehearsal's invalid fixture does.
+2. `helm upgrade --wait` to this branch's images exited 1 after 3 seconds with
+   `pre-upgrade hooks failed: resource Job/adr38/victual-upgrade-preflight not ready`.
+   Revision 2 is `failed`.
+3. The preflight container exited 2. Its log is the report and ends `tasks.done_timestamp:
+   1 value(s) are infinite in UTC`.
+4. The 0.2.0-MVP pod was not replaced: it kept the same name and start time. The ConfigMap
+   kept revision 1's values, and the client got 200 on every request.
+5. After the row was corrected, the upgrade to revision 3 enabled MQTT against an anonymous
+   Mosquitto 2 broker in the namespace. Its `post-upgrade` Job completed in 3 seconds and
+   logged `Published the discovery payloads (device mode) and the state snapshot`.
+6. `mosquitto_sub --retained-only` read nine retained topics: eight under `victual/state/`
+   and the Home Assistant device discovery topic.
 
 How the chart differs from `deploy/production/`'s values, which decision 6 says it keeps:
 
@@ -330,6 +383,12 @@ How the chart differs from `deploy/production/`'s values, which decision 6 says 
 - **`values.example.yaml` is in the chart**, at `deploy/helm/victual/values.example.yaml`,
   and is packaged with it. In inline mode the bootstrap administrator's password is still
   required, as `render.py` required it.
+- **The hook Jobs run `/opt/victual/php bin/<command>`.** The app and migrate images had
+  no PATH, no shell and a `Cmd` of store paths, so a manifest had no name for either
+  command. `nix/php-launcher.nix` places each image's own PHP at `/opt/victual/php`, as
+  `nix/healthcheck.nix` places the probe. The scripts stay in the application root, which
+  is the images' working directory. `upgradePreflight.enabled` turns the preflight off;
+  `deploy/k3s/`'s values turn it off, although `--no-hooks` already leaves it out.
 - **Memory limits are values** (`resources.*`). The schema does not require them, so that
   the negative control reaches `check_deploy_manifest.py`, which is the check this record
   names.
