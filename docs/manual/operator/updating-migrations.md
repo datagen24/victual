@@ -33,6 +33,47 @@ request to `/` perform the migration instead. It is off by default, since a depl
 normally runs this as its own init step (a Job or an initContainer ahead of the serving
 pods) rather than leaving it to whoever loads the page first.
 
+## Rolling back a Helm release
+
+`helm rollback` is a recovery only for a release that added no migration. After an
+upgrade that migrated the database, rolling back does not return the instance to the
+older version. Migrations only move forward, and the Helm chart has no step that undoes
+one.
+
+On kind on 2026-10-08, a rollback from a release at migration 304 to one at migration 288
+behaved as follows ([ADR-0038, "Prerequisite 4 on
+kind"](../../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md#prerequisite-4-on-kind)):
+
+- The older `migrate` initContainer exited 0 and logged `Schema is up to date at migration
+  304`. Its own migrations stop at 288, so it neither ran nor refused anything. Expect no
+  error from it.
+- The older pod never became ready. Its code does not match the schema, so it answers
+  every request, including the readiness probe's `GET /login`, with 503 and `Victual cannot
+  serve requests: the database schema does not match this code.`
+- Under the default rolling update, the newer pod kept running and serving: clients got
+  200 throughout. `helm rollback --wait` timed out with `context deadline exceeded`, and
+  Helm recorded the rollback revision as `failed`.
+- The rollback restored the older revision's ConfigMap under the newer pod. The newer pod
+  keeps the configuration it started with, but if it restarts it starts with the older
+  values. On kind, that would have turned MQTT off.
+- A rollback runs no `post-upgrade` hook, so the chart does not run
+  `bin/victual-publish-state` ([Home Assistant and
+  MQTT](home-assistant-mqtt.md#keeping-the-broker-in-sync)).
+
+To recover, roll forward to the upgraded revision. On kind, `helm rollback victual 3
+--wait`, where revision 3 was the upgrade, exited 0. List the revisions with
+`helm history victual`.
+
+If the newer pod is already gone, for example because it was evicted or the Deployment
+does not use a rolling update, the instance answers 503 until you do one of the
+following:
+
+- Deploy the newer version again, with `helm rollback` to the upgraded revision or
+  `helm upgrade` with its chart.
+- Restore the `pg_dump` backup taken before the upgrade into an empty database and run
+  the older version against it ([Backup and restore](backup-restore.md)). Bookings made
+  after the upgrade are not in that backup.
+
 ## Moving from SQLite
 
 See [Getting started](../getting-started.md#moving-an-existing-sqlite-installation-across)
