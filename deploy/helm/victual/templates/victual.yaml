@@ -78,9 +78,11 @@ data:
   {{- with .Values.influxdb }}
   {{- if .enabled }}
   VICTUAL_INFLUXDB_ENABLED: "true"
+  VICTUAL_INFLUXDB_VERSION: {{ .version | toString | quote }}
   VICTUAL_INFLUXDB_URL: {{ .url | quote }}
   VICTUAL_INFLUXDB_ORG: {{ .org | quote }}
   VICTUAL_INFLUXDB_BUCKET: {{ .bucket | quote }}
+  VICTUAL_INFLUXDB_USERNAME: {{ .username | quote }}
   {{- end }}
   {{- end }}
   {{- range $name, $value := .Values.settings }}

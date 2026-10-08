@@ -339,14 +339,16 @@ Setting('MQTT_DEVICE_NAME', 'Victual'); // The device name Home Assistant shows 
 //   price_paid,product_id=<id>  price=<paid>,amount=<booked>   at the booking's own timestamp
 //   stock_value,product_id=<id> value=<worth>,amount=<in stock> at the end of the request
 //
-// Written on the same after-commit seam as the MQTT publish, over InfluxDB's v2
-// /api/v2/write line-protocol endpoint. A failure is logged and never reaches the write that
+// Written on the same after-commit seam as the MQTT publish, over InfluxDB's HTTP
+// line-protocol endpoint: /write for 1.x, /api/v2/write for 2.x, /api/v3/write_lp for 3.x. A failure is logged and never reaches the write that
 // triggered it.
 Setting('INFLUXDB_ENABLED', false);
-Setting('INFLUXDB_URL', ''); // Base URL of the InfluxDB v2 server, e.g. "http://influxdb:8086" - required when INFLUXDB_ENABLED is true
-Setting('INFLUXDB_TOKEN', ''); // An API token with write access to the bucket below; never exposed via GET /api/system/config
-Setting('INFLUXDB_ORG', 'victual'); // The InfluxDB organisation
-Setting('INFLUXDB_BUCKET', 'victual'); // The bucket the points are written to
+Setting('INFLUXDB_VERSION', 2); // Major version of the InfluxDB server: 1, 2 or 3
+Setting('INFLUXDB_URL', ''); // Base URL of the InfluxDB server, e.g. "http://influxdb:8086" - required when INFLUXDB_ENABLED is true
+Setting('INFLUXDB_TOKEN', ''); // 2.x/3.x: an API token with write access to the bucket below. 1.x: the password of INFLUXDB_USERNAME. Never exposed via GET /api/system/config
+Setting('INFLUXDB_USERNAME', ''); // 1.x only: the user to write as; empty writes without authentication
+Setting('INFLUXDB_ORG', 'victual'); // 2.x only: the InfluxDB organisation
+Setting('INFLUXDB_BUCKET', 'victual'); // The bucket (2.x) or database (1.x, 3.x) the points are written to
 Setting('INFLUXDB_TIMEOUT_SECONDS', 2); // Connect and total timeout - this bounds how long a write can be delayed when InfluxDB is unreachable
 
 

@@ -173,6 +173,13 @@
         "enabled": {
           "type": "boolean"
         },
+        "version": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
         "url": {
           "$ref": "#/$defs/text"
         },
@@ -180,6 +187,9 @@
           "$ref": "#/$defs/text"
         },
         "bucket": {
+          "$ref": "#/$defs/text"
+        },
+        "username": {
           "$ref": "#/$defs/text"
         }
       },
@@ -495,17 +505,48 @@
               "url": {
                 "minLength": 1
               },
-              "org": {
-                "minLength": 1
-              },
               "bucket": {
                 "minLength": 1
               }
             },
             "required": [
               "url",
-              "org",
               "bucket"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "org is InfluxDB 2's alone; 1 and 3 write to a database.",
+      "if": {
+        "properties": {
+          "influxdb": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "version": {
+                "const": 2
+              }
+            },
+            "required": [
+              "enabled",
+              "version"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "influxdb": {
+            "properties": {
+              "org": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "org"
             ]
           }
         }

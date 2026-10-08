@@ -341,9 +341,14 @@ class ConfigurationValidator
 			throw new EInvalidConfig('INFLUXDB_URL needs to be set when INFLUXDB_ENABLED is true');
 		}
 
-		if (empty(trim(VICTUAL_INFLUXDB_BUCKET)) || empty(trim(VICTUAL_INFLUXDB_ORG)))
+		if (!in_array((string)VICTUAL_INFLUXDB_VERSION, ['1', '2', '3'], true))
 		{
-			throw new EInvalidConfig('INFLUXDB_ORG and INFLUXDB_BUCKET need to be set when INFLUXDB_ENABLED is true');
+			throw new EInvalidConfig('INFLUXDB_VERSION needs to be 1, 2 or 3');
+		}
+
+		if (empty(trim(VICTUAL_INFLUXDB_BUCKET)) || ((string)VICTUAL_INFLUXDB_VERSION === '2' && empty(trim(VICTUAL_INFLUXDB_ORG))))
+		{
+			throw new EInvalidConfig('INFLUXDB_ORG and INFLUXDB_BUCKET need to be set when INFLUXDB_ENABLED is true (INFLUXDB_ORG only for InfluxDB 2)');
 		}
 
 		if (!is_numeric(VICTUAL_INFLUXDB_TIMEOUT_SECONDS) || (int)VICTUAL_INFLUXDB_TIMEOUT_SECONDS < 1)

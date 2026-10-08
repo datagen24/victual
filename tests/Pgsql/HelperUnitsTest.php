@@ -1331,6 +1331,20 @@ class HelperUnitsTest extends PgsqlSchemaTestCase
 			['INFLUXDB_BUCKET' => '']
 		);
 		self::assertConfigurationRefused(
+			['INFLUXDB_ENABLED' => 'true', 'INFLUXDB_URL' => 'http://influxdb.example.test:8086', 'INFLUXDB_VERSION' => '4'],
+			'INFLUXDB_VERSION needs to be 1, 2 or 3',
+			'only the three releases that exist are spoken'
+		);
+		foreach (['1', '3'] as $version)
+		{
+			$verdict = self::validateConfiguration(
+				['INFLUXDB_ENABLED' => 'true', 'INFLUXDB_URL' => 'http://influxdb.example.test:8086', 'INFLUXDB_VERSION' => $version],
+				[],
+				['INFLUXDB_ORG' => '']
+			);
+			self::assertTrue($verdict['ok'], "InfluxDB $version has no organisation, but the validator refused it: " . ($verdict['message'] ?? ''));
+		}
+		self::assertConfigurationRefused(
 			['INFLUXDB_ENABLED' => 'true', 'INFLUXDB_URL' => 'http://influxdb.example.test:8086', 'INFLUXDB_TIMEOUT_SECONDS' => '0'],
 			'at least 1',
 			'the timeout bounds how long an unreachable metrics server delays a booking'

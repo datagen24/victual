@@ -9,7 +9,12 @@ use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\RequestOptions;
 
 /**
- * Writes events to InfluxDB over its v2 HTTP line-protocol endpoint.
+ * Writes events to InfluxDB over its HTTP line-protocol endpoint, for InfluxDB 1.x, 2.x or 3.x.
+ *
+ * INFLUXDB_VERSION picks the dialect (see Request()). All three answer a successful write with
+ * `204 No Content`, so the acknowledgement check in Write() is the same for each. A Home
+ * Assistant install that still writes to a 1.x server with years of history is the reason 1.x
+ * is here; 3.x is here because it is what a new install is offered.
  *
  * The transport half of question 7 of docs/plans/18-mqtt-state-publication.md, answered
  * 2026-08-31: the fork does write to InfluxDB, scoped to *events* rather than sampled state.
@@ -78,7 +83,7 @@ class InfluxEventWriter
 	 * So redirects are off, every status comes back as a response rather than an exception,
 	 * and the acknowledgement is asserted here: a 2xx, from the address the request was sent
 	 * to, with no body. The empty body is part of the contract rather than fussiness -
-	 * InfluxDB's v2 write API answers `204 No Content`, so a 2xx carrying a page is a proxy
+	 * InfluxDB's write APIs answer `204 No Content`, so a 2xx carrying a page is a proxy
 	 * or a portal answering on the endpoint's behalf. If a real deployment ever puts
 	 * something in front of InfluxDB that returns a body on success, this is the check to
 	 * loosen, deliberately and with the endpoint named.
@@ -94,7 +99,14 @@ class InfluxEventWriter
 		}
 
 		$timeout = max(1, (int)VICTUAL_INFLUXDB_TIMEOUT_SECONDS);
-		$url = rtrim((string)VICTUAL_INFLUXDB_URL, '/') . '/api/v2/write';
+		[$url, $query, $headers, $auth] = self::BuildRequest(
+			(int)VICTUAL_INFLUXDB_VERSION,
+			(string)VICTUAL_INFLUXDB_URL,
+			(string)VICTUAL_INFLUXDB_TOKEN,
+			(string)VICTUAL_INFLUXDB_USERNAME,
+			(string)VICTUAL_INFLUXDB_ORG,
+			(string)VICTUAL_INFLUXDB_BUCKET
+		);
 
 		try
 		{
@@ -112,18 +124,17 @@ class InfluxEventWriter
 				RequestOptions::HTTP_ERRORS => false
 			]);
 
-			$response = $client->request('POST', $url, [
-				RequestOptions::QUERY => [
-					'org' => VICTUAL_INFLUXDB_ORG,
-					'bucket' => VICTUAL_INFLUXDB_BUCKET,
-					'precision' => 'ns'
-				],
-				RequestOptions::HEADERS => [
-					'Authorization' => 'Token ' . VICTUAL_INFLUXDB_TOKEN,
-					'Content-Type' => 'text/plain; charset=utf-8'
-				],
+			$options = [
+				RequestOptions::QUERY => $query,
+				RequestOptions::HEADERS => $headers + ['Content-Type' => 'text/plain; charset=utf-8'],
 				RequestOptions::BODY => implode("\n", $lines)
-			]);
+			];
+			if ($auth !== null)
+			{
+				$options[RequestOptions::AUTH] = $auth;
+			}
+
+			$response = $client->request('POST', $url, $options);
 
 			$status = $response->getStatusCode();
 
@@ -162,6 +173,50 @@ class InfluxEventWriter
 		catch (\Throwable $ex)
 		{
 			return $this->Reject($ex->getMessage());
+		}
+	}
+
+	/**
+	 * The write endpoint for the configured InfluxDB version: URL, query string, headers and
+	 * HTTP basic credentials (null for none).
+	 *
+	 * - **1.x**: `POST /write?db=`, authenticated with HTTP basic auth when INFLUXDB_USERNAME
+	 *   is set (the token setting holds that user's password) and unauthenticated otherwise.
+	 *   INFLUXDB_BUCKET is the database; the default retention policy is used.
+	 * - **2.x**: `POST /api/v2/write?org=&bucket=`, `Authorization: Token`.
+	 * - **3.x**: `POST /api/v3/write_lp?db=`, `Authorization: Bearer`; the header is left off
+	 *   when no token is set, because 3.x Core can run without authentication. INFLUXDB_BUCKET
+	 *   is the database.
+	 *
+	 * @return array{0: string, 1: array<string, string>, 2: array<string, string>, 3: array{0: string, 1: string}|null}
+	 */
+	public static function BuildRequest(int $version, string $url, string $token, string $username, string $org, string $bucket): array
+	{
+		$base = rtrim($url, '/');
+
+		switch ($version)
+		{
+			case 1:
+				return [
+					$base . '/write',
+					['db' => $bucket, 'precision' => 'ns'],
+					[],
+					$username === '' ? null : [$username, $token]
+				];
+			case 3:
+				return [
+					$base . '/api/v3/write_lp',
+					['db' => $bucket, 'precision' => 'nanosecond'],
+					$token === '' ? [] : ['Authorization' => 'Bearer ' . $token],
+					null
+				];
+			default:
+				return [
+					$base . '/api/v2/write',
+					['org' => $org, 'bucket' => $bucket, 'precision' => 'ns'],
+					['Authorization' => 'Token ' . $token],
+					null
+				];
 		}
 	}
 
