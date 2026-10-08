@@ -311,11 +311,12 @@ candidate later if substring proves insufficient in use — recorded, not built)
 minus the first set. Only `type = normal` recipes (not meal-plan shadow recipes — see
 Appendix A for why nothing may depend on that internal naming convention again).
 
-## 6. Tools — deferred writes (specified now, built later)
+## 6. Tools — writes (built 2026-10-08, issue #209)
 
-Per 02-Q2 these ship only after read-only v1 has proven the transport in use, and
-after [13](plans/landed/13-write-path-transactions.md) is in place. Specified here so the
-write wave is an implementation task, not a design task:
+Per 02-Q2 these were to ship only after read-only v1 had proven the transport in use.
+The maintainer waived that gate on 2026-10-08 and the tools are built, off by default. They
+needed [13](plans/landed/13-write-path-transactions.md), which had landed. The table is
+the build specification:
 
 | Tool | Input | Backed by |
 |---|---|---|
@@ -388,7 +389,7 @@ nothing here is complex enough for a config file:
 |---|---|---|
 | `VICTUAL_BASE_URL` | Victual origin, e.g. `http://victual.victual.svc:80` | required |
 | `MCP_PORT` | listen port | `3000` |
-| `MCP_ENABLED_TOOLS` | comma-separated allowlist; `all-read` keyword = the six §5 tools | `all-read` |
+| `MCP_ENABLED_TOOLS` | comma-separated allowlist; `all-read` keyword (also valid inside the list) = the six §5 tools; the §6 write tools are enabled by name only | `all-read` |
 | `MCP_REQUEST_TIMEOUT_MS` | per-REST-call timeout | `10000` |
 | `LOG_LEVEL` | `error`/`warn`/`info`/`debug`, to stderr/stdout | `info` |
 

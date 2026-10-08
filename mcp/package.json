@@ -2,7 +2,7 @@
   "name": "victual-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Read-only MCP sidecar for Victual \u2014 see docs/mcp-interface-spec.md",
+  "description": "MCP sidecar for Victual \u2014 see docs/mcp-interface-spec.md",
   "type": "module",
   "engines": {
     "node": ">=22.6.0"

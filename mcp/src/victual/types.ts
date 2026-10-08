@@ -64,3 +64,11 @@ export interface RecipeRow {
   name: string;
   type: string;
 }
+
+/** One row of the stock_log answer to POST /api/stock/products/{id}/consume and /add. */
+export interface StockLogRow {
+  id: Numeric;
+  transaction_id: string;
+  product_id: Numeric;
+  amount: Numeric;
+}

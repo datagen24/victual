@@ -15,7 +15,10 @@ export const ALL_READ_TOOLS = [
   "recipes_i_can_cook",
 ] as const;
 
-export type ToolName = (typeof ALL_READ_TOOLS)[number];
+// §6 write tools: never part of `all-read`, so enabling one is a deliberate act.
+export const WRITE_TOOLS = ["add_to_shopping_list", "consume_product", "purchase_product"] as const;
+
+export type ToolName = (typeof ALL_READ_TOOLS)[number] | (typeof WRITE_TOOLS)[number];
 
 const envSchema = z.object({
   VICTUAL_BASE_URL: z.string().url(),
@@ -23,7 +26,12 @@ const envSchema = z.object({
   MCP_ENABLED_TOOLS: z
     .string()
     .default("all-read")
-    .transform((value) => (value === "all-read" ? [...ALL_READ_TOOLS] : value.split(","))),
+    // `all-read` expands in place, so `all-read,consume_product` is the six reads plus one write.
+    .transform((value) => [
+      ...new Set(
+        value.split(",").flatMap((name) => (name.trim() === "all-read" ? [...ALL_READ_TOOLS] : [name.trim()])),
+      ),
+    ]),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).default("info"),
 });
@@ -42,7 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const config = parsed.data;
   const unknown = config.MCP_ENABLED_TOOLS.filter(
-    (tool) => !(ALL_READ_TOOLS as readonly string[]).includes(tool),
+    (tool) => ![...ALL_READ_TOOLS, ...WRITE_TOOLS].includes(tool as ToolName),
   );
   if (unknown.length > 0) {
     console.error(

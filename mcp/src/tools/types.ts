@@ -28,6 +28,17 @@ export interface ToolDefinition<Input extends z.ZodTypeAny, Output extends z.Zod
    * route does") is the one that holds.
    */
   permission: string;
+  /**
+   * Further permissions the tool's REST calls check. `consume` and `add` answer with the
+   * booked `stock_log` rows through `StockTransactions`, which needs STOCK_VIEW: a key
+   * without it would book the change and then see a 403, and a model told "forbidden"
+   * retries the booking.
+   */
+  alsoRequires?: readonly string[];
+  /** Write tools are listed only to a key that is not `read_only` (§6) and carry no readOnlyHint. */
+  write?: boolean;
+  /** Hint to clients that the call changes or removes existing data (consumption does). */
+  destructive?: boolean;
   inputSchema: Input;
   outputSchema: Output;
   handler: (input: z.infer<Input>, ctx: ToolContext) => Promise<ToolResult<z.infer<Output>>>;
