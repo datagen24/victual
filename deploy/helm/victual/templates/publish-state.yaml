@@ -1,0 +1,84 @@
+{{- /*
+MQTT state publication after every install and upgrade (ADR-0038 decision 9).
+
+bin/victual-publish-state publishes the Home Assistant discovery payloads and the full state
+snapshot as retained topics, which docs/manual/operator/home-assistant-mqtt.md asks for after
+every deployment. Rendered only with mqtt.enabled; the command itself does nothing when MQTT
+is off, so there is no Job to run then.
+
+Comments live inside template blocks in this file, not as `#` lines: deploy/k3s/ is rendered
+with --no-hooks, and a comment-only chunk would become a file there (render_k3s.py).
+
+The same image, configuration and credentials as the app container: the app role reads the
+snapshot, and the broker's password is in its own Secret, required when the broker has a
+username. Helm starts a post-install or post-upgrade hook once the release's resources are
+created, or once they are ready under --wait; without --wait the new pod may not have
+migrated yet, which is what the retries are for.
+*/ -}}
+{{- if .Values.mqtt.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: victual-publish-state
+  labels:
+    app.kubernetes.io/name: victual
+    app.kubernetes.io/component: publish-state
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    {{- /* Kept until the next run replaces it, so its log says what was published. */}}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-publish-state
+    spec:
+      restartPolicy: Never
+      os:
+        name: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      containers:
+        - name: publish-state
+          image: {{ include "victual.image" (dict "root" . "name" "victual-app") }}
+          {{- /* See upgrade-preflight.yaml for /opt/victual/php. */}}
+          command: ["/opt/victual/php", "bin/victual-publish-state"]
+          envFrom:
+            - configMapRef:
+                name: victual-config
+            - secretRef:
+                name: {{ .Values.secrets.names.app }}
+            - secretRef:
+                name: {{ .Values.secrets.names.mqtt }}
+                optional: {{ not (include "victual.wantsMqttSecret" .) }}
+            {{- /*
+            A booking event's InfluxDB delivery is not this command's work unless --drain is
+            passed, but the configuration it boots with is the app container's, token included.
+            */}}
+            - secretRef:
+                name: {{ .Values.secrets.names.influxdb }}
+                optional: {{ not (include "victual.wantsInfluxdbSecret" .) }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.resources.publishState }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

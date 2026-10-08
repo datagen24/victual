@@ -24,6 +24,9 @@ mcp:
   enabled: true
 labelWorkers:
   enabled: true
+# Rendered with --no-hooks anyway; off so that the base's values say it has none.
+upgradePreflight:
+  enabled: false
 settings: {}
 secrets:
   source: placeholder

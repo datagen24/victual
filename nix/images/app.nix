@@ -21,6 +21,7 @@
   app,
   appRoot,
   healthcheckBin,
+  phpLauncher,
   imageLib,
   runtime,
   version,
@@ -36,6 +37,7 @@ dockerTools.streamLayeredImage (
 
     contents = [
       healthcheckBin
+      phpLauncher
       imageLib.passwd
       imageLib.certificates
     ];

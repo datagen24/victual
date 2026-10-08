@@ -81,6 +81,16 @@ labelWorkers:
   # API key an administrator issues (secrets below); neither holds a database credential.
   enabled: true
 
+# --- Before every upgrade ------------------------------------------------------------------
+upgradePreflight:
+  # A pre-upgrade hook Job that runs bin/victual-timestamp-preflight from the new migrate
+  # image, holding the migrate role's Secret. When migration 0301 would refuse this
+  # database's timestamps it exits 2, and `helm upgrade` fails before any pod is replaced;
+  # `kubectl logs job/victual-upgrade-preflight` is the report. With MQTT enabled, a
+  # post-install and post-upgrade Job also runs bin/victual-publish-state (ADR-0038
+  # decision 9). Neither runs for `kubectl apply -k deploy/k3s`, which has no hooks.
+  enabled: true
+
 # --- Any other setting -------------------------------------------------------------------
 # Every setting in docs/manual/configuration.md, by its name there (no VICTUAL_ prefix).
 # The database, URL, MQTT and InfluxDB settings come from the sections above and are
@@ -167,3 +177,10 @@ resources:
   labelWorker:
     requests: {cpu: 50m, memory: 32Mi}
     limits: {cpu: "1", memory: 128Mi}
+  # The two hook Jobs above.
+  upgradePreflight:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+  publishState:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}

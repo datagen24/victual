@@ -175,6 +175,7 @@ nix/
   webroot.nix          the static tree the web tier serves
   healthcheck.nix      /opt/victual/healthcheck, the app tier's exec probe
   webcheck.nix         /opt/victual/webcheck, the web tier's — statically linked
+  php-launcher.nix     /opt/victual/php, so a Job can name the interpreter (app, migrate)
   mcp.nix              the MCP sidecar, buildNpmPackage over mcp/ — unbuilt, see above
   checks.nix           what `nix flake check` proves
   runtime/
