@@ -7,8 +7,9 @@ restarts the pods. The cost to running requests is known and measured beforehand
 **Depends on:** [ADR-0038](../adr/0038-kubernetes-deployments-ship-as-a-helm-chart.md)
 decision 10 (Proposed), which
 keeps `roles.sql` a manual step outside the chart and names this handler as separate work.
-[ADR-0010](../adr/0010-workload-standard.md) property 3 defines the two roles.
-**Status:** draft, research only. No script exists. Open questions 1 and 2 decide the design.
+**Status:** draft, research only. No script exists. Implementation waits on the logging
+hardening in [#676](https://github.com/datagen24/victual/pull/676) and on the availability
+decision in open questions 1 and 2.
 
 ## Problem and outcome
 
@@ -67,17 +68,20 @@ app item may hold `VICTUAL_MQTT_PASSWORD` and `VICTUAL_INFLUXDB_TOKEN`
 and it sets both passwords on every run (`ALTER ROLE … PASSWORD :'…'`). Rotating one role
 therefore requires passing the other's current password too.
 
-On master as of 2026-10-07, the documented invocation (the script's header and
-`values.example.yaml`) passes both passwords as `psql -v name=value`.
-`deploy/kind/roles-job.yaml` does the same through `$(MIGRATE_PASSWORD)` substitution in the
-container's `command`. Both put the passwords in `psql`'s argument list, visible in `ps` to
-other users of the machine or node.
+Until 2026-10-07 the documented invocation passed both passwords as `psql -v name=value`,
+and `deploy/kind/roles-job.yaml` did the same in its container `command`. Both put the
+passwords in `psql`'s argument list, visible in `ps` to other users of the machine or node.
 
-Branch `claude/roles-sql-env-passwords` replaces that interface, as open question 8's
-answer requires. `roles.sql` reads `MIGRATE_PASSWORD` and `APP_PASSWORD` from psql's
-environment with `\getenv`, discards any `-v` value, and refuses to run without them or on
-a psql older than 15. On that branch a refusal also exits non-zero; on master, `\quit 1`
-exits 0. Every call site in the tree moves to the environment form there.
+[#674](https://github.com/datagen24/victual/pull/674), merged 2026-10-07, replaced that
+interface, as open question 8's answer requires. `roles.sql` reads `MIGRATE_PASSWORD` and
+`APP_PASSWORD` from psql's environment with `\getenv`, discards any `-v` value, and refuses
+to run without them or on a psql older than 15. A refusal exits 3; before #674, `\quit 1`
+exited 0. Every call site in the tree uses the environment form.
+
+The server still receives each password as a literal in `ALTER ROLE … PASSWORD`.
+[#676](https://github.com/datagen24/victual/pull/676), open, switches off every server
+setting that records statement text before that statement runs (see
+[Server logs](#server-logs)).
 
 PostgreSQL stores one password per role. `VALID UNTIL` sets an expiry, not a second accepted
 value, so one role cannot accept an old and a new password at the same time.
@@ -123,8 +127,6 @@ Included:
   PostgreSQL;
 - 1Password through `op`, writing the items `deploy/talos/seed-1password.sh` creates, with
   their field labels unchanged;
-- HashiCorp Vault KV version 2 as an optional second store (see open question 4 for its
-  cluster-side consumer);
 - running `roles.sql` without exposing secrets, as described in [Secret handling](#secret-handling);
 - the Kubernetes Secret propagation wait and the pod restart;
 - the kind harness as the place the gap is measured.
@@ -137,7 +139,10 @@ Excluded:
   the chart;
 - scheduled or unattended rotation. The handler is interactive by design, because it asks
   for the superuser credential;
-- Vault's database secrets engine, which rotates passwords itself (open question 5).
+- Vault's database secrets engine, which rotates passwords itself (open question 5);
+- HashiCorp Vault as a store, deferred until a Kubernetes Secret consumer for it is chosen
+  (open question 4). The Vault notes under [Store writes](#store-writes) record what is
+  known for that later work.
 
 ## Design
 
@@ -160,49 +165,59 @@ outline below is required behaviour; the names are illustrative.
    `seed-1password.sh` does, and compute each one's SCRAM-SHA-256 verifier (see
    [Server logs](#server-logs)).
 5. **Store, apply, propagate and restart,** in the order the chosen
-   [ordering option](#ordering) gives, recording each phase in the journal.
+   [ordering option](#ordering) gives. A `prepared` journal entry is written before the
+   first store write, and each later phase is recorded as it completes (see
+   [Recovery](#recovery)).
 6. **Confirm.** The new pod is Ready; a connection with the old app password is refused;
    the store's current version is the new value. Report each result, close the journal
    entry and release the lock.
 
-The handler accepts which roles to rotate, the store (`1password`, `vault`, or a
-`kind-files` backend for the harness), and the target namespace. It refuses to run with
+The handler accepts which roles to rotate, the store (`1password`, or a `kind-files`
+backend for the harness), and the target namespace. It refuses to run with
 `set -x` tracing enabled or without a terminal. Every PostgreSQL connection it opens,
-including the lock session, preflight, `roles.sql` and verification, uses the transport
+including the superuser session that runs `roles.sql`, preflight and verification, uses the transport
 policy in [Transport](#transport).
 
 ### Secret handling
 
-**The superuser password.** The handler reads it from `/dev/tty` with echo off. It never
-reaches an argument, an exported shell variable, a file or a log. Two credible designs:
+**The superuser session.** The handler drives one `psql` process, connected as the
+superuser, for the whole run, writing commands to its standard input and reading results
+back. That one session holds the rotation lock ([Concurrency](#concurrency)), reads
+`pg_authid` for classification, and runs `roles.sql`.
 
-- *psql prompts for it.* `psql` reads the password from `/dev/tty` when the server asks.
-  The handler then never holds the password, but the operator types it once for every
-  connection: the lock session, preflight and the `roles.sql` run.
-- *the handler holds it* and passes it as `PGPASSWORD` in the environment of each `psql`
-  child only. The operator types it once. The residual exposure is
-  `/proc/<pid>/environ` of the `psql` process, readable by the same user and by root for
-  the life of that process.
+**The superuser password.** It never reaches an argument, an exported shell variable, a
+file or a log. Two credible designs:
 
-The recommendation is the second: the operator types the password once, and the exposure
-is limited to the operator's own user and root. `PGPASSFILE` is not used, because it needs
-a file.
+- *psql prompts for it.* `psql` reads the password from `/dev/tty` when the server asks,
+  even with its standard input on a pipe. The handler never holds the password. Because
+  there is one superuser session, the operator types it once; a recovery that has to
+  reconnect asks again.
+- *the handler holds it* and passes it as `PGPASSWORD` in the session's environment. The
+  residual exposure is `/proc/<pid>/environ` of that `psql` process, readable by the same
+  user and by root for the whole run.
+
+The recommendation is the first: with one session it costs one prompt, and the handler
+holds no superuser credential at all. `PGPASSFILE` is not used, because it needs a file.
 
 **The role passwords.** The store receives the plaintext, because the pods log in with it.
 PostgreSQL receives only its SCRAM verifier (see [Server logs](#server-logs)). The handler
-passes the verifiers the way `roles.sql` reads its inputs, in the `psql` child's
-environment beside `PGPASSWORD`:
+writes the verifiers to the session's standard input as `\setenv` lines, then includes the
+script:
 
-```sh
-# Illustrative. The values are verifiers, in psql's environment; no argument holds a secret.
-PGPASSWORD="$su" PGSSLMODE="$sslmode" MIGRATE_PASSWORD="$m_verifier" APP_PASSWORD="$a_verifier" \
-  psql -v ON_ERROR_STOP=1 -v db=victual -f deploy/postgres/roles.sql \
-  "postgresql://$suname@$host/$db"
+```text
+\setenv MIGRATE_PASSWORD SCRAM-SHA-256$4096:…
+\setenv APP_PASSWORD SCRAM-SHA-256$4096:…
+\i deploy/postgres/roles.sql
 ```
 
-The variables are set for that one command, not exported into the handler's shell. Feeding
-`\set` lines to `psql` on standard input does not work: `roles.sql` unsets both variables
-before reading the environment, so that a `-v` value cannot survive.
+`\setenv` changes psql's own environment, which `roles.sql`'s `\getenv` reads. The values
+travel on the pipe; no argument or exported variable holds them. `roles.sql` unsets
+`migrate_password` and `app_password` before `\getenv`, which is what defeats a `-v` or
+`\set` value; `\setenv` is not affected.
+
+**The preflight logins** test each role's store password by connecting as that role, in a
+separate short `psql` with the password in its `PGPASSWORD`. SCRAM does not send the
+password to the server; the `/proc/<pid>/environ` residual applies for that connection only.
 
 **Rotating one role.** `roles.sql` sets both passwords on every run. For the role not being
 rotated, the handler passes that role's current `pg_authid.rolpassword`, read under the
@@ -232,33 +247,46 @@ Two measures, both required:
   verifier is still sensitive: it allows server impersonation and an offline guessing
   attack. With 32 random alphanumeric characters (about 190 bits) the guessing attack is
   not practical.
-- **No statement logging for the session.** Before the `ALTER ROLE`, the session sets
-  `log_statement = 'none'`, `log_min_error_statement = 'panic'` and
-  `log_min_duration_statement = -1`. All three are superuser-settable, and `roles.sql`
-  already needs a superuser. The settings belong in `roles.sql` itself, so that the kind
-  and talos roles Jobs and manual runs, which still send plaintext, are covered as well
-  (open question 11).
+- **No statement text recorded for the session.** Before any password is sent,
+  `roles.sql` switches off, for its own session, every server setting that records a
+  statement's text ([#676](https://github.com/datagen24/victual/pull/676)):
 
-Audit extensions log independently of these settings. Preflight reads
-`shared_preload_libraries`. With `pgaudit` loaded, the session also sets `pgaudit.log =
-'none'`. With any other library loaded that could log statements, the handler stops and
-names it; the operator decides.
+  | Setting | Records |
+  |---|---|
+  | `log_statement`, `log_min_duration_statement` | the statement and slow-query logs |
+  | `log_min_duration_sample`, `log_transaction_sample_rate` | sampled logging, independent of the two above |
+  | `log_min_error_statement` | statement text attached to an error |
+  | `track_activities` | `pg_stat_activity.query` while it runs |
+  | `pg_stat_statements.track_utility` | `pg_stat_statements`, which keeps utility statements with their literals |
+  | `pgaudit.log` | pgaudit's session log |
 
-Measured on `postgres:16` with `log_statement = all`, 2026-10-07:
+  All are superuser-settable; a lesser role is refused at the first `SET`. Because the
+  settings live in `roles.sql`, they also cover the roles Jobs and manual runs, which send
+  plaintext.
+
+Another library that records statement text on its own is not covered by these settings.
+Preflight reads `shared_preload_libraries` and `session_preload_libraries`, and stops on any
+library it does not recognise; the operator decides.
+
+Measured on `postgres:16`, 2026-10-07 and 2026-10-08:
 
 - a client-computed verifier passed through `ALTER ROLE` stored as given, and the
   plaintext it was computed from logged in;
 - with logging left on, the log held the verifier and no plaintext;
-- with the three settings above, the log held neither, including for an `ALTER ROLE` that
-  failed.
+- with every logger on (`log_statement = all`, both durations 0, both sample rates 1,
+  `log_min_error_statement = debug5`, `pg_stat_statements` loaded), master's `roles.sql` left
+  each canary once in the log and in `pg_stat_statements`. #676's left none, including
+  when the script failed after its `ALTER ROLE`s;
+- without the two sampling settings, either sampling mode alone logged both canaries.
 
 ### Transport
 
 libpq's default `sslmode` is `prefer`: it falls back to an unencrypted connection when the
 server offers no TLS. With verifiers, what crosses the network is a verifier, not
 plaintext, but it still needs protecting. The handler therefore sets `PGSSLMODE`
-explicitly on every connection, never inheriting it, and uses the same value for the lock
-session, preflight, `roles.sql` and verification.
+explicitly on every connection, never inheriting it. The same value applies to the
+superuser session, which also runs `roles.sql`, and to the preflight and verification
+logins.
 
 **Direct connection to an external server** (outside the cluster, typically on the same
 LAN): `require` at least, which refuses a server without TLS before any statement is sent.
@@ -286,17 +314,40 @@ reach that database, so the lock works across workstations. PostgreSQL releases 
 the connection closes, so a killed handler cannot leave it held. A handler that fails to
 take the lock stops with a message; it does not wait.
 
-`roles.sql` does not take the lock, because the handler runs it in a second session, and
-that session would wait for the lock the handler already holds. Manual `roles.sql` runs
-and the roles Jobs are therefore not serialised with the handler; open question 10.
+`roles.sql` takes the same lock, so manual runs and the roles Jobs are serialised with the
+handler. A standalone run that cannot take it refuses and exits 3; a Job then retries under
+its `backoffLimit`. The handler runs `roles.sql` inside its own lock session, where an
+advisory lock is re-entrant. It drives one `psql` process for the whole run over a pipe:
+it takes the lock, later sends `\setenv MIGRATE_PASSWORD …` and `\setenv APP_PASSWORD …`
+lines, then `\i deploy/postgres/roles.sql`. The verifiers travel on the pipe, not in an
+argument, and `roles.sql`'s `\getenv` reads what `\setenv` set. The lock in `roles.sql` is
+a change to that file, made with the handler.
 
-Store writes are compare-and-swap. Under the lock the handler re-reads the item and checks
-that its version (the 1Password item `version`, the Vault KV `current_version`) is the one
-it read in classification. Vault writes pass `-cas=<version>`. `op` has no compare-and-swap
-on edit, so for 1Password the check and the edit are two calls, and the lock is what keeps
-another handler out between them. An edit made in the 1Password app at that moment is not
-prevented; the handler re-reads after writing and stops if the version moved by more than
-one.
+`roles.sql` sets `ON_ERROR_STOP`, so an error inside it ends the session, and PostgreSQL
+releases the lock with it. The handler does not continue in a new session as if nothing
+happened: it reconnects, takes the lock again, and enters [Recovery](#recovery), which
+treats the database state as unknown.
+
+Measured on `postgres:16`, 2026-10-08: in one `psql` session, `pg_try_advisory_lock`
+returned true, `\setenv` followed by `roles.sql` created both roles, and a second
+`pg_try_advisory_lock` on the same key also returned true.
+
+**Store writes cannot be made atomic with `op`.** Under the lock the handler re-reads the
+item and checks its version (the 1Password item `version`) against the one it read in
+classification, then edits it. `op` has no compare-and-swap, so those are two calls. The
+lock keeps other handlers out between them, but not an edit made in the 1Password app.
+Checking the version after writing can detect such an edit, but only after the handler has
+overwritten it. Nor can it guarantee that sibling fields survive.
+
+The design therefore gives each rotated credential an item the handler owns entirely:
+`victual-db-migrate` and `victual-db-app` hold `VICTUAL_DB_USER` and `VICTUAL_DB_PASSWORD`
+and nothing else. `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, `VICTUAL_MQTT_PASSWORD` and
+`VICTUAL_INFLUXDB_TOKEN` move to items of their own, read as a second Secret through
+another `envFrom` entry. A whole-item write then has no sibling fields to lose. An edit to
+a handler-owned item outside the handler is unsupported; the post-write version check
+reports it rather than prevents it. This changes `seed-1password.sh`, the talos
+`OnePasswordItem`s, `values.example.yaml`, `render.py` and the chart's Secret references;
+open question 13.
 
 ### Store writes
 
@@ -304,15 +355,16 @@ one.
 pipes the whole item to `op item edit <item> --vault … --account …` as a template on
 standard input. The `op` reference says piped templates are accepted and that assignment
 arguments are "visible to other processes" (1Password CLI reference, read 2026-10-07).
-Sending the whole item keeps sibling fields. Whether `op` merges or replaces fields from a
-template decides whether sending only the changed field is safe; open question 7. 1Password
+With handler-owned items ([Concurrency](#concurrency)) the whole item is the handler's to
+send. Until those items exist, whether `op` merges or replaces fields from a template
+decides whether sibling fields survive; open question 7. 1Password
 keeps item history, so the previous password is recoverable for rollback.
 
-**Vault.** The handler writes with `vault kv patch`, which merges the change into the
-existing data instead of replacing it, and reads the value from standard input when given
-`key=-` (Vault `kv patch` reference, read 2026-10-07). KV v2 keeps prior versions, which
-gives the same rollback as 1Password item history. No overlay deploys a Vault
-consumer today (open question 4).
+**Vault (deferred).** A Vault backend would write with `vault kv patch`, which merges the
+change into the existing data instead of replacing it, and reads the value from standard
+input when given `key=-` (Vault `kv patch` reference, read 2026-10-07). KV v2 keeps prior versions, which
+gives the same rollback as 1Password item history, and `-cas=<version>` gives the atomic
+compare-and-swap `op` lacks. No overlay deploys a Vault consumer today (open question 4).
 
 **kind.** The `kind-files` backend rewrites `deploy/kind/.secrets/{migrate,app}.env` with
 mode 0600 and runs `kubectl apply -k deploy/kind`. This writes the password to disk, which
@@ -396,40 +448,56 @@ the ADR decision in open question 1.
 ### Recovery
 
 The handler records each operation in a journal: a ConfigMap,
-`victual-credential-rotation`, in the deployment's namespace. It holds no secret: an
-operation id, the roles being rotated, the phase reached (`stored`, `propagated`,
-`altered`, `restarted`, `done`), and for each role the store version before and after the
-write and a SHA-256 fingerprint of the role's `pg_authid.rolpassword` before the change. A
-salted verifier's hash reveals nothing usable. A ConfigMap works the same for every store;
-a 1Password field would become a key in the Secret and an environment variable in the pods.
+`victual-credential-rotation`, in the deployment's namespace, so the record works the same
+for every store. A 1Password field would become a key in the Secret and an environment
+variable in the pods. The journal holds no secret. Each write uses the ConfigMap's
+`resourceVersion`, so a stale writer is refused.
+
+The journal is written ahead of every change it describes. Before the first store write,
+the handler records a `prepared` entry and confirms the write succeeded:
+
+- an operation id and the roles being rotated;
+- for each role, the store item's version before the write;
+- for each role, a salted SHA-256 of the new plaintext, with a random salt kept beside
+  it. The plaintext is 190 bits of randomness, so the hash reveals nothing usable; it lets
+  a later run recognise its own write;
+- for each role, a SHA-256 fingerprint of `pg_authid.rolpassword` before the change.
+
+The phase then advances as each step is confirmed: `stored`, `propagated`, `altered`,
+`restarted`, `done`. A crash between a step and its journal update leaves the journal one
+phase behind; recovery tests the actual state rather than trusting the phase.
 
 After taking the lock, the handler reads the journal before anything else:
 
 - **No open operation:** a fresh run. A store password that does not authenticate is
   drift, and the handler stops.
-- **An open operation:** recovery. For each role in it, the handler compares the role's
-  current `rolpassword` with the journal's fingerprint, and tests the store's current
-  password by SCRAM login, which does not send the password to the server.
-  - The store's new password logs in: the `ALTER ROLE` happened. Resume at propagation or
-    rollout.
-  - The fingerprint matches: the `ALTER ROLE` did not happen. Finish the rotation, or
-    restore the store's previous version with a compare-and-swap write; the operator
-    chooses.
-  - Neither: something outside the handler changed the role. Stop and report.
+- **An open operation:** recovery, role by role.
+  - *Store.* If the store's current value hashes to the journal's new-value hash, the
+    write landed, whatever the phase says. If the value does not match and the item
+    version is unchanged, the write never happened. Any other combination means an edit
+    from outside the handler: stop and report. An interrupted or timed-out store write is
+    resolved this way.
+  - *Database.* If the store's new password logs in by SCRAM, which does not send the
+    password, the `ALTER ROLE` happened. If `rolpassword` still matches the journal
+    fingerprint, it did not. Neither means an outside change: stop.
+  - *Then* resume from the earliest step not done. Alternatively, if the `ALTER ROLE` did
+    not happen, restore the store's previous version with a compare-and-swap write; the
+    operator chooses.
 
-Recovery never needs the old plaintext. Restoring the store does: Vault reads it with
-`-version`, and whether `op` can read a past item version is open question 12 (1Password's
-app can restore one by hand). Each role is reconciled separately, because
-`roles.sql` sets `victual_migrate` before `victual_app`, and an interruption between the two
-leaves them in different phases. The `kind-files` backend keeps each file's previous
-version beside it (mode 0600), so that restore is testable on the harness.
+Recovery never needs the old plaintext. Restoring the store does: whether `op` can read a
+past item version is open question 12 (the 1Password app can restore one by hand). Each role
+is reconciled separately, because `roles.sql` sets `victual_migrate` before `victual_app`,
+and an interruption between the two leaves them in different phases. The `kind-files`
+backend keeps each file's previous version beside it (mode 0600), with a version counter,
+so that both classification and restore are testable on the harness.
 
 ### Failure behaviour
 
 | Fails at | State | Handler's response |
 |---|---|---|
 | Prompt, lock or classification | Nothing changed | Stop. |
-| Store write | Store unchanged or written; journal says which | Restore the prior version with a compare-and-swap write; close the journal entry; stop. |
+| Journal `prepared` write | Nothing changed | Stop; nothing to recover. |
+| Store write, including an unknown outcome | Journal `prepared`; store old or new | Classify by the new-value hash and item version, as in [Recovery](#recovery); resume or restore. |
 | Secret propagation timeout | Store new, database old, pods old | Report; nothing is broken. A rerun enters recovery and resumes at the wait. |
 | `roles.sql` | Each role at old or new; journal at `stored` or `propagated` | Reconcile each role as in [Recovery](#recovery), then finish or restore. |
 | Rollout timeout | Database new; old pod refusing app requests | Report the pod's state. Do not revert the database, which would break the new pod. |
@@ -439,7 +507,8 @@ version beside it (mode 0600), so that restore is testable on the harness.
 
 - ADR-0038 decision 10 (Proposed): the handler is outside the chart and needs a human with
   the superuser credential.
-- ADR-0010 property 3: one role per job. Options B and C stretch it.
+- [ADR-0010](../adr/0010-workload-standard.md) property 3: one role per job. Options B and C
+  stretch it.
 - `roles.sql`'s environment interface, on branch `claude/roles-sql-env-passwords` (open
   question 8). The handler's [secret handling](#secret-handling) assumes it.
 - `deploy/talos/seed-1password.sh` and `values.example.yaml`: item names and field labels
@@ -488,16 +557,32 @@ version beside it (mode 0600), so that restore is testable on the harness.
    encrypts; `verify-ca` or `verify-full` also authenticates the server, and needs its CA
    on the workstation. The answer depends on the network a deployment trusts, so it may be
    a per-deployment setting with `require` as the floor.
-10. **Should manual `roles.sql` runs and the roles Jobs be serialised with the handler?**
-    The handler's lock does not cover them (see [Concurrency](#concurrency)). Covering them
-    means `roles.sql` takes the lock itself and the handler runs it inside its lock
-    session, which needs the verifiers in that session's environment when it starts.
-11. **Do the logging settings land in `roles.sql` before the handler?** They protect the
-    roles Jobs and manual runs, which send plaintext today. That is a change to the file
-    [#674](https://github.com/datagen24/victual/pull/674) already changes, and could ship with it.
+10. ~~**Should manual `roles.sql` runs and the roles Jobs be serialised with the handler?**~~
+    **Answered: yes.**
+
+    > **Response (datagen24, review of plan 36, 2026-10-08):** Concurrency protection is
+    > incomplete while manual `roles.sql` runs and the roles Jobs are outside the lock.
+    > *Reconciled in [Concurrency](#concurrency): `roles.sql` takes the lock, and the
+    > handler runs it inside its own lock session.*
+11. ~~**Do the logging settings land in `roles.sql` before the handler?**~~ **Answered:
+    yes, separately.**
+
+    > **Response (datagen24, review of plan 36, 2026-10-08):** Ship logging hardening
+    > separately, then correct recovery and measurement before building the handler; the
+    > settings must also cover `log_min_duration_sample` and
+    > `log_transaction_sample_rate`. *Done in
+    > [#676](https://github.com/datagen24/victual/pull/676); reconciled in
+    > [Server logs](#server-logs).*
 12. **Can `op` read a previous item version?** Recovery does not need it, but restoring the
     store after an abandoned rotation does. If it cannot, a 1Password restore is a manual
     step in the 1Password app, and the handler says so.
+
+13. **Do the rotated credentials move to handler-owned 1Password items?** Without them, a
+    whole-item write can lose a sibling field edited concurrently, and `op` offers no
+    compare-and-swap to prevent it ([Concurrency](#concurrency)). Moving
+    `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD`, `VICTUAL_MQTT_PASSWORD` and `VICTUAL_INFLUXDB_TOKEN`
+    to items of their own changes the item layout every 1Password deployment uses, so it
+    needs a migration note for existing items.
 
 ## Verification
 
@@ -516,8 +601,11 @@ Each criterion runs on `deploy/kind/` with the `kind-files` backend unless it na
    `victual_migrate`'s `rolpassword` byte for byte as it was, and its prior password
    authenticating. In 1Password, a scratch copy of
    the migrate item keeps `VICTUAL_BOOTSTRAP_ADMIN_PASSWORD` byte for byte.
-4. **The gap is measured.** A request loop through `kubectl port-forward svc/victual` hits
-   an API GET every 200 ms with an API key and records each non-200 with a timestamp. Under
+4. **The gap is measured.** A probe Pod in the namespace requests an API GET from the
+   Service (`http://victual:8080/…`) every 200 ms with an API key, and logs each status with
+   a timestamp; on talos, a second probe uses the ingress host. The probe follows Service
+   routing across the rollout. `kubectl port-forward svc/victual` picks one pod and ends
+   when that pod terminates, so it cannot measure a rollout. Under
    option A the loop's failure window starts at the `ALTER ROLE` and ends when the new pod is
    Ready. The handler prints its length, and it is recorded in this plan's Executed section
    from three runs. Under option B or C, if implemented, the loop records zero failures
@@ -532,25 +620,31 @@ Each criterion runs on `deploy/kind/` with the `kind-files` backend unless it na
    database, the handler stops before writing anything.
 8. **Idempotence.** Two consecutive rotations succeed, and the second leaves the database,
    store and pods consistent.
-9. **Nothing reaches the server log.** kind's PostgreSQL runs with `log_statement = all`
-   and `log_min_error_statement = error`. A rotation with synthetic canary passwords leaves
-   neither a canary nor its verifier in `kubectl logs` of the PostgreSQL pod. The same holds
+9. **Nothing reaches the server log or statistics.** kind's PostgreSQL runs with
+   `log_statement = all`, both duration thresholds at 0, `log_statement_sample_rate` and
+   `log_transaction_sample_rate` at 1, `log_min_error_statement = debug5`, and
+   `pg_stat_statements` loaded. A rotation with synthetic canary passwords leaves neither a
+   canary nor its verifier in `kubectl logs` of the PostgreSQL pod or in
+   `pg_stat_statements`. The same holds
    for a run whose `ALTER ROLE` is forced to fail, and for a run killed during `roles.sql`.
    A server with an unrecognised logging library in `shared_preload_libraries` stops the
    handler before it connects with any credential.
 10. **Transport refuses fallback.** With `require`, a connection to the harness's
     PostgreSQL, which has no TLS, fails with libpq's "server does not support SSL" before
-    any statement runs, for the lock session, preflight and `roles.sql` alike. The
+    any statement runs, for the superuser session and the preflight logins alike. The
     port-forward path runs with `disable` set explicitly, and the handler reports which
     policy it used.
-11. **Concurrent handlers cannot undo each other.** Two handlers, one rotating
+11. **Concurrent runs cannot undo each other.** Two handlers, one rotating
     `victual_migrate` and one `victual_app`, started together: the second fails to take
-    the lock and changes nothing. With the lock disabled in a test build, the interleaving
+    the lock and changes nothing. A manual `roles.sql` run and the roles Job, started
+    during a rotation, exit 3 without changing a role, and the Job succeeds on a retry
+    after the rotation ends. With the lock disabled in a test build, the interleaving
     in which an app-only run follows a migrate-only run still leaves `victual_migrate` on
     the newer password, because the app-only run passes back the current `rolpassword`.
     A store edit whose version moved during the run stops the handler without writing.
-12. **An interrupted rotation resumes.** Killing the handler after the store write, and
-    again after `roles.sql`'s first `ALTER ROLE` (migrate changed, app not), then starting a
-    fresh handler: it enters recovery, classifies each role correctly, and converges to
+12. **An interrupted rotation resumes.** The handler is killed at three points: after the
+    `prepared` journal write and before the store write; after the store write and before
+    its journal update; and after `roles.sql`'s first `ALTER ROLE` (migrate changed, app
+    not). Each time, a fresh handler enters recovery, classifies each role correctly, and converges to
     both roles on their new passwords with the store, Secret and pods agreeing. It does not
     report its own intermediate state as drift.
