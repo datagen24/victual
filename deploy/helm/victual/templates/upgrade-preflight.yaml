@@ -1,0 +1,86 @@
+{{- /*
+The upgrade preflight, as a pre-upgrade hook (ADR-0038 decision 9).
+
+bin/victual-timestamp-preflight reports whether migration 0301 would refuse this database's
+stored timestamps, and changes nothing. Run before any pod is replaced, a refusal (exit 2)
+fails `helm upgrade` while the running version keeps serving, instead of leaving the new
+pod's migrate initContainer in a restart loop. The report is this Job's log:
+
+  kubectl logs job/victual-upgrade-preflight
+
+Comments live inside template blocks in this file, not as `#` lines: deploy/k3s/ is rendered
+with --no-hooks, and a comment-only chunk would become a file there (render_k3s.py).
+
+It holds the migrate role's Secret, because the preflight creates its conversion function
+inside a transaction it rolls back and so needs that role's CREATE. It and the migrate
+initContainer are the only readers of that Secret; test_helm_chart.py asserts it (ADR-0038,
+Consequences). Not the bootstrap administrator's Secret: nothing here creates a schema.
+
+A pre-upgrade hook runs against the release being replaced, so the ConfigMap and the Secret
+it reads are the running version's. The image is the one being upgraded to: the new code
+judges whether its own migrations will run.
+*/ -}}
+{{- if .Values.upgradePreflight.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: victual-upgrade-preflight
+  labels:
+    app.kubernetes.io/name: victual
+    app.kubernetes.io/component: upgrade-preflight
+  annotations:
+    helm.sh/hook: pre-upgrade
+    {{- /*
+    Replaced by the next upgrade's, and otherwise kept: a refusal's report is this Job's
+    log, and deleting a failed hook (hook-failed) would delete it.
+    */}}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  {{- /* One run. A retry would print the same refusal again and blur the exit code. */}}
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victual-upgrade-preflight
+    spec:
+      restartPolicy: Never
+      os:
+        name: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      containers:
+        - name: preflight
+          image: {{ include "victual.image" (dict "root" . "name" "victual-migrate") }}
+          {{- /*
+          /opt/victual/php is the image's interpreter (nix/php-launcher.nix); the script
+          path is relative to the image's working directory, the application root.
+          */}}
+          command: ["/opt/victual/php", "bin/victual-timestamp-preflight"]
+          envFrom:
+            - configMapRef:
+                name: victual-config
+            - secretRef:
+                name: {{ .Values.secrets.names.migrate }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.resources.upgradePreflight }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

@@ -89,6 +89,12 @@ in
     # brings no libc into an image that holds no interpreter.
     webcheckBin = self.callPackage ./webcheck.nix { };
 
+    # /opt/victual/php — the interpreter by a name a manifest can carry, so a Job can run a
+    # bin/ command from the image (the Helm chart's hooks, ADR-0038 decision 9). One per
+    # image, because the migrate image's PHP is not the app image's. See the file.
+    phpLauncher = self.callPackage ./php-launcher.nix { };
+    phpMigrateLauncher = self.callPackage ./php-launcher.nix { php = self.phpMigrate; };
+
     # The two workloads whose source lives outside this tree, built from the revisions
     # flake.nix pins. See nix/label-renderer.nix for why the pin is the reproducibility
     # boundary rather than a convenience.

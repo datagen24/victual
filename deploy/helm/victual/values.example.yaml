@@ -66,8 +66,9 @@ database:
 
 # --- Home Assistant over MQTT (optional) ---------------------------------------------------
 # docs/manual/operator/home-assistant-mqtt.md says what is published. Victual publishes after
-# every write; running bin/victual-publish-state after a deploy, which the manual also asks
-# for, is not automated by this chart yet.
+# every write. With enabled: true, a post-install and post-upgrade hook Job also runs
+# bin/victual-publish-state after each `helm install` and `helm upgrade`, which the manual
+# asks for after every deployment.
 mqtt:
   enabled: false
   # Required with enabled: true.

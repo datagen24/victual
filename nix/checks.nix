@@ -211,6 +211,8 @@ in
       migrations \
       db/pgsql/baseline \
       bin/victual-migrate \
+      bin/victual-timestamp-preflight \
+      bin/victual-publish-state \
       viewcache
     do
       if [ ! -e "${appRoot}/$required" ]; then

@@ -211,6 +211,18 @@
         "enabled"
       ]
     },
+    "upgradePreflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    },
     "settings": {
       "type": "object",
       "$comment": "Each name is one from docs/manual/configuration.md, without VICTUAL_, holding one value: a list cannot be set from the environment.",

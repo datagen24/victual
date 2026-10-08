@@ -1,0 +1,13 @@
+# Both hook Jobs (ADR-0038 decision 9) on their own: the upgrade preflight, and MQTT
+# publication to an anonymous broker, so the publish Job holds no broker Secret. The shape
+# the kind gates for prerequisites 4 and 7 installed.
+baseUrl: https://victual.example.com
+database: {host: postgres.example.internal}
+mqtt: {enabled: true, host: mqtt.example.internal, username: ""}
+influxdb: {enabled: false}
+mcp: {enabled: false}
+labelWorkers: {enabled: false}
+upgradePreflight: {enabled: true}
+secrets:
+  source: inline
+  inline: {migratePassword: migrate-password, appPassword: app-password, bootstrapAdminPassword: admin-password}

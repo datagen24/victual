@@ -151,8 +151,107 @@ class ValuesMatrixTest(unittest.TestCase):
             ("OnePasswordItem", "victual-db-migrate"),
             ("Secret", "victual-mqtt"),
             ("Secret", "victual-influxdb"),
+            ("Job", "victual-upgrade-preflight"),
+            ("Job", "victual-publish-state"),
         ]:
             self.assertIn(wanted, seen)
+
+
+def hooks(docs):
+    """{name: Job} for the documents Helm runs as hooks."""
+    return {
+        d["metadata"]["name"]: d for d in docs
+        if "helm.sh/hook" in (d["metadata"].get("annotations") or {})
+    }
+
+
+def pod_spec(doc):
+    spec = doc["spec"]
+    if doc["kind"] == "CronJob":
+        spec = spec["jobTemplate"]["spec"]
+    return spec["template"]["spec"]
+
+
+def secret_readers(docs, secret):
+    """(kind, name, container) for every container that can read the Secret `secret`."""
+    readers = set()
+    for doc in docs:
+        if doc["kind"] not in {"Deployment", "Job", "CronJob", "Pod", "StatefulSet", "DaemonSet"}:
+            continue
+        spec = pod_spec(doc)
+        mounted = {v["name"] for v in spec.get("volumes") or []
+                   if (v.get("secret") or {}).get("secretName") == secret}
+        for container in (spec.get("initContainers") or []) + (spec.get("containers") or []):
+            names = {r["secretRef"]["name"] for r in container.get("envFrom") or [] if "secretRef" in r}
+            names |= {e["valueFrom"]["secretKeyRef"]["name"] for e in container.get("env") or []
+                      if "secretKeyRef" in (e.get("valueFrom") or {})}
+            if secret in names or mounted & {m["name"] for m in container.get("volumeMounts") or []}:
+                readers.add((doc["kind"], doc["metadata"]["name"], container["name"]))
+    return readers
+
+
+@needs_helm
+class HookJobTest(unittest.TestCase):
+    """ADR-0038 decision 9: the preflight before an upgrade, MQTT publication after one."""
+
+    PREFLIGHT = "victual-upgrade-preflight"
+    PUBLISH = "victual-publish-state"
+
+    def test_the_migrate_secret_has_two_readers(self):
+        """Consequences: the preflight Job and the migrate initContainer, and nothing else.
+
+        test_deploy_pod_parity.py checks the pod; this checks everything the chart renders,
+        hooks included, for every values file in the matrix.
+        """
+        for path in MATRIX:
+            with self.subTest(path.name):
+                values = yaml.safe_load(path.read_text()) or {}
+                name = ((values.get("secrets") or {}).get("names") or {}).get("migrate", "victual-db-migrate")
+                expected = {("Deployment", "victual", "migrate")}
+                if (values.get("upgradePreflight") or {}).get("enabled", True):
+                    expected.add(("Job", self.PREFLIGHT, "preflight"))
+                self.assertEqual(secret_readers(render(path), name), expected)
+
+    def test_the_preflight_runs_before_an_upgrade_from_the_migrate_image(self):
+        job = hooks(render(CHART / "ci/inline-no-features.yaml"))[self.PREFLIGHT]
+        annotations = job["metadata"]["annotations"]
+        self.assertEqual(annotations["helm.sh/hook"], "pre-upgrade")
+        # The refusal's report is the Job's log: a failed hook must not be deleted.
+        self.assertNotIn("hook-failed", annotations.get("helm.sh/hook-delete-policy", ""))
+        # One run: a retry would repeat the refusal and hide the exit code behind a backoff.
+        self.assertEqual(job["spec"]["backoffLimit"], 0)
+        (container,) = pod_spec(job)["containers"]
+        self.assertEqual(container["image"].rsplit(":", 1)[0], "ghcr.io/datagen24/victual-migrate")
+        self.assertEqual(container["command"], ["/opt/victual/php", "bin/victual-timestamp-preflight"])
+
+    def test_the_preflight_can_be_turned_off(self):
+        values = filled_inline(False)
+        values["upgradePreflight"] = {"enabled": False}
+        self.assertNotIn(self.PREFLIGHT, hooks(render(values)))
+
+    def test_publication_runs_after_install_and_upgrade_only_with_mqtt(self):
+        self.assertNotIn(self.PUBLISH, hooks(render(filled_inline(False))))
+        job = hooks(render(filled_inline(True)))[self.PUBLISH]
+        self.assertEqual(job["metadata"]["annotations"]["helm.sh/hook"], "post-install,post-upgrade")
+        (container,) = pod_spec(job)["containers"]
+        self.assertEqual(container["image"].rsplit(":", 1)[0], "ghcr.io/datagen24/victual-app")
+        self.assertEqual(container["command"], ["/opt/victual/php", "bin/victual-publish-state"])
+
+    def test_publication_holds_what_the_app_container_holds(self):
+        """The app role, and the broker's Secret required exactly when the app's is."""
+        for values in (filled_inline(True), onepassword(True), CHART / "ci/hooks-inline-anonymous-mqtt.yaml"):
+            docs = render(values)
+            (container,) = pod_spec(hooks(docs)[self.PUBLISH])["containers"]
+            self.assertEqual(container["envFrom"], app_container(docs)["envFrom"])
+
+    def test_no_hook_pod_is_selected_by_the_service(self):
+        """The Service selects app.kubernetes.io/name: victual; a hook pod answering it would be wrong."""
+        docs = render(CHART / "ci/inline-all-features.yaml")
+        selector = by_kind(docs, "Service")["victual"]["spec"]["selector"]
+        for name, job in hooks(docs).items():
+            with self.subTest(name):
+                labels = job["spec"]["template"]["metadata"]["labels"]
+                self.assertFalse(selector.items() <= labels.items())
 
 
 @needs_helm

@@ -16,6 +16,7 @@
   lib,
   dockerTools,
   phpMigrate,
+  phpMigrateLauncher,
   appRoot,
   imageLib,
   version,
@@ -29,6 +30,9 @@ dockerTools.streamLayeredImage (
     name = "victual-migrate";
 
     contents = [
+      # /opt/victual/php, for a Job that runs another bin/ command from this image: the
+      # upgrade preflight, which the Helm chart's pre-upgrade hook runs.
+      phpMigrateLauncher
       imageLib.passwd
       imageLib.certificates
     ];
