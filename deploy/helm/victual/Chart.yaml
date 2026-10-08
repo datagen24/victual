@@ -8,8 +8,8 @@ apiVersion: v2
 name: victual
 description: Victual, a self-hosted household inventory, with its MCP sidecar and label workers
 type: application
-version: 0.3.0
-appVersion: "0.3.0"
+version: 0.3.1
+appVersion: "0.3.1"
 home: https://github.com/datagen24/victual
 sources:
   - https://github.com/datagen24/victual
