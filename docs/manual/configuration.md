@@ -214,13 +214,21 @@ so it never carries a price; InfluxDB is where spending history is written, quer
 own credentials rather than broadcast. See
 [Home Assistant and MQTT](operator/home-assistant-mqtt.md#influxdb).
 
+| Version | Endpoint written to | Authentication |
+|---|---|---|
+| 1.x | `POST /write?db=` | Basic, `INFLUXDB_USERNAME` / `INFLUXDB_TOKEN`; none when the username is empty |
+| 2.x | `POST /api/v2/write?org=&bucket=` | `Authorization: Token` |
+| 3.x | `POST /api/v3/write_lp?db=` | `Authorization: Bearer`; none when the token is empty |
+
 | Setting | Default | Notes |
 |---|---|---|
 | `INFLUXDB_ENABLED` | `false` | Master switch. |
-| `INFLUXDB_URL` | *(empty)* | Base URL of the InfluxDB v2 server, e.g. `http://influxdb:8086`. Required when enabled. |
-| `INFLUXDB_TOKEN` | *(empty)* | An API token with write access to the bucket below. Never exposed by `GET /api/system/config`. |
-| `INFLUXDB_ORG` | `victual` | The InfluxDB organisation. |
-| `INFLUXDB_BUCKET` | `victual` | The bucket points are written to. |
+| `INFLUXDB_VERSION` | `2` | Major version of the server: `1`, `2` or `3`. Picks the write endpoint and authentication, below. |
+| `INFLUXDB_URL` | *(empty)* | Base URL of the InfluxDB server, e.g. `http://influxdb:8086` (`:8181` for 3.x Core). Required when enabled. |
+| `INFLUXDB_TOKEN` | *(empty)* | 2.x and 3.x: an API token with write access to the bucket or database. 1.x: the password of `INFLUXDB_USERNAME`. Never exposed by `GET /api/system/config`. |
+| `INFLUXDB_USERNAME` | *(empty)* | 1.x only: the user to write as (HTTP basic authentication). Empty writes without authentication. |
+| `INFLUXDB_ORG` | `victual` | 2.x only: the InfluxDB organisation. |
+| `INFLUXDB_BUCKET` | `victual` | The bucket (2.x) or database (1.x, 3.x) points are written to. For 1.x the database must already exist, e.g. `CREATE DATABASE victual`. |
 | `INFLUXDB_TIMEOUT_SECONDS` | `2` | Connect and total timeout — bounds how long a write is delayed when InfluxDB is unreachable. Must be at least 1. |
 
 ## Configuration outside config.php {: #configuration-outside-configphp }

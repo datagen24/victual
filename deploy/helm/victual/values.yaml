@@ -62,13 +62,19 @@ mqtt:
   discoveryMode: device
   deviceName: Victual
 
-# --- Price and stock-value events to InfluxDB v2 (optional) --------------------------------
+# --- Price and stock-value events to InfluxDB 1.x, 2.x or 3.x (optional) -------------------
 influxdb:
   enabled: false
+  # 1, 2 or 3. A Home Assistant install with years of history is usually still on 1.
+  version: 2
   url: ""
+  # 2 only. Ignored by 1 and 3.
   org: victual
+  # The bucket (2) or the database (1, 3) the points are written to.
   bucket: victual
-  # The token comes from `secrets`.
+  # 1 only: the user to write as; empty writes without authentication.
+  username: ""
+  # The token comes from `secrets` (for 1, it is the password of `username`).
 
 # --- The read-only MCP server for AI assistants (optional) ---------------------------------
 mcp:
