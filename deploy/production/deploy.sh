@@ -32,6 +32,7 @@ apply)
 	manifests | "${KUBECTL[@]}" apply -f -
 	if [ -n "$OPERATOR_SECRETS" ]; then
 		log "waiting for the 1Password Connect operator to write the Secrets"
+		# shellcheck disable=SC2086 # a space-separated list of Secret names, split on purpose
 		for secret in $OPERATOR_SECRETS; do
 			for _ in $(seq 60); do
 				"${KUBECTL[@]}" -n "$NAMESPACE" get secret "$secret" >/dev/null 2>&1 && break
