@@ -46,6 +46,7 @@ These records are not published on the documentation site
 
 | Version | Date | Record |
 |---|---|---|
+| 0.3.1 | 2026-10-08 | [0.3.1.md](0.3.1.md) |
 | 0.3.0 | 2026-10-07 | [0.3.0.md](0.3.0.md) |
 | 0.2.0-MVP | 2026-09-24 | [0.2.0-MVP.md](0.2.0-MVP.md) |
 | 0.1.1-MVP | 2026-09-19, never tagged; its changes are in 0.2.0-MVP | [0.1.1-MVP.md](0.1.1-MVP.md) |

@@ -14,9 +14,7 @@
 # maintainer's machine may be any cluster. The chart comes from
 # oci://ghcr.io/datagen24/charts/victual at CHART_VERSION (version.json's Version unless set);
 # --local installs the working tree's chart instead, still with the published images.
-# The first published chart is 0.3.1: no 0.3.0 chart exists. The release PR for that tag
-# moves version.json to 0.3.1, as release.yml requires, and the default follows it; before
-# then, CHART_VERSION=0.3.1 names it.
+# The first published chart is 0.3.1: no earlier chart exists.
 #
 # The passwords come from 1Password through the cluster's Connect operator: run
 # deploy/talos/seed-1password.sh once first, or the four Secrets never appear.
