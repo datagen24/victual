@@ -2,12 +2,13 @@
 #
 # A `v*` tag placed on master builds the six Nix images for x86_64 and aarch64, boots and
 # walks each architecture's images through the `nix` workflow, pushes them to GHCR as one
-# multi-architecture tag per image, and creates the GitHub release with their digests.
+# multi-architecture tag per image, pushes the Helm chart to GHCR as an OCI artifact
+# (ADR-0038 decision 5), and creates the GitHub release with their digests.
 #
 # The tag is the maintainer's act, from the workstation, signed (docs/releases/README.md).
 # This workflow places nothing and decides nothing: it refuses a tag that disagrees with
-# version.json, that has no release record, or that is not on master, and otherwise
-# publishes exactly what the tag names.
+# version.json or with the chart's Chart.yaml, that has no release record, or that is not
+# on master, and otherwise publishes exactly what the tag names.
 #
 # A pull request that changes this file runs the two builds and stops there, so the
 # aarch64 half is proven before a tag depends on it. Nothing is pushed from a pull request.
@@ -42,9 +43,14 @@ jobs:
         id: version
         run: echo "version=$(jq -r .Version version.json)" >> "$GITHUB_OUTPUT"
 
-      # The three refusals. Each is a mistake that is cheap to make at a terminal and
+      # The four refusals. Each is a mistake that is cheap to make at a terminal and
       # expensive to discover after the images are public.
-      - name: The tag is version.json's, has a record, and is on master
+      #
+      # Chart.yaml is read with sed because Helm is installed only in `publish`. Its two
+      # keys are top-level scalars in a file this repository writes, and
+      # test_helm_chart.ChartVersionTest holds them to version.json on every pull request;
+      # this repeats the check at the tag, where a disagreement would publish.
+      - name: The tag is version.json's and Chart.yaml's, has a record, and is on master
         if: github.event_name == 'push'
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -53,6 +59,14 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           if [ "$tag" != "v$VERSION" ]; then
             echo "tag $tag does not match version.json's Version ($VERSION); expected v$VERSION" >&2
+            exit 1
+          fi
+          chart=deploy/helm/victual/Chart.yaml
+          chart_version=$(sed -n 's/^version:[[:space:]]*//p' "$chart" | tr -d "\"'")
+          chart_app_version=$(sed -n 's/^appVersion:[[:space:]]*//p' "$chart" | tr -d "\"'")
+          if [ "$chart_version" != "$VERSION" ] || [ "$chart_app_version" != "$VERSION" ]; then
+            echo "tag $tag does not match $chart: version $chart_version," \
+              "appVersion $chart_app_version; expected $VERSION for both" >&2
             exit 1
           fi
           record="docs/releases/$VERSION.md"
@@ -69,7 +83,7 @@ jobs:
             echo "tag $tag points at $GITHUB_SHA, which is not on master" >&2
             exit 1
           fi
-          echo "v$VERSION: record present, commit on master"
+          echo "v$VERSION: chart agrees, record present, commit on master"
 
   images:
     needs: identity
@@ -95,6 +109,7 @@ jobs:
       packages: write
     outputs:
       digests: ${{ steps.manifest.outputs.digests }}
+      chart: ${{ steps.chart.outputs.chart }}
     env:
       VERSION: ${{ needs.identity.outputs.version }}
       REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -147,6 +162,52 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      # The chart (ADR-0038 decision 5). The tagged commit's tree, which `identity` has
+      # already held to the tag.
+      - uses: actions/checkout@v7
+        with:
+          path: source
+
+      # The same Helm as the `lint` job in tests.yml, pinned by the same checksum, so the
+      # chart is packaged by the Helm that rendered deploy/k3s/. Bump both together.
+      - name: Install Helm
+        env:
+          HELM_VERSION: v4.3.0
+          HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+        run: |
+          archive="helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" "https://get.helm.sh/$archive"
+          echo "$HELM_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" linux-amd64/helm
+          # On PATH for the later steps; GITHUB_PATH does not apply to this one.
+          echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/linux-amd64/helm" version
+
+      # `helm push` names the artifact from the chart: oci://<prefix>/victual:<version>.
+      # The tag is the chart's version and nothing else, so there is no `latest`
+      # (ADR-0030 decision 7).
+      - name: Package and push the chart
+        id: chart
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          helm package source/deploy/helm/victual --destination chart
+          package="chart/victual-$VERSION.tgz"
+          if [ ! -f "$package" ]; then
+            echo "helm package did not write $package:" >&2
+            ls chart >&2
+            exit 1
+          fi
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push "$package" "oci://$REGISTRY/charts" 2>&1 | tee push.txt
+          digest=$(sed -n 's/^Digest:[[:space:]]*//p' push.txt)
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "no digest in helm push's output" >&2; exit 1 ;;
+          esac
+          echo "chart=oci://$REGISTRY/charts/victual:$VERSION@$digest" >> "$GITHUB_OUTPUT"
+
   release:
     needs: [identity, publish]
     runs-on: ubuntu-latest
@@ -155,6 +216,7 @@ jobs:
     env:
       VERSION: ${{ needs.identity.outputs.version }}
       DIGESTS: ${{ needs.publish.outputs.digests }}
+      CHART: ${{ needs.publish.outputs.chart }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
@@ -172,6 +234,12 @@ jobs:
             echo
             echo '```'
             printf '%s\n' "$DIGESTS"
+            echo '```'
+            echo
+            echo "The Helm chart. Helm checks the digest when it pulls this reference:"
+            echo
+            echo '```'
+            echo "helm install victual $CHART"
             echo '```'
           } > notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
